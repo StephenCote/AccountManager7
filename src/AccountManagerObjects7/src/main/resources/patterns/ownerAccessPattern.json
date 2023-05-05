@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.owneraccess",
+	"type": "function",
+	"name": "Owner Access Pattern",
+	"fact": "${fact.contextUser}",
+	"match": "${fact.matchOwnerFunction}"
+}

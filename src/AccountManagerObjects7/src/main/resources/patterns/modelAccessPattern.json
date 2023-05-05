@@ -1,0 +1,8 @@
+{
+	"model": "pattern",
+	"urn": "resource.policy.pattern.modelaccess",
+	"type": "authorization",
+	"name": "Model Access Role Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.modelRole}"
+}

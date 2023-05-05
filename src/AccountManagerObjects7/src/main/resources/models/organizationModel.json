@@ -1,0 +1,13 @@
+{
+"name": "organization",
+"inherits": ["nameId", "parent", "path"],
+"fields": [
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.OrganizationEnumType",
+		"type": "enum",
+		"required": true,
+		"index": true,
+		"maxLength": 16
+	}
+]}

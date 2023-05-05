@@ -1,0 +1,86 @@
+{
+"name": "person",
+"inherits": ["directory"],
+"fields": [
+	{
+	"name": "description",
+	"type": "string"
+	}
+	,{
+	"name": "firstName",
+	"type": "string"
+	}
+	,{
+	"name": "middleName",
+	"type": "string"
+	}
+	,{
+	"name": "lastName",
+	"type": "string"
+	}
+	,{
+	"name": "title",
+	"type": "string"
+	}
+	,{
+	"name": "suffix",
+	"type": "string"
+	}
+	,{
+	"name": "birthDate",
+	"type": "timestamp"
+	}
+	,{
+	"name": "gender",
+	"type": "string"
+	}
+	,{
+	"name": "alias",
+	"type": "string"
+	}
+	,{
+	"name": "prefix",
+	"type": "string"
+	}
+	,{
+	"name": "users",
+	"baseType": "model",
+	"baseModel": "user",
+	"type": "list",
+	"foreign": true
+	}
+	,{
+	"name": "accounts",
+	"baseType": "model",
+	"baseModel": "account",
+	"type": "list",
+	"foreign": true
+	}
+	,{
+	"name": "contactInformation",
+	"baseModel": "contactInformation",
+	"type": "model",
+	"foreign": true
+	}
+	,{
+	"name": "partners",
+	"baseType": "model",
+	"baseModel": "person",
+	"type": "list",
+	"foreign": true
+	}
+	,{
+	"name": "dependents",
+	"baseType": "model",
+	"baseModel": "person",
+	"type": "list",
+	"foreign": true
+	}
+	,{
+	"name": "notes",
+	"baseType": "model",
+	"baseModel": "data",
+	"type": "list",
+	"foreign": true
+	}
+]}

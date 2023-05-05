@@ -1,0 +1,13 @@
+{
+"name": "role",
+"inherits": ["nameId", "path", "parent"],
+"constraints": ["parentId", "name", "type"],
+"fields": [
+	{
+	"name": "type",
+	"baseClass": "org.cote.accountmanager.schema.type.RoleEnumType",
+	"type": "enum",
+	"index": true,
+	"maxLength": 16
+	}
+]}

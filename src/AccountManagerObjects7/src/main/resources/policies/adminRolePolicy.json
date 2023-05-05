@@ -1,0 +1,36 @@
+{
+	"model": "policy",
+	"urn": "policy.adminRole",
+	"rules": [
+		{
+			"patterns": [
+				{
+					"fact": {
+						"urn": "actorFactUrn",
+						"type": "parameter",
+						"name": "Actor",
+						"modelType": "user"
+					},
+					"match": {
+						"urn": "actorMatchUrn",
+						"name": "Admin Role Fact",
+						"factData": "/AccountAdministrators",
+						"type": "role",
+						"modelType": "role",
+						"sourceUrn": "replace"
+					},
+					"type": "authorization",
+					"name": "Read Object Access Pattern",
+					"urn": "accessPatternUrn"
+				}
+			],
+			"type": "permit",
+			"condition": "all",
+			"name": "Read Object Access Rule",
+			"urn": "accessPatternUrn"
+		}
+	],
+	"enabled": true,
+	"condition": "all",
+	"name": "Owner Access Policy"
+}

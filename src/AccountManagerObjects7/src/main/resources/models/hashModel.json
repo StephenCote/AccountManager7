@@ -1,0 +1,25 @@
+{
+	"name": "hash",
+	"inherits": ["base"],
+	"fields": [
+		{
+			"name": "keyFunction",
+			"type": "string",
+			"default": "PBKDF2WithHmacSHA512"
+		},
+		{
+			"name": "algorithm",
+			"type": "string",
+			"default": "SHA3-224"
+		},
+		{
+			"name": "prng",
+			"type": "string",
+			"default": "SHA1PRNG"
+		},
+		{
+			"name": "salt",
+			"type": "blob"
+		}
+	]
+}

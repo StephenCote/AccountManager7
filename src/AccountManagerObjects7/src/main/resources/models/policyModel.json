@@ -1,0 +1,29 @@
+{
+	"name": "policy",
+	"inherits": ["baseAuthorization"],
+	"group": "Policies",
+	"fields": [
+		{
+			"name": "rules",
+			"baseModel": "rule",
+			"baseType": "model",
+			"type": "list",
+			"foreign": true
+		},
+		{
+			"name": "enabled",
+			"type": "boolean"
+		},
+		{
+			"name": "decisionAge",
+			"type": "long",
+			"default": 0
+		},
+		{
+			"name": "condition",
+			"baseClass": "org.cote.accountmanager.schema.type.ConditionEnumType",
+			"type": "enum",
+			"maxLength": 16
+		}
+	]
+}

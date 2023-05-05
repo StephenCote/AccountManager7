@@ -1,0 +1,32 @@
+{
+"name": "rule",
+"inherits": ["baseAuthorization"],
+"group": "Rules",
+"fields": [
+	{
+	"name": "rules",
+	"baseModel": "rule",
+	"type": "list",
+	"baseType": "model",
+	"foreign": true
+	}
+	,{
+	"name": "patterns",
+	"baseModel": "pattern",
+	"baseType": "model",
+	"type": "list",
+	"foreign": true
+	}
+	,{
+	"name": "type",
+	"baseClass": "org.cote.accountmanager.schema.type.RuleEnumType",
+	"type": "enum",
+	"maxLength": 16
+	}
+	,{
+	"name": "condition",
+	"baseClass": "org.cote.accountmanager.schema.type.ConditionEnumType",
+	"type": "enum",
+	"maxLength": 16
+	}
+]}

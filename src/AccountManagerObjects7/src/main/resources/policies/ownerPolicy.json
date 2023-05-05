@@ -1,0 +1,40 @@
+{
+	"model": "policy",
+	"urn": "policy.owner",
+	"rules": [
+		{
+			"patterns": [
+				{
+					"fact": {
+						"urn": "ownerFactUrn",
+						"type": "parameter",
+						"modelType": "user",
+						"sourceDataType": "VARCHAR",
+						"name": "Object Owner"
+					},
+					"match": {
+						"name": "Owner Policy Function",
+						"sourceDataType": "varchar",
+						"type": "factory",
+						"modelType": "unknown",
+						"urn": "ownerMatchUrn"
+					},
+					"type": "operation",
+					"operation": {
+						"type": "internal",
+						"operation": "org.cote.accountmanager.policy.operation.OwnerOperation"
+					},
+					"name": "Owner Access Pattern",
+					"urn": "ownerAccessUrn"
+				}
+			],
+			"type": "permit",
+			"condition": "all",
+			"name": "Owner Access Rule",
+			"urn": "ownerAccessRule"
+		}
+	],
+	"enabled": true,
+	"condition": "all",
+	"name": "Owner Access Policy"
+}

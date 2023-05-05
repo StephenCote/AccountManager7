@@ -1,0 +1,10 @@
+{
+	"name": "brokenImport",
+	"inherits": ["missing"],
+	"fields":[
+		{
+			"name": "path",
+			"type": "string"
+		}	
+	]
+}

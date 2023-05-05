@@ -1,0 +1,37 @@
+{
+"name": "queryResult",
+"ioConstraints": ["file"],
+"fields": [
+	{
+		"name": "queryKey",
+		"type": "string"
+	},
+	{
+		"name": "queryHash",
+		"type": "string"
+	},
+	{
+		"name": "count",
+		"type": "int"
+	},
+	{
+		"name": "totalCount",
+		"type": "long"
+	},
+	{
+		"name": "results",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "$flex"
+	},
+	{
+		"name": "response",
+		"baseClass": "org.cote.accountmanager.schema.type.OperationResponseEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "message",
+		"type": "string"
+	}
+]}

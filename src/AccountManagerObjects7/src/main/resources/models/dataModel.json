@@ -1,0 +1,10 @@
+{
+"name": "data",
+"inherits": ["directory", "cryptoByteStore", "description", "dateTime"],
+"group": "Data",
+"fields": [
+	{
+		"name": "dimensions",
+		"type": "string"
+	}
+]}

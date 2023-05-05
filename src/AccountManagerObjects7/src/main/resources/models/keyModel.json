@@ -1,0 +1,25 @@
+{
+	"name": "key",
+	"inherits": ["base"],
+	"fields": [
+		{
+			"name": "key",
+			"type": "blob"
+		},
+		{
+			"name": "keySpec",
+			"type": "string",
+			"default": "RSA"
+		},
+		{
+			"name": "keyMode",
+			"type": "string",
+			"default": "RSA"
+		},
+		{
+			"name": "keySize",
+			"type": "int",
+			"default": 2048
+		}
+	]
+}

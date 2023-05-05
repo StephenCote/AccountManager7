@@ -1,0 +1,10 @@
+{
+"name": "journalObject",
+"inherits": ["directory", "cryptoByteStore", "description", "dateTime", "journalExt"],
+"group": "Journal",
+"fields": [
+	{
+		"name": "journalTest",
+		"type": "string"
+	}
+]}

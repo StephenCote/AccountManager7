@@ -1,0 +1,11 @@
+{
+	"model": "policy",
+	"urn": "resource.policy.systemupdateobject",
+	"enabled": true,
+	"condition": "all",
+	"name": "System Update Object Policy",
+	"decisionAge": 120,
+	"rules": [
+		"${rule.systemUpdate}"
+	]
+}

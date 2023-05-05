@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.parentreadpermission",
+	"name": "Parent Read Permission Match",
+	"factData": "/Read",
+	"factDataType": "${resourceType}",
+	"type": "permission",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceParentUrn}",
+	"factReference": "${resourceParent}"
+}

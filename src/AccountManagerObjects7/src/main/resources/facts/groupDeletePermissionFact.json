@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.groupdeletepermission",
+	"name": "Group Delete Permission Match",
+	"factData": "/Delete",
+	"factDataType": "group",
+	"type": "permission",
+	"modelType": "group",
+	"sourceUrn": "${resourceGroupUrn}",
+	"factReference": "${resourceGroup}"
+}

@@ -1,0 +1,14 @@
+{
+"name": "nameId",
+"inherits": ["base"],
+"abstract": true,
+"fields": [
+	{
+		"name": "name",
+		"type": "string",
+		"required": true,
+		"index": true,
+		"allowNull": false,
+		"maxLength":256
+	}
+]}

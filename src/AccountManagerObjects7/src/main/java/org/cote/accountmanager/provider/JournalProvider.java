@@ -1,0 +1,208 @@
+package org.cote.accountmanager.provider;
+
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordOperation;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.RecordUtil;
+
+public class JournalProvider implements IProvider {
+	public static final Logger logger = LogManager.getLogger(JournalProvider.class);
+	
+	private static final String[] protectedFields = new String[] {
+			FieldNames.FIELD_JOURNALED,
+			FieldNames.FIELD_JOURNAL_HASH,
+			FieldNames.FIELD_JOURNAL_VERSION,
+			FieldNames.FIELD_JOURNAL_ENTRIES
+	}; 
+
+	
+	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model) throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException {
+		/// Nothing to do
+	}
+	
+	public void provide(BaseRecord contextUser, RecordOperation operation,  ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) throws ModelException, FieldException, ValueException, ModelNotFoundException {
+
+		if(!model.inherits(ModelNames.MODEL_JOURNAL_EXT)) {
+			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getModel(), ModelNames.MODEL_JOURNAL_EXT));
+		}
+		
+		if(!RecordOperation.CREATE.equals(operation) && !RecordOperation.UPDATE.equals(operation) && !RecordOperation.DELETE.equals(operation)) {
+			return;
+		}
+	
+		logger.info("Calculate journal entry for " + operation.toString() + " " + model.get(FieldNames.FIELD_NAME));
+		if(RecordOperation.CREATE.equals(operation)) {
+			logger.info("Prepare journal create");
+			createJournalObject(model);
+		}
+		else if(RecordOperation.UPDATE.equals(operation)) {
+			logger.info("Prepare journal update");
+			updateJournalObject(model);;
+		}
+	}
+	
+	private void updateJournalObject(BaseRecord model) {
+		BaseRecord jour1 = null;
+		if(!model.hasField(FieldNames.FIELD_OBJECT_ID) && !model.hasField(FieldNames.FIELD_ID)) {
+			logger.error("Model does not include an identity field");
+			return;
+		}
+		if(!model.inherits(ModelNames.MODEL_JOURNAL_EXT)) {
+			logger.error("Model does not use the journal interface");
+			return;
+		}
+		if(model.hasField(FieldNames.FIELD_JOURNAL)) {
+			jour1 = model.get(FieldNames.FIELD_JOURNAL);
+		}
+		if(jour1 == null) {
+			jour1 = IOSystem.getActiveContext().getRecordUtil().findChildRecord(null, model, FieldNames.FIELD_JOURNAL);
+		}
+		if(jour1 != null && !jour1.hasField(FieldNames.FIELD_JOURNAL_ENTRIES)) {
+			logger.warn("Loading complete journal model");
+			//logger.warn(JSONUtil.exportObject(jour1, RecordSerializerConfig.getUnfilteredModule()));
+			
+			/// TODO: a lightweight copy of the object is being added to the cache, and the whole object is needed, so the cache needs to be cleared or bypassed
+			CacheUtil.clearCache();
+			jour1 = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, jour1, new String[0]);
+			/*
+			if(jour1.hasField(FieldNames.FIELD_ID)) {
+				jour1 = recordUtil.getRecordById(null, jour1.get(FieldNames.FIELD_ID));
+			}
+			else if(jour1.hasField(FieldNames.FIELD_OBJECT_ID)) {
+				jour1 = recordUtil.getRecordByObjectId(null, jour1.get(FieldNames.FIELD_OBJECT_ID));
+			}
+			*/
+			//logger.warn(JSONUtil.exportObject(jour1, RecordSerializerConfig.getUnfilteredModule()));
+		}
+		if(jour1 == null || !jour1.hasField(FieldNames.FIELD_JOURNAL_ENTRIES)) {
+			logger.error("Unable to restore journal");
+			if(jour1 != null) {
+				logger.error(jour1.toString());
+			}
+			return;
+		}
+		
+		Map<String, FieldType> baseLine = getBaseLine(jour1);
+		ModelSchema lbm = RecordFactory.getSchema(model.getModel());
+		List<FieldType> patchFields = new ArrayList<>();
+		
+		for(FieldType f : model.getFields()) {
+			FieldSchema lbf = lbm.getFieldSchema(f.getName());
+			if(lbf.isEphemeral() || lbf.isVirtual() || f.getName().equals(FieldNames.FIELD_JOURNAL) || lbf.isIdentity()) {
+				continue;
+			}
+			if(baseLine.containsKey(f.getName()) && baseLine.get(f.getName()).isEquals(f)) {
+				// logger.warn("Updated value is the same as most recent journaled value for " + f.getName() + ". Skipping.");
+				continue;
+			}
+			patchFields.add(f);
+		}
+		if(patchFields.size() > 0) {
+			
+			try {
+				BaseRecord patchModel = RecordFactory.newInstance(model.getModel());
+				patchModel.setFields(patchFields);
+				journalFields(jour1, patchModel);
+				logger.info("Updating journal");
+				IOSystem.getActiveContext().getRecordUtil().updateRecord(jour1);
+			} catch (FieldException | ModelNotFoundException e) {
+				logger.error(e);
+				
+			}
+			
+		}
+		else {
+			logger.error("No fields identified needing to be patched");
+		}
+	}
+	
+	private Map<String, FieldType> getBaseLine(BaseRecord journal){
+		List<BaseRecord> entries = journal.get(FieldNames.FIELD_JOURNAL_ENTRIES);
+		Map<String, FieldType> baseLine = new HashMap<>();
+		for(int i = entries.size() - 1; i >= 0; i--) {
+			BaseRecord e = entries.get(i);
+			BaseRecord emod = e.get(FieldNames.FIELD_JOURNAL_ENTRY_MODIFIED);
+			emod.getFields().forEach(f -> {
+				if(!baseLine.containsKey(f.getName())) {
+					baseLine.put(f.getName(), f);
+				}
+			});
+		}
+		
+		return baseLine;
+	}
+	
+	private void createJournalObject(BaseRecord model)  {
+		try {
+			BaseRecord jour1 = RecordFactory.newInstance(ModelNames.MODEL_JOURNAL);
+			BaseRecord copyMod = model.copyRecord();
+			copyMod.set(FieldNames.FIELD_JOURNAL, null);
+			
+			jour1.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+			jour1.set(FieldNames.FIELD_JOURNALED, true);
+			jour1.set(FieldNames.FIELD_JOURNAL_VERSION, 1.0);
+			model.set(FieldNames.FIELD_JOURNAL, jour1);
+			
+			journalFields(jour1, copyMod);
+
+			if(!IOSystem.getActiveContext().getRecordUtil().createRecord(jour1)) {
+				logger.error("Failed to create journal object");
+			}
+			else {
+				//logger.info(JSONUtil.exportObject(jour1, RecordSerializerConfig.getUnfilteredModule()));
+			}
+		}
+		catch(NullPointerException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			
+			
+		}
+	}
+	
+	private void journalFields(BaseRecord journal, BaseRecord model) throws FieldException, ModelNotFoundException {
+		List<BaseRecord> entries = journal.get(FieldNames.FIELD_JOURNAL_ENTRIES);
+		BaseRecord entry = RecordFactory.newInstance(ModelNames.MODEL_JOURNAL_ENTRY);
+		List<String> fieldNames = entry.get(FieldNames.FIELD_FIELDS);
+		
+		RecordUtil.sortFields(model);
+		ModelSchema lbm = RecordFactory.getSchema(model.getModel());
+		for(FieldType f : model.getFields()) {
+			FieldSchema lbf = lbm.getFieldSchema(f.getName());
+			if(lbf.isEphemeral() || lbf.isVirtual() || f.getName().equals(FieldNames.FIELD_JOURNAL)) {
+				continue;
+			}
+			fieldNames.add(f.getName());
+		}
+		try {
+			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_DATE, new Date());
+			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_MODIFIED, model);
+			// entry.set(FieldNames.FIELD_HASH, CryptoUtil.getDigest(json.getBytes(), new byte[0]));
+			entry.set(FieldNames.FIELD_HASH, model.hash(fieldNames.toArray(new String[0])).getBytes());
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		entries.add(entry);
+	}
+
+	
+}

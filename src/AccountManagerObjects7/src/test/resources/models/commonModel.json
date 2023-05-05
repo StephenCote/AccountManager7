@@ -1,0 +1,10 @@
+{
+	"name": "common",
+	"abstract": "true",
+	"fields":[
+		{
+			"name": "id",
+			"type": "long"
+		}	
+	]
+}

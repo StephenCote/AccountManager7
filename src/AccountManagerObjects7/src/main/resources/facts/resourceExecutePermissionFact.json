@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.resourceexecutepermission",
+	"name": "Resource Execute Permission Match",
+	"factData": "/Execute",
+	"factDataType": "data",
+	"type": "permission",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceUrn}",
+	"factReference": "${resource}"
+}

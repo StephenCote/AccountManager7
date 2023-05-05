@@ -1,0 +1,15 @@
+{
+	"urn": "resource.policy.rule.systemread",
+	"type": "permit",
+	"condition": "any",
+	"name": "System Read Resource Access Rule", 
+	"patterns": [
+		"${pattern.ownerAccessOp}",
+		"${pattern.groupOwnerAccessOp}",
+		"${pattern.parentOwnerAccessOp}",
+		"${pattern.accountAdministrator}",
+		"${pattern.groupReadAccess}",
+		"${pattern.parentReadAccess}",
+		"${pattern.resourceReadAccess}"
+	]
+}

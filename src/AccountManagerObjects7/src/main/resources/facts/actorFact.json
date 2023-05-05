@@ -1,0 +1,7 @@
+{
+	"name": "Actor",
+	"urn": "resource.policy.fact.actor",
+	"type": "parameter",
+	"modelType": "${actorType}",
+	"sourceUrn": "${actorUrn}"
+}

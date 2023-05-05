@@ -1,0 +1,16 @@
+{
+"name": "cipherExt",
+"abstract": true,
+"fields": [
+
+	{
+		"name": "cipherKey",
+		"type": "string",
+		"ephemeral": true
+	},
+	{
+		"name": "enciphered",
+		"type": "boolean"
+	}
+
+]}

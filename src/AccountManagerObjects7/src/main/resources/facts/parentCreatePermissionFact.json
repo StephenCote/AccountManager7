@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.parentcreatepermission",
+	"name": "Parent Create Permission Match",
+	"factData": "/Create",
+	"factDataType": "${resourceType}",
+	"type": "permission",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceParentUrn}",
+	"factReference": "${resourceParent}"
+}

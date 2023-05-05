@@ -1,0 +1,9 @@
+{
+"name": "score",
+"abstract": true,
+"fields": [
+	{
+	"name": "score",
+	"type": "int"
+	}
+]}

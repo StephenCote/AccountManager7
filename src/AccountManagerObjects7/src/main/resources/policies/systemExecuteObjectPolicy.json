@@ -1,0 +1,11 @@
+{
+	"model": "policy",
+	"urn": "resource.policy.systemexecuteobject",
+	"enabled": true,
+	"condition": "all",
+	"name": "System Execute Object Policy",
+	"decisionAge": 120,
+	"rules": [
+		"${rule.systemExecute}"
+	]
+}

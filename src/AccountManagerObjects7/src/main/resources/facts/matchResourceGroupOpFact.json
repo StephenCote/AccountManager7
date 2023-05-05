@@ -1,0 +1,8 @@
+{
+	"urn": "resource.policy.fact.matchgroupowneroperation",
+	"name": "Group Resource Operation Match",
+	"type": "factory",
+	"modelType": "group",
+	"sourceUrn": "${resourceGroupUrn}",
+	"factReference": "${resourceGroup}"
+}

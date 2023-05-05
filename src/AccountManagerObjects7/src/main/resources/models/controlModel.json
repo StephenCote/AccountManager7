@@ -1,0 +1,31 @@
+{
+"name": "control",
+"inherits": ["nameId", "dateTime"],
+"fields": [
+	{
+		"name": "referenceType",
+		"baseClass": "org.cote.accountmanager.schema.type.FactoryEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+	,{
+	"name": "referenceId",
+	"type": "long"
+	}
+	,{
+	"name": "controlId",
+	"type": "long"
+	}
+	,{
+		"name": "controlType",
+		"baseClass": "org.cote.accountmanager.schema.type.ControlEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+	,{
+		"name": "controlAction",
+		"baseClass": "org.cote.accountmanager.schema.type.ControlActionEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+]}

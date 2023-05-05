@@ -1,0 +1,35 @@
+{
+"name": "byteStore",
+"abstract": true,
+"inherits": ["compression"],
+"fields": [
+
+	{
+		"name": "dataBytesStore",
+		"type": "blob"
+	},
+	{
+		"name": "dataHash",
+		"type": "string",
+		"maxLength": 128
+	},
+	{
+		"name": "readDataBytes",
+		"type": "boolean",
+		"virtual": true
+	},
+	{
+		"name": "pointer",
+		"type": "boolean",
+		"private": true
+	},
+	{
+		"name": "mimeType",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "size",
+		"type": "int"
+	}
+]}

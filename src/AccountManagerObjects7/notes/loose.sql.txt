@@ -1,0 +1,485 @@
+-- can steve read data he owns
+-- dataview = 67d569d2-f6cf-453a-9ed4-247357dd1935
+select * from fn_is_authorized('user', 'd450be1e-b32a-4cc7-a9a8-fb7f0010a688', '67d569d2-f6cf-453a-9ed4-247357dd1935', 'data', '902fa904-e5b8-47f7-90df-4ad257649685')
+
+-- can steve read a user via system role
+-- accountview = a87311dc-9641-4810-8187-7609d7ebf6d5
+select * from fn_is_authorized('user', 'd450be1e-b32a-4cc7-a9a8-fb7f0010a688', 'a87311dc-9641-4810-8187-7609d7ebf6d5', 'user', 'ab55f2a5-2336-4379-aa63-534d7e9616c6')
+-- can Admin read a user via system role
+select * from fn_is_authorized('user', '2539e6fe-13fb-4bae-8199-f69be51464f0', 'a87311dc-9641-4810-8187-7609d7ebf6d5', 'user', 'ab55f2a5-2336-4379-aa63-534d7e9616c6')
+
+-- can TestUser1 read steve's ~/GalleryHome group via direct permission
+select * from fn_is_authorized('user', 'ab55f2a5-2336-4379-aa63-534d7e9616c6', '5cc9db02-04cf-4c58-ab6d-685b3957e8f3', 'group', '4d6b4f8c-ac3a-4944-b9e1-06dee64cfecb')
+-- 1696
+select id from groups where objectId = '4d6b4f8c-ac3a-4944-b9e1-06dee64cfecb'
+--1402032
+select * from role_membership_refid(1402032, 'USER', 1402018);
+
+-- Can TestUser1 read steve's ~/Articles group via role
+select * from fn_is_authorized('user', 'ab55f2a5-2336-4379-aa63-534d7e9616c6', '5cc9db02-04cf-4c58-ab6d-685b3957e8f3', 'group', 'eb6c5e05-025a-41a6-87cb-13c32d1015be')
+
+-- Can TestUser1 read steve's data in ~/Articles because they have read on the parent group
+-- 212a7194-4763-487e-9778-022d7a9066f3
+select * from fn_is_authorized('user', 'ab55f2a5-2336-4379-aa63-534d7e9616c6', '5cc9db02-04cf-4c58-ab6d-685b3957e8f3', 'data', '212a7194-4763-487e-9778-022d7a9066f3')
+
+
+-- CREATE UNIQUE INDEX idxnameidobj on nameid(objectid);
+drop function if exists fn_is_authorized;
+drop function if exists fn_is_authorized_byid;
+drop function if exists fn_is_authorized_byoid;
+-- only user, account, and person are valid actors
+-- this function checks for authorization in the following order:
+--    1) Is the model owned by the actor
+--    2) Is the actor in a system role that permits reader or administrative access (note: permissionId is indirectly checked for reader roles, but otherwise is implied)
+--    3) Is the actor directly authorized at the data group level
+--    4) Is the actor directly authorized at the parent level
+--    5) Is the actor directly authorized at the object level
+--    6) Is the actor indirectly authorized (via role or group hierarchy) at the data group level
+--    7) Is the actor indirectly authorized (via role or group hierarchy) at the the parent level
+--    4) Is the actor directly authorized (via role or group hierarchy) at the object level
+-- note: this function DOES NOT currently unwind user<->person<->account linkage
+-- note: this function DOES NOT currently consider GROUP membership in a ROLE hierarchy
+-- note: this function does look across role and group hierarchies for direct and group/parent level access
+
+
+CREATE OR REPLACE FUNCTION fn_is_authorized_byid(
+	actor text,
+	actorId bigint,
+	permissionId bigint,
+	model text,
+	modelId bigint
+	)
+    RETURNS TABLE(authorizationName text, authorizationId bigint, authorizationType text, authorizationTrap text, authorized boolean) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE 
+    ROWS 100
+AS $BODY$
+DECLARE
+	authorizationName text;
+	authorizationId bigint;
+	authorizationTrap text;
+	recordId BIGINT;
+	authorizeGroup boolean;
+	authorizeParent boolean;
+	parentId BIGINT;
+	entitlementId BIGINT;
+	recordName text;
+	isPart boolean;
+	authorizationType text;
+	authorized boolean;
+	actorTable text;
+	modelTable text;
+	partTable text;
+	permissionName text;
+	permissionType text;
+	entitlementName text;
+	adminRoleName text;
+	secondaryAdminRoleName text;
+	readerRoleName text;
+BEGIN
+
+entitlementId := permissionId;
+IF permissionId IS NOT NULL AND permissionId > 0 THEN
+	SELECT P.name, P.permissionType FROM permissions P WHERE P.id = permissionId AND P.parentId = 0 INTO permissionName, permissionType;
+END IF;
+
+IF model NOT IN ('group', 'role', 'permission', 'organization', 'approval', 'approver', 'assymetrickeys', 'symmetrickeys', 'session', 'sessiondata', 'attribute', 'audit', 'user', 'contactinformation', 'credential') THEN
+	authorizeGroup := true;
+ELSIF model IN('group', 'role', 'permission') THEN
+	authorizeParent := true;
+END IF;
+
+IF model IN ('group', 'role', 'permission', 'contactinformation', 'data') THEN
+	isPart := true;
+	partTable := model || 'participation';
+END IF;
+
+IF model IN ('user', 'tag', 'role', 'person', 'permission', 'group', 'contact', 'account') THEN
+	modelTable := model || 's';
+ELSIF model = 'address' THEN
+	modelTable := model || 'es';
+ELSE
+	modelTable := model;
+END IF;
+actorTable := actor || 's';
+
+IF permissionName IS NULL THEN
+	authorizationName := 'null permission from ' || permissionId;
+	--RETURN QUERY SELECT authorizationName, authorizationId, authorizationType, authorized;
+ELSIF permissionName LIKE '%View' THEN
+	entitlementName = 'View';
+ELSIF permissionName LIKE '%Edit' THEN
+	entitlementName = 'Edit';
+ELSIF permissionName LIKE '%Delete' THEN
+	entitlementName = 'Delete';
+ELSIF permissionName LIKE '%Create' THEN
+	entitlementName = 'Create';
+ELSIF permissionName LIKE '%Execute' THEN
+	entitlementName = 'Execute';
+ELSE
+	authorizationName := permissionName;
+END IF;
+
+authorized := false;
+-- define authorizationName, and admin and reader roles based on the model type
+-- the entitlementName is used to map a permission to system level roles
+IF entitlementName IS NOT NULL THEN
+	IF model = 'user' OR model = 'person' OR model = 'account' THEN
+		adminRoleName := 'AccountAdministrators';
+		--authorizationName := 'Account' || entitlementName;
+		authorizationName := permissionName;
+		IF actor = 'user' AND model = 'user' THEN
+			readerRoleName := 'AccountUsersReaders';
+		ELSIF model = 'person' THEN
+			authorizationName := 'Person' || entitlementName;
+		END IF;
+	ELSIF model = 'role' THEN
+		adminRoleName := 'AccountAdministrators';
+		readerRoleName := 'RoleReaders';
+		authorizationName := 'Role' || entitlementName;
+	ELSIF model = 'permission' THEN
+		adminRoleName := 'AccountAdministrators';
+		secondaryAdminRoleName := 'PermissionAdministrators';
+		readerRoleName := 'PermissionReaders';
+		authorizationName := 'Permission' || entitlementName;
+	ELSIF model = 'data' THEN
+		adminRoleName := 'DataAdministrators';
+		readerRoleName := 'DataReaders';
+		authorizationName := 'Data' || entitlementName;
+	ELSIF model = 'group' THEN
+		adminRoleName := 'DataAdministrators';
+		readerRoleName := 'GroupReaders';
+		authorizationName := 'Group' || entitlementName;
+	ELSE
+		adminRoleName := 'ObjectAdministrators';
+		readerRoleName := 'ObjectReaders';
+		authorizationName := 'Object' || entitlementName;
+	END IF;
+ELSIF authorizationName IS NOT NULL THEN
+		adminRoleName := 'ObjectAdministrators';
+		readerRoleName := 'ObjectReaders';
+		entitlementName := 'Custom';
+END IF;
+
+-- From this point on, entitlementName (rename to operationType) must have been mapped to a system or custom permission, and authorizationName should capture the specific authorization being used 
+--
+
+-- Test for object ownership
+IF entitlementName IS NOT NULL AND actor = 'user' THEN
+	EXECUTE format('SELECT 
+		Act.id	   
+		FROM %I Act
+		INNER JOIN %I Obj on Obj.ownerId = Act.id
+		WHERE Act.id = %s
+    	AND Obj.id = %s', actorTable, modelTable, actorId, modelId) INTO recordId;
+	IF recordId > 0 THEN
+		authorizationId := actorId;
+		authorizationTrap := 'owner';
+		authorizationType := 'owner';
+		authorized := true;
+	END IF;
+END IF;
+
+--raise notice 'Try actor % permission % role % because authorized is %', actor, permissionName, readerRoleName, authorized;
+-- Test for reader and admin role participation
+IF entitlementName IS NOT NULL AND authorized = false AND ((entitlementName = 'View' AND readerRoleName IS NOT NULL) OR adminRoleName IS NOT NULL) THEN
+	EXECUTE format('SELECT
+		R.id, R.name
+		FROM %I Act
+		INNER JOIN roleparticipation RP on RP.participanttype = upper(''%s'') AND RP.participantId = Act.id
+		INNER JOIN roles R on R.id = RP.participationId
+		WHERE Act.id = %s AND R.parentId = 0
+		AND ((NOT ''%s'' = ''NULL'' AND R.name = ''%s'')
+		OR (NOT ''%s'' = ''NUL'' AND R.name = ''%s'')
+		OR (NOT ''%s'' = ''NULL'' AND R.name = ''%s'')
+		)', actorTable, actor, actorId, readerRoleName, readerRoleName, adminRoleName, adminRoleName, secondaryAdminRoleName, secondaryAdminRoleName) INTO authorizationId, recordName;
+	IF authorizationId IS NOT NULL AND authorizationId > 0 THEN
+		authorizationType := recordName;
+		authorizationTrap := 'system role';
+		authorized := true;
+	END IF;
+END IF;
+
+-- check for actor entitlement assignment on group
+IF authorizeGroup = true AND entitlementName IS NOT NULL AND authorized = false AND isPart = true THEN
+	EXECUTE format('SELECT P.participantId, P.participantType FROM groupparticipation P
+	INNER JOIN %I Mod ON Mod.id = %s AND Mod.groupId = P.participationId
+	INNER JOIN %I Act ON Act.id = %s and Act.id = P.participantId
+	WHERE P.participantType = upper(''%s'') AND affectId = %s
+	', modelTable, modelId, actorTable, actorId, actor, entitlementId) INTO authorizationId, recordName;
+	IF authorizationId IS NOT NULL AND authorizationId > 0 THEN
+		authorizationType := recordName;
+		authorized := true;
+		authorizationTrap := 'group';
+	END IF;
+END IF;
+
+-- check for actor entitlement assignment on parent
+IF authorizeParent = true AND entitlementName IS NOT NULL AND authorized = false AND isPart = true THEN
+	EXECUTE format('SELECT P.participantId, P.participantType FROM %I P
+	INNER JOIN %I Mod ON Mod.id = %s AND Mod.parentId = P.participationId
+	INNER JOIN %I Act ON Act.id = %s and Act.id = P.participantId
+	WHERE P.participantType = upper(''%s'') AND affectId = %s
+	', partTable, modelTable, modelId, actorTable, actorId, actor, entitlementId) INTO authorizationId, recordName;
+	IF authorizationId IS NOT NULL AND authorizationId > 0 THEN
+		authorizationType := recordName;
+		authorizationTrap := 'parent';
+		authorized := true;
+	END IF;
+END IF;
+
+-- check for direct actor entitlement assignment
+IF entitlementName IS NOT NULL AND authorized = false AND isPart = true THEN
+	EXECUTE format('SELECT P.participantId, P.participantType FROM %I P
+		INNER JOIN %I Mod ON Mod.id = %s AND Mod.id = P.participationId
+		INNER JOIN %I Act ON Act.id = %s AND Act.id = P.participantId
+		WHERE P.participantType = upper(''%s'') AND affectId = %s
+	', partTable, modelTable, modelId, actorTable, actorId, actor, entitlementId) INTO authorizationId, recordName;
+	IF authorizationId IS NOT NULL AND authorizationId > 0 THEN
+		authorizationType := recordName;
+		authorizationTrap := 'direct entitlement';
+		authorized := true;
+	END IF;
+END IF;
+
+-- check for indirect group indirect entitlement assignment
+IF authorizeGroup = true AND entitlementName IS NOT NULL AND authorized = false AND isPart = true THEN
+
+		EXECUTE format('SELECT P.participantId, CASE WHEN R.id IS NOT NULL THEN R.name WHEN G.id IS NOT NULL THEN G.name END FROM groupparticipation P
+		INNER JOIN %I Mod ON Mod.id = %s AND Mod.groupId = P.participationId
+		LEFT JOIN roles R ON R.id = P.participantId AND P.participantType = ''ROLE''
+		LEFT JOIN groups G ON G.id = P.participantId AND P.participantType = ''GROUP''
+		WHERE affectId = %s AND (
+			(R.id IS NOT NULL AND P.participantId IN (SELECT roleid FROM role_membership_refid(P.participantId, upper(''%s''), %s)))
+			OR
+			(G.id IS NOT NULL AND P.participantId IN (SELECT groupid FROM group_membership_refid(P.participantId, upper(''%s''), %s)))
+		)
+		', modelTable, modelId, entitlementId, actor, actorId, actor, actorId) INTO authorizationId, recordName;
+		IF authorizationId IS NOT NULL AND authorizationId > 0 THEN
+			authorizationType := recordName;
+			authorizationTrap := 'indirect group';
+			authorized := true;
+		END IF;
+
+END IF;
+
+-- check for indirect parent indirect entitlement assignment
+IF authorizeParent = true AND entitlementName IS NOT NULL AND authorized = false AND isPart = true THEN
+		EXECUTE format('SELECT P.participantId, CASE WHEN R.id IS NOT NULL THEN R.name WHEN G.id IS NOT NULL THEN G.name END FROM %I P
+		INNER JOIN %I Mod ON Mod.id = %s AND Mod.parentId = P.participationId
+		LEFT JOIN roles R ON R.id = P.participantId AND P.participantType = ''ROLE''
+		LEFT JOIN groups G ON G.id = P.participantId AND P.participantType = ''GROUP''
+		WHERE affectId = %s AND (
+			(R.id IS NOT NULL AND P.participantId IN (SELECT roleid FROM role_membership_refid(P.participantId, upper(''%s''), %s)))
+			OR
+			(G.id IS NOT NULL AND P.participantId IN (SELECT groupid FROM group_membership_refid(P.participantId, upper(''%s''), %s)))
+		)
+		', partTable, modelTable, modelId, entitlementId, actor, actorId, actor, actorId) INTO authorizationId, recordName;
+		IF authorizationId IS NOT NULL THEN
+			authorizationType := recordName;
+			authorizationTrap := 'indirect parent';
+			authorized := true;
+		END IF;
+
+END IF;
+--IF authorized = false THEN
+
+-- check for direct object indirect entitlement assignment
+IF entitlementName IS NOT NULL AND authorized = false AND isPart = true THEN
+		EXECUTE format('SELECT P.participantId, CASE WHEN R.id IS NOT NULL THEN R.name WHEN G.id IS NOT NULL THEN G.name END FROM %I P
+		INNER JOIN %I Mod ON Mod.id = %s AND Mod.id = P.participationId
+		LEFT JOIN roles R ON R.id = P.participantId AND P.participantType = ''ROLE''
+		LEFT JOIN groups G on G.id = P.participantId AND P.participantType = ''GROUP''
+		WHERE affectId = %s AND (
+			(R.id IS NOT NULL AND P.participantId IN (SELECT roleid FROM role_membership_refid(P.participantId, upper(''%s''), %s)))
+			OR
+			(G.id IS NOT NULL AND P.participantId IN (SELECT groupid FROM group_membership_refid(P.participantId, upper(''%s''), %s)))
+		)
+		', partTable, modelTable, modelId, entitlementId, actor, actorId, actor, actorId) INTO authorizationId, recordName;
+		IF authorizationId IS NOT NULL THEN
+			authorizationType := recordName;
+			authorizationTrap := 'indirect direct';
+			authorized := true;
+		END IF;
+
+END IF;
+--IF authorized = false THEN
+		
+--END IF;
+
+RETURN QUERY 
+	SELECT authorizationName, authorizationId, authorizationType, authorizationTrap, authorized;
+ END;
+$BODY$;
+
+CREATE OR REPLACE FUNCTION fn_is_authorized_byoid(
+	actor text,
+	actorId text,
+	permissionId text,
+	model text,
+	modelId text
+	)
+    RETURNS TABLE(authorizationName text, authorizationId bigint, authorizationType text, authorizationTrap text, authorized boolean) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE 
+    ROWS 100
+AS $BODY$
+DECLARE
+	authorizationName text;
+	authorizationTrap text;
+	authorizationType text;
+	authorizationId bigint;
+	authorized boolean;
+	actorRecordId bigint;
+	modelRecordId bigint;
+	permissionRecordId bigint;
+	actorTable text;
+	modelTable text;
+BEGIN
+IF model IN ('user', 'tag', 'role', 'person', 'permission', 'group', 'contact', 'account') THEN
+	modelTable := model || 's';
+ELSIF model = 'address' THEN
+	modelTable := model || 'es';
+ELSE
+	modelTable := model;
+END IF;
+actorTable := actor || 's';
+
+	EXECUTE format('SELECT 
+		Act.id	   
+		FROM %I Act
+		WHERE Act.objectId = ''%s''',
+		actorTable, actorId) INTO actorRecordId;
+	EXECUTE format('SELECT 
+		Mod.id	   
+		FROM %I Mod
+		WHERE Mod.objectId = ''%s''',
+		modelTable, modelId) INTO modelRecordId;
+	EXECUTE format('SELECT 
+		Per.id	   
+		FROM permissions Per
+		WHERE Per.objectId = ''%s''',
+		permissionId) INTO permissionRecordId;
+
+	authorized := false;
+
+	IF modelRecordId IS NOT NULL AND modelRecordId > 0 AND actorRecordId IS NOT NULL AND actorRecordId > 0 AND permissionRecordId IS NOT NULL AND permissionRecordId > 0 THEN
+		SELECT FN.authorizationName, FN.authorizationId, FN.authorizationType, FN.authorizationTrap, FN.authorized FROM fn_is_authorized_byid(actor, actorRecordId, permissionRecordId, model, modelRecordId) FN INTO authorizationName, authorizationId, authorizationType, authorizationTrap, authorized;
+	END IF;
+RETURN QUERY 
+	SELECT authorizationName, authorizationId, authorizationType, authorizationTrap, authorized;
+ END;
+$BODY$;
+
+drop function if exists fn_membership_byoid;
+drop function if exists fn_membership_byid;
+
+CREATE OR REPLACE FUNCTION fn_membership_byid(
+	actor text,
+	actorId bigint,
+	enable boolean,
+	container text,
+	containerId bigint,
+	organizationId bigint
+	)
+    RETURNS TABLE(success boolean, memexists boolean, memerror boolean) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE 
+    ROWS 100
+AS $BODY$
+DECLARE
+	success boolean := false;
+	memexists boolean := false;
+	memerror boolean := false;
+	partRecordId bigint;
+	partTable text;
+BEGIN
+
+	partTable := container || 'participation';
+	EXECUTE format('SELECT 
+		P.id	   
+		FROM %I P
+		WHERE P.participationId = %s AND P.participantType = upper(''%s'') AND P.participantId = %s',
+		partTable, containerId, actor, actorId) INTO partRecordId;
+
+	IF partRecordId IS NOT NULL AND partRecordId > 0 THEN
+		memexists := true;
+		IF enable = false THEN
+			EXECUTE format('DELETE 
+				FROM %I P
+				WHERE P.participationId = %s AND P.participantType = upper(''%s'') AND P.participantId = %s',
+				partTable, containerId, actor, actorId);
+				success := true;
+		END IF;
+	ELSIF enable = true THEN
+		IF enable = true THEN
+			EXECUTE format('INSERT INTO %I (participationId, participantType, participantId, affectType, affectId, organizationId) VALUES (%s, upper(''%s''), %s, ''%s'', %s, %s)',
+				partTable, containerId, actor, actorId, 'UNKNOWN', 0, organizationId);
+			success := true;
+		END IF;
+	ELSE
+		-- delete nothing
+	END IF;
+
+RETURN QUERY 
+	SELECT success, memexists, memerror;
+ END;
+$BODY$;
+
+
+CREATE OR REPLACE FUNCTION fn_membership_byoid(
+	actor text,
+	actorId text,
+	enable boolean,
+	container text,
+	containerId text
+	)
+    RETURNS TABLE(success boolean, memexists boolean, memerror boolean) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE 
+    ROWS 100
+AS $BODY$
+DECLARE
+	success boolean;
+	memexists boolean;
+	memerror boolean;
+	actorRecordId bigint;
+	containerRecordId bigint;
+	actorTable text;
+	containerTable text;
+	organizationId bigint;
+BEGIN
+IF container IN ('user', 'tag', 'role', 'person', 'permission', 'group', 'contact', 'account') THEN
+	containerTable := container || 's';
+ELSIF container = 'address' THEN
+	containerTable := container || 'es';
+ELSE
+	containerTable := container;
+END IF;
+actorTable := actor || 's';
+
+	EXECUTE format('SELECT 
+		Act.id, Act.organizationId	   
+		FROM %I Act
+		WHERE Act.objectId = ''%s''',
+		actorTable, actorId) INTO actorRecordId, organizationId;
+	EXECUTE format('SELECT 
+		Mod.id	   
+		FROM %I Mod
+		WHERE Mod.objectId = ''%s''',
+		containerTable, containerId) INTO containerRecordId;
+
+	IF containerRecordId IS NOT NULL AND containerRecordId > 0 AND actorRecordId IS NOT NULL AND actorRecordId > 0 THEN
+		SELECT FN.success, FN.memexists, FN.memerror FROM fn_membership_byid(actor, actorRecordId, enable, container, containerRecordId, organizationId) FN INTO success, memexists, memerror;
+	END IF;
+RETURN QUERY 
+	SELECT success, memexists, memerror;
+ END;
+$BODY$;
+
+
+

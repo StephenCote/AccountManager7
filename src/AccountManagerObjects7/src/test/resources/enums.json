@@ -1,0 +1,10 @@
+{
+	"name": "enumMap",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "userEnum",
+			"baseClass": "UserEnumType"
+		}
+	]
+}

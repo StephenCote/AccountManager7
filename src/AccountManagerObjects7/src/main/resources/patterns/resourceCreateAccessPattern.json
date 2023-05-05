@@ -1,0 +1,7 @@
+{
+	"type": "authorization",
+	"urn": "resource.policy.pattern.resourceCreateAccess",
+	"name": "Create Object Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.resourceCreatePermission}"
+}

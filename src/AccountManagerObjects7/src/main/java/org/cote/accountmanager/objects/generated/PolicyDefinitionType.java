@@ -1,0 +1,124 @@
+/*
+	Generated
+	Note: Inheritence isn't used here because the schema supports multiple inheritence
+*/
+package org.cote.accountmanager.objects.generated;
+
+import java.util.Date;
+import java.util.List;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.util.TypeUtil;
+
+public class PolicyDefinitionType extends LooseRecord {
+	public static final Logger logger = LogManager.getLogger(PolicyDefinitionType.class);
+	public PolicyDefinitionType(){
+		try {
+			RecordFactory.newInstance("policyDefinition", this, null);
+		} catch (FieldException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	public PolicyDefinitionType(BaseRecord rec){
+		this.setModel(rec.getModel());
+		setFieldList(rec.getFields());
+		setFieldMap(rec.getFieldMap());
+	}
+	public List<FactType> getParameters() {
+		return TypeUtil.convertRecordList(get("parameters"));
+	}
+	public void setParameters(List<FactType> parameters) {
+		try {
+			set("parameters", parameters);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public String getUrn() {
+		return get("urn");
+	}
+	public void setUrn(String urn) {
+		try {
+			set("urn", urn);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public boolean getEnabled() {
+		return get("enabled");
+	}
+	public void setEnabled(boolean enabled) {
+		try {
+			set("enabled", enabled);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public long getDecisionAge() {
+		return get("decisionAge");
+	}
+	public void setDecisionAge(long decisionAge) {
+		try {
+			set("decisionAge", decisionAge);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public Date getCreatedDate() {
+		return get("createdDate");
+	}
+	public void setCreatedDate(Date createdDate) {
+		try {
+			set("createdDate", createdDate);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public Date getModifiedDate() {
+		return get("modifiedDate");
+	}
+	public void setModifiedDate(Date modifiedDate) {
+		try {
+			set("modifiedDate", modifiedDate);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public Date getExpiryDate() {
+		return get("expiryDate");
+	}
+	public void setExpiryDate(Date expiryDate) {
+		try {
+			set("expiryDate", expiryDate);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public String getOrganizationPath() {
+		return get("organizationPath");
+	}
+	public void setOrganizationPath(String organizationPath) {
+		try {
+			set("organizationPath", organizationPath);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public long getOrganizationId() {
+		return get("organizationId");
+	}
+	public void setOrganizationId(long organizationId) {
+		try {
+			set("organizationId", organizationId);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
+}

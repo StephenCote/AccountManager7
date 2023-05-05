@@ -1,0 +1,7 @@
+{
+	"type": "authorization",
+	"urn": "resource.policy.pattern.resourceExecuteAccess",
+	"name": "Execute Object Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.resourceExecutePermission}"
+}

@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.groupexecutepermission",
+	"name": "Group Execute Permission Match",
+	"factData": "/Execute",
+	"factDataType": "group",
+	"type": "permission",
+	"modelType": "group",
+	"sourceUrn": "${resourceGroupUrn}",
+	"factReference": "${resourceGroup}"
+}

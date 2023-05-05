@@ -1,0 +1,23 @@
+{
+	"name": "genericObject",
+	"inherits": ["common", "dateTime"],
+	"fields":[
+		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "dataStore",
+			"type": "blob"
+		},
+		{
+			"name": "populated",
+			"type": "boolean"
+		},
+		{
+			"name": "type",
+			"type": "enum",
+			"baseClass": "org.cote.accountmanager.schema.type.UserEnumType"
+		}
+	]
+}

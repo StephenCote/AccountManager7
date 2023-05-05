@@ -1,0 +1,40 @@
+{
+	"name": "cipherKey",
+	"inherits": ["base"],
+	"fields": [
+		{
+			"name": "key",
+			"type": "blob"
+		},
+		{
+			"name": "iv",
+			"type": "blob"
+		},
+		{
+			"name": "encrypt",
+			"type": "boolean",
+			"default": false
+		},
+		{
+			"name": "provider",
+			"type": "string",
+			"default": "BC"
+		},
+		{
+			"name": "keySpec",
+			"type": "string",
+			"default": "AES"
+		},
+		{
+			"name": "keyMode",
+			"type": "string",
+			"default": "AES/CBC/PKCS5Padding"
+		},
+		{
+			"name": "keySize",
+			"type": "int",
+			"default": 256
+		}
+		
+	]
+}

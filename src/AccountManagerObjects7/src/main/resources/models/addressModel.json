@@ -1,0 +1,43 @@
+{
+"name": "address",
+"inherits": ["directory", "description"],
+"fields": [
+	{
+	"name": "addressLine1",
+	"type": "string"
+	}
+	,{
+	"name": "addressLine2",
+	"type": "string"
+	}
+	,{
+	"name": "city",
+	"type": "string"
+	}
+	,{
+	"name": "region",
+	"type": "string"
+	}
+	,{
+	"name": "state",
+	"type": "string"
+	}
+	,{
+	"name": "postalCode",
+	"type": "string"
+	}
+	,{
+	"name": "country",
+	"type": "string"
+	}
+	,{
+	"name": "locationType",
+	"baseClass": "org.cote.accountmanager.schema.type.LocationEnumType",
+	"type": "enum",
+	"maxLength": 16
+	}
+	,{
+	"name": "preferred",
+	"type": "boolean"
+	}
+]}

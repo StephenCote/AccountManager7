@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.groupreadaccess",
+	"type": "authorization",
+	"name": "Read Object Group Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.groupReadPermission}"
+}

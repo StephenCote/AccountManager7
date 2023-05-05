@@ -1,0 +1,9 @@
+{
+	"name": "simpleByteStore",
+	"inherits": ["indexEntry"],
+	"fields": [
+	{
+		"name": "dataBytesStore",
+		"type": "blob"
+	}
+]}

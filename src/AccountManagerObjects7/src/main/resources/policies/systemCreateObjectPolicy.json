@@ -1,0 +1,11 @@
+{
+	"model": "policy",
+	"urn": "resource.policy.systemcreateobject",
+	"enabled": true,
+	"condition": "all",
+	"name": "System Create Object Policy",
+	"decisionAge": 120,
+	"rules": [
+		"${rule.systemCreate}"
+	]
+}

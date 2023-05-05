@@ -1,0 +1,33 @@
+{
+"name": "authenticationRequest",
+"inherits": ["request"],
+"fields": [
+
+	{
+		"name": "credential",
+		"type": "blob"
+	},
+	{
+		"name": "checkCredential",
+		"type": "blob"
+	},
+	{
+		"name": "credentialType",
+		"baseClass": "org.cote.accountmanager.schema.type.CredentialEnumType",
+		"type": "enum",
+		"index": true,
+		"maxLength": 16
+	},
+	{
+		"name": "checkCredentialType",
+		"baseClass": "org.cote.accountmanager.schema.type.CredentialEnumType",
+		"type": "enum",
+		"index": true,
+		"maxLength": 16
+	},
+	{
+		"name": "tokens",
+		"type": "list",
+		"baseType": "string"
+	}
+]}

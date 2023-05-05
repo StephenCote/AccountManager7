@@ -1,0 +1,14 @@
+{
+	"name": "attributeList",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "attributes",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "attribute",
+			"referenced": true,
+			"followReference": false
+		}
+	]
+}

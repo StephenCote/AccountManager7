@@ -1,0 +1,25 @@
+{
+	"name": "policyDefinition",
+	"inherits": ["dateTime", "organizationExt"],
+	"fields": [
+		{
+			"name": "parameters",
+			"baseModel": "fact",
+			"baseType": "model",
+			"type": "list"
+		},
+		{
+			"name": "urn",
+			"type": "string",
+			"readOnly": true
+		},
+		{
+			"name": "enabled",
+			"type": "boolean"
+		}
+		,{
+			"name": "decisionAge",
+			"type": "long"
+		}
+	]
+}

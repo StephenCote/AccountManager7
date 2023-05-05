@@ -1,0 +1,13 @@
+{
+	"name": "urn",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "urn",
+			"type": "string",
+			"readOnly": true,
+			"provider": "org.cote.accountmanager.provider.UrnProvider",
+			"identity": true
+		}
+	]
+}

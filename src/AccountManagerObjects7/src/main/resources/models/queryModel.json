@@ -1,0 +1,109 @@
+{
+"name": "query",
+"ioConstraints": ["unknown"],
+"factory": "org.cote.accountmanager.factory.QueryFactory",
+"fields": [
+	{
+		"name": "urn",
+		"type": "string",
+		"identity": true
+	},
+	{
+		"name": "type",
+		"type": "string",
+		"required": true
+	},
+	{
+		"name": "alias",
+		"type": "string",
+		"ephemeral": true
+	},
+	{
+		"name": "count",
+		"type": "int",
+		"ephemeral": true,
+		"private": true
+	},
+
+	{
+		"name": "executed",
+		"type": "boolean",
+		"ephemeral": true
+	},
+	{
+		"name": "comparator",
+		"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
+		"type": "enum",
+		"default": "GROUP_AND",
+		"maxLength": 16
+	},
+	{
+		"name": "sortField",
+		"type": "string"
+	},
+	{
+		"name": "startRecord",
+		"type": "long"
+	},
+	{
+		"name": "recordCount",
+		"type": "int"
+	},
+	{
+		"name": "order",
+		"baseClass": "org.cote.accountmanager.schema.type.OrderEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "queryKey",
+		"type": "boolean"
+	},
+	{
+		"name": "queryHash",
+		"type": "boolean"
+	},
+	{
+		"name": "request",
+		"type": "list",
+		"baseType": "string"
+	},
+	{
+		"name": "contextUser",
+		"type": "model",
+		"baseModel": "user",
+		"foreign": true
+	},
+	{
+		"name": "fields",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "queryField"
+	},
+	{
+		"name": "queries",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "query"
+	},
+	{
+		"name": "topCount",
+		"type": "int"
+	},
+	{
+		"name": "organizationId",
+		"type": "long"
+	},
+	{
+		"name": "groupBy",
+		"type": "string"
+	},
+	{
+		"name": "having",
+		"type": "string"
+	},
+	{
+		"name": "havingClause",
+		"type": "string"
+	}
+]}

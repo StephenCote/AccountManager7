@@ -1,0 +1,37 @@
+{
+	"name": "policyResponse",
+	"inherits": ["attributeList", "score"],
+	"fields": [
+		{
+			"name": "message",
+			"type": "string"
+		},
+		{
+			"name": "patternChain",
+			"baseType": "string",
+			"type": "list"
+		},
+		{
+			"name": "responseData",
+			"baseType": "model",
+			"baseModel": "base",
+			"type": "list"
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.PolicyResponseEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+
+		{
+			"name": "urn",
+			"type": "string"
+		},
+		{
+			"name": "expiryDate",
+			"type": "timestamp"
+		}
+
+	]
+}

@@ -1,0 +1,25 @@
+{
+"name": "contact",
+"inherits": ["directory", "description"],
+"fields": [
+	{
+		"name": "contactValue",
+		"type": "string"
+	}
+	,{
+		"name": "contactType",
+		"baseClass": "org.cote.accountmanager.schema.type.ContactEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+	,{
+		"name": "locationType",
+		"baseClass": "org.cote.accountmanager.schema.type.LocationEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+	,{
+		"name": "preferred",
+		"type": "boolean"
+	}
+]}

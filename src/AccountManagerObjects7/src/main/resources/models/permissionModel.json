@@ -1,0 +1,14 @@
+{
+"name": "permission",
+"inherits": ["nameId", "path", "parent"],
+"constraints": ["parentId", "name", "type"],
+"fields": [
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.PermissionEnumType",
+		"type": "enum",
+		"index": true,
+		"maxLength": 16
+	}
+
+]}

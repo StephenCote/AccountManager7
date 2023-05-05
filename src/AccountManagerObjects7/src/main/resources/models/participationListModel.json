@@ -1,0 +1,27 @@
+{
+"name": "participationList",
+"inherits": ["organizationExt"],
+"ioConstraints": ["file"],
+"fields": [
+		{
+			"name": "id",
+			"type": "long",
+			"identity": true,
+			"readOnly": true,
+			"private": true
+		},
+		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "partId",
+			"type": "long"
+		},
+		{
+			"name": "parts",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "participationEntry"
+		}
+]}

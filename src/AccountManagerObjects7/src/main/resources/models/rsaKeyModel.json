@@ -1,0 +1,17 @@
+{
+	"name": "rsaKey",
+	"fields": [
+		{
+			"name": "modulus",
+			"type": "blob"
+		},
+		{
+			"name": "exponent",
+			"type": "blob"
+		},
+		{
+			"name": "d",
+			"type": "blob"
+		}
+	]
+}

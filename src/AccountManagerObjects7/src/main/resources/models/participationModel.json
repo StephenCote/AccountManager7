@@ -1,0 +1,48 @@
+{
+"name": "participation",
+"inherits": ["organizationExt", "primaryKey"],
+"provider": "org.cote.accountmanager.provider.ParticipationProvider",
+"fields": [
+	{
+		"name": "ownerId",
+		"type": "long",
+		"required": true,
+		"private": true
+	},
+
+	{
+		"name": "participationId",
+		"type": "long",
+		"required": true
+	},
+	{
+		"name": "participationModel",
+		"type": "string",
+		"required": true
+	},
+	{
+		"name": "participantId",
+		"type": "long",
+		"required": true
+	},
+	{
+		"name": "participantModel",
+		"type": "string",
+		"required": true
+	},
+	{
+		"name": "permissionId",
+		"type": "long"
+	},
+	{
+		"name": "effectType",
+		"type": "string",
+		"baseClass": "org.cote.accountmanager.schema.type.EffectEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "enabled",
+		"type": "boolean"
+	}
+]}

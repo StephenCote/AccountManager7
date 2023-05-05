@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.accountadministrator",
+	"type": "authorization",
+	"name": "Account Administrator Role Member Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.accountAdministratorRole}"
+}

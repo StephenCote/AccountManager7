@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.groupdeleteaccess",
+	"type": "authorization",
+	"name": "Delete Object Group Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.groupDeletePermission}"
+}

@@ -1,0 +1,51 @@
+{
+	"name": "keySet",
+	"inherits": ["directory"],
+	"factory": "org.cote.accountmanager.factory.KeyFactory",
+	"fields": [
+		{
+			"name": "hash",
+			"baseModel": "hash",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "public",
+			"baseModel": "key",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "private",
+			"baseModel": "key",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "cipher",
+			"baseModel": "cipherKey",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "agreementSpec",
+			"type": "string"
+		},
+		{
+			"name": "curveName",
+			"type": "string"
+		},
+		{
+			"name": "organizationKey",
+			"type": "boolean"
+		},
+		{
+			"name": "primaryKey",
+			"type": "boolean"
+		},
+		{
+			"name": "globalKey",
+			"type": "boolean"
+		}
+	]
+}

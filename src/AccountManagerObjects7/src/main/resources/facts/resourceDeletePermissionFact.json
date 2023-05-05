@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.resourcedeletepermission",
+	"name": "Resource Delete Permission Match",
+	"factData": "/Delete",
+	"factDataType": "data",
+	"type": "permission",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceUrn}",
+	"factReference": "${resource}"
+}

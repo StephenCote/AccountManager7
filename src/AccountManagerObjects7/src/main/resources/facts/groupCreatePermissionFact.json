@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.groupcreatepermission",
+	"name": "Group Create Permission Match",
+	"factData": "/Create",
+	"factDataType": "group",
+	"type": "permission",
+	"modelType": "group",
+	"sourceUrn": "${resourceGroupUrn}",
+	"factReference": "${resourceGroup}"
+}

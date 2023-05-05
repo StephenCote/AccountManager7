@@ -1,0 +1,101 @@
+{
+"name": "security",
+"inherits": ["nameId"],
+"fields": [
+	{
+	"name": "publicKeyBytes",
+	"type": "blob"
+	}
+	,{
+	"name": "privateKeyBytes",
+	"type": "blob"
+	}
+	,{
+	"name": "cipherIV",
+	"type": "blob"
+	}
+	,{
+	"name": "cipherKey",
+	"type": "blob"
+	}
+	,{
+	"name": "encryptedCipherIV",
+	"type": "blob"
+	}
+	,{
+	"name": "encryptedCipherKey",
+	"type": "blob"
+	}
+	,{
+	"name": "cipherProvider",
+	"type": "string"
+	}
+	,{
+	"name": "symmetricCipherKeySpec",
+	"type": "string"
+	}
+	,{
+	"name": "asymmetricCipherKeySpec",
+	"type": "string"
+	}
+	,{
+	"name": "randomSeedLength",
+	"type": "long"
+	}
+	,{
+	"name": "encryptCipherKey",
+	"type": "boolean"
+	}
+	,{
+	"name": "reverseEncrypt",
+	"type": "boolean"
+	}
+	,{
+	"name": "hashProvider",
+	"type": "string"
+	}
+	,{
+	"name": "cipherKeySpec",
+	"type": "string"
+	}
+	,{
+	"name": "cipherKeySize",
+	"type": "int"
+	}
+	,{
+	"name": "keySize",
+	"type": "int"
+	}
+	,{
+	"name": "globalKey",
+	"type": "boolean"
+	}
+	,{
+	"name": "primaryKey",
+	"type": "boolean"
+	}
+	,{
+	"name": "organizationKey",
+	"type": "boolean"
+	}
+	,{
+	"name": "symmetricKeyId",
+	"type": "long"
+	}
+	,{
+	"name": "asymmetricKeyId",
+	"type": "long"
+	}
+	,{
+	"name": "previousKeyId",
+	"type": "long"
+	}
+	,{
+	"name": "curveName",
+	"type": "string"
+	}
+	,{
+	"name": "keyAgreementSpec",
+	"type": "string"
+	}
+]}

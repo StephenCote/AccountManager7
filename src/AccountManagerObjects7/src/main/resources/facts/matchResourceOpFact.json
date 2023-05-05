@@ -1,0 +1,8 @@
+{
+	"urn": "resource.policy.fact.matchowneroperation",
+	"name": "Resource Operation Match",
+	"type": "factory",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceUrn}",
+	"factReference": "${resource}"
+}

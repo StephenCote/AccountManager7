@@ -1,0 +1,19 @@
+{
+	"name": "dateTime",
+	"abstract": "true",
+	"factory": "org.cote.accountmanager.factory.DateTimeFactory",
+	"fields":[
+		{
+			"name": "createdDate",
+			"type": "timestamp"
+		},
+		{
+			"name": "modifiedDate",
+			"type": "timestamp"
+		},
+		{
+			"name": "expiryDate",
+			"type": "timestamp"
+		}
+	]
+}

@@ -1,0 +1,18 @@
+{
+"name": "response",
+"inherits": ["organizationExt"],
+"abstract": true,
+"fields": [
+
+	{
+		"name": "message",
+		"type": "string"
+	},
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.OperationResponseEnumType",
+		"type": "enum",
+		"index": true,
+		"maxLength": 16
+	}
+]}

@@ -1,0 +1,15 @@
+{
+	"name": "primaryKey",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "id",
+			"type": "long",
+			"identity": true,
+			"readOnly": true,
+			"private": true,
+			"sequence": true,
+			"primaryKey": true
+		}
+	]
+}

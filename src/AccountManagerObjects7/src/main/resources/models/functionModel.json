@@ -1,0 +1,32 @@
+{
+"name": "function",
+"inherits": ["baseAuthorization"],
+"fields": [
+	{
+		"name": "facts",
+		"baseModel": "functionFact",
+		"type": "list",
+		"baseType": "model",
+		"foreign": true
+	}
+	,{
+		"name": "functionData",
+		"baseModel": "data",
+		"type": "model",
+		"foreign": true
+	}
+	,{
+		"name": "functionType",
+		"baseClass": "org.cote.accountmanager.schema.type.FunctionEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+	,{
+		"name": "sourceUrl",
+		"type": "string"
+	}
+	,{
+		"name": "sourceUrn",
+		"type": "string"
+	}
+]}

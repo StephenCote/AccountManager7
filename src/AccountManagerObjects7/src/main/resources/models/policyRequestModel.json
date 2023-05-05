@@ -1,0 +1,53 @@
+{
+	"name": "policyRequest",
+	"factory": "org.cote.accountmanager.factory.PolicyRequestFactory",
+	"fields": [
+		{
+			"name": "attributes",
+			"baseModel": "attribute",
+			"baseType": "model",
+			"type": "list"
+		},
+		{
+			"name": "facts",
+			"baseModel": "fact",
+			"baseType": "model",
+			"type": "list"
+		},
+		{
+			"name": "contextUser",
+			"type": "model",
+			"baseModel": "user",
+			"foreign": true
+		},
+		{
+			"name": "urn",
+			"type": "string"
+		},
+		{
+			"name": "organizationPath",
+			"type": "string"
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.PolicyRequestEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "subject",
+			"type": "string"
+		},
+		{
+			"name": "subjectType",
+			"type": "string"
+		},
+		{
+			"name": "credentialType",
+			"baseClass": "org.cote.accountmanager.schema.type.CredentialEnumType",
+			"type": "enum",
+			"maxLength": 16
+		}
+
+	]
+}

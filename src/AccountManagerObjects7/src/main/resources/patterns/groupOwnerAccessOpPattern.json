@@ -1,0 +1,11 @@
+{
+	"urn": "resource.policy.pattern.groupowneraccessop",
+	"type": "operation",
+	"name": "Group Owner Access Pattern",
+	"operation": {
+		"type": "internal",
+		"operation": "org.cote.accountmanager.policy.operation.OwnerOperation"
+	},
+	"fact": "${fact.actor}",
+	"match": "${fact.matchResourceGroupOp}"
+}

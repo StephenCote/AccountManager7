@@ -1,0 +1,11 @@
+{
+	"model": "policy",
+	"urn": "resource.policy.systemdeleteobject",
+	"enabled": true,
+	"condition": "all",
+	"name": "System Delete Object Policy",
+	"decisionAge": 120,
+	"rules": [
+		"${rule.systemDelete}"
+	]
+}

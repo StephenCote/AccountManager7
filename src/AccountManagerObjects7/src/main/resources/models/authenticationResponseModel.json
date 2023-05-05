@@ -1,0 +1,23 @@
+{
+"name": "authenticationResponse",
+"inherits": ["response"],
+"fields": [
+
+	{
+		"name": "principle",
+		"type": "model"
+	},
+	{
+		"name": "tokens",
+		"type": "list",
+		"baseType": "string"
+	},
+	{
+		"name": "response",
+		"baseClass": "org.cote.accountmanager.schema.type.AuthenticationResponseEnumType",
+		"type": "enum",
+		"index": true,
+		"maxLength": 16
+	}
+	
+]}

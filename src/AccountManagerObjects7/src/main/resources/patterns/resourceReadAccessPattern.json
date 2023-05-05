@@ -1,0 +1,8 @@
+{
+	"model": "pattern",
+	"type": "authorization",
+	"urn": "resource.policy.pattern.resourceReadAccess",
+	"name": "Read Object Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.resourceReadPermission}"
+}

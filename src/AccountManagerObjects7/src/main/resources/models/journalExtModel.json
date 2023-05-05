@@ -1,0 +1,13 @@
+{
+"name": "journalExt",
+"abstract": true,
+"fields": [
+	{
+		"name": "journal",
+		"type": "model",
+		"baseModel": "journal",
+		"foreign": true,
+		"provider": "org.cote.accountmanager.provider.JournalProvider"
+	}
+]}
+		

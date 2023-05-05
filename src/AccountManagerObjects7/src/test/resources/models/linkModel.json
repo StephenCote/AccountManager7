@@ -1,0 +1,38 @@
+{
+"name": "link",
+"inherits": ["nameId"],
+"fields": [
+	{
+		"name": "next",
+		"type": "model",
+		"foreign": true,
+		"foreignField": "objectId",
+		"baseModel": "$self"
+	},
+	{
+		"name": "previous",
+		"type": "model",
+		"foreign": true,
+		"baseModel": "$self"
+	},
+	{
+		"name": "up",
+		"type": "model",
+		"foreign": true,
+		"baseModel": "$self"
+	},
+	{
+		"name": "down",
+		"type": "model",
+		"foreign": true,
+		"baseModel": "$self"
+	},
+	{
+		"name": "list",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "$self",
+		"foreignField": "objectId",
+		"foreign": true
+	}
+]}

@@ -1,0 +1,8 @@
+{
+	"urn": "resource.policy.fact.matchparentowneroperation",
+	"name": "Parent Resource Operation Match",
+	"type": "factory",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceParentUrn}",
+	"factReference": "${resourceParent}"
+}

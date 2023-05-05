@@ -1,0 +1,44 @@
+{
+"name": "validationRule",
+"inherits": ["directory", "description"],
+"fields": [
+	{
+	"name": "errorMessage",
+	"type": "string"
+	}
+	,{
+	"name": "replacementValue",
+	"type": "flex"
+	}
+	,{
+	"name": "rules",
+	"baseModel": "validationRule",
+	"type": "list"
+	}
+	,{
+	"name": "expression",
+	"type": "string"
+	}
+	,{
+	"name": "isRuleSet",
+	"type": "boolean"
+	}
+	,{
+	"name": "isReplacementRule",
+	"type": "boolean"
+	}
+	,{
+	"name": "validationType",
+	"baseClass": "org.cote.accountmanager.schema.type.ValidationEnumType",
+	"type": "enum",
+	"maxLength": 16
+	}
+	,{
+	"name": "comparison",
+	"type": "boolean"
+	}
+	,{
+	"name": "allowNull",
+	"type": "boolean"
+	}
+]}

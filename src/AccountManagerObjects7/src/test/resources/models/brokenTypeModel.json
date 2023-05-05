@@ -1,0 +1,9 @@
+{
+	"name": "brokenType",
+	"fields":[
+		{
+			"name": "path",
+			"type": "vector"
+		}	
+	]
+}

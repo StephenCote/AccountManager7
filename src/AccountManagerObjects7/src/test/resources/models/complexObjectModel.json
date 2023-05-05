@@ -1,0 +1,21 @@
+{
+	"name": "complexObject",
+	"inherits": ["genericObject"],
+	"fields":[
+		{
+			"name": "link",
+			"type": "model",
+			"baseModel": "complexObject"
+		},
+		{
+			"name": "stuff",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "fancyStuff",
+			"type": "list",
+			"baseType": "model"
+		}
+	]
+}

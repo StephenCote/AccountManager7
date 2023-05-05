@@ -1,0 +1,13 @@
+{
+"name": "functionFact",
+"inherits": ["baseAuthorization"],
+"fields": [
+	{
+	"name": "functionUrn",
+	"type": "string"
+	}
+	,{
+	"name": "factUrn",
+	"type": "string"
+	}
+]}

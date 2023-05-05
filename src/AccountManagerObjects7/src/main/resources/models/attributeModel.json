@@ -1,0 +1,21 @@
+{
+"name": "attribute",
+"inherits": ["base", "reference"],
+"followReference": false,
+"fields": [
+	{
+		"name": "value",
+		"type": "flex",
+		"valueType": "valueType"
+	},
+	{
+		"name": "valueType",
+		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "name",
+		"type": "string"
+	}
+]}

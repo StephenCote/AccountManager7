@@ -1,0 +1,7 @@
+{
+	"type": "authorization",
+	"urn": "resource.policy.pattern.resourceDeleteAccess",
+	"name": "Delete Object Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.resourceDeletePermission}"
+}

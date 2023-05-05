@@ -1,0 +1,19 @@
+{
+"name": "vaultExt",
+"abstract": true,
+"fields": [
+	{
+		"name": "keyId",
+		"type": "string",
+		"maxLength": 64
+	}
+	,{
+		"name": "vaultId",
+		"type": "string",
+		"maxLength": 64
+	}
+	,{
+		"name": "vaulted",
+		"type": "boolean"
+	}
+]}

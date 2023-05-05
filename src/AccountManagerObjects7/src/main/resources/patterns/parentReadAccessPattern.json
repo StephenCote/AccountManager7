@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.parentreadaccess",
+	"type": "authorization",
+	"name": "Read Object Parent Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.parentReadPermission}"
+}

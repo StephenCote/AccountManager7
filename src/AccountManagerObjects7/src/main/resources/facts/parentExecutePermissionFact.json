@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.parentexecutepermission",
+	"name": "Parent Execute Permission Match",
+	"factData": "/Execute",
+	"factDataType": "${resourceType}",
+	"type": "permission",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceParentUrn}",
+	"factReference": "${resourceParent}"
+}

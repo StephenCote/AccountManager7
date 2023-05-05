@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.parentcreateaccess",
+	"type": "authorization",
+	"name": "Create Object Parent Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.parentCreatePermission}"
+}

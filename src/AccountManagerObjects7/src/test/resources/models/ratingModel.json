@@ -1,0 +1,9 @@
+{
+"name": "rating",
+"abstract": true,
+"fields": [
+	{
+		"name": "rating",
+		"type": "double"
+	}
+]}

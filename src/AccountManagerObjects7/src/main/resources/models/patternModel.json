@@ -1,0 +1,61 @@
+{
+"name": "pattern",
+"inherits": ["baseAuthorization"],
+"group": "Patterns",
+"fields": [
+	{
+		"name": "fact",
+		"baseModel": "fact",
+		"type": "model",
+		"foreign": true
+	}
+	,{
+		"name": "match",
+		"baseModel": "fact",
+		"type": "model",
+		"foreign": true
+	}
+	,{
+		"name": "operation",
+		"baseModel": "operation",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "operationClass",
+		"type": "string"
+	}
+	,{
+		"name": "factUrn",
+		"type": "string"
+	}
+	,{
+		"name": "comparator",
+		"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+	,{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.PatternEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+	,{
+		"name": "matchUrn",
+		"type": "string"
+	}
+	,{
+		"name": "operationUrn",
+		"type": "string"
+	},
+	{
+		"name": "entitlementType",
+		"type": "string"
+	},
+	{
+		"name": "entitlementPath",
+		"type": "string"
+	}
+	
+]}

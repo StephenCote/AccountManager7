@@ -1,0 +1,11 @@
+{
+	"name": "populate",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "populated",
+			"type": "boolean",
+			"ephemeral": true
+		}
+	]
+}

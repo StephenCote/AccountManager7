@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.resourceupdatepermission",
+	"name": "Resource Update Permission Match",
+	"factData": "/Update",
+	"factDataType": "data",
+	"type": "permission",
+	"modelType": "${resourceType}",
+	"sourceUrn": "${resourceUrn}",
+	"factReference": "${resource}"
+}

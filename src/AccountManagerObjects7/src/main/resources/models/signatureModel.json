@@ -1,0 +1,12 @@
+{
+	"name": "signature",
+	"abstract": true,
+	"fields": [
+	{
+		"name": "signature",
+		"type": "blob",
+		"restricted": true
+	}
+	]
+}
+

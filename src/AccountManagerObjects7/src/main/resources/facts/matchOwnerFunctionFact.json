@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.fact.matchownerfunction",
+	"name": "Owner Policy Function",
+	"sourceDataType": "varchar",
+	"type": "function",
+	"sourceUrl": "resource:./functions/ownerPolicyFunction.js"
+}

@@ -1,0 +1,7 @@
+{
+"name": "baseAuthorization",
+"abstract": true,
+"inherits": ["directory", "description", "dateTime", "score"],
+"fields": [
+
+]}

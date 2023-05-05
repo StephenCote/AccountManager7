@@ -1,0 +1,35 @@
+{
+"name": "account",
+"inherits": ["directory"],
+"fields": [
+	{
+	"name": "contactInformation",
+	"baseModel": "contactInformation",
+	"type": "model",
+	"foreign": true
+	}
+	,{
+	"name": "type",
+	"baseClass": "org.cote.accountmanager.schema.type.AccountEnumType",
+	"type": "enum",
+	"maxLength": 16
+	}
+	,{
+	"name": "status",
+	"baseClass": "org.cote.accountmanager.schema.type.AccountStatusEnumType",
+	"type": "enum",
+	"maxLength": 16
+	}
+	,{
+	"name": "referenceId",
+	"type": "long"
+	}
+	,{
+	"name": "accountId",
+	"type": "string"
+	}
+	,{
+	"name": "databaseRecord",
+	"type": "boolean"
+	}
+]}

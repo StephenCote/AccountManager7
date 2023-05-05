@@ -1,0 +1,31 @@
+2023/03/30
+
+Account Manager 7 is a ground-up rewrite of the Account Manager model and system.  The object model started off being similar, the schema was changed from being XSD based to a proprietary JSON structure.  The main reason for this was a desire to have more flexible control in-process over the model, particularly during serialization and deserialization, without having to rely on reflection or create a massive factory library to accommodate specific members, while also enforcing strong typing. By adding a class generator on top of this flex model, object instances can appear as standard POJOs while remaining very dynamic.  The trade-off is the field name tracking is fairly verbose, and there are a number of additional schema checks that make this slower under load.  However, the schema and data become much more portable.
+
+The primary tenets of the redesign are:
+- flexible model:
+	- Schema changes should not require rebuilding the core library, while supporting strong typing, and tighter serialization/deserialization control
+	- Multiple identity and schema level index guidance to crosswalk between persistance layers:  E.G.: In a DB, use autonumbers, while in a ledger, use guids, and both supporting the general query interface
+- Independent, non-compile schema support:
+	- Not-so-code-first, database last data model, where persistance layer schemas may be generated or, as much as possible, be manually tweaked, to afford the broadest flexibility for performance tuning
+- Support a distributed-ledger type of deployment
+	- File-based persistence
+	- Journaling
+	- Base-lining
+ - Distributed ledger
+	- Incorporate a ledger model at the core.  Also, I admin, I'm not a fan of code-first database generation and would prefer to design from the schema, which I am doing and have been doing for a long time - I just don't want to have to write the schema twice, once for the object model, and once for the database by database version, and suffer the verbosity of implementation as happened in the Account Manager versions 3 (Java), 4 (.NET), 5 (Java) (AM 6 didn't have a material model change).  So, 7 is a big departure from the model perspective.
+
+ - Uniform query interface
+	- The V5.5 interface was generic by type, but behind the scenes was very verbose with all sorts of different implementations due to legacy schema design decisions, making the ability to search across types first becoming muddled, until a more common search mechanism was added.  Further more, there was very limited control over the return value, with only the data type supporting the ability to not return the whole byte array.
+	- The V7 interface starts with the common query interface, which supports hierachical combinations of query patterns, and includes the ability to return requested fields
+
+- PBAC at the core:
+	- The Participation-Based Access model, a fundamental and original design predicate remains due to its inherent flexibility in supporting other access models, including GBAC, RBAC, PBAC, and ABAC, and row level security.  While column level constraints were supported, implementing it wasn't obvious.  Due to the factory structure in prior versions, the security policies were hard coded in a very specific order and format to determine ownership, administrative rights, indirect rights, and direct rights.
+	- In V7, the system level authorization model will be policy based, using the policy model evaluation structure, wherein policy decisions are cached for a configurable period of time, and offering greater control over the underlying system to enhance or relax system level authorization decisions, while keeping that evaluation in a common format.
+
+
+
+
+
+	- The original account manager hierarchy is still used for maximum flexibility: Organizations (multi-tenant), Parent and Group (eg: separately, or parent lineage within a single group).
+

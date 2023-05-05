@@ -1,0 +1,9 @@
+{
+"name": "description",
+"abstract": true,
+"fields": [
+	{
+		"name": "description",
+		"type": "string"
+	}
+]}

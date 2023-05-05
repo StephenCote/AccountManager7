@@ -1,0 +1,8 @@
+{
+	"urn": "resource.policy.fact.accountadministratorrole",
+	"name": "Account Administrator Role Fact",
+	"factData": "/AccountAdministrators",
+	"factDataType": "user",
+	"type": "role",
+	"modelType": "role"
+}

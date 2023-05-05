@@ -1,0 +1,28 @@
+{
+"name": "queryField",
+"ioConstraints": ["unknown"],
+"fields": [
+	{
+		"name": "comparator",
+		"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
+		"type": "enum",
+		"maxLength": 16,
+		"default": "EQUALS"
+	},
+	{
+		"name": "name",
+		"type": "string",
+		"required": true
+	},
+	{
+		"name": "value",
+		"type": "flex",
+		"required": true
+	},
+	{
+		"name": "fields",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "$self"
+	}
+]}

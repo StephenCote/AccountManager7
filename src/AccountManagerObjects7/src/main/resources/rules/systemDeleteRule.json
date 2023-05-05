@@ -1,0 +1,15 @@
+{
+	"urn": "resource.policy.rule.systemdelete",
+	"type": "permit",
+	"condition": "any",
+	"name": "System Delete Resource Access Rule", 
+	"patterns": [
+		"${pattern.ownerAccessOp}",
+		"${pattern.groupOwnerAccessOp}",
+		"${pattern.parentOwnerAccessOp}",
+		"${pattern.accountAdministrator}",
+		"${pattern.groupDeleteAccess}",
+		"${pattern.parentDeleteAccess}",
+		"${pattern.resourceDeleteAccess}"
+	]
+}

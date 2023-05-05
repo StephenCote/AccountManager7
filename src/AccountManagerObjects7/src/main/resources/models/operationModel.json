@@ -1,0 +1,16 @@
+{
+"name": "operation",
+"inherits": ["baseAuthorization"],
+"group": "Operations",
+"fields": [
+	{
+		"name": "operation",
+		"type": "string"
+	}
+	,{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.OperationEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+]}

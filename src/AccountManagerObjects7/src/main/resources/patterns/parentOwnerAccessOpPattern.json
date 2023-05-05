@@ -1,0 +1,11 @@
+{
+	"urn": "resource.policy.pattern.parentowneraccessop",
+	"type": "operation",
+	"name": "Parent Owner Access Pattern",
+	"operation": {
+		"type": "internal",
+		"operation": "org.cote.accountmanager.policy.operation.OwnerOperation"
+	},
+	"fact": "${fact.actor}",
+	"match": "${fact.matchResourceParentOp}"
+}

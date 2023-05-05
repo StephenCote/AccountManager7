@@ -1,0 +1,122 @@
+{
+	"name": "spool",
+	"inherits": [
+		"dateTime",
+		"organizationExt",
+		"primaryKey"
+	],
+	"fields": [
+		{
+			"name": "data",
+			"type": "blob"
+		},
+		{
+			"name": "objectId",
+			"type": "string",
+			"identity": true,
+			"readOnly": true
+		},
+		{
+			"name": "spoolBucketType",
+			"baseClass": "org.cote.accountmanager.schema.type.SpoolBucketEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "spoolBucketName",
+			"baseClass": "org.cote.accountmanager.schema.type.SpoolNameEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "valueType",
+			"baseClass": "org.cote.accountmanager.schema.type.ValueEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "ownerId",
+			"type": "long"
+		},
+		{
+			"name": "spoolStatus",
+			"baseClass": "org.cote.accountmanager.schema.type.SpoolStatusEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "expires",
+			"type": "boolean"
+		},
+		{
+			"name": "referenceId",
+			"type": "long"
+		},
+		{
+			"name": "referenceType",
+			"type": "string"
+		},
+
+		{
+			"name": "transportType",
+			"type": "string"
+		},
+		{
+			"name": "credentialId",
+			"type": "long"
+		},
+		{
+			"name": "parentObjectId",
+			"type": "string"
+		},
+		{
+			"name": "currentLevel",
+			"type": "int"
+		},
+		{
+			"name": "endLevel",
+			"type": "int"
+		},
+		{
+			"name": "classification",
+			"type": "string"
+		},
+		{
+			"name": "groupId",
+			"type": "long",
+			"baseModel": "group"
+		},
+		{
+			"name": "groupPath",
+			"type": "string",
+			"virtual": true,
+			"baseModel": "group",
+			"baseProperty": "groupId",
+			"provider": "org.cote.accountmanager.provider.PathProvider"
+		},
+		{
+			"name": "senderId",
+			"type": "long"
+		},
+		{
+			"name": "senderType",
+			"type": "string"
+		},
+		{
+			"name": "recipientId",
+			"type": "long"
+		},
+		{
+			"name": "recipientType",
+			"type": "string"
+		},
+		{
+			"name": "modelType",
+			"type": "string"
+		}
+	]
+}

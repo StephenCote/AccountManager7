@@ -1,0 +1,8 @@
+{
+	"urn": "resource.policy.fact.modelrole",
+	"name": "Model Role Fact",
+	"factData": "${modelRole}",
+	"factDataType": "user",
+	"type": "role",
+	"modelType": "role"
+}

@@ -1,0 +1,56 @@
+{
+"name": "fact",
+"inherits": ["baseAuthorization"],
+"group": "Facts",
+"fields": [
+	{
+		"name": "factReference",
+		"baseModel": "nameId",
+		"type": "model",
+		"ephemeral": "true"
+	},
+	{
+		"name": "factData",
+		"type": "string"
+	},
+	{
+		"name": "factDataType",
+		"type": "string"
+	},
+	{
+		"name": "factType",
+		"type": "string"
+	},
+	{
+		"name": "sourceUrn",
+		"type": "string"
+	},
+	{
+		"name": "sourceDataType",
+		"baseClass": "org.cote.accountmanager.schema.type.SqlDataEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "sourceUrl",
+		"type": "string"
+	},
+	{
+		"name": "sourceData",
+		"type": "blob"
+	},
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.FactEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "modelType",
+		"type": "string"
+	},
+	{
+		"name": "sourceType",
+		"type": "string"
+	}
+]}

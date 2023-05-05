@@ -1,0 +1,16 @@
+{
+	"name": "indexEntry2",
+	"ioConstraints": ["file"],
+	"fields": [
+		{
+			"name": "type",
+			"type": "string"
+		},
+		{
+			"name": "values",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "indexEntryValue2"
+		}
+	]
+}

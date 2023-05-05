@@ -1,0 +1,37 @@
+{
+	"model": "policy",
+	"urn": "policy.readObject",
+	"rules": [
+		{
+			"patterns": [
+				{
+					"fact": {
+						"urn": "actorFactUrn",
+						"type": "parameter",
+						"name": "Actor",
+						"modelType": "replace"
+					},
+					"match": {
+						"urn": "matchFactUrn",
+						"name": "Owner Policy Function",
+						"factData": "/Read",
+						"factDataType": "data",
+						"type": "permission",
+						"modelType": "replace",
+						"sourceUrn": "replace"
+					},
+					"urn": "patternUrn",
+					"type": "authorization",
+					"name": "Read Object Access Pattern"
+				}
+			],
+			"type": "permit",
+			"condition": "all",
+			"name": "Read Object Access Rule",
+			"urn": "ruleUrn"
+		}
+	],
+	"enabled": true,
+	"condition": "all",
+	"name": "Owner Access Policy"
+}

@@ -1,0 +1,17 @@
+{
+	"name": "reference",
+	"abstract": true,
+	"fields": [
+		{
+		"name": "referenceType",
+		"type": "string",
+		"maxLength": 64,
+		"index": true
+		},
+		{
+			"name": "referenceId",
+			"type": "long",
+			"index": true
+		}
+	]
+}

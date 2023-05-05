@@ -1,0 +1,6 @@
+{
+"name": "cryptoByteStore",
+"abstract": true,
+"inherits": ["byteStore", "cipherExt", "vaultExt"],
+"fields": []
+}

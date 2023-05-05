@@ -1,0 +1,24 @@
+{
+"name": "participationEntry",
+"ioConstraints": ["file"],
+"fields": [
+	{
+		"name": "partId",
+		"type": "long"
+	},
+	{
+		"name": "type",
+		"type": "string"
+	},
+	{
+		"name": "permissionId",
+		"type": "long"
+	},
+	{
+		"name": "effectType",
+		"type": "string",
+		"baseClass": "org.cote.accountmanager.schema.type.EffectEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+]}

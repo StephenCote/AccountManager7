@@ -1,0 +1,15 @@
+{
+	"urn": "resource.policy.rule.systemexecute",
+	"type": "permit",
+	"condition": "any",
+	"name": "System Execute Resource Access Rule", 
+	"patterns": [
+		"${pattern.ownerAccessOp}",
+		"${pattern.groupOwnerAccessOp}",
+		"${pattern.parentOwnerAccessOp}",
+		"${pattern.accountAdministrator}",
+		"${pattern.groupExecuteAccess}",
+		"${pattern.parentExecuteAccess}",
+		"${pattern.resourceExecuteAccess}"
+	]
+}

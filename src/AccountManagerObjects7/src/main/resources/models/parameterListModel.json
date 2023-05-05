@@ -1,0 +1,12 @@
+{
+	"name": "parameterList",
+	"factory": "org.cote.accountmanager.factory.ParameterListFactory",
+	"fields": [
+		{
+			"name": "parameters",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "parameter"
+		}
+	]
+}

@@ -1,0 +1,174 @@
+package org.cote.accountmanager.util;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.exceptions.WriterException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.IPath;
+import org.cote.accountmanager.io.IReader;
+import org.cote.accountmanager.io.ISearch;
+import org.cote.accountmanager.io.IWriter;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.policy.PolicyUtil;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordOperation;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+
+public abstract class PathUtil implements IPath {
+	
+	public static final Logger logger = LogManager.getLogger(PathUtil.class);
+	
+	private final IReader reader;
+	private final IWriter writer;
+	private final ISearch search;
+	
+	public PathUtil(IReader reader, ISearch search) {
+		this(reader, null, search);
+	}
+	public PathUtil(IReader reader, IWriter writer, ISearch search) {
+		this.reader = reader;
+		this.writer = writer;
+		this.search = search;
+	}
+	
+	public BaseRecord findPath(BaseRecord owner, String model, String path, String type, long organizationId) {
+		return makePath(owner, model, path, type, organizationId, false);
+	}
+	
+	public BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId) {
+		return makePath(owner, model, path, type, organizationId, true);
+	}
+	private BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId, boolean doCreate) {
+		BaseRecord node = null;
+
+		if(owner != null) {
+			IOSystem.getActiveContext().getRecordUtil().populate(owner);
+		}
+		if(path.startsWith("~/")) {
+			if(owner != null) {
+				path = owner.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH) + path.substring(1);
+			}
+			else {
+				logger.error("Cannot resolve a relative user path without a user reference");
+				return null;
+			}
+		}
+
+		String[] pathE = path.split("/");
+		long parentId = 0L;
+		
+
+		try {
+			for(String e : pathE) {
+				if(e == null || e.length() == 0) {
+					continue;
+				}
+				BaseRecord[] nodes = search.findByNameInParent(model, parentId, e, type, organizationId);
+	
+				if(nodes.length == 0) {
+					if(!doCreate) {
+						logger.warn("Failed to find '" + e + "' " + (type != null ? "of type (" + type + ") " : "") + "in parent " + parentId + " in path " + path + ", create = false");
+						node = null;
+						break;
+					}
+					else {
+						// logger.info("Node not found at " + e + " " + parentId);
+						
+						node = RecordFactory.model(model).newInstance();
+						node.set(FieldNames.FIELD_NAME, e);
+						node.set(FieldNames.FIELD_PARENT_ID, parentId);
+						node.set(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+						if(type != null && node.hasField(FieldNames.FIELD_TYPE)) {
+							node.set(FieldNames.FIELD_TYPE, type);
+						}
+						if(owner != null) {
+							node.set(FieldNames.FIELD_OWNER_ID, owner.get(FieldNames.FIELD_ID));
+						}
+
+						writer.translate(RecordOperation.READ, node);
+						PolicyResponseType prr = null;
+						if(IOSystem.getActiveContext().isEnforceAuthorization()
+							&& (
+								owner == null
+								||
+								(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
+						) {
+							logger.error("Not authorized to create " + model + " " + (type != null ? "of type (" + type + ") " : "") + "node " + e + " in path " + path);
+							/*
+							if(prr != null) {
+								logger.error(prr.toString());
+							}
+							*/
+							return null;
+						}
+						
+						if(prr == null) {
+							// logger.warn("*** Creating node '" + e + "' without authorization check because " + (enforceAuthorization ? "enforced" : "not enforced") + " and owner " + (owner != null ? "" : "not") + " specified");
+						}
+						/*
+						if(model.equals(ModelNames.MODEL_ROLE)) {
+							logger.info("Role model:");
+							node.getFields().forEach(f -> {
+								logger.info("Field: " + f.getName());
+							});
+						}
+						*/
+						
+						writer.write(node);
+						writer.flush();
+						parentId = node.get(FieldNames.FIELD_ID);
+						//create = true;
+					}
+				}
+				else if(nodes.length == 1) {
+					node = nodes[0];
+					parentId = node.get(FieldNames.FIELD_ID);
+					if(type == null) {
+						//logger.info("Inherit parent type: " + type);
+						type = node.get(FieldNames.FIELD_TYPE);
+					}
+				}
+				else {
+					logger.error("Invalid search for " + model + " type " + type + " parent " + parentId + " org " + organizationId + " from '" + e + "'");
+					StackTraceElement[] st = new Throwable().getStackTrace();
+					for(int i = 0; i < st.length; i++) {
+						logger.error(st[i].toString());
+					}
+				}
+			}
+			if(doCreate) {
+				writer.flush();
+			}
+			//if(create) {
+				/// invoke translate to pick up any virtual properties applicable to read operations, such as the calculated path
+				//writer.translate(RecordOperation.READ, node);
+			//}
+		}
+		catch(ValueException | WriterException | IndexException | ReaderException | FieldException | ModelNotFoundException e) {
+			logger.error(e.getMessage());
+			node = null;
+		}
+		/*
+		 /// Not enforcing here at the moment in favor of enforcing at the common access point
+		PolicyResponseType prr = null;
+		if(node != null && IOSystem.getActiveContext().isEnforceAuthorization()
+			&& (
+				owner == null
+				||
+				(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_READ_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
+		) {
+			logger.error("Not authorized to view " + model + " path " + path);
+			return null;
+		}
+		*/
+		return node;
+
+	}
+}

@@ -1,0 +1,12 @@
+{
+	"name": "path",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "path",
+			"type": "string",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.provider.PathProvider"
+		}
+	]
+}

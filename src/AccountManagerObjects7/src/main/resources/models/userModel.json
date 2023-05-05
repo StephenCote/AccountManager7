@@ -1,0 +1,32 @@
+{
+	"name": "user",
+	"inherits": [
+		"nameId"
+	],
+	"fields": [
+		{
+			"name": "contactInformation",
+			"baseModel": "contactInformation",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "homeDirectory",
+			"baseModel": "group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "status",
+			"baseClass": "org.cote.accountmanager.schema.type.UserStatusEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.UserEnumType",
+			"type": "enum",
+			"maxLength": 16
+		}
+	]
+}

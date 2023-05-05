@@ -1,0 +1,21 @@
+{
+	"name": "base",
+	"abstract": true,
+	"inherits": ["attributeList", "organizationExt", "populate", "primaryKey", "urn"],
+	"factory": "org.cote.accountmanager.factory.BaseFactory",
+	"fields": [
+		{
+			"name": "ownerId",
+			"type": "long",
+			"required": true,
+			"private": true
+		},
+		{
+			"name": "objectId",
+			"type": "string",
+			"identity": true,
+			"readOnly": true,
+			"maxLength": 64
+		}
+	]
+}

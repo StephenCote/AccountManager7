@@ -1,0 +1,24 @@
+{
+	"name": "directory",
+	"inherits": ["nameId"],
+	"constraints": ["name, groupId"],
+	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
+	"fields": [
+		{
+			"name": "groupId",
+			"type": "long",
+			"baseProperty": "id",
+			"baseModel": "group",
+			"index": true,
+			"recursive": true
+		},
+		{
+			"name": "groupPath",
+			"type": "string",
+			"virtual": true,
+			"baseModel": "group",
+			"baseProperty": "groupId",
+			"provider": "org.cote.accountmanager.provider.PathProvider"
+		}
+	]
+}

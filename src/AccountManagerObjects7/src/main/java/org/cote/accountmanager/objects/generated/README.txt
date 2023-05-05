@@ -1,0 +1,1 @@
+This package/folder contains classes generated from select schema.  The BaseRecord.toConcrete() method will return an instance of a generated class, allowing for direct access to strongly typed getters/setters.

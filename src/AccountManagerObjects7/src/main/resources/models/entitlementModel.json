@@ -1,0 +1,17 @@
+{
+"name": "entitlement",
+"abstract": true,
+"fields": [
+	{
+		"name": "entitlementModel",
+		"baseClass": "org.cote.accountmanager.schema.type.ApproverEnumType",
+		"type": "enum",
+		"default": "UNKNOWN",
+		"maxLength": 32
+	},
+	{
+		"name": "entitlementId",
+		"type": "long"
+	}
+
+]}

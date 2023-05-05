@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.groupexecuteaccess",
+	"type": "authorization",
+	"name": "Execute Object Group Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.groupExecutePermission}"
+}

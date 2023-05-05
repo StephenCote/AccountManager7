@@ -1,0 +1,284 @@
+package org.cote.accountmanager.util;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.WriterException;
+import org.cote.accountmanager.io.IMember;
+import org.cote.accountmanager.io.IReader;
+import org.cote.accountmanager.io.ISearch;
+import org.cote.accountmanager.io.IWriter;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.ParticipationFactory;
+import org.cote.accountmanager.record.RecordIO;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.EffectEnumType;
+
+public class MemberUtil implements IMember {
+	public static final Logger logger = LogManager.getLogger(MemberUtil.class);
+	
+	private final IReader reader;
+	private final IWriter writer;
+	private final ISearch search;
+	private final RecordUtil recordUtil;
+	
+	public MemberUtil(IReader reader, IWriter writer, ISearch search) {
+		this.reader = reader;
+		this.writer = writer;
+		this.search = search;
+		recordUtil = new RecordUtil(reader, writer, search); 
+	}	
+	
+	public List<BaseRecord> findMembers(BaseRecord rec, String model, long id) throws IndexException, ReaderException {
+		return findMembers(rec, model, id, 0L, "ParticipationList");
+	}
+	public List<BaseRecord> findMembers(BaseRecord rec, String model, long id, long permissionId) throws IndexException, ReaderException {
+		return findMembers(rec, model, id, permissionId, "ParticipationList");
+	}
+	public List<BaseRecord> findParticipants(BaseRecord rec, String model, long id) throws IndexException, ReaderException {
+		return findMembers(rec, model, id, 0L, "ParticipantList");
+	}
+	public List<BaseRecord> findParticipants(BaseRecord rec, String model, long id, long permissionId) throws IndexException, ReaderException {
+		return findMembers(rec, model, id, permissionId, "ParticipantList");
+	}
+	private List<BaseRecord> findMembers(BaseRecord rec, String model, long id, long permissionId, String nameSuffix) throws IndexException, ReaderException {
+		
+		List<BaseRecord> list = new ArrayList<>();
+		if(reader.getRecordIo() == RecordIO.FILE) {
+			BaseRecord plist = getFileMembers(rec, nameSuffix);
+			if(plist != null) {
+				List<BaseRecord> parts = plist.get(FieldNames.FIELD_PARTS);
+				list = parts.stream().filter(o ->{
+					long mid = o.get(FieldNames.FIELD_PART_ID);
+					long pid = o.get(FieldNames.FIELD_PERMISSION_ID);
+					String type = o.get(FieldNames.FIELD_TYPE);
+					return (
+						(model == null || model.equals(type))
+						&&
+						(id == 0L || id == mid)
+						&&
+						(permissionId == 0L || permissionId == pid)
+					);
+					
+				}).collect(Collectors.toList());
+			}
+		}
+		else if(reader.getRecordIo() == RecordIO.DATABASE) {
+			Query q = createParticipationQuery(null, rec, null, null);
+			if(permissionId > 0L) {
+				q.field(FieldNames.FIELD_PERMISSION_ID, permissionId);
+				q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.GRANT_PERMISSION);
+			}
+			else {
+				q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.AGGREGATE);
+			}
+			if(model != null) {
+				q.field(FieldNames.FIELD_PARTICIPANT_MODEL, model);
+			}
+			if(id > 0L) {
+				q.field(FieldNames.FIELD_PARTICIPANT_ID, id);
+			}
+
+			QueryResult qr = search.find(q);
+			list.addAll(Arrays.asList(qr.getResults()));
+		}
+		else {
+			throw new ReaderException(reader.getRecordIo() + " not supported");
+		}
+		return list;
+	}
+	public List<BaseRecord> getMembers(BaseRecord rec, String memberModelType) throws IndexException, ReaderException {
+		List<BaseRecord> recs = new ArrayList<>();
+		if(reader.getRecordIo() == RecordIO.FILE) {
+			BaseRecord prec = getFileMembers(rec);
+			if(prec != null) {
+				recs = prec.get(FieldNames.FIELD_PARTS);
+			}
+		}
+		else if(reader.getRecordIo() == RecordIO.DATABASE) {
+			recs = getDbMembers(rec, false, memberModelType);
+		}
+		return recs;
+	}
+	public List<BaseRecord> getParticipations(BaseRecord rec, String participationModelType) throws IndexException, ReaderException {
+		List<BaseRecord> recs = new ArrayList<>();
+		if(reader.getRecordIo() == RecordIO.FILE) {
+			BaseRecord prec = getFileParticipants(rec);
+			if(prec != null) {
+				recs = prec.get(FieldNames.FIELD_PARTS);
+			}
+		}
+		else if(reader.getRecordIo() == RecordIO.DATABASE) {
+			recs = getDbMembers(rec, true, participationModelType);
+		}
+		return recs;
+	}
+	private BaseRecord getFileMembers(BaseRecord rec) throws IndexException, ReaderException {
+		return getFileMembers(rec, "ParticipationList");
+	}
+	private BaseRecord getFileParticipants(BaseRecord rec) throws IndexException, ReaderException {
+		return getFileMembers(rec, "ParticipantList");
+	}
+	private List<BaseRecord> getDbMembers(BaseRecord rec, boolean byPart, String modelType) throws IndexException, ReaderException {
+		Query q = createParticipationQuery(null, (!byPart ? rec : null), (byPart ? rec : null), null);
+		
+		String idField = FieldNames.FIELD_PARTICIPATION_ID;
+		String modelField = FieldNames.FIELD_PARTICIPATION_MODEL;
+		if(!byPart) {
+			idField = FieldNames.FIELD_PARTICIPANT_ID;
+			modelField = FieldNames.FIELD_PARTICIPANT_MODEL;
+			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, modelType);
+		}
+		else {
+			q.field(FieldNames.FIELD_PARTICIPATION_MODEL, modelType);
+		}
+		
+		q.setRequest(new String[] {FieldNames.FIELD_ID, modelField, idField});
+		QueryResult qr = search.find(q);
+		List<String> ids = new ArrayList<>();
+
+		String partModel = null;
+		for(BaseRecord prec : qr.getResults()) {
+			String model = prec.get(modelField);
+			if(partModel == null) {
+				partModel = model;
+			}
+			if(!partModel.equals(model)) {
+				throw new ReaderException("Mixed models in participation result");
+			}
+			ids.add(Long.toString(prec.get(idField)));
+		}
+		List<BaseRecord> recs = new ArrayList<>();
+		if(partModel == null) {
+			return recs;
+		}
+		try {
+			Query sq = QueryUtil.createQuery(partModel);
+			sq.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
+			QueryResult sqr = search.find(sq);
+			recs = Arrays.asList(sqr.getResults());
+		}
+		catch(Exception e) {
+			logger.error(e);
+		}
+		return recs;
+		
+	}
+	private BaseRecord getFileMembers(BaseRecord rec, String nameSuffix) throws IndexException, ReaderException {
+		BaseRecord list = null;
+		if(reader.getRecordIo() == RecordIO.FILE) {
+			String partcName = rec.get(FieldNames.FIELD_ID) + "-" + nameSuffix;
+			BaseRecord[] recc = search.findByName(ModelNames.MODEL_PARTICIPATION_LIST, partcName);
+			if(recc.length > 0) {
+				list = recc[0];
+			}
+		}
+		else {
+			throw new ReaderException(reader.getRecordIo() + " not supported");
+		}
+		
+		return list;
+	}
+	
+	public boolean isMember(BaseRecord actor, BaseRecord object) {
+		return isMember(actor, object, false);
+	}
+	public boolean isMember(BaseRecord actor, BaseRecord object, boolean browseHierarchy) {
+		boolean outBool = false;
+		
+		try {
+			List<BaseRecord> parts = findMembers(object, actor.getModel(), actor.get(FieldNames.FIELD_ID));
+			if(parts.size() > 0) {
+				outBool = true;
+			}
+			else if(browseHierarchy && object.inherits(ModelNames.MODEL_PARENT)){
+				long parentId = object.get(FieldNames.FIELD_PARENT_ID);
+				if(parentId > 0L) {
+					BaseRecord oparent =reader.read(object.getModel(), parentId);
+					if(oparent != null) {
+						outBool = isMember(actor, oparent, browseHierarchy);
+					}
+				}
+			}
+		} catch (IndexException | ReaderException e) {
+			logger.error(e);
+		}
+		
+		return outBool;
+	}
+	
+	public Query createParticipationQuery(BaseRecord contextUser, BaseRecord object, BaseRecord actor, BaseRecord effect) {
+		Query q = new Query(contextUser, ModelNames.MODEL_PARTICIPATION);
+		if(object != null) {
+			q.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.EQUALS, object.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_PARTICIPATION_MODEL, ComparatorEnumType.EQUALS, object.getModel());
+		}
+		if(actor != null) {
+			q.field(FieldNames.FIELD_PARTICIPANT_ID, ComparatorEnumType.EQUALS, actor.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, ComparatorEnumType.EQUALS, actor.getModel());
+		}
+		if(effect != null) {
+			q.field(FieldNames.FIELD_PERMISSION_ID, ComparatorEnumType.EQUALS, effect.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_EFFECT_TYPE, ComparatorEnumType.EQUALS, EffectEnumType.GRANT_PERMISSION.toString());
+		}
+
+		return q;
+	}
+	
+	public boolean member(BaseRecord user, BaseRecord object, BaseRecord actor, BaseRecord effect, boolean enable) {
+		boolean outBool = false;
+		Query q = createParticipationQuery(user, object, actor, effect);
+		CacheUtil.clearCache(q.hash());
+		
+		QueryResult res = null;
+		try {
+			res = search.find(q);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			
+		}
+		if(res != null && res.getCount() > 0) {
+			if(!enable) {
+				try {
+					outBool = writer.delete(res.getResults()[0]);
+					if(outBool) {
+						writer.flush();
+					}
+				} catch (WriterException e) {
+					logger.error(e);
+				}
+			}
+			else {
+				logger.debug("Entry already exists");
+			}
+			return outBool;
+		}
+		else if(!enable) {
+			return false;
+		}
+		
+		BaseRecord part1 = null;
+		if(effect != null) {
+			part1 = ParticipationFactory.newParticipation(user, object, actor, effect);
+		}
+		else {
+			part1 = ParticipationFactory.newParticipation(user, object, actor);
+		}
+
+		return recordUtil.createRecord(part1);
+	}
+	
+}

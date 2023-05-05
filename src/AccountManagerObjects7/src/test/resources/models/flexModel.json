@@ -1,0 +1,21 @@
+{
+	"name": "flex",
+	"fields":[
+		{
+			"name": "flexString",
+			"type": "flex"
+		},
+		{
+			"name": "flexBool",
+			"type": "flex"
+		},
+		{
+			"name": "flexByte",
+			"type": "flex"
+		},
+		{
+			"name": "flexDate",
+			"type": "flex"
+		}
+	]
+}

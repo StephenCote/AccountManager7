@@ -1,0 +1,121 @@
+{
+"name": "vault",
+"inherits": ["directory", "dateTime"],
+"ephemeral": true,
+"fields": [
+	{
+		"name": "alias",
+		"type": "String"
+	},
+	{
+		"name": "keyPath",
+		"type": "blob"
+	},
+	{
+		"name": "vaultPath",
+		"type": "blob"
+	},
+	{
+		"name": "nameHash",
+		"type": "string"
+	},
+	{
+		"name": "activeKey",
+		"baseModel": "keySet",
+		"type": "model",
+		"foreign": true,
+		"ephemeral": false
+	},
+	{
+		"name": "vaultKey",
+		"baseModel": "keySet",
+		"type": "model",
+		"foreign": true,
+		"ephemeral": true
+	},
+	{
+		"name": "public",
+		"baseModel": "keySet",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "salt",
+		"baseModel": "keySet",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "serviceUser",
+		"baseModel": "user",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "credential",
+		"baseModel": "credential",
+		"type": "model",
+		"foreign": false
+	},
+	{
+		"name": "protectedCredential",
+		"baseModel": "credential",
+		"type": "model",
+		"foreign": true,
+		"ephemeral": true
+	},
+	{
+		"name": "protectedCredentialPath",
+		"type": "blob"
+	},
+	{
+		"name": "vaultGroup",
+		"baseModel": "group",
+		"type": "model",
+		"foreign": true
+	},
+		{
+		"name": "groupName",
+		"type": "String",
+		"default": ".vault"
+	},
+	{
+		"name": "vaultLink",
+		"type": "string"
+	},	
+	{
+		"name": "keyExtension",
+		"type": "string",
+		"default": ".mprv"
+	},
+	{
+		"name": "keyPrefix",
+		"type": "string",
+		"default": "Vault"
+	},
+	{
+		"name": "keyProtectedPrefix",
+		"type": "string",
+		"default": "Prot"
+	},
+	{
+		"name": "haveVaultKey",
+		"type": "boolean"
+	},	
+	{
+		"name": "protected",
+		"type": "boolean"
+	},
+	{
+		"name": "haveCredential",
+		"type": "boolean"
+	},
+	{
+		"name": "dn",
+		"type": "String"
+	},	
+	{
+		"name": "initialized",
+		"type": "boolean"
+	}
+]}

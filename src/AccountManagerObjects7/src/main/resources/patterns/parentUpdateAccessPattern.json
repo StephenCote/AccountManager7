@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.parentupdateaccess",
+	"type": "authorization",
+	"name": "Update Object Parent Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.parentUpdatePermission}"
+}

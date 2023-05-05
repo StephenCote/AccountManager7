@@ -1,0 +1,34 @@
+{
+"name": "approver",
+"abstract": true,
+"inherits": ["signature"],
+"fields": [
+	{
+		"name": "approver",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "approverType"
+	},
+	{
+		"name": "approverType",
+		"type": "enum",
+		"baseClass": "org.cote.accountmanager.schema.type.ApproverEnumType",
+		"maxLength": 64
+	},
+
+	{
+		"name": "delegate",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "delegateType"
+	},
+	{
+		"name": "delegateType",
+		"type": "enum",
+		"baseClass": "org.cote.accountmanager.schema.type.ApproverEnumType",
+		"maxLength": 64
+	}
+
+]}

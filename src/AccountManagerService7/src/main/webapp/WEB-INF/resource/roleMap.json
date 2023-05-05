@@ -1,0 +1,9 @@
+{
+	"SystemAdministrators":"admin",
+	"DataAdministrators":"admin",
+	"AccountAdministrators":"admin",
+	"ApiUsers":"api",
+	"ScriptExecutors":"script",
+	"DebugUsers":"debug",
+	"AccountUsers":"user"
+}

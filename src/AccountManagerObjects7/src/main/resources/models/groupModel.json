@@ -1,0 +1,13 @@
+{
+"name": "group",
+"inherits": ["nameId", "path", "parent"],
+"fields": [
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.GroupEnumType",
+		"type": "enum",
+		"required": true,
+		"index": true,
+		"maxLength": 16
+	}
+]}

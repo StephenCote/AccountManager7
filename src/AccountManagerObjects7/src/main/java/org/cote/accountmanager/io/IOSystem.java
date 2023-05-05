@@ -1,0 +1,166 @@
+package org.cote.accountmanager.io;
+
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.StoreException;
+import org.cote.accountmanager.io.db.DBUtil;
+import org.cote.accountmanager.io.file.FileIndexManager;
+import org.cote.accountmanager.io.file.FileReader;
+import org.cote.accountmanager.io.file.FileStore;
+import org.cote.accountmanager.io.file.FileWriter;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordIO;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.RecordUtil;
+
+public class IOSystem {
+
+	public static final Logger logger = LogManager.getLogger(IOSystem.class);
+	private static boolean followForeignKeys = false;
+	private static IOContext activeContext = null;
+	//private final RecordIO ioType;
+	//private final IOContext context;
+	//private boolean initialized = false;
+	
+	/*
+	public IOSystem(RecordIO ioType) {
+		this.ioType = ioType;
+		this.context = new IOContext();
+	}
+	*/
+	
+	
+	public static IOContext open(RecordIO ioType) {
+		return open(ioType, null);
+	}
+
+	public static IOContext getActiveContext() {
+		return activeContext;
+	}
+
+	public static IOContext open(RecordIO ioType, IOProperties properties) {
+		if(activeContext != null) {
+			logger.error("An active context already exists");
+			return null;
+		}
+		
+		ModelNames.loadModels();
+		
+		IReader reader = null;
+		IWriter writer = null;
+		ISearch search = null;
+		FileIndexManager fim = null;
+		FileStore store = null;
+		DBUtil dbUtil = null;
+
+		if(ioType == RecordIO.FILE) {
+			//getReader(RecordIO io, String base, FileStore store, boolean followForeignKeys) {
+
+			fim = new FileIndexManager(IOFactory.DEFAULT_FILE_BASE);
+		
+
+			reader = IOFactory.getReader(ioType, IOFactory.DEFAULT_FILE_BASE, store, followForeignKeys);
+			//if(store == null && indexName != null) {
+				/// Is this even being used anymore?
+				//((CacheFileReader)reader).getIndexer().setIndexStoreName(indexName);
+			//}
+			writer = IOFactory.getWriter(ioType, reader, IOFactory.DEFAULT_FILE_BASE, store);
+			search = IOFactory.getSearch(reader);
+		}
+		else if(ioType == RecordIO.DATABASE) {
+			if(properties == null || properties.getDataSourceUrl() == null) {
+				logger.error("Missing IOProperties");
+				return null;
+			}
+			dbUtil = new DBUtil(properties);
+			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck()) {
+				logger.info("Scanning model schema");
+				for(String m : ModelNames.MODELS) {
+					ModelSchema schema = RecordFactory.getSchema(m);
+					if(RecordUtil.isIdentityModel(schema)) {
+						if(!dbUtil.isConstrained(schema) && !dbUtil.haveTable(m)) {
+							
+							String dbSchema = dbUtil.generateNewSchemaOnly(schema);
+							if(dbSchema != null) {
+								// logger.info("Generating schema:");
+								// logger.info(dbSchema);
+								dbUtil.execute(dbSchema);
+							}
+							else {
+								logger.error("**** Schema not defined for " + m);
+							}
+						}
+					}
+					else {
+						// logger.info("Skip model without identity: " + m);
+					}
+				}
+			}
+			
+			reader = IOFactory.getReader(ioType, dbUtil.getDataSource());
+			writer = IOFactory.getWriter(ioType, dbUtil.getDataSource());
+			search = IOFactory.getSearch(reader);
+		}
+		
+		activeContext = new IOContext(ioType, reader, writer, search);
+		activeContext.setIndexManager(fim);
+		activeContext.setDbUtil(dbUtil);
+		
+		if(ioType == RecordIO.FILE) {
+
+			if(properties != null && properties.getDataSourceName() != null) {
+				store = IOFactory.getStore(properties.getDataSourceName());
+			}
+			try {
+				((FileReader)reader).setStore(store);
+				((FileWriter)writer).setStore(store);
+				activeContext.setStore(store);
+				fim.setStore(store);
+			} catch (StoreException e) {
+				logger.error(e);
+			}
+		}
+		return activeContext;
+	}
+	
+	public static void close() {
+		close(activeContext);
+	}
+	public static void close(IOContext context) {
+
+		if(context != null) {
+			try {
+				if(context.getIndexManager() != null) {
+					context.getIndexManager().flush();
+					context.getIndexManager().clearCache();
+				}
+				if(context.getReader() != null) {
+					context.getReader().close();
+				}
+				if(context.getSearch() != null) {
+					context.getSearch().close();
+				}
+				if(context.getPolicyUtil() != null) {
+					context.getPolicyUtil().close();
+				}
+				if(context.getStore() != null) {
+					context.getStore().close();
+				}
+
+				else if(context.getIoType() == RecordIO.FILE) {
+					//FileIndexer.clearCache();
+				}
+			}
+			catch(ReaderException e) {
+				logger.error(e);
+				
+			}
+		}
+		CacheUtil.clearCache();
+		activeContext = null;
+	}
+	
+}

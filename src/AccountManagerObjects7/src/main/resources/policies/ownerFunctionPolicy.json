@@ -1,0 +1,36 @@
+{
+	"model": "policy",
+	"urn": "policy.owner",
+	"rules": [
+		{
+			"patterns": [
+				{
+					"fact": {
+						"urn": "ownerFactUrn",
+						"type": "parameter",
+						"modelType": "unknown",
+						"sourceDataType": "VARCHAR",
+						"name": "Object Owner"
+					},
+					"match": {
+						"name": "Owner Policy Function",
+						"sourceDataType": "varchar",
+						"type": "function",
+						"modelType": "data",
+						"urn": "ownerMatchUrn"
+					},
+					"type": "function",
+					"name": "Owner Access Pattern",
+					"urn": "ownerPatternUrn"
+				}
+			],
+			"type": "permit",
+			"condition": "all",
+			"name": "Owner Access Rule",
+			"urn": "ownerRuleUrn"
+		}
+	],
+	"enabled": true,
+	"condition": "all",
+	"name": "Owner Access Policy"
+}
