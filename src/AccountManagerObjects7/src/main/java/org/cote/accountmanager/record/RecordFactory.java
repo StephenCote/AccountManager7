@@ -11,12 +11,19 @@ import java.util.Set;
 import org.apache.commons.lang3.EnumUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOContext;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldFactory;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -91,15 +98,7 @@ public class RecordFactory {
 		looseImports.clear();
 		rawModels.clear();
 	}
-	/*
-	public static void clearImports() {
-		for(String key : looseImports.keySet()) {
-			Catalog.clearCatalog(key);
-		}
-		//looseImports.clear();
-		looseBaseModels.clear();
-	}
-	*/
+
 	public static BaseRecord model(String name) {
 		if(looseBaseModels.containsKey(name)) {
 			return looseBaseModels.get(name);
@@ -154,16 +153,11 @@ public class RecordFactory {
 		BaseRecord lbmb = looseBaseModels.get(model);
 		FieldType ft = lbmb.getField(field);
 		if(ft == null) {
-			StackTraceElement[] st = new Throwable().getStackTrace();
-			for(int i = 0; i < st.length; i++) {
-				logger.error(st[i].toString());
-			}
 			throw new FieldException("newFieldInstance: Field " + field + " was not found on model " + model);
 		}
 		return newFieldInstance(ft);
-		
-		
 	}
+
 	public static FieldType newFieldInstance(FieldType field) {
 		FieldType nft = FieldFactory.fieldByType(field.getValueType(), field.getName());
 		nft.getFieldValueType().setBaseClass(field.getFieldValueType().getBaseClass());
@@ -188,28 +182,6 @@ public class RecordFactory {
 			//logger.info(rawModels.get(name));
 			return rawModels.get(name);
 		}
-		/*
-		InputStream srs = ClassLoader.getSystemResourceAsStream("./models/" + name + "Model.json");
-		if(srs == null) {
-			logger.error("Null stream for " + name + "Model.json");
-			return null;
-		}
-		BufferedInputStream is = new BufferedInputStream(srs);
-		String file = null;
-		try {
-			file = StreamUtil.streamToString(is);
-		} catch (IOException e) {
-			logger.error("IOException: " + e.getMessage());
-			
-		}
-		finally {
-			try {
-				is.close();
-			} catch (IOException e) {
-				//logger.error(e);
-			}
-		}
-		*/
 		String file = ResourceUtil.getModelResource(name);
 		if(file != null) {
 			looseImports.put(name, file);
@@ -226,41 +198,30 @@ public class RecordFactory {
 			String typev = lft.getType().toUpperCase();
 			if(EnumUtils.isValidEnum(FieldEnumType.class, typev)) {
 				FieldEnumType type = FieldEnumType.valueOf(typev);
-				//boolean ftype = type.equals(FieldEnumType.FIELD);
-				//FieldType f = null;
-				//logger.info(typev + " -> " + ftype);
-				//if(!ftype) {
-					FieldType f = FieldFactory.fieldByType(type, lft.getName());
-					if(f != null) {
-						if(lft.getDefaultValue() != null) {
-							try {
-								if(lft.getType().equals("long") && lft.getDefaultValue() instanceof Integer) {
-									// logger.info("Setting default value for " + lft.getName() + " to " + lft.getDefaultValue());
-									f.setValue(Long.valueOf((Integer)lft.getDefaultValue()));
-								}
-								else {
-									f.setValue(lft.getDefaultValue());
-								}
-							} catch (Exception e) {
-								logger.error(e);
-								
+				FieldType f = FieldFactory.fieldByType(type, lft.getName());
+				if(f != null) {
+					if(lft.getDefaultValue() != null) {
+						try {
+							if(lft.getType().equals("long") && lft.getDefaultValue() instanceof Integer) {
+								f.setValue(Long.valueOf((Integer)lft.getDefaultValue()));
 							}
+							else {
+								f.setValue(lft.getDefaultValue());
+							}
+						} catch (Exception e) {
+							logger.error(e);
 						}
-						f.getFieldValueType().setBaseClass(lft.getBaseClass());
-						f.getFieldValueType().setBaseModel(lft.getBaseModel());
-						f.getFieldValueType().setBaseType(lft.getBaseType());
-						fields.add(f);
 					}
-					else {
-						logger.error("Failed to map " + lft.getName() + " type " + type + " to field");
-						errors++;
-					}
-				/*
+					f.getFieldValueType().setBaseClass(lft.getBaseClass());
+					f.getFieldValueType().setBaseModel(lft.getBaseModel());
+					f.getFieldValueType().setBaseType(lft.getBaseType());
+					fields.add(f);
 				}
 				else {
-					logger.info("Handle flex field for " + lft.getName());
+					logger.error("Failed to map " + lft.getName() + " type " + type + " to field");
+					errors++;
 				}
-				*/
+
 			}
 			else {
 				logger.error("Invalid data type: '" + typev + "' for " + lft.getName());
@@ -275,11 +236,97 @@ public class RecordFactory {
 		return mod;
 	}
 	
+	private static ModelSchema getIOSchema(String modelName) {
+		ModelSchema ms = null;
+		if(IOSystem.getActiveContext() != null && IOSystem.getActiveContext().isInitialized()) {
+			OrganizationContext sysOrg = IOSystem.getActiveContext().getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, null);
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_NAME, modelName);
+			q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
+			BaseRecord modelRec = IOSystem.getActiveContext().getSearch().findRecord(q);
+			if(modelRec != null) {
+				byte[] data = modelRec.get(FieldNames.FIELD_SCHEMA);
+				if(data.length > 0) {
+					ms = JSONUtil.importObject(new String(data), ModelSchema.class);
+				}
+			}
+		}
+		return ms;
+	}
+	
+	private static ModelSchema createIOSchema(String name, ModelSchema ims) {
+		
+		if(IOSystem.getActiveContext() == null || !IOSystem.getActiveContext().isInitialized()) {
+			return null;
+		}
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext sysOrg = ioContext.getOrganizationContext("/System", null);
+		if(ims == null) {
+			logger.error("Null schema");
+			return null;
+		}
+		
+		ModelSchema ms = null;
+		
+		try {
+			ims.setName(name);
+			BaseRecord rec = RecordFactory.newInstance(ModelNames.MODEL_MODEL_SCHEMA);
+			rec.set(FieldNames.FIELD_OWNER_ID, sysOrg.getOpsUser().get(FieldNames.FIELD_ID));
+			rec.set(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
+			rec.set(FieldNames.FIELD_NAME, name);
+
+			/// Re-serialize for name change
+			///
+			rec.set(FieldNames.FIELD_SCHEMA, JSONUtil.exportObject(ims).getBytes());
+			if(ioContext.getRecordUtil().createRecord(rec)) {
+				ms = getIOSchema(name);
+				if(ms != null) {
+					if(ioContext.getIoType() == RecordIO.DATABASE) {
+						/// this is superfluous with generateNewSchema, which does the same thing
+						if(!ioContext.getDbUtil().isConstrained(ms) && !ioContext.getDbUtil().haveTable(name)) {
+							String dbSchema = ioContext.getDbUtil().generateNewSchemaOnly(ms);
+							if(dbSchema != null) {
+								logger.info("Generating schema:");
+								logger.info(dbSchema);
+								ioContext.getDbUtil().execute(dbSchema);
+								ModelNames.releaseCustomModelNames();
+							}
+							else {
+								logger.error("**** Schema not defined for " + name);
+							}
+						}
+						else {
+							logger.warn("Schema is constrained or already exists");
+						}
+					}
+					else {
+						logger.error("Unhandled IO Type: " + ioContext.getIoType().toString());
+					}
+				}
+				else {
+					logger.error("Failed to retrieve schema record " + name);
+				}
+			}
+			else {
+				logger.error("Failed to create schema record, " + name);
+			}
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+		return ms;
+	}
+	
 	public static ModelSchema getSchema(String name) {
 		if(schemas.containsKey(name)) {
 			return schemas.get(name);
 		}
-		ModelSchema mod = importSchemaFromResource(name);
+		
+		ModelSchema mod = getIOSchema(name);
+		if(mod == null) {
+			mod = importSchemaFromResource(name);
+		}
 		if(mod == null) {
 			logger.error("Failed to import loose model for " + name);
 			return null;
@@ -287,6 +334,21 @@ public class RecordFactory {
 		schemas.put(name,  mod);
 		return mod;
 	}
+	
+	public static ModelSchema getCustomSchemaFromResource(String name, String resourceName) {
+		ModelSchema ms = RecordFactory.getIOSchema(name);
+		if(ms == null) {
+			logger.info("Load resource");
+			String schema = ResourceUtil.getModelResource(resourceName);
+			if(schema != null) {
+				logger.info("Create user resource entry");
+				ms = RecordFactory.importSchemaFromUser(name, schema);
+			}
+		}
+		return ms;
+	}
+
+	
 
 	public static BaseRecord importSchema(String name) {
 		if(looseBaseModels.containsKey(name)) {
@@ -314,6 +376,35 @@ public class RecordFactory {
 		
 	}
 	
+	public static ModelSchema importSchemaFromUser(String name, String schema) {
+		ModelSchema mod = getIOSchema(name);
+		if(mod != null) {
+			logger.error("Model schema already exists: " + name);
+			return null;
+		}
+		Set<String> impSet =  new HashSet<String>();
+		mod = importSchemaFromContents(name, schema, impSet);
+		if(mod == null) {
+			logger.error("Failed to load schema from contents '" + name + "'");
+			return null;
+		}
+		configureSchema(mod, impSet);
+		if(createIOSchema(name, mod) == null) {
+			logger.info("Failed to create schema");
+			return null;
+		}
+		return getSchema(name);
+	}
+	private static void configureSchema(ModelSchema mod, Set<String> impSet) {
+		mod.setImplements(new ArrayList<String>(impSet));
+		mod.getFields().forEach(f -> {
+			if(ModelNames.MODEL_SELF.equals(f.getBaseModel())) {
+				f.setBaseModel(mod.getName());
+			}
+		});
+	
+	}
+	
 	private static ModelSchema importSchemaFromResource(String name) {
 		Set<String> impSet =  new HashSet<String>();
 		ModelSchema mod = importSchemaFromResource(name, impSet);
@@ -321,45 +412,35 @@ public class RecordFactory {
 			logger.error("Failed to load schema from resource '" + name + "'");
 			return null;
 		}
-		mod.setImplements(new ArrayList<String>(impSet));
-		mod.getFields().forEach(f -> {
-			/// f.isForeign() && 
-			if(ModelNames.MODEL_SELF.equals(f.getBaseModel())) {
-				f.setBaseModel(mod.getName());
-			}
-		});
+		configureSchema(mod, impSet);
 		return mod;
 	}
+	
+	private static ModelSchema importSchemaFromIO(String name, Set<String> impSet) {
+		ModelSchema ms = getIOSchema(name);
+		if(ms != null) {
+			importSchema(ms, name, impSet);
+		}
+		else {
+			ms = importSchemaFromResource(name, impSet);
+		}
+		return ms;
+	}
+	
 	private static ModelSchema importSchemaFromResource(String name, Set<String> impSet) {
+		return importSchemaFromContents(name, getResource(name), impSet);
+	}
+	
+	private static ModelSchema importSchemaFromContents(String name, String contents, Set<String> impSet) {
 		final ModelSchema mod;
-		String file = getResource(name);
+		
 		//Set<String> impSet = new HashSet<>();
-		impSet.add(name);
+		// impSet.add(name);
 		int errors = 0;
-		if(file != null) {
-			mod = JSONUtil.importObject(file, ModelSchema.class);
+		if(contents != null) {
+			mod = JSONUtil.importObject(contents, ModelSchema.class);
 			if(mod != null) {
-				for(String imp : mod.getInherits()) {
-					if(!impSet.contains(imp)) {
-						impSet.add(imp);
-						ModelSchema impMod = importSchemaFromResource(imp, impSet);
-						if(impMod != null) {
-							//mod.getFields().addAll(impMod.getFields());
-							impMod.getFields().forEach(f -> {
-								f.setInherited(true);
-								mod.getFields().add(f);
-							});
-						}
-						else {
-							logger.error("Failed to import " + name);
-							errors++;
-						}
-					}
-					else {
-						/// prevent recursive imports
-						logger.debug(imp + " already imported");
-					}
-				}
+				importSchema(mod, name, impSet);
 			}
 			else {
 				logger.error("Failed to deserialize " + name);
@@ -377,6 +458,41 @@ public class RecordFactory {
 		}
 		return mod;
 	}
+	private static ModelSchema importSchema(final ModelSchema mod, String name, Set<String> impSet) {
+		impSet.add(name);
+		int errors = 0;
+		if(mod != null) {
+			for(String imp : mod.getInherits()) {
+				if(!impSet.contains(imp)) {
+					impSet.add(imp);
+					ModelSchema impMod = importSchemaFromIO(imp, impSet);
+					if(impMod != null) {
+						impMod.getFields().forEach(f -> {
+							f.setInherited(true);
+							mod.getFields().add(f);
+						});
+					}
+					else {
+						logger.error("Failed to import " + name);
+						errors++;
+					}
+				}
+				else {
+					/// prevent recursive imports
+					logger.debug(imp + " already imported");
+				}
+			}
+		}
+		else {
+			logger.error("Failed to deserialize " + name);
+			errors++;
+		}
+		if(errors > 0) {
+			return null;
+		}
+		return mod;
+	}
+
 	
 	public static BaseRecord importRecord(String modelName, String contents) {
 		if(contents == null || contents.length() == 0) {
