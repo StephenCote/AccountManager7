@@ -51,13 +51,19 @@ public class JournalProvider implements IProvider {
 		}
 	
 		logger.info("Calculate journal entry for " + operation.toString() + " " + model.get(FieldNames.FIELD_NAME));
-		if(RecordOperation.CREATE.equals(operation)) {
-			logger.info("Prepare journal create");
-			createJournalObject(model);
+		try {
+			if(RecordOperation.CREATE.equals(operation)) {
+				logger.info("Prepare journal create");
+				createJournalObject(model);
+			}
+			else if(RecordOperation.UPDATE.equals(operation)) {
+				logger.info("Prepare journal update");
+				updateJournalObject(model);;
+			}
 		}
-		else if(RecordOperation.UPDATE.equals(operation)) {
-			logger.info("Prepare journal update");
-			updateJournalObject(model);;
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
 		}
 	}
 	
@@ -79,20 +85,9 @@ public class JournalProvider implements IProvider {
 		}
 		if(jour1 != null && !jour1.hasField(FieldNames.FIELD_JOURNAL_ENTRIES)) {
 			logger.warn("Loading complete journal model");
-			//logger.warn(JSONUtil.exportObject(jour1, RecordSerializerConfig.getUnfilteredModule()));
-			
-			/// TODO: a lightweight copy of the object is being added to the cache, and the whole object is needed, so the cache needs to be cleared or bypassed
-			CacheUtil.clearCache();
+			CacheUtil.clearCache(model);
+			CacheUtil.clearCache(jour1);
 			jour1 = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, jour1, new String[0]);
-			/*
-			if(jour1.hasField(FieldNames.FIELD_ID)) {
-				jour1 = recordUtil.getRecordById(null, jour1.get(FieldNames.FIELD_ID));
-			}
-			else if(jour1.hasField(FieldNames.FIELD_OBJECT_ID)) {
-				jour1 = recordUtil.getRecordByObjectId(null, jour1.get(FieldNames.FIELD_OBJECT_ID));
-			}
-			*/
-			//logger.warn(JSONUtil.exportObject(jour1, RecordSerializerConfig.getUnfilteredModule()));
 		}
 		if(jour1 == null || !jour1.hasField(FieldNames.FIELD_JOURNAL_ENTRIES)) {
 			logger.error("Unable to restore journal");
@@ -112,7 +107,6 @@ public class JournalProvider implements IProvider {
 				continue;
 			}
 			if(baseLine.containsKey(f.getName()) && baseLine.get(f.getName()).isEquals(f)) {
-				// logger.warn("Updated value is the same as most recent journaled value for " + f.getName() + ". Skipping.");
 				continue;
 			}
 			patchFields.add(f);
@@ -168,9 +162,6 @@ public class JournalProvider implements IProvider {
 			if(!IOSystem.getActiveContext().getRecordUtil().createRecord(jour1)) {
 				logger.error("Failed to create journal object");
 			}
-			else {
-				//logger.info(JSONUtil.exportObject(jour1, RecordSerializerConfig.getUnfilteredModule()));
-			}
 		}
 		catch(NullPointerException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -196,7 +187,6 @@ public class JournalProvider implements IProvider {
 		try {
 			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_DATE, new Date());
 			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_MODIFIED, model);
-			// entry.set(FieldNames.FIELD_HASH, CryptoUtil.getDigest(json.getBytes(), new byte[0]));
 			entry.set(FieldNames.FIELD_HASH, model.hash(fieldNames.toArray(new String[0])).getBytes());
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
