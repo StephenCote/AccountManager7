@@ -85,7 +85,6 @@ public class JournalProvider implements IProvider {
 		}
 		if(jour1 != null && !jour1.hasField(FieldNames.FIELD_JOURNAL_ENTRIES)) {
 			logger.warn("Loading complete journal model");
-			CacheUtil.clearCache(model);
 			CacheUtil.clearCache(jour1);
 			jour1 = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, jour1, new String[0]);
 		}
