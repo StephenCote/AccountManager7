@@ -3,17 +3,26 @@ package org.cote.accountmanager.io;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.StoreException;
+import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.io.file.FileIndexManager;
 import org.cote.accountmanager.io.file.FileReader;
 import org.cote.accountmanager.io.file.FileStore;
 import org.cote.accountmanager.io.file.FileWriter;
+import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
+import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.CredentialEnumType;
+import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class IOSystem {
@@ -21,16 +30,10 @@ public class IOSystem {
 	public static final Logger logger = LogManager.getLogger(IOSystem.class);
 	private static boolean followForeignKeys = false;
 	private static IOContext activeContext = null;
-	//private final RecordIO ioType;
-	//private final IOContext context;
-	//private boolean initialized = false;
 	
-	/*
-	public IOSystem(RecordIO ioType) {
-		this.ioType = ioType;
-		this.context = new IOContext();
+	private IOSystem() {
+
 	}
-	*/
 	
 	
 	public static IOContext open(RecordIO ioType) {
@@ -57,16 +60,8 @@ public class IOSystem {
 		DBUtil dbUtil = null;
 
 		if(ioType == RecordIO.FILE) {
-			//getReader(RecordIO io, String base, FileStore store, boolean followForeignKeys) {
-
 			fim = new FileIndexManager(IOFactory.DEFAULT_FILE_BASE);
-		
-
 			reader = IOFactory.getReader(ioType, IOFactory.DEFAULT_FILE_BASE, store, followForeignKeys);
-			//if(store == null && indexName != null) {
-				/// Is this even being used anymore?
-				//((CacheFileReader)reader).getIndexer().setIndexStoreName(indexName);
-			//}
 			writer = IOFactory.getWriter(ioType, reader, IOFactory.DEFAULT_FILE_BASE, store);
 			search = IOFactory.getSearch(reader);
 		}
@@ -82,11 +77,8 @@ public class IOSystem {
 					ModelSchema schema = RecordFactory.getSchema(m);
 					if(RecordUtil.isIdentityModel(schema)) {
 						if(!dbUtil.isConstrained(schema) && !dbUtil.haveTable(m)) {
-							
 							String dbSchema = dbUtil.generateNewSchemaOnly(schema);
 							if(dbSchema != null) {
-								// logger.info("Generating schema:");
-								// logger.info(dbSchema);
 								dbUtil.execute(dbSchema);
 							}
 							else {
@@ -95,7 +87,7 @@ public class IOSystem {
 						}
 					}
 					else {
-						// logger.info("Skip model without identity: " + m);
+						logger.debug("Skip model without identity: " + m);
 					}
 				}
 			}
@@ -123,6 +115,26 @@ public class IOSystem {
 				logger.error(e);
 			}
 		}
+		
+		for(String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
+			OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
+			if(!oc.isInitialized()) {
+				logger.info("Creating " + OrganizationEnumType.valueOf(org.substring(1).toUpperCase()) + " " + org);
+				try {
+					oc.createOrganization();
+				} catch (NullPointerException | SystemException e) {
+					logger.error(e);
+					e.printStackTrace();
+				}
+			}
+		}
+
+		/// Custom models are stored in the /System organization
+		///
+		for(String s : ModelNames.getCustomModelNames()) {
+			RecordFactory.model(s);
+		}
+		
 		return activeContext;
 	}
 	
