@@ -5,36 +5,68 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.UUID;
 
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
-
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.AttributeUtil;
 import org.junit.Test;
 
 public class TestJournal extends BaseTest {
 	private String testJournalName = "Demo Journaled Object - " + UUID.randomUUID().toString();
+	
+	@Test
+	public void TestDynamicModel() {
+		logger.info("Test dynamic model");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String dataName = "Demo data " + UUID.randomUUID().toString();
+		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
+		plist.parameter("name", dataName);
+		
+		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("testJournal8", "journalObject");
+		assertNotNull("Schema is null", ms);
+		ModelNames.loadCustomModels();
+		
+
+		
+		try {
+			BaseRecord jrec = mf.newInstance("testJournal8", testUser1, null, plist);
+			BaseRecord jrecc = ioContext.getAccessPoint().create(testUser1, jrec);
+			
+			BaseRecord jour1 = jrecc.get(FieldNames.FIELD_JOURNAL);
+			
+		} catch (FactoryException e) {
+			logger.error(e);
+		}
+		
+	}
+	
 
 	@Test
 	public void TestPatch() {
 		
 		logger.info("Test Patch Journal");
 		
+		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("journalObject", "journalObject");
+		assertNotNull("Schema is null", ms);
+		ModelNames.loadCustomModels();
+		
 		String dataName = "Patch Dataset - " + UUID.randomUUID().toString();
 		
-		resetIO(null);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Journal");
 		Factory mf = ioContext.getFactory();
 		BaseRecord journalUser = null;
@@ -50,7 +82,6 @@ public class TestJournal extends BaseTest {
 		assertNotNull("Organization is null", testOrgContext);
 		assertNotNull("Journal user is null", journalUser);
 		BaseRecord group = ioContext.getPathUtil().makePath(journalUser, "group", "~/JournalTest", "DATA", testOrgContext.getOrganizationId());
-		//BaseRecord data = this.getCreateData(journalUser, "Patch Dataset", "text/plain", "The data to patch".getBytes(), "~/JournalTest", journalOrganization.get(FieldNames.FIELD_ID));
 		BaseRecord data = null;
 		
 		try {
@@ -60,51 +91,39 @@ public class TestJournal extends BaseTest {
 			data.set(FieldNames.FIELD_BYTE_STORE, "The data to patch".getBytes());
 			data.set(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			data.set(FieldNames.FIELD_ORGANIZATION_ID, testOrgContext.getOrganizationId());
+			AttributeUtil.addAttribute(data, "Demo attribute", true);
 			ioContext.getRecordUtil().createRecord(data, true);
 
-			
 			BaseRecord jour1 = data.get(FieldNames.FIELD_JOURNAL);
 			long jid = jour1.get(FieldNames.FIELD_ID);
 			logger.info("Looking for journal #" + jid);
-			//IndexEntry[] entries = IOSystem.getActiveContext().getIndexManager().getInstance(ModelNames.MODEL_JOURNAL).findIndexEntriesDEPRECATE(jid, 0L, 0L, 0L, null, null, null, null);
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_JOURNAL, FieldNames.FIELD_ID, jid);
-			IndexEntry[] entries = IOSystem.getActiveContext().getIndexManager().getInstance(ModelNames.MODEL_JOURNAL).findIndexEntries(q);
-			logger.info("Index count: " + entries.length);
-			// logger.info(JSONUtil.exportObject(jour1, RecordSerializerConfig.getUnfilteredModule()));		
-			
 			BaseRecord dataPatch = ioContext.getRecordUtil().getRecord(journalUser, "journalObject", data.get(FieldNames.FIELD_NAME), -1, "~/JournalTest");
 			assertNotNull("Patch data is null");
-//			logger.info(JSONUtil.exportObject(dataPatch, RecordSerializerConfig.getUnfilteredModule()));
-			
-			
-//			BaseRecord dataPatch = data.copyRecord(new String[] {FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_DESCRIPTION});
 			try {
 				dataPatch.set(FieldNames.FIELD_DESCRIPTION, UUID.randomUUID().toString() + " description!");
-				// logger.info(JSONUtil.exportObject(dataPatch, RecordSerializerConfig.getUnfilteredModule()));
 				boolean updated = ioContext.getRecordUtil().updateRecord(dataPatch);
 				assertTrue("Expected the record to be updated", updated);
 			} catch (Exception e) {
 				logger.error(e);
 				
 			}
-			//logger.info(JSONUtil.exportObject(journalUser, RecordSerializerConfig.getUnfilteredModule()));
-
-			
-		} catch (FieldException | ModelNotFoundException | ValueException | IndexException e1) {
+		} catch (ClassCastException | FieldException | ModelNotFoundException | ValueException | ModelException e1) {
 			logger.error(e1);
 			e1.printStackTrace();
 		}
 	}
-	
-	
+
 	@Test
 	public void TestAltOrgJournal() {
 		
 		logger.info("Test Alt Org Joural");
 		
-		resetIO(null);
-		
-		RecordFactory.importSchema("journalObject");
+		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("journalObject", "journalObject");
+		assertNotNull("Schema is null", ms);
+		ModelNames.loadCustomModels();
+
+		// RecordFactory.importSchema("journalObject");
 		
 		logger.info("Test journal in an alternate organization");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Journal");
@@ -136,16 +155,11 @@ public class TestJournal extends BaseTest {
 			}
 			assertNotNull("JOB1 is null", job1);
 			
-		} catch (IndexOutOfBoundsException | FieldException | ModelNotFoundException | ValueException e) {
+		} catch (ClassCastException | IndexOutOfBoundsException | FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 	}
-	
-	
-
-	
-	
-
 	
 	
 }
