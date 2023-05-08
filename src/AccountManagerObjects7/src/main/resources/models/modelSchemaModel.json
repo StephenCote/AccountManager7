@@ -1,0 +1,10 @@
+{
+"name": "modelSchema",
+"inherits": ["nameId"],
+"constraints": ["name, organizationId"],
+"fields": [
+	{
+		"name": "schema",
+		"type": "blob"
+	}
+]}
