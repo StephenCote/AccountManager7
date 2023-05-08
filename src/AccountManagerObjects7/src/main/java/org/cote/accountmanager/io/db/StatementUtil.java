@@ -27,7 +27,10 @@ import org.cote.accountmanager.io.QueryField;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
@@ -38,6 +41,7 @@ import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.SqlDataEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.FieldUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.json.JSONArray;
 import org.json.JSONException;
 
@@ -674,6 +678,14 @@ public class StatementUtil {
 						statement.setString(index, (valRec != null ? valRec.toString() : null));
 					}
 					break;
+				case LIST:
+					if(!fs.isForeign()) {
+						List<?> list = (List<?>)value;
+						String ser = JSONUtil.exportObject(list, RecordSerializerConfig.getUnfilteredModule());
+						//logger.info(ser);
+						statement.setString(index, ser);
+						break;
+					}
 				default:
 					throw new DatabaseException("Unhandled data type:" + dataType + " for index " + index);
 			}
@@ -734,6 +746,16 @@ public class StatementUtil {
 							throw new FieldException("Unhandled connection type: " + util.getConnectionType().toString());	
 						}
 						// logger.info("Handle: " + col);
+					}
+					else if(!fs.isForeign()) {
+						List<?> lst = new ArrayList<>();
+						if(ModelNames.MODEL_MODEL.equals(fs.getBaseType())) {
+							lst = JSONUtil.getList(rset.getString(colName), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+						}
+						else {
+							lst = JSONUtil.importObject(rset.getString(colName), ArrayList.class);
+						}
+						record.set(col, lst);
 					}
 					else {
 						throw new FieldException("Unhandled list type: " + record.getModel() + "." + col);
@@ -802,11 +824,11 @@ public class StatementUtil {
 			case BOOLEAN:
 				record.set(name, jsarr.getBoolean(index));
 				break;
-			case FLEX:
 			case LIST:
+			case FLEX:
 			case MODEL:
 			default:
-				logger.error("Unhandled type: " + fet.toString() + " " + name);
+				logger.error("Unhandled type in setValueByJSONArray: " + fet.toString() + " " + name);
 				break;
 		}
 	}
