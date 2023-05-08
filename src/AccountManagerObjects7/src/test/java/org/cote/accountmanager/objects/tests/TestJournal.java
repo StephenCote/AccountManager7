@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.UUID;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
@@ -17,10 +18,12 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestJournal extends BaseTest {
@@ -94,20 +97,18 @@ public class TestJournal extends BaseTest {
 			AttributeUtil.addAttribute(data, "Demo attribute", true);
 			ioContext.getRecordUtil().createRecord(data, true);
 
-			BaseRecord jour1 = data.get(FieldNames.FIELD_JOURNAL);
-			long jid = jour1.get(FieldNames.FIELD_ID);
-			logger.info("Looking for journal #" + jid);
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_JOURNAL, FieldNames.FIELD_ID, jid);
 			BaseRecord dataPatch = ioContext.getRecordUtil().getRecord(journalUser, "journalObject", data.get(FieldNames.FIELD_NAME), -1, "~/JournalTest");
 			assertNotNull("Patch data is null");
-			try {
-				dataPatch.set(FieldNames.FIELD_DESCRIPTION, UUID.randomUUID().toString() + " description!");
-				boolean updated = ioContext.getRecordUtil().updateRecord(dataPatch);
-				assertTrue("Expected the record to be updated", updated);
-			} catch (Exception e) {
-				logger.error(e);
-				
-			}
+			dataPatch.set(FieldNames.FIELD_DESCRIPTION, UUID.randomUUID().toString() + " description!");
+			boolean updated = ioContext.getRecordUtil().updateRecord(dataPatch);
+			assertTrue("Expected the record to be updated", updated);
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_JOURNAL, FieldNames.FIELD_ID, data.get(FieldNames.FIELD_JOURNAL_FIELD_ID));
+			BaseRecord jour1 = ioContext.getSearch().findRecord(q);
+			logger.info(jour1.toString());
+			
+			Query q2 = QueryUtil.createQuery("journalObject", FieldNames.FIELD_ID, data.get(FieldNames.FIELD_ID));
+			BaseRecord idata = ioContext.getSearch().findRecord(q2);
+			
 		} catch (ClassCastException | FieldException | ModelNotFoundException | ValueException | ModelException e1) {
 			logger.error(e1);
 			e1.printStackTrace();
