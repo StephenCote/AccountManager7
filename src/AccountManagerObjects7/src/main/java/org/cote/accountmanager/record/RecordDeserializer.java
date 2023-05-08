@@ -47,6 +47,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     private boolean accessForeignKey = false;
     private String[] fkImportFields = null;
     private NodeLink currentNode = null;
+    private String lastModel = null;
     
     public RecordDeserializer() {
     	this(null);
@@ -105,14 +106,22 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         	modelName = findModel(jsonParser, node, currentNode);
         }
         if(modelName == null) {
-        	logger.error("Invalid model name");
-        	logger.error("Current node: " + node.toString());
-        	if(currentNode != null) {
-        		logger.error("Model name is null");
-        		logger.error("Current node: " + node.toString());
-        		logger.error(JSONUtil.exportObject(currentNode));
+        	if(lastModel != null) {
+        		modelName = lastModel;
         	}
-        	return null;
+        	else {
+	        	logger.error("Invalid model name");
+	        	logger.error("Current node: " + node.toString());
+	        	if(currentNode != null) {
+	        		logger.error("Model name is null");
+	        		logger.error("Current node: " + node.toString());
+	        		logger.error(JSONUtil.exportObject(currentNode));
+	        	}
+	        	return null;
+        	}
+        }
+        else {
+        	lastModel = modelName;
         }
         if(modelName.equals(ModelNames.MODEL_SELF)) {
         	logger.error("Unresolved self reference");
@@ -276,7 +285,6 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 	    				fld.setValue(impList);
     				}
     				else {
-
 	    				TypeReference tr = null;
 	    				if(lft.getBaseType() != null && lft.getBaseType().equals(FieldTypes.TYPE_MODEL)) {
 	    					tr = new TypeReference<List<LooseRecord>>() {};
