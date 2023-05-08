@@ -31,7 +31,7 @@ public class FieldNames {
 		public static final String FIELD_JOURNAL_ENTRIES = "journalEntries";
 		public static final String FIELD_JOURNAL_ENTRY_MODIFIED = "modified";
 		public static final String FIELD_JOURNAL_ENTRY_DATE = "journalDate";
-		
+		public static final String FIELD_JOURNAL_FIELD_ID = FIELD_JOURNAL + "." + FIELD_ID;
 		/// Extension
 		public static final String FIELD_PATH = "path";
 		public static final String FIELD_GROUP_PATH = "groupPath";
