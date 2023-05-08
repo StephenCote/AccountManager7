@@ -42,11 +42,7 @@ public class ResourceUtil {
 		//InputStream srs = Thread.currentThread().getContextClassLoader().getResourceAsStream(path);
 		InputStream srs = ResourceUtil.class.getClassLoader().getResourceAsStream(path);
 		if(srs == null) {
-			logger.error("Null stream for " + path);
-			StackTraceElement[] st = new Throwable().getStackTrace();
-			for(int i = 0; i < st.length; i++) {
-				logger.error(st[i].toString());
-			}
+			logger.warn("Failed to load " + path);
 			return null;
 		}
 		BufferedInputStream is = new BufferedInputStream(srs);
