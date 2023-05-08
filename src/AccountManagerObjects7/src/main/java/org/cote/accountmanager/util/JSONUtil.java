@@ -24,19 +24,42 @@
 package org.cote.accountmanager.util;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.GeneralException;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.module.SimpleModule;
+import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 
 public class JSONUtil {
 	public static final Logger logger = LogManager.getLogger(JSONUtil.class);
+	
+	public static <T> List<T> getList(String data, Class<?> itemClass, SimpleModule module){
+		ObjectMapper mapper = new ObjectMapper();
+		if(module != null) {
+			mapper.registerModule(module);
+		}
+		CollectionType listType =  mapper.getTypeFactory().constructCollectionType(ArrayList.class, itemClass);
+		List<T> lst = null;
+		try {
+			lst = mapper.readValue(data, listType);
+		} catch (IOException e) {
+			logger.error(e);
+		}
+		return lst;
+	}
+	
 	public static <T> Map<String,T> getMap(byte[] data, Class<?> keyClass, Class<?> mapClass){
 		ObjectMapper mapper = new ObjectMapper();
 		Map<String,T> map = null;
