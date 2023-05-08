@@ -10,6 +10,7 @@ import javax.sql.DataSource;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -52,7 +53,7 @@ public class DBWriter extends MemoryWriter {
 	public synchronized boolean delete(BaseRecord model) throws WriterException {
 		//RecordOperation op = RecordOperation.DELETE;
 		boolean success = false;
-
+		CacheUtil.clearCache(model);
 		DBStatementMeta meta = StatementUtil.getDeleteTemplate(model);
 		if(meta == null) {
 			return false;
@@ -81,6 +82,7 @@ public class DBWriter extends MemoryWriter {
 		long id = (model.hasField(FieldNames.FIELD_ID) ? model.get(FieldNames.FIELD_ID) : 0L);
 		if(id > 0L || objectId != null) {
 			op = RecordOperation.UPDATE;
+			CacheUtil.clearCache(model);
 		}
 		/*
 		logger.info(op.toString() + " " + model.getModel());
