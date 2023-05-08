@@ -28,6 +28,12 @@ import org.cote.accountmanager.util.KeyStoreUtil;
 public class OrganizationContext {
 	public static final Logger logger = LogManager.getLogger(OrganizationContext.class);
 	
+    public static final String[] DEFAULT_ORGANIZATIONS = new String[] {
+    	"/System",
+    	"/Development",
+    	"/Public"
+      };
+	
 	private final IOContext ioContext;
 	private String organizationPath = null;
 	private long organizationId = 0L;
@@ -135,16 +141,12 @@ public class OrganizationContext {
 			organizationCipher = new CryptoBean(crypto);
 
 			if(organizationCipher.getSecretKey() == null) {
-				// logger.info("Generating cipher for " + organizationPath);
 				CryptoFactory.getInstance().generateSecretKey(organizationCipher);
 				BaseRecord cipher = organizationCipher.get(FieldNames.FIELD_CIPHER); 
 				ioContext.getRecordUtil().applyOwnership(vaultUser, cipher, orgId);
 				IOSystem.getActiveContext().getRecordUtil().createRecord(cipher);
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(organizationCipher);
-				// logger.info(organizationCipher.toString());
 			}
-			
-
 			
 		}
 		catch(NullPointerException | IndexException | ReaderException | FieldException | ModelNotFoundException | ValueException e) {
@@ -172,16 +174,6 @@ public class OrganizationContext {
 		return vault;
 	}
 	
-	/*
-	 * 		String storePath = IOFactory.DEFAULT_FILE_BASE + "/jks/" + orgId;
-		FileUtil.makePath(storePath);
-		String kpath = storePath + "/keystore.jks";
-		String tpath = storePath + "/truststore.jks";
-		char[] pwd = new String((byte[])cred.get(FieldNames.FIELD_CREDENTIAL)).toCharArray();
-		String alias = org.get(FieldNames.FIELD_NAME) + " Certificate Authority";
-
-	 */
-	
 	public String getOrganizationPath() {
 		return organizationPath;
 	}
@@ -208,8 +200,6 @@ public class OrganizationContext {
 		if(!initialize(rec)) {
 			throw new SystemException("Failed to initialize organization");
 		}
-		
-		
 	}
 
 	public BaseRecord getAdminUser() {
@@ -250,19 +240,4 @@ public class OrganizationContext {
 		return new byte[0];
 	}
 	
-	
-	
-	/*
-	 * 		devOrganization = makeOrganization("/Development", OrganizationEnumType.DEVELOPMENT, 0L);
-			adminUser =  recordUtil.getRecord(null, ModelNames.MODEL_USER, "admin", 0L, 0L, devOrganization.get(FieldNames.FIELD_ID));
-			assertNotNull("Admin user is null", adminUser);
-			
-			//devOrganization = makePath(null, ModelNames.MODEL_ORGANIZATION, "/Development", null, 0L);
-			testGroup1 = pathUtil.makePath(adminUser, ModelNames.MODEL_GROUP, "/home/testUser1", "DATA", devOrganization.get(FieldNames.FIELD_ID));
-			testGroup2 = pathUtil.makePath(adminUser, ModelNames.MODEL_GROUP, "/home/testUser2", "DATA", devOrganization.get(FieldNames.FIELD_ID));
-			testGroup3 = pathUtil.makePath(adminUser, ModelNames.MODEL_GROUP, "/home/testUser3", "DATA", devOrganization.get(FieldNames.FIELD_ID));
-			testUser1 = getCreateUser(adminUser, "testUser1", testGroup1, devOrganization.get(FieldNames.FIELD_ID));
-			testUser2 = getCreateUser(adminUser, "testUser2", testGroup2, devOrganization.get(FieldNames.FIELD_ID));
-			testUser3 = getCreateUser(adminUser, "testUser3", testGroup3, devOrganization.get(FieldNames.FIELD_ID));
-	 */
 }
