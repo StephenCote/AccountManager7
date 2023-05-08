@@ -1,13 +1,27 @@
 package org.cote.accountmanager.schema;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.RecordFactory;
 
 public class ModelNames {
 	
+	public static final Logger logger = LogManager.getLogger(ModelNames.class);
+	
 	public static final String MODEL_MODEL = "model";
+	public static final String MODEL_MODEL_SCHEMA = "modelSchema";
 	public static final String MODEL_PRIMARY_KEY = "primaryKey";
 	
 	public static final String MODEL_ACCOUNT = "account";
@@ -87,19 +101,57 @@ public class ModelNames {
 	public static final String MODEL_ENTITLEMENT = "entitlement";
 	public static final String MODEL_ACCESS_REQUEST = "accessRequest";
 	
-	//public static String[] MODELS = new String[] {
 	public static List<String> MODELS = Arrays.asList(
 		MODEL_ORGANIZATION, MODEL_SIMPLE_BYTE_STORE, MODEL_DIRECTORY, MODEL_USER, MODEL_ACCOUNT, MODEL_PERSON, MODEL_GROUP, MODEL_ATTRIBUTE, MODEL_ROLE,
 		MODEL_PERMISSION, MODEL_DATA, MODEL_CONTROL, MODEL_CREDENTIAL, MODEL_OPERATION, MODEL_CONTACT, MODEL_ADDRESS,  MODEL_HASH, MODEL_KEY, MODEL_CIPHER_KEY,
 		MODEL_KEY_SET, MODEL_RSA_KEY,  MODEL_POLICY, MODEL_RULE, MODEL_PATTERN, MODEL_FACT, MODEL_POLICY_REQUEST, MODEL_POLICY_RESPONSE, MODEL_POLICY_DEFINITION, MODEL_PARTICIPATION,
 		MODEL_QUERY, MODEL_QUERY_FIELD, MODEL_QUERY_RESULT, MODEL_JOURNAL, MODEL_JOURNAL_ENTRY, MODEL_PARTICIPATION_LIST, MODEL_PARTICIPATION_ENTRY, MODEL_SPOOL, MODEL_TOKEN, MODEL_PARAMETER, MODEL_PARAMETER_LIST,
 		MODEL_INDEX2, MODEL_INDEX_ENTRY2, MODEL_INDEX_ENTRY_VALUE2, MODEL_INDEX_STORE, MODEL_KEY_STORE, MODEL_VAULT, MODEL_AUTHENTICATION_REQUEST, MODEL_AUTHENTICATION_RESPONSE,
-		MODEL_AUDIT, MODEL_CONTACT_INFORMATION, MODEL_ACCESS_REQUEST
+		MODEL_AUDIT, MODEL_CONTACT_INFORMATION, MODEL_ACCESS_REQUEST, MODEL_MODEL_SCHEMA
 	);
+	
+	private static List<String> customModelNames = null;
+	public static void releaseCustomModelNames() {
+		customModelNames = null;
+	}
+	public static List<String> getCustomModelNames(){
+		if(customModelNames == null) {
+			customModelNames = listCustomModels();
+		}
+		return customModelNames;
+	}
+	
+	public static void loadCustomModels() {
+		releaseCustomModelNames();
+		List<String> names = getCustomModelNames();
+		for(String s : names) {
+			RecordFactory.model(s);
+		}
+	}
+	
+	private static List<String> listCustomModels() {
+		List<String> names = new ArrayList<>();
+		if(IOSystem.getActiveContext() == null || !IOSystem.getActiveContext().isInitialized()) {
+			return names;
+		}
+		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext("/System", null);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_ORGANIZATION_ID, org.getOrganizationId());
+		q.setRequest(new String[] {FieldNames.FIELD_NAME});
+		QueryResult qr = null;
+		try {
+			qr = IOSystem.getActiveContext().getSearch().find(q);
+		} catch (IndexException | ReaderException e) {
+			logger.error(e);
+		}
+		
+		if(qr != null) {
+			names = Arrays.asList(qr.getResults()).stream().map(b -> (String)b.get(FieldNames.FIELD_NAME)).collect(Collectors.toList());	
+		}
+		return names;
+	}
 
 	public static void loadModels() {
 		for(String model : MODELS) {
-			// System.out.println(model);
 			RecordFactory.model(model);
 		}
 	}
