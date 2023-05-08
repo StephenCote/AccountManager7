@@ -28,10 +28,13 @@ import org.cote.accountmanager.util.KeyStoreUtil;
 public class OrganizationContext {
 	public static final Logger logger = LogManager.getLogger(OrganizationContext.class);
 	
+	public static final String SYSTEM_ORGANIZATION = "/System";
+	public static final String DEVELOPMENT_ORGANIZATION = "/Development";
+	public static final String PUBLIC_ORGANIZATION = "/Public";
     public static final String[] DEFAULT_ORGANIZATIONS = new String[] {
-    	"/System",
-    	"/Development",
-    	"/Public"
+    	SYSTEM_ORGANIZATION,
+    	DEVELOPMENT_ORGANIZATION,
+    	PUBLIC_ORGANIZATION
       };
 	
 	private final IOContext ioContext;
@@ -56,7 +59,7 @@ public class OrganizationContext {
 	}
 	
 	public boolean initialize(String organizationPath, OrganizationEnumType orgType) {
-		// logger.info("Initialize org from path: " + organizationPath);
+
 		this.organizationPath = organizationPath;
 		this.organizationType = orgType;
 		BaseRecord rec = null;
