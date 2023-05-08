@@ -222,5 +222,7 @@ public class FieldNames {
 		public static final String FIELD_PASSWORD = "password";
 		
 		public static final String FIELD_APPROVAL_STATUS = "approvalStatus";
+		
+		public static final String FIELD_SCHEMA = "schema";
 
 }
