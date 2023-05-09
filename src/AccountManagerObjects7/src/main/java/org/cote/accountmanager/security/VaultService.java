@@ -315,7 +315,7 @@ public class VaultService
 			BaseRecord saltSet = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), null, kslist);
 			saltSet.set(FieldNames.FIELD_NAME, "Salt");
 
-			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), saltSet, orgId);
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(vault.getServiceUser(), saltSet, "Salt", ipath, orgId);
 			
 			logger.info("Creating salt ....");
 			IOSystem.getActiveContext().getRecordUtil().createRecord(saltSet);
@@ -353,14 +353,21 @@ public class VaultService
 			/// Set aside the public key in the vault key directory 
 			/// The enciphered private key and passphrase are stored outside of the system, while the cipher key is stored inside the system
 			logger.info("Serializing public key ...");
-			BaseRecord publicKeyCfg = CryptoFactory.getInstance().export(sm, false, true, false, false, true);
+			//BaseRecord publicKeyCfg = CryptoFactory.getInstance().export(sm, false, true, false, false, true);
+			BaseRecord publicKeyCfg = sm.copyRecord();
+			publicKeyCfg.set(FieldNames.FIELD_PRIVATE, null);
+			// publicKeyCfg.set(FieldNames.FIELD_HASH, null);
+			publicKeyCfg.set(FieldNames.FIELD_CIPHER, null);
+			
 			logger.info("Creating public key bean ...");
 			BaseRecord publicKey = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), publicKeyCfg, null);
-			publicKey.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-			publicKey.set(FieldNames.FIELD_NAME, "Public Key");
-			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey, orgId);
+			// publicKey.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			// publicKey.set(FieldNames.FIELD_NAME, "Public Key");
+			
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(vault.getServiceUser(), publicKey, "Public Key", dir.get(FieldNames.FIELD_PATH), orgId);
 			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_PUBLIC), orgId);
 			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_HASH), orgId);
+			
 			logger.info("Creating public key ...");
 			logger.info(JSONUtil.exportObject(publicKey, RecordSerializerConfig.getForeignUnfilteredModule()));
 			IOSystem.getActiveContext().getRecordUtil().createRecord(publicKey);
@@ -398,8 +405,9 @@ public class VaultService
 			FileUtil.emitFile(vaultKeyPath, JSONUtil.exportObject(vault, RecordSerializerConfig.getForeignFilteredModule()));
 
 		}
-		catch(NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException e){
+		catch(IllegalArgumentException | NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException e){
 			logger.error(e);
+			e.printStackTrace();
 			
 		}
 		return true;

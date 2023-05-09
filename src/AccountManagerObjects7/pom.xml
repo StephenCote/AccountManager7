@@ -58,16 +58,17 @@
 					</includes>
 					<excludes>
 					
-					<exclude>**/TestVault.java</exclude>
+					
 					<exclude>**/TestObjectPolicy.java</exclude>
 					<exclude>**/TestObjectConstruct.java</exclude>	
 					<exclude>**/TestH2Database.java</exclude>
-
+					<exclude>**/TestJournal.java</exclude>
 					<exclude>**/TestAudit.java</exclude>	
-					<exclude>**/TestCryptography.java</exclude>					
+					<exclude>**/TestCryptography.java</exclude>
+					<exclude>**/TestAccessPoint.java</exclude>						
 					<!--
-
-					<exclude>**/TestAccessPoint.java</exclude>	
+					<exclude>**/TestVault.java</exclude>
+					
 					-->
 					<exclude>**/TestGenerator.java</exclude>
 						<exclude>**/TestAuthentication.java</exclude>
@@ -75,7 +76,7 @@
 						<exclude>**/TestQuery.java</exclude>
 						<exclude>**/TestStartup.java</exclude>
 						<exclude>**/TestSerializer.java</exclude>
-						<exclude>**/TestJournal.java</exclude>
+						
 						<exclude>**/TestFileIndexerVer2.java</exclude>
 						
 						<exclude>**/TestFileStore.java</exclude>

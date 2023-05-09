@@ -14,6 +14,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.CryptoFactory;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.model.field.VaultBean;
@@ -22,6 +23,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.security.VaultService;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
@@ -47,6 +49,7 @@ public class TestVault extends BaseTest {
 	}
 	*/
 	
+	/*
 	@Test
 	public void TestCryptoPersist() {
 		logger.info("Test Crypto Bean Persistence");
@@ -54,27 +57,44 @@ public class TestVault extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		/*
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Keys", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		CryptoBean bean = new CryptoBean();
+		String keyName = "Key Pair - " + UUID.randomUUID().toString();
 		CryptoFactory.getInstance().generateSecretKey(bean);
 		CryptoFactory.getInstance().generateKeyPair(bean);
 		try {
-			ioContext.getRecordUtil().applyOwnership(testUser1, bean, testOrgContext.getOrganizationId());
+			ioContext.getRecordUtil().applyNameGroupOwnership(testUser1, bean, keyName, "~/Keys", testOrgContext.getOrganizationId());
+			// ioContext.getRecordUtil().applyOwnership(testUser1, bean, testOrgContext.getOrganizationId());
 			ioContext.getRecordUtil().createRecord(bean);
+			logger.info(JSONUtil.exportObject(bean, RecordSerializerConfig.getForeignUnfilteredModule()));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.info(e);
 		}
 		
 		
 		CryptoBean ibean = new CryptoBean(ioContext.getRecordUtil().getRecordById(testUser1, ModelNames.MODEL_KEY_SET, bean.get(FieldNames.FIELD_ID)));
-		logger.info(bean.getPublicKey() != null);
-		*/
+		//logger.info(bean.getPublicKey() != null);
+		
+		//BaseRecord erec = CryptoFactory.getInstance().export(ibean, false, true, false, false, true);
+		//logger.info(erec.toString());
+		BaseRecord erec = ibean.copyRecord();
+		
+		BaseRecord publicKey = null;
+		try {
+			erec.set(FieldNames.FIELD_PRIVATE, null);
+			erec.set(FieldNames.FIELD_HASH, null);
+
+			publicKey = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, testUser1, erec, null);
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		
 		String vaultName = "Vault - " + UUID.randomUUID().toString();
 		VaultBean vbean = VaultService.getInstance().getCreateVault(testUser1, vaultName, testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
 		
 	}
-	
-	/*
+	*/
+
 	@Test
 	public void TestOrgVault() {
 		logger.info("Test loading organization vault");
@@ -87,7 +107,7 @@ public class TestVault extends BaseTest {
 		assertTrue("Expected to be assigned a new active key", newKey);
 		
 	}
-	*/
+
 	/*
 	@Test
 	public void TestRandomVault() {
