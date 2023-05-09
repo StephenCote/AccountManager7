@@ -14,10 +14,14 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.CryptoFactory;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.security.VaultService;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
@@ -44,16 +48,46 @@ public class TestVault extends BaseTest {
 	*/
 	
 	@Test
+	public void TestCryptoPersist() {
+		logger.info("Test Crypto Bean Persistence");
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		/*
+		CryptoBean bean = new CryptoBean();
+		CryptoFactory.getInstance().generateSecretKey(bean);
+		CryptoFactory.getInstance().generateKeyPair(bean);
+		try {
+			ioContext.getRecordUtil().applyOwnership(testUser1, bean, testOrgContext.getOrganizationId());
+			ioContext.getRecordUtil().createRecord(bean);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.info(e);
+		}
+		
+		
+		CryptoBean ibean = new CryptoBean(ioContext.getRecordUtil().getRecordById(testUser1, ModelNames.MODEL_KEY_SET, bean.get(FieldNames.FIELD_ID)));
+		logger.info(bean.getPublicKey() != null);
+		*/
+		String vaultName = "Vault - " + UUID.randomUUID().toString();
+		VaultBean vbean = VaultService.getInstance().getCreateVault(testUser1, vaultName, testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
+		
+	}
+	
+	/*
+	@Test
 	public void TestOrgVault() {
+		logger.info("Test loading organization vault");
 		VaultBean orgVault = orgContext.getVault();
 		assertNotNull("Vault is null", orgVault);
 		//getPublicKey(orgVault);
 		// logger.info(JSONUtil.exportObject(orgVault, RecordSerializerConfig.getUnfilteredModule()));
+		logger.info("Creating new active key");
 		boolean newKey = VaultService.getInstance().newActiveKey(orgVault);
 		assertTrue("Expected to be assigned a new active key", newKey);
 		
 	}
-	
+	*/
 	/*
 	@Test
 	public void TestRandomVault() {

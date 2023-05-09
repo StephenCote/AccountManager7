@@ -108,7 +108,22 @@ public class DBWriter extends MemoryWriter {
 			if(fs.isForeign() && f.getValueType() == FieldEnumType.MODEL) {
 				BaseRecord bf = model.get(f.getName());
 				if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
-					logger.warn("Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
+					/// logger.warn("**** Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
+					if(op == RecordOperation.CREATE) {
+						logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
+						try {
+							bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
+							bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+							IOSystem.getActiveContext().getRecordUtil().createRecord(bf);
+							//logger.info(bf.toString());
+						}
+						catch(ValueException | FieldException | ModelNotFoundException e) {
+							logger.error(e);
+						}
+					}
+					else {
+						logger.error("Will not update foreign child without an identity reference");
+					}
 				}
 			}
 			
@@ -127,11 +142,12 @@ public class DBWriter extends MemoryWriter {
 			if(rid == 0L) {
 				throw new WriterException("Failed to obtain next identifier");
 			}
-			DBStatementMeta meta = StatementUtil.getInsertTemplate(model);
+			
 			
 			// logger.info(meta.getSql());
 		    try (Connection con = dataSource.getConnection()){
 				model.set(FieldNames.FIELD_ID, rid);
+				DBStatementMeta meta = StatementUtil.getInsertTemplate(model);
 		    	PreparedStatement st = con.prepareStatement(meta.getSql());
 		    	StatementUtil.applyPreparedStatement(model, meta, st);
 		    	int update = st.executeUpdate();
@@ -187,6 +203,8 @@ public class DBWriter extends MemoryWriter {
 				st.close();
 			} catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
+				logger.error(model.toString());
+				e.printStackTrace();
 		    }
 		}
 		else if(op == RecordOperation.UPDATE) {

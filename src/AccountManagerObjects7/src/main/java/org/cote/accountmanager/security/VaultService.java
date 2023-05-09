@@ -103,7 +103,7 @@ public class VaultService
 		File f = new File(filePath);
 		if(f.exists()){
 			logger.error("File '" + filePath + "' already exists");
-			return false;
+			//return false;
 		}
 		
 		/// Note: CredentialService is intentionally NOT USED here because this credential SHOULD NOT be stored in the database
@@ -120,6 +120,10 @@ public class VaultService
 		CryptoBean cb = new CryptoBean(crypto);
 		if(cb.getSecretKey() == null) {
 			CryptoFactory.getInstance().generateSecretKey(cb);
+			BaseRecord ciph = cb.get(FieldNames.FIELD_CIPHER);
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vaultOwner, ciph, vaultOwner.get(FieldNames.FIELD_ORGANIZATION_ID));
+			//logger.info("Cipher: " + ciph.toString());
+			IOSystem.getActiveContext().getRecordUtil().createRecord(ciph);
 			IOSystem.getActiveContext().getRecordUtil().updateRecord(cb);
 		}
 		
@@ -160,7 +164,10 @@ public class VaultService
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(credential.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(CredentialEnumType.ENCRYPTED_PASSWORD.toString().equals(credential.get(FieldNames.FIELD_TYPE))){
 			CryptoBean crypto = new CryptoBean(IOSystem.getActiveContext().getRecordUtil().getRecordByObjectId(org.getAdminUser(), ModelNames.MODEL_KEY_SET, credential.get(FieldNames.FIELD_KEY_ID)));
+			IOSystem.getActiveContext().getRecordUtil().populate(crypto);
 			if(crypto.getSecretKey() == null){
+				logger.warn("Secret key is null");
+				// logger.info(JSONUtil.exportObject(crypto, RecordSerializerConfig.getForeignUnfilteredModule()));
 				return new byte[0];
 			}
 			return CryptoUtil.decipher(crypto, credential.get(FieldNames.FIELD_CREDENTIAL));
@@ -223,7 +230,7 @@ public class VaultService
 		VaultBean vault = null;
 		try {
 			vault = getVault(vaultUser, vaultName);
-			
+			// logger.info("Vault: " + (vault != null));
 			if(vault == null) {
 				String credPath = IOFactory.DEFAULT_FILE_BASE + "/.vault/" + organizationId + "/credential/" + vaultName + ".json";
 				String vaultPath = IOFactory.DEFAULT_FILE_BASE + "/.vault/" + organizationId + "/vault";
@@ -307,18 +314,24 @@ public class VaultService
 			kslist.parameter("salt", true);
 			BaseRecord saltSet = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), null, kslist);
 			saltSet.set(FieldNames.FIELD_NAME, "Salt");
+
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), saltSet, orgId);
+			
+			logger.info("Creating salt ....");
 			IOSystem.getActiveContext().getRecordUtil().createRecord(saltSet);
+			logger.info(JSONUtil.exportObject(saltSet, RecordSerializerConfig.getForeignUnfilteredModule()));
 			
 			CryptoBean sm = new CryptoBean();
 			sm.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
 			CryptoFactory.getInstance().generateKeyPair(sm);
 			CryptoFactory.getInstance().generateSecretKey(sm);
 			//IOSystem.getActiveContext().getRecordUtil().createRecord(sm);
-			
+
+			logger.info("Serializing private key ...");
 			byte[] privateKeyConfig = CryptoFactory.getInstance().serialize(sm, true, false, false, false, true).getBytes(StandardCharsets.UTF_8);
-	
 			String inPassword = null;
 			if(vault.getProtectedCredential() != null && (CredentialEnumType.ENCRYPTED_PASSWORD.toString().equals(vault.getProtectedCredential().get(FieldNames.FIELD_TYPE)) || CredentialEnumType.HASHED_PASSWORD.toString().equals(vault.getProtectedCredential().get(FieldNames.FIELD_TYPE)))){
+				logger.info("Protect credential ...");
 				inPassword = new String(getProtectedCredentialValue(vault.getProtectedCredential()));
 			}
 
@@ -326,21 +339,35 @@ public class VaultService
 			//
 			if (vault.isProtected() && inPassword != null && inPassword.length() > 0)
 			{
+				logger.info("Enciphering private key ...");
 				privateKeyConfig = CryptoUtil.encipher(privateKeyConfig, inPassword, saltSet.get(FieldNames.FIELD_HASH_FIELD_SALT)); 
 			}
 	
 			// Encipher the private key with the org key
 			//
-			CryptoBean orgSKey = getPrimarySymmetricKey(vault); 
+			logger.info("Retrieving org key ...");
+			CryptoBean orgSKey = getPrimarySymmetricKey(vault);
+			logger.info(JSONUtil.exportObject(orgSKey, RecordSerializerConfig.getForeignUnfilteredModule()));
 			byte[] encPrivateKey = CryptoUtil.encipher(orgSKey, privateKeyConfig);
 			
 			/// Set aside the public key in the vault key directory 
-			/// The enciphered private key and passphrase are stored outside of the system, while the cipher key is stored inside the system 
+			/// The enciphered private key and passphrase are stored outside of the system, while the cipher key is stored inside the system
+			logger.info("Serializing public key ...");
 			BaseRecord publicKeyCfg = CryptoFactory.getInstance().export(sm, false, true, false, false, true);
+			logger.info("Creating public key bean ...");
 			BaseRecord publicKey = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), publicKeyCfg, null);
 			publicKey.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			publicKey.set(FieldNames.FIELD_NAME, "Public Key");
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey, orgId);
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_PUBLIC), orgId);
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_HASH), orgId);
+			logger.info("Creating public key ...");
+			logger.info(JSONUtil.exportObject(publicKey, RecordSerializerConfig.getForeignUnfilteredModule()));
 			IOSystem.getActiveContext().getRecordUtil().createRecord(publicKey);
+			
+			
+			
+			
 			
 			//BaseRecord pdat = IOSystem.getActiveContext().getFactory().getCreateDirectoryModel(vault.getServiceUser(), ModelNames.MODEL_VAULT, "Public Vault", "~/" + vault.getGroupName() + "/" + vault.get(FieldNames.FIELD_NAME), orgId);
 			BaseRecord pdat =  IOSystem.getActiveContext().getFactory().getCreateDirectoryModel(vault.getServiceUser(), ModelNames.MODEL_VAULT, vault.get(FieldNames.FIELD_NAME), "~/" + vault.getGroupName(), orgId);
@@ -353,7 +380,9 @@ public class VaultService
 			pdat.set(FieldNames.FIELD_SERVICE_USER, vault.getServiceUser());
 			pdat.set(FieldNames.FIELD_VAULT_PATH, vault.get(FieldNames.FIELD_VAULT_PATH));
 			pdat.set(FieldNames.FIELD_PROTECTED_CREDENTIAL_PATH, vault.get(FieldNames.FIELD_PROTECTED_CREDENTIAL_PATH));
+			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), pdat, orgId);
 			IOSystem.getActiveContext().getRecordUtil().createRecord(pdat);
+			logger.info(pdat.toString());
 			
 			vault.set(FieldNames.FIELD_VAULT_LINK, pdat.get(FieldNames.FIELD_OBJECT_ID));
 			vault.set(FieldNames.FIELD_HAVE_VAULT_KEY, true);

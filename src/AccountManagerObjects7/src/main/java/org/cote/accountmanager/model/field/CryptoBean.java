@@ -32,6 +32,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.CryptoFactory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -117,14 +118,27 @@ public class CryptoBean extends LooseRecord {
 			}
 		}
 	}
-	private void applyKeys(boolean encryptedCipher) {
-		applyPublicKey();
-		applyPrivateKey();
+	private void applyCipherKey(boolean encryptedCipher) {
 		if(hasField(FieldNames.FIELD_CIPHER_FIELD_KEY) && ((byte[])get(FieldNames.FIELD_CIPHER_FIELD_KEY)).length > 0) {
-			// logger.info("Reconstitute cipher key");
+			logger.info("Reconstitute cipher key");
 			byte[] keyBytes = get(FieldNames.FIELD_CIPHER_FIELD_KEY);
 			byte[] ivBytes = get(FieldNames.FIELD_CIPHER_FIELD_IV);
 			CryptoFactory.getInstance().setSecretKey(this, keyBytes, ivBytes, encryptedCipher);
+		}
+	}
+	private void applyKeys(boolean encryptedCipher) {
+		if(hasField(FieldNames.FIELD_PUBLIC)) {
+			IOSystem.getActiveContext().getRecordUtil().populate(get(FieldNames.FIELD_PUBLIC));
+			applyPublicKey();
+		}
+		if(hasField(FieldNames.FIELD_PRIVATE)) {
+			IOSystem.getActiveContext().getRecordUtil().populate(get(FieldNames.FIELD_PRIVATE));
+			applyPrivateKey();
+		}
+
+		if(hasField(FieldNames.FIELD_CIPHER)) {
+			IOSystem.getActiveContext().getRecordUtil().populate(get(FieldNames.FIELD_CIPHER));
+			applyCipherKey(encryptedCipher);
 		}
 	}
 	/*

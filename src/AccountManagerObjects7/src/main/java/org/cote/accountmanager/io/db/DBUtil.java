@@ -450,7 +450,8 @@ public class DBUtil {
 		String defStr = null;
 		String colName = getColumnName(fschema.getName());
 		if(fschema.isSequence()) {
-			defStr = "nextval('" + schema.getName() + "_" + fschema.getName() + "_seq')";
+			/// TODO - fix this typo
+			defStr = "nextval('" + getSequenceName(schema.getName()) + "_seq')";
 		}
 		else if(fet == FieldEnumType.INT || fet == FieldEnumType.DOUBLE || fet == FieldEnumType.LONG) {
 			defStr = "0";

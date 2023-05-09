@@ -57,9 +57,11 @@ import org.cote.accountmanager.io.JsonWriter;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.CryptoUtil;
+import org.cote.accountmanager.util.JSONUtil;
 
 
 public class CryptoFactory {
@@ -160,6 +162,8 @@ public class CryptoFactory {
 		}
 		catch(FieldException | ModelNotFoundException | ValueException | WriterException | NoSuchAlgorithmException | InvalidKeySpecException e) {
 			logger.error(e);
+			logger.error(JSONUtil.exportObject(bean, RecordSerializerConfig.getForeignUnfilteredModule()));
+			e.printStackTrace();
 			
 		}
 		return bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEY);
@@ -663,7 +667,7 @@ public class CryptoFactory {
 		SecretKey secretKey = null;
 		try {
 			if(!bean.hasField(FieldNames.FIELD_CIPHER) || bean.get(FieldNames.FIELD_CIPHER) == null) {
-				bean.set(FieldNames.FIELD_CIPHER, RecordFactory.newInstance("cipherKey"));
+				bean.set(FieldNames.FIELD_CIPHER, RecordFactory.newInstance(ModelNames.MODEL_CIPHER_KEY));
 			}
 			if((boolean)bean.get(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT) && bean.getPublicKey() == null){
 				logger.error("Cannot encrypt secret key with missing PKI data.  Verify PKI is initialized.");
