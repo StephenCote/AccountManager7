@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IMember;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
@@ -39,6 +40,13 @@ public class MemberUtil implements IMember {
 		this.writer = writer;
 		this.search = search;
 		recordUtil = new RecordUtil(reader, writer, search); 
+	}
+	
+	public MemberUtil(IOContext context) {
+		this.reader = context.getReader();
+		this.writer = context.getWriter();
+		this.search = context.getSearch();
+		recordUtil = context.getRecordUtil(); 
 	}	
 	
 	public List<BaseRecord> findMembers(BaseRecord rec, String model, long id) throws IndexException, ReaderException {

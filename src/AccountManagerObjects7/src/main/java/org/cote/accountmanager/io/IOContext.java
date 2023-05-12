@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.client.AccessPoint;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.db.DBUtil;
@@ -21,6 +23,8 @@ import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class IOContext {
+	
+	public static final Logger logger = LogManager.getLogger(IOContext.class);
 	
 	private IReader reader = null;
 	private IWriter writer = null;
@@ -56,14 +60,18 @@ public class IOContext {
 		this.search = search;
 		this.ioType = ioType;
 		
-		recordUtil = IOFactory.getRecordUtil(reader, writer, search);
-		memberUtil = IOFactory.getMemberUtil(reader, writer, search);
-		authorizationUtil = IOFactory.getAuthorizationUtil(reader, writer, search);
-		policyUtil = IOFactory.getPolicyUtil(reader, writer, search);
-		pathUtil = IOFactory.getPathUtil(reader, writer, search);
+		//recordUtil = IOFactory.getRecordUtil(reader, writer, search);
+
+		pathUtil = IOFactory.getPathUtil(this);
+		recordUtil = IOFactory.getRecordUtil(this);
+		
+		memberUtil = IOFactory.getMemberUtil(this);
+		authorizationUtil = IOFactory.getAuthorizationUtil(this);
+		policyUtil = IOFactory.getPolicyUtil(this);
+		
 		factory = new Factory(this);
-		policyEvaluator = new PolicyEvaluator(reader, writer, search, authorizationUtil, memberUtil);
-		policyDefinitionUtil = new PolicyDefinitionUtil(reader, search);
+		policyEvaluator = new PolicyEvaluator(this);
+		policyDefinitionUtil = new PolicyDefinitionUtil(this);
 
 		this.accessPoint = new AccessPoint(this);
 

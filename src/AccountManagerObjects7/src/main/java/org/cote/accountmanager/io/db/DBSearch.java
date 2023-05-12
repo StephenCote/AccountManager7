@@ -73,7 +73,11 @@ public class DBSearch extends SearchBase {
 	}
 	
 	public QueryResult find(Query query) throws IndexException, ReaderException {
-
+		
+		if(useAlternateIO(query)) {
+			return findAlternate(query);
+		}
+		
 		String model = query.get(FieldNames.FIELD_TYPE);
 		List<BaseRecord> recs = new ArrayList<>();
 		DBStatementMeta sql = null;

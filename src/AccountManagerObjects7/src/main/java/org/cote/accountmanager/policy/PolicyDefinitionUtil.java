@@ -10,6 +10,7 @@ import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.record.BaseRecord;
@@ -33,6 +34,10 @@ public class PolicyDefinitionUtil {
 	public PolicyDefinitionUtil(IReader reader, ISearch search) {
 		this.reader = reader;
 		this.factUtil = new FactUtil(reader, search);
+	}
+	
+	public PolicyDefinitionUtil(IOContext context) {
+		this(context.getReader(), context.getSearch());
 	}
 
 	public BaseRecord generatePolicyRequest(BaseRecord pdt) throws FieldException, ModelNotFoundException, ValueException {

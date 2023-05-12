@@ -1,6 +1,11 @@
 {
 "name": "streamSegment",
 "ephemeral": true,
+"io": {
+	"reader": "org.cote.accountmanager.io.stream.StreamSegmentReader",
+	"writer": "org.cote.accountmanager.io.stream.StreamSegmentWriter",
+	"search": "org.cote.accountmanager.io.stream.StreamSegmentSearch"
+},
 "fields": [
 	{
 		"name": "streamId",
@@ -27,6 +32,10 @@
 		"name": "size",
 		"type": "long",
 		"ephemeral": true
+	},
+	{
+		"name": "read",
+		"type": "boolean"
 	}
 	
 ]}

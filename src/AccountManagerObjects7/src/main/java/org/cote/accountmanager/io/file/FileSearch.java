@@ -37,6 +37,11 @@ public class FileSearch extends SearchBase {
 	}
 	
 	public QueryResult find(Query query) throws IndexException, ReaderException {
+		
+		if(useAlternateIO(query)) {
+			return findAlternate(query);
+		}
+		
 		BaseRecord[] recs = findByIndex(IOSystem.getActiveContext().getIndexManager().getInstance(query.get(FieldNames.FIELD_TYPE)).findIndexEntries(query));
 
 		try {

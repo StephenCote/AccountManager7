@@ -20,6 +20,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ScriptException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IPath;
@@ -126,6 +127,12 @@ public class PolicyUtil {
 		this.pathUtil = IOFactory.getPathUtil(reader, writer, search);
 	}
 	
+	public PolicyUtil(IOContext context) {
+		this.reader = context.getReader();
+		this.writer = context.getWriter();
+		this.search = context.getSearch();
+		this.pathUtil = context.getPathUtil();
+	}
 	
 	
 	public boolean isTrace() {

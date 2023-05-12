@@ -5,7 +5,9 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public abstract class SearchBase implements ISearch {
@@ -13,6 +15,32 @@ public abstract class SearchBase implements ISearch {
 	
 	public void close() throws ReaderException {
 	
+	}
+	
+	public QueryResult findAlternate(Query query) {
+		QueryResult qr = null;
+		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
+		if(ms != null && ms.getIo() != null && ms.getIo().getSearch() != null) {
+			ISearch altSearch = RecordFactory.getClassInstance(ms.getIo().getSearch());
+			try {
+				qr = altSearch.find(query);
+			} catch (IndexException | ReaderException e) {
+				logger.error(e);
+			}
+		}
+		else {
+			logger.error("Model schema " + query.get(FieldNames.FIELD_TYPE) + " does not define an alternate search interface");
+		}
+		return qr;
+	}
+	
+	public boolean useAlternateIO(Query query) {
+		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
+		boolean outBool = false;
+		if(ms != null && ms.getIo() != null && ms.getIo().getSearch() != null) {
+			outBool = true;
+		}
+		return outBool;
 	}
 	
 	public BaseRecord findRecord(Query query) {

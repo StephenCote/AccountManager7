@@ -19,8 +19,10 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOFactory;
+import org.cote.accountmanager.io.stream.StreamSegmentWriter;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
@@ -33,10 +35,8 @@ import org.cote.accountmanager.util.FileUtil;
 public class StreamProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(StreamProvider.class);
 	
-	public Path[] permittedPaths = new Path[0];
-	
 	public StreamProvider() {
-		permittedPaths =  new Path[]{Paths.get(IOFactory.DEFAULT_FILE_BASE).toAbsolutePath()};
+
 	}
 	
 	@Override
@@ -64,8 +64,8 @@ public class StreamProvider implements IProvider {
 			// logger.info(model.toFullString());
 		}
 		else if(operation == RecordOperation.READ) {
-			logger.info("***** Read segment");
 			/*
+			logger.info("***** Read segment");
 			StackTraceElement[] st = new Throwable().getStackTrace();
 			for(int i = 0; i < st.length; i++) {
 				logger.error(st[i].toString());
@@ -78,53 +78,25 @@ public class StreamProvider implements IProvider {
 
 	}
 	
-	private String getFileStreamPath(BaseRecord stream) {
-		String source = stream.get(FieldNames.FIELD_STREAM_SOURCE);
-		
-		if(source == null) {
-			String orgPath = stream.get(FieldNames.FIELD_ORGANIZATION_PATH);
-			String groupPath = stream.get(FieldNames.FIELD_GROUP_PATH);
-			String contentType = stream.get(FieldNames.FIELD_CONTENT_TYPE);
-			String ext = "";
-			if(contentType != null) {
-				String text = ContentTypeUtil.getExtensionFromType(contentType);
-				if(text != null && text.length() > 0) {
-					ext = "." + text;
-				}
-			}
-			if(groupPath == null) {
-				groupPath = "Anonymous";
-			}
-			if(orgPath == null) {
-				orgPath = "Anonymous";
-			}
-			else {
-				orgPath = orgPath.substring(1).replace('/', '.');
-			}
-			source = IOFactory.DEFAULT_FILE_BASE + "/streams/" + orgPath + groupPath + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
-			try {
-				stream.set(FieldNames.FIELD_STREAM_SOURCE, source);
-			} catch (FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-		}
-		return source;
-	}
-	
 
-	private boolean isRestrictedPath(String path) {
-		boolean restricted = false;
-		for(Path cpath : permittedPaths) {
-			//Path path1 = Paths.get(cpath).toAbsolutePath();
-			Path path2 = Paths.get(path).toAbsolutePath();
-			if(!path2.startsWith(cpath)) {
-				restricted = true;
-				break;
-			}
+	
+	private void writeSegments(BaseRecord stream) throws ModelException {
+		ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_STREAM_SEGMENT);
+		if(ms.getIo() == null) {
+			throw new ModelException("Model " + ms.getName() + " does not define a specialized IO");
 		}
-		return restricted;
+		StreamSegmentWriter ssw = RecordFactory.getClassInstance(ms.getIo().getWriter());
+		if(ssw == null) {
+			throw new ModelException("Invalid Model IO Writer: " + ms.getIo().getWriter());
+		}
+
+		List<BaseRecord> segments = stream.get(FieldNames.FIELD_SEGMENTS);
+		for(BaseRecord segment : segments) {
+			ssw.writeSegment(stream, segment);
+		}
 	}
 	
+	/*
 	private void writeSegments(BaseRecord stream) throws ModelException {
 		List<BaseRecord> segments = stream.get(FieldNames.FIELD_SEGMENTS);
 		String path = getFileStreamPath(stream);
@@ -160,6 +132,7 @@ public class StreamProvider implements IProvider {
 			e.printStackTrace();
 		}
 	}
+	*/
 
 	@Override
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model,

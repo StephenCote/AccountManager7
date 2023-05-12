@@ -92,6 +92,7 @@ public class FieldNames {
 	   public static final String FIELD_VAULT_ID = "vaultId";
 	   public static final String FIELD_COMPRESSION_TYPE = "compressionType";
 	   public static final String FIELD_READ_BYTE_STORE = "readDataBytes";
+	   public static final String FIELD_READ = "read";
 	   public static final String FIELD_POINTER = "pointer";
 	   public static final String FIELD_CONTENT_TYPE = "contentType";
 	   public static final String FIELD_DATA_HASH = "dataHash";
@@ -234,6 +235,7 @@ public class FieldNames {
 		public static final String FIELD_START_POSITION = "startPosition";
 		public static final String FIELD_LENGTH = "length";
 		public static final String FIELD_STREAM = "stream";
+		public static final String FIELD_STREAM_ID = "streamId";
 		public static final String FIELD_STREAM_SOURCE = "streamSource";
 		public static final String FIELD_SEGMENTS = "segments";
 

@@ -36,12 +36,25 @@ public class ModelSchema {
 	private String factory = null;
 	
 	private ModelAccess access = null;
+	private ModelIO io = null;
 	
 	public ModelSchema() {
 		
 	}
 	
 	
+
+	public ModelIO getIo() {
+		return io;
+	}
+
+
+
+	public void setIo(ModelIO io) {
+		this.io = io;
+	}
+
+
 
 	public List<String> getQuery() {
 		return query;

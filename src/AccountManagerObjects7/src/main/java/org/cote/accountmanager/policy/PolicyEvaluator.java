@@ -16,6 +16,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ScriptException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
@@ -70,7 +71,9 @@ public class PolicyEvaluator {
 		this.memberUtil = memUtil; //IOFactory.getMemberUtil(reader, writer, search);
 	}
 	
-	
+	public PolicyEvaluator(IOContext context){
+		this(context.getReader(), context.getWriter(), context.getSearch(), context.getAuthorizationUtil(), context.getMemberUtil());
+	}
 
 	public boolean isTrace() {
 		return trace;

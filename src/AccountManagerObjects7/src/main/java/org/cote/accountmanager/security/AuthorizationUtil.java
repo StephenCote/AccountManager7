@@ -7,6 +7,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
@@ -26,21 +27,18 @@ public class AuthorizationUtil {
 	
 	public static final Logger logger = LogManager.getLogger(AuthorizationUtil.class);
 	private final IReader reader;
-	private final IWriter writer;
-	private final ISearch search;
-	private final RecordUtil recordUtil;
 	private final MemberUtil memberUtil;
 	private boolean trace = false;
 
 	public AuthorizationUtil(IReader reader, IWriter writer, ISearch search) {
 		this.reader = reader;
-		this.writer = writer;
-		this.search = search;
-		recordUtil = new RecordUtil(reader, writer, search);
 		memberUtil = new MemberUtil(reader, writer, search);
 	}
 	
-	
+	public AuthorizationUtil(IOContext context) {
+		this.reader = context.getReader();
+		this.memberUtil = context.getMemberUtil();
+	}
 	
 	public boolean isTrace() {
 		return trace;

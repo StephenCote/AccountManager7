@@ -4,6 +4,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -34,6 +35,31 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 	
 	public RecordReader() {
 
+	}
+	
+	public BaseRecord readAlternate(BaseRecord rec) {
+		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+		if(ms != null && ms.getIo() != null && ms.getIo().getReader() != null) {
+			IReader altReader = RecordFactory.getClassInstance(ms.getIo().getReader());
+			try {
+				rec = altReader.read(rec);
+			} catch (ReaderException e) {
+				logger.error(e);
+			}
+		}
+		else {
+			logger.error("Model schema " + rec.getModel() + " does not define an alternate reader interface");
+		}
+		return rec;
+	}
+	
+	public boolean useAlternateIO(BaseRecord rec) {
+		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+		boolean outBool = false;
+		if(ms != null && ms.getIo() != null && ms.getIo().getSearch() != null) {
+			outBool = true;
+		}
+		return outBool;
 	}
 	
 	/// Note: URN is intentionally excluded from populate to allow for ephemeral instances to pass through without attempting to lookup

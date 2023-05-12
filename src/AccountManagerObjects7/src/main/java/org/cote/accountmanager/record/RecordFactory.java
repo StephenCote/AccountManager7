@@ -40,6 +40,7 @@ public class RecordFactory {
 	private static Map<String, BaseRecord> looseBaseModels = new HashMap<>();
 	private static Map<String, ModelSchema> schemas = new HashMap<>();
 	private static Map<String, Class<?>> classMap = new HashMap<>();
+	private static Map<String, Object> instMap = new HashMap<>();
 	private static Map<String, String> rawModels = new HashMap<>();
 	
 	public static boolean isEnumValue(String name, String value) {
@@ -75,6 +76,31 @@ public class RecordFactory {
 	}
 	public static void addRawModel(String name, String data) {
 		rawModels.put(name,  data);
+	}
+	
+	@SuppressWarnings("unchecked")
+	public static <T> T getClassInstance(String cls) {
+		if(!instMap.containsKey(cls)) {
+			Class<?> ccls = getClass(cls);
+			if(ccls != null) {
+				Object inst = getClassInstance(ccls);
+				if(inst != null) {
+					instMap.put(cls, inst);
+				}
+			}
+		}
+		return (T)instMap.get(cls);
+	}
+
+	public static <T> T getClassInstance(Class<T> cls) {
+		
+		T inst = null;
+		try {
+			inst = cls.getDeclaredConstructor().newInstance();
+		} catch (InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException e) {
+			logger.error(e);
+		}
+		return inst;
 	}
 	
 	public static <T> Class<?> getClass(String name){

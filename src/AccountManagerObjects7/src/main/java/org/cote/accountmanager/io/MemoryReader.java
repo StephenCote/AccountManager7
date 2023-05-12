@@ -22,6 +22,9 @@ public class MemoryReader extends RecordReader {
 	}
 	
 	public synchronized BaseRecord read(BaseRecord rec) throws ReaderException {
+		if(useAlternateIO(rec)) {
+			return readAlternate(rec);
+		}
 		prepareTranslation(RecordOperation.READ, rec);
 		return rec;
 	}

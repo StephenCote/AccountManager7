@@ -10,6 +10,9 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.UUID;
+import java.nio.ByteBuffer;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -27,6 +30,7 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
+import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.generated.PolicyType;
 import org.cote.accountmanager.policy.PolicyUtil;
@@ -59,6 +63,7 @@ public class TestStream extends BaseTest {
 		try {
 			seg = RecordFactory.newInstance(ModelNames.MODEL_STREAM_SEGMENT);
 			seg.set(FieldNames.FIELD_STREAM, data);
+			seg.set(FieldNames.FIELD_STREAM_ID, stream.get(FieldNames.FIELD_OBJECT_ID));
 			segs.add(seg);
 		}
 		catch(ValueException | FieldException | ModelNotFoundException e) {
@@ -66,7 +71,7 @@ public class TestStream extends BaseTest {
 		}
 		return seg;
 	}
-
+	
 	@Test
 	public void TestCreateStream() {
 		logger.info("Test Streaming");
@@ -84,17 +89,44 @@ public class TestStream extends BaseTest {
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_STREAM, testUser5, null, plist);
 			data.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
 			data.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
-			newSegment(data, "This is some example data".getBytes());
+			newSegment(data, "1) This is some example data".getBytes());
 			assertNotNull("Data is null", data);
 			data = ioContext.getAccessPoint().create(testUser5, data);
-			logger.info(data.toFullString());
+			// logger.info(data.toFullString());
 			
 			BaseRecord idata = ioContext.getAccessPoint().findById(testUser5, ModelNames.MODEL_STREAM, data.get(FieldNames.FIELD_ID));
 			assertNotNull("Data is null", idata);
 			
+			/// Write a direct segment
+			BaseRecord seg = RecordFactory.newInstance(ModelNames.MODEL_STREAM_SEGMENT);
+			seg.set(FieldNames.FIELD_STREAM, "\n2) This is some more data to add".getBytes());
+			seg.set(FieldNames.FIELD_STREAM_ID, idata.get(FieldNames.FIELD_OBJECT_ID));
+			boolean created = ioContext.getRecordUtil().createRecord(seg);
+			assertTrue("Expected to create the segment", created);
+			
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_STREAM_SEGMENT, FieldNames.FIELD_STREAM_ID, idata.get(FieldNames.FIELD_OBJECT_ID));
+			q.field(FieldNames.FIELD_START_POSITION, 0L);
+			q.field(FieldNames.FIELD_LENGTH, 10L);
+			
+			QueryResult qr = ioContext.getSearch().find(q);
+			assertNotNull("Result is null", qr);
+			// logger.info(qr.toFullString());
+			assertTrue("Expected 1 result", qr.getTotalCount() == 1);
+			BaseRecord seg1 = qr.getResults()[0];
+			String txt = new String((byte[])seg1.get(FieldNames.FIELD_STREAM));
+			logger.info("Streamed back: " + txt);
+			
+			StreamSegmentUtil ssu = new StreamSegmentUtil();
+			
+			byte[] allBytes = ssu.streamToEnd(idata.get(FieldNames.FIELD_OBJECT_ID), 0L, 10L);
+			logger.info(new String(allBytes));
+			
+			
+			byte[] overRead = ssu.streamToEnd(idata.get(FieldNames.FIELD_OBJECT_ID), 0L, 100L);
+			
 			// logger.info(data.toFullString());
 
-		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException    e) {
+		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException    e) {
 			logger.error(e);
 			e.printStackTrace();
 		}

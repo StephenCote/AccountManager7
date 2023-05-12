@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IPath;
@@ -49,6 +50,13 @@ public class RecordUtil {
 		this.writer = writer;
 		this.search = search;
 		this.pathUtil = IOFactory.getPathUtil(reader, writer, search);
+	}
+
+	public RecordUtil(IOContext context) {
+		this.reader = context.getReader();
+		this.writer = context.getWriter();
+		this.search = context.getSearch();
+		this.pathUtil = context.getPathUtil();
 	}
 	
 	public static String toJSONString(BaseRecord rec) {
@@ -223,12 +231,26 @@ public class RecordUtil {
 		return createRecord(rec, false);
 	}
 	public boolean createRecord(BaseRecord rec, boolean flush) {
-		writer.translate(RecordOperation.INSPECT, rec);
+		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+		IWriter useWriter = null;
+		if(ms.getIo() != null && ms.getIo().getWriter() != null) {
+			IWriter modelWriter = RecordFactory.getClassInstance(ms.getIo().getWriter());
+			if(modelWriter != null) {
+				useWriter = modelWriter;
+			}
+			else {
+				logger.error("Failed to instantiate the customer writer: " + ms.getIo().getWriter());
+			}
+		}
+		else {
+			useWriter = writer;
+		}
+		useWriter.translate(RecordOperation.INSPECT, rec);
 		boolean outBool = false;
 		try {
-			outBool = writer.write(rec);
+			outBool = useWriter.write(rec);
 			if(flush) {
-				writer.flush();
+				useWriter.flush();
 			}
 		} catch (WriterException e) {
 			logger.error(e);

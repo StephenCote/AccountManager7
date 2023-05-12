@@ -1,5 +1,6 @@
 package org.cote.accountmanager.io.file;
 
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.PathUtil;
@@ -10,6 +11,10 @@ public class FilePathUtil extends PathUtil {
 	}
 	public FilePathUtil(FileReader reader, FileWriter writer, FileSearch search) {
 		super(reader, writer, search);
+	}
+	
+	public FilePathUtil(IOContext context) {
+		super(context.getReader(), context.getWriter(), context.getSearch());
 	}
 	
 	public static String getFilePath(IndexEntry entry) {

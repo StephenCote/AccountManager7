@@ -8,6 +8,7 @@ import java.util.Map;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.cache.ICache;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
@@ -19,17 +20,24 @@ import org.cote.accountmanager.util.CryptoUtil;
 
 public class CachePolicyUtil extends PolicyUtil implements ICache {
 	
-	private final Map<String, PolicyResponseType> responseCache;
-	private final Map<String, List<String>> actorCache;
-	private final Map<String, List<String>> resourceCache;
+	private Map<String, PolicyResponseType> responseCache;
+	private Map<String, List<String>> actorCache;
+	private Map<String, List<String>> resourceCache;
 
 	public CachePolicyUtil(IReader reader, IWriter writer, ISearch search) {
 		super(reader, writer, search);
+		init();
+
+	}
+	public CachePolicyUtil(IOContext context) {
+		super(context);
+		init();
+	}
+	private void init() {
 		responseCache = new HashMap<>();
 		actorCache = new HashMap<>();
 		resourceCache = new HashMap<>();
-		CacheUtil.addProvider(this);
-
+		CacheUtil.addProvider(this);		
 	}
 	private String getContextKey(BaseRecord contextUser, String policyName, String actorUrn, String resourceUrn) throws ValueException {
 
