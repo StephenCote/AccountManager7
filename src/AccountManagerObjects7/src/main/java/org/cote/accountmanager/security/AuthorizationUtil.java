@@ -2,6 +2,7 @@ package org.cote.accountmanager.security;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,10 +17,16 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelAccess;
+import org.cote.accountmanager.schema.ModelAccessPolicies;
+import org.cote.accountmanager.schema.ModelAccessPolicyBind;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
@@ -70,12 +77,36 @@ public class AuthorizationUtil {
 	
 	protected PolicyResponseType canDo(BaseRecord contextUser, String policyName, ActionEnumType action, BaseRecord actor, BaseRecord resource) {
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
-		reader.populate(resource);
 		if(org == null) {
 			logger.error("Failed to load organization context: " + contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH));
 			return null;
 		}
-
+		
+		ModelSchema ms = RecordFactory.getSchema(resource.getModel());
+		ModelAccessPolicyBind bind = Optional.ofNullable(ms)
+				.map(ModelSchema::getAccess)
+				.map(ModelAccess::getPolicies)
+				.map(ModelAccessPolicies::getBind)
+				.orElse(null)
+		;
+		
+		if(bind != null) {
+			PolicyResponseType oprr = new PolicyResponseType();
+			String objId = resource.get(bind.getObjectId());
+			String model = bind.getModel();
+			BaseRecord refObj = IOSystem.getActiveContext().getAccessPoint().findByObjectId(contextUser, model, objId);
+			if(refObj != null) {
+				return canDo(contextUser, policyName, action, actor, refObj);
+			}
+			else {
+				oprr.setType(PolicyResponseEnumType.DENY);
+				oprr.setMessage("Could not read object: " + model + " " + objId);
+			}
+			return oprr;
+		}
+		
+		reader.populate(resource);
+		
 		// BaseRecord audit = AuditUtil.startAudit(contextUser, action, actor, resource);
 		PolicyResponseType prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actor, resource);
 		// AuditUtil.closeAudit(audit, prr);

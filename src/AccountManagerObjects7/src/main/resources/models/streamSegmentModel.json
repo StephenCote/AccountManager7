@@ -1,41 +1,50 @@
 {
-"name": "streamSegment",
-"ephemeral": true,
-"io": {
-	"reader": "org.cote.accountmanager.io.stream.StreamSegmentReader",
-	"writer": "org.cote.accountmanager.io.stream.StreamSegmentWriter",
-	"search": "org.cote.accountmanager.io.stream.StreamSegmentSearch"
-},
-"fields": [
-	{
-		"name": "streamId",
-		"type": "string",
-		"maxLength": 60,
-		"ephemeral": true
+	"name": "streamSegment",
+	"ephemeral": true,
+	"io": {
+		"reader": "org.cote.accountmanager.io.stream.StreamSegmentReader",
+		"writer": "org.cote.accountmanager.io.stream.StreamSegmentWriter",
+		"search": "org.cote.accountmanager.io.stream.StreamSegmentSearch"
 	},
-	{
-		"name": "stream",
-		"type": "blob",
-		"ephemeral": true
+	"access": {
+		"policies": {
+			"bind": {
+				"objectId": "streamId",
+				"model": "stream",
+				"description": "Defer to the object identified by 'propertyName' when performing policy evaluations.  This is to allow for ephemeral objects to be authorized and audited in a uniform fashion"
+			}
+		}
 	},
-	{
-		"name": "startPosition",
-		"type": "long",
-		"ephemeral": true
-	},
-	{
-		"name": "length",
-		"type": "long",
-		"ephemeral": true
-	},
-	{
-		"name": "size",
-		"type": "long",
-		"ephemeral": true
-	},
-	{
-		"name": "read",
-		"type": "boolean"
-	}
-	
-]}
+	"fields": [
+		{
+			"name": "streamId",
+			"type": "string",
+			"maxLength": 60,
+			"ephemeral": true
+		},
+		{
+			"name": "stream",
+			"type": "blob",
+			"ephemeral": true
+		},
+		{
+			"name": "startPosition",
+			"type": "long",
+			"ephemeral": true
+		},
+		{
+			"name": "length",
+			"type": "long",
+			"ephemeral": true
+		},
+		{
+			"name": "size",
+			"type": "long",
+			"ephemeral": true
+		},
+		{
+			"name": "read",
+			"type": "boolean"
+		}
+	]
+}

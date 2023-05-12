@@ -73,6 +73,42 @@ public class TestStream extends BaseTest {
 	}
 	
 	@Test
+	public void TestAuthorizeStreamSegment() {
+		logger.info("Test Stream Authorization");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
+		String dataName = "Auth stream " + UUID.randomUUID().toString();
+		ParameterList plist = ParameterList.newParameterList("path", "~/Data/Streams");
+		plist.parameter("name", dataName);
+		BaseRecord data = null;
+		BaseRecord odata = null;
+		StreamSegmentUtil ssu = new StreamSegmentUtil();
+		
+		try {
+			data = ioContext.getFactory().newInstance(ModelNames.MODEL_STREAM, testUser5, null, plist);
+			data.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
+			data.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
+			//newSegment(data, "1) This is some example data".getBytes());
+			data = ioContext.getAccessPoint().create(testUser5, data);
+			
+			BaseRecord seg1 = ssu.newSegment(data.get(FieldNames.FIELD_OBJECT_ID));
+			
+			PolicyResponseType prr = ioContext.getAuthorizationUtil().canCreate(testUser5, testUser5, data);
+			assertTrue("Expected a permit", prr.getType() == PolicyResponseEnumType.PERMIT);
+			
+			PolicyResponseType prr2 = ioContext.getAuthorizationUtil().canCreate(testUser5, testUser5, seg1);
+			logger.info(prr2.toFullString());
+			
+			
+		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException  e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		
+	}
+	
+	@Test
 	public void TestCreateStream() {
 		logger.info("Test Streaming");
 
@@ -123,7 +159,7 @@ public class TestStream extends BaseTest {
 			
 			
 			byte[] overRead = ssu.streamToEnd(idata.get(FieldNames.FIELD_OBJECT_ID), 0L, 100L);
-			
+			assertTrue("Expected byte length to match", overRead.length == allBytes.length);
 			// logger.info(data.toFullString());
 
 		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException    e) {
