@@ -5,9 +5,11 @@ package org.cote.accountmanager.security;
 
 import java.io.File;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -17,16 +19,22 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.CryptoFactory;
+import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.JsonReader;
 import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
@@ -36,11 +44,24 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.CompressionEnumType;
 import org.cote.accountmanager.schema.type.CredentialEnumType;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
+import org.cote.accountmanager.util.RecordUtil;
+import org.cote.accountmanager.util.ZipUtil;
+
+
+/// The Vault setup in AM7 is similar in concept to the AM5/6 version, but noteably different in the persistence layer.
+/// Instead of storing the keys as serialized entities in DataType objects, the keysets, keys, hashes, and vaults all have their own model.
+/// There was also a fair amount of duplication in the original object members to differentiate between enciphered/encrypted values vs. temporarily decrypted values
+/// In the current version, values are left encrypted, and only temporarily decrypted to reconstitute the key/cipher.
+/// TODO: Currently, the private key is left exposed on the VaultBean instance once instantiated, so the public access methods need to only return sanitized versions
+/// TODO: Move read/search/delete to use AccessPoint 
+
 public class VaultService
 {
 	
@@ -48,7 +69,7 @@ public class VaultService
 	
 	public static final Logger logger = LogManager.getLogger(VaultService.class);
 	
-	private static Map<String,VaultBean> cacheByUrn = Collections.synchronizedMap(new HashMap<>());
+	private static Map<String,VaultBean> cacheByObjectId = Collections.synchronizedMap(new HashMap<>());
 	
 	/// export a version of the vault that does not include exposed (aka unencrypted) information that should be protected
 	///
@@ -57,6 +78,11 @@ public class VaultService
 	}
 	
 	private static VaultService instance = null;
+	
+	private RecordUtil recordUtil = null;
+	private Factory factory = null;
+	private ISearch search = null;
+	
 	public static VaultService getInstance() {
 		if(instance == null) {
 			instance = new VaultService();
@@ -65,7 +91,9 @@ public class VaultService
 	}
 	
 	public VaultService(){
-		
+		this.recordUtil = IOSystem.getActiveContext().getRecordUtil();
+		this.factory = IOSystem.getActiveContext().getFactory();
+		this.search = IOSystem.getActiveContext().getSearch();
 	}
 	
 	public BaseRecord loadProtectedCredential(String filePath){
@@ -81,14 +109,11 @@ public class VaultService
 			outCred = reader.read(ModelNames.MODEL_CREDENTIAL, fileDat);
 		} catch (ReaderException e) {
 			logger.error(e);
-			
 		}
 
-		//BaseRecord outCred = JSONUtil.importObject(FileUtil.getFileAsString(filePath), LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		if(outCred == null ){
 			logger.error("Credential was not successfully restored");
 		}
-
 
 		return outCred;
 	}
@@ -98,33 +123,31 @@ public class VaultService
 	///
 	public boolean createProtectedCredentialFile(BaseRecord vaultOwner, String filePath, byte[] credential) throws FactoryException, FieldException, ValueException, ModelNotFoundException, ReaderException {
 		
-
-		IOSystem.getActiveContext().getRecordUtil().populate(vaultOwner);
+		recordUtil.populate(vaultOwner);
 		File f = new File(filePath);
 		if(f.exists()){
 			logger.error("File '" + filePath + "' already exists");
-			//return false;
+			return false;
 		}
 		
 		/// Note: CredentialService is intentionally NOT USED here because this credential SHOULD NOT be stored in the database
 		///
-		BaseRecord cred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, vaultOwner, null, null);
+		BaseRecord cred = factory.newInstance(ModelNames.MODEL_CREDENTIAL, vaultOwner, null, null);
 		cred.set(FieldNames.FIELD_TYPE, CredentialEnumType.ENCRYPTED_PASSWORD);
 		cred.set(FieldNames.FIELD_ENCIPHERED, true);
 		
 		String keyName = filePath.substring(filePath.lastIndexOf("/") + 1);
 		
 
-		BaseRecord crypto = IOSystem.getActiveContext().getRecordUtil().getCreateRecord(vaultOwner, ModelNames.MODEL_KEY_SET, "Vault Key - " + keyName, "~/keys", vaultOwner.get(FieldNames.FIELD_ORGANIZATION_ID));
-		IOSystem.getActiveContext().getRecordUtil().populate(crypto);
+		BaseRecord crypto = recordUtil.getCreateRecord(vaultOwner, ModelNames.MODEL_KEY_SET, "Vault Key - " + keyName, "~/keys", vaultOwner.get(FieldNames.FIELD_ORGANIZATION_ID));
+		recordUtil.populate(crypto);
 		CryptoBean cb = new CryptoBean(crypto);
 		if(cb.getSecretKey() == null) {
 			CryptoFactory.getInstance().generateSecretKey(cb);
 			BaseRecord ciph = cb.get(FieldNames.FIELD_CIPHER);
-			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vaultOwner, ciph, vaultOwner.get(FieldNames.FIELD_ORGANIZATION_ID));
-			//logger.info("Cipher: " + ciph.toString());
-			IOSystem.getActiveContext().getRecordUtil().createRecord(ciph);
-			IOSystem.getActiveContext().getRecordUtil().updateRecord(cb);
+			recordUtil.applyOwnership(vaultOwner, ciph, vaultOwner.get(FieldNames.FIELD_ORGANIZATION_ID));
+			recordUtil.createRecord(ciph);
+			recordUtil.updateRecord(cb);
 		}
 		
 		cred.set(FieldNames.FIELD_CREDENTIAL, CryptoUtil.encipher(cb, credential));
@@ -138,8 +161,8 @@ public class VaultService
 
 		/// Test decipher
 		BaseRecord icred = JSONUtil.importObject(FileUtil.getFileAsString(filePath), LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+
 		// Invoke a memory read to activate providers
-		
 		new MemoryReader().read(icred);
 		if(icred == null){
 			logger.error("Failed check to read in credential file");
@@ -163,11 +186,10 @@ public class VaultService
 	private byte[] getProtectedCredentialValue(BaseRecord credential){
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(credential.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(CredentialEnumType.ENCRYPTED_PASSWORD.toString().equals(credential.get(FieldNames.FIELD_TYPE))){
-			CryptoBean crypto = new CryptoBean(IOSystem.getActiveContext().getRecordUtil().getRecordByObjectId(org.getAdminUser(), ModelNames.MODEL_KEY_SET, credential.get(FieldNames.FIELD_KEY_ID)));
-			IOSystem.getActiveContext().getRecordUtil().populate(crypto);
+			CryptoBean crypto = new CryptoBean(recordUtil.getRecordByObjectId(org.getAdminUser(), ModelNames.MODEL_KEY_SET, credential.get(FieldNames.FIELD_KEY_ID)));
+			recordUtil.populate(crypto);
 			if(crypto.getSecretKey() == null){
 				logger.warn("Secret key is null");
-				// logger.info(JSONUtil.exportObject(crypto, RecordSerializerConfig.getForeignUnfilteredModule()));
 				return new byte[0];
 			}
 			return CryptoUtil.decipher(crypto, credential.get(FieldNames.FIELD_CREDENTIAL));
@@ -195,7 +217,6 @@ public class VaultService
 	private void setKeyPath(VaultBean vault){
 		CryptoBean orgSKey = getPrimarySymmetricKey(vault);
 		String path = getVaultPath(vault) + File.separator + vault.getNameHash() + "-" + vault.getKeyPrefix() + (vault.isProtected() ? vault.getKeyProtectedPrefix() : "") + vault.getKeyExtension();
-		// logger.info("Setting key path: " + path);
 		vault.setKeyPath(CryptoUtil.encipher(orgSKey, path.getBytes()));
 	}
 	
@@ -230,7 +251,6 @@ public class VaultService
 		VaultBean vault = null;
 		try {
 			vault = getVault(vaultUser, vaultName);
-			// logger.info("Vault: " + (vault != null));
 			if(vault == null) {
 				String credPath = IOFactory.DEFAULT_FILE_BASE + "/.vault/" + organizationId + "/credential/" + vaultName + ".json";
 				String vaultPath = IOFactory.DEFAULT_FILE_BASE + "/.vault/" + organizationId + "/vault";
@@ -252,9 +272,8 @@ public class VaultService
 				vault = getVault(vaultUser, vaultName);
 			}
 		}
-		catch(FactoryException | FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException e) {
+		catch(Exception e) {
 			logger.error(e);
-			
 		}
 		return vault;
 	}
@@ -262,7 +281,7 @@ public class VaultService
 	public VaultBean newVault(BaseRecord serviceUser, String vaultBasePath, String vaultName){
 		VaultBean vault = null;
 		try {
-			vault = new VaultBean(IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_VAULT));
+			vault = new VaultBean(factory.newInstance(ModelNames.MODEL_VAULT));
 			vault.set(FieldNames.FIELD_SERVICE_USER, serviceUser);
 	
 			vault.set(FieldNames.FIELD_ORGANIZATION_ID, serviceUser.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -297,35 +316,24 @@ public class VaultService
 				return false;
 			}
 			long orgId = vault.getServiceUser().get(FieldNames.FIELD_ORGANIZATION_ID);
-			/*
-			BaseRecord vdat = IOSystem.getActiveContext().getFactory().getCreateDirectoryModel(vault.getServiceUser(), ModelNames.MODEL_VAULT, vault.get(FieldNames.FIELD_NAME), "~/" + vault.getGroupName(), orgId);
-	
-			if (vdat.get(FieldNames.FIELD_CREDENTIAL) != null)
-			{
-				logger.error("Vault for '" + vault.get(FieldNames.FIELD_NAME) + "' could not be made.  Existing vault must first be unimproved.");
-				return false;
-			}
-			*/
+
 			String ipath = "~/" + vault.getGroupName() + "/" + vault.get(FieldNames.FIELD_NAME);
 			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(vault.getServiceUser(), ModelNames.MODEL_GROUP, ipath, "DATA", orgId);
-			IOSystem.getActiveContext().getRecordUtil().populate(dir);
+			recordUtil.populate(dir);
 			
 			ParameterList kslist = ParameterUtil.newParameterList("path", ipath);
 			kslist.parameter("salt", true);
-			BaseRecord saltSet = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), null, kslist);
+			BaseRecord saltSet = factory.newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), null, kslist);
 			saltSet.set(FieldNames.FIELD_NAME, "Salt");
 
-			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(vault.getServiceUser(), saltSet, "Salt", ipath, orgId);
+			recordUtil.applyNameGroupOwnership(vault.getServiceUser(), saltSet, "Salt", ipath, orgId);
 			
-			logger.info("Creating salt ....");
-			IOSystem.getActiveContext().getRecordUtil().createRecord(saltSet);
-			logger.info(JSONUtil.exportObject(saltSet, RecordSerializerConfig.getForeignUnfilteredModule()));
+			recordUtil.createRecord(saltSet);
 			
 			CryptoBean sm = new CryptoBean();
 			sm.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
 			CryptoFactory.getInstance().generateKeyPair(sm);
 			CryptoFactory.getInstance().generateSecretKey(sm);
-			//IOSystem.getActiveContext().getRecordUtil().createRecord(sm);
 
 			logger.info("Serializing private key ...");
 			byte[] privateKeyConfig = CryptoFactory.getInstance().serialize(sm, true, false, false, false, true).getBytes(StandardCharsets.UTF_8);
@@ -345,39 +353,24 @@ public class VaultService
 	
 			// Encipher the private key with the org key
 			//
-			logger.info("Retrieving org key ...");
 			CryptoBean orgSKey = getPrimarySymmetricKey(vault);
-			logger.info(JSONUtil.exportObject(orgSKey, RecordSerializerConfig.getForeignUnfilteredModule()));
 			byte[] encPrivateKey = CryptoUtil.encipher(orgSKey, privateKeyConfig);
 			
 			/// Set aside the public key in the vault key directory 
 			/// The enciphered private key and passphrase are stored outside of the system, while the cipher key is stored inside the system
-			logger.info("Serializing public key ...");
-			//BaseRecord publicKeyCfg = CryptoFactory.getInstance().export(sm, false, true, false, false, true);
 			BaseRecord publicKeyCfg = sm.copyRecord();
 			publicKeyCfg.set(FieldNames.FIELD_PRIVATE, null);
-			// publicKeyCfg.set(FieldNames.FIELD_HASH, null);
 			publicKeyCfg.set(FieldNames.FIELD_CIPHER, null);
 			
-			logger.info("Creating public key bean ...");
-			BaseRecord publicKey = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), publicKeyCfg, null);
-			// publicKey.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-			// publicKey.set(FieldNames.FIELD_NAME, "Public Key");
+			BaseRecord publicKey = factory.newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), publicKeyCfg, null);
 			
-			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(vault.getServiceUser(), publicKey, "Public Key", dir.get(FieldNames.FIELD_PATH), orgId);
-			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_PUBLIC), orgId);
-			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_HASH), orgId);
+			recordUtil.applyNameGroupOwnership(vault.getServiceUser(), publicKey, "Public Key", dir.get(FieldNames.FIELD_PATH), orgId);
+			recordUtil.applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_PUBLIC), orgId);
+			recordUtil.applyOwnership(vault.getServiceUser(), publicKey.get(FieldNames.FIELD_HASH), orgId);
+
+			recordUtil.createRecord(publicKey);
 			
-			logger.info("Creating public key ...");
-			logger.info(JSONUtil.exportObject(publicKey, RecordSerializerConfig.getForeignUnfilteredModule()));
-			IOSystem.getActiveContext().getRecordUtil().createRecord(publicKey);
-			
-			
-			
-			
-			
-			//BaseRecord pdat = IOSystem.getActiveContext().getFactory().getCreateDirectoryModel(vault.getServiceUser(), ModelNames.MODEL_VAULT, "Public Vault", "~/" + vault.getGroupName() + "/" + vault.get(FieldNames.FIELD_NAME), orgId);
-			BaseRecord pdat =  IOSystem.getActiveContext().getFactory().getCreateDirectoryModel(vault.getServiceUser(), ModelNames.MODEL_VAULT, vault.get(FieldNames.FIELD_NAME), "~/" + vault.getGroupName(), orgId);
+			BaseRecord pdat =  factory.getCreateDirectoryModel(vault.getServiceUser(), ModelNames.MODEL_VAULT, vault.get(FieldNames.FIELD_NAME), "~/" + vault.getGroupName(), orgId);
 			pdat.set(FieldNames.FIELD_HAVE_VAULT_KEY, true);
 			pdat.set(FieldNames.FIELD_PROTECTED_CREDENTIAL_PATH, vault.getProtectedCredentialPath());
 			pdat.set(FieldNames.FIELD_PUBLIC, publicKey);
@@ -387,9 +380,8 @@ public class VaultService
 			pdat.set(FieldNames.FIELD_SERVICE_USER, vault.getServiceUser());
 			pdat.set(FieldNames.FIELD_VAULT_PATH, vault.get(FieldNames.FIELD_VAULT_PATH));
 			pdat.set(FieldNames.FIELD_PROTECTED_CREDENTIAL_PATH, vault.get(FieldNames.FIELD_PROTECTED_CREDENTIAL_PATH));
-			IOSystem.getActiveContext().getRecordUtil().applyOwnership(vault.getServiceUser(), pdat, orgId);
-			IOSystem.getActiveContext().getRecordUtil().createRecord(pdat);
-			logger.info(pdat.toString());
+			recordUtil.applyOwnership(vault.getServiceUser(), pdat, orgId);
+			recordUtil.createRecord(pdat);
 			
 			vault.set(FieldNames.FIELD_VAULT_LINK, pdat.get(FieldNames.FIELD_OBJECT_ID));
 			vault.set(FieldNames.FIELD_HAVE_VAULT_KEY, true);
@@ -412,28 +404,82 @@ public class VaultService
 		}
 		return true;
 	}
-	
-	
-	public VaultBean getVault(BaseRecord user, String name) throws IndexException, ReaderException{
-		VaultBean dvault = new VaultBean();
+	public CryptoBean getActiveKey(VaultBean vault) {
+		if(vault.getActiveKey() != null) {
+			return vault.getActiveKey();
+		}
+		BaseRecord key = null;
+		if(!vault.hasField(FieldNames.FIELD_ACTIVE_KEY) || vault.get(FieldNames.FIELD_ACTIVE_KEY) == null) {
+			if(!newActiveKey(vault)) {
+				logger.error("Failed to create a new active key");
+				return null;
+			}
+		}
+		key = vault.get(FieldNames.FIELD_ACTIVE_KEY);
+		if(key == null) {
+			logger.error("Failed to retrieve key");
+			return null;
+		}
 		
-		BaseRecord group = IOSystem.getActiveContext().getSearch().findByPath(user, ModelNames.MODEL_GROUP, "~/" + dvault.get(FieldNames.FIELD_GROUP_NAME), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		if(group == null) {
-			logger.warn("Vault group does not exist");
+		String keyId = key.get(FieldNames.FIELD_CIPHER_FIELD_KEY_ID);
+		
+		if(vault.getVaultKey() == null && getVaultKey(vault) == null) {
+			logger.error("Vault key is null");
 			return null;
 		}
-		//IOSystem.getActiveContext().getSearch().findByPath(vault.getServiceUser(), ModelNames.MODEL_GROUP, "~/" + dvault.get(FieldNames.FIELD_GROUP_NAME), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_VAULT, group.get(FieldNames.FIELD_ID), name);
+		CryptoBean vaultKey = vault.getVaultKey();
+		CryptoBean activeBean = null;
+		// logger.info("Key id: " + keyId);
+		//logger.info(vaultKey.toFullString());
+		// try {
+			// key.set(FieldNames.FIELD_PRIVATE, vaultKey.get(FieldNames.FIELD_PRIVATE));
+			// logger.info(vaultKey.toFullString());
+			// logger.info(key.toFullString());
+			activeBean = new CryptoBean(key, vaultKey.getPrivateKey(), vaultKey.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
+			// key.set(FieldNames.FIELD_PRIVATE, null);
+			vault.setActiveKey(activeBean);
+		/*
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		*/
+		return activeBean;
+	}
+	
+	public VaultBean getPublicVault(BaseRecord user, String name) {
+		VaultBean dvault = new VaultBean();
 		VaultBean pvault = null;
-		if(recs.length == 0) {
-			logger.error("Failed to find vault " + name);
-			return null;
+		try {
+			BaseRecord group = search.findByPath(user, ModelNames.MODEL_GROUP, "~/" + dvault.get(FieldNames.FIELD_GROUP_NAME), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(group == null) {
+				logger.warn("Vault group does not exist");
+				return null;
+			}
+			BaseRecord[] recs = search.findByNameInGroup(ModelNames.MODEL_VAULT, group.get(FieldNames.FIELD_ID), name);
+			
+			if(recs.length == 0) {
+				logger.warn("Failed to find public vault " + name);
+				return null;
+			}
+			pvault = new VaultBean(recs[0]);
+			recordUtil.populate(pvault.getServiceUser());
+			if(!initialize(pvault, null)) {
+				logger.error("Failed to initialize public vault");
+				return null;
+			}
 		}
-		pvault = new VaultBean(recs[0]);
-		IOSystem.getActiveContext().getRecordUtil().populate(pvault.getServiceUser());
-		//logger.info(JSONUtil.exportObject(pvault, RecordSerializerConfig.getUnfilteredModule()));
-		if(!initialize(pvault, null)) {
-			logger.error("Failed to initialize public vault");
+		catch(IndexException | ReaderException e) {
+			logger.error(e);
+		}
+		return pvault;
+	}
+	public VaultBean getVault(BaseRecord user, String name) {
+		
+		VaultBean pvault = getPublicVault(user, name);
+		if(pvault == null) {
+			logger.debug("Failed to find vault " + name);
+			return null;
 		}
 
 		String vaultPath = getVaultPath(pvault);
@@ -450,7 +496,6 @@ public class VaultService
 			logger.error("Failed to initialize vault " + vaultPath);
 			return null;
 		}
-		//cacheByUrn.put(data.getUrn(), vault);
 		return vault;
 	}
 	
@@ -479,6 +524,10 @@ public class VaultService
 			if(vault.getVaultPath().length == 0) {
 				throw new FieldException("Invalid base path");
 			}
+			
+			recordUtil.populate(vault.getServiceUser());
+			recordUtil.populate(vault.get(FieldNames.FIELD_PUBLIC));
+			recordUtil.populate(vault.get(FieldNames.FIELD_SALT));
 	
 			String vaultPath = getVaultPath(vault);
 			logger.debug("Initializing Vault '" + vault.get(FieldNames.FIELD_NAME) + "' In " + vaultPath);
@@ -487,7 +536,7 @@ public class VaultService
 				throw new FieldException("Unable to create path to " + vaultPath);
 			}
 	
-			IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
+			recordUtil.populate(vault.getServiceUser());
 	
 			// Check for non-password protected file
 			//
@@ -509,9 +558,9 @@ public class VaultService
 	}
 	
 	private BaseRecord getVaultGroup(VaultBean vault) throws IndexException, ReaderException {
-		return IOSystem.getActiveContext().getSearch().findByPath(vault.getServiceUser(), ModelNames.MODEL_GROUP, "~/" + vault.get(FieldNames.FIELD_GROUP_NAME), vault.get(FieldNames.FIELD_ORGANIZATION_ID));
-		//return BaseService.readByNameInParent(audit, AuditEnumType.GROUP, vault.getServiceUser(), vault.getServiceUser().getHomeDirectory(), vault.getVaultGroupName(), "DATA");
+		return search.findByPath(vault.getServiceUser(), ModelNames.MODEL_GROUP, "~/" + vault.get(FieldNames.FIELD_GROUP_NAME), vault.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
+
 	private BaseRecord getVaultInstanceGroup(VaultBean vault) throws IndexException, ReaderException {
 		BaseRecord grp = getVaultGroup(vault);
 		if(grp == null) {
@@ -519,7 +568,7 @@ public class VaultService
 			return null;
 		}
 		BaseRecord ogrp = null;
-		BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findByNameInParent(ModelNames.MODEL_GROUP, grp.get(FieldNames.FIELD_ID), vault.get(FieldNames.FIELD_NAME));
+		BaseRecord[] recs = search.findByNameInParent(ModelNames.MODEL_GROUP, grp.get(FieldNames.FIELD_ID), vault.get(FieldNames.FIELD_NAME));
 		if(recs.length > 0) {
 			ogrp = recs[0];
 		}
@@ -535,7 +584,7 @@ public class VaultService
 			logger.error("Null vault instance group");
 			return null;
 		}
-		BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_KEY_SET, dir.get(FieldNames.FIELD_ID), "Salt");
+		BaseRecord[] recs = search.findByNameInGroup(ModelNames.MODEL_KEY_SET, dir.get(FieldNames.FIELD_ID), "Salt");
 		BaseRecord kset = null;
 		if(recs.length > 0) {
 			kset = recs[0];
@@ -562,6 +611,7 @@ public class VaultService
 			{
 
 				BaseRecord cred = vault.get(FieldNames.FIELD_CREDENTIAL);
+				//recordUtil.populate(cred);
 				byte[] keyBytes = new byte[0];
 				if(cred != null) {
 					keyBytes = cred.get(FieldNames.FIELD_CREDENTIAL);
@@ -572,25 +622,28 @@ public class VaultService
 				}
 				CryptoBean orgSKey = getPrimarySymmetricKey(vault); 
 				byte[] decConfig = CryptoUtil.decipher(orgSKey, keyBytes);
+
 				BaseRecord credSalt = getSalt(vault);
 				if(credSalt == null){
 					logger.info("Salt is null");
 					return null;
 				}
+				recordUtil.populate(credSalt.get(FieldNames.FIELD_HASH));
 				if (vault.isProtected()){
 					decConfig = CryptoUtil.decipher(decConfig, new String(getProtectedCredentialValue(vault.getProtectedCredential())), credSalt.get(FieldNames.FIELD_HASH_FIELD_SALT));
 				}
 				if (decConfig.length == 0) return null;
-				CryptoBean crypto = CryptoFactory.getInstance().createCryptoBean(decConfig, true);
+				CryptoBean crypto = new CryptoBean();
+				CryptoFactory.getInstance().importCryptoBean(crypto, decConfig, false);
+				// CryptoBean crypto = CryptoFactory.getInstance().createCryptoBean(decConfig, false);
 				vault.setVaultKey(crypto);
-
 			}
 		}
 		catch(FieldException | IndexException | ReaderException e) {
 			logger.error(e);
 			
 		}
-			return vault.getVaultKey();
+		return vault.getVaultKey();
 	}
 
 	public CryptoBean getPublicKey(VaultBean vault) {
@@ -598,11 +651,11 @@ public class VaultService
 		try {
 			//BaseRecord grp = getVaultInstanceGroup(vault);
 			BaseRecord grp = getVaultGroup(vault);
-			BaseRecord[] recs = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_VAULT, grp.get(FieldNames.FIELD_ID), vault.get(FieldNames.FIELD_NAME));
+			BaseRecord[] recs = search.findByNameInGroup(ModelNames.MODEL_VAULT, grp.get(FieldNames.FIELD_ID), vault.get(FieldNames.FIELD_NAME));
 			if(recs.length > 0) {
 				BaseRecord key = recs[0].get(FieldNames.FIELD_PUBLIC);
-				IOSystem.getActiveContext().getRecordUtil().populate(key);
-				crypto = new CryptoBean(key, true);
+				recordUtil.populate(key);
+				crypto = new CryptoBean(key);
 			}
 			else {
 				logger.error("Public key " + vault.get(FieldNames.FIELD_NAME) + " was not found in group " + grp.get(FieldNames.FIELD_ID));
@@ -621,16 +674,15 @@ public class VaultService
 	/// This could be refactored by defining groups of symmetric keys vs. groups of data items containing the keys and associating that group relative to the vault group
 	///
 	public boolean newActiveKey(VaultBean vault)  {
-		
-		
 		CryptoBean pubKey = getPublicKey(vault);
+		logger.info("**** NEW ACTIVE KEY");
 		if(pubKey == null) {
 			logger.error("Public key could not be found");
 			return false;
 		}
 		try {
-			IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
-			CryptoBean key = new CryptoBean(IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), null, null));
+			recordUtil.populate(vault.getServiceUser());
+			CryptoBean key = new CryptoBean(factory.newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), null, null));
 			key.setPublicKey((BaseRecord)pubKey.get(FieldNames.FIELD_PUBLIC));
 			key.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
 			if(!CryptoFactory.getInstance().generateSecretKey(key)) {
@@ -638,18 +690,21 @@ public class VaultService
 				return false;
 			}
 	
-			BaseRecord expKey = CryptoFactory.getInstance().export(key, false, false, true, false, true);
+			BaseRecord expKey = key.copyRecord();
+			expKey.set(FieldNames.FIELD_PUBLIC, null);
+			expKey.set(FieldNames.FIELD_CIPHER_FIELD_KEY_ID, vault.get(FieldNames.FIELD_VAULT_LINK));
 			BaseRecord impDir = getVaultInstanceGroup(vault);
 			if(impDir == null) {
 				logger.error("Invalid vault directory");
 				return false;
 			}
-			expKey.set(FieldNames.FIELD_ORGANIZATION_ID, impDir.get(FieldNames.FIELD_ORGANIZATION_ID));
-			expKey.set(FieldNames.FIELD_GROUP_ID, impDir.get(FieldNames.FIELD_ID));
-			expKey.set(FieldNames.FIELD_NAME, "Key - " + UUID.randomUUID().toString());
-			IOSystem.getActiveContext().getRecordUtil().createRecord(expKey);
-			// vault.set(FieldNames.FIELD_ACTIVE_KEY_ID, expKey.get(FieldNames.FIELD_ID));
+			BaseRecord cipher = expKey.get(FieldNames.FIELD_CIPHER);
+			recordUtil.applyNameGroupOwnership(vault.getServiceUser(), expKey, "Key - " + UUID.randomUUID().toString(), impDir.get(FieldNames.FIELD_PATH), vault.get(FieldNames.FIELD_ORGANIZATION_ID));
+			recordUtil.applyOwnership(vault.getServiceUser(), cipher, vault.get(FieldNames.FIELD_ORGANIZATION_ID));
+			
+			recordUtil.createRecord(expKey);
 			vault.set(FieldNames.FIELD_ACTIVE_KEY, expKey);
+			vault.setActiveKey(null);
 		}
 		catch(ClassCastException | NullPointerException | ReaderException | FieldException | ValueException | ModelNotFoundException | IndexException | FactoryException e) {
 			logger.error(e);
@@ -657,6 +712,329 @@ public class VaultService
 		}
 		return true;
 	}
+	
+	public List<VaultBean> listVaultsByOwner(BaseRecord owner) {
+		
+		VaultBean tmp = new VaultBean();
+		recordUtil.populate(owner);
+		List<VaultBean> vaults = new ArrayList<>();
+		try {
+			
+			tmp.set(FieldNames.FIELD_SERVICE_USER, owner);
+			tmp.set(FieldNames.FIELD_ORGANIZATION_ID, owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+			
+			BaseRecord vgroup = getVaultGroup(tmp);
+			if(vgroup == null) {
+				logger.error("Failed to find vault group");
+				return vaults;
+			}
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_VAULT, FieldNames.FIELD_OWNER_ID, owner.get(FieldNames.FIELD_ID));
+			QueryResult qr = search.find(q);
+			
+			if(qr != null) {
+				for(BaseRecord r: qr.getResults()) {
+					vaults.add(new VaultBean(r));
+				}
+			}
+		}
+		catch(ModelNotFoundException | FieldException | ValueException | IndexException | ReaderException e) {
+			logger.error(e);
+		}
+		return vaults;
+		
+	}
+	
+	public void setVaultBytes(VaultBean vault, BaseRecord obj, byte[] inData) throws ValueException, ModelException
+	{
+		if (vault.getActiveKey() == null){
+			if(getActiveKey(vault) == null){
+				throw new ValueException("Failed to establish active key");
+			}
+			if (vault.getActiveKey() == null)
+			{
+				throw new ValueException("Active key is null");
+			}
+		}
+		
+		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
+		}
+		recordUtil.populate(vault.getActiveKey());
+		logger.info("Get active key");
+		CryptoBean key = vault.getActiveKey();
+		
+		try {
+			obj.set(FieldNames.FIELD_KEY_ID, key.get(FieldNames.FIELD_OBJECT_ID));
+			obj.set(FieldNames.FIELD_VAULT_ID, vault.get(FieldNames.FIELD_VAULT_LINK));
+			obj.set(FieldNames.FIELD_VAULTED, true);
+			obj.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.UNKNOWN);
+			obj.set(FieldNames.FIELD_DATA_HASH, CryptoUtil.getDigestAsString(inData, new byte[0]));
+			if(inData.length > ByteModelUtil.MINIMUM_COMPRESSION_SIZE && ByteModelUtil.tryCompress(obj)) {
+				inData = ZipUtil.gzipBytes(inData);
+				obj.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.GZIP);
+			}
+			logger.info("Encipher data");
+			ByteModelUtil.setValue(obj, CryptoUtil.encipher(key, inData));
+			
+		}
+		catch(ClassCastException | ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		
+		logger.info("Exit from set vault bytes");
+
+	}
+	
+	/// TODO - change back to private
+	public CryptoBean getVaultCipher(VaultBean vault, String keyId) {
+		
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_OBJECT_ID, keyId);
+		BaseRecord key = search.findRecord(q);
+		if(key == null) {
+			logger.error("Failed to find key: " + keyId);
+			return null;
+		}
+		recordUtil.populate(key.get(FieldNames.FIELD_CIPHER));
+		// logger.info(key.toFullString());
+		this.getVaultKey(vault);
+		CryptoBean vaultKey = getVaultKey(vault);
+		CryptoBean crypto = new CryptoBean(key, vaultKey.getPrivateKey(), vaultKey.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
+		return crypto;
+		/*
+		if(vault.getSymmetricKeyMap().containsKey(keyId)){
+			return vault.getSymmetricKeyMap().get(keyId);
+		}
+
+		// Get the encrypted keys for this data object.
+		//
+		DataType key = ((DataFactory)Factories.getFactory(FactoryEnumType.DATA)).getDataByName(keyId, getVaultInstanceGroup(vault));
+		if (key == null){
+			logger.error("Vault key " + keyId + " does not exist");
+			return null;
+		}
+
+		SecurityBean vSm = getCipherFromData(vault, key);
+		if(vSm == null){
+			logger.error("Failed to restore cipher from data");
+			return null;
+		}
+		vault.getSymmetricKeyMap().put(keyId, vSm);
+		return vSm;
+		*/
+	}
+	
+	public byte[] extractVaultData(VaultBean vault, BaseRecord obj) throws ModelException, ValueException, FieldException
+	{
+		byte[] outBytes = new byte[0];
+		if(vault == null){
+			logger.error("Vault reference is null");
+			return outBytes;
+		}
+		if (!(boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY)){
+			logger.warn("Vault key is not specified");
+			return outBytes;
+		}
+		
+		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
+		}
+		
+		boolean isVaulted = obj.get(FieldNames.FIELD_VAULTED);
+		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
+		String keyId = obj.get(FieldNames.FIELD_KEY_ID);
+		
+		if(!isVaulted || vaultId == null || keyId == null) {
+			logger.error("Object is not vaulted");
+			return outBytes;
+		}
+		
+		String vaultLinkId = vault.get(FieldNames.FIELD_VAULT_LINK);
+		// If the data vault id isn't the same as this vault name, then it can't be decrypted.
+		//
+		if (vaultLinkId.equals(vaultId) == false){
+			logger.error("Object vault id '" + vaultId + "' does not match the specified vault link id '" + vaultLinkId + "'.  This is a precautionary/secondary check, probably due to changing the persisted vault configuration name");
+			return outBytes;
+		}
+
+		return getVaultBytes(vault,obj, getVaultCipher(vault,keyId));
+
+	}
+	public static byte[] getVaultBytes(VaultBean vault, BaseRecord obj, CryptoBean bean) throws ModelException, ValueException, FieldException
+	{
+		
+		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
+		}
+		
+		if(bean == null){
+			logger.error("Vault cipher for " + obj.get(FieldNames.FIELD_OBJECT_ID) + " is null");
+			return new byte[0];
+		}
+		
+		byte[] ret = CryptoUtil.decipher(bean, ByteModelUtil.getValue(obj));
+		CompressionEnumType cet = CompressionEnumType.valueOf(obj.get(FieldNames.FIELD_COMPRESSION_TYPE));
+		if (cet == CompressionEnumType.GZIP && ret.length > 0)
+		{
+			ret = ZipUtil.gunzipBytes(ret);
+		}
+
+
+		return ret;
+	}
+	
+	public VaultBean getVaultByObjectId(BaseRecord user, String objectId){
+		BaseRecord data = recordUtil.getRecordByObjectId(user, ModelNames.MODEL_VAULT, objectId);
+		if(data == null){
+			logger.error("Data is null for object id '" + objectId + "'");
+			return null;
+		}
+		return getVault(new VaultBean(data));
+	}
+	
+	private VaultBean getVault(VaultBean pubVault){
+		if(pubVault == null){
+			logger.error("Vault reference could not be restored");
+			return null;
+		}
+
+		initialize(pubVault, null);
+		
+		String vaultPath = getVaultPath(pubVault);
+		String credPath = getProtectedCredentialPath(pubVault);
+		BaseRecord cred = loadProtectedCredential(credPath);
+
+		VaultBean vault = loadVault(vaultPath, pubVault.get(FieldNames.FIELD_NAME), pubVault.get(FieldNames.FIELD_PROTECTED));
+		if(vault == null){
+			logger.error("Failed to restore vault");
+			return null;
+		}
+		initialize(vault, cred);
+
+		return vault;
+	}
+
+	private void deleteHash(BaseRecord rec) {
+		BaseRecord hash = rec.get(FieldNames.FIELD_HASH);
+		if(hash != null && RecordUtil.isIdentityRecord(hash)) {
+			recordUtil.deleteRecord(hash);
+		}
+	}
+	private void deleteCipher(BaseRecord rec) {
+		BaseRecord cip = rec.get(FieldNames.FIELD_CIPHER);
+		if(cip != null && RecordUtil.isIdentityRecord(cip)) {
+			recordUtil.deleteRecord(cip);
+		}
+	}
+	private void deleteKeyPair(BaseRecord rec) {
+		BaseRecord priv = rec.get(FieldNames.FIELD_PRIVATE);
+		BaseRecord pub = rec.get(FieldNames.FIELD_PUBLIC);
+		if(priv != null && RecordUtil.isIdentityRecord(priv)) {
+			recordUtil.deleteRecord(priv);
+		}
+		if(pub != null && RecordUtil.isIdentityRecord(pub)) {
+			recordUtil.deleteRecord(pub);
+		}
+		
+	}
+	private void deleteKeySet(BaseRecord rec) {
+		if(rec != null) {
+			deleteCipher(rec);
+			deleteHash(rec);
+			deleteKeyPair(rec);
+			if(RecordUtil.isIdentityRecord(rec)) {
+				recordUtil.deleteRecord(rec);
+			}
+		}
+	}
+	private void deleteSalt(BaseRecord rec) {
+		BaseRecord salt = rec.get(FieldNames.FIELD_SALT);
+		if(salt != null && RecordUtil.isIdentityRecord(salt)) {
+			deleteKeySet(salt);
+		}
+	}
+	private void deleteVaultRecord(BaseRecord rec) {
+		if(rec != null) {
+			deleteSalt(rec);
+			if(RecordUtil.isIdentityRecord(rec)) {
+				recordUtil.deleteRecord(rec);
+			}
+		}
+	}
+	
+	public boolean deleteVault(VaultBean vault) throws IndexException, ReaderException
+	{
+		logger.info("Cleaning up vault instance");
+		
+		
+		String vaultLink = vault.get(FieldNames.FIELD_VAULT_LINK);
+		BaseRecord pvault = null;
+		if(vaultLink != null) {
+			pvault = recordUtil.getRecordByObjectId(vault.getServiceUser(), ModelNames.MODEL_VAULT, vaultLink);
+		}
+		// logger.info(pvault.toFullString());
+		if (!(boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY)){
+			logger.warn("No key detected, so nothing is deleted");
+		}
+		if (vault.getKeyPath() == null){
+			logger.warn("Key path is null");
+		}
+		else{
+			String keyPath = getKeyPath(vault);
+			File vaultKeyFile = new File(keyPath);
+			if(vaultKeyFile.exists()){
+				if(!vaultKeyFile.delete()) {
+					logger.error("Unable to delete vault key file " + keyPath);
+				}
+			}
+			else{
+				logger.warn("Vault file " + keyPath + " does not exist");
+			}
+		}
+		
+		String credPath = getProtectedCredentialPath(vault);
+		if(credPath == null) {
+			logger.warn("Credential path is null");
+		}
+		else {
+			File credFile = new File(credPath);
+			if(credFile.exists()) {
+				if(!credFile.delete()) {
+					logger.error("Unable to delete vault credential file " + credPath);
+				}
+			}
+			else {
+				logger.warn("Vault credential file " + credPath + " does not exist");
+			}
+		}
+
+		BaseRecord localImpDir = getVaultInstanceGroup(vault);
+		logger.info("Removing implementation group: " + (localImpDir == null ? "[null]" : localImpDir.get(FieldNames.FIELD_URN)));
+		if (localImpDir != null )
+		{
+			Query keySetsQ = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_GROUP_ID, localImpDir.get(FieldNames.FIELD_ID));
+			QueryResult keySetQR = search.find(keySetsQ);
+			logger.info("Delete " + keySetQR.getResults().length + " ciphers from " + localImpDir.get(FieldNames.FIELD_URN));
+			for(BaseRecord r : keySetQR.getResults()) {
+				deleteKeySet(r);
+			}
+		}
+
+		BaseRecord vaultGroup = getVaultGroup(vault);
+		if(vaultGroup != null){
+			logger.info("Removing implementation data");
+			deleteVaultRecord(pvault);
+			deleteVaultRecord(vault);
+			// recordUtil.deleteRecord(vault);
+			recordUtil.deleteRecord(vaultGroup);
+		}
+		else{
+			logger.warn("Vault group is null");
+		}
+
+		return true;
+	}
+	
 	
 	/*
 	
@@ -701,146 +1079,6 @@ public class VaultService
 
 	
 
-	
-	public boolean deleteVault(VaultType vault) throws ArgumentException, FactoryException
-	{
-		AuditType audit = beginAudit(vault,ActionEnumType.DELETE, "Delete vault",true);
-
-		logger.info("Cleaning up vault instance");
-		if (!vault.getHaveVaultKey().booleanValue()){
-			logger.warn("No key detected, so nothing is deleted");
-		}
-		if (vault.getKeyPath() == null){
-			logger.warn("Path is null");
-		}
-		else{
-			File vaultKeyFile = new File(getKeyPath(vault));
-			if(vaultKeyFile.exists()){
-				if(!vaultKeyFile.delete()) logger.error("Unable to delete vault key file " + vault.getKeyPath());
-			}
-			else{
-				logger.warn("Vault file " + vault.getKeyPath() + " does not exist");
-			}
-		}
-
-		DirectoryGroupType localImpDir = getVaultInstanceGroup(vault);
-		logger.info("Removing implementation group: " + (localImpDir == null ? "[null]" : localImpDir.getUrn()));
-		if (localImpDir != null && !((GroupFactory)Factories.getFactory(FactoryEnumType.GROUP)).deleteDirectoryGroup(localImpDir))
-		{
-			logger.warn("Unable to delete keys from vault directory");
-		}
-		DirectoryGroupType vaultGroup = getVaultGroup(vault);
-		if(vaultGroup != null){
-			DataType impData = ((DataFactory)Factories.getFactory(FactoryEnumType.DATA)).getDataByName(vault.getVaultName(), true,vaultGroup);
-			logger.info("Removing implementation data: " + (impData == null ? "[null]" : impData.getUrn()));
-			if(impData != null && !((DataFactory)Factories.getFactory(FactoryEnumType.DATA)).delete(impData)){
-				logger.warn("Unable to delete improvement key");
-			}
-			else if(impData == null){
-				logger.warn("Implementation data '" + vault.getVaultName() + "' in group " + vaultGroup.getUrn() + " could not be removed");
-			}
-		}
-		else{
-			logger.warn("Vault group is null");
-		}
-		cacheByUrn.remove(vault.getVaultDataUrn());
-		vault.setVaultDataUrn(null);
-		vault.setKeyPath(null);
-		vault.setHaveCredential(false);
-		vault.setProtectedCredential(null);
-		vault.setActiveKey(null);
-		vault.setVaultKey(null);
-		vault.setCredential(null);
-		
-		AuditService.permitResult(audit, "TODO: Add authZ check");
-		return true;
-	}
-	private DataType getVaultMetaData(VaultBean vault) throws FactoryException, ArgumentException{
-		AuditType audit = beginAudit(vault,ActionEnumType.READ, "getVaultMetaData",true);
-		return BaseService.readByName(audit, AuditEnumType.DATA, vault.getServiceUser(),  getVaultGroup(vault), vault.getVaultName());
-	}
-	
-
-
-	
-	
-	
-	
-	/// NOTE:
-	///		The Volatile Key includes the deciphered/exposed private key from the vaultKey
-	///		The private key should be immediately null'd after decrypting the secret key
-	///		
-	private SecurityBean getVolatileVaultKey(VaultBean vault) throws ArgumentException
-	{
-		if (!vault.getHaveVaultKey().booleanValue() || getVaultKey(vault) == null){
-			logger.error("Vault is not initialized correctly.  The vault key is not present.");
-			return null;
-		}
-
-		SecurityBean outBean = new SecurityBean();
-		
-		SecurityBean inBean = vault.getVaultKeyBean();
-		
-		
-		outBean.setEncryptCipherKey(inBean.getEncryptCipherKey());
-		outBean.setCipherIV(inBean.getCipherIV());
-		outBean.setCipherKey(inBean.getCipherKey());
-		outBean.setPrivateKeyBytes(inBean.getPrivateKeyBytes());
-		outBean.setPrivateKey(inBean.getPrivateKey());
-		outBean.setPublicKeyBytes(inBean.getPublicKeyBytes());
-		outBean.setPublicKey(inBean.getPublicKey());
-		outBean.setSecretKey(inBean.getSecretKey());
-
-		return outBean;
-	
-	}
-	
-	private SecurityBean getCipherFromData(VaultBean vault, DataType data) throws DataException, ArgumentException{
-		// Get a mutable security manager to swap out the keys
-		// The Volatile Key includes the exposed private key, so it's immediately wiped from the object after decrypting the cipher key
-		//
-		SecurityBean vSm = getVolatileVaultKey(vault);
-		if (vSm == null){
-			logger.error("Volatile key copy is null");
-			return null;
-		}
-		byte[] dataBytes = DataUtil.getValue(data);
-		if(dataBytes.length == 0){
-			logger.error("Key data was empty");
-			return null;
-		}
-		SecurityFactory.getSecurityFactory().importSecurityBean(vSm, dataBytes, true);
-		vSm.setPrivateKey(null);
-		vSm.setPrivateKeyBytes(new byte[0]);
-		return vSm;
-	}
-	
-	private SecurityBean getVaultCipher(VaultBean vault, String keyId) throws FactoryException, ArgumentException, DataException{
-		if(vault.getSymmetricKeyMap().containsKey(keyId)){
-			return vault.getSymmetricKeyMap().get(keyId);
-		}
-
-		// Get the encrypted keys for this data object.
-		//
-		DataType key = ((DataFactory)Factories.getFactory(FactoryEnumType.DATA)).getDataByName(keyId, getVaultInstanceGroup(vault));
-		if (key == null){
-			logger.error("Vault key " + keyId + " does not exist");
-			return null;
-		}
-
-		SecurityBean vSm = getCipherFromData(vault, key);
-		if(vSm == null){
-			logger.error("Failed to restore cipher from data");
-			return null;
-		}
-		vault.getSymmetricKeyMap().put(keyId, vSm);
-		return vSm;
-	}
-	
-	public static boolean canVault(NameIdType obj) throws FactoryException {
-		INameIdFactory fact = Factories.getFactory(FactoryEnumType.valueOf(obj.getNameType().toString()));
-		return fact.isVaulted();
-	}
 	public String[] extractVaultAttributeValues(VaultBean vault, AttributeType attr) throws UnsupportedEncodingException, ArgumentException, FactoryException, DataException {
 		String[] outVals = new String[0];
 		AttributeFactory af = Factories.getAttributeFactory();
@@ -885,234 +1123,8 @@ public class VaultService
 		attr.getValues().clear();
 		af.setEncipheredAttributeValues(attr, vault.getActiveKeyBean(), values);
 	}
-	public void setVaultBytes(VaultBean vault, NameIdType obj, byte[] inData) throws DataException, FactoryException, UnsupportedEncodingException, ArgumentException
-	{
-		if (vault.getActiveKey() == null || vault.getActiveKeyId() == null){
-			if(!newActiveKey(vault)){
-				throw new FactoryException("Failed to establish active key");
-			}
-			if (vault.getActiveKey() == null)
-			{
-				throw new FactoryException("Active key is null");
-			}
-		}
-		INameIdFactory fact = Factories.getFactory(FactoryEnumType.valueOf(obj.getNameType().toString()));
-		if(fact.isVaulted() == false) throw new ArgumentException("Object factory does not support vaulted protection");
-		
-		obj.setKeyId(vault.getActiveKeyId());
-		obj.setVaultId(vault.getVaultDataUrn());
-		obj.setVaulted(true);
-		
-		if(obj.getNameType() == NameEnumType.CREDENTIAL) {
-			BaseRecord cred = (BaseRecord)obj;
-			cred.setCredential(CryptoUtil.encipher(vault.getActiveKeyBean(), inData));
-
-		}
-		else if(obj.getNameType() == NameEnumType.DATA) {
-			DataType data = (DataType)obj;
-			data.setCompressed(false);
-			data.setDataHash(CryptoUtil.getDigestAsString(inData,new byte[0]));
 	
-			if (inData.length > 512 && DataUtil.tryCompress(data))
-			{
-				inData = ZipUtil.gzipBytes(inData);
-				data.setCompressed(true);
-				data.setCompressionType(CompressionEnumType.GZIP);
-			}
-			DataUtil.setValue(data,CryptoUtil.encipher(vault.getActiveKeyBean(), inData));
-		}
 
-	}
-	public byte[] extractVaultData(VaultBean vault, NameIdType obj) throws FactoryException, ArgumentException, DataException
-	{
-		byte[] outBytes = new byte[0];
-		if(vault == null){
-			logger.error("Vault reference is null");
-			return outBytes;
-		}
-		if (!vault.getHaveVaultKey().booleanValue()){
-			logger.warn("Vault key is not specified");
-			return outBytes;
-		}
-		INameIdFactory fact = Factories.getFactory(FactoryEnumType.valueOf(obj.getNameType().toString()));
-		if(fact.isVaulted() == false) throw new ArgumentException("Object factory does not support vaulted protection");
-
-		boolean isVaulted = obj.getVaulted();
-		String vaultId = obj.getVaultId();
-		String keyId = obj.getKeyId();
-		
-		if(!isVaulted || vaultId == null || keyId == null) {
-			logger.error("Object is not vaulted");
-			return outBytes;
-		}
-		
-		// If the data vault id isn't the same as this vault name, then it can't be decrypted.
-		//
-		if (vault.getVaultDataUrn().equals(vaultId) == false){
-			logger.error("Object vault id '" + vaultId + "' does not match the specified vault name '" + vault.getVaultDataUrn() + "'.  This is a precautionary/secondary check, probably due to changing the persisted vault configuration name");
-			return outBytes;
-		}
-
-		return getVaultBytes(vault,obj, getVaultCipher(vault,keyId));
-
-	}
-	public static byte[] getVaultBytes(VaultBean vault, NameIdType obj, SecurityBean bean) throws DataException, FactoryException, ArgumentException
-	{
-		
-		if(bean == null){
-			logger.error("Vault cipher for " + obj.getUrn() + " is null");
-			return new byte[0];
-		}
-		
-		INameIdFactory fact = Factories.getFactory(FactoryEnumType.valueOf(obj.getNameType().toString()));
-		if(fact.isVaulted() == false) throw new ArgumentException("Object factory does not support vaulted protection");
-		
-		byte[] ret = new byte[0];
-		switch(obj.getNameType()) {
-			case DATA:
-				DataType data = (DataType)obj;
-				ret = CryptoUtil.decipher(bean,DataUtil.getValue(data));
-				if (data.getCompressed().booleanValue() && ret.length > 0)
-				{
-					ret = ZipUtil.gunzipBytes(ret);
-				}
-				if (data.getPointer().booleanValue())
-				{
-					ret = FileUtil.getFile(new String(ret));
-				}
-				break;
-			case CREDENTIAL:
-				ret = CryptoUtil.decipher(bean,((BaseRecord)obj).getCredential());
-				break;
-			default:
-				logger.error("Unhandled object type: " + obj.getNameType());
-				break;
-		}
-
-		return ret;
-	}
-	/// Use this method with BaseService.add
-	/// The TypeSanitizer will take care of setVaultBytes
-	/// Otherwise, for direct factory adds (such as with bulk inserts), use setVaultBytes and invoke the add method directly on the factory
-	public DataType newVaultData(VaultBean vault, UserType dataOwner, String name, DirectoryGroupType group, String mimeType, byte[] inData, byte[] clientCipher) throws FactoryException, ArgumentException, DataException, UnsupportedEncodingException
-	{
-		
-		boolean encipher = (clientCipher != null && clientCipher.length > 0);
-		if (inData == null || inData.length == 0) return null;
-
-		DataType outData = ((DataFactory)Factories.getFactory(FactoryEnumType.DATA)).newData(dataOwner, group.getId());
-		outData.setName(name);
-		outData.setMimeType(mimeType);
-		outData.setGroupPath(group.getPath());
-		if (encipher && clientCipher.length > 0)
-		{
-			outData.setCipherKey(clientCipher);
-			outData.setEncipher(true);
-		}
-
-		DataUtil.setValue(outData, inData);
-		outData.setVaulted(true);
-		outData.setVaultId(vault.getVaultDataUrn());
-		return outData;
-	}
-	
-	/// return a list of the PUBLIC vault configurations
-	/// These have the same data as the PRIVATE configuration, with the exception of which key is held
-	/// 
-
-	
-	public List<VaultType> listVaultsByOwner(UserType owner) throws FactoryException, ArgumentException, DataException{
-		VaultType vault = new VaultType();
-		((NameIdFactory)Factories.getFactory(FactoryEnumType.USER)).populate(owner);
-		vault.setServiceUser(owner);
-		vault.setServiceUserUrn(owner.getUrn());
-
-		/// Using the default group location ("~/.vault)
-		///
-		DirectoryGroupType dir = getVaultGroup(vault);
-		if(dir == null){
-			return new ArrayList<>();
-		}
-
-		List<DataType> dataList = BaseService.listByGroup(AuditEnumType.DATA, "DATA", dir.getObjectId(), 0L, 0, owner);
-		
-		List<VaultType> vaults = new ArrayList<>();
-		for(DataType data : dataList){
-			VaultBean vaultb = getVaultByUrn(owner, data.getUrn());
-			if(vaultb != null) vaults.add(vaultb);
-		}
-
-		return vaults;
-	}
-	
-	/// User provided for context authorization
-	///
-	public VaultBean getVaultByUrn(UserType user, String urn){
-		if(cacheByUrn.containsKey(urn)) return cacheByUrn.get(urn);
-		
-		DataType data = BaseService.readByUrn(AuditEnumType.DATA, urn, user);
-		if(data == null){
-			logger.error("Data is null for urn '" + urn + "'");
-			return null;
-		}
-		return getVault(data);
-	}
-	/// User provided for context authorization
-	///
-	public VaultBean getVaultByObjectId(UserType user, String objectId){
-		if(cacheByUrn.containsKey(objectId)) return cacheByUrn.get(objectId);
-		
-		DataType data = BaseService.readByObjectId(AuditEnumType.DATA, objectId, user);
-		if(data == null){
-			logger.error("Data is null for object id '" + objectId + "'");
-			return null;
-		}
-		return getVault(data);
-	}
-	
-	private VaultBean getVault(DataType data){
-		VaultBean vault = null;
-		VaultType pubVault = null;
-
-
-		try {
-			pubVault = JSONUtil.importObject(new String(DataUtil.getValue(data)), VaultType.class);
-			initialize(pubVault, null);
-		} catch ( DataException | ArgumentException | FactoryException e) {
-			logger.error(e);
-		}
-
-		
-		if(pubVault == null){
-			logger.error("Vault reference could not be restored");
-			return null;
-		}
-		
-		String vaultPath = getVaultPath(pubVault);
-		String credPath = getProtectedCredentialPath(pubVault);
-
-		BaseRecord cred = loadProtectedCredential(credPath);
-
-		vault = loadVault(vaultPath, pubVault.getVaultName(), pubVault.isProtected());
-		if(vault == null){
-			logger.error("Failed to restore vault");
-			return null;
-		}
-		try {
-			initialize(vault, cred);
-		} catch (ArgumentException | FactoryException e) {
-			logger.error(e);
-			vault = null;
-		}
-		cacheByUrn.put(data.getUrn(), vault);
-		return vault;
-	}
-	public static void clearCache() {
-		cacheByUrn.clear();
-	}
-	public static String reportCacheSize(){
-		return "VaultService Cache Report\ncacheByUrn\t" + cacheByUrn.keySet().size() + "\n";
-	}
 	*/
 }
 

@@ -15,15 +15,18 @@
 	},
 	{
 		"name": "factDataType",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	},
 	{
 		"name": "factType",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	},
 	{
 		"name": "sourceUrn",
-		"type": "string"
+		"type": "string",
+		"maxLength": 127
 	},
 	{
 		"name": "sourceDataType",
@@ -47,10 +50,12 @@
 	},
 	{
 		"name": "modelType",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	},
 	{
 		"name": "sourceType",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	}
 ]}

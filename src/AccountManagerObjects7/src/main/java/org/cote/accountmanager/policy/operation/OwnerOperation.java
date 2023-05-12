@@ -5,10 +5,15 @@
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.policy.FactUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -101,7 +106,15 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 			
 			if(murn != null && murn.length() > 0) {
 				try {
-					BaseRecord[] recs = search.findByUrn(mtype, murn);
+					String[] flds = QueryUtil.getCommonFields(mtype);
+					if(flds.length == 0) {
+						flds = new String[] {FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID};
+					}
+					Query q = QueryUtil.createQuery(mtype, FieldNames.FIELD_URN, murn);
+					q.setRequest(flds);
+					q.set(FieldNames.FIELD_INSPECT, true);
+					BaseRecord[] recs = search.find(q).getResults();
+					//BaseRecord[] recs = search.findByUrn(mtype, murn);
 					if(recs.length > 0) {
 						mrec = recs[0];
 					}
@@ -109,7 +122,7 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 						logger.error("Urn could not be found: " + murn);
 					}
 				}
-				catch(IndexException | ReaderException e0) {
+				catch(IndexException | ReaderException | FieldException | ValueException | ModelNotFoundException e0) {
 					logger.error(e0);
 					return OperationResponseEnumType.ERROR;
 				}

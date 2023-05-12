@@ -7,6 +7,11 @@
 			"type": "blob"
 		},
 		{
+			"name": "keyId",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
 			"name": "iv",
 			"type": "blob"
 		},
@@ -18,17 +23,20 @@
 		{
 			"name": "provider",
 			"type": "string",
-			"default": "BC"
+			"default": "BC",
+			"maxLength": 32
 		},
 		{
 			"name": "keySpec",
 			"type": "string",
-			"default": "AES"
+			"default": "AES",
+			"maxLength": 32
 		},
 		{
 			"name": "keyMode",
 			"type": "string",
-			"default": "AES/CBC/PKCS5Padding"
+			"default": "AES/CBC/PKCS5Padding",
+			"maxLength": 32
 		},
 		{
 			"name": "keySize",

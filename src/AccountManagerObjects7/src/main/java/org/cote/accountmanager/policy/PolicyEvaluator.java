@@ -17,6 +17,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ScriptException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOFactory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
@@ -58,15 +59,31 @@ public class PolicyEvaluator {
 	private FactUtil futil = null;
 	private AuthorizationUtil authUtil = null;
 	private MemberUtil memberUtil = null;
-	public PolicyEvaluator(IReader reader, IWriter writer, ISearch search){
+	private boolean trace = false;
+	
+	public PolicyEvaluator(IReader reader, IWriter writer, ISearch search, AuthorizationUtil authUtil, MemberUtil memUtil){
 		this.reader = reader;
 		this.writer = writer;
 		this.search = search;
 		futil = new FactUtil(reader, search);
-		authUtil = IOFactory.getAuthorizationUtil(reader, writer, search);
-		memberUtil = IOFactory.getMemberUtil(reader, writer, search);
+		this.authUtil = authUtil; //IOFactory.getAuthorizationUtil(reader, writer, search);
+		this.memberUtil = memUtil; //IOFactory.getMemberUtil(reader, writer, search);
 	}
 	
+	
+
+	public boolean isTrace() {
+		return trace;
+	}
+
+
+
+	public void setTrace(boolean trace) {
+		authUtil.setTrace(trace);
+		this.trace = trace;
+	}
+
+
 
 	public BaseRecord evaluatePolicyRequest(BaseRecord prt) throws FieldException, ModelNotFoundException, ValueException, ScriptException, IndexException, ReaderException, ModelException {
 
@@ -242,10 +259,13 @@ public class PolicyEvaluator {
 	}
 	private boolean evaluatePattern(BaseRecord pattern, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws ValueException, ScriptException, IndexException, ReaderException, FieldException, ModelNotFoundException, ModelException{
 		PatternEnumType ptype = PatternEnumType.valueOf(pattern.get(FieldNames.FIELD_TYPE));
-		logger.debug("Evaluating Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString());
+		
+		if(trace) {
+			logger.info("Evaluating Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString());
+		}
+		
 		BaseRecord fact = pattern.get(FieldNames.FIELD_FACT);
 		BaseRecord mfact = pattern.get(FieldNames.FIELD_MATCH);
-		// logger.info(JSONUtil.exportObject(pattern, RecordSerializerConfig.getUnfilteredModule()));
 
 		BaseRecord pfact = fact;
 		OperationResponseEnumType opr = OperationResponseEnumType.UNKNOWN;
@@ -389,15 +409,27 @@ public class PolicyEvaluator {
 			
 			BaseRecord perm = null;
 			String fdata = matchFact.get(FieldNames.FIELD_FACT_DATA);
-			if(mtype.equals(ModelNames.MODEL_PERMISSION)) perm = g;
+			if(fdata == null && mtype.equals(ModelNames.MODEL_PERMISSION)) perm = g;
 			else if(FactUtil.idPattern.matcher(fdata).matches()){
 				perm = reader.read(matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), Long.parseLong(fdata));
 			}
 			else if(fdata.indexOf("/") > -1) {
-				// logger.info("Find perm: " + fdata + " in " +  contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-				perm = search.findByPath(contextUser, ModelNames.MODEL_PERMISSION, fdata, matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				if(trace) {
+					logger.info("Find perm by path: " + fdata + " in " +  contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				}
+				String fdtype = matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE);
+				if(fdtype != null && (fdtype.equals(ModelNames.MODEL_PERMISSION) ||  fdtype.equals(ModelNames.MODEL_ROLE))) {
+					if(trace) {
+						logger.info("Stipulating permission/role type '" + fdtype + "' relative to the actor type '" + ftype + "'.  This is likely from the internally generated policy");
+					}
+					fdtype = ftype;
+				}
+				perm = search.findByPath(contextUser, ModelNames.MODEL_PERMISSION, fdata, fdtype, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 			}
 			else{
+				if(trace) {
+					logger.info("Find perm by urn: " + fdata);
+				}
 				BaseRecord[] perms = search.findByUrn(matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), fdata);
 				if(perms.length > 0) {
 					perm = perms[0];
@@ -450,12 +482,12 @@ public class PolicyEvaluator {
 	private OperationResponseEnumType evaluatePermissionAuthorization(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord src, BaseRecord targ, BaseRecord permission) {
 		OperationResponseEnumType outResponse = OperationResponseEnumType.UNKNOWN;
 		boolean authZ = authUtil.checkEntitlement(src, permission, targ);
-		/*
-		logger.info(JSONUtil.exportObject(src, RecordSerializerConfig.getUnfilteredModule()));
-		logger.info(JSONUtil.exportObject(permission, RecordSerializerConfig.getUnfilteredModule()));
-		logger.info(JSONUtil.exportObject(targ, RecordSerializerConfig.getUnfilteredModule()));
-		logger.info("AuthZ: " + authZ);
-		*/
+		if(trace) {
+			logger.info(src.toFullString());
+			logger.info(permission.toFullString());
+			logger.info(targ.toFullString());
+			logger.info("AuthZ: " + authZ);
+		}
 		/*
 		logger.error("Not converted");
 

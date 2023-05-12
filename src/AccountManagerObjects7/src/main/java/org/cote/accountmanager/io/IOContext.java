@@ -62,16 +62,14 @@ public class IOContext {
 		policyUtil = IOFactory.getPolicyUtil(reader, writer, search);
 		pathUtil = IOFactory.getPathUtil(reader, writer, search);
 		factory = new Factory(this);
-		policyEvaluator = new PolicyEvaluator(reader, writer, search);
+		policyEvaluator = new PolicyEvaluator(reader, writer, search, authorizationUtil, memberUtil);
 		policyDefinitionUtil = new PolicyDefinitionUtil(reader, search);
 
 		this.accessPoint = new AccessPoint(this);
 
 		initialized = true;
 	}
-	
-	
-	
+
 	public AccessPoint getAccessPoint() {
 		return accessPoint;
 	}

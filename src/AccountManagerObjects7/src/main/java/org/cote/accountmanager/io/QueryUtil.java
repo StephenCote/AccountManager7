@@ -1,7 +1,9 @@
 package org.cote.accountmanager.io;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -13,8 +15,10 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.util.CryptoUtil;
@@ -23,6 +27,19 @@ import org.cote.accountmanager.util.ParameterUtil;
 public class QueryUtil {
 	public static final Logger logger = LogManager.getLogger(QueryUtil.class);
 	
+	public static String[] getCommonFields(String model) {
+		// List<String> flds = new ArrayList<>();
+		Set<String> flds = new HashSet<>();
+		ModelSchema ms = RecordFactory.getSchema(model);
+		flds.addAll(ms.getQuery());
+		for(String s : ms.getImplements()) {
+			if(!s.equals(model)) {
+				ModelSchema mis = RecordFactory.getSchema(s);
+				flds.addAll(mis.getQuery());
+			}
+		}
+		return flds.toArray(new String[0]);
+	}
 	public static String getComparatorToken(ComparatorEnumType comp) {
 		String token = comp.toString();
 		switch(comp) {

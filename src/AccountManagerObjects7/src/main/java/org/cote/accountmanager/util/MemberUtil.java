@@ -277,7 +277,6 @@ public class MemberUtil implements IMember {
 		else {
 			part1 = ParticipationFactory.newParticipation(user, object, actor);
 		}
-
 		return recordUtil.createRecord(part1);
 	}
 	

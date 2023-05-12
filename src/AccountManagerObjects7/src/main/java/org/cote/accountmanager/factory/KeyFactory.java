@@ -2,9 +2,15 @@ package org.cote.accountmanager.factory;
 
 
 import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.MemoryWriter;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.ParameterUtil;
 
@@ -114,14 +120,30 @@ public class KeyFactory  extends FactoryBase {
 			isSecretKey = ParameterUtil.getParameter(parameterList, "secretKey", Boolean.class, false);
 			isSalt = ParameterUtil.getParameter(parameterList, "salt", Boolean.class, false);
 		}
-		if(isKeyPair) {
-			CryptoFactory.getInstance().generateKeyPair(keySet);
+		
+		try {
+			if(isKeyPair) {
+				CryptoFactory.getInstance().generateKeyPair(keySet);
+				if(contextUser != null) {
+					IOSystem.getActiveContext().getRecordUtil().applyOwnership(contextUser, keySet.get(FieldNames.FIELD_PUBLIC), contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+					IOSystem.getActiveContext().getRecordUtil().applyOwnership(contextUser, keySet.get(FieldNames.FIELD_PRIVATE), contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				}
+			}
+			if(isSecretKey) {
+				CryptoFactory.getInstance().generateSecretKey(keySet);
+				if(contextUser != null) {
+					IOSystem.getActiveContext().getRecordUtil().applyOwnership(contextUser, keySet.get(FieldNames.FIELD_CIPHER), contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				}
+			}
+			if(isSalt) {
+				CryptoFactory.getInstance().setSalt(keySet);
+				if(contextUser != null) {
+					IOSystem.getActiveContext().getRecordUtil().applyOwnership(contextUser, keySet.get(FieldNames.FIELD_HASH), contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+				}
+			}
 		}
-		if(isSecretKey) {
-			CryptoFactory.getInstance().generateSecretKey(keySet);
-		}
-		if(isSalt) {
-			CryptoFactory.getInstance().setSalt(keySet);
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
 		}
 		return keySet;
 

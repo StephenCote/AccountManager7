@@ -55,7 +55,7 @@ public class TestAccessPoint extends BaseTest {
 		OrganizationContext orgC = IOSystem.getActiveContext().getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(orgC != null && orgC.isInitialized()) {
 			try {
-				token = TokenService.createAuthorizationToken(orgC.getOpsUser(), user, "Demo token", 120);
+				token = TokenService.createAuthorizationToken(orgC.getOpsUser(), user, null, null, "Demo token", 120);
 			}
 			catch(ReaderException | IndexException e) {
 				logger.error(e);
@@ -69,9 +69,20 @@ public class TestAccessPoint extends BaseTest {
 	private BaseRecord getCreateCredential(BaseRecord user, String pwd) {
 		BaseRecord cred = CredentialUtil.getLatestCredential(user);
 		if(cred == null) {
+			logger.info("Creating new credential");
 			cred = CredentialUtil.newPasswordCredential(user, pwd);
+			logger.info("Checking create new object policy authorization");
 			PolicyResponseType prr = ioContext.getAuthorizationUtil().canCreate(user, user, cred);
-			logger.info("Create cred? " + prr.getType().toString());
+			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
+				logger.info("Creating credential object");
+				cred = ioContext.getAccessPoint().create(user, cred);
+			}
+			else {
+				logger.info("Not authorized to create new credential");
+			}
+		}
+		else {
+			logger.info("Returning latest credential");
 		}
 		return cred;
 	}
@@ -137,20 +148,20 @@ public class TestAccessPoint extends BaseTest {
 		
 		BaseRecord cred = getCreateCredential(testUser1, "password");
 		assertNotNull("Credential is null", cred);
-		logger.info(cred.toString());
+		// logger.info(cred.toString());
 		
 		String token = getAccessToken(testUser1);
 		logger.info("Token: " + token);
 		try {
 			PolicyType pol = ioContext.getPolicyUtil().getResourcePolicy(PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, testUser1, cred).toConcrete();
-			logger.info(pol.toString());
+			// logger.info(pol.toString());
 		} catch (ReaderException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
 		BaseRecord req = newAccessRequest(testUser1, testUser1, ActionEnumType.ADD, cred);
 		PolicyResponseType prr = ioContext.getAuthorizationUtil().canCreate(testUser1, testUser1, req);
-		logger.info(prr.toString());
+		// logger.info(prr.toString());
 		// logger.info(req.toString());
 		
 		// ioContext.getPolicyUtil().getModelAccessPatternList(testUser1, SystemPermissionEnumType.CREATE, req);
@@ -174,7 +185,7 @@ public class TestAccessPoint extends BaseTest {
 		
 		return req;
 	}
-	
+
 	@Test
 	public void TestObjectCRUD() {
 		logger.info("*** Test Create Data");
@@ -193,9 +204,11 @@ public class TestAccessPoint extends BaseTest {
 		try {
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
 			assertNotNull("Data is null", data);
+			logger.info("Attempting to create data with an unauthorized user");
 			odata = ioContext.getAccessPoint().create(testUser2, data);
 			assertNull("Expected attempt to add data to fail", odata);
 			
+			logger.info("Attempting to create data with an authorized user");
 			odata = ioContext.getAccessPoint().create(testUser1, data);
 			logger.info("Ident: " + RecordUtil.isIdentityRecord(odata));
 			
@@ -203,7 +216,7 @@ public class TestAccessPoint extends BaseTest {
 			assertNotNull("Group was null", group);
 			BaseRecord ogroup = ioContext.getAccessPoint().findByObjectId(testUser1, ModelNames.MODEL_GROUP, group.get(FieldNames.FIELD_OBJECT_ID));
 			assertNotNull("Group was null", ogroup);
-			logger.info(ogroup.toString());
+			// logger.info(ogroup.toString());
 			
 			BaseRecord badObj = ioContext.getAccessPoint().findByNameInGroup(testUser2, ModelNames.MODEL_DATA, (long)odata.get(FieldNames.FIELD_GROUP_ID), dataName);
 			BaseRecord goodObj = ioContext.getAccessPoint().findByNameInGroup(testUser1, ModelNames.MODEL_DATA, (long)odata.get(FieldNames.FIELD_GROUP_ID), dataName);
@@ -269,7 +282,7 @@ public class TestAccessPoint extends BaseTest {
 		logger.info("Count: " + count);
 
 		QueryResult qr2 = ioContext.getAccessPoint().list(testUser2, q2);
-		logger.info(qr2.toString());
+		// logger.info(qr2.toString());
 	}
 	
 	@Test
@@ -335,4 +348,5 @@ public class TestAccessPoint extends BaseTest {
 		BaseRecord group = ioContext.getAccessPoint().make(testUser1, ModelNames.MODEL_GROUP, "~/A/Place/For/My/Stuff", GroupEnumType.DATA.toString());
 		assertNotNull("Group is null", group);
 	}
+	
 }

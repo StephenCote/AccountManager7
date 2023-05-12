@@ -20,6 +20,9 @@ public class VaultBean extends LooseRecord {
 	@JsonIgnore
 	private CryptoBean publicKey = null;
 	
+	@JsonIgnore
+	private CryptoBean activeKey = null;
+	
 	public VaultBean() {
 		try {
 			RecordFactory.newInstance(ModelNames.MODEL_VAULT, this, null);
@@ -35,12 +38,6 @@ public class VaultBean extends LooseRecord {
 	
 	@JsonIgnore
 	public CryptoBean getVaultKey() {
-		if(vaultKey == null) {
-			BaseRecord rec = get(FieldNames.FIELD_VAULT_KEY);
-			if(rec != null) {
-				vaultKey = new CryptoBean(rec);
-			}
-		}
 		return vaultKey;
 	}
 	
@@ -206,13 +203,22 @@ public class VaultBean extends LooseRecord {
 	
 	@JsonIgnore
 	public CryptoBean getPublicKey() {
-		return VaultService.getInstance().getPublicKey(this);
+		if(publicKey == null) {
+			publicKey = VaultService.getInstance().getPublicKey(this);
+		}
+		return publicKey;
 	}
 	
 	@JsonIgnore
 	public CryptoBean getActiveKey() {
-		return get(FieldNames.FIELD_ACTIVE_KEY);
+		return activeKey;
+		// return get(FieldNames.FIELD_ACTIVE_KEY);
 	}
+	
+	@JsonIgnore
+	public void setActiveKey(CryptoBean key) {
+		this.activeKey = key;
+	}	
 	
 	public boolean newActiveKey() {
 		return VaultService.getInstance().newActiveKey(this);

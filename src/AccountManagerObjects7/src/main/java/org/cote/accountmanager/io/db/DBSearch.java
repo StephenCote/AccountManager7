@@ -85,11 +85,16 @@ public class DBSearch extends SearchBase {
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
 			ResultSet rset = statement.executeQuery();
-			
+			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
 			while(rset.next()) {
 				BaseRecord rec = RecordFactory.newInstance(model, sql.getColumns().toArray(new String[0]));
 				StatementUtil.populateRecord(sql, rset, rec);
-				memReader.read(rec);
+				if(inspect) {
+					memReader.inspect(rec);
+				}
+				else {
+					memReader.read(rec);
+				}
 				recs.add(rec);
 			}
 			

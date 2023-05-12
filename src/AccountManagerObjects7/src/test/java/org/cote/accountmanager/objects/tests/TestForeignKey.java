@@ -21,6 +21,8 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
@@ -48,6 +50,11 @@ public class TestForeignKey extends BaseTest {
 	 */
 
 	private BaseRecord newLink(String name) {
+		
+		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("link", "link");
+		assertNotNull("Schema is null", ms);
+		ModelNames.loadCustomModels();
+		
 		BaseRecord rec = null;
 		try {
 			rec = RecordFactory.model("link").newInstance();
@@ -76,7 +83,12 @@ public class TestForeignKey extends BaseTest {
 		IWriter writer = ioContext.getWriter();
 		IReader reader = ioContext.getReader();
 		String nameSuffix = UUID.randomUUID().toString();
-		RecordFactory.importSchema("link");
+		
+		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("link", "link");
+		assertNotNull("Schema is null", ms);
+		ModelNames.loadCustomModels();
+		
+		// RecordFactory.importSchema("link");
 		try {
 			link = newLink("link-" + nameSuffix);
 			upLink = newLink("up-" + nameSuffix);

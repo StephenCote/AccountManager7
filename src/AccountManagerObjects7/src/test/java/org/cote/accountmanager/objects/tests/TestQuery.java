@@ -272,7 +272,7 @@ public class TestQuery extends BaseTest {
 		BaseRecord group1 = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, testPath, "DATA", orgContext.getOrganizationId());
 		BaseRecord data1 = this.getCreateData(testUser1, testDataName, "text/plain", "Demo text 1".getBytes(), testPath,  orgContext.getOrganizationId());		
 		Query q = new Query(ModelNames.MODEL_DATA);
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SIZE, FieldNames.FIELD_MIME_TYPE});
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SIZE, FieldNames.FIELD_CONTENT_TYPE});
 		q.field(FieldNames.FIELD_NAME, ComparatorEnumType.EQUALS, testDataName);
 		q.field(FieldNames.FIELD_GROUP_ID, ComparatorEnumType.EQUALS, data1.get(FieldNames.FIELD_GROUP_ID));
 		
@@ -305,7 +305,7 @@ public class TestQuery extends BaseTest {
 		}
 		
 		Query q = new Query(testUser1, ModelNames.MODEL_DATA);
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SIZE, FieldNames.FIELD_MIME_TYPE}, 5L, 10);
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SIZE, FieldNames.FIELD_CONTENT_TYPE}, 5L, 10);
 		q.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE, testDataPref);
 		q.field(FieldNames.FIELD_GROUP_ID, ComparatorEnumType.EQUALS, group1.get(FieldNames.FIELD_ID));
 		logger.info(q.key());
@@ -314,6 +314,7 @@ public class TestQuery extends BaseTest {
 		try {
 			res = ioContext.getSearch().find(q);
 			assertNotNull("Expected a valid response object", res);
+			// logger.info(res.toFullString());
 			assertTrue("Expected success", res.getResponse() == OperationResponseEnumType.SUCCEEDED);
 			assertTrue("Expected ten results, not " + res.getCount(), res.getCount() == 10);
 			// logger.info(JSONUtil.exportObject(res, RecordSerializerConfig.getUnfilteredModule()));
@@ -333,7 +334,7 @@ public class TestQuery extends BaseTest {
 		BaseRecord testUser2 = mf.getCreateUser(orgContext.getAdminUser(), "testUser2", orgContext.getOrganizationId());
 		BaseRecord data1 = this.getCreateData(testUser1, testDataName, "text/plain", "Demo text 1".getBytes(), testPath,  orgContext.getOrganizationId());
 		BaseRecord group1 = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, testPath, "DATA", orgContext.getOrganizationId());
-		BaseRecord readDataPer = ioContext.getPathUtil().findPath(null, ModelNames.MODEL_PERMISSION, "/Read", "DATA", 0L);
+		BaseRecord readDataPer = ioContext.getPathUtil().findPath(orgContext.getAdminUser(), ModelNames.MODEL_PERMISSION, "/Read", "DATA", orgContext.getOrganizationId());
 		//logger.info("Permission: " +  readDataPer);
 		
 		ioContext.getMemberUtil().member(testUser1, data1, testUser2, readDataPer, false);

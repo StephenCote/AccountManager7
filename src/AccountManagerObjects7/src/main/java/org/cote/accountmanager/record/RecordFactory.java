@@ -328,7 +328,7 @@ public class RecordFactory {
 			mod = importSchemaFromResource(name);
 		}
 		if(mod == null) {
-			logger.error("Failed to import loose model for " + name);
+			logger.debug("Failed to import loose model for " + name);
 			return null;
 		}
 		schemas.put(name,  mod);
@@ -357,7 +357,7 @@ public class RecordFactory {
 		}
 		ModelSchema mod = getSchema(name);
 		if(mod == null) {
-			// logger.error("Failed to import loose model for " + name);
+			logger.error("Failed to import loose model for " + name);
 			return null;
 		}
 		if(mod.isAbs()) {
@@ -432,7 +432,7 @@ public class RecordFactory {
 	}
 	
 	private static ModelSchema importSchemaFromContents(String name, String contents, Set<String> impSet) {
-		final ModelSchema mod;
+		ModelSchema mod = null;
 		
 		//Set<String> impSet = new HashSet<>();
 		// impSet.add(name);
@@ -440,7 +440,7 @@ public class RecordFactory {
 		if(contents != null) {
 			mod = JSONUtil.importObject(contents, ModelSchema.class);
 			if(mod != null) {
-				importSchema(mod, name, impSet);
+				mod = importSchema(mod, name, impSet);
 			}
 			else {
 				logger.error("Failed to deserialize " + name);

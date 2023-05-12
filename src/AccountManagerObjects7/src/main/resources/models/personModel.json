@@ -4,27 +4,33 @@
 "fields": [
 	{
 	"name": "description",
-	"type": "string"
+	"type": "string",
+	"maxLength": 255
 	}
 	,{
 	"name": "firstName",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "middleName",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "lastName",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "title",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "suffix",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "birthDate",
@@ -32,15 +38,18 @@
 	}
 	,{
 	"name": "gender",
-	"type": "string"
+	"type": "string",
+	"maxLength": 10
 	}
 	,{
 	"name": "alias",
-	"type": "string"
+	"type": "string",
+	"maxLength": 64
 	}
 	,{
 	"name": "prefix",
-	"type": "string"
+	"type": "string",
+	"maxLength": 10
 	}
 	,{
 	"name": "users",

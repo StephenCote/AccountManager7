@@ -27,6 +27,7 @@
 	}
 	,{
 		"name": "sourceUrn",
-		"type": "string"
+		"type": "string",
+		"maxLength": 127
 	}
 ]}

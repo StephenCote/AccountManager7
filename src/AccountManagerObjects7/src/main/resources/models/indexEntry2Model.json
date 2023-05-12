@@ -4,7 +4,8 @@
 	"fields": [
 		{
 			"name": "type",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		},
 		{
 			"name": "values",

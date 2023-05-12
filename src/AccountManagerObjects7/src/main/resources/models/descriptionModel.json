@@ -4,6 +4,7 @@
 "fields": [
 	{
 		"name": "description",
-		"type": "string"
+		"type": "string",
+		"maxLength": 512
 	}
 ]}

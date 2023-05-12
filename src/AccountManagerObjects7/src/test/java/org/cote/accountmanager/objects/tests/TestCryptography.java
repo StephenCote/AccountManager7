@@ -5,20 +5,116 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.UUID;
+
+import javax.crypto.Cipher;
 
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.CryptoFactory;
+import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.CryptoUtil;
 import org.junit.Test;
 
 public class TestCryptography extends BaseTest {
 
+	@Test
+	public void TestGetterSetterIssue() {
+		logger.info("Test issue where populating an incomplete model was not picking up fields due to having defaultValues set");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		BaseRecord rec = null;
+		String keyName = "Demo KeySet - " + UUID.randomUUID().toString();
+		BaseRecord crypto = null;
+		try {
+			rec = RecordFactory.newInstance(ModelNames.MODEL_KEY_SET);
+			crypto = ioContext.getRecordUtil().getCreateRecord(testUser1, ModelNames.MODEL_KEY_SET, "Vault Key - " + keyName, "~/keys", testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
+			CryptoBean cb = new CryptoBean(crypto);
+			cb.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
+			CryptoFactory.getInstance().generateKeyPair(cb);
+			CryptoFactory.getInstance().generateSecretKey(cb);
+			BaseRecord ciph = cb.get(FieldNames.FIELD_CIPHER);
+			BaseRecord pub = cb.get(FieldNames.FIELD_PUBLIC);
+			BaseRecord priv = cb.get(FieldNames.FIELD_PRIVATE);
+			ioContext.getRecordUtil().applyOwnership(testUser1, ciph, testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
+			ioContext.getRecordUtil().applyOwnership(testUser1, pub, testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
+			ioContext.getRecordUtil().applyOwnership(testUser1, priv, testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
+			// logger.info(((BaseRecord)cb.get(FieldNames.FIELD_CIPHER)).toFullString());
+			logger.info("*** Create cipher key");
+			ciph.set(FieldNames.FIELD_KEY_SPEC, "Blah");
+			ioContext.getRecordUtil().createRecord(ciph);
+			ioContext.getRecordUtil().createRecord(priv);
+			ioContext.getRecordUtil().createRecord(pub);
+			logger.info("**** Update key set");
+			//logger.info(cb.toFullString());
+			ioContext.getRecordUtil().updateRecord(cb);
+			
+			//logger.info("**** NOE: " + cb.getField(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT).isNullOrEmpty());
+			
+			BaseRecord chk = ioContext.getRecordUtil().getRecordById(testUser1, ModelNames.MODEL_KEY_SET, (long)cb.get(FieldNames.FIELD_ID));
+			BaseRecord ciph2 = chk.get(FieldNames.FIELD_CIPHER);
+			ioContext.getRecordUtil().populate(ciph2);
+			
+			logger.info(ciph2.toFullString());
+			logger.info("**** NOE: " + ciph2.getField(FieldNames.FIELD_ENCRYPT).isNullOrEmpty(ciph2.getModel()));
+			
+			
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+	}
+
+	@Test
+	public void TestEncryptedCipher() {
+		logger.info("Test issue with using an encrypted cipher right after making it");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		BaseRecord rec = null;
+		String keyName = "Demo KeySet - " + UUID.randomUUID().toString();
+		BaseRecord crypto = null;
+		try {
+			rec = RecordFactory.newInstance(ModelNames.MODEL_KEY_SET);
+			CryptoBean cb = new CryptoBean(rec);
+			cb.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
+			CryptoFactory.getInstance().generateKeyPair(cb);
+			CryptoFactory.getInstance().generateSecretKey(cb);
+			
+			// logger.info(cb.toString());
+			
+			Cipher ec = CryptoFactory.getInstance().getEncryptCipherKey(cb);
+			assertNotNull("Cipher is null", ec);
+			
+			byte[] src = "Example text".getBytes();
+			byte[] enc = CryptoUtil.encipher(cb, src);
+			
+			Cipher dc = CryptoFactory.getInstance().getDecryptCipherKey(cb);
+			assertNotNull("Cipher is null", dc);
+			byte[] dec = CryptoUtil.decipher(cb, enc);
+			logger.info("Dec: " + new String(dec));
+			assertTrue("Arrays aren't equal", Arrays.equals(src, dec));
+			
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+	}
+
+	
 	@Test
 	public void TestCipher() {
 		logger.info("Test AES");
@@ -113,7 +209,7 @@ public class TestCryptography extends BaseTest {
 		
 		String rawText = "Example text to encipher";
 		byte[] enc = CryptoUtil.encrypt(bean,  rawText.getBytes(StandardCharsets.UTF_8));
-		String erec = CryptoFactory.getInstance().serialize(bean, true, true, true, false, false);
+		String erec = CryptoFactory.getInstance().serialize(bean, true, true, true, false, true);
 		
 		//logger.info(JSONUtil.exportObject((BaseRecord)bean, RecordSerializerConfig.getUnfilteredModule()));
 		//logger.info(erec);
@@ -121,7 +217,7 @@ public class TestCryptography extends BaseTest {
 		CryptoBean ibean = new CryptoBean();
 		CryptoFactory.getInstance().configureECBean(ibean);
 		
-		
+		//logger.info(bean.toFullString());
 		try {
 			CryptoFactory.getInstance().importCryptoBean(ibean, erec.getBytes(StandardCharsets.UTF_8), true);
 		}

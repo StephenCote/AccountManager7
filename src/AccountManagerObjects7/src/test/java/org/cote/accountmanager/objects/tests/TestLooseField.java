@@ -22,31 +22,6 @@ public class TestLooseField {
 	public static final Logger logger = LogManager.getLogger(TestLooseField.class);
 	
 	
-	
-	private Class<?> compile(LooseRecord model){
-		// Prepare source somehow.
-		/*
-		String source = "package test; public class Test { static { System.out.println(\"hello\"); } public Test() { System.out.println(\"world\"); } }";
-	
-		// Save source in .java file.
-		File root = new File("/java"); // On Windows running on C:\, this is C:\java.
-		File sourceFile = new File(root, "test/Test.java");
-		sourceFile.getParentFile().mkdirs();
-		Files.write(sourceFile.toPath(), source.getBytes(StandardCharsets.UTF_8));
-	
-		// Compile source file.
-		JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-		compiler.run(null, null, null, sourceFile.getPath());
-	
-		// Load and instantiate compiled class.
-		URLClassLoader classLoader = URLClassLoader.newInstance(new URL[] { root.toURI().toURL() });
-		Class<?> cls = Class.forName("test.Test", true, classLoader); // Should print "hello".
-		*/
-		return null;
-	}
-	
-
-	
 	@Test
 	public void TestLooseImport() {
 		logger.info("Test Loose Imports.");
@@ -67,6 +42,9 @@ public class TestLooseField {
 		assertNull("Broken model should be null", brokenmod);
 		
 		BaseRecord brokenimp = RecordFactory.importSchema("brokenImport");
+		if(brokenimp != null) {
+			logger.error(brokenimp.toFullString());
+		}
 		assertNull("Broken import should be null", brokenimp);
 		
 		BaseRecord generic = RecordFactory.importSchema("genericObject");

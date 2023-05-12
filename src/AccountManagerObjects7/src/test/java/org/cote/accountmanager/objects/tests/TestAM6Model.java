@@ -22,6 +22,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ScriptUtil;
@@ -62,7 +63,7 @@ public class TestAM6Model extends BaseTest {
 		logger.info("Test Record Path");
 		BaseRecord rec = null;
 		try {
-			rec = ioContext.getPathUtil().makePath(testUser1, "group",  "/root/home/steve", "DATA", 0L);
+			rec = ioContext.getPathUtil().makePath(testUser1, "group",  "~/Demo Path", "DATA", org.getOrganizationId());
 		} catch (ClassCastException | NullPointerException e) {
 			logger.error(e);
 			
@@ -79,7 +80,7 @@ public class TestAM6Model extends BaseTest {
 			assertNotNull("Model was null", model);
 			
 			model.set("name", "Demo Data");
-			model.set("mimeType", "text/plain");
+			model.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			String demoData = "This is the demo data that we're going to be working with for now";
 			model.set("dataBytesStore", demoData.getBytes());
 
@@ -128,7 +129,7 @@ public class TestAM6Model extends BaseTest {
 		try {
 			model = RecordFactory.model("data").newInstance(new String[] {"name", "dataBytesStore"});
 			model.set("name", "Demo Data");
-			model.set("mimeType", "text/plain");
+			model.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			String demoData = "This is the demo data that we're going to be working with for now";
 			model.set("dataBytesStore", demoData.getBytes());
 			writer.write(model);

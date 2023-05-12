@@ -125,7 +125,10 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 	@Override
 	public void clearCache(BaseRecord rec) {
 		// TODO Auto-generated method stub
-		String urn = rec.get(FieldNames.FIELD_URN);
+		String urn = null;
+		if(rec.hasField(FieldNames.FIELD_URN)) {
+			urn = rec.get(FieldNames.FIELD_URN);
+		}
 		if(urn != null) {
 			
 			List<String> keys = new ArrayList<>();

@@ -14,7 +14,8 @@
 		"name": "objectId",
 		"type": "string",
 		"identity": true,
-		"readOnly": true
+		"readOnly": true,
+		"maxLength": 40
 	},
 	{
 		"name": "name",
@@ -23,6 +24,7 @@
 	},
 	{
 		"name": "indexModel",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	}
 ]}

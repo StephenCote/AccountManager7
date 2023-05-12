@@ -56,6 +56,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.SpoolBucketEnumType;
 import org.cote.accountmanager.schema.type.SpoolNameEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
+import org.cote.accountmanager.util.RecordUtil;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.CompressionCodecs;
@@ -73,6 +74,9 @@ public class TokenService {
 	public static final String CLAIM_ORGANIZATION_PATH = "organizationPath";
 	public static final String CLAIM_SCOPES = "scopes";
 	public static final String CLAIM_SUBJECT_TYPE = "subjectType";
+	public static final String CLAIM_SBI = "sbi";
+	public static final String CLAIM_RESOURCE_TYPE = "resourceType";
+	public static final String CLAIM_RESOURCE_ID = "resourceId";
 	public static final int TOKEN_EXPIRY_1_MINUTE = 60;
 	public static final int TOKEN_EXPIRY_10_MINUTES = 600;
 	public static final int TOKEN_EXPIRY_1_HOUR = 3600;
@@ -219,11 +223,51 @@ public class TokenService {
 		return newSecurityToken(contextUser, SpoolNameEnumType.AUTHORIZATION, tokenId + " " + DEFAULT_REFERENCE_SUFFIX, token.getBytes(StandardCharsets.UTF_8), (expiryMinutes * 60));
 	}
 	
+	private static String[] getScope(BaseRecord persona, String[] resourceClaims) throws ReaderException, IndexException{
+		if(resourceClaims != null && resourceClaims.length > 0) {
+			return resourceClaims;
+		}
+		List<String> buff = new ArrayList<>();
+		List<BaseRecord> entsp = IOSystem.getActiveContext().getMemberUtil().getParticipations(persona, ModelNames.MODEL_ROLE);
+		List<BaseRecord> entsl = entsp.stream().filter(o -> {
+			// logger.info(o.toString());
+			if(o.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
+				String type = o.get(FieldNames.FIELD_TYPE);
+				return ModelNames.MODEL_ROLE.equals(type);
+			}
+			else {
+				return true;
+			}
+		}).collect(Collectors.toList());
+		
+
+		for(BaseRecord b : entsl) {
+			long id = 0L;
+			String model = null;
+
+			BaseRecord rb = null;
+			if(b.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
+				id = b.get(FieldNames.FIELD_PART_ID);
+				model = b.get(FieldNames.FIELD_TYPE);
+				if(id > 0L && model != null) {
+					rb = IOSystem.getActiveContext().getReader().read(model, id);
+				}
+			}
+			else {
+				rb = b;
+			}
+			if(rb != null) {
+				buff.add(rb.get(FieldNames.FIELD_NAME));
+			}
+		}
+		
+		return buff.toArray(new String[0]);
+	}
 	
 	public static String createAuthorizationToken(BaseRecord authorizingUser, BaseRecord persona) throws ReaderException, IndexException{
-		return createAuthorizationToken(authorizingUser, persona, UUID.randomUUID().toString(), TOKEN_EXPIRY_10_MINUTES);
+		return createAuthorizationToken(authorizingUser, persona, null, new String[0], UUID.randomUUID().toString(), TOKEN_EXPIRY_10_MINUTES);
 	}
-	public static String createAuthorizationToken(BaseRecord authorizingUser, BaseRecord persona, String tokenId, int expiryMinutes) throws ReaderException, IndexException{
+	public static String createAuthorizationToken(BaseRecord authorizingUser, BaseRecord persona, BaseRecord resource, String[] resourceClaims, String tokenId, int expiryMinutes) throws ReaderException, IndexException{
 		if(!userType.matcher(authorizingUser.getModel()).find()){
 			logger.error("Unsupported user type: {0}", authorizingUser.getModel());
 			return null;
@@ -242,58 +286,7 @@ public class TokenService {
 			return null;
 		}
 		
-		//BaseRecord ents = IOSystem.getActiveContext().getMemberUtil().getParticipants(persona);
-		List<BaseRecord> entsp = IOSystem.getActiveContext().getMemberUtil().getParticipations(persona, ModelNames.MODEL_ROLE);
-		List<BaseRecord> entsl = entsp.stream().filter(o -> {
-			// logger.info(o.toString());
-			if(o.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
-				String type = o.get(FieldNames.FIELD_TYPE);
-				return ModelNames.MODEL_ROLE.equals(type);
-			}
-			else {
-				return true;
-				/*
-				String type = o.get(FieldNames.FIELD_PARTICIPATION_MODEL);
-				return ModelNames.MODEL_ROLE.equals(type);
-				*/
-			}
-		}).collect(Collectors.toList());
-		
-		List<String> buff = new ArrayList<>();
-		for(BaseRecord b : entsl) {
-			long id = 0L;
-			String model = null;
-			/*
-			if(b.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
-				id = b.get(FieldNames.FIELD_PARTICIPATION_ID);
-				model = b.get(FieldNames.FIELD_PARTICIPATION_MODEL);
-			}
-			else {
-			*/
-			BaseRecord rb = null;
-			if(b.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
-				id = b.get(FieldNames.FIELD_PART_ID);
-				model = b.get(FieldNames.FIELD_TYPE);
-				if(id > 0L && model != null) {
-					rb = IOSystem.getActiveContext().getReader().read(model, id);
-				}
-			}
-			else {
-				rb = b;
-			}
-			if(rb != null) {
-				buff.add(rb.get(FieldNames.FIELD_NAME));
-			}
-			/*
-			if(id > 0L && model != null) {
-				BaseRecord rb = IOSystem.getActiveContext().getReader().read(model, id);
-				if(rb != null) {
-					buff.add(rb.get(FieldNames.FIELD_NAME));
-				}
-			}
-			*/
-
-		}
+		String[] buff = getScope(persona, resourceClaims);
 		
 	    Claims claims = Jwts.claims().setSubject(persona.get(FieldNames.FIELD_NAME));
 	    claims.put(CLAIM_SCOPES, Arrays.asList(buff));
@@ -301,7 +294,16 @@ public class TokenService {
 		claims.put(CLAIM_TOKEN_ID, tokenId);
 		claims.put(CLAIM_ORGANIZATION_PATH, persona.get(FieldNames.FIELD_ORGANIZATION_PATH));
 		claims.put(CLAIM_SUBJECT_TYPE,persona.getModel());
-		claims.put("sbi", true);
+		if(resource != null) {
+			if(RecordUtil.isIdentityRecord(resource)) {
+				claims.put(CLAIM_RESOURCE_TYPE, resource.getModel());
+				claims.put(CLAIM_RESOURCE_ID, resource.get(FieldNames.FIELD_OBJECT_ID));
+			}
+			else {
+				logger.error("Cannot authorize a resource without an identity");
+			}
+		}
+		claims.put(CLAIM_SBI, true);
 		Calendar cal = Calendar.getInstance();
 		Date now = cal.getTime();
 		cal.add(Calendar.MINUTE, expiryMinutes);

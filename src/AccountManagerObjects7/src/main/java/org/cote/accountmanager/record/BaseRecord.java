@@ -20,7 +20,9 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldFactory;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.FieldUtil;
@@ -58,6 +60,11 @@ public abstract class BaseRecord {
 		return RecordUtil.toJSONString(this);
 	}
 	
+	@JsonIgnore
+	public String toFullString() {
+		return RecordUtil.toFullJSONString(this);
+	}
+	
 	public <T> T toConcrete() {
 		T obj = null;
 		String clsName = RecordFactory.GENERATED_PACKAGE_NAME + "." + model.substring(0, 1).toUpperCase() + model.substring(1) + "Type";
@@ -78,24 +85,29 @@ public abstract class BaseRecord {
 	}
 	public BaseRecord copyRecord(String[] outFieldNames) {
 		BaseRecord copy = null;
+		try {
+			copy = RecordFactory.newInstance(getModel(), outFieldNames);
+		} catch (FieldException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		copyIntoRecord(copy, outFieldNames);
+		return copy;
+	}
+	public BaseRecord copyIntoRecord(BaseRecord copy, String[] outFieldNames) {
+
 		List<String> fieldNames = new ArrayList<>();
 		List<FieldType> lflds = getFields();
 		Set<String> fset = new HashSet<>(Arrays.asList(outFieldNames));
 		
-		try {
-			copy = RecordFactory.newInstance(getModel(), fieldNames.toArray(new String[0]));
-			List<FieldType> ofields = new ArrayList<>();
-			lflds.forEach(f -> {
-				if(outFieldNames.length == 0 ||  fset.contains(f.getName())) {
-					fieldNames.add(f.getName());
-					ofields.add(RecordFactory.newFieldInstance(f));
-				}
-			});
-			copy.setFields(ofields);
-		} catch (FieldException | ModelNotFoundException e) {
-			logger.error(e);
-			
-		}
+		List<FieldType> ofields = new ArrayList<>();
+		lflds.forEach(f -> {
+			if(outFieldNames.length == 0 ||  fset.contains(f.getName())) {
+				fieldNames.add(f.getName());
+				ofields.add(RecordFactory.newFieldInstance(f));
+			}
+		});
+		copy.setFields(ofields);
+
 		return copy;
 	}
 	
@@ -195,7 +207,6 @@ public abstract class BaseRecord {
 			checkField(name);
 		} catch (ModelNotFoundException | FieldException e) {
 			logger.error(e);
-			
 			return null;
 		}
 		
@@ -284,6 +295,11 @@ public abstract class BaseRecord {
 
 		FieldType f = getField(fieldName);
 		if(f != null) {
+			/*
+			if(this.model.equals(ModelNames.MODEL_CIPHER_KEY) && fieldName.equals(FieldNames.FIELD_ENCRYPT)) {
+				logger.warn("*** " + fieldName + " == " + val);
+			}
+			*/
 			f.setValue(this, val);
 		}
 		else {

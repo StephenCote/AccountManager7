@@ -79,11 +79,11 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 						frec.getFields().forEach(f -> {
 							try {
 								///  && !frec.getField(f.getName()).isNullOrEmpty()
-								if((!rec.hasField(f.getName()) || rec.getField(f.getName()).isNullOrEmpty())){
+								if((!rec.hasField(f.getName()) || rec.getField(f.getName()).isNullOrEmpty(rec.getModel()))){
 									rec.set(f.getName(), frec.get(f.getName()));
 								}
 								else {
-									//logger.warn("Skip populate: " + f.getName());
+									/// logger.warn("Skip populate: " + f.getName());
 								}
 								if(rec.getField(f.getName()).getValueType() == FieldEnumType.MODEL && foreignDepth > 0) {
 									populate(rec.get(f.getName()), foreignDepth - 1);

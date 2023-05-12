@@ -1,0 +1,32 @@
+{
+"name": "streamSegment",
+"ephemeral": true,
+"fields": [
+	{
+		"name": "streamId",
+		"type": "string",
+		"maxLength": 60,
+		"ephemeral": true
+	},
+	{
+		"name": "stream",
+		"type": "blob",
+		"ephemeral": true
+	},
+	{
+		"name": "startPosition",
+		"type": "long",
+		"ephemeral": true
+	},
+	{
+		"name": "length",
+		"type": "long",
+		"ephemeral": true
+	},
+	{
+		"name": "size",
+		"type": "long",
+		"ephemeral": true
+	}
+	
+]}

@@ -14,7 +14,8 @@
 			"name": "objectId",
 			"type": "string",
 			"identity": true,
-			"readOnly": true
+			"readOnly": true,
+			"maxLength": 60
 		},
 		{
 			"name": "spoolBucketType",
@@ -58,12 +59,14 @@
 		},
 		{
 			"name": "referenceType",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		},
 
 		{
 			"name": "transportType",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		},
 		{
 			"name": "credentialId",
@@ -71,7 +74,8 @@
 		},
 		{
 			"name": "parentObjectId",
-			"type": "string"
+			"type": "string",
+			"maxLength": 60
 		},
 		{
 			"name": "currentLevel",
@@ -83,7 +87,8 @@
 		},
 		{
 			"name": "classification",
-			"type": "string"
+			"type": "string",
+			"maxLength": 64
 		},
 		{
 			"name": "groupId",
@@ -104,7 +109,8 @@
 		},
 		{
 			"name": "senderType",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		},
 		{
 			"name": "recipientId",
@@ -112,11 +118,13 @@
 		},
 		{
 			"name": "recipientType",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		},
 		{
 			"name": "modelType",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		}
 	]
 }

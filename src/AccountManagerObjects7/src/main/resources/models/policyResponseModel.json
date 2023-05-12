@@ -4,7 +4,8 @@
 	"fields": [
 		{
 			"name": "message",
-			"type": "string"
+			"type": "string",
+			"maxLength": 255
 		},
 		{
 			"name": "patternChain",
@@ -26,7 +27,8 @@
 
 		{
 			"name": "urn",
-			"type": "string"
+			"type": "string",
+			"maxLength": 255
 		},
 		{
 			"name": "expiryDate",

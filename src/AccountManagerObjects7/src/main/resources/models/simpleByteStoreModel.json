@@ -1,6 +1,7 @@
 {
 	"name": "simpleByteStore",
 	"inherits": ["indexEntry"],
+	"ioConstraints": ["file"],
 	"fields": [
 	{
 		"name": "dataBytesStore",

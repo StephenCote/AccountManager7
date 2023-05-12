@@ -122,22 +122,22 @@ public class BaseTest {
 	}
 	
 	
-	protected BaseRecord getCreateData(BaseRecord user, String name, String mimeType, byte[] data, String path, long organizationId) {
+	protected BaseRecord getCreateData(BaseRecord user, String name, String contentType, byte[] data, String path, long organizationId) {
 		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, path, "DATA", organizationId);
 		BaseRecord dat = ioContext.getRecordUtil().getRecord(user, ModelNames.MODEL_DATA, name, 0L, (long)dir.get(FieldNames.FIELD_ID), organizationId);
 		if(dat == null) {
-			dat = newData(user, name, mimeType, data, path, organizationId);
+			dat = newData(user, name, contentType, data, path, organizationId);
 			ioContext.getRecordUtil().createRecord(dat);
 		}
 		return dat;
 	}
-	protected BaseRecord newData(BaseRecord user, String name, String mimeType, byte[] data, String path, long organizationId) {
+	protected BaseRecord newData(BaseRecord user, String name, String contentType, byte[] data, String path, long organizationId) {
 		BaseRecord record = null;
 		boolean error = false;
 		try {
 			record = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
 			ioContext.getRecordUtil().applyNameGroupOwnership(user, record, name, path, organizationId);
-			record.set(FieldNames.FIELD_MIME_TYPE, mimeType);
+			record.set(FieldNames.FIELD_CONTENT_TYPE, contentType);
 			record.set(FieldNames.FIELD_BYTE_STORE, data);
 		} catch (Exception e) {
 			logger.error(e);

@@ -28,8 +28,8 @@ public class FieldType {
 	}
 	
 	@JsonIgnore
-	public boolean isNullOrEmpty() {
-		return FieldUtil.isNullOrEmpty(this);
+	public boolean isNullOrEmpty(String model) {
+		return FieldUtil.isNullOrEmpty(model, this);
 	}
 
 	@JsonIgnore

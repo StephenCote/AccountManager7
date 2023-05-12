@@ -4,11 +4,13 @@
 "fields": [
 	{
 		"name": "queryKey",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
 	},
 	{
 		"name": "queryHash",
-		"type": "string"
+		"type": "string",
+		"maxLength": 127
 	},
 	{
 		"name": "count",
@@ -32,6 +34,7 @@
 	},
 	{
 		"name": "message",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
 	}
 ]}

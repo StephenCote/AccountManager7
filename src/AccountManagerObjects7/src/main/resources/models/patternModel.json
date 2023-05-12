@@ -23,11 +23,13 @@
 	},
 	{
 		"name": "operationClass",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
 	}
 	,{
 		"name": "factUrn",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
 	}
 	,{
 		"name": "comparator",
@@ -43,19 +45,23 @@
 	}
 	,{
 		"name": "matchUrn",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
 	}
 	,{
 		"name": "operationUrn",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
 	},
 	{
 		"name": "entitlementType",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	},
 	{
 		"name": "entitlementPath",
-		"type": "string"
+		"type": "string",
+		"maxLength": 127
 	}
 	
 ]}

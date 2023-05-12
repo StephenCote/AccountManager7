@@ -1,7 +1,7 @@
 {
 "name": "byteStore",
 "abstract": true,
-"inherits": ["compression"],
+"inherits": ["compression", "contentType"],
 "fields": [
 
 	{
@@ -22,11 +22,6 @@
 		"name": "pointer",
 		"type": "boolean",
 		"private": true
-	},
-	{
-		"name": "mimeType",
-		"type": "string",
-		"maxLength": 64
 	},
 	{
 		"name": "size",

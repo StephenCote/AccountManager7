@@ -4,10 +4,12 @@
 "fields": [
 	{
 	"name": "functionUrn",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "factUrn",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 ]}

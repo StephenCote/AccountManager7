@@ -28,9 +28,10 @@ public class ModelSchema {
 	private List<FieldSchema> fields = new ArrayList<>();
 	private List<String> inherits = new ArrayList<>();
 	private List<String> implist = new ArrayList<>();
-	private List<String> values = new ArrayList<>();
+	// private List<String> values = new ArrayList<>();
 	private List<String> constraints = new ArrayList<>();
 	private List<String> ioConstraints = new ArrayList<>();
+	private List<String> query = new ArrayList<>();
 	private List<String> hints = new ArrayList<>();
 	private String factory = null;
 	
@@ -41,6 +42,18 @@ public class ModelSchema {
 	}
 	
 	
+
+	public List<String> getQuery() {
+		return query;
+	}
+
+
+
+	public void setQuery(List<String> query) {
+		this.query = query;
+	}
+
+
 
 	public ModelAccess getAccess() {
 		return access;
@@ -152,6 +165,7 @@ public class ModelSchema {
 	public List<String> getImplements() {
 		return implist;
 	}
+
 	public String getName() {
 		return name;
 	}
@@ -215,13 +229,14 @@ public class ModelSchema {
 		this.baseClass = baseClass;
 	}
 	*/
+	/*
 	public List<String> getValues() {
 		return values;
 	}
 	public void setValues(List<String> values) {
 		this.values = values;
 	}
-	
+	*/
 	
 	
 }

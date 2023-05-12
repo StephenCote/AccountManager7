@@ -30,6 +30,7 @@ public class AuthorizationUtil {
 	private final ISearch search;
 	private final RecordUtil recordUtil;
 	private final MemberUtil memberUtil;
+	private boolean trace = false;
 
 	public AuthorizationUtil(IReader reader, IWriter writer, ISearch search) {
 		this.reader = reader;
@@ -39,6 +40,20 @@ public class AuthorizationUtil {
 		memberUtil = new MemberUtil(reader, writer, search);
 	}
 	
+	
+	
+	public boolean isTrace() {
+		return trace;
+	}
+
+
+
+	public void setTrace(boolean trace) {
+		this.trace = trace;
+	}
+
+
+
 	public PolicyResponseType canCreate(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
 		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, ActionEnumType.ADD, actor, resource);
 	}
@@ -76,7 +91,10 @@ public class AuthorizationUtil {
 	}
 	
 	public boolean checkEntitlement(BaseRecord actor, BaseRecord permission, BaseRecord object) {
-		// logger.info("TODO: Need to check entitlement: " + permission.get(FieldNames.FIELD_NAME) + " " + permission.get(FieldNames.FIELD_TYPE) + " for " + object.getModel() + " " + object.get(FieldNames.FIELD_NAME));
+		
+		if(trace) {
+			logger.info("Check entitlement: " + permission.get(FieldNames.FIELD_NAME) + " " + permission.get(FieldNames.FIELD_TYPE) + " for " + object.getModel() + " " + object.get(FieldNames.FIELD_NAME));
+		}
 
 		boolean outBool = false;
 		List<BaseRecord> parts = new ArrayList<>();
@@ -86,7 +104,9 @@ public class AuthorizationUtil {
 			logger.error(e);
 			
 		}
-		// logger.info("Parts: " + parts.size());
+		if(trace) {
+			logger.info("Parts: " + parts.size());
+		}
 		for(BaseRecord part : parts) {
 			
 			long partId = 0L;

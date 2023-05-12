@@ -17,6 +17,7 @@ import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.provider.IProvider;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 
 public abstract class RecordTranslator {
@@ -35,6 +36,7 @@ public abstract class RecordTranslator {
 				prov.provide(null, operation, lmodel, model);
 			} catch (ModelException | FieldException | ValueException | ModelNotFoundException | ReaderException e) {
 				logger.error(e);
+				e.printStackTrace();
 				
 			}
 		}
@@ -50,6 +52,7 @@ public abstract class RecordTranslator {
 				prov.provide(null, operation, lmodel, model, lfield, field);
 			} catch (ModelException | FieldException | ValueException | ModelNotFoundException | ReaderException e) {
 				logger.error(e);
+				e.printStackTrace();
 			}
 		}
 		
@@ -75,7 +78,7 @@ public abstract class RecordTranslator {
 							model.set(lfield.getName(), UUID.randomUUID().toString());
 						}
 						else {
-							logger.debug("*** Skip " + lfield.getName());
+							//logger.info("*** Skip " + lfield.getName());
 						}
 					}
 					else {

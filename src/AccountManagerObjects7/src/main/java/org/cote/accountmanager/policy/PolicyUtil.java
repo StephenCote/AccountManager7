@@ -21,6 +21,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ScriptException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOFactory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
@@ -116,11 +117,25 @@ public class PolicyUtil {
 		RULE
 	};
 	
+	private boolean trace = false;
+	
 	public PolicyUtil(IReader reader, IWriter writer, ISearch search) {
 		this.reader = reader;
 		this.writer = writer;
 		this.search = search;
 		this.pathUtil = IOFactory.getPathUtil(reader, writer, search);
+	}
+	
+	
+	
+	public boolean isTrace() {
+		return trace;
+	}
+
+	public void setTrace(boolean trace) {
+		IOSystem.getActiveContext().getPolicyEvaluator().setTrace(trace);
+		IOSystem.getActiveContext().getAuthorizationUtil().setTrace(trace);
+		this.trace = trace;
 	}
 	
 	public void close() {
@@ -222,6 +237,7 @@ public class PolicyUtil {
 					for(Object x : vals) {
 						/// query.get(FieldNames.FIELD_TYPE)
 						Query sq = QueryUtil.createQuery(type, propName, x);
+						sq.set(FieldNames.FIELD_INSPECT, true);
 						if(!querySet.contains(sq.key())) {
 							querySet.add(sq.key());
 							QueryResult qr = search.find(sq);
@@ -235,7 +251,7 @@ public class PolicyUtil {
 			}
 
 		}
-		catch(ReaderException | IndexException e) {
+		catch(ReaderException | IndexException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 		return prrs.toArray(new PolicyResponseType[0]);
@@ -275,7 +291,7 @@ public class PolicyUtil {
 		PolicyRequestType preq = null;
 		PolicyResponseType prr = null;
 
-		PolicyEvaluator pe = new PolicyEvaluator(reader, writer, search);
+		PolicyEvaluator pe = IOSystem.getActiveContext().getPolicyEvaluator();
 
 		try {
 			pol = getResourcePolicy(policyName, actor, resource).toConcrete();
@@ -332,7 +348,7 @@ public class PolicyUtil {
 			if(
 				(fs.isForeign() || roles.size() > 0)
 				&&
-				!f.isNullOrEmpty()
+				!f.isNullOrEmpty(object.getModel())
 			){
 				// logger.warn("Add rule for " + fs.getName());
 				String patternStr = null;
@@ -638,7 +654,9 @@ public class PolicyUtil {
 			return null;
 		}
 		
-		//logger.info(policyBase);
+		if(trace) {
+			logger.info(policyBase);
+		}
 
 		rec = JSONUtil.importObject(policyBase, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		if(rec == null) {
@@ -654,7 +672,7 @@ public class PolicyUtil {
 			List<BaseRecord> rules = rec.get(FieldNames.FIELD_RULES);
 			if(rules.size() > 0) {
 				List<BaseRecord> patterns = rules.get(0).get(FieldNames.FIELD_PATTERNS);
-				logger.info("Injecting " + modelPatterns.size() + " model access patterns");
+				// logger.info("Injecting " + modelPatterns.size() + " model access patterns");
 				patterns.addAll(modelPatterns);
 			}
 		}

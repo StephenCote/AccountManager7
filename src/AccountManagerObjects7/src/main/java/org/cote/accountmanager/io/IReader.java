@@ -12,6 +12,7 @@ public interface IReader {
 	public void populate(BaseRecord rec, int foreignDepth);
 	public void close() throws ReaderException;
 	public BaseRecord read(BaseRecord rec) throws ReaderException;
+	public BaseRecord inspect(BaseRecord rec) throws ReaderException;
 	public BaseRecord read(String model, String objectId) throws ReaderException;
 	public BaseRecord readByUrn(String model, String urn) throws ReaderException;
 	public BaseRecord read(String model, long id) throws ReaderException;

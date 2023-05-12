@@ -40,6 +40,7 @@ public class FieldSchema {
 	//private FieldType defaultValue = null;
 	private Object defaultValue = null;
 	private ModelAccess access = null;
+	private String description = null;
 	
 	@JsonProperty("private")
 	private boolean priv = false;
@@ -53,6 +54,14 @@ public class FieldSchema {
 	}
 
 
+
+	public String getDescription() {
+		return description;
+	}
+
+	public void setDescription(String description) {
+		this.description = description;
+	}
 
 	public void setAccess(ModelAccess access) {
 		this.access = access;

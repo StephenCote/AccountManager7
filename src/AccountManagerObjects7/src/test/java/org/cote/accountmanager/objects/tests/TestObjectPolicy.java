@@ -5,7 +5,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
+import java.util.UUID;
 
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelException;
@@ -28,12 +30,83 @@ import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.junit.Test;
 
 public class TestObjectPolicy extends BaseTest {
+	
+	@Test
+	public void TestCrossTypePathAuthorization() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		//BaseRecord rec = ioContext.getPathUtil().findPath(testUser1, ModelNames.MODEL_GROUP, "~/Data", GroupEnumType.DATA.toString(), testOrgC)
+
+		String userRolePath = "~/User Roles/User - " + UUID.randomUUID().toString();
+		String accountRolePath = "~/Account Roles/Account - " + UUID.randomUUID().toString();
+
+		String userPermissionPath = "~/User Permissions/User - " + UUID.randomUUID().toString();
+		String accountPermissionPath = "~/Account Permissions/Account - " + UUID.randomUUID().toString();
+		String dataGroupPath = "~/Data/Group - " + UUID.randomUUID().toString();
+		String randomParentGroup = "/Parent - " + UUID.randomUUID().toString();
+		String accountGroupPath = "~/Account" + randomParentGroup + "/Group - " + UUID.randomUUID().toString();
+		// ioContext.getPolicyUtil().setTrace(true);
+		BaseRecord dir1 = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, dataGroupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		//ioContext.getPolicyUtil().setTrace(false);
+		assertNotNull("Data group is null", dir1);
+		
+		BaseRecord dir2 = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, accountGroupPath, GroupEnumType.ACCOUNT.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Account group is null", dir2);
+
+		
+		BaseRecord homePerm = ioContext.getPathUtil().findPath(testUser1, ModelNames.MODEL_PERMISSION, "~/", PermissionEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Can't read home permission", homePerm);
+		
+		try {
+			BaseRecord chkPerm = mf.newInstance(ModelNames.MODEL_PERMISSION, testUser1);
+			chkPerm.set(FieldNames.FIELD_NAME, "Test Perm - " + UUID.randomUUID().toString());
+			chkPerm.set(FieldNames.FIELD_PARENT_ID, homePerm.get(FieldNames.FIELD_ID));
+			chkPerm.set(FieldNames.FIELD_TYPE, PermissionEnumType.USER);
+			
+			// ioContext.getPolicyUtil().setTrace(true);
+			PolicyResponseType prr = ioContext.getAuthorizationUtil().canCreate(testUser1, testUser1, chkPerm);
+			// ioContext.getPolicyUtil().setTrace(false);
+			//logger.info(prr.toFullString());
+			assertTrue("Expected a create permit", prr.getType() == PolicyResponseEnumType.PERMIT);
+			
+			
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+
+		// ioContext.getPolicyUtil().setTrace(true);
+		BaseRecord perm1 = ioContext.getPathUtil().makePath(testUser1,  ModelNames.MODEL_PERMISSION, userPermissionPath, PermissionEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		//ioContext.getPolicyUtil().setTrace(false);
+		assertNotNull("User permission is null", perm1);
+
+		
+		BaseRecord perm2 = ioContext.getPathUtil().makePath(testUser1,  ModelNames.MODEL_PERMISSION, accountPermissionPath, PermissionEnumType.ACCOUNT.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Account permission is null", perm2);
+		
+		// ioContext.getPolicyUtil().setTrace(true);
+		BaseRecord role1 = ioContext.getPathUtil().makePath(testUser1,  ModelNames.MODEL_ROLE, userRolePath, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		// ioContext.getPolicyUtil().setTrace(false);
+		assertNotNull("User role is null", role1);
+
+		BaseRecord role2 = ioContext.getPathUtil().makePath(testUser1,  ModelNames.MODEL_ROLE, accountRolePath, RoleEnumType.ACCOUNT.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Account role is null", role2);
+
+	}
+	
+
 
 	@Test
 	public void TestDeserializeInferredModel() {
@@ -270,6 +343,7 @@ public class TestObjectPolicy extends BaseTest {
 		evaluatePolicy(testUser1, "systemCreateObject", testUser1, newDat, PolicyResponseEnumType.PERMIT);
 	}
 	
+
 	@Test
 	public void TestSystemResourceAccessPolicy() {
 		
@@ -396,7 +470,6 @@ public class TestObjectPolicy extends BaseTest {
 		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser1.getModel(), testUser1.get(FieldNames.FIELD_URN), dat.getModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
 		
 	}
-	
 
 	private PolicyResponseType evaluatePolicyByUrn(BaseRecord contextUser, String policyName, String actorType, String actorUrn, String resourceType, String resourceUrn, PolicyResponseEnumType expectedResponse) {
 		PolicyResponseType pres = ioContext.getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actorType, actorUrn, resourceType, resourceUrn);
@@ -421,5 +494,6 @@ public class TestObjectPolicy extends BaseTest {
 		assertTrue("Expected the policy to " + expectedResponse.toString(), expectedResponse == pres.getType());
 		return pres;
 	}
+
 	
 }

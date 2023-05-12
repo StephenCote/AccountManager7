@@ -68,10 +68,13 @@ public class CryptoFactory {
 	public static final Logger logger = LogManager.getLogger(CryptoFactory.class);
 
 	private static String[] importFields = new String[] {
+			FieldNames.FIELD_PUBLIC, FieldNames.FIELD_PRIVATE, FieldNames.FIELD_CIPHER, FieldNames.FIELD_HASH
+/*
 			FieldNames.FIELD_PUBLIC_FIELD_KEYSIZE,FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC,FieldNames.FIELD_PUBLIC_FIELD_KEYMODE,
 			FieldNames.FIELD_PRIVATE_FIELD_KEYSIZE,FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC,FieldNames.FIELD_PRIVATE_FIELD_KEYMODE,FieldNames.FIELD_CIPHER_FIELD_IV,FieldNames.FIELD_CIPHER_FIELD_KEY,
 			FieldNames.FIELD_CIPHER_FIELD_ENCRYPT,FieldNames.FIELD_CIPHER_FIELD_KEYSIZE,FieldNames.FIELD_CIPHER_FIELD_KEYSPEC,FieldNames.FIELD_CIPHER_FIELD_KEYMODE,FieldNames.FIELD_HASH_FIELD_KEYFUNCTION,
-			FieldNames.FIELD_HASH_FIELD_ALGORITHM, FieldNames.FIELD_HASH_FIELD_PRNG,
+			FieldNames.FIELD_HASH_FIELD_ALGORITHM, FieldNames.FIELD_HASH_FIELD_PRNG
+*/
 	};
 	
 	private static CryptoFactory instance = null;
@@ -272,12 +275,18 @@ public class CryptoFactory {
 	}
 	public void setSecretKey(CryptoBean bean, byte[] key, byte[] iv, boolean encryptedCipher){
 		byte[] decKey = key;
+		byte[] decIv = iv;
 		try {
 			if(encryptedCipher){
 				decKey = CryptoUtil.decrypt(bean, key);
+				if(iv.length > 0) {
+					decIv = CryptoUtil.decrypt(bean, iv);
+				}
+				// logger.info("Dec: " + decKey.length);
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
 			}
 			String spec = bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC);
+			// logger.info("Dec Key: " + decKey.length + " / " + spec);
 			bean.setSecretKey(new SecretKeySpec(decKey, spec));
 			
 			bean.set(FieldNames.FIELD_CIPHER_FIELD_IV, iv);
@@ -306,13 +315,13 @@ public class CryptoFactory {
 	public void setPrivateKey(CryptoBean bean, byte[] privateKey){
 		PrivateKey privKey = null;
 		try{
+			// logger.info("**** Set Private Key: " + privateKey.length + " / " + bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
 	        KeyFactory kFact = KeyFactory.getInstance(bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
 			PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKey);
 			privKey = kFact.generatePrivate(privKeySpec);		
 		}
 		catch(Exception e){
 			logger.error(e);
-			
 		}
 		bean.setPrivateKey(privKey);
 	}
@@ -558,7 +567,6 @@ public class CryptoFactory {
 				copyField(rec, bean, field);
 			}
 
-			
 			if(rec.hasField(FieldNames.FIELD_HASH_FIELD_SALT)) {
 				bean.set(FieldNames.FIELD_HASH_FIELD_SALT, rec.get(FieldNames.FIELD_HASH_FIELD_SALT));
 			}
@@ -587,9 +595,9 @@ public class CryptoFactory {
 			}
 			
 			if(rec.hasField(FieldNames.FIELD_CIPHER_FIELD_KEY) && rec.hasField(FieldNames.FIELD_CIPHER_FIELD_IV) && rec.get(FieldNames.FIELD_CIPHER_FIELD_KEY) != null) {
-				if(!bean.hasField(FieldNames.FIELD_CIPHER) || bean.get(FieldNames.FIELD_CIPHER) == null) {
+				// if(!bean.hasField(FieldNames.FIELD_CIPHER) || bean.get(FieldNames.FIELD_CIPHER) == null) {
 					bean.set(FieldNames.FIELD_CIPHER, RecordFactory.newInstance(ModelNames.MODEL_CIPHER_KEY));
-				}
+				// }
 				setSecretKey(bean, rec.get(FieldNames.FIELD_CIPHER_FIELD_KEY), rec.get(FieldNames.FIELD_CIPHER_FIELD_IV), encryptedCipher);
 			}
 
@@ -611,6 +619,16 @@ public class CryptoFactory {
 		return getCipherKey(bean, true);
 	}
 	private Cipher getCipherKey(CryptoBean bean,  boolean decrypt){
+		/*
+		if(decrypt && bean.getDecryptCipherKey() != null) {
+			// logger.warn("**** " + bean.getDecryptCipherKey());
+			return bean.getDecryptCipherKey();
+		}
+		else if(bean.getEncryptCipherKey() != null) {
+			return bean.getEncryptCipherKey();
+		}
+		*/
+
 		boolean bECD = ((String)bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC)).startsWith("EC");
 		if(
 			bean.getSecretKey() == null
@@ -649,6 +667,14 @@ public class CryptoFactory {
 			cipherKey.init(mode,  bean.getSecretKey());
 			bean.set(FieldNames.FIELD_CIPHER_FIELD_IV, cipherKey.getIV());
 		}
+
+		if(decrypt) {
+			bean.setDecryptCipherKey(cipherKey);
+		}
+		else {
+			bean.setEncryptCipherKey(cipherKey);
+		}
+		
 
        }
        catch (NoSuchAlgorithmException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException | FieldException | ValueException | ModelNotFoundException e) {
@@ -695,10 +721,12 @@ public class CryptoFactory {
 				return ret;
 			}
 			bean.set(FieldNames.FIELD_CIPHER_FIELD_IV, cipher.getIV());
+			
 			if((boolean)bean.get(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT)){
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEY, CryptoUtil.encrypt(bean, bean.get(FieldNames.FIELD_CIPHER_FIELD_KEY)));
 				if(bean.get(FieldNames.FIELD_CIPHER_FIELD_IV) != null) bean.set(FieldNames.FIELD_CIPHER_FIELD_IV, CryptoUtil.encrypt(bean, bean.get(FieldNames.FIELD_CIPHER_FIELD_IV)));
 			}
+			
 			ret = true;
 		} catch (NullPointerException | NoSuchAlgorithmException | InvalidKeyException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e.getMessage());

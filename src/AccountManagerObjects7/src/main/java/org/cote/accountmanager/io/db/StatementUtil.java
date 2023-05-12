@@ -93,10 +93,10 @@ public class StatementUtil {
 			FieldType f = record.getFields().get(i);
 			FieldSchema fs = ms.getFieldSchema(f.getName());
 			if(fs.isIdentity()) {
-				if(!FieldUtil.isNullOrEmpty(f)) {
+				if(!FieldUtil.isNullOrEmpty(record.getModel(), f)) {
 					ident = f;
+					break;
 				}
-				break;
 			}
 		}
 
@@ -124,7 +124,7 @@ public class StatementUtil {
 			FieldType f = record.getFields().get(i);
 			FieldSchema fs = ms.getFieldSchema(f.getName());
 			if(fs.isIdentity()) {
-				if(!FieldUtil.isNullOrEmpty(f)) {
+				if(!FieldUtil.isNullOrEmpty(record.getModel(), f)) {
 					ident = f;
 				}
 				continue;
@@ -147,6 +147,7 @@ public class StatementUtil {
 		DBStatementMeta meta = new DBStatementMeta();
 		if(ident == null) {
 			logger.error("No identity field provided");
+			// logger.error(record.toFullString());
 		}
 		else {
 			buff.append(" WHERE " + ident.getName() + " = ?");
@@ -514,7 +515,7 @@ public class StatementUtil {
 				continue;
 			}
 			T val = ft.getValue();
-			setStatementParameter(statement, record.getModel(), ft.getName(), ft.getValueType(), val, (i + 1));
+			setStatementParameter(statement, record.getModel(), ft.getName(), ComparatorEnumType.UNKNOWN, ft.getValueType(), val, (i + 1));
 		}
 	}
 	
@@ -550,7 +551,7 @@ public class StatementUtil {
 				|| comp == ComparatorEnumType.LESS_THAN_OR_EQUALS
 				|| comp == ComparatorEnumType.LIKE
 			){
-				setStatementParameter(statement, model, field.get(FieldNames.FIELD_NAME), fet, field.get(FieldNames.FIELD_VALUE), paramMarker++);
+				setStatementParameter(statement, model, field.get(FieldNames.FIELD_NAME), comp, fet, field.get(FieldNames.FIELD_VALUE), paramMarker++);
 			}
 			else if(
 					comp == ComparatorEnumType.IN
@@ -589,7 +590,7 @@ public class StatementUtil {
 		return paramMarker;
 	}
 	
-	public static <T> void setStatementParameter(PreparedStatement statement, String model, String fieldName, FieldEnumType dataType, T value, int index) throws DatabaseException{
+	private static <T> void setStatementParameter(PreparedStatement statement, String model, String fieldName, ComparatorEnumType comp, FieldEnumType dataType, T value, int index) throws DatabaseException{
 		ModelSchema ms = RecordFactory.getSchema(model);
 		FieldSchema fs = ms.getFieldSchema(fieldName);
 		if(index <= 0){
@@ -611,7 +612,11 @@ public class StatementUtil {
 						statement.setString(index, ((BaseRecord)value).toString());
 					}
 					else {
-						statement.setString(index,  (String)value);
+						String sval = (String)value;
+						if(comp == ComparatorEnumType.LIKE && sval != null && sval.indexOf("%") == -1) {
+							sval = "%" + sval + "%";
+						}
+						statement.setString(index,  sval);
 					}
 					break;
 				case INT:
@@ -702,7 +707,7 @@ public class StatementUtil {
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		int subCount = 0;
 		for(String col : meta.getColumns()) {
-			String colName = col;//util.getColumnName(col);
+			String colName = col;
 			FieldType f = record.getField(col);
 			FieldSchema fs = ms.getFieldSchema(col);
 			if(f == null) {

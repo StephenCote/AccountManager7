@@ -238,6 +238,12 @@ public class OrganizationContext {
 		return organizationCipher;
 	}
 	
+	
+	
+	public BaseRecord getOrganization() {
+		return organization;
+	}
+
 	public byte[] sign(byte[] bytes) {
 		//CryptoFactory.getInstance()
 		return new byte[0];

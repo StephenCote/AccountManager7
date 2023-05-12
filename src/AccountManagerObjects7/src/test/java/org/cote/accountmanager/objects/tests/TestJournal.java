@@ -90,7 +90,7 @@ public class TestJournal extends BaseTest {
 		try {
 			data = RecordFactory.model("journalObject").newInstance();
 			data.set(FieldNames.FIELD_NAME, dataName);
-			data.set(FieldNames.FIELD_MIME_TYPE,  "text/plain");
+			data.set(FieldNames.FIELD_CONTENT_TYPE,  "text/plain");
 			data.set(FieldNames.FIELD_BYTE_STORE, "The data to patch".getBytes());
 			data.set(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			data.set(FieldNames.FIELD_ORGANIZATION_ID, testOrgContext.getOrganizationId());

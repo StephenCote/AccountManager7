@@ -29,11 +29,14 @@
 		},
 		{
 			"name": "agreementSpec",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		},
 		{
 			"name": "curveName",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
+			
 		},
 		{
 			"name": "organizationKey",

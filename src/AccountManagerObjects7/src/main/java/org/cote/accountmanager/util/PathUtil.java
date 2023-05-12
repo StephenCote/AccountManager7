@@ -19,6 +19,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 
 public abstract class PathUtil implements IPath {
@@ -70,7 +71,21 @@ public abstract class PathUtil implements IPath {
 				if(e == null || e.length() == 0) {
 					continue;
 				}
-				BaseRecord[] nodes = search.findByNameInParent(model, parentId, e, type, organizationId);
+				String utype = type;
+				/// When trying to get type specific paths, allow to build off a singlur base such as /home/{name} vs. duplicating /home/{name}
+				/// TODO: This needs to be configurable because it would also be helpful in the Community layout
+				///
+				
+				if(owner != null && (e.equals("home") || e.equals(owner.get(FieldNames.FIELD_NAME)))) {
+					if(model.equals(ModelNames.MODEL_GROUP)) {
+						utype = "DATA";
+					}
+					else if(model.equals(ModelNames.MODEL_PERMISSION) || model.equals(ModelNames.MODEL_ROLE)) {
+						utype = "USER";
+					}
+				}
+				
+				BaseRecord[] nodes = search.findByNameInParent(model, parentId, e, utype, organizationId);
 	
 				if(nodes.length == 0) {
 					if(!doCreate) {
@@ -100,7 +115,13 @@ public abstract class PathUtil implements IPath {
 								||
 								(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
 						) {
-							logger.error("Not authorized to create " + model + " " + (type != null ? "of type (" + type + ") " : "") + "node " + e + " in path " + path);
+							logger.error("Not authorized to create " + model + " " + (type != null ? "of type (" + type + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path);
+							/*
+							StackTraceElement[] st = new Throwable().getStackTrace();
+							for(int i = 0; i < st.length; i++) {
+								logger.error(st[i].toString());
+							}
+							*/
 							/*
 							if(prr != null) {
 								logger.error(prr.toString());
@@ -112,14 +133,6 @@ public abstract class PathUtil implements IPath {
 						if(prr == null) {
 							// logger.warn("*** Creating node '" + e + "' without authorization check because " + (enforceAuthorization ? "enforced" : "not enforced") + " and owner " + (owner != null ? "" : "not") + " specified");
 						}
-						/*
-						if(model.equals(ModelNames.MODEL_ROLE)) {
-							logger.info("Role model:");
-							node.getFields().forEach(f -> {
-								logger.info("Field: " + f.getName());
-							});
-						}
-						*/
 						
 						writer.write(node);
 						writer.flush();

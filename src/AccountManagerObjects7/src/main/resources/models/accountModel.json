@@ -26,7 +26,8 @@
 	}
 	,{
 	"name": "accountId",
-	"type": "string"
+	"type": "string",
+	"maxLength": 40
 	}
 	,{
 	"name": "databaseRecord",

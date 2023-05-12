@@ -122,11 +122,10 @@ public class TestStartup extends BaseTest {
 		try {
 			BaseRecord org = mf.makeOrganization("/Development", OrganizationEnumType.DEVELOPMENT, 0L);
 			BaseRecord testMember1 = mf.getCreateUser(orgContext.getAdminUser(), "testMember1", org.get(FieldNames.FIELD_ID));
-			FileIndexer fix = ioContext.getIndexManager().getInstance(ModelNames.MODEL_PERSON);
-			fix.setTrace(true);
+
 			// logger.info(JSONUtil.exportObject(org, RecordSerializerConfig.getUnfilteredModule()));
 			BaseRecord per1 = mf.getCreateDirectoryModel(testMember1, ModelNames.MODEL_PERSON, "Demo Person 1", "~/Persons", org.get(FieldNames.FIELD_ID));
-			fix.setTrace(false);
+
 			String token = TokenService.createJWTToken(orgContext.getAdminUser());
 			logger.info("Token: " + token);
 			
@@ -145,7 +144,7 @@ public class TestStartup extends BaseTest {
 			BaseRecord dok = mf.template(ModelNames.MODEL_DATA, """
 					{
 						"name": "Demo Data",
-						"mimeType": "text/plain"
+						"contentType": "text/plain"
 						
 					}
 			""");
@@ -274,20 +273,5 @@ public class TestStartup extends BaseTest {
 		DigestCalculator digCalc = new BcDigestCalculatorProvider().get(new AlgorithmIdentifier(OIWObjectIdentifiers.idSHA1));
 		return new X509ExtensionUtils(digCalc).createAuthorityKeyIdentifier(publicKeyInfo);
 	}
-	
-	
-	/*
-	 *     JceOpenSSLPKCS8EncryptorBuilder encryptorBuilder = new JceOpenSSLPKCS8EncryptorBuilder(PKCS8Generator.PBE_SHA1_3DES);
-    encryptorBuilder.setRandom(EntropySource.getSecureRandom());
-    encryptorBuilder.setPasssword("12345".toCharArray());
-    OutputEncryptor oe = encryptorBuilder.build();
-    JcaPKCS8Generator gen = new JcaPKCS8Generator(privKey,oe);
-    PemObject obj = gen.generate();
-
-    PEMWriter pemWrt = new PEMWriter( new FileWriter("privatekey.pem"));
-    pemWrt.writeObject(obj);
-    pemWrt.close();
-	 */
-	
 	
 }

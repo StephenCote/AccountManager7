@@ -18,7 +18,8 @@
 	{
 		"name": "participationModel",
 		"type": "string",
-		"required": true
+		"required": true,
+		"maxLength": 32
 	},
 	{
 		"name": "participantId",
@@ -28,7 +29,8 @@
 	{
 		"name": "participantModel",
 		"type": "string",
-		"required": true
+		"required": true,
+		"maxLength": 32
 	},
 	{
 		"name": "permissionId",

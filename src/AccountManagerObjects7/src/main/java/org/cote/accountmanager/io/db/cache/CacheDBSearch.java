@@ -47,6 +47,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			// logger.info("Cache hit: " + query.key());
 			return cache.get(hash);
 		}
+		
+		// logger.info(query.key());
+		
 		res = super.find(query);
 		if(res != null && res.getCount() > 0) {
 			cache.put(hash, res);

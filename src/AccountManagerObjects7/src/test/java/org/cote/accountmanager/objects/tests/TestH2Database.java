@@ -242,7 +242,7 @@ public class TestH2Database extends BaseTest {
 		try{
 			rec = RecordFactory.newInstance(ModelNames.MODEL_DATA);
 			rec.set(FieldNames.FIELD_NAME, name);
-			rec.set(FieldNames.FIELD_MIME_TYPE, "text/plain");
+			rec.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			rec.set(FieldNames.FIELD_BYTE_STORE, "Example data is here".getBytes());
 			
 			boolean created = ioContext.getRecordUtil().createRecord(rec);
@@ -251,7 +251,7 @@ public class TestH2Database extends BaseTest {
 			
 			//BaseRecord irec = ioContext.getRecordUtil().getRecordById(null, ModelNames.MODEL_DATA, rec.get(FieldNames.FIELD_ID));
 			Query query = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_ID, rec.get(FieldNames.FIELD_ID));
-			query.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_MIME_TYPE, FieldNames.FIELD_BYTE_STORE});
+			query.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_BYTE_STORE});
 			
 			BaseRecord irec = ioContext.getSearch().findRecord(query);
 			assertNotNull("Expected a result", irec);
@@ -284,7 +284,7 @@ public class TestH2Database extends BaseTest {
 		try{
 			rec = RecordFactory.newInstance(ModelNames.MODEL_DATA);
 			rec.set(FieldNames.FIELD_NAME, name);
-			rec.set(FieldNames.FIELD_MIME_TYPE, "text/plain");
+			rec.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			rec.set(FieldNames.FIELD_DESCRIPTION, "This is the example data with some attributes");
 			rec.set(FieldNames.FIELD_BYTE_STORE, "Example data is here".getBytes());
 			

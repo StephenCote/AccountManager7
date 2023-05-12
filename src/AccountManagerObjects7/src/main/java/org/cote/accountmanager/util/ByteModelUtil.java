@@ -124,9 +124,9 @@ public class ByteModelUtil {
 		{
 			setValue(d, value.getBytes(StandardCharsets.UTF_8));
 		}
-		String mt = d.get(FieldNames.FIELD_MIME_TYPE);
+		String mt = d.get(FieldNames.FIELD_CONTENT_TYPE);
 		if(mt == null || mt.length() == 0){
-			d.set(FieldNames.FIELD_MIME_TYPE, "text/plain");
+			d.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 		}
 	}
 	
@@ -209,22 +209,23 @@ public class ByteModelUtil {
 
        return new byte[0];
    }
-
+   public static final int MINIMUM_COMPRESSION_SIZE = 512;
    public static boolean tryCompress(BaseRecord d)
    {
-       String mimeType = d.get(FieldNames.FIELD_MIME_TYPE, null);
+       String contentType = d.get(FieldNames.FIELD_CONTENT_TYPE, null);
        return (
-               mimeType == null
+               contentType == null
                ||
                (
                        (
-                               mimeType.startsWith("image/") == false
+                               contentType.startsWith("image/") == false
                                ||
-                               mimeType.equals("image/svg+xml"))
+                               contentType.equals("image/svg+xml")
+                       )
                        &&
-                       mimeType.startsWith("application/") == false
+                       contentType.startsWith("application/") == false
                        &&
-                       mimeType.startsWith("audio/") == false
+                       contentType.startsWith("audio/") == false
                        )
                );
 

@@ -16,6 +16,7 @@
 	},
 	{
 		"name": "name",
-		"type": "string"
+		"type": "string",
+		"maxLength": 64
 	}
 ]}

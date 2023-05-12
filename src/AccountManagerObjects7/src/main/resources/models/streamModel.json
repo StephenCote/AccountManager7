@@ -1,0 +1,28 @@
+{
+"name": "stream",
+"inherits": ["directory", "description", "dateTime", "contentType"],
+"provider": "org.cote.accountmanager.provider.StreamProvider",
+"fields": [
+	{
+		"name": "streamSource",
+		"type": "string"
+	},
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.StreamEnumType",
+		"type": "enum",
+		"default": "UNKNOWN",
+		"maxLength": 16
+	},
+	{
+		"name": "size",
+		"type": "long"
+	},
+	{
+		"name": "segments",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "streamSegment",
+		"ephemeral": true
+	}
+]}

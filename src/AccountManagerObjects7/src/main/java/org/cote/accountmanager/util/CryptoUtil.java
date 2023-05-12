@@ -268,6 +268,7 @@ public class CryptoUtil {
 		PrivateKey key = bean.getPrivateKey();
 		byte[] ret = new byte[0];
 		if(key == null || data.length == 0){
+			logger.error("Private key " + (key == null ? "is null" : "exists") + " and data " + (data.length == 0 ? "not provided" : "provided"));
 			return ret;
 		}
 		try{

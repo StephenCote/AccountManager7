@@ -14,6 +14,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
@@ -37,7 +38,16 @@ public class PathProvider implements IProvider {
 			if(ipath != null) {
 				if(lfield.getBaseModel() != null && lfield.getBaseProperty() != null) {
 					logger.info("Creating/Finding path: " + ipath);
-					BaseRecord obj = IOSystem.getActiveContext().getPathUtil().makePath(contextUser, lfield.getBaseModel(), ipath, null, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+					BaseRecord obj = null;
+					if(lfield.getBaseModel().equals(ModelNames.MODEL_ORGANIZATION)) {
+						OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(ipath, null);
+						if(oc != null && oc.isInitialized()) {
+							obj = oc.getOrganization();
+						}
+					}
+					else {
+						obj = IOSystem.getActiveContext().getPathUtil().makePath(contextUser, lfield.getBaseModel(), ipath, null, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+					}
 					if(obj != null) {
 						model.set(lfield.getBaseProperty(), obj.get(FieldNames.FIELD_ID));
 						if(ipath.startsWith("~/") && contextUser != null) {
@@ -51,7 +61,7 @@ public class PathProvider implements IProvider {
 			}
 			return;
 		}
-		else if(!RecordOperation.READ.equals(operation)) {
+		else if(!RecordOperation.READ.equals(operation) && !RecordOperation.INSPECT.equals(operation)) {
 			return;
 		}
 		String path = null;
@@ -140,7 +150,7 @@ public class PathProvider implements IProvider {
 			logger.debug("Unhandled: Model " + model.getModel() + " " + model.get(FieldNames.FIELD_NAME) + " does not define a parent");
 		}
 		if(path == null) {
-			logger.warn("Empty path value");
+			//logger.warn("Empty path value");
 			logger.debug(model.toString());
 		}
 		logger.debug("Apply path to " + model.getModel() + " " + lfield.getName() + " == " + path);

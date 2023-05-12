@@ -22,11 +22,13 @@
 		},
 		{
 			"name": "urn",
-			"type": "string"
+			"type": "string",
+			"maxLength": 127
 		},
 		{
 			"name": "organizationPath",
-			"type": "string"
+			"type": "string",
+			"maxLength": 255
 		},
 		{
 			"name": "type",
@@ -36,11 +38,13 @@
 		},
 		{
 			"name": "subject",
-			"type": "string"
+			"type": "string",
+			"maxLength": 127
 		},
 		{
 			"name": "subjectType",
-			"type": "string"
+			"type": "string",
+			"maxLength": 32
 		},
 		{
 			"name": "credentialType",

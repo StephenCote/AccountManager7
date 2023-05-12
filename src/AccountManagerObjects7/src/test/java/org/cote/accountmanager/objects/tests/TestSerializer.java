@@ -42,10 +42,11 @@ public class TestSerializer extends BaseTest {
 	public static final Logger logger = LogManager.getLogger(TestSerializer.class);
 	
 	
-
-	
 	/*
-	 * NOTE: Some of these tests are currently invalid because the storage base doesn't change, so the index tests wind up pointing to mismatched objects and a deserialization error is thrown
+	 * NOTE: Many of these tests are currently invalid because the storage base doesn't change.
+	 * FileIndexes wind up pointing to mismatched objects and a deserialization error is thrown
+	 * Or the keyStores are invalid with randomized fileStores (zip)
+	 * So all of these tests need to be refactored to move the storage base to a randomized sub-directory to avoid conflicts
 	 */
 	@Test
 	public void TestPaths() {

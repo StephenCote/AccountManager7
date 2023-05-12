@@ -15,6 +15,11 @@ public class MemoryReader extends RecordReader {
 		super();
 		this.recordIo = RecordIO.MEMORY;
 	}
+
+	public synchronized BaseRecord inspect(BaseRecord rec) throws ReaderException {
+		prepareTranslation(RecordOperation.INSPECT, rec);
+		return rec;
+	}
 	
 	public synchronized BaseRecord read(BaseRecord rec) throws ReaderException {
 		prepareTranslation(RecordOperation.READ, rec);

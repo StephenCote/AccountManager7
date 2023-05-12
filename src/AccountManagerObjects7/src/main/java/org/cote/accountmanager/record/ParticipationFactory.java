@@ -39,7 +39,6 @@ public class ParticipationFactory {
 		}
 		catch (MissingFormatArgumentException | NullPointerException | FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
-			
 		}
 		return part1;
 	}

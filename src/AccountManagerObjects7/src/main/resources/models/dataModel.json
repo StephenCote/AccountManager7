@@ -1,10 +1,11 @@
 {
 "name": "data",
-"inherits": ["directory", "cryptoByteStore", "description", "dateTime"],
+"inherits": ["directory", "cryptoByteStore", "description", "dateTime", "streamExt"],
 "group": "Data",
 "fields": [
 	{
 		"name": "dimensions",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	}
 ]}

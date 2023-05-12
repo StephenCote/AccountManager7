@@ -79,8 +79,8 @@ public class KeyStoreUtil {
 				newStore.store(fos, password);
 				fos.close();
 			} catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
-				logger.error(e.getMessage());
 				logger.error(e);
+				e.printStackTrace();
 			}
 		}
 		return getKeyStore(path,password);
@@ -95,9 +95,9 @@ public class KeyStoreUtil {
 			saved = true;
 		}
 		 catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
-			 logger.error(e.getMessage());
 			logger.error(e);
-			}
+			e.printStackTrace();
+		}
 		return saved;
 	}
 	
@@ -116,8 +116,10 @@ public class KeyStoreUtil {
 		  keystore.load(is, password);
 		}
 		catch(KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e){
-			logger.info(e.getMessage());
 			logger.error(e);
+			logger.error("Path:" + path);
+			logger.error("Pwd len: " + password.length);
+			e.printStackTrace();
 		}
 		finally{
 			try {
@@ -137,8 +139,8 @@ public class KeyStoreUtil {
 		store.store(baos,password);
 		outByte = baos.toByteArray();
 		} catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
-			logger.error(e.getMessage());
 			logger.error(e);
+			e.printStackTrace();
 		}
 
 	   return outByte;
@@ -155,8 +157,8 @@ public class KeyStoreUtil {
 	    	store =  KeyStore.getInstance(provider);
 			store.load(new ByteArrayInputStream(keystoreBytes), password);
 		} catch (NoSuchAlgorithmException | CertificateException | IOException | KeyStoreException e) {
-			logger.error(e.getMessage());
 			logger.error(e);
+			e.printStackTrace();
 			store = null;
 		} 
 	      return store;
@@ -170,28 +172,28 @@ public class KeyStoreUtil {
 			cert =  cf.generateCertificate(bais);
 		}
 		catch(CertificateException e){
-			logger.error(e.getMessage());
 			logger.error(e);
+			e.printStackTrace();
 		}
 		return cert;
 	}
 	public static boolean importCertificate(KeyStore store, byte[] certificate, String alias){
 		boolean outBool = false;
-		logger.info("Import certificate");
+		logger.info("Import certificate: " + alias);
 		try{
 			Certificate cert =  decodeCertificate(certificate);
 			store.setCertificateEntry(alias, cert);
 			outBool = true;
 		}
 		catch(KeyStoreException e){
-			logger.error(e.getMessage());
 			logger.error(e);
+			e.printStackTrace();
 		}
 		return outBool;
 	}
 	public static boolean importPKCS12(KeyStore store,  byte[] p12cert, String alias, char[] password){
 		KeyStore pkstore = getKeyStore(p12cert,password);
-		logger.info("Import PKCS12 Store");
+		logger.info("Import PKCS12 Store: " + alias);
 		if(pkstore == null){
 			logger.error("PKCS12 store is null");
 			return false;
@@ -221,6 +223,7 @@ public class KeyStoreUtil {
 		catch(KeyStoreException | UnrecoverableKeyException | NoSuchAlgorithmException e){
 			logger.error(e.getMessage());
 			logger.error(e);
+			e.printStackTrace();
 		}
 	    return outBool;
 
@@ -239,7 +242,6 @@ public class KeyStoreUtil {
 		    try {
 				cert = store.getCertificate(keyAlias);
 			} catch (KeyStoreException e) {
-				logger.error(e.getMessage());
 				logger.error(e);
 			}
 
@@ -262,7 +264,6 @@ public class KeyStoreUtil {
 					logger.info("Alias " + keyAlias + " chain: " + certs.length);
 				}
 			} catch (UnrecoverableKeyException | KeyStoreException | NoSuchAlgorithmException e) {
-				logger.error(e.getMessage());
 				logger.error(e);
 			}
 		    return key;

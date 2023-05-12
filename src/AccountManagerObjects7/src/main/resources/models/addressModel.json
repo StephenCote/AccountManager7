@@ -4,31 +4,38 @@
 "fields": [
 	{
 	"name": "addressLine1",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "addressLine2",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "city",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "region",
-	"type": "string"
+	"type": "string",
+	"maxLength": 127
 	}
 	,{
 	"name": "state",
-	"type": "string"
+	"type": "string",
+	"maxLength": 40
 	}
 	,{
 	"name": "postalCode",
-	"type": "string"
+	"type": "string",
+	"maxLength": 12
 	}
 	,{
 	"name": "country",
-	"type": "string"
+	"type": "string",
+	"maxLength": 40
 	}
 	,{
 	"name": "locationType",

@@ -17,7 +17,7 @@ public abstract class ValueType implements IValueType {
 	private String baseClass = null;
 	private String baseModel = null;
 	private String baseType = null;
-	
+
 	public ValueType() {
 		
 	}

@@ -26,6 +26,7 @@ package org.cote.accountmanager.model.field;
 import java.security.PrivateKey;
 import java.security.PublicKey;
 
+import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 
 import org.cote.accountmanager.exceptions.FieldException;
@@ -51,7 +52,16 @@ public class CryptoBean extends LooseRecord {
 	
 	@JsonIgnore
 	private PrivateKey privateKey = null;
-
+	
+	@JsonIgnore
+	private Cipher encryptCipherKey = null;
+	
+	@JsonIgnore
+	private Cipher decryptCipherKey = null;
+	
+	@JsonIgnore
+	private PrivateKey decryptKey = null;
+	
 	public CryptoBean() {
 		try {
 			RecordFactory.newInstance(ModelNames.MODEL_KEY_SET, this, null);
@@ -62,23 +72,41 @@ public class CryptoBean extends LooseRecord {
 	}
 	
 	public CryptoBean(BaseRecord keySet) {
-		this();
-		this.setFields(keySet.getFields());
-		boolean encryptedCipher = false;
-		
-		if(hasField(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT)) {
-			encryptedCipher = get(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT);
-		}
-		this.applyKeys(encryptedCipher);
-		
-		// applyKeys(keySet, false);
+		this(keySet, null, null);
 	}
 	
+	/*
 	public CryptoBean(BaseRecord keySet, boolean encryptedCipher) {
 		this();
 		this.setFields(keySet.getFields());
 		this.applyKeys(encryptedCipher);
 	}
+	*/
+	
+	public CryptoBean(BaseRecord keySet, PrivateKey decryptKey, String keySpec) {
+		this();
+		this.setFields(keySet.getFields());
+		boolean encryptedCipher = false;
+		if(decryptKey != null && !hasField(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC) && keySpec != null) {
+			try {
+				set(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC, keySpec);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		if(hasField(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT)) {
+			encryptedCipher = get(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT);
+			/*
+			if(encryptedCipher && decryptKey == null) {
+				logger.warn("Private key not provided, and encoded private key may not be available to decrypt the encrypted cipher");
+			}
+			*/
+		}
+
+		this.decryptKey = decryptKey;
+		this.applyKeys(encryptedCipher);
+	}
+	
 	private void applyPublicKey() {
 		if(hasField(FieldNames.FIELD_PUBLIC_FIELD_KEY)) {
 			
@@ -86,44 +114,53 @@ public class CryptoBean extends LooseRecord {
 			byte[] keyBytes = get(FieldNames.FIELD_PUBLIC_FIELD_KEY);
 			String spec = get(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC);
 			if(spec != null && keyBytes.length > 0) {
-				//logger.info("Reconstitute public key");
-				//logger.info(this.toString());
-				/*
-				if(spec.startsWith("EC")) {
-					CryptoFactory.getInstance().setECDSAPublicKey(this, keyBytes);
-				}
-				else {
-					CryptoFactory.getInstance().setRSAPublicKey(this, keyBytes);
-				}
-				*/
 				CryptoFactory.getInstance().setPublicKey(this,  keyBytes);
 			}
 		}		
 	}
 	private void applyPrivateKey() {
 		if(hasField(FieldNames.FIELD_PRIVATE_FIELD_KEY)) {
-			// logger.info("Reconstitute private key");
 			byte[] keyBytes = get(FieldNames.FIELD_PRIVATE_FIELD_KEY);
 			String spec = get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC);
 			if(spec != null && keyBytes.length > 0) {
 				CryptoFactory.getInstance().setPrivateKey(this,  keyBytes);
-				/*
-				if(spec.startsWith("EC")) {
-					CryptoFactory.getInstance().setECDSAPrivateKey(this, keyBytes);
+				if(this.privateKey == null) {
+					logger.error("**** Failed to apply private key");
 				}
-				else {
-					CryptoFactory.getInstance().setRSAPrivateKey(this, keyBytes);
-				}
-				*/
+			}
+			else {
+				logger.warn("Private key (" + keyBytes.length + ") or keySpec (" + spec + ") were missing");
 			}
 		}
 	}
 	private void applyCipherKey(boolean encryptedCipher) {
 		if(hasField(FieldNames.FIELD_CIPHER_FIELD_KEY) && ((byte[])get(FieldNames.FIELD_CIPHER_FIELD_KEY)).length > 0) {
-			logger.info("Reconstitute cipher key");
 			byte[] keyBytes = get(FieldNames.FIELD_CIPHER_FIELD_KEY);
 			byte[] ivBytes = get(FieldNames.FIELD_CIPHER_FIELD_IV);
+			//logger.info(encryptedCipher + " " + get(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT) + " " + keyBytes.length + " " + ivBytes.length + " / " + (privateKey == null ? " NO KEY" : " KEY"));
+			boolean unsetKey = false;
+			if(encryptedCipher && privateKey == null) {
+				if(decryptKey != null) {
+					privateKey = decryptKey;
+					unsetKey = true;
+				}
+				else {
+					logger.error("A private key is needed to decrypt the cipher.  If using a vault key, the vault private key is encoded as a separate enciphered model and can't be important in this call stack.  Therefore, pass in the decrypt key plus set the Private.keySpec in the constructor.");
+				}
+			}
 			CryptoFactory.getInstance().setSecretKey(this, keyBytes, ivBytes, encryptedCipher);
+			// encryptCipherKey = CryptoFactory.getInstance().getEncryptCipherKey(this);
+			// decryptCipherKey = CryptoFactory.getInstance().getDecryptCipherKey(this);
+			if(unsetKey) {
+				/*
+				privateKey = null;
+				try {
+					set(FieldNames.FIELD_PRIVATE, null);
+				} catch (FieldException | ValueException | ModelNotFoundException e) {
+					logger.error(e);
+				}
+				*/
+			}
 		}
 	}
 	private void applyKeys(boolean encryptedCipher) {
@@ -133,11 +170,13 @@ public class CryptoBean extends LooseRecord {
 		}
 		if(hasField(FieldNames.FIELD_PRIVATE)) {
 			IOSystem.getActiveContext().getRecordUtil().populate(get(FieldNames.FIELD_PRIVATE));
+			// logger.info("Apply private");
 			applyPrivateKey();
 		}
 
 		if(hasField(FieldNames.FIELD_CIPHER)) {
 			IOSystem.getActiveContext().getRecordUtil().populate(get(FieldNames.FIELD_CIPHER));
+			// logger.info("Apply cipher");
 			applyCipherKey(encryptedCipher);
 		}
 	}
@@ -200,5 +239,27 @@ public class CryptoBean extends LooseRecord {
 	public void setSecretKey(SecretKey secretKey) {
 		this.secretKey = secretKey;
 	}
+
+	@JsonIgnore
+	public Cipher getEncryptCipherKey() {
+		return encryptCipherKey;
+	}
+
+	@JsonIgnore
+	public void setEncryptCipherKey(Cipher encryptCipherKey) {
+		this.encryptCipherKey = encryptCipherKey;
+	}
+
+	@JsonIgnore
+	public Cipher getDecryptCipherKey() {
+		return decryptCipherKey;
+	}
+
+	@JsonIgnore
+	public void setDecryptCipherKey(Cipher decryptCipherKey) {
+		this.decryptCipherKey = decryptCipherKey;
+	}
+	
+	
 	
 }

@@ -152,6 +152,10 @@ public class DBUtil {
 		return dataPrefix + "_" + modelName;
 	}
 	public String generateNewSchemaOnly(ModelSchema schema) {
+		if(schema.isEphemeral()) {
+			logger.warn("Schema " + schema.getName() + " is ephemeral");
+			return null;
+		}
 		if(isConstrained(schema)) {
 			logger.warn("Schema " + schema.getName() + " is constrained from using a database schema");
 			return null;
@@ -167,6 +171,11 @@ public class DBUtil {
 		FieldSchema primary = null;
 		List<FieldSchema> idents = new ArrayList<>();
 		List<FieldSchema> flds = new ArrayList<>();
+		
+		if(schema.isEphemeral()) {
+			logger.warn("Schema " + schema.getName() + " is ephemeral");
+			return null;
+		}
 
 		for(FieldSchema f : schema.getFields()) {
 			if(f.isVirtual() || f.isEphemeral()) {

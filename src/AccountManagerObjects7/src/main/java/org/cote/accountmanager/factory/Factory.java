@@ -230,8 +230,10 @@ public class Factory {
 			BaseRecord permHome = context.getPathUtil().makePath(adminUser, ModelNames.MODEL_PERMISSION, "/home/" + user.get(FieldNames.FIELD_NAME), "USER", orgId);
 			BaseRecord userHome = context.getPathUtil().findPath(adminUser, ModelNames.MODEL_GROUP, "/home/" + user.get(FieldNames.FIELD_NAME), "DATA", orgId);
 			
-			setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.ROLE.toString());
-			setCRUEntitlement(adminUser, user, permHome, PermissionEnumType.PERMISSION.toString());
+			setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.USER.toString());
+			// setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.ROLE.toString());
+			setCRUEntitlement(adminUser, user, permHome, PermissionEnumType.USER.toString());
+			// setCRUEntitlement(adminUser, user, permHome, PermissionEnumType.PERMISSION.toString());
 			setCRUEntitlement(adminUser, user, userHome, PermissionEnumType.GROUP.toString());
 			setCRUEntitlement(adminUser, user, userHome, PermissionEnumType.DATA.toString());
 			setCRUEntitlement(adminUser, user, user, PermissionEnumType.DATA.toString());

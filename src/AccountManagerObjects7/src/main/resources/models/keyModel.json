@@ -9,12 +9,14 @@
 		{
 			"name": "keySpec",
 			"type": "string",
-			"default": "RSA"
+			"default": "RSA",
+			"maxLength": 32
 		},
 		{
 			"name": "keyMode",
 			"type": "string",
-			"default": "RSA"
+			"default": "RSA",
+			"maxLength": 32
 		},
 		{
 			"name": "keySize",

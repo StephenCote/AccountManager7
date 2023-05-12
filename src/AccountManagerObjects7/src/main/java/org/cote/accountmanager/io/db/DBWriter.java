@@ -63,7 +63,7 @@ public class DBWriter extends MemoryWriter {
 	    	StatementUtil.applyPreparedStatement(model, meta, st);
 	    	int update = st.executeUpdate();
 	    	if(update > 0) {
-	    		logger.info("Deleted: " + update);
+	    		// logger.info("Deleted: " + update);
 	    		success = true;
 	    	}
 			st.close();
@@ -103,30 +103,34 @@ public class DBWriter extends MemoryWriter {
 			throw new WriterException("Model " + model.getModel() + " does not define an identity field");
 		}
 		
-		for(FieldType f : model.getFields()) {
-			FieldSchema fs = schema.getFieldSchema(f.getName());
-			if(fs.isForeign() && f.getValueType() == FieldEnumType.MODEL) {
-				BaseRecord bf = model.get(f.getName());
-				if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
-					/// logger.warn("**** Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
-					if(op == RecordOperation.CREATE) {
-						logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
-						try {
-							bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
-							bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
-							IOSystem.getActiveContext().getRecordUtil().createRecord(bf);
-							//logger.info(bf.toString());
+		/// TODO: Make this a schema property to not auto-create foreign objects
+		if(!model.getModel().equals(ModelNames.MODEL_AUDIT)) {
+			for(FieldType f : model.getFields()) {
+				FieldSchema fs = schema.getFieldSchema(f.getName());
+				if(fs.isForeign() && f.getValueType() == FieldEnumType.MODEL) {
+					BaseRecord bf = model.get(f.getName());
+					if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
+						/// logger.warn("**** Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
+						if(op == RecordOperation.CREATE) {
+							logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
+							// logger.info(model.toFullString());
+							try {
+								bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
+								bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+								IOSystem.getActiveContext().getRecordUtil().createRecord(bf);
+								//logger.info(bf.toString());
+							}
+							catch(ValueException | FieldException | ModelNotFoundException e) {
+								logger.error(e);
+							}
 						}
-						catch(ValueException | FieldException | ModelNotFoundException e) {
-							logger.error(e);
+						else {
+							logger.error("Will not update " + model.getModel() + " foreign child " + f.getName() + " without an identity reference");
 						}
-					}
-					else {
-						logger.error("Will not update foreign child without an identity reference");
 					}
 				}
+				
 			}
-			
 		}
 		
 		boolean success = false;
@@ -173,7 +177,7 @@ public class DBWriter extends MemoryWriter {
 		    								logger.error("Model " + erec.getModel() + " does not inherit from the reference model");
 		    								continue;
 		    							}
-		    							if(FieldUtil.isNullOrEmpty(erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
+		    							if(FieldUtil.isNullOrEmpty(erec.getModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
 		    								erec.set(FieldNames.FIELD_REFERENCE_ID, rid);
 		    								erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getModel());
 		    								if(erec.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {

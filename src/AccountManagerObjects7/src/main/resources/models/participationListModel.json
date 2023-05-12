@@ -12,7 +12,8 @@
 		},
 		{
 			"name": "name",
-			"type": "string"
+			"type": "string",
+			"maxLength": 255
 		},
 		{
 			"name": "partId",

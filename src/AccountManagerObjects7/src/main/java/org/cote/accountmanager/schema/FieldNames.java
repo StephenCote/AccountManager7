@@ -89,10 +89,11 @@ public class FieldNames {
 	   public static final String FIELD_ENCIPHERED = "enciphered";
 	   public static final String FIELD_ENCRYPT = "encrypt";
 	   public static final String FIELD_VAULTED = "vaulted";
+	   public static final String FIELD_VAULT_ID = "vaultId";
 	   public static final String FIELD_COMPRESSION_TYPE = "compressionType";
 	   public static final String FIELD_READ_BYTE_STORE = "readDataBytes";
 	   public static final String FIELD_POINTER = "pointer";
-	   public static final String FIELD_MIME_TYPE = "mimeType";
+	   public static final String FIELD_CONTENT_TYPE = "contentType";
 	   public static final String FIELD_DATA_HASH = "dataHash";
 	   public static final String FIELD_HASH = "hash";
 	   public static final String FIELD_SIZE = "size";
@@ -107,6 +108,7 @@ public class FieldNames {
 	   public static final String FIELD_CIPHER_FIELD_KEY = FIELD_CIPHER + "." + FIELD_KEY;
 	   public static final String FIELD_CIPHER_FIELD_IV = FIELD_CIPHER + "." + FIELD_IV;
 
+	   public static final String FIELD_CIPHER_FIELD_KEY_ID = FIELD_CIPHER + "." + FIELD_KEY_ID;
 		public static final String FIELD_CIPHER_FIELD_KEYSIZE = "cipher.keySize";
 		public static final String FIELD_CIPHER_FIELD_KEYMODE = "cipher.keyMode";
 		public static final String FIELD_CIPHER_FIELD_KEYSPEC = "cipher.keySpec";
@@ -118,14 +120,17 @@ public class FieldNames {
 		public static final String FIELD_PUBLIC = "public";
 		public static final String FIELD_SALT = "salt";
 		public static final String FIELD_PRIVATE = "private";
-		public static final String FIELD_PUBLIC_FIELD_KEY = "public.key";
-		public static final String FIELD_PUBLIC_FIELD_KEYSIZE = "public.keySize";
-		public static final String FIELD_PRIVATE_FIELD_KEYSIZE = "private.keySize";
-		public static final String FIELD_PRIVATE_FIELD_KEY = "private.key";
-		public static final String FIELD_PUBLIC_FIELD_KEYSPEC = "public.keySpec";
-		public static final String FIELD_PRIVATE_FIELD_KEYSPEC = "private.keySpec";
-		public static final String FIELD_PUBLIC_FIELD_KEYMODE = "public.keyMode";
-		public static final String FIELD_PRIVATE_FIELD_KEYMODE = "private.keyMode";
+		public static final String FIELD_KEY_SPEC = "keySpec";
+		public static final String FIELD_KEY_SIZE = "keySize";
+		public static final String FIELD_KEY_MODE = "keyMode";
+		public static final String FIELD_PUBLIC_FIELD_KEY = FIELD_PUBLIC + "." + FIELD_KEY;
+		public static final String FIELD_PUBLIC_FIELD_KEYSIZE = FIELD_PUBLIC + "." + FIELD_KEY_SIZE;
+		public static final String FIELD_PRIVATE_FIELD_KEYSIZE = FIELD_PRIVATE + "." + FIELD_KEY_SIZE;
+		public static final String FIELD_PRIVATE_FIELD_KEY = FIELD_PRIVATE + "." + FIELD_KEY;
+		public static final String FIELD_PUBLIC_FIELD_KEYSPEC = FIELD_PUBLIC + "." + FIELD_KEY_SPEC;
+		public static final String FIELD_PRIVATE_FIELD_KEYSPEC = FIELD_PRIVATE + "." + FIELD_KEY_SPEC;
+		public static final String FIELD_PUBLIC_FIELD_KEYMODE = FIELD_PUBLIC + "." + FIELD_KEY_MODE;
+		public static final String FIELD_PRIVATE_FIELD_KEYMODE = FIELD_PRIVATE + "." + FIELD_KEY_MODE;
 
 		public static final String FIELD_RSA_MODULUS = "modulus";
 		public static final String FIELD_RSA_EXPONENT = "exponent";
@@ -156,6 +161,7 @@ public class FieldNames {
 		public static final String FIELD_RESPONSE = "response";
 		public static final String FIELD_ACTION = "action";
 		public static final String FIELD_COUNT = "count";
+		public static final String FIELD_INSPECT = "inspect";
 		public static final String FIELD_TOTAL_COUNT = "totalCount";
 		public static final String FIELD_EXECUTED = "executed";
 		
@@ -224,5 +230,11 @@ public class FieldNames {
 		public static final String FIELD_APPROVAL_STATUS = "approvalStatus";
 		
 		public static final String FIELD_SCHEMA = "schema";
+		
+		public static final String FIELD_START_POSITION = "startPosition";
+		public static final String FIELD_LENGTH = "length";
+		public static final String FIELD_STREAM = "stream";
+		public static final String FIELD_STREAM_SOURCE = "streamSource";
+		public static final String FIELD_SEGMENTS = "segments";
 
 }

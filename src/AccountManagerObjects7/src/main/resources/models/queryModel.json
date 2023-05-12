@@ -6,17 +6,20 @@
 	{
 		"name": "urn",
 		"type": "string",
-		"identity": true
+		"identity": true,
+		"maxLength": 255
 	},
 	{
 		"name": "type",
 		"type": "string",
-		"required": true
+		"required": true,
+		"maxLength": 32
 	},
 	{
 		"name": "alias",
 		"type": "string",
-		"ephemeral": true
+		"ephemeral": true,
+		"maxLength": 60
 	},
 	{
 		"name": "count",
@@ -39,7 +42,8 @@
 	},
 	{
 		"name": "sortField",
-		"type": "string"
+		"type": "string",
+		"maxLength": 32
 	},
 	{
 		"name": "startRecord",
@@ -96,14 +100,22 @@
 	},
 	{
 		"name": "groupBy",
-		"type": "string"
+		"type": "string",
+		"maxLength": 127
 	},
 	{
 		"name": "having",
-		"type": "string"
+		"type": "string",
+		"maxLength": 127
 	},
 	{
 		"name": "havingClause",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
+	},
+	{
+		"name": "inspect",
+		"type": "boolean",
+		"description": "Indicates to listening providers not to perform some actions intended for read operations"
 	}
 ]}

@@ -5,7 +5,8 @@
 "fields": [
 	{
 		"name": "alias",
-		"type": "String"
+		"type": "String",
+		"maxLength": 64
 	},
 	{
 		"name": "keyPath",
@@ -17,7 +18,8 @@
 	},
 	{
 		"name": "nameHash",
-		"type": "string"
+		"type": "string",
+		"maxLength": 255
 	},
 	{
 		"name": "activeKey",
@@ -77,26 +79,31 @@
 		{
 		"name": "groupName",
 		"type": "String",
-		"default": ".vault"
+		"default": ".vault",
+		"maxLength": 127
 	},
 	{
 		"name": "vaultLink",
-		"type": "string"
+		"type": "string",
+		"maxLength": 60
 	},	
 	{
 		"name": "keyExtension",
 		"type": "string",
-		"default": ".mprv"
+		"default": ".mprv",
+		"maxLength": 10
 	},
 	{
 		"name": "keyPrefix",
 		"type": "string",
-		"default": "Vault"
+		"default": "Vault",
+		"maxLength": 10
 	},
 	{
 		"name": "keyProtectedPrefix",
 		"type": "string",
-		"default": "Prot"
+		"default": "Prot",
+		"maxLength": 10
 	},
 	{
 		"name": "haveVaultKey",
@@ -112,7 +119,8 @@
 	},
 	{
 		"name": "dn",
-		"type": "String"
+		"type": "String",
+		"maxLength": 255
 	},	
 	{
 		"name": "initialized",

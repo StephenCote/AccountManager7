@@ -14,7 +14,10 @@ import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelSchema;
 
 public class FieldUtil {
 	public static final Logger logger = LogManager.getLogger(FieldUtil.class);
@@ -300,8 +303,10 @@ public class FieldUtil {
 		return comp;
 	}
 	
-	public static <T> boolean isNullOrEmpty(FieldType f) {
+	public static <T> boolean isNullOrEmpty(String model, FieldType f) {
 		boolean outBool = false;
+		ModelSchema ms = RecordFactory.getSchema(model);
+		FieldSchema fs = ms.getFieldSchema(f.getName());
 		T val = f.getValue();
 		switch(f.getValueType()) {
 			case INT:
@@ -316,7 +321,7 @@ public class FieldUtil {
 			case BOOLEAN:
 			case MODEL:
 			case TIMESTAMP:
-				outBool = val == null;
+				outBool = (val == null || (fs.getDefaultValue() != null && fs.getDefaultValue() == val));
 				break;
 			case LIST:
 				outBool = (val == null || ((List<?>)val).size() == 0);
@@ -327,7 +332,7 @@ public class FieldUtil {
 			case STRING:
 			case ENUM:
 				String sval = (String)val;
-				outBool = (sval == null || sval.length() == 0);
+				outBool = (sval == null || sval.length() == 0 || (fs.getDefaultValue() != null && ((String)fs.getDefaultValue()).equals((String)val)));
 				break;
 			default:
 				logger.error("Unhandled value type: " + f.getValueType());

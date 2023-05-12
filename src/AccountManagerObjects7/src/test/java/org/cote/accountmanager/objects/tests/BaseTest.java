@@ -128,7 +128,7 @@ public class BaseTest {
 
 		ioContext = IOSystem.open(ioType, properties);
 		if(ioType == RecordIO.DATABASE) {
-			logger.info("**** BREAK MARK");
+			// logger.info("**** BREAK MARK");
 			// return;
 		}
 		OrganizationContext octx = null;
@@ -141,7 +141,7 @@ public class BaseTest {
 					octx.createOrganization();
 			}
 			else {
-				logger.info("Working with existing organization " + organizationPath);
+				logger.debug("Working with existing organization " + organizationPath);
 			}
 		} catch (Exception e) {
 			logger.error(e);
@@ -156,25 +156,26 @@ public class BaseTest {
 	protected void clearIO() {
 		IOSystem.close();
 		ioContext = null;
+		orgContext = null;
 	}
 	
 	
-	protected BaseRecord getCreateData(BaseRecord user, String name, String mimeType, byte[] data, String path, long organizationId) {
+	protected BaseRecord getCreateData(BaseRecord user, String name, String contentType, byte[] data, String path, long organizationId) {
 		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, path, "DATA", organizationId);
 		BaseRecord dat = ioContext.getRecordUtil().getRecord(user, ModelNames.MODEL_DATA, name, 0L, (long)dir.get(FieldNames.FIELD_ID), organizationId);
 		if(dat == null) {
-			dat = newData(user, name, mimeType, data, path, organizationId);
+			dat = newData(user, name, contentType, data, path, organizationId);
 			ioContext.getRecordUtil().createRecord(dat);
 		}
 		return dat;
 	}
-	protected BaseRecord newData(BaseRecord user, String name, String mimeType, byte[] data, String path, long organizationId) {
+	protected BaseRecord newData(BaseRecord user, String name, String contentType, byte[] data, String path, long organizationId) {
 		BaseRecord rec = null;
 		boolean error = false;
 		try {
 			rec = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
 			ioContext.getRecordUtil().applyNameGroupOwnership(user, rec, name, path, organizationId);
-			rec.set(FieldNames.FIELD_MIME_TYPE, mimeType);
+			rec.set(FieldNames.FIELD_CONTENT_TYPE, contentType);
 			rec.set(FieldNames.FIELD_BYTE_STORE, data);
 		} catch (Exception e) {
 			logger.error(e);
@@ -233,7 +234,7 @@ public class BaseTest {
 				datT.set(FieldNames.FIELD_NAME, name);
 				datT.set(FieldNames.FIELD_GROUP_PATH, path);
 				datT.set(FieldNames.FIELD_BYTE_STORE, textContents.getBytes());
-				datT.set(FieldNames.FIELD_MIME_TYPE, "text/plain");
+				datT.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 				dat = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, owner, datT, null);
 				ioContext.getRecordUtil().createRecord(dat);
 	

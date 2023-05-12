@@ -28,15 +28,18 @@
 	}
 	,{
 	"name": "cipherProvider",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "symmetricCipherKeySpec",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "asymmetricCipherKeySpec",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "randomSeedLength",
@@ -52,11 +55,13 @@
 	}
 	,{
 	"name": "hashProvider",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "cipherKeySpec",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "cipherKeySize",
@@ -92,10 +97,12 @@
 	}
 	,{
 	"name": "curveName",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 	,{
 	"name": "keyAgreementSpec",
-	"type": "string"
+	"type": "string",
+	"maxLength": 32
 	}
 ]}

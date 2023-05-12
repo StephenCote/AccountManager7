@@ -50,9 +50,15 @@ public class RecordUtil {
 		this.search = search;
 		this.pathUtil = IOFactory.getPathUtil(reader, writer, search);
 	}
+	
 	public static String toJSONString(BaseRecord rec) {
 		sortFields(rec);
 		return JSONUtil.exportObject(rec, RecordSerializerConfig.getUnfilteredModule());
+	}
+	
+	public static String toFullJSONString(BaseRecord rec) {
+		sortFields(rec);
+		return JSONUtil.exportObject(rec, RecordSerializerConfig.getForeignUnfilteredModule());
 	}
 	
 	public static String hash(BaseRecord rec) {
@@ -101,7 +107,7 @@ public class RecordUtil {
 		ModelSchema schema = RecordFactory.getSchema(rec.getModel());
 		for(FieldType f : rec.getFields()) {
 			FieldSchema fs = schema.getFieldSchema(f.getName());
-			if(fs.isIdentity() && !f.isNullOrEmpty()) {
+			if(fs.isIdentity() && !f.isNullOrEmpty(rec.getModel())) {
 				isId = true;
 				break;
 			}
@@ -209,13 +215,15 @@ public class RecordUtil {
 	}
 	
 	public boolean updateRecord(BaseRecord rec) {
+		// logger.info("**** UPDATE");
 		return createRecord(rec, true);
 	}
 	public boolean createRecord(BaseRecord rec) {
+		// logger.info("**** CREATE");
 		return createRecord(rec, false);
 	}
 	public boolean createRecord(BaseRecord rec, boolean flush) {
-		writer.translate(RecordOperation.READ, rec);
+		writer.translate(RecordOperation.INSPECT, rec);
 		boolean outBool = false;
 		try {
 			outBool = writer.write(rec);
