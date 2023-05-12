@@ -4,6 +4,7 @@
 	"condition": "any",
 	"name": "System Read Resource Access Rule", 
 	"patterns": [
+		"${pattern.tokenAccessOp}",
 		"${pattern.ownerAccessOp}",
 		"${pattern.groupOwnerAccessOp}",
 		"${pattern.parentOwnerAccessOp}",

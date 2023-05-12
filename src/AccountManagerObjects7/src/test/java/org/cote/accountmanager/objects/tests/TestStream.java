@@ -78,6 +78,7 @@ public class TestStream extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
+		BaseRecord testUser6 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser6", testOrgContext.getOrganizationId());
 		String dataName = "Auth stream " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Data/Streams");
 		plist.parameter("name", dataName);
@@ -98,10 +99,19 @@ public class TestStream extends BaseTest {
 			assertTrue("Expected a permit", prr.getType() == PolicyResponseEnumType.PERMIT);
 			
 			PolicyResponseType prr2 = ioContext.getAuthorizationUtil().canCreate(testUser5, testUser5, seg1);
-			logger.info(prr2.toFullString());
+			//logger.info(prr2.toFullString());
+			
+			logger.info("Can testUser6 access testUser5's data (no rights)");
+			PolicyResponseType prr3 = ioContext.getAuthorizationUtil().canRead(testUser6, testUser6, data);
+			logger.info(prr3.toFullString());
+			
+			logger.info("Can testUser6 access testUser5's data (w/ access token)");
+			String token = TokenService.createAuthorizationToken(testUser5, testUser6, data, new String[] {"/Read"}, UUID.randomUUID().toString(), 5);
+			PolicyResponseType prr4 = ioContext.getAuthorizationUtil().canRead(testUser6, testUser6, token, data);
+			logger.info(prr4.toFullString());
 			
 			
-		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException  e) {
+		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ReaderException | IndexException  e) {
 			logger.error(e);
 			e.printStackTrace();
 		}

@@ -238,5 +238,7 @@ public class FieldNames {
 		public static final String FIELD_STREAM_ID = "streamId";
 		public static final String FIELD_STREAM_SOURCE = "streamSource";
 		public static final String FIELD_SEGMENTS = "segments";
+		
+		public static  final String FIELD_TOKEN = "token";
 
 }

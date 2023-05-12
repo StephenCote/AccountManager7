@@ -73,7 +73,8 @@ public class PolicyUtil {
 	 *  ${error} - marker used to track issues with dynamic policy construction via resource
 	 */
 
-	
+
+	private Pattern tokenExp = Pattern.compile("\"\\$\\{token\\}\"");
 	private Pattern actorExp = Pattern.compile("\\$\\{actorUrn\\}");
 	private Pattern modelRoleExp = Pattern.compile("\\$\\{modelRole\\}");
 	private Pattern actorTypeExp = Pattern.compile("\\$\\{actorType\\}");
@@ -212,22 +213,8 @@ public class PolicyUtil {
 	
 	public PolicyResponseType[] evaluateQueryToReadPolicyResponses(BaseRecord contextUser, Query query) {
 		List<PolicyResponseType> prrs = new ArrayList<>();
-		// List<Long> ids = QueryUtil.findFieldValues(query, FieldNames.FIELD_ID, 0L);
-		// List<Long> groupIds = QueryUtil.findFieldValues(query, FieldNames.FIELD_GROUP_ID, 0L);
-		// List<Long> parentIds = QueryUtil.findFieldValues(query, FieldNames.FIELD_PARENT_ID, 0L);
-		//List<Long> urns = QueryUtil.findFieldValues(query, FieldNames.FIELD_URN, null);
 		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
 		try {
-			/*
-			for(Long l : groupIds) {
-				BaseRecord group = reader.read(ModelNames.MODEL_GROUP, l);
-				prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, group));
-			}
-			for(Long l : parentIds) {
-				BaseRecord par = reader.read(query.get(FieldNames.FIELD_TYPE), l);
-				prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, par));
-			}
-			*/
 			Set<String> querySet = new HashSet<>();
 			for(FieldSchema fs : ms.getFields()) {
 				if(fs.isIdentity() || fs.isRecursive()) {
@@ -242,15 +229,13 @@ public class PolicyUtil {
 					}
 					
 					for(Object x : vals) {
-						/// query.get(FieldNames.FIELD_TYPE)
 						Query sq = QueryUtil.createQuery(type, propName, x);
 						sq.set(FieldNames.FIELD_INSPECT, true);
 						if(!querySet.contains(sq.key())) {
 							querySet.add(sq.key());
 							QueryResult qr = search.find(sq);
 							for(BaseRecord cr : qr.getResults()) {
-								/// logger.info("Evaluate: " + fs.getName() + " / " + propName + " " + cr.get(FieldNames.FIELD_URN));
-								prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, cr));
+								prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, query.get(FieldNames.FIELD_TOKEN), cr));
 							}
 						}
 					}
@@ -264,23 +249,23 @@ public class PolicyUtil {
 		return prrs.toArray(new PolicyResponseType[0]);
 	}
 	
-	public boolean executePermitted(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_EXECUTE_OBJECT, actor, resource).getType() == PolicyResponseEnumType.PERMIT;
+	public boolean executePermitted(BaseRecord contextUser, BaseRecord actor, String token, BaseRecord resource) {
+		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_EXECUTE_OBJECT, actor, token, resource).getType() == PolicyResponseEnumType.PERMIT;
 	}
-	public boolean deletePermitted(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_DELETE_OBJECT, actor, resource).getType() == PolicyResponseEnumType.PERMIT;
+	public boolean deletePermitted(BaseRecord contextUser, BaseRecord actor, String token, BaseRecord resource) {
+		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_DELETE_OBJECT, actor, token, resource).getType() == PolicyResponseEnumType.PERMIT;
 	}
-	public boolean updatePermitted(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_UPDATE_OBJECT, actor, resource).getType() == PolicyResponseEnumType.PERMIT;
+	public boolean updatePermitted(BaseRecord contextUser, BaseRecord actor, String token, BaseRecord resource) {
+		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_UPDATE_OBJECT, actor, token, resource).getType() == PolicyResponseEnumType.PERMIT;
 	}
-	public boolean createPermitted(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_CREATE_OBJECT, actor, resource).getType() == PolicyResponseEnumType.PERMIT;
+	public boolean createPermitted(BaseRecord contextUser, BaseRecord actor, String token, BaseRecord resource) {
+		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_CREATE_OBJECT, actor, token, resource).getType() == PolicyResponseEnumType.PERMIT;
 	}
-	public boolean readPermitted(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, actor, resource).getType() == PolicyResponseEnumType.PERMIT;
+	public boolean readPermitted(BaseRecord contextUser, BaseRecord actor, String token, BaseRecord resource) {
+		return evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, actor, token, resource).getType() == PolicyResponseEnumType.PERMIT;
 	}
 	
-	public PolicyResponseType evaluateResourcePolicy(BaseRecord contextUser, String policyName, String actorType, String actorUrn, String resourceType, String resourceUrn) {
+	public PolicyResponseType evaluateResourcePolicy(BaseRecord contextUser, String policyName, String actorType, String actorUrn, String token, String resourceType, String resourceUrn) {
 		BaseRecord actor = null;
 		BaseRecord resource = null;
 		try {
@@ -290,10 +275,13 @@ public class PolicyUtil {
 			logger.error(e);
 			
 		}
-		return evaluateResourcePolicy(contextUser, policyName, actor, resource);
+		return evaluateResourcePolicy(contextUser, policyName, actor, token, resource);
 	}
-	
 	public PolicyResponseType evaluateResourcePolicy(BaseRecord contextUser, String policyName, BaseRecord actor, BaseRecord resource) {
+		return evaluateResourcePolicy(contextUser, policyName, actor, null, resource);
+	
+	}
+	public PolicyResponseType evaluateResourcePolicy(BaseRecord contextUser, String policyName, BaseRecord actor, String accessToken, BaseRecord resource) {
 		PolicyType pol = null;
 		PolicyRequestType preq = null;
 		PolicyResponseType prr = null;
@@ -301,11 +289,10 @@ public class PolicyUtil {
 		PolicyEvaluator pe = IOSystem.getActiveContext().getPolicyEvaluator();
 
 		try {
-			pol = getResourcePolicy(policyName, actor, resource).toConcrete();
+			pol = getResourcePolicy(policyName, actor, accessToken, resource).toConcrete();
 			preq = getPolicyRequest(pol, contextUser, actor);
+			//logger.info(preq.toFullString());
 			prr = pe.evaluatePolicyRequest(preq, pol).toConcrete();
-			// logger.info(JSONUtil.exportObject(preq, RecordSerializerConfig.getUnfilteredModule()));
-			// logger.info(JSONUtil.exportObject(prr, RecordSerializerConfig.getUnfilteredModule()));
 		}
 		catch(ReaderException | FieldException | ModelNotFoundException | ValueException | ScriptException | IndexException | ModelException e) {
 			logger.error(e);
@@ -315,25 +302,6 @@ public class PolicyUtil {
 	}
 	public SystemPermissionEnumType getSystemPermissionFromPolicyName(String name) {
 		return policyNameMap.get(name);
-		/*
-		SystemPermissionEnumType spet = SystemPermissionEnumType.UNKNOWN;
-		if(POLICY_SYSTEM_CREATE_OBJECT.equals(name)) {
-			spet = SystemPermissionEnumType.CREATE;
-		}
-		else if(POLICY_SYSTEM_UPDATE_OBJECT.equals(name)) {
-			spet = SystemPermissionEnumType.UPDATE;
-		}
-		else if(POLICY_SYSTEM_READ_OBJECT.equals(name)) {
-			spet = SystemPermissionEnumType.READ;
-		}
-		else if(POLICY_SYSTEM_DELETE_OBJECT.equals(name)) {
-			spet = SystemPermissionEnumType.DELETE;
-		}
-		else if(POLICY_SYSTEM_EXECUTE_OBJECT.equals(name)) {
-			spet = SystemPermissionEnumType.EXECUTE;
-		}
-		return spet;
-		*/
 	}
 	
 	public String getPolicyName(FieldSchema fs, SystemPermissionEnumType spet) {
@@ -455,36 +423,11 @@ public class PolicyUtil {
 		ModelSchema schema = RecordFactory.getSchema(object.getModel());
 		List<String> roles = getSchemaRoles(schema.getAccess(), spet);
 		if(roles.size() > 0) {
-			
-			// String accessPattern = ResourceUtil.getPatternResource("modelAccess");
 			for(String r : roles) {
 				BaseRecord pattern = getModelAccessPattern(actor, r);
 				if(pattern != null) {
 					patterns.add(pattern);
 				}
-				/*
-				String tmpPattern = accessPattern;
-				tmpPattern = applyResourcePattern(factResourceExp, ResourceType.FACT, tmpPattern);
-				String roleName = r;
-				if(!r.startsWith("/")) {
-					roleName = "/" + r;
-				}
-				tmpPattern = applyActorPattern(tmpPattern, actor);
-
-				Matcher 
-				m = modelRoleExp.matcher(tmpPattern);
-				tmpPattern = m.replaceAll(roleName);
-				
-				BaseRecord rec = JSONUtil.importObject(tmpPattern, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-				if(rec != null) {
-					patterns.add(rec);
-				}
-				else {
-					logger.error("Warning: Failed to parse pattern");
-					logger.error(tmpPattern);
-				}
-				*/
-				
 			}
 		}
 		
@@ -522,6 +465,18 @@ public class PolicyUtil {
 		return outStr;
 
 	}
+
+	private String applyTokenPattern(String contents, String token) {
+		Matcher m = tokenExp.matcher(contents);
+		String outStr = null;
+		if(token != null && token.length() > 0) {
+			outStr = m.replaceAll("\"" + token + "\"");
+		}
+		else {
+			outStr = m.replaceAll("null");
+		}
+		return outStr;
+	}
 	
 	private String applyActorPattern(String contents, BaseRecord actor) {
 		Matcher m = actorExp.matcher(contents);
@@ -552,7 +507,7 @@ public class PolicyUtil {
 	
 	/// Note: actor is for object types other than the contextUser, including other users, persons, and accounts.
 	///
-	public BaseRecord getResourcePolicy(String name, BaseRecord actor, BaseRecord resource) throws ReaderException {
+	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
 
 		String policyBase = ResourceUtil.getPolicyResource(name);
 		BaseRecord rec = null;
@@ -564,38 +519,19 @@ public class PolicyUtil {
 		policyBase = applyResourcePattern(patternResourceExp, ResourceType.PATTERN, policyBase);
 		policyBase = applyResourcePattern(factResourceExp, ResourceType.FACT, policyBase);
 
-		/*
-		Matcher m = resourceUrnExp.matcher(policyBase);
-		String recUrn = resource.get(FieldNames.FIELD_URN);
-		//if(recUrn != null) {
-		policyBase = m.replaceAll((recUrn != null ? recUrn : ""));
-		//}
-		
-		m = resourceTypeExp.matcher(policyBase);
-		policyBase = m.replaceAll(resource.getModel());
-		*/
 		policyBase = applyActorPattern(policyBase, actor);
 		policyBase = applyResourcePattern(policyBase, resource);
-		/*
-		m = actorExp.matcher(policyBase);
-		String actUrn = actor.get(FieldNames.FIELD_URN);
-		policyBase = m.replaceAll(actUrn);
-		
-		m = resourceExp.matcher(policyBase);
-		policyBase = m.replaceAll("null");
-		*/
+		policyBase = applyTokenPattern(policyBase, token);
 		
 		Matcher m = resourceGroupExp.matcher(policyBase);
 		policyBase = m.replaceAll("null");
 		
 		m = resourceParentExp.matcher(policyBase);
 		policyBase = m.replaceAll("null");
-		/*
-		m = actorTypeExp.matcher(policyBase);
-		policyBase = m.replaceAll(actor.getModel());
-		*/
+
 		Matcher g = resourceGroupUrnExp.matcher(policyBase);
 		
+		boolean removeToken = true;
 		boolean removeGroupUrn = true;
 		boolean removeParentUrn = false;
 		

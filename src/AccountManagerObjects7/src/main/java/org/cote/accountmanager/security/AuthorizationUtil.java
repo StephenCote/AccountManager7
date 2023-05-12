@@ -60,22 +60,25 @@ public class AuthorizationUtil {
 
 
 	public PolicyResponseType canCreate(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, ActionEnumType.ADD, actor, resource);
+		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, ActionEnumType.ADD, actor, null, resource);
 	}
 	public PolicyResponseType canDelete(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_DELETE_OBJECT, ActionEnumType.DELETE, actor, resource);
+		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_DELETE_OBJECT, ActionEnumType.DELETE, actor, null, resource);
 	}
 	public PolicyResponseType canExecute(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_EXECUTE_OBJECT, ActionEnumType.EXECUTE, actor, resource);
+		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_EXECUTE_OBJECT, ActionEnumType.EXECUTE, actor, null, resource);
 	}
 	public PolicyResponseType canRead(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_READ_OBJECT, ActionEnumType.READ, actor, resource);
+		return canRead(contextUser, actor, null, resource);
+	}
+	public PolicyResponseType canRead(BaseRecord contextUser, BaseRecord actor, String token, BaseRecord resource) {
+		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_READ_OBJECT, ActionEnumType.READ, actor, token, resource);
 	}
 	public PolicyResponseType canUpdate(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
-		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, ActionEnumType.MODIFY, actor, resource);
+		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, ActionEnumType.MODIFY, actor, null, resource);
 	}
 	
-	protected PolicyResponseType canDo(BaseRecord contextUser, String policyName, ActionEnumType action, BaseRecord actor, BaseRecord resource) {
+	protected PolicyResponseType canDo(BaseRecord contextUser, String policyName, ActionEnumType action, BaseRecord actor, String token, BaseRecord resource) {
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(org == null) {
 			logger.error("Failed to load organization context: " + contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH));
@@ -96,7 +99,7 @@ public class AuthorizationUtil {
 			String model = bind.getModel();
 			BaseRecord refObj = IOSystem.getActiveContext().getAccessPoint().findByObjectId(contextUser, model, objId);
 			if(refObj != null) {
-				return canDo(contextUser, policyName, action, actor, refObj);
+				return canDo(contextUser, policyName, action, actor, token, refObj);
 			}
 			else {
 				oprr.setType(PolicyResponseEnumType.DENY);
@@ -107,16 +110,9 @@ public class AuthorizationUtil {
 		
 		reader.populate(resource);
 		
-		// BaseRecord audit = AuditUtil.startAudit(contextUser, action, actor, resource);
-		PolicyResponseType prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actor, resource);
-		// AuditUtil.closeAudit(audit, prr);
+		PolicyResponseType prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actor, token, resource);
 		
 		return prr;
-		/*
-		boolean success = (prr.getType() == PolicyResponseEnumType.PERMIT);
-		
-		return success;
-		*/
 	}
 	
 	public boolean checkEntitlement(BaseRecord actor, BaseRecord permission, BaseRecord object) {

@@ -19,11 +19,16 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
+import org.cote.accountmanager.security.TokenService;
+
+import io.jsonwebtoken.Claims;
 
 
-	public class OwnerOperation extends Operation {
+	public class TokenOperation extends Operation {
 		
-		public OwnerOperation(IReader reader, ISearch search) {
+		Map<String,Pattern> patterns = new HashMap<String,Pattern>();
+		
+		public TokenOperation(IReader reader, ISearch search) {
 			super(reader, search);
 		}
 		
@@ -34,74 +39,33 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 		}
 		@Override
 		public OperationResponseEnumType operate(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord sourceFact, BaseRecord referenceFact) {
-			// TODO Auto-generated method stub
-			// logger.info("***** Owner Access Op");
+
+			//logger.info(sourceFact.toFullString());
 			OperationResponseEnumType ort = OperationResponseEnumType.UNKNOWN;
-			// logger.info(JSONUtil.exportObject(sourceFact, RecordSerializerConfig.getUnfilteredModule()));
-			// logger.info(JSONUtil.exportObject(referenceFact, RecordSerializerConfig.getUnfilteredModule()));
 			String murn = referenceFact.get(FieldNames.FIELD_SOURCE_URN);
 			String mtype = referenceFact.get(FieldNames.FIELD_MODEL_TYPE);
-			String surn = sourceFact.get(FieldNames.FIELD_SOURCE_URN);
-			String stype = sourceFact.get(FieldNames.FIELD_MODEL_TYPE);
 			String sdat = sourceFact.get(FieldNames.FIELD_FACT_DATA);
+			String sdattype = sourceFact.get(FieldNames.FIELD_FACT_DATA_TYPE);
 
-			if(stype == null || !ModelNames.MODEL_USER.equals(stype)) {
-				logger.error("Source type must refer to a user model: " + stype + " != " + ModelNames.MODEL_USER);
+			if(sdattype == null || !sdattype.equals("token"))
+			{
+				logger.info("*** No token data");
+				logger.info(sourceFact);
+				return OperationResponseEnumType.FAILED; 
+			}
+			
+			if(sdat == null) {
+				logger.error("*** Source data must be provided");
 				return OperationResponseEnumType.ERROR;
 				
 			}
+
 			if(murn == null || mtype == null) {
 				logger.error("Reference model urn (" + murn + ") or type (" + mtype + ") was not defined");
-				//logger.error(JSONUtil.exportObject(referenceFact, RecordSerializerConfig.getUnfilteredModule()));
 				return OperationResponseEnumType.ERROR;
 			}
 
-			long ownerId = 0L;
-			long contextId = 0L;
-			BaseRecord srec = null;
 			BaseRecord mrec = null;
-			
-			if(sdat != null && FactUtil.idPattern.matcher(sdat).matches()) {
-				try {
-					long rid = Long.parseLong(sdat);
-					if(rid > 0L) {
-						srec = reader.read(sourceFact.get(FieldNames.FIELD_FACT_DATA_TYPE), rid);
-					}
-					else {
-						logger.info("Skip invalid id");
-					}
-				}
-				catch(NumberFormatException | ReaderException e) {
-					logger.error(e);
-					return OperationResponseEnumType.ERROR;
-				}
-			}
-			else if(surn != null) {
-				try {
-					BaseRecord[] recs = search.findByUrn(stype, surn);
-					if(recs.length > 0) {
-						srec = recs[0];
-					}
-					else {
-						logger.warn("Failed to find urn: " + surn);
-					}
-				}
-				catch(IndexException | ReaderException e0) {
-					logger.error(e0);
-					return OperationResponseEnumType.ERROR;
-				}
-			}
-			else {
-				logger.error("Source urn or data was not defined");
-				return OperationResponseEnumType.ERROR;
-
-			}
-			if(srec != null) {
-				ownerId = srec.get(FieldNames.FIELD_ID);
-			}
-			
-			
-			
 			if(murn != null && murn.length() > 0) {
 				try {
 					String[] flds = QueryUtil.getCommonFields(mtype);
@@ -112,7 +76,6 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 					q.setRequest(flds);
 					q.set(FieldNames.FIELD_INSPECT, true);
 					BaseRecord[] recs = search.find(q).getResults();
-					//BaseRecord[] recs = search.findByUrn(mtype, murn);
 					if(recs.length > 0) {
 						mrec = recs[0];
 					}
@@ -127,26 +90,24 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 			}
 			
 			if(mrec != null) {
-				contextId = mrec.get(FieldNames.FIELD_OWNER_ID);
-			}
-			else {
-				// logger.error("Record could not be found");
+				try {
+					Claims claims = TokenService.validateSpooledJWTToken(sdat, false, true);
+					String recType = claims.get(TokenService.CLAIM_RESOURCE_TYPE, String.class);
+					String recId = claims.get(TokenService.CLAIM_RESOURCE_ID, String.class);
+					if(recType != null && recId != null) {
+						if(mrec.getModel().equals(recType) && recId.equals(mrec.get(FieldNames.FIELD_OBJECT_ID))) {
+							ort = OperationResponseEnumType.SUCCEEDED;
+						}
+					}
+					
+				} catch (IndexException | ReaderException e) {
+					logger.error(e);
+					e.printStackTrace();
+				}
 			}
 
-			if(ownerId > 0L && contextId > 0L) {
-				if(ownerId == contextId) {
-					ort = OperationResponseEnumType.SUCCEEDED;
-				}
-				else {
-					// logger.warn("OwnerId " + ownerId + " does not match ContextId " + contextId);
-					ort = OperationResponseEnumType.FAILED;
-				}
-			}
-			else {
-				// logger.error("ownerId or contextId were not defined: " + ownerId + ":" + contextId);
-				ort = OperationResponseEnumType.ERROR;
-			}
 
+		
 			return ort;
 		}
 	}

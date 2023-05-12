@@ -184,7 +184,7 @@ public class TestObjectPolicy extends BaseTest {
 
 		try {
 			logger.info("Load owner resource policy");
-			rec = ioContext.getPolicyUtil().getResourcePolicy("owner", testUser1, dat).toConcrete();
+			rec = ioContext.getPolicyUtil().getResourcePolicy("owner", testUser1, null, dat).toConcrete();
 
 			
 			
@@ -419,7 +419,7 @@ public class TestObjectPolicy extends BaseTest {
 		
 		BaseRecord policy = null;
 		try {
-			policy = ioContext.getPolicyUtil().getResourcePolicy("systemCreateObject", testUser2, dat);
+			policy = ioContext.getPolicyUtil().getResourcePolicy("systemCreateObject", testUser2, null, dat);
 		} catch (ReaderException e) {
 			logger.error(e);
 			
@@ -472,7 +472,7 @@ public class TestObjectPolicy extends BaseTest {
 	}
 
 	private PolicyResponseType evaluatePolicyByUrn(BaseRecord contextUser, String policyName, String actorType, String actorUrn, String resourceType, String resourceUrn, PolicyResponseEnumType expectedResponse) {
-		PolicyResponseType pres = ioContext.getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actorType, actorUrn, resourceType, resourceUrn);
+		PolicyResponseType pres = ioContext.getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actorType, actorUrn, resourceType, null, resourceUrn);
 		assertNotNull("Expected a response", pres);
 		if(expectedResponse != pres.getType()) {
 			logger.error("Expected response " + expectedResponse.toString() + " does not match response " + pres.getType().toString());

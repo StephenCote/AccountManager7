@@ -109,6 +109,11 @@
 		"maxLength": 127
 	},
 	{
+		"name": "token",
+		"type": "string",
+		"ephemeral": true
+	},
+	{
 		"name": "havingClause",
 		"type": "string",
 		"maxLength": 255

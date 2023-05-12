@@ -67,7 +67,7 @@ public class TestAuthentication extends BaseTest {
 		try {
 			rec = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, orgContext.getAdminUser(), null, plist);
 			logger.info(JSONUtil.exportObject(rec, RecordSerializerConfig.getUnfilteredModule()));
-			canCreate = ioContext.getPolicyUtil().createPermitted(orgContext.getAdminUser(), orgContext.getAdminUser(), rec);
+			canCreate = ioContext.getPolicyUtil().createPermitted(orgContext.getAdminUser(), orgContext.getAdminUser(), null, rec);
 		} catch (NullPointerException | FactoryException e) {
 			logger.error(e);
 			

@@ -151,12 +151,14 @@ public class PolicyDefinitionUtil {
 			if (haveParameter(pdt, fact)) {
 				return;
 			}
-
+			/// TODO: Is there some reason this is all by one-by-one vs. just copying the record?
 			BaseRecord parmFact = RecordFactory.model(ModelNames.MODEL_FACT).newInstance();
 			parmFact.set(FieldNames.FIELD_NAME, fact.get(FieldNames.FIELD_NAME));
 			parmFact.set(FieldNames.FIELD_URN, fact.get(FieldNames.FIELD_URN));
 			parmFact.set(FieldNames.FIELD_MODEL_TYPE, fact.get(FieldNames.FIELD_MODEL_TYPE));
 			parmFact.set(FieldNames.FIELD_TYPE, fact.get(FieldNames.FIELD_TYPE));
+			parmFact.set(FieldNames.FIELD_FACT_DATA, fact.get(FieldNames.FIELD_FACT_DATA));
+			parmFact.set(FieldNames.FIELD_FACT_DATA_TYPE, fact.get(FieldNames.FIELD_FACT_DATA_TYPE));
 			parmFact.set(FieldNames.FIELD_SOURCE_DATA_TYPE, fact.get(FieldNames.FIELD_SOURCE_DATA_TYPE));
 			parmFact.set(FieldNames.FIELD_SOURCE_URN, fact.get(FieldNames.FIELD_SOURCE_URN));
 			parmFact.set(FieldNames.FIELD_SOURCE_URL, fact.get(FieldNames.FIELD_SOURCE_URL));

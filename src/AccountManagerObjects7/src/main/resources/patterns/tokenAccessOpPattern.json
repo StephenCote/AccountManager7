@@ -1,0 +1,11 @@
+{
+	"urn": "resource.policy.pattern.tokenaccessop",
+	"type": "operation",
+	"name": "Token Access Pattern",
+	"operation": {
+		"type": "internal",
+		"operation": "org.cote.accountmanager.policy.operation.TokenOperation"
+	},
+	"fact": "${fact.token}",
+	"match": "${fact.matchResourceOp}"
+}

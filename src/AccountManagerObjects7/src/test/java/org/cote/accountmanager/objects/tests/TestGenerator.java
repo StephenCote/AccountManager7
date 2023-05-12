@@ -33,7 +33,7 @@ public class TestGenerator extends BaseTest{
 		resetIO(null);
 		BaseRecord policy = null;
 		try {
-			policy = ioContext.getPolicyUtil().getResourcePolicy("systemReadObject", orgContext.getAdminUser(), orgContext.getAdminUser());
+			policy = ioContext.getPolicyUtil().getResourcePolicy("systemReadObject", orgContext.getAdminUser(), null, orgContext.getAdminUser());
 		} catch (ReaderException e) {
 			logger.error(e);
 		}

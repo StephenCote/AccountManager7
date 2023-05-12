@@ -116,7 +116,7 @@ public class TestAccessPoint extends BaseTest {
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
 			assertNotNull("Data is null", data);
 
-			PolicyType pol = ioContext.getPolicyUtil().getResourcePolicy(PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, testUser1, testUser1).toConcrete();
+			PolicyType pol = ioContext.getPolicyUtil().getResourcePolicy(PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, testUser1, null, testUser1).toConcrete();
 			
 			prr = ioContext.getPolicyUtil().evaluateResourcePolicy(testUser1, PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, testUser1, testUser1);
 		} catch (NullPointerException | FactoryException | ReaderException   e) {
@@ -153,7 +153,7 @@ public class TestAccessPoint extends BaseTest {
 		String token = getAccessToken(testUser1);
 		logger.info("Token: " + token);
 		try {
-			PolicyType pol = ioContext.getPolicyUtil().getResourcePolicy(PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, testUser1, cred).toConcrete();
+			PolicyType pol = ioContext.getPolicyUtil().getResourcePolicy(PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, testUser1, null, cred).toConcrete();
 			// logger.info(pol.toString());
 		} catch (ReaderException e) {
 			logger.error(e);
@@ -310,7 +310,7 @@ public class TestAccessPoint extends BaseTest {
 			e.printStackTrace();
 		}
 		try {
-			PolicyType pol = ioContext.getPolicyUtil().getResourcePolicy(PolicyUtil.POLICY_SYSTEM_READ_OBJECT, testUser1, q).toConcrete();
+			PolicyType pol = ioContext.getPolicyUtil().getResourcePolicy(PolicyUtil.POLICY_SYSTEM_READ_OBJECT, testUser1, null, q).toConcrete();
 			// logger.info(pol.toString());
 		} catch (ReaderException e) {
 			// TODO Auto-generated catch block
