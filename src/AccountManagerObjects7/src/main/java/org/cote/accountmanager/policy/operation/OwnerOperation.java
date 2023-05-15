@@ -1,11 +1,7 @@
 
 	package org.cote.accountmanager.policy.operation;
 
-	import java.util.HashMap;
-import java.util.Map;
-import java.util.regex.Pattern;
-
-import org.cote.accountmanager.exceptions.FieldException;
+	import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;

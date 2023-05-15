@@ -28,7 +28,6 @@ import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.MemberUtil;
-import org.cote.accountmanager.util.RecordUtil;
 
 public class AuthorizationUtil {
 	

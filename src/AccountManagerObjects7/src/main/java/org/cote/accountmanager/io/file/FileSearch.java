@@ -13,16 +13,13 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.SearchBase;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class FileSearch extends SearchBase {
 	public static final Logger logger = LogManager.getLogger(FileSearch.class);

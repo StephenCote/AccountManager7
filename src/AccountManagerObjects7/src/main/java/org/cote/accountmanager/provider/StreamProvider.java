@@ -1,14 +1,5 @@
 package org.cote.accountmanager.provider;
 
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -18,7 +9,6 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.stream.StreamSegmentWriter;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
@@ -29,8 +19,6 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.StreamEnumType;
-import org.cote.accountmanager.util.ContentTypeUtil;
-import org.cote.accountmanager.util.FileUtil;
 
 public class StreamProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(StreamProvider.class);

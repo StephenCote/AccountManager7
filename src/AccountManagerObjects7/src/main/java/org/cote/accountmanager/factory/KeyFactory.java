@@ -6,7 +6,6 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.MemoryWriter;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;

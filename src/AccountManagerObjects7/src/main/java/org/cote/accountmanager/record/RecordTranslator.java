@@ -17,7 +17,6 @@ import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.provider.IProvider;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.schema.FieldSchema;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 
 public abstract class RecordTranslator {
