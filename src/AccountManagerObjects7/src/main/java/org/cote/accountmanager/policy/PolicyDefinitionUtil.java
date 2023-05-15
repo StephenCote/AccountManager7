@@ -159,6 +159,7 @@ public class PolicyDefinitionUtil {
 			parmFact.set(FieldNames.FIELD_TYPE, fact.get(FieldNames.FIELD_TYPE));
 			parmFact.set(FieldNames.FIELD_FACT_DATA, fact.get(FieldNames.FIELD_FACT_DATA));
 			parmFact.set(FieldNames.FIELD_FACT_DATA_TYPE, fact.get(FieldNames.FIELD_FACT_DATA_TYPE));
+			parmFact.set(FieldNames.FIELD_SOURCE_DATA, fact.get(FieldNames.FIELD_SOURCE_DATA));
 			parmFact.set(FieldNames.FIELD_SOURCE_DATA_TYPE, fact.get(FieldNames.FIELD_SOURCE_DATA_TYPE));
 			parmFact.set(FieldNames.FIELD_SOURCE_URN, fact.get(FieldNames.FIELD_SOURCE_URN));
 			parmFact.set(FieldNames.FIELD_SOURCE_URL, fact.get(FieldNames.FIELD_SOURCE_URL));

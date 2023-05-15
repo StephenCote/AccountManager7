@@ -2,6 +2,7 @@
 package org.cote.accountmanager.policy.operation;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -21,7 +22,11 @@ import org.cote.accountmanager.security.TokenService;
 
 import io.jsonwebtoken.Claims;
 
-
+/// TokenOperation validates the token for the specific resource to the scoped entitlement
+///	The tokenFact is part of the dynamic policy set
+/// The token and entitlement property names need to be refactored as they're currently mashed around in the old fact member names
+/// and would be better handled by the entitlement schema member names that combine resource + entitlement, and then put the token in as a credential reference
+///
 
 public class TokenOperation extends Operation {
 		
@@ -44,6 +49,7 @@ public class TokenOperation extends Operation {
 		OperationResponseEnumType ort = OperationResponseEnumType.UNKNOWN;
 		String murn = referenceFact.get(FieldNames.FIELD_SOURCE_URN);
 		String mtype = referenceFact.get(FieldNames.FIELD_MODEL_TYPE);
+		String token = new String((byte[])sourceFact.get(FieldNames.FIELD_SOURCE_DATA));
 		String sdat = sourceFact.get(FieldNames.FIELD_FACT_DATA);
 		String sdattype = sourceFact.get(FieldNames.FIELD_FACT_DATA_TYPE);
 
@@ -54,12 +60,12 @@ public class TokenOperation extends Operation {
 			return OperationResponseEnumType.FAILED; 
 		}
 		
-		if(sdat == null) {
+		if(sdat == null || token == null || token.length() == 0) {
 			logger.error("*** Source data must be provided");
 			return OperationResponseEnumType.ERROR;
 			
 		}
-
+		
 		if(murn == null || mtype == null) {
 			logger.error("Reference model urn (" + murn + ") or type (" + mtype + ") was not defined");
 			return OperationResponseEnumType.ERROR;
@@ -91,19 +97,35 @@ public class TokenOperation extends Operation {
 		
 		if(mrec != null) {
 			try {
-				Claims claims = TokenService.validateSpooledJWTToken(sdat, false, true);
+				Claims claims = TokenService.validateSpooledJWTToken(token, false, true);
 				String recType = claims.get(TokenService.CLAIM_RESOURCE_TYPE, String.class);
 				String recId = claims.get(TokenService.CLAIM_RESOURCE_ID, String.class);
 				if(recType != null && recId != null) {
 					if(mrec.getModel().equals(recType) && recId.equals(mrec.get(FieldNames.FIELD_OBJECT_ID))) {
-						ort = OperationResponseEnumType.SUCCEEDED;
+						
+						List<String> scope = (List<String>)claims.get(TokenService.CLAIM_SCOPES);
+						if(scope != null && scope.contains(sdat)) {
+							ort = OperationResponseEnumType.SUCCEEDED;
+						}
+						else {
+							logger.error("Out of scope: " + sdat);
+						}
 					}
+					else {
+						logger.error("Resource ids don't match");
+					}
+				}
+				else {
+					logger.error("Resource Type and ID not defined");
 				}
 				
 			} catch (IndexException | ReaderException e) {
 				logger.error(e);
 				e.printStackTrace();
 			}
+		}
+		else {
+			logger.error("Resource is null");
 		}
 		return ort;
 	}

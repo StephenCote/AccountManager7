@@ -49,6 +49,7 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.SystemPermissionEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -73,8 +74,9 @@ public class PolicyUtil {
 	 *  ${error} - marker used to track issues with dynamic policy construction via resource
 	 */
 
-
+	private Pattern permissionExp = Pattern.compile("\"\\$\\{permission\\}\"");
 	private Pattern tokenExp = Pattern.compile("\"\\$\\{token\\}\"");
+	private Pattern binaryTokenExp = Pattern.compile("\"\\$\\{binaryToken\\}\"");
 	private Pattern actorExp = Pattern.compile("\\$\\{actorUrn\\}");
 	private Pattern modelRoleExp = Pattern.compile("\\$\\{modelRole\\}");
 	private Pattern actorTypeExp = Pattern.compile("\\$\\{actorType\\}");
@@ -466,6 +468,21 @@ public class PolicyUtil {
 
 	}
 
+	private String applyPermissionPattern(String contents, String name) {
+		
+		SystemPermissionEnumType spet = getSystemPermissionFromPolicyName(name);
+		Matcher m = permissionExp.matcher(contents);
+		String outStr = null;
+		if(spet != SystemPermissionEnumType.UNKNOWN) {
+			String perm1 = spet.toString();
+			outStr = m.replaceAll("\"/" + perm1.substring(0,1) + perm1.toLowerCase().substring(1) + "\"");
+		}
+		else {
+			outStr = m.replaceAll("null");
+		}
+		return outStr;
+	}
+	
 	private String applyTokenPattern(String contents, String token) {
 		Matcher m = tokenExp.matcher(contents);
 		String outStr = null;
@@ -474,6 +491,15 @@ public class PolicyUtil {
 		}
 		else {
 			outStr = m.replaceAll("null");
+		}
+		
+		m = binaryTokenExp.matcher(outStr);
+		if(token != null && token.length() > 0) {
+			outStr = m.replaceAll("\"" + BinaryUtil.toBase64Str(token) + "\"");
+			// logger.info(outStr);
+		}
+		else {
+			outStr = m.replaceAll("\"\"");
 		}
 		return outStr;
 	}
@@ -522,6 +548,7 @@ public class PolicyUtil {
 		policyBase = applyActorPattern(policyBase, actor);
 		policyBase = applyResourcePattern(policyBase, resource);
 		policyBase = applyTokenPattern(policyBase, token);
+		policyBase = applyPermissionPattern(policyBase, name);
 		
 		Matcher m = resourceGroupExp.matcher(policyBase);
 		policyBase = m.replaceAll("null");

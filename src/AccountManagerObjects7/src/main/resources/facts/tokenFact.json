@@ -2,6 +2,7 @@
 	"name": "Token",
 	"urn": "resource.policy.fact.token",
 	"type": "parameter",
-	"factData": "${token}",
-	"factDataType": "token"
+	"factData": "${permission}",
+	"factDataType": "token",
+	"sourceData": "${binaryToken}"
 }
