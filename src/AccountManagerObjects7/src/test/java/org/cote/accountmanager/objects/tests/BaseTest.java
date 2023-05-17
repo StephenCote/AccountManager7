@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.util.List;
+import java.util.UUID;
 
 import javax.sql.DataSource;
 
@@ -71,12 +72,18 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
+	
 	@Before
 	public void setup() {
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
 		/// 
 		// resetIO(null);
-		resetIO("jdbc:h2:./am7/h2", "sa", "1234");
+		// resetIO("jdbc:h2:./am7/h2", "sa", "1234");
+		/// NOTE: Still need to add recursive query in StatementUtil for PG
+		IOFactory.PERMIT_PATH = new String[] {"c:\\tmp\\xpic"};
+		
+		resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
+		//resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 	}
 	@After
 	public void tearDown() throws Exception{
@@ -116,6 +123,11 @@ public class BaseTest {
 		props.setDataSourceUrl(dataUrl);
 		props.setDataSourceUserName(dataUser);
 		props.setDataSourcePassword(dataPassword);
+		
+		
+		// Force schema rebuild
+		//
+		props.setReset(true);
 		props.setSchemaCheck(false);
 		//resetH2DBUtil("./am7/h2", "sa", "1234", false);
 		resetIO(RecordIO.DATABASE, props);
@@ -123,6 +135,8 @@ public class BaseTest {
 	protected void resetIO(RecordIO ioType, IOProperties properties) {
 		logger.info("Reset IO");
 		clearIO();
+		
+		// IOFactory.DEFAULT_FILE_BASE = "./am7/" + UUID.randomUUID().toString();
 
 		//resetH2DBUtil("./am7/h2", "sa", "1234", false);
 

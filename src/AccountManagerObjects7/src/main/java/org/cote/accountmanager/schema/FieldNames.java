@@ -93,7 +93,6 @@ public class FieldNames {
 	   public static final String FIELD_COMPRESSION_TYPE = "compressionType";
 	   public static final String FIELD_READ_BYTE_STORE = "readDataBytes";
 	   public static final String FIELD_READ = "read";
-	   public static final String FIELD_POINTER = "pointer";
 	   public static final String FIELD_CONTENT_TYPE = "contentType";
 	   public static final String FIELD_DATA_HASH = "dataHash";
 	   public static final String FIELD_HASH = "hash";
@@ -225,6 +224,7 @@ public class FieldNames {
 		
 		public static final String FIELD_SIGNATURE = "signature";
 		public static final String FIELD_POLICY = "policy";
+		public static final String FIELD_VERBOSE = "verbose";
 		public static final String FIELD_QUERY = "query";
 		public static final String FIELD_PASSWORD = "password";
 		
@@ -240,5 +240,7 @@ public class FieldNames {
 		public static final String FIELD_SEGMENTS = "segments";
 		
 		public static  final String FIELD_TOKEN = "token";
+		public static  final String FIELD_WIDTH = "width";
+		public static  final String FIELD_HEIGHT = "height";
 
 }

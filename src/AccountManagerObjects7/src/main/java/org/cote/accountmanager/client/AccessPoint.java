@@ -160,6 +160,16 @@ public class AccessPoint {
 		PolicyResponseType prr = null;
 		if((prr = authorizeQuery(contextUser, query)) == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			AuditUtil.closeAudit(audit, prr, "One or more query fields were not or could not be authorized: " + query.key());
+			// logger.info(query.toFullString());
+			if(prr != null) {
+				logger.error(prr.toFullString());
+			}
+			/*
+			StackTraceElement[] st = new Throwable().getStackTrace();
+			for(int i = 0; i < st.length; i++) {
+				logger.error(st[i].toString());
+			}
+			*/
 			return rec;
 		}
 		QueryResult qr = search(contextUser, query);
@@ -174,6 +184,7 @@ public class AccessPoint {
 			AuditUtil.closeAudit(audit, prr, null);
 		}
 		else {
+			// logger.info(query.toFullString());
 			failAudit(aet, ResponseEnumType.INVALID, contextUser, contextUser, null, "No results");
 		}
 
@@ -220,7 +231,7 @@ public class AccessPoint {
 	}
 	
 	private BaseRecord findByNameInHierarchy(BaseRecord contextUser, BaseRecord parent, String hierarchyFieldName, String model, String name, String type) {
-		return findByNameInHierarchy(contextUser, hierarchyFieldName, parent.get(FieldNames.FIELD_ID), model, name, type);
+		return findByNameInHierarchy(contextUser, hierarchyFieldName, (long)parent.get(FieldNames.FIELD_ID), model, name, type);
 	}
 	private <T> BaseRecord findByNameInHierarchy(BaseRecord contextUser, String hierarchyFieldName, T hierarchyFieldValue, String model, String name, String type) {
 		Query query = QueryUtil.createQuery(model, hierarchyFieldName, hierarchyFieldValue);
@@ -228,6 +239,8 @@ public class AccessPoint {
 		if(type != null) {
 			query.field(FieldNames.FIELD_TYPE, type);
 		}
+		// logger.info(hierarchyFieldName + " = " + hierarchyFieldValue);
+		logger.info(query.toFullString());
 		return find(contextUser, query);
 	}
 	

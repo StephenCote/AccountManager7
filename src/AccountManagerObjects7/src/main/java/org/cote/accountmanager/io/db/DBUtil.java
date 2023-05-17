@@ -66,15 +66,50 @@ public class DBUtil {
 	}
 
 	protected void applyDataSource() {
-		if(dataSourceUrl != null && dataSourceUrl.startsWith("jdbc:h2:")) {
-			dataSource = getH2DataSource();
-			connectionType = ConnectionEnumType.H2;
+		if(dataSourceUrl != null) {
+			if(dataSourceUrl.startsWith("jdbc:h2:")) {
+				dataSource = getH2DataSource();
+				connectionType = ConnectionEnumType.H2;
+			}
+			else if(dataSourceUrl.startsWith("jdbc:postgresql:")) {
+				
+				dataSource = getPGDataSource();
+				connectionType = ConnectionEnumType.POSTGRE;
+			}
 		}
 	}
 	public DataSource getDataSource() {
 		return dataSource;
 	}
+	
+	private DataSource getDataSource(String driverClass) {
+		DataSource ds = null;
+		try {
+			DriverAdapterCPDS driver = new DriverAdapterCPDS();
+
+			driver.setDriver(driverClass);
+			driver.setUrl(dataSourceUrl);
+			driver.setUser(dataSourceUser);
+			driver.setPassword(dataSourcePassword);
+
+			SharedPoolDataSource sharedPoolDS = new SharedPoolDataSource();
+			sharedPoolDS.setConnectionPoolDataSource(driver);
+			sharedPoolDS.setMaxActive(10);
+			sharedPoolDS.setMaxWait(50);
+			sharedPoolDS.setTestOnBorrow(true);
+			sharedPoolDS.setValidationQuery("SELECT 1");
+			sharedPoolDS.setTestWhileIdle(true);
+			ds = sharedPoolDS;
+		} catch (ClassNotFoundException cnfe) {
+			logger.error(cnfe);
+		}
+		
+		return ds;
+	}
+	
 	private DataSource getH2DataSource() {
+		return getDataSource("org.h2.Driver");
+		/*
 		DataSource ds = null;
 		try {
 			DriverAdapterCPDS driver = new DriverAdapterCPDS();
@@ -97,6 +132,11 @@ public class DBUtil {
 		}
 		
 		return ds;
+		*/
+	}
+	
+	private DataSource getPGDataSource() {
+		return getDataSource("org.postgresql.Driver");
 	}
 	
 	private Map<String, String> sequenceNames = new HashMap<>();
@@ -176,6 +216,9 @@ public class DBUtil {
 			logger.warn("Schema " + schema.getName() + " is ephemeral");
 			return null;
 		}
+		
+		String tableName = getTableName(schema.getName());
+		buff.append("DROP TABLE IF EXISTS " + tableName + " CASCADE;\n");
 
 		for(FieldSchema f : schema.getFields()) {
 			if(f.isVirtual() || f.isEphemeral()) {
@@ -183,6 +226,7 @@ public class DBUtil {
 			}
 			if(f.isSequence()) {
 				String sequenceName = dataPrefix + "_" + schema.getName() + "_" + f.getName() + "_seq";
+				buff.append("DROP SEQUENCE IF EXISTS " + sequenceName + ";\n");
 				buff.append("CREATE SEQUENCE " + sequenceName + ";\n");
 			}
 			if(f.isPrimaryKey()) {
@@ -200,8 +244,9 @@ public class DBUtil {
 			logger.warn(schema.getName() + " does not define an identity.  Skipping");
 			return null;
 		}
-		String tableName = getTableName(schema.getName());
-		buff.append("CREATE OR REPLACE TABLE " + tableName + "(\n");
+
+		buff.append("CREATE TABLE " + tableName + "(\n");
+		// buff.append("CREATE OR REPLACE TABLE " + tableName + "(\n");
 		List<String> schemaLines = new ArrayList<>();
 		
 		if(primary != null) {
@@ -233,7 +278,10 @@ public class DBUtil {
 		buff.append(");\n");
 
 		buff.append(generateIndices(schema));
-	
+		
+		
+		// logger.info(buff.toString());
+		
 		return buff.toString();
 	}
 	private String generateIndex(ModelSchema schema, String cols, boolean unique) {
@@ -385,8 +433,8 @@ public class DBUtil {
 				break;
 			case MODEL:
 				if(!schema.isForeign()) {
-					logger.info("Model " + schema.getName() + " will be persisted as a JSON string");
-					logger.info(JSONUtil.exportObject(schema));
+					logger.info("Linked model " + schema.getName() + " will be persisted as a JSON string");
+					// logger.info(JSONUtil.exportObject(schema));
 					outType = "text";
 				}
 				else {
@@ -460,7 +508,7 @@ public class DBUtil {
 		String colName = getColumnName(fschema.getName());
 		if(fschema.isSequence()) {
 			/// TODO - fix this typo
-			defStr = "nextval('" + getSequenceName(schema.getName()) + "_seq')";
+			defStr = "nextval('" + getSequenceName(schema.getName()) + "')";
 		}
 		else if(fet == FieldEnumType.INT || fet == FieldEnumType.DOUBLE || fet == FieldEnumType.LONG) {
 			defStr = "0";
@@ -479,9 +527,19 @@ public class DBUtil {
 	
 	public boolean haveTable(String table) {
     	int count = 0;
-	    try (Connection con = dataSource.getConnection()){
+    	String useName = getTableName(table);
+    	
+    	if(this.connectionType == ConnectionEnumType.H2) {
+    		useName = useName.toUpperCase();
+    	}
+    	else if(this.connectionType == ConnectionEnumType.POSTGRE) {
+    		useName = useName.toLowerCase();
+    	}
+	    
+    	try (Connection con = dataSource.getConnection()){
+	    	logger.info("***** Check Table: " + useName);
 	    	try(PreparedStatement st = con.prepareStatement("select count(*) from information_schema.tables where table_name = ?;")){
-		    	st.setString(1, getTableName(table).toUpperCase());
+		    	st.setString(1, useName);
 		    	ResultSet rset = st.executeQuery();
 	
 		    	if(rset.next()) {

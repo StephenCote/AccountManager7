@@ -13,6 +13,8 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelException;
@@ -32,10 +34,13 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.objects.generated.FactType;
+import org.cote.accountmanager.objects.generated.OperationType;
+import org.cote.accountmanager.objects.generated.PatternType;
 import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
 import org.cote.accountmanager.objects.generated.PolicyRequestType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.generated.PolicyType;
+import org.cote.accountmanager.objects.generated.RuleType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -47,6 +52,7 @@ import org.cote.accountmanager.schema.ModelAccessRoles;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.SystemPermissionEnumType;
+import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
@@ -327,32 +333,46 @@ public class PolicyUtil {
 				&&
 				!f.isNullOrEmpty(object.getModel())
 			){
-				// logger.warn("Add rule for " + fs.getName());
+				logger.debug("Add rule for " + fs.getName());
 				String patternStr = null;
 				BaseRecord linkedObj = null;
 				if(fs.isForeign()) {
-					// String policyName = getPolicyName(fs, SystemPermissionEnumType.READ);
-					// logger.info("Map: " + policyName);
-					patternStr = applyResourcePattern(factResourceExp, ResourceType.FACT, ResourceUtil.getPatternResource("resourceReadAccess"));
-					linkedObj = object.get(f.getName());
-					if(!linkedObj.hasField(FieldNames.FIELD_URN)) {
-						reader.populate(linkedObj);
-					}
-					if(RecordUtil.isIdentityRecord(linkedObj)) {
-						// logger.info("Apply resource pattern to " + linkedObj.toString());
-						patternStr = applyResourcePattern(patternStr, linkedObj);
-						patternStr = applyActorPattern(patternStr, actor);
-	
-						BaseRecord pattern = JSONUtil.importObject(patternStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-						if(pattern == null) {
-							logger.error("Invalid pattern");
-							logger.error(patternStr);
-							continue;
-						}
-						patterns.add(pattern);
+					if(spet == SystemPermissionEnumType.DELETE) {
+						logger.debug("Skip policy check for deleting object with foreign reference");
 					}
 					else {
-						logger.warn("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
+						String policyName = getPolicyName(fs, SystemPermissionEnumType.READ);
+	
+						// patternStr = applyResourcePattern(factResourceExp, ResourceType.FACT, ResourceUtil.getPatternResource("resourceReadAccess"));
+	
+						linkedObj = object.get(f.getName());
+						if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
+							reader.populate(linkedObj);
+						}
+	
+						if(RecordUtil.isIdentityRecord(linkedObj)) {
+							try {
+								PolicyType recPolicy = this.getResourcePolicy(POLICY_SYSTEM_READ_OBJECT, actor, null, linkedObj).toConcrete();
+								patterns.addAll(recPolicy.getRules().get(0).getPatterns());
+							}
+							catch(ReaderException e) {
+								logger.error(e);
+							}
+							// patternStr = applyResourcePattern(patternStr, linkedObj);
+							// patternStr = applyActorPattern(patternStr, actor);
+							/*
+							BaseRecord pattern = JSONUtil.importObject(patternStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+							if(pattern == null) {
+								logger.error("Invalid pattern");
+								logger.error(patternStr);
+								continue;
+							}
+							patterns.add(pattern);
+							*/
+						}
+						else {
+							logger.warn("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
+						}
 					}
 				}
 				for(String r : roles) {
@@ -362,7 +382,7 @@ public class PolicyUtil {
 					}
 				}
 				if(patterns.size() > 0) {
-					String ruleTemplate = ResourceUtil.getRuleResource("genericAll");
+					String ruleTemplate = ResourceUtil.getRuleResource("genericOr");
 					BaseRecord rule = JSONUtil.importObject(ruleTemplate, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 					List<BaseRecord> rpats = rule.get(FieldNames.FIELD_PATTERNS);
 					rpats.addAll(patterns);
@@ -648,10 +668,13 @@ public class PolicyUtil {
 		}
 
 		List<BaseRecord> rules = rec.get(FieldNames.FIELD_RULES);
+		
 		List<BaseRecord> schemaRules = getSchemaRules(actor, spet, resource);
+		logger.debug("Adding " + schemaRules.size() + " dynamic rules");
 		rules.addAll(schemaRules);
-		if(removeGroupUrn || removeParentUrn) {
-			removeUnusedRules(rules, removeGroupUrn, removeParentUrn);
+		
+		if(removeGroupUrn || removeParentUrn || token == null) {
+			removeUnusedRules(rules, removeGroupUrn, removeParentUrn, (token == null));
 		}
 		
 		return rec;
@@ -686,37 +709,146 @@ public class PolicyUtil {
 	}
 	
 	
-	private void removeUnusedRules(List<BaseRecord> prules, boolean removeGroupUrn, boolean removeParentUrn) {
+	private void removeUnusedRules(List<BaseRecord> prules, boolean removeGroupUrn, boolean removeParentUrn, boolean removeToken) {
 		for(BaseRecord r : prules) {
 			List<BaseRecord> rules = r.get(FieldNames.FIELD_RULES);
 			List<BaseRecord> patterns = r.get(FieldNames.FIELD_PATTERNS);
-			removeUnusedRules(rules, removeGroupUrn, removeParentUrn);
-			List<BaseRecord> npatterns = patterns.stream().filter(o -> filterUnusedPattern(o, removeGroupUrn, removeParentUrn)).collect(Collectors.toList());
+			removeUnusedRules(rules, removeGroupUrn, removeParentUrn, removeToken);
+			List<BaseRecord> npatterns = patterns.stream().filter(o -> filterUnusedPattern(o, removeGroupUrn, removeParentUrn, removeToken)).collect(Collectors.toList());
 			patterns.clear();
 			patterns.addAll(npatterns);
 		}
 	}
 	
-	private boolean filterUnusedPattern(BaseRecord pattern, boolean removeGroupUrn, boolean removeParentUrn) {
+	private boolean filterUnusedPattern(BaseRecord pattern, boolean removeGroupUrn, boolean removeParentUrn, boolean removeToken) {
 		BaseRecord fact = pattern.get(FieldNames.FIELD_FACT);
 		BaseRecord match = pattern.get(FieldNames.FIELD_MATCH);
-		return (filterFact(fact, removeGroupUrn, removeParentUrn) && filterFact(match, removeGroupUrn, removeParentUrn));
+		return (filterFact(fact, removeGroupUrn, removeParentUrn, removeToken) && filterFact(match, removeGroupUrn, removeParentUrn, removeToken));
 	}
 	
-	private boolean filterFact(BaseRecord fact, boolean removeGroupUrn, boolean removeParentUrn) {
+	private boolean filterFact(BaseRecord fact, boolean removeGroupUrn, boolean removeParentUrn, boolean removeToken) {
 		boolean outBool = true;
 		if(fact.hasField(FieldNames.FIELD_SOURCE_URN)) {
 			String fsurn = fact.get(FieldNames.FIELD_SOURCE_URN);
-			if(fsurn != null && (
-				(removeGroupUrn && resourceGroupUrnExp.matcher(fsurn).find())
-				||
-				(removeParentUrn && resourceParentUrnExp.matcher(fsurn).find())
-			)) {
+			if(
+				fsurn != null && (
+						(removeGroupUrn && resourceGroupUrnExp.matcher(fsurn).find())
+						||
+						(removeParentUrn && resourceParentUrnExp.matcher(fsurn).find())
+				)
+			) {
 				outBool = false;
 			}
 		}
+		if(fact.hasField(FieldNames.FIELD_FACT_DATA_TYPE)) {
+			String fdt = fact.get(FieldNames.FIELD_FACT_DATA_TYPE);
+			if(removeToken && fdt.equals("token")) {
+				outBool = false;
+			}
+			
+		}
 		return outBool;
 	}
+	
+	public String printPattern(PatternType pattern, int depth) {
+		StringBuilder buff = new StringBuilder();
+		StringBuilder baseTabBuff = new StringBuilder();
+		for(int i = 0; i < depth; i++) baseTabBuff.append("\t");
+		String baseTab = baseTabBuff.toString();
+		String tab = baseTab.toString() + "\t";
+		String subTab = tab + "\t";
+		reader.populate(pattern);
+		buff.append(baseTab + "PATTERN " + pattern.getName()+ "\n");
+		buff.append(tab + "urn\t" + pattern.getUrn()+ "\n");
+		buff.append(tab + "type\t" + pattern.getType()+ "\n");
+		buff.append(tab + "order\t" + pattern.get(FieldNames.FIELD_ORDER) + "\n");
+		if(pattern.getOperationUrn() != null) buff.append(tab + "operation\t" + pattern.getOperationUrn()+ "\n");
+		FactType srcFact = pattern.getFact();
+		FactType mFact = pattern.getMatch();
+		buff.append(tab + "SOURCE FACT " + (srcFact != null ? srcFact.getName() : "IS NULL")+ "\n");
+		if(srcFact != null){
+			buff.append(subTab + "urn\t" + srcFact.getUrn()+ "\n");
+			buff.append(subTab + "type\t" + srcFact.getFactType()+ "\n");
+			buff.append(subTab + "factoryType\t" + srcFact.getModelType() + "\n");
+			buff.append(subTab + "sourceUrl\t" + srcFact.getSourceUrl()+ "\n");
+			buff.append(subTab + "sourceUrn\t" + srcFact.getSourceUrn()+ "\n");
+			buff.append(subTab + "sourceType\t" + srcFact.getSourceType()+ "\n");
+			buff.append(subTab + "sourceDataType\t" + srcFact.getSourceDataType().toString()+ "\n");
+			buff.append(subTab + "factData\t" + srcFact.getFactData()+ "\n");
+		}
+		buff.append(tab + "COMPARATOR " + pattern.getComparator()+ "\n");
+		buff.append(tab + "MATCH FACT " + (mFact != null ? mFact.getName() : "IS NULL")+ "\n");
+		if(mFact != null){
+			buff.append(subTab + "urn\t" + mFact.getUrn()+ "\n");
+			buff.append(subTab + "type\t" + mFact.getFactType()+ "\n");
+			buff.append(subTab + "factoryType\t" + mFact.getModelType()+ "\n");
+			buff.append(subTab + "sourceUrl\t" + mFact.getSourceUrl()+ "\n");
+			buff.append(subTab + "sourceUrn\t" + mFact.getSourceUrn()+ "\n");
+			buff.append(subTab + "sourceType\t" + mFact.getSourceType()+ "\n");
+			buff.append(subTab + "sourceDataType\t" + mFact.getSourceDataType().toString()+ "\n");
+			buff.append(subTab + "factData\t" + mFact.getFactData()+ "\n");
+			if(mFact.getType() == FactEnumType.OPERATION){
+				buff.append(subTab + "OPERATION\t" + (mFact.getSourceUrl() != null ? mFact.getSourceUrl() : "IS NULL")+ "\n");
+				if(mFact.getSourceUrl() != null){
+					try {
+						OperationType op = new OperationType(reader.readByUrn(ModelNames.MODEL_OPERATION, mFact.getSourceUrl()));
+						buff.append(subTab + "urn\t" + op.getUrn()+ "\n");
+						buff.append(subTab + "operationType\t" + op.getType()+ "\n");
+						buff.append(subTab + "operation\t" + op.getOperation()+ "\n");
+					}
+					catch(ReaderException e) {
+						logger.error(e);
+					}
+				}
+				
+			}
+		}
+		return buff.toString();
+	}
+	public String printRule(RuleType rule, int depth) {
+		
+		reader.populate(rule);
+		StringBuilder buff = new StringBuilder();
+		StringBuilder baseTabBuff = new StringBuilder();
+		for(int i = 0; i < depth; i++) baseTabBuff.append("\t");
+		String baseTab = baseTabBuff.toString();
+		String tab = baseTab.toString() + "\t";
+
+		buff.append(baseTab + "RULE " + rule.getName()+ "\n");
+		buff.append(tab + "urn\t" + rule.getUrn()+ "\n");
+		buff.append(tab + "type\t" + rule.getType()+ "\n");
+		buff.append(tab + "condition\t" + rule.getCondition()+ "\n");
+		buff.append(tab + "order\t" + rule.get(FieldNames.FIELD_ORDER) + "\n");
+		
+		List<RuleType> rules = rule.getRules();
+		for(int p = 0; p < rules.size();p++){
+			RuleType crule = rules.get(p);
+			buff.append(printRule(crule,depth+1));
+		}
+		
+		List<PatternType> patterns = rule.getPatterns();
+		for(int p = 0; p < patterns.size();p++){
+			PatternType pattern = patterns.get(p);
+			buff.append(printPattern(pattern,depth+1));
+		}
+		return buff.toString();
+	}
+	public String printPolicy(PolicyType pol) {
+		StringBuilder buff = new StringBuilder();
+		reader.populate(pol);
+		buff.append("\nPOLICY " + pol.getName()+ "\n");
+		buff.append("\turn\t" + pol.getUrn()+ "\n");
+		buff.append("\tenabled\t" + pol.getEnabled()+ "\n");
+		buff.append("\tcreated\t" + pol.getCreatedDate().toString()+ "\n");
+		buff.append("\texpires\t" + pol.getExpiryDate().toString()+ "\n");
+		List<RuleType> rules = pol.getRules();
+		for(int i = 0; i < rules.size();i++){
+			RuleType rule = rules.get(i);
+			buff.append(printRule(rule, 1));
+		}
+		return buff.toString();
+	}
+	
 
 	
 	

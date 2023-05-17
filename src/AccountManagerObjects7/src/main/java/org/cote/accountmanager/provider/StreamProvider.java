@@ -1,5 +1,10 @@
 package org.cote.accountmanager.provider;
 
+import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -9,6 +14,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentWriter;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
@@ -19,6 +25,7 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.StreamEnumType;
+import org.cote.accountmanager.util.FileUtil;
 
 public class StreamProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(StreamProvider.class);
@@ -73,6 +80,15 @@ public class StreamProvider implements IProvider {
 		if(ms.getIo() == null) {
 			throw new ModelException("Model " + ms.getName() + " does not define a specialized IO");
 		}
+		
+		StreamSegmentUtil ssu = new StreamSegmentUtil();
+		/// String streamSource = stream.get(FieldNames.FIELD_STREAM_SOURCE);
+		String streamSource = ssu.getFileStreamPath(stream);
+		if(ssu.isRestrictedPath(streamSource)) {
+			logger.warn("Will not write to a restricted location");
+			return;
+		}
+		
 		StreamSegmentWriter ssw = RecordFactory.getClassInstance(ms.getIo().getWriter());
 		if(ssw == null) {
 			throw new ModelException("Invalid Model IO Writer: " + ms.getIo().getWriter());
@@ -82,6 +98,28 @@ public class StreamProvider implements IProvider {
 		for(BaseRecord segment : segments) {
 			ssw.writeSegment(stream, segment);
 		}
+		try {
+			stream.set(FieldNames.FIELD_SIZE, getStreamSize(streamSource));
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new ModelException(e);
+		}
+	}
+	
+	private long getStreamSize(String streamSource) {
+			StreamSegmentUtil ssu = new StreamSegmentUtil();
+			long size = 0L;
+			try (
+				RandomAccessFile writer = new RandomAccessFile(streamSource, "r");
+				FileChannel channel = writer.getChannel()
+			){
+				size = channel.size();
+            }
+		    catch (IOException e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
+			return size;
+
 	}
 	
 	/*

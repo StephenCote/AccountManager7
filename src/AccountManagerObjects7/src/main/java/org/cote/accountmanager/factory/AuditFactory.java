@@ -55,8 +55,15 @@ public class AuditFactory extends FactoryBase {
 				audit.set(FieldNames.FIELD_CONTEXT_USER, contextUser);
 				audit.set(FieldNames.FIELD_ORGANIZATION_ID, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 			}
-			audit.set(FieldNames.FIELD_SUBJECT, subject);
-			audit.set(FieldNames.FIELD_RESOURCE, resource);
+			if(subject != null) {
+				audit.set(FieldNames.FIELD_SUBJECT, subject);
+				audit.set(FieldNames.FIELD_SUBJECT_TYPE, subject.getModel());
+			}
+			if(resource != null) {
+				audit.set(FieldNames.FIELD_RESOURCE, resource);
+				audit.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getModel());
+			}
+			
 			audit.set(FieldNames.FIELD_ACTION, aet);
 			audit.set(FieldNames.FIELD_RESPONSE, ret);
 			

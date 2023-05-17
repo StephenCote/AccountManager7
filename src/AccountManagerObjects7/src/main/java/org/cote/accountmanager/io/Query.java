@@ -165,6 +165,7 @@ public class Query extends LooseRecord{
 					qfield.setString(FieldNames.FIELD_VALUE, value);
 				}
 				else {
+					// logger.info(itype.getValueType() + " = " + value);
 					qfield.setFlex(FieldNames.FIELD_VALUE, itype.getValueType(), value);
 				}
 				/*
@@ -194,6 +195,7 @@ public class Query extends LooseRecord{
 				*/
 			}
 			else {
+				logger.error("**** Null itype for " + getIRecord().getModel() + "." + fieldName);
 				qfield.setString(FieldNames.FIELD_VALUE, null);
 			}
 			//qfield.set(FieldNames.FIELD_VALUE, value);

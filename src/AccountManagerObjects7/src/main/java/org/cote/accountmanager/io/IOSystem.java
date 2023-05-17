@@ -51,6 +51,11 @@ public class IOSystem {
 		FileIndexManager fim = null;
 		FileStore store = null;
 		DBUtil dbUtil = null;
+		
+		if(properties.isReset()) {
+			/// logger.warn("**** CLEANING UP ARTIFACTS");
+			/// Need to cleanup ./jks - IOFactory.DEFAULT_FILE_BASE + "/jks/"
+		}
 
 		if(ioType == RecordIO.FILE) {
 			fim = new FileIndexManager(IOFactory.DEFAULT_FILE_BASE);
@@ -64,13 +69,13 @@ public class IOSystem {
 				return null;
 			}
 			dbUtil = new DBUtil(properties);
-			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck()) {
+			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset()) {
 				logger.info("Scanning model schema");
 				for(String m : ModelNames.MODELS) {
 					ModelSchema schema = RecordFactory.getSchema(m);
 					if(RecordUtil.isIdentityModel(schema)) {
-						if(!dbUtil.isConstrained(schema) && !dbUtil.haveTable(m)) {
-							String dbSchema = dbUtil.generateNewSchemaOnly(schema);
+						if(!dbUtil.isConstrained(schema) && (!dbUtil.haveTable(m) || properties.isReset())) {
+							String dbSchema = (properties.isReset() ? dbUtil.generateSchema(schema) : dbUtil.generateNewSchemaOnly(schema));
 							if(dbSchema != null) {
 								dbUtil.execute(dbSchema);
 							}

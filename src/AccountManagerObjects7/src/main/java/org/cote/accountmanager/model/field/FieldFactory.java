@@ -28,7 +28,7 @@ public class FieldFactory {
 		return new FieldType(name, new ListValueType(new ArrayList<T>()));
 	}
 	public static FieldType dateTimeFieldType(String name) throws ModelException {
-		return new FieldType(name, new DateValueType(new Date()));
+		return new FieldType(name, new DateValueType(new Date(0)));
 	}
 	public static FieldType doubleFieldType(String name) throws ModelException {
 		return new FieldType(name, new DoubleValueType(0.0));

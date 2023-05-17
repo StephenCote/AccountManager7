@@ -55,13 +55,13 @@ public class TokenOperation extends Operation {
 
 		if(sdattype == null || !sdattype.equals("token"))
 		{
-			logger.info("*** No token data");
-			logger.info(sourceFact);
+			logger.debug("*** No token data");
+			logger.debug(sourceFact);
 			return OperationResponseEnumType.FAILED; 
 		}
 		
 		if(sdat == null || token == null || token.length() == 0) {
-			logger.error("*** Source data must be provided");
+			logger.debug("*** Source data must be provided");
 			return OperationResponseEnumType.ERROR;
 			
 		}

@@ -4,6 +4,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -22,10 +25,18 @@ import org.cote.accountmanager.util.ContentTypeUtil;
 public class StreamSegmentUtil {
 	public static final Logger logger = LogManager.getLogger(StreamSegmentUtil.class);
 	
-	public Path[] permittedPaths = new Path[0];
+	private List<Path> permittedPaths = new ArrayList<>();;
 	
 	public StreamSegmentUtil() {
-		permittedPaths =  new Path[]{Paths.get(IOFactory.DEFAULT_FILE_BASE).toAbsolutePath()};
+		// permittedPaths =  new Path[]{Paths.get(IOFactory.DEFAULT_FILE_BASE).toAbsolutePath()};
+		permittedPaths.add(Paths.get(IOFactory.DEFAULT_FILE_BASE));
+		for(String p : IOFactory.PERMIT_PATH) {
+			permittedPaths.add(Paths.get(p));	
+		}
+	}
+	
+	public void addPermittedPath(String path) {
+		permittedPaths.add(Paths.get(path));
 	}
 	
 	public byte[] streamToEnd(String streamId, long start, long len) {
@@ -83,20 +94,23 @@ public class StreamSegmentUtil {
 		return stream;
 	}
 	
-	protected boolean isRestrictedPath(String path) {
-		boolean restricted = false;
+	public boolean isRestrictedPath(String path) {
+		boolean restricted = true;
+		if(path == null || path.length() == 0) {
+			logger.warn("Stream source is null");
+			return restricted;
+		}
 		for(Path cpath : permittedPaths) {
-			//Path path1 = Paths.get(cpath).toAbsolutePath();
 			Path path2 = Paths.get(path).toAbsolutePath();
-			if(!path2.startsWith(cpath)) {
-				restricted = true;
+			if(path2.startsWith(cpath.toAbsolutePath())) {
+				restricted = false;
 				break;
 			}
 		}
 		return restricted;
 	}
 	
-	protected String getFileStreamPath(BaseRecord stream) {
+	public String getFileStreamPath(BaseRecord stream) {
 		String source = stream.get(FieldNames.FIELD_STREAM_SOURCE);
 		
 		if(source == null) {

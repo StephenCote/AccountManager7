@@ -19,12 +19,7 @@
 		"virtual": true
 	},
 	{
-		"name": "pointer",
-		"type": "boolean",
-		"private": true
-	},
-	{
 		"name": "size",
-		"type": "int"
+		"type": "long"
 	}
 ]}

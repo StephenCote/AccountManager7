@@ -1,0 +1,9 @@
+{
+"name": "order",
+"abstract": true,
+"fields": [
+	{
+	"name": "order",
+	"type": "int"
+	}
+]}

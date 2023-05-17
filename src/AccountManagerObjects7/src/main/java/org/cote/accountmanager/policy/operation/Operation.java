@@ -7,7 +7,7 @@ import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.policy.FactUtil;
 
 public abstract class Operation implements IOperation {
-	public static final Logger logger = LogManager.getLogger(OwnerOperation.class);
+	public static final Logger logger = LogManager.getLogger(Operation.class);
 	protected IReader reader = null;
 	protected ISearch search = null;
 	protected FactUtil factUtil = null;

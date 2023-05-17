@@ -215,10 +215,25 @@ public class StatementUtil {
 			if(util.getConnectionType() == ConnectionEnumType.H2) {
 				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
+			
+			else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+				StringBuilder ajoin = new StringBuilder();
+				//for(String s : cols) {
+				for(int i = 0; i < cols.size(); i++) {
+					String s = cols.get(i);
+					String f = fields.get(i);
+					if(ajoin.length() > 0) {
+						ajoin.append(", ");
+					}
+					ajoin.append("'" + f + "', " + s);
+				}
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+			}
+			
 		}
 		
 		if(buff.length() == 0) {
-			throw new FieldException("**** Unhandled inner query");
+			throw new FieldException("**** Unhandled inner query: " + util.getConnectionType().toString());
 		}
 		
 		subQuery.setRequest(fields.toArray(new String[0]));
@@ -739,12 +754,24 @@ public class StatementUtil {
 					break;
 				case LIST:
 					if(fs.isReferenced()) {
+
+						List<BaseRecord> queries = meta.getQuery().get(FieldNames.FIELD_QUERIES);
+						if(queries.size() <= subCount) {
+							throw new FieldException("Expected a sub query at index " + subCount);
+						}
+
 						if(util.getConnectionType() == ConnectionEnumType.H2) {
-							List<BaseRecord> queries = meta.getQuery().get(FieldNames.FIELD_QUERIES);
-							if(queries.size() <= subCount) {
-								throw new FieldException("Expected a sub query at index " + subCount);
-							}
 							applyH2JSONArrayToList(new Query(queries.get(subCount)), rset.getArray(colName), record, fs, f);
+							subCount++;
+						}
+						else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+							//String json = rset.getString(colName);
+							String ser = rset.getString(colName);
+							if(ser != null) {
+								List<?> lst = JSONUtil.getList(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+								record.set(col, lst);
+							}
+							// logger.info("***** JSON " + ser);
 							subCount++;
 						}
 						else {

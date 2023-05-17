@@ -101,10 +101,13 @@ public class AuthorizationUtil {
 				return canDo(contextUser, policyName, action, actor, token, refObj);
 			}
 			else {
+				/*
 				oprr.setType(PolicyResponseEnumType.DENY);
 				oprr.setMessage("Could not read object: " + model + " " + objId);
+				*/
+				logger.warn("Orphan binding for " + model + " " + objId);
 			}
-			return oprr;
+			/// return oprr;
 		}
 		
 		reader.populate(resource);

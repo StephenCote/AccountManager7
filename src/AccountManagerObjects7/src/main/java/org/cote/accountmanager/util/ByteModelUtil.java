@@ -16,6 +16,10 @@ import org.cote.accountmanager.schema.type.CompressionEnumType;
 
 public class ByteModelUtil {
    public static final Logger logger = LogManager.getLogger(ByteModelUtil.class);
+
+   public static long FIVE_MB_BYTE_LENGTH = 5242880;
+   public static long TWO_MB_BYTE_LENGTH = 2097152;
+   public static long MAXIMUM_BYTE_LENGTH = TWO_MB_BYTE_LENGTH;
    
    private ByteModelUtil(){
 
@@ -115,7 +119,7 @@ public class ByteModelUtil {
            /// Zero out the cipher key
            d.set(FieldNames.FIELD_KEYS, null);
        }
-       d.set(FieldNames.FIELD_SIZE, value.length);
+       d.set(FieldNames.FIELD_SIZE, (long)value.length);
        d.getField(fieldName).setValue(value);
    }
 	public static void setValueString(BaseRecord d, String value) throws FieldException, ValueException, ModelNotFoundException
@@ -150,7 +154,6 @@ public class ByteModelUtil {
 		   throw new FieldException("Missing one or more required fields");
 	   }
 	   
-	   boolean pointer = d.get(FieldNames.FIELD_POINTER, false);
 	   boolean readDataBytes = d.get(FieldNames.FIELD_READ_BYTE_STORE, false);
 	   boolean enciphered = d.get(FieldNames.FIELD_ENCIPHERED, false);
 	   boolean vaulted = d.get(FieldNames.FIELD_VAULTED, false);
@@ -199,12 +202,7 @@ public class ByteModelUtil {
        if (readDataBytes)
        {
     	   /// Directly get field value to avoid stackoverflow
-    	   byte[] ret = d.getField(fieldName).getValue();
-           if (pointer && !vaulted)
-           {
-               return FileUtil.getFile(new String(ret));
-           }
-           return ret;
+    	   return d.getField(fieldName).getValue();
        }
 
        return new byte[0];
@@ -214,8 +212,8 @@ public class ByteModelUtil {
    {
        String contentType = d.get(FieldNames.FIELD_CONTENT_TYPE, null);
        return (
-               contentType == null
-               ||
+               contentType != null
+               &&
                (
                        (
                                contentType.startsWith("image/") == false

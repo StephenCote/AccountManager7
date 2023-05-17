@@ -51,6 +51,10 @@
 			"baseClass": "org.cote.accountmanager.schema.type.CredentialEnumType",
 			"type": "enum",
 			"maxLength": 16
+		},
+		{
+			"name": "verbose",
+			"type": "boolean"
 		}
 
 	]

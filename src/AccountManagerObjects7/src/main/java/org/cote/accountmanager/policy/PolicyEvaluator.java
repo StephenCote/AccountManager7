@@ -17,6 +17,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ScriptException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
@@ -95,7 +96,6 @@ public class PolicyEvaluator {
 	}
 	public BaseRecord evaluatePolicyRequest(BaseRecord prt, BaseRecord pol) throws FieldException, ModelNotFoundException, ValueException, ScriptException, IndexException, ReaderException, ModelException {	
 		BaseRecord prr = RecordFactory.model(ModelNames.MODEL_POLICY_RESPONSE).newInstance();
-
 		if(pol == null) {
 			if(prt.get(FieldNames.FIELD_URN) == null){
 		
@@ -111,6 +111,9 @@ public class PolicyEvaluator {
 				return prr;
 			}
 
+		}
+		if((boolean)prt.get(FieldNames.FIELD_VERBOSE)) {
+			prr.set(FieldNames.FIELD_DESCRIPTION, IOSystem.getActiveContext().getPolicyUtil().printPolicy(pol.toConcrete()));
 		}
 		
 		String purn = prt.get(FieldNames.FIELD_URN);

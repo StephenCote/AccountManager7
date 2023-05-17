@@ -5,11 +5,27 @@ public class IOProperties {
 	private String dataSourceUrl = null;
 	private String dataSourceUserName = null;
 	private String dataSourcePassword = null;
+	private boolean reset = false;
+	
 	private boolean schemaCheck = false;
 	
 	public IOProperties() {
 		
 	}
+	
+	
+
+	public boolean isReset() {
+		return reset;
+	}
+
+
+
+	public void setReset(boolean reset) {
+		this.reset = reset;
+	}
+
+
 
 	public boolean isSchemaCheck() {
 		return schemaCheck;

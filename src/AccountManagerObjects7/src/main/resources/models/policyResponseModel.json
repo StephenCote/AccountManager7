@@ -1,6 +1,6 @@
 {
 	"name": "policyResponse",
-	"inherits": ["attributeList", "score"],
+	"inherits": ["attributeList", "score", "description"],
 	"fields": [
 		{
 			"name": "message",

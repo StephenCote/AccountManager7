@@ -138,7 +138,10 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        		}
 	        		break;
 	        	case TIMESTAMP:
-	        		jgen.writeNumberField(f.getName(), ((Date)f.getValue()).getTime());
+	        		long ldval = ((Date)f.getValue()).getTime();
+	        		if(ldval != 0L) {
+	        			jgen.writeNumberField(f.getName(), ldval);
+	        		}
 	        		break;
 	        	case BLOB:
 	        		byte[] data = f.getValue();

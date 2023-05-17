@@ -28,6 +28,7 @@ import org.cote.accountmanager.util.RecordUtil;
 public class IOFactory {
 	public static final Logger logger = LogManager.getLogger(IOFactory.class);
 	public static String DEFAULT_FILE_BASE = "./am7";
+	public static String[] PERMIT_PATH = new String[0];
 
 	public static FileStore getStore(String name) {
 		return getStore(DEFAULT_FILE_BASE, name);

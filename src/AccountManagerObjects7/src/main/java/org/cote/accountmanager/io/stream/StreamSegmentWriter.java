@@ -115,7 +115,7 @@ public class StreamSegmentWriter implements IWriter {
 			throw new ModelException("Path " + path + " is restricted");
 		}
 		FileUtil.makePath(path.substring(0, path.lastIndexOf("/")));
-		long size = 0L;
+		// long size = 0L;
 		try (
 			RandomAccessFile writer = new RandomAccessFile(path, "rw");
 			FileChannel channel = writer.getChannel()
@@ -133,7 +133,7 @@ public class StreamSegmentWriter implements IWriter {
 				channel.position(start);
 				ByteBuffer buff = ByteBuffer.wrap(segment.get(FieldNames.FIELD_STREAM));
 				channel.write(buff);
-				size = channel.size();
+				// size = channel.size();
 
 				lock.release();
             }

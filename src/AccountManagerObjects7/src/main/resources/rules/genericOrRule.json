@@ -1,0 +1,9 @@
+{
+	"model": "rule",
+	"urn": "generic.policy.rule.onerequired",
+	"type": "permit",
+	"condition": "any",
+	"name": "Generic Rule Where One Pattern is Required", 
+	"patterns": [
+	]
+}

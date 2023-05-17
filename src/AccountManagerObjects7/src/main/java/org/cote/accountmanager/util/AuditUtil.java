@@ -26,6 +26,7 @@ public class AuditUtil {
 		BaseRecord contextUser = audit.get(FieldNames.FIELD_CONTEXT_USER);
 		BaseRecord resource = audit.get(FieldNames.FIELD_RESOURCE);
 		BaseRecord subject = audit.get(FieldNames.FIELD_SUBJECT);
+		String message = audit.get(FieldNames.FIELD_MESSAGE);
 		String cname = "[anonymous]";
 		String sname = "[anonymous subject]";
 		String rname = null;
@@ -55,9 +56,10 @@ public class AuditUtil {
 			}
 			else {
 				rname = "[unknown resource]";
+				// logger.info(audit.toFullString());
 			}
 		}
-		buff.append(ret.toString() + " " + sname + " to " + act.toString() + " " + rname + " (via: " + cname + ")");
+		buff.append(ret.toString() + " " + sname + " to " + act.toString() + " " + rname + " (via: " + cname + ")" + (message != null ? " " + message : ""));
 		return buff.toString();
 	}
 	
