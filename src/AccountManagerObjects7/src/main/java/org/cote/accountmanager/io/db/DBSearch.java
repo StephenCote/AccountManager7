@@ -84,6 +84,7 @@ public class DBSearch extends SearchBase {
 
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
+			// logger.info(statement);
 			ResultSet rset = statement.executeQuery();
 			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
 			while(rset.next()) {
@@ -104,6 +105,7 @@ public class DBSearch extends SearchBase {
 			
 		} catch (NullPointerException | ModelException | FieldException | DatabaseException | SQLException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
+			e.printStackTrace();
 			if(sql != null) {
 				logger.error(JSONUtil.exportObject(sql));
 			}

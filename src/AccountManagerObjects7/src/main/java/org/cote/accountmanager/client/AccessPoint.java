@@ -3,8 +3,11 @@ package org.cote.accountmanager.client;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
@@ -147,7 +150,8 @@ public class AccessPoint {
 			AuditUtil.closeAudit(audit, prr, null);
 		}
 		else {
-			failAudit(aet, ResponseEnumType.INVALID, contextUser, contextUser, null, "No results");
+			// failAudit(aet, ResponseEnumType.INVALID, contextUser, contextUser, null, "No results");
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "No results");
 		}
 
 		return rec;
@@ -185,7 +189,8 @@ public class AccessPoint {
 		}
 		else {
 			// logger.info(query.toFullString());
-			failAudit(aet, ResponseEnumType.INVALID, contextUser, contextUser, null, "No results");
+			//failAudit(aet, ResponseEnumType.INVALID, contextUser, contextUser, null, "No results");
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "No results");
 		}
 
 		return rec;
@@ -240,7 +245,7 @@ public class AccessPoint {
 			query.field(FieldNames.FIELD_TYPE, type);
 		}
 		// logger.info(hierarchyFieldName + " = " + hierarchyFieldValue);
-		logger.info(query.toFullString());
+		/// logger.info(query.toFullString());
 		return find(contextUser, query);
 	}
 	
@@ -308,7 +313,8 @@ public class AccessPoint {
 		BaseRecord audit = null;
 		try {
 			audit = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_AUDIT, contextUser, null, ParameterUtil.newParameterList(FieldNames.FIELD_ACTION, act), actor, resource);
-		} catch (FactoryException e) {
+			audit.set(FieldNames.FIELD_ORGANIZATION_PATH, contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH));
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 		AuditUtil.closeAudit(audit, ret, msg);
