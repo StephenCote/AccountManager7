@@ -5,6 +5,7 @@ import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -42,11 +43,24 @@ public class StreamProvider implements IProvider {
 			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_STREAM);
 		}
 		if(!model.hasField(FieldNames.FIELD_OBJECT_ID)) {
-			throw new ModelException("Model " + model.getModel() + " does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
+			if(operation == RecordOperation.CREATE) {
+				throw new ModelException("Model " + model.getModel() + " does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
+			}
+			else {
+				logger.warn("Skip segment write for model " + model.getModel() + " because it does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
+				return;
+			}
 		}
 		if(operation == RecordOperation.CREATE || operation == RecordOperation.UPDATE) {
-			logger.info("***** Create/Update with segments");
+			logger.info("***** " + operation.toString() + " with segments");
 			StreamEnumType set = StreamEnumType.valueOf(model.get("type"));
+			// logger.info(model.toFullString());
+			/*
+			StackTraceElement[] st = new Throwable().getStackTrace();
+			for(int i = 0; i < st.length; i++) {
+				logger.error(st[i].toString());
+			}
+			*/
 			switch(set) {
 				case FILE:
 					// logger.info("Handle file stream write");
@@ -95,32 +109,21 @@ public class StreamProvider implements IProvider {
 		}
 
 		List<BaseRecord> segments = stream.get(FieldNames.FIELD_SEGMENTS);
-		for(BaseRecord segment : segments) {
-			ssw.writeSegment(stream, segment);
-		}
-		try {
-			stream.set(FieldNames.FIELD_SIZE, getStreamSize(streamSource));
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			throw new ModelException(e);
+		if(segments.size() > 0) {
+			try {
+				stream.set(FieldNames.FIELD_SEGMENTS, new ArrayList<BaseRecord>());
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+			for(BaseRecord segment : segments) {
+				ssw.writeSegment(stream, segment);
+			}
+			logger.info("Calculating stream size");
+			ssu.updateStreamSize(stream);
 		}
 	}
 	
-	private long getStreamSize(String streamSource) {
-			StreamSegmentUtil ssu = new StreamSegmentUtil();
-			long size = 0L;
-			try (
-				RandomAccessFile writer = new RandomAccessFile(streamSource, "r");
-				FileChannel channel = writer.getChannel()
-			){
-				size = channel.size();
-            }
-		    catch (IOException e) {
-				logger.error(e);
-				e.printStackTrace();
-			}
-			return size;
 
-	}
 	
 	/*
 	private void writeSegments(BaseRecord stream) throws ModelException {
