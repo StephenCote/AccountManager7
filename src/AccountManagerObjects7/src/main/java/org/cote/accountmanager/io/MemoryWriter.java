@@ -9,6 +9,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class MemoryWriter extends RecordWriter {
 	public static final Logger logger = LogManager.getLogger(MemoryWriter.class);
@@ -21,8 +22,13 @@ public class MemoryWriter extends RecordWriter {
 	@Override
 	public boolean write(BaseRecord rec) throws WriterException {
 		RecordOperation op = RecordOperation.CREATE;
+		/*
 		String objectId = (rec.hasField(FieldNames.FIELD_OBJECT_ID) ? rec.get(FieldNames.FIELD_OBJECT_ID) : null);
 		if(objectId != null) {
+			op = RecordOperation.UPDATE;
+		}
+		*/
+		if(RecordUtil.isIdentityRecord(rec)) {
 			op = RecordOperation.UPDATE;
 		}
 		prepareTranscription(op, rec);
