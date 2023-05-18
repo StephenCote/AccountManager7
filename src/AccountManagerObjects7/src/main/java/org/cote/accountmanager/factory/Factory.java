@@ -165,7 +165,7 @@ public class Factory {
 	
 	private void configureOrganizationStore(BaseRecord owner, BaseRecord organization) {
 		long orgId = organization.get(FieldNames.FIELD_ID);
-		String storePath = IOFactory.DEFAULT_FILE_BASE + "/jks/" + orgId;
+		String storePath = IOFactory.DEFAULT_FILE_BASE + "/.jks/" + orgId;
 		FileUtil.makePath(storePath);
 		String kpath = storePath + "/keystore.jks";
 		String tpath = storePath + "/truststore.jks";
