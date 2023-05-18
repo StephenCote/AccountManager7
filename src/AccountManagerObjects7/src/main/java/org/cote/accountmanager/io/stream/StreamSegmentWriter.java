@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.WriterException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IWriter;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
@@ -86,7 +87,7 @@ public class StreamSegmentWriter implements IWriter {
 		
 	}
 	
-
+	/*
 	public void writeSegments(BaseRecord stream) throws ModelException {
 		logger.warn("REFACTOR THIS: DON'T WRITE SEGMENTS BEFORE THE STREAM OBJECT IS CREATED - MOVE TO A POST WRITE OPERATION");
 		List<BaseRecord> segments = stream.get(FieldNames.FIELD_SEGMENTS);
@@ -94,8 +95,20 @@ public class StreamSegmentWriter implements IWriter {
 			writeSegment(stream, segment);
 		}
 	}
+	*/
 	public void writeSegment(BaseRecord segment) throws ModelException {
-		writeSegment(ssUtil.getStream(segment), segment);
+		BaseRecord stream = ssUtil.getStream(segment);
+		writeSegment(stream, segment);
+		ssUtil.updateStreamSize(stream);
+		
+
+		BaseRecord streamU = stream.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_SIZE});
+		try {
+			IOSystem.getActiveContext().getWriter().write(streamU);
+		} catch (WriterException e) {
+			logger.error(e);
+		}
+		
 	}
 	
 	public void writeSegment(BaseRecord stream, BaseRecord segment) throws ModelException {

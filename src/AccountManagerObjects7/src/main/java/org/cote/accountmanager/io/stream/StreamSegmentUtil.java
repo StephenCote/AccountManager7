@@ -2,6 +2,8 @@ package org.cote.accountmanager.io.stream;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -114,6 +116,8 @@ public class StreamSegmentUtil {
 		String source = stream.get(FieldNames.FIELD_STREAM_SOURCE);
 		
 		if(source == null) {
+			long organizationId = stream.get(FieldNames.FIELD_ORGANIZATION_ID);
+			long groupId = stream.get(FieldNames.FIELD_GROUP_ID);
 			String orgPath = stream.get(FieldNames.FIELD_ORGANIZATION_PATH);
 			String groupPath = stream.get(FieldNames.FIELD_GROUP_PATH);
 			String contentType = stream.get(FieldNames.FIELD_CONTENT_TYPE);
@@ -133,7 +137,10 @@ public class StreamSegmentUtil {
 			else {
 				orgPath = orgPath.substring(1).replace('/', '.');
 			}
-			source = IOFactory.DEFAULT_FILE_BASE + "/streams/" + orgPath + groupPath + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
+			String fullPath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + orgPath + groupPath + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
+			String densePath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + organizationId + "/" + groupId + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
+			// source = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + orgPath + groupPath + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
+			source = densePath;
 			try {
 				stream.set(FieldNames.FIELD_STREAM_SOURCE, source);
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -142,4 +149,37 @@ public class StreamSegmentUtil {
 		}
 		return source;
 	}
+	
+	public void updateStreamSize(BaseRecord stream) {
+		try {
+			stream.set(FieldNames.FIELD_SIZE, getStreamSize(stream));
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	
+	public long getStreamSize(BaseRecord stream) {
+		String streamSource = stream.get(FieldNames.FIELD_STREAM_SOURCE);
+		long outSize = 0L;
+		if(streamSource != null) {
+			outSize = getStreamSize(streamSource);
+		}
+		return outSize;
+	}
+	private long getStreamSize(String streamSource) {
+		StreamSegmentUtil ssu = new StreamSegmentUtil();
+		long size = 0L;
+		try (
+			RandomAccessFile writer = new RandomAccessFile(streamSource, "r");
+			FileChannel channel = writer.getChannel()
+		){
+			size = channel.size();
+        }
+	    catch (IOException e) {
+			logger.error(e);
+			/// e.printStackTrace();
+		}
+		return size;
+
+}
 }
