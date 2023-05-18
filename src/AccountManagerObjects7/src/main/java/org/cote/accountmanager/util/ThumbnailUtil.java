@@ -57,7 +57,7 @@ public class ThumbnailUtil {
 		BaseRecord thumbDir = ctx.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, thumbPath, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		String thumbName = record.get(FieldNames.FIELD_NAME) + " " + width + "x" + height;
 		//BaseRecord thumb = ioContext.getSearch().findByPath(owner, thumbPath, thumbName,  owner.get(FieldNames.FIELD_ORGANIZATION_ID));
-
+		// logger.info(owner.toFullString());
 		BaseRecord thumb = ctx.getAccessPoint().findByNameInGroup(owner, ModelNames.MODEL_THUMBNAIL, thumbDir.get(FieldNames.FIELD_OBJECT_ID), thumbName);
 		if(thumb != null) {
 			String cobj = record.get(FieldNames.FIELD_OBJECT_ID);
@@ -70,15 +70,21 @@ public class ThumbnailUtil {
 			}
 		}
 
-		
+		logger.info("Loading image bytes ...");
 		byte[] imageBytes = record.get(FieldNames.FIELD_BYTE_STORE);
 		if(imageBytes.length == 0 && record.hasField(FieldNames.FIELD_STREAM)) {
 			BaseRecord stream = record.get(FieldNames.FIELD_STREAM);
+			logger.info("Loading stream bytes ...");
 			if(stream != null) {
 				if(!stream.hasField(FieldNames.FIELD_OBJECT_ID)) {
 					ctx.getReader().populate(stream);
 				}
 				StreamSegmentUtil ssu = new StreamSegmentUtil();
+				logger.info("Streaming bytes ... ");
+				long size = stream.get(FieldNames.FIELD_SIZE);
+				if(size == 0L) {
+					logger.warn("Stream size marker is 0");
+				}
 				imageBytes = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0L, stream.get(FieldNames.FIELD_SIZE));
 			}
 		}
