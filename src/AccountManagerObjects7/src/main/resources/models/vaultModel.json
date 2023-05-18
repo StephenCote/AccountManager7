@@ -1,7 +1,7 @@
 {
 "name": "vault",
 "inherits": ["directory", "dateTime"],
-"ephemeral": true,
+"ephemeral": false,
 "fields": [
 	{
 		"name": "alias",
