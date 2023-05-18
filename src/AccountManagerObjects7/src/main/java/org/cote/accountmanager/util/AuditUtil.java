@@ -134,15 +134,26 @@ public class AuditUtil {
 			audit.set(FieldNames.FIELD_RESPONSE, ret);
 			audit.set(FieldNames.FIELD_DESCRIPTION, getAuditString(audit));
 			audit.set(FieldNames.FIELD_MESSAGE, msg);
-			OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(audit.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
-			if(org != null && org.isInitialized()) {
-				byte[] hash = getAuditHash(audit);
-				audit.set(FieldNames.FIELD_HASH, hash);
-				byte[] sig = CryptoUtil.sign(org.getKeyStoreBean().getCryptoBean().getPrivateKey(), hash);
-				audit.set(FieldNames.FIELD_SIGNATURE, sig);
+			String orgPath = audit.get(FieldNames.FIELD_ORGANIZATION_PATH);
+			if(orgPath != null) {
+				OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(orgPath, null);
+				if(org != null && org.isInitialized()) {
+					byte[] hash = getAuditHash(audit);
+					audit.set(FieldNames.FIELD_HASH, hash);
+					byte[] sig = CryptoUtil.sign(org.getKeyStoreBean().getCryptoBean().getPrivateKey(), hash);
+					audit.set(FieldNames.FIELD_SIGNATURE, sig);
+				}
+				else {
+					logger.error("Failed to access organization " + audit.get(FieldNames.FIELD_ORGANIZATION_PATH));
+					logger.error(audit.toFullString());
+				}
 			}
 			else {
-				logger.error("Failed to access organization " + audit.get(FieldNames.FIELD_ORGANIZATION_PATH));
+				logger.error("Organization path is null");
+				StackTraceElement[] st = new Throwable().getStackTrace();
+				for(int i = 0; i < st.length; i++) {
+					logger.error(st[i].toString());
+				}
 			}
 			IOSystem.getActiveContext().getRecordUtil().createRecord(audit);
 			print(audit);
