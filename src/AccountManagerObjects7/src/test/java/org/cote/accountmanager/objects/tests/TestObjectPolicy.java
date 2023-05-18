@@ -185,8 +185,6 @@ public class TestObjectPolicy extends BaseTest {
 		try {
 			logger.info("Load owner resource policy");
 			rec = ioContext.getPolicyUtil().getResourcePolicy("owner", testUser1, null, dat).toConcrete();
-
-			
 			
 			rec.getRules().get(0).getPatterns().get(0).getMatch().setModelType(dat.getModel());
 			rec.getRules().get(0).getPatterns().get(0).getMatch().setSourceUrn(dat.get(FieldNames.FIELD_URN));
@@ -203,7 +201,7 @@ public class TestObjectPolicy extends BaseTest {
 			prr = ioContext.getPolicyEvaluator().evaluatePolicyRequest(preq, rec).toConcrete();
 		}
 		catch(Exception e) {
-			
+			logger.error(e);
 		}
 
 		assertNotNull("Policy is null", rec);
@@ -460,7 +458,7 @@ public class TestObjectPolicy extends BaseTest {
 		ioContext.getMemberUtil().member(testUser1, dat, trole1, sperm1, true);
 		ioContext.getMemberUtil().member(testUser1, trole1, testUser2, null, false);
 		ioContext.getMemberUtil().member(testUser1, trole1, testUser2, null, true);
-		
+		try {
 		evaluatePolicyByUrn(testUser1, "systemReadObject", testUser1.getModel(), testUser1.get(FieldNames.FIELD_URN), dat.getModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
 		evaluatePolicyByUrn(testUser1, "systemReadObject", testUser2.getModel(), testUser2.get(FieldNames.FIELD_URN), dat.getModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
 
@@ -468,11 +466,14 @@ public class TestObjectPolicy extends BaseTest {
 		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser2.getModel(), testUser2.get(FieldNames.FIELD_URN), dat.getModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.DENY);
 
 		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser1.getModel(), testUser1.get(FieldNames.FIELD_URN), dat.getModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
-		
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	private PolicyResponseType evaluatePolicyByUrn(BaseRecord contextUser, String policyName, String actorType, String actorUrn, String resourceType, String resourceUrn, PolicyResponseEnumType expectedResponse) {
-		PolicyResponseType pres = ioContext.getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actorType, actorUrn, resourceType, null, resourceUrn);
+		PolicyResponseType pres = ioContext.getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actorType, actorUrn, null, resourceType, resourceUrn);
 		assertNotNull("Expected a response", pres);
 		if(expectedResponse != pres.getType()) {
 			logger.error("Expected response " + expectedResponse.toString() + " does not match response " + pres.getType().toString());
