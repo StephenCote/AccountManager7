@@ -25,6 +25,7 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class FileWriter extends MemoryWriter {
 	public static final Logger logger = LogManager.getLogger(FileWriter.class);
@@ -202,10 +203,11 @@ public class FileWriter extends MemoryWriter {
 		String objectId = (model.hasField(FieldNames.FIELD_OBJECT_ID) ? model.get(FieldNames.FIELD_OBJECT_ID) : null);
 		long id = (model.hasField(FieldNames.FIELD_ID) ? model.get(FieldNames.FIELD_ID) : 0L);
 		BaseRecord mergeModel = null;
-		if(id > 0L || objectId != null) {
+		//if(id > 0L || objectId != null) {
+		if(RecordUtil.isIdentityRecord(model)) {
 			op = RecordOperation.UPDATE;
-			mergeModel = createMerge(model);
-			
+			// mergeModel = createMerge(model);
+			model = mergeModel = createMerge(model);
 		}
 		super.write(model);
 		//prepareTranscription(op, model);
@@ -222,7 +224,9 @@ public class FileWriter extends MemoryWriter {
 			}
 			else {
 				Query query = QueryUtil.createQuery(model.getModel(), FieldNames.FIELD_ID, id);
-				query.field(FieldNames.FIELD_OBJECT_ID, objectId);
+				if(model.hasField(FieldNames.FIELD_OBJECT_ID)) {
+					query.field(FieldNames.FIELD_OBJECT_ID, objectId);
+				}
 				query.setComparator(ComparatorEnumType.GROUP_OR);
 				
 				//IndexEntry2 ent = idx.findIndexEntry(FieldNames.FIELD_OBJECT_ID, objectId);
