@@ -442,12 +442,15 @@ public class StatementUtil {
 			else if (fieldComp == ComparatorEnumType.IN || fieldComp == ComparatorEnumType.NOT_IN)
 			{
 				String notStr = (fieldComp == ComparatorEnumType.NOT_IN ? " NOT " : "");
+				matchBuff.append(String.format("%s %s = ANY(%s)", fieldName, notStr, paramToken));
+				/*
 				if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
 					matchBuff.append(String.format("%s %s IN (%s)", fieldName, notStr, paramToken));
 				}
 				else if(util.getConnectionType() == ConnectionEnumType.H2) {
 					matchBuff.append(String.format("%s %s = ANY(%s)", fieldName, notStr, paramToken));
 				}
+				*/
 				
 			}
 			else if (fieldComp == ComparatorEnumType.ANY || fieldComp == ComparatorEnumType.NOT_ANY)
@@ -579,7 +582,6 @@ public class StatementUtil {
 					Object[] array = packVal;
 					FieldSchema fs = schema.getFieldSchema(field.get(FieldNames.FIELD_NAME));
 					FieldEnumType ffet = FieldEnumType.valueOf(fs.getType().toUpperCase());
-					// logger.info("*** HANDLE IN: " + ffet.toString());
 					switch(ffet) {
 						case LONG:
 							List<Long> useValLong = Stream.of(packVal).map(Long::valueOf).collect(Collectors.toList());
@@ -593,11 +595,12 @@ public class StatementUtil {
 							/// leave it as varchar
 							break;
 					}
-					SqlDataEnumType sdet = SqlTypeUtil.toSqlType(fet);
+					SqlDataEnumType sdet = SqlTypeUtil.toSqlType(ffet);
 					Array arr = statement.getConnection().createArrayOf(sdet.toString(), array);
 					statement.setArray(paramMarker++, arr);
 				} catch (SQLException e) {
 					logger.error(e.getMessage());
+					e.printStackTrace();
 					throw new DatabaseException(e.getMessage());
 				}
 			}
