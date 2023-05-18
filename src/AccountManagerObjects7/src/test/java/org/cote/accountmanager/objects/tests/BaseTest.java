@@ -72,6 +72,7 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
+	protected static boolean resetDataSchema = false;
 	
 	@Before
 	public void setup() {
@@ -82,7 +83,13 @@ public class BaseTest {
 		/// NOTE: Still need to add recursive query in StatementUtil for PG
 		IOFactory.PERMIT_PATH = new String[] {"c:\\tmp\\xpic"};
 		
+		/// USE FILE
+		//resetIO(null);
+
+		/// USE POSTGRESQL
 		resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
+
+		/// USE H2
 		//resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 	}
 	@After
@@ -91,24 +98,6 @@ public class BaseTest {
 		ioContext = null;
 		orgContext = null;
 
-	}
-	
-	private void resetH2DBUtil(String url, String user, String pwd, boolean reset) {
-		if(reset) {
-			logger.info("Resetting database");
-			File f = new File(url + ".mv.db");
-			File f2 = new File(url + ".trace.db");
-			if(f.exists()) {
-				logger.info("Cleanup database: " + f.delete());
-			}
-			else {
-				logger.info("No database to cleanup: " + url + ".mv");
-			}
-			if(f2.exists()) {
-				logger.info("Cleanup database trace: " + f2.delete());
-			}
-		}
-		dbUtil = new DBUtil("jdbc:h2:" + url, user, pwd);
 	}
 	
 	//protected void resetIO(FileStore store, boolean follow) {
@@ -126,10 +115,10 @@ public class BaseTest {
 		
 		
 		// Force schema rebuild
-		//
-		props.setReset(true);
+		//   - This will destroy all tables and sequences, remove all stream data, and delete all keystores
+		props.setReset(resetDataSchema);
+		resetDataSchema = false;
 		props.setSchemaCheck(false);
-		//resetH2DBUtil("./am7/h2", "sa", "1234", false);
 		resetIO(RecordIO.DATABASE, props);
 	}
 	protected void resetIO(RecordIO ioType, IOProperties properties) {

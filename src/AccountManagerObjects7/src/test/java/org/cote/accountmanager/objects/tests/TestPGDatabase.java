@@ -101,29 +101,5 @@ public class TestPGDatabase extends BaseTest {
 	
 	
 	}
-
-	
-	
-	/*
-	try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
-		Statement stat = con.createStatement();
-		ResultSet rset = stat.executeQuery("SELECT * FROM A7_participation ORDER BY id ASC");
-		while(rset.next()) {
-			String ctype = rset.getString("participationModel");
-			long cid = rset.getLong("participationId");
-			String ptype = rset.getString("participantModel");
-			long pid = rset.getLong("participantId");
-			String etype = rset.getString("effectType");
-			long eid = rset.getLong("permissionId");
-			
-			logger.info(ctype + " " + cid + " " + ptype + " " + pid + " " + etype + " " + eid);
-
-
-		}
-	}
-	catch(SQLException e) {
-		logger.error(e);
-	}
-	*/
 	
 }

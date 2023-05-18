@@ -41,6 +41,7 @@ import org.junit.Test;
 
 public class TestVault extends BaseTest {
 	
+	
 	@Test
 	public void TestVaultLifecycle() {
 		logger.info("Test Vault Lifecycle");
@@ -279,5 +280,6 @@ public class TestVault extends BaseTest {
 		}
 		assertNotNull("Vault is null", vault);
 	}
+	
 
 }

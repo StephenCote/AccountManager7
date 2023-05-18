@@ -130,8 +130,7 @@ public class TestH2Database extends BaseTest {
 
 	}
 	
-	
-	
+
 	@Test
 	public void TestMembership() {
 		
@@ -167,7 +166,7 @@ public class TestH2Database extends BaseTest {
 			assertTrue("Expected to establish membership", member);
 			
 			List<BaseRecord> members = ioContext.getMemberUtil().getMembers(role, ModelNames.MODEL_PERSON);
-			assertTrue("Expected member count to be 1", members.size() == 1);
+			assertTrue("Expected member count to be 1, instead received " + members.size(), members.size() == 1);
 			
 			boolean isMember = ioContext.getMemberUtil().isMember(iperson, role);
 			assertTrue("Expected person to be in the role", isMember);
@@ -196,6 +195,8 @@ public class TestH2Database extends BaseTest {
 	
 
 	}
+	
+
 
 	@Test
 	public void TestForeignSchema() {
