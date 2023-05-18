@@ -309,7 +309,10 @@ public class PolicyUtil {
 		return prr;
 	}
 	public SystemPermissionEnumType getSystemPermissionFromPolicyName(String name) {
-		return policyNameMap.get(name);
+		if(policyNameMap.containsKey(name)) {
+			return policyNameMap.get(name);
+		}
+		return SystemPermissionEnumType.CREATE;
 	}
 	
 	public String getPolicyName(FieldSchema fs, SystemPermissionEnumType spet) {
@@ -491,6 +494,7 @@ public class PolicyUtil {
 	private String applyPermissionPattern(String contents, String name) {
 		
 		SystemPermissionEnumType spet = getSystemPermissionFromPolicyName(name);
+
 		Matcher m = permissionExp.matcher(contents);
 		String outStr = null;
 		if(spet != SystemPermissionEnumType.UNKNOWN) {
