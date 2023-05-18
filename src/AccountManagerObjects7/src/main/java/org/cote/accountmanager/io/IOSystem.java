@@ -1,5 +1,8 @@
 package org.cote.accountmanager.io;
 
+import java.io.File;
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
@@ -16,6 +19,7 @@ import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.util.DirectoryUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class IOSystem {
@@ -54,7 +58,19 @@ public class IOSystem {
 		
 		if(properties.isReset()) {
 			/// logger.warn("**** CLEANING UP ARTIFACTS");
-			/// Need to cleanup ./jks - IOFactory.DEFAULT_FILE_BASE + "/jks/"
+			DirectoryUtil du = new DirectoryUtil(IOFactory.DEFAULT_FILE_BASE + "/.jks/");
+			List<File> files = du.dir(null, true);
+			for(File f : files) {
+				logger.info("Cleanup: " + f.getName());
+				f.delete();
+			}
+			du = new DirectoryUtil(IOFactory.DEFAULT_FILE_BASE + "/.streams/");
+			files = du.dir(null, true);
+			for(File f : files) {
+				logger.info("Cleanup: " + f.getName());
+				f.delete();
+			}
+
 		}
 
 		if(ioType == RecordIO.FILE) {
@@ -68,7 +84,8 @@ public class IOSystem {
 				logger.error("Missing IOProperties");
 				return null;
 			}
-			dbUtil = new DBUtil(properties);
+			// dbUtil = new DBUtil(properties);
+			dbUtil = DBUtil.getInstance(properties);
 			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset()) {
 				logger.info("Scanning model schema");
 				for(String m : ModelNames.MODELS) {
@@ -163,6 +180,7 @@ public class IOSystem {
 				else if(context.getIoType() == RecordIO.FILE) {
 					//FileIndexer.clearCache();
 				}
+
 			}
 			catch(ReaderException e) {
 				logger.error(e);
