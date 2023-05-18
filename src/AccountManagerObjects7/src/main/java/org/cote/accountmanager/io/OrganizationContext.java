@@ -111,7 +111,7 @@ public class OrganizationContext {
 		boolean outB = false;
 		// logger.info(JSONUtil.exportObject(opsUser, RecordSerializerConfig.getUnfilteredModule()));
 		long orgId = org.get(FieldNames.FIELD_ID);
-		String storePath = IOFactory.DEFAULT_FILE_BASE + "/jks/" + orgId;
+		String storePath = IOFactory.DEFAULT_FILE_BASE + "/.jks/" + orgId;
 		String kpath = storePath + "/keystore.jks";
 		String tpath = storePath + "/truststore.jks";
 		
