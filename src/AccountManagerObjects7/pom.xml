@@ -57,22 +57,23 @@
 						<include>**/Test*.java</include>
 					</includes>
 					<excludes>
+
 					<!--
-						
 						<exclude>**/TestData.java</exclude>	
 					-->
-						<exclude>**/TestPGDatabase.java</exclude>
+						
 						
 						<!-- Repeatable Set -->
+						<exclude>**/TestVault.java</exclude>	
+						<exclude>**/TestPGDatabase.java</exclude>
+						<exclude>**/TestObjectPolicy.java</exclude>
 						<exclude>**/TestStream.java</exclude>	
 						<exclude>**/TestAccessPoint.java</exclude>	
-						<exclude>**/TestObjectPolicy.java</exclude>
 						<exclude>**/TestObjectConstruct.java</exclude>	
 						<exclude>**/TestH2Database.java</exclude>
 						<exclude>**/TestJournal.java</exclude>					
 						<exclude>**/TestCryptography.java</exclude>
 						<exclude>**/TestAudit.java</exclude>
-						<exclude>**/TestVault.java</exclude>	
 						<exclude>**/TestQuery.java</exclude>
 						<exclude>**/TestAuthentication.java</exclude>
 						<exclude>**/TestStartup.java</exclude>
@@ -81,7 +82,8 @@
 						<exclude>**/TestFlexValueType.java</exclude>		
 						<exclude>**/TestNameIdMap.java</exclude>
 						<exclude>**/TestValueType.java</exclude>
-						<exclude>**/TestLooseField.java</exclude>	
+						<exclude>**/TestLooseField.java</exclude>
+
 						
 						<!-- Not intended to be regularly run -->
 						<exclude>**/TestGenerator.java</exclude>
