@@ -3,44 +3,53 @@
 "inherits": ["directory", "description"],
 "fields": [
 	{
-	"name": "errorMessage",
-	"type": "string",
-	"maxLength": 255
-	}
-	,{
-	"name": "replacementValue",
-	"type": "flex"
-	}
-	,{
-	"name": "rules",
-	"baseModel": "validationRule",
-	"type": "list"
-	}
-	,{
-	"name": "expression",
-	"type": "string",
-	"maxLength": 255
-	}
-	,{
-	"name": "isRuleSet",
-	"type": "boolean"
-	}
-	,{
-	"name": "isReplacementRule",
-	"type": "boolean"
-	}
-	,{
-	"name": "validationType",
-	"baseClass": "org.cote.accountmanager.schema.type.ValidationEnumType",
-	"type": "enum",
-	"maxLength": 16
-	}
-	,{
-	"name": "comparison",
-	"type": "boolean"
-	}
-	,{
-	"name": "allowNull",
-	"type": "boolean"
+		"name": "errorMessage",
+		"type": "string",
+		"maxLength": 255
+	},
+	{
+		"name": "replacementValue",
+		"type": "flex",
+		"valueType": "replacementValueType"
+	},
+	{
+		"name": "replacementValueType",
+		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "rules",
+		"baseModel": "validationRule",
+		"baseType": "model",
+		"type": "list",
+		"foreign": true
+	},
+	{
+		"name": "expression",
+		"type": "string",
+		"maxLength": 255
+	},
+
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.ValidationEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "comparison",
+		"type": "boolean",
+		"default": true
+	},
+	{
+		"name": "comparator",
+		"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "allowNull",
+		"type": "boolean"
 	}
 ]}
