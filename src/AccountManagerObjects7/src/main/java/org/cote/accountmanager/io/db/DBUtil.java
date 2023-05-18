@@ -43,15 +43,29 @@ public class DBUtil {
 	private String dataSourceUser = "sa";
 	private String dataSourcePassword = "1234";
 	private ConnectionEnumType connectionType = ConnectionEnumType.UNKNOWN;
-	public DBUtil() {
-		
+	
+	private static DBUtil instance = null;
+	public static DBUtil getInstance(IOProperties props) {
+		if(instance == null) {
+			instance = new DBUtil(props);
+		}
+		return instance;
 	}
 	
+	public DBUtil() {
+
+	}
+	/*
+	public void release() {
+		dataSource = null;
+	}
+	*/
 	public DBUtil(IOProperties props) {
 		this(props.getDataSourceUrl(), props.getDataSourceUserName(), props.getDataSourcePassword());
 	}
 	
 	public DBUtil(String url, String user, String pwd) {
+		logger.info("CREATE DBUtil ...");
 		this.dataSourceUrl = url;
 		this.dataSourceUser = user;
 		this.dataSourcePassword = pwd;
@@ -536,17 +550,18 @@ public class DBUtil {
     		useName = useName.toLowerCase();
     	}
 	    
-    	try (Connection con = dataSource.getConnection()){
-	    	logger.info("***** Check Table: " + useName);
-	    	try(PreparedStatement st = con.prepareStatement("select count(*) from information_schema.tables where table_name = ?;")){
-		    	st.setString(1, useName);
-		    	ResultSet rset = st.executeQuery();
-	
-		    	if(rset.next()) {
-		    		count = rset.getInt(1);
-		    	}
-		    	rset.close();
+    	try (
+    			Connection con = dataSource.getConnection();
+    			PreparedStatement st = con.prepareStatement("select count(*) from information_schema.tables where table_name = ?;");
+    	){
+	    	//logger.info("***** Check Table: " + useName);
+	    	st.setString(1, useName);
+	    	ResultSet rset = st.executeQuery();
+
+	    	if(rset.next()) {
+	    		count = rset.getInt(1);
 	    	}
+	    	rset.close();
 		} catch (SQLException e) {
            logger.error(e);
 	    }
@@ -555,11 +570,11 @@ public class DBUtil {
 	
 	public boolean execute(String sql) {
 		boolean exec = false;
-		try (Connection con = dataSource.getConnection()){
-			try(Statement statement = con.createStatement()){
-				exec = statement.execute(sql);
-			}
-
+		try (
+			Connection con = dataSource.getConnection();
+			Statement statement = con.createStatement();
+		){
+			exec = statement.execute(sql);
 		} catch (SQLException e) {
 			logger.error(e);
 		}
@@ -569,15 +584,16 @@ public class DBUtil {
 	public List<String> getTables() {
 		logger.info("Print tables");
 		List<String> tables = new ArrayList<>();
-	    try (Connection con = dataSource.getConnection()){
-	    	try(Statement st = con.createStatement()){
-		    	ResultSet rset = st.executeQuery("select * from information_schema.tables;");
-		    	while(rset.next()) {
-		    		//logger.info(rset.getString("table_name"));
-		    		tables.add(rset.getString("table_name"));
-		    	}
-		    	rset.close();
+	    try (
+	    	Connection con = dataSource.getConnection();
+	    	Statement st = con.createStatement();
+	    ){
+	    	ResultSet rset = st.executeQuery("select * from information_schema.tables;");
+	    	while(rset.next()) {
+	    		//logger.info(rset.getString("table_name"));
+	    		tables.add(rset.getString("table_name"));
 	    	}
+	    	rset.close();
 		} catch (SQLException e) {
 			logger.error(e);
 	    }
