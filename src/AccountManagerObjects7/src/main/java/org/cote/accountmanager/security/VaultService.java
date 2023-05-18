@@ -83,6 +83,8 @@ public class VaultService
 	private Factory factory = null;
 	private ISearch search = null;
 	
+	public static String DEFAULT_VAULT_PATH = "/.vault";
+	
 	public static VaultService getInstance() {
 		if(instance == null) {
 			instance = new VaultService();
@@ -252,8 +254,8 @@ public class VaultService
 		try {
 			vault = getVault(vaultUser, vaultName);
 			if(vault == null) {
-				String credPath = IOFactory.DEFAULT_FILE_BASE + "/.vault/" + organizationId + "/credential/" + vaultName + ".json";
-				String vaultPath = IOFactory.DEFAULT_FILE_BASE + "/.vault/" + organizationId + "/vault";
+				String credPath = IOFactory.DEFAULT_FILE_BASE + DEFAULT_VAULT_PATH + "/" + organizationId + "/credential/" + vaultName + ".json";
+				String vaultPath = IOFactory.DEFAULT_FILE_BASE + DEFAULT_VAULT_PATH + "/" + organizationId + "/vault";
 				if(!createProtectedCredentialFile(vaultUser, credPath, UUID.randomUUID().toString().getBytes())) {
 					logger.error("Failed to create protected credential");
 					return null;
