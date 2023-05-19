@@ -59,6 +59,11 @@ public abstract class BaseRecord {
 	}
 	
 	@JsonIgnore
+	public String toFilteredString() {
+		return RecordUtil.toFilteredJSONString(this);
+	}
+	
+	@JsonIgnore
 	public String toFullString() {
 		return RecordUtil.toFullJSONString(this);
 	}

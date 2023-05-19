@@ -58,6 +58,11 @@ public class RecordUtil {
 		this.search = context.getSearch();
 		this.pathUtil = context.getPathUtil();
 	}
+
+	public static String toFilteredJSONString(BaseRecord rec) {
+		sortFields(rec);
+		return JSONUtil.exportObject(rec, RecordSerializerConfig.getFilteredModule());
+	}
 	
 	public static String toJSONString(BaseRecord rec) {
 		sortFields(rec);
