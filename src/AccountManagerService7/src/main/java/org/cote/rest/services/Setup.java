@@ -28,6 +28,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.CredentialEnumType;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.rest.config.RestServiceConfig;
@@ -63,6 +64,7 @@ public class Setup {
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response setup(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
+
 		BaseRecord icred = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		boolean setup = false;
 
@@ -70,32 +72,35 @@ public class Setup {
 			logger.error("Null cred");
 		}
 		else {
-			OrganizationContext oct = IOSystem.getActiveContext().getOrganizationContext("/System", null);
-			if(oct != null && !oct.isInitialized()) {
-				for(String org : RestServiceConfig.DEFAULT_ORGANIZATIONS) {
-					logger.info("Configuring " + OrganizationEnumType.valueOf(org.substring(1).toUpperCase()) + " " + org);
-					OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
+			for(String org : RestServiceConfig.DEFAULT_ORGANIZATIONS) {
+				logger.info("Configuring " + OrganizationEnumType.valueOf(org.substring(1).toUpperCase()) + " " + org);
+				OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
+				try {
 					if(!oc.isInitialized()) {
-						try {
-							oc.createOrganization();
-							BaseRecord admin = oc.getAdminUser();
-							String credStr = new String((byte[])icred.get(FieldNames.FIELD_CREDENTIAL));
-							ParameterList plist = ParameterUtil.newParameterList("password", credStr);
-							plist.parameter("type", CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
-							
-							BaseRecord newCred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, admin, null, plist);
-							logger.info("New cred");
-							logger.info(JSONUtil.exportObject(admin, RecordSerializerConfig.getUnfilteredModule()));
-							logger.info(JSONUtil.exportObject(newCred, RecordSerializerConfig.getUnfilteredModule()));
-							IOSystem.getActiveContext().getRecordUtil().createRecord(newCred);
-						} catch (NullPointerException | SystemException | FactoryException e) {
-							logger.error(e);
-							e.printStackTrace();
-						}
+						oc.createOrganization();
 					}
+					BaseRecord admin = oc.getAdminUser();
+					BaseRecord cred = CredentialUtil.getLatestCredential(admin);
+					if(cred == null) {
+						String credStr = new String((byte[])icred.get(FieldNames.FIELD_CREDENTIAL));
+						ParameterList plist = ParameterUtil.newParameterList("password", credStr);
+						plist.parameter(FieldNames.FIELD_TYPE, CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
+						BaseRecord newCred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, admin, null, plist);
+						logger.info("New credential created");
+						IOSystem.getActiveContext().getRecordUtil().createRecord(newCred);
+					}
+					else {
+						logger.warn("Administrative credential already set");
+					}
+
+				} catch (NullPointerException | SystemException | FactoryException e) {
+					logger.error(e);
+					e.printStackTrace();
 				}
-				setup = true;
+
 			}
+			setup = true;
+
 		}
 
 
