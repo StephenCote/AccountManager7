@@ -5,6 +5,7 @@ public class IOProperties {
 	private String dataSourceUrl = null;
 	private String dataSourceUserName = null;
 	private String dataSourcePassword = null;
+	private String jndiName = null;
 	private boolean reset = false;
 	
 	private boolean schemaCheck = false;
@@ -13,19 +14,21 @@ public class IOProperties {
 		
 	}
 	
-	
+	public String getJndiName() {
+		return jndiName;
+	}
+
+	public void setJndiName(String jndiName) {
+		this.jndiName = jndiName;
+	}
 
 	public boolean isReset() {
 		return reset;
 	}
 
-
-
 	public void setReset(boolean reset) {
 		this.reset = reset;
 	}
-
-
 
 	public boolean isSchemaCheck() {
 		return schemaCheck;

@@ -85,7 +85,7 @@ public class IOSystem {
 			search = IOFactory.getSearch(reader);
 		}
 		else if(ioType == RecordIO.DATABASE) {
-			if(properties == null || properties.getDataSourceUrl() == null) {
+			if(properties == null || (properties.getDataSourceUrl() == null && properties.getJndiName() == null)) {
 				logger.error("Missing IOProperties");
 				return null;
 			}
