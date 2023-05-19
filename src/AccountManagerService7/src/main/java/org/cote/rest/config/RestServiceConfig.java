@@ -130,11 +130,12 @@ public class RestServiceConfig extends ResourceConfig{
     	}
 
         /// 
-    	protected IOProperties getDBProperties(String dataUrl, String dataUser, String dataPassword) {
+    	protected IOProperties getDBProperties(String dataUrl, String dataUser, String dataPassword, String jndiName) {
     		IOProperties props = new IOProperties();
     		props.setDataSourceUrl(dataUrl);
     		props.setDataSourceUserName(dataUser);
     		props.setDataSourcePassword(dataPassword);
+    		props.setJndiName(jndiName);
     		props.setSchemaCheck(false);
     		return props;
     	}
@@ -144,7 +145,9 @@ public class RestServiceConfig extends ResourceConfig{
 			String path = context.getInitParameter("store.path");
 			ResourceUtil.RESOURCE_PREFIX = "";
 			IOFactory.DEFAULT_FILE_BASE = path;
-			IOProperties props = getDBProperties("jdbc:h2:" + path + "/h2", "sa", "1234");
+			String dsName = context.getInitParameter("database.dsname");
+			//IOProperties props = getDBProperties("jdbc:h2:" + path + "/h2", "sa", "1234");
+			IOProperties props = getDBProperties(null, null, null, dsName);
 			//IOContext ioContext = IOSystem.open(RecordIO.FILE, null, null);
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 			
