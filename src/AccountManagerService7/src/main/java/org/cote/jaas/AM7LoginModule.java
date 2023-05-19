@@ -235,8 +235,9 @@ public class AM7LoginModule implements LoginModule {
 					return ModelNames.MODEL_ROLE.equals(type);
 				}
 				else {
-					String type = o.get(FieldNames.FIELD_PARTICIPATION_MODEL);
-					return ModelNames.MODEL_ROLE.equals(type);
+					// String type = o.get(FieldNames.FIELD_PARTICIPATION_MODEL);
+					// return ModelNames.MODEL_ROLE.equals(type);
+					return true;
 				}
 			}).collect(Collectors.toList());
 		}
@@ -245,15 +246,22 @@ public class AM7LoginModule implements LoginModule {
 		}
 		try {
 	        for(BaseRecord b : roles) {
-				long id = b.get(FieldNames.FIELD_PART_ID);
-				BaseRecord brole = IOSystem.getActiveContext().getReader().read(b.get(FieldNames.FIELD_TYPE), id);
-				if(brole == null) {
-					logger.error("Failed to retrieve role #" + id);
-					continue;
-				}
+	        	BaseRecord brole = null;
+	        	if(b.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
+	        		long id = b.get(FieldNames.FIELD_PART_ID);
+	        		brole = IOSystem.getActiveContext().getReader().read(b.get(FieldNames.FIELD_TYPE), id);
+					if(brole == null) {
+						logger.error("Failed to retrieve role #" + id);
+						continue;
+					}
+	        	}
+	        	else {
+	        		brole = b;
+	        	}
+
 	        	String name = brole.get(FieldNames.FIELD_NAME);
 	        	if(map.containsKey(name)){
-	        		// logger.info("Mapping role for " + uprince.getName() + ": " + name);
+	        		// logger.info("Mapping role for " + uprince.getName() + ": " + name + " -> " + map.get(name));
 	        		RolePrincipal role = new RolePrincipal(map.get(name));
 	        		oroles.add(role);
 	        	}
