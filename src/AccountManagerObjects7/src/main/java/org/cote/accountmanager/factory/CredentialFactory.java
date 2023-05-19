@@ -9,6 +9,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -102,6 +103,10 @@ public class CredentialFactory extends FactoryBase {
 					vet = VerificationEnumType.ERROR;
 				}
 				else {
+					BaseRecord hash = rec.get(FieldNames.FIELD_HASH);
+					if(hash != null) {
+						IOSystem.getActiveContext().getReader().populate(hash);
+					}
 					byte[] credHash = rec.get(FieldNames.FIELD_CREDENTIAL);
 					byte[] checkHash = CryptoUtil.getDigest(pwd.getBytes(), rec.get(FieldNames.FIELD_HASH_FIELD_SALT));
 					if(Arrays.areEqual(credHash, checkHash)) {
@@ -110,7 +115,6 @@ public class CredentialFactory extends FactoryBase {
 					}
 					else {
 						logger.warn("Password hash does not match");
-						logger.info("Password: \"" + pwd + "\"");
 						logger.info(BinaryUtil.toBase64Str(credHash));
 						logger.info(BinaryUtil.toBase64Str(checkHash));
 						vet = VerificationEnumType.NOT_VERIFIED;
