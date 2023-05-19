@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import javax.naming.InitialContext;
+import javax.naming.NamingException;
 import javax.sql.DataSource;
 
 import org.apache.commons.dbcp.cpdsadapter.DriverAdapterCPDS;
@@ -21,6 +23,7 @@ import org.apache.commons.dbcp.datasources.SharedPoolDataSource;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.DatabaseException;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.RecordFactory;
@@ -41,7 +44,11 @@ public class DBUtil {
 	private String dataSourceUrl = "jdbc:h2:./am7/h2";
 	private String dataSourceUser = "sa";
 	private String dataSourcePassword = "1234";
+	private String jndiName = null;
 	private ConnectionEnumType connectionType = ConnectionEnumType.UNKNOWN;
+	
+	private String h2Driver = "org.h2.Driver";
+	private String pgDriver = "org.postgresql.Driver";
 	
 	private static DBUtil instance = null;
 	public static DBUtil getInstance(IOProperties props) {
@@ -60,14 +67,15 @@ public class DBUtil {
 	}
 	*/
 	public DBUtil(IOProperties props) {
-		this(props.getDataSourceUrl(), props.getDataSourceUserName(), props.getDataSourcePassword());
+		this(props.getDataSourceUrl(), props.getDataSourceUserName(), props.getDataSourcePassword(), props.getJndiName());
 	}
 	
-	public DBUtil(String url, String user, String pwd) {
+	public DBUtil(String url, String user, String pwd, String jndiName) {
 		logger.info("CREATE DBUtil ...");
 		this.dataSourceUrl = url;
 		this.dataSourceUser = user;
 		this.dataSourcePassword = pwd;
+		this.jndiName = jndiName;
 		applyDataSource();
 	}
 	public void setDataSource(DataSource ds) {
@@ -90,7 +98,42 @@ public class DBUtil {
 				connectionType = ConnectionEnumType.POSTGRE;
 			}
 		}
+		else if(jndiName != null) {
+			String driver = null;
+			if(jndiName.endsWith("postgresDS")) {
+				driver = pgDriver;
+				connectionType = ConnectionEnumType.POSTGRE;
+			}
+			else if(jndiName.endsWith("h2DS")) {
+				driver = h2Driver;
+				connectionType = ConnectionEnumType.H2;
+			}
+			if(driver != null) {
+				dataSource = getJNDIDataSource(driver);
+			}
+		}
 	}
+	
+	public DataSource getJNDIDataSource(String driverClass) {
+		DataSource ds = null;
+
+	    String dsFile = "java:/" + jndiName;   
+	    
+		try {
+			InitialContext ctx = new InitialContext();
+			ds = (DataSource) ctx.lookup(dsFile);
+		}
+		catch (NamingException e) {
+			logger.error(e);
+		}
+
+		if(ds == null){
+			logger.error("DataSource is null.  Check that the database server is started and accessible.");
+			return null;
+		}
+		return ds;
+	}
+	
 	public DataSource getDataSource() {
 		return dataSource;
 	}
@@ -119,37 +162,14 @@ public class DBUtil {
 		
 		return ds;
 	}
+
 	
 	private DataSource getH2DataSource() {
-		return getDataSource("org.h2.Driver");
-		/*
-		DataSource ds = null;
-		try {
-			DriverAdapterCPDS driver = new DriverAdapterCPDS();
-
-			driver.setDriver("org.h2.Driver");
-			driver.setUrl(dataSourceUrl);
-			driver.setUser(dataSourceUser);
-			driver.setPassword(dataSourcePassword);
-
-			SharedPoolDataSource sharedPoolDS = new SharedPoolDataSource();
-			sharedPoolDS.setConnectionPoolDataSource(driver);
-			sharedPoolDS.setMaxActive(10);
-			sharedPoolDS.setMaxWait(50);
-			sharedPoolDS.setTestOnBorrow(true);
-			sharedPoolDS.setValidationQuery("SELECT 1");
-			sharedPoolDS.setTestWhileIdle(true);
-			ds = sharedPoolDS;
-		} catch (ClassNotFoundException cnfe) {
-			logger.error(cnfe);
-		}
-		
-		return ds;
-		*/
+		return getDataSource(h2Driver);
 	}
 	
 	private DataSource getPGDataSource() {
-		return getDataSource("org.postgresql.Driver");
+		return getDataSource(pgDriver);
 	}
 	
 	private Map<String, String> sequenceNames = new HashMap<>();
