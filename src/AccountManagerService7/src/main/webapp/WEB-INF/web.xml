@@ -33,6 +33,11 @@
 		<param-name>isLog4jAutoInitializationDisabled</param-name>
 		<param-value>false</param-value>
 	</context-param>
+  <context-param>
+    <description>Database Connection Type</description>
+    <param-name>database.dsname</param-name>
+    <param-value>comp/env/tomcat/datasources/h2DS</param-value>
+  </context-param>
 	<context-param>
 		<description>File Store Path</description>
 		<param-name>store.path</param-name>

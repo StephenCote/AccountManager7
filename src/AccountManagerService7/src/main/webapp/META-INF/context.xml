@@ -9,6 +9,35 @@
         cacheMaxSize="100000"
     />
     
+    <Resource name="tomcat/datasources/h2DS"
+          auth="Container"
+          type="javax.sql.DataSource"
+          factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
+          testWhileIdle="true"
+          testOnBorrow="true"
+          testOnReturn="false"
+          validationQuery="SELECT 1"
+          validationInterval="30000"
+          timeBetweenEvictionRunsMillis="30000"
+          maxActive="150"
+          minIdle="20"
+          maxWait="10000"
+          initialSize="10"
+          removeAbandonedTimeout="60"
+          removeAbandoned="true"
+          abandonWhenPercentageFull="50"
+          logAbandoned="true"
+          minEvictableIdleTimeMillis="30000"
+          jmxEnabled="true"
+          jdbcInterceptors="org.apache.tomcat.jdbc.pool.interceptor.ConnectionState;
+            org.apache.tomcat.jdbc.pool.interceptor.StatementFinalizer"
+          username="devuser"
+          password="password"
+          driverClassName="org.h2.Driver"
+          url="jdbc:h2:c:/projects/data/am7/h2"
+          closeMethod="close"
+          />
+    
     <Manager className="org.apache.catalina.session.PersistentManager" maxIdleBackup="1">
    <Store className="org.apache.catalina.session.FileStore" directory="c:/Projects/Sessions"/>
    <CookieProcessor sameSiteCookies="none" />
