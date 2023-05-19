@@ -30,7 +30,6 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
-import org.cote.accountmanager.util.JSONUtil;
 
 public class DBUtil {
 	public static final Logger logger = LogManager.getLogger(DBUtil.class);

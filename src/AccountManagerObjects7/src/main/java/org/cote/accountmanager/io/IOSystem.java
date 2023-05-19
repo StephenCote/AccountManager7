@@ -62,13 +62,18 @@ public class IOSystem {
 			List<File> files = du.dir(null, true);
 			for(File f : files) {
 				logger.info("Cleanup: " + f.getName());
-				f.delete();
+				if(!f.delete()) {
+					logger.warn("Failed to delete " + f.getName());
+				}
 			}
 			du = new DirectoryUtil(IOFactory.DEFAULT_FILE_BASE + "/.streams/");
 			files = du.dir(null, true);
 			for(File f : files) {
 				logger.info("Cleanup: " + f.getName());
-				f.delete();
+				if(!f.delete()) {
+					logger.warn("Failed to delete " + f.getName());
+				}
+
 			}
 
 		}

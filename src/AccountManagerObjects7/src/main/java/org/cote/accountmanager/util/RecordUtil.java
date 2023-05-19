@@ -240,6 +240,7 @@ public class RecordUtil {
 			}
 			else {
 				logger.error("Failed to instantiate the customer writer: " + ms.getIo().getWriter());
+				return false;
 			}
 		}
 		else {

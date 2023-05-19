@@ -1,5 +1,8 @@
 package org.cote.accountmanager.schema;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldEnumType;
@@ -41,6 +44,7 @@ public class FieldSchema {
 	private Object defaultValue = null;
 	private ModelAccess access = null;
 	private String description = null;
+	private List<String> rules = new ArrayList<>();
 	
 	@JsonProperty("private")
 	private boolean priv = false;
@@ -49,6 +53,20 @@ public class FieldSchema {
 		
 	}
 	
+	
+	
+	public List<String> getRules() {
+		return rules;
+	}
+
+
+
+	public void setRules(List<String> rules) {
+		this.rules = rules;
+	}
+
+
+
 	public ModelAccess getAccess() {
 		return access;
 	}

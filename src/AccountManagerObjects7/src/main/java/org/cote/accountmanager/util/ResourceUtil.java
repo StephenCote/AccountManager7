@@ -31,6 +31,9 @@ public class ResourceUtil {
 	public static String getRuleResource(String name) {
 		return getResource(RESOURCE_PREFIX + "rules/" + name + "Rule.json");
 	}
+	public static String getValidationRuleResource(String name) {
+		return getResource(RESOURCE_PREFIX + "validationRules/" + name + "Rule.json");
+	}
 	public static String getPolicyResource(String name) {
 		return getResource(RESOURCE_PREFIX + "policies/" + name + "Policy.json");
 	}

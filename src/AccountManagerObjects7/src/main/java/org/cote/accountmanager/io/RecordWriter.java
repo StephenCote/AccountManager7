@@ -10,7 +10,6 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.record.RecordTranslator;
-import org.cote.accountmanager.record.RecordValidator;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 
@@ -46,7 +45,7 @@ public abstract class RecordWriter extends RecordTranslator implements IWriter {
 			FieldSchema lf = lbm.getFieldSchema(f.getName());
 			//logger.info("Translate field: " + recordIo.toString() + " " + operation.toString() + " "  + model.getModel() + " " + lf.getName());
 			translateField(operation, this.recordIo, lbm, model, lf, f);
-			RecordValidator.validateField(operation, this.recordIo, lbm, model, lf, f);
+			//RecordValidator.validateField(operation, this.recordIo, lbm, model, lf, f);
 		}
 		translateModel(operation, this.recordIo, lbm, model);
 	}

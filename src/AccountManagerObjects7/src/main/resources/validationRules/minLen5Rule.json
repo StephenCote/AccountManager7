@@ -1,0 +1,7 @@
+{
+	"model": "validationRule",
+	"name": "minLen5",
+	"type": "boolean",
+	"expression": "[A-Za-z0-9]{5}",
+	"rules": ["${notEmpty}"]
+}

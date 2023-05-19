@@ -164,16 +164,6 @@ public class AccessPoint {
 		PolicyResponseType prr = null;
 		if((prr = authorizeQuery(contextUser, query)) == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			AuditUtil.closeAudit(audit, prr, "One or more query fields were not or could not be authorized: " + query.key());
-			// logger.info(query.toFullString());
-			if(prr != null) {
-				logger.error(prr.toFullString());
-			}
-			/*
-			StackTraceElement[] st = new Throwable().getStackTrace();
-			for(int i = 0; i < st.length; i++) {
-				logger.error(st[i].toString());
-			}
-			*/
 			return rec;
 		}
 		QueryResult qr = search(contextUser, query);
@@ -188,8 +178,6 @@ public class AccessPoint {
 			AuditUtil.closeAudit(audit, prr, null);
 		}
 		else {
-			// logger.info(query.toFullString());
-			//failAudit(aet, ResponseEnumType.INVALID, contextUser, contextUser, null, "No results");
 			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "No results");
 		}
 
@@ -209,9 +197,7 @@ public class AccessPoint {
 	}
 	
 	public BaseRecord findByNameInGroup(BaseRecord contextUser, String model, String groupObjectId, String name) {
-		// BaseRecord group = findByObjectId(contextUser, ModelNames.MODEL_GROUP, groupObjectId);
 		Query groupq = getIdQuery(contextUser, ModelNames.MODEL_GROUP, FieldNames.FIELD_OBJECT_ID, groupObjectId);
-		// CacheUtil.clearCache();
 		BaseRecord group = find(contextUser, groupq);
 		BaseRecord rec = null;
 		if(group != null) {
@@ -272,7 +258,6 @@ public class AccessPoint {
 	///		In other words - I need to write a PolicyEvaluator than can do so with direct database calls
 	///		In the meantime, the count isn't checked, and the list/search by query is restricted to group/parent based
 	///
-	
 	public int count(BaseRecord contextUser, Query query) {
 
 		ActionEnumType aet = ActionEnumType.READ;

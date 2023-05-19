@@ -995,7 +995,7 @@ public class VaultService
 		}
 		
 		String credPath = getProtectedCredentialPath(vault);
-		if(credPath == null) {
+		if(credPath == null || credPath.length() == 0) {
 			logger.warn("Credential path is null");
 		}
 		else {

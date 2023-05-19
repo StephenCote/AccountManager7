@@ -20,149 +20,114 @@ public class ModelSchema {
 	private boolean ephemeral = false;
 	private boolean followReference = true;
 	private boolean emitModel = false;
-	
 	private String group = null;
 	private String provider = null;
 
-	//private String baseClass = null;
 	private List<FieldSchema> fields = new ArrayList<>();
 	private List<String> inherits = new ArrayList<>();
 	private List<String> implist = new ArrayList<>();
-	// private List<String> values = new ArrayList<>();
 	private List<String> constraints = new ArrayList<>();
 	private List<String> ioConstraints = new ArrayList<>();
 	private List<String> query = new ArrayList<>();
 	private List<String> hints = new ArrayList<>();
+	
 	private String factory = null;
 	
 	private ModelAccess access = null;
 	private ModelIO io = null;
+	private ModelValidation validation = null;
 	
 	public ModelSchema() {
 		
 	}
 	
-	
+	public ModelValidation getValidation() {
+		return validation;
+	}
+
+	public void setValidation(ModelValidation validation) {
+		this.validation = validation;
+	}
 
 	public ModelIO getIo() {
 		return io;
 	}
 
-
-
 	public void setIo(ModelIO io) {
 		this.io = io;
 	}
-
-
 
 	public List<String> getQuery() {
 		return query;
 	}
 
-
-
 	public void setQuery(List<String> query) {
 		this.query = query;
 	}
-
-
 
 	public ModelAccess getAccess() {
 		return access;
 	}
 
-
-
 	public void setAccess(ModelAccess access) {
 		this.access = access;
 	}
-
-
 
 	public List<String> getIoConstraints() {
 		return ioConstraints;
 	}
 
-
-
 	public void setIoConstraints(List<String> ioConstraints) {
 		this.ioConstraints = ioConstraints;
 	}
-
-
 
 	public List<String> getConstraints() {
 		return constraints;
 	}
 
-
-
 	public boolean isFollowReference() {
 		return followReference;
 	}
-
-
 
 	public void setFollowReference(boolean followReference) {
 		this.followReference = followReference;
 	}
 
-
-
 	public void setConstraints(List<String> constraints) {
 		this.constraints = constraints;
-	}
-
-
+	}	
 
 	public List<String> getHints() {
 		return hints;
 	}
 
-
-
 	public void setHints(List<String> hints) {
 		this.hints = hints;
 	}
-
-
 
 	public boolean isEphemeral() {
 		return ephemeral;
 	}
 
-
-
 	public void setEphemeral(boolean ephemeral) {
 		this.ephemeral = ephemeral;
 	}
-
-
 
 	public String getFactory() {
 		return factory;
 	}
 
-
-
 	public void setFactory(String factory) {
 		this.factory = factory;
 	}
-
-
 
 	public String getProvider() {
 		return provider;
 	}
 
-
-
 	public void setProvider(String provider) {
 		this.provider = provider;
 	}
-
-
 
 	public String getGroup() {
 		return group;
@@ -175,6 +140,7 @@ public class ModelSchema {
 	public void setImplements(List<String> list) {
 		implist = list;
 	}
+	
 	public List<String> getImplements() {
 		return implist;
 	}
@@ -182,6 +148,7 @@ public class ModelSchema {
 	public String getName() {
 		return name;
 	}
+	
 	public void setName(String name) {
 		this.name = name;
 	}
@@ -210,17 +177,13 @@ public class ModelSchema {
 		return null;
 	}
 	
-	
-	
 	public boolean isEmitModel() {
 		return emitModel;
 	}
 
-
 	public void setEmitModel(boolean emitModel) {
 		this.emitModel = emitModel;
 	}
-
 
 	public List<FieldSchema> getFields() {
 		return fields;
@@ -234,22 +197,5 @@ public class ModelSchema {
 	public void setInherits(List<String> inherits) {
 		this.inherits = inherits;
 	}
-	/*
-	public String getBaseClass() {
-		return baseClass;
-	}
-	public void setBaseClass(String baseClass) {
-		this.baseClass = baseClass;
-	}
-	*/
-	/*
-	public List<String> getValues() {
-		return values;
-	}
-	public void setValues(List<String> values) {
-		this.values = values;
-	}
-	*/
-	
-	
+
 }

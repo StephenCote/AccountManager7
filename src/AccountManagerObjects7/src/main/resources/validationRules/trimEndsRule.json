@@ -1,0 +1,6 @@
+{
+	"model": "validationRule",
+	"name": "trimEnds",
+	"type": "none",
+	"rules": ["${trimBegin}", "${trimEnd}"]
+}

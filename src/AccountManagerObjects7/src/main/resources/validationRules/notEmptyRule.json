@@ -1,0 +1,7 @@
+{
+	"model": "validationRule",
+	"name": "notEmpty",
+	"type": "boolean",
+	"expression": "\\S",
+	"rules": ["${trimEnds}"]
+}

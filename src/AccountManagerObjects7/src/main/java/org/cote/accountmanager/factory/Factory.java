@@ -107,14 +107,15 @@ public class Factory {
 			return org;
 		}
 
+		logger.warn("*** Disable field validation for new organization");
+		context.setEnforceValidation(false);
+		
 		logger.warn("*** Disable path authorization for new organization");
 		context.setEnforceAuthorization(false);
 		
 		org = context.getPathUtil().makePath(null, ModelNames.MODEL_ORGANIZATION, path, orgType.toString(), 0L);
 		long orgId = org.get(FieldNames.FIELD_ID);
 		logger.info("Created " + org.get(FieldNames.FIELD_NAME) + " from " + path + " with id " + orgId);
-
-
 		
 		BaseRecord admin = getCreateUser(null, ADMIN_USER_NAME, null, orgId, true);
 		emitRoles(org, admin);
@@ -124,41 +125,13 @@ public class Factory {
 		BaseRecord ops = getCreateUser(admin, OPS_USER_NAME, null, orgId);
 		BaseRecord vault = getCreateUser(admin, VAULT_USER_NAME, null, orgId);
 		BaseRecord docControl = getCreateUser(admin, DOCUMENT_CONTROL_USER_NAME, null, orgId);
-
-		/*
-		BaseRecord group = context.getPathUtil().makePath(admin, ModelNames.MODEL_GROUP, "/home/" + ADMIN_USER_NAME, "DATA", orgId);
-		BaseRecord group2 = context.getPathUtil().makePath(ops, ModelNames.MODEL_GROUP, "/home/" + OPS_USER_NAME, "DATA", orgId);
-		BaseRecord group3 = context.getPathUtil().makePath(vault, ModelNames.MODEL_GROUP, "/home/" + VAULT_USER_NAME, "DATA", orgId);
-		BaseRecord group4 = context.getPathUtil().makePath(docControl, ModelNames.MODEL_GROUP, "/home/" + DOCUMENT_CONTROL_USER_NAME, "DATA", orgId);
-
-		try {
-			admin.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID, group);
-			admin.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH, group);
-			context.getRecordUtil().updateRecord(admin);
-			ops.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID, group2);
-			ops.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH, group2);
-			context.getRecordUtil().updateRecord(ops);
-			vault.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID, group3);
-			vault.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH, group3);
-			context.getRecordUtil().updateRecord(vault);
-			docControl.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID, group4);
-			docControl.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH, group4);
-			context.getRecordUtil().updateRecord(docControl);
-			
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-			
-		}
-		
-		context.getRecordUtil().updateRecord(admin);
-		emitRoles(org, admin);
-		emitPermissions(org, admin);
-		configureOrganizationStore(ops, org);
-		*/
 	
 		configureOrganizationStore(ops, org);
 		logger.warn("*** Re-Enable path authorization");
 		context.setEnforceAuthorization(true);
+		
+		logger.warn("*** Re-Enable field validation");
+		context.setEnforceValidation(true);
 			
 		return org;
 	}

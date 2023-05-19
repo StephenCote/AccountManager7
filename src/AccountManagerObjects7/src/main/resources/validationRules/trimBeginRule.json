@@ -1,0 +1,8 @@
+{
+	"model": "validationRule",
+	"name": "trimBegin",
+	"expression": "^\\s+",
+	"type": "replacement",
+	"replacementValue": "",
+	"replacementValueType": "string"
+}	

@@ -406,37 +406,41 @@ public class PolicyEvaluator {
 		BaseRecord g = futil.recordRead(contextUser, matchFact, matchFact);
 		if(p == null || g == null){
 			logger.error("The " + (g == null ? "match ":"") + "fact reference " + (g == null ? matchFact.get(FieldNames.FIELD_URN) : fact.get(FieldNames.FIELD_URN)) + " was null");
-			// logger.error(matchFact.toString());
 			return OperationResponseEnumType.ERROR;
 		}
 		if(matype == FactEnumType.PERMISSION){
 			
 			BaseRecord perm = null;
 			String fdata = matchFact.get(FieldNames.FIELD_FACT_DATA);
-			if(fdata == null && mtype.equals(ModelNames.MODEL_PERMISSION)) perm = g;
-			else if(FactUtil.idPattern.matcher(fdata).matches()){
-				perm = reader.read(matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), Long.parseLong(fdata));
+			if(fdata == null && mtype.equals(ModelNames.MODEL_PERMISSION)) {
+				perm = g;
 			}
-			else if(fdata.indexOf("/") > -1) {
-				if(trace) {
-					logger.info("Find perm by path: " + fdata + " in " +  contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			else if(fdata != null) {
+				if(FactUtil.idPattern.matcher(fdata).matches()){
+			
+					perm = reader.read(matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), Long.parseLong(fdata));
 				}
-				String fdtype = matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE);
-				if(fdtype != null && (fdtype.equals(ModelNames.MODEL_PERMISSION) ||  fdtype.equals(ModelNames.MODEL_ROLE))) {
+				else if(fdata.indexOf("/") > -1) {
 					if(trace) {
-						logger.info("Stipulating permission/role type '" + fdtype + "' relative to the actor type '" + ftype + "'.  This is likely from the internally generated policy");
+						logger.info("Find perm by path: " + fdata + " in " +  contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 					}
-					fdtype = ftype;
+					String fdtype = matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE);
+					if(fdtype != null && (fdtype.equals(ModelNames.MODEL_PERMISSION) ||  fdtype.equals(ModelNames.MODEL_ROLE))) {
+						if(trace) {
+							logger.info("Stipulating permission/role type '" + fdtype + "' relative to the actor type '" + ftype + "'.  This is likely from the internally generated policy");
+						}
+						fdtype = ftype;
+					}
+					perm = search.findByPath(contextUser, ModelNames.MODEL_PERMISSION, fdata, fdtype, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 				}
-				perm = search.findByPath(contextUser, ModelNames.MODEL_PERMISSION, fdata, fdtype, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-			}
-			else{
-				if(trace) {
-					logger.info("Find perm by urn: " + fdata);
-				}
-				BaseRecord[] perms = search.findByUrn(matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), fdata);
-				if(perms.length > 0) {
-					perm = perms[0];
+				else{
+					if(trace) {
+						logger.info("Find perm by urn: " + fdata);
+					}
+					BaseRecord[] perms = search.findByUrn(matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), fdata);
+					if(perms.length > 0) {
+						perm = perms[0];
+					}
 				}
 			}
 			if(perm == null){
@@ -456,28 +460,6 @@ public class PolicyEvaluator {
 		
 		boolean authZ = memberUtil.isMember(src, role, true);
 
-		/*
-		logger.info("Is member: " + authZ);
-		logger.info(JSONUtil.exportObject(src, RecordSerializerConfig.getUnfilteredModule()));
-		logger.info(JSONUtil.exportObject(role, RecordSerializerConfig.getUnfilteredModule()));
-		logger.info(JSONUtil.exportObject(targ, RecordSerializerConfig.getUnfilteredModule()));
-		*/
-		/*
-		if(targ.getNameType() == NameEnumType.ROLE){
-			switch(src.getNameType()){
-				case USER:
-				case PERSON:
-				case ACCOUNT:
-					authZ = EffectiveAuthorizationService.getIsActorInEffectiveRole(role, src);
-					break;
-				default:
-					logger.error("Unexpected source type: " + src.getNameType());
-					break;
-
-			}
-		}
-
-		*/
 		if(authZ){
 			outResponse = OperationResponseEnumType.SUCCEEDED;
 		}
@@ -492,10 +474,6 @@ public class PolicyEvaluator {
 			logger.info(targ.toFullString());
 			logger.info("AuthZ: " + authZ);
 		}
-		/*
-		logger.error("Not converted");
-
-		*/
 
 		if(authZ){
 			outResponse = OperationResponseEnumType.SUCCEEDED;
@@ -506,7 +484,6 @@ public class PolicyEvaluator {
 
 	private OperationResponseEnumType evaluateOperation(BaseRecord prt,BaseRecord prr, BaseRecord pattern, BaseRecord fact, BaseRecord matchFact, String operationClass, String operation) throws ScriptException, ValueException, IndexException, ReaderException {
 		OperationResponseEnumType outResponse = OperationResponseEnumType.UNKNOWN;
-		// logger.info("*** Evaluate operation: " + operationClass + " / " + operation);
 		if(operationClass != null) {
 			IOperation oper = OperationUtil.getOperationInstance(operationClass, reader, search);
 			if(oper == null) outResponse = OperationResponseEnumType.ERROR;

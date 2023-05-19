@@ -4,6 +4,14 @@
 	"inherits": [
 		"nameId"
 	],
+	"validation": {
+		"rules": [
+			{
+				"fields": ["name"],
+				"rules": ["$minLen5"]
+			}
+		]
+	},
 	"fields": [
 		{
 			"name": "contactInformation",

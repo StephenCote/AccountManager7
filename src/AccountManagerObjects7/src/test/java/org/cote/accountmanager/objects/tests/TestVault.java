@@ -217,7 +217,7 @@ public class TestVault extends BaseTest {
 			logger.error(e);
 			
 		}
-		assertNotNull("Vault was not created", created);
+		assertTrue("Vault was not created", created);
 		
 		BaseRecord cred = vs.loadProtectedCredential(vaultPath + vaultName);
 		assertNotNull("Protected credential is null", cred);
@@ -269,7 +269,7 @@ public class TestVault extends BaseTest {
 				logger.error(e);
 				
 			}
-			assertNotNull("Vault was not created", created);
+			assertTrue("Vault was not created", created);
 			BaseRecord cred = vs.loadProtectedCredential(vaultPath + vaultName);
 			assertNotNull("Protected credential is null", cred);
 			VaultBean newVault = vs.newVault(testUser1, vaultPath + "vault", vaultName2);

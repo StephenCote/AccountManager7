@@ -9,6 +9,7 @@
 		"required": true,
 		"index": true,
 		"allowNull": false,
-		"maxLength":256
+		"maxLength":256,
+		"rules": ["$notEmpty"]
 	}
 ]}

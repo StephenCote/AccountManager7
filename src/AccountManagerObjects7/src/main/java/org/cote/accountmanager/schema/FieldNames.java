@@ -242,5 +242,10 @@ public class FieldNames {
 		public static  final String FIELD_TOKEN = "token";
 		public static  final String FIELD_WIDTH = "width";
 		public static  final String FIELD_HEIGHT = "height";
+		
+		public static final String FIELD_COMPARISON = "comparison";
+		public static final String FIELD_ALLOW_NULL = "allowNull";
+		public static final String FIELD_EXPRESSION = "expression";
+		public static final String FIELD_REPLACEMENT_VALUE = "replacementValue";
 
 }

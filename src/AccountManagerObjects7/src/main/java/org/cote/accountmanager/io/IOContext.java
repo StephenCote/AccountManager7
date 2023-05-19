@@ -45,6 +45,7 @@ public class IOContext {
 	private DBUtil dbUtil = null;
 	private AccessPoint accessPoint = null;
 	private boolean enforceAuthorization = true;
+	private boolean enforceValidation = true;
 	
 	private Map<String, OrganizationContext> organizations = new HashMap<>();
 	
@@ -80,6 +81,14 @@ public class IOContext {
 
 	public AccessPoint getAccessPoint() {
 		return accessPoint;
+	}
+	
+	public boolean isEnforceValidation() {
+		return enforceValidation;
+	}
+
+	public void setEnforceValidation(boolean enforceValidation) {
+		this.enforceValidation = enforceValidation;
 	}
 
 	public void setEnforceAuthorization(boolean enforce) {
