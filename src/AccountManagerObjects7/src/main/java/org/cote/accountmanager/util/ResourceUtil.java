@@ -15,7 +15,10 @@ public class ResourceUtil {
 	
 	private static Map<String, String> cache = new HashMap<>();
 	public static String RESOURCE_PREFIX = "";
-	
+
+	public static String getCategoryResource(String name) {
+		return getResource(RESOURCE_PREFIX + "categories/" + name + "Category.json");
+	}
 	public static String getModelResource(String name) {
 		return getResource(RESOURCE_PREFIX + "models/" + name + "Model.json");
 	}

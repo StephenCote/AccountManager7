@@ -1,0 +1,7 @@
+{
+	"model": "modelCategory",
+	"name": "project",
+    "label" : "Project",
+    "order" : ["lifecycle", "project", "stage", "work", "task"],
+    "icon" : "dynamic_form"
+}

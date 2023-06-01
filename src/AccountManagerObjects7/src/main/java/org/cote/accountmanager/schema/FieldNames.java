@@ -247,5 +247,11 @@ public class FieldNames {
 		public static final String FIELD_ALLOW_NULL = "allowNull";
 		public static final String FIELD_EXPRESSION = "expression";
 		public static final String FIELD_REPLACEMENT_VALUE = "replacementValue";
-
+		public static final String FIELD_SYSTEM_ROLES = "systemRoles";
+		public static final String FIELD_USER_ROLES = "userRoles";
+		public static final String FIELD_SYSTEM_PERMISSIONS = "systemPermissions";
+		
+		
+		public static final String FIELD_USER = "user";
+		public static final String FIELD_PERSON = "person";
 }

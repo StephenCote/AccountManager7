@@ -6,10 +6,10 @@ import java.util.List;
 import javax.annotation.security.DeclareRoles;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
-import javax.ws.rs.POST;
+import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.PATCH;
-import javax.ws.rs.DELETE;
+import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -20,27 +20,17 @@ import javax.ws.rs.core.Response;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ReaderException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
-import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.model.field.FieldType;
-import org.cote.accountmanager.objects.generated.PolicyResponseType;
-import org.cote.accountmanager.objects.generated.PolicyType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordSerializerConfig;
-import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"admin","user"})
@@ -59,7 +49,7 @@ public class ModelService {
 			return Response.status(404).entity(null).build();
 		}
 
-		return Response.status(200).entity(rec.toFilteredString()).build();
+		return Response.status(200).entity(rec.toFullString()).build();
 	}
 	
 	@DELETE
@@ -100,7 +90,7 @@ public class ModelService {
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response createModel(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
-		
+		logger.info(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		if(imp == null) {
@@ -133,7 +123,7 @@ public class ModelService {
 
 		String ops = null;
 		if(oop != null) {
-			ops = oop.copyRecord(outFields.toArray(new String[0])).toFilteredString();
+			ops = oop.copyRecord(outFields.toArray(new String[0])).toFullString();
 		}
 		return Response.status(200).entity(ops).build();
 	}
@@ -153,7 +143,7 @@ public class ModelService {
 		QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, query);
 		String ops = null;
 		if(qr != null) {
-			ops = qr.toFilteredString();
+			ops = qr.toFullString();
 		}
 		return Response.status(200).entity(ops).build();
 	}

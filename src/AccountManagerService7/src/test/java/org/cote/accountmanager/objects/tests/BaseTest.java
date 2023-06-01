@@ -51,6 +51,7 @@ import org.cote.accountmanager.schema.type.OperationEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.schema.type.PatternEnumType;
+import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.ParameterUtil;
@@ -98,7 +99,26 @@ public class BaseTest {
 		assertTrue("Expected org to be initialized", octx.isInitialized());
 		orgContext = octx;
 	}
+	protected BaseRecord getCreateCredential(BaseRecord user) {
+		return getCreateCredential(user, "password");
+	}
 	
+	protected BaseRecord getCreateCredential(BaseRecord user, String pwd) {
+		BaseRecord cred = CredentialUtil.getLatestCredential(user);
+		if(cred == null) {
+			ParameterList plist = ParameterUtil.newParameterList("password", pwd);
+			plist.parameter("type", CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
+			try {
+				cred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, user, null, plist);
+				ioContext.getRecordUtil().createRecord(cred);
+				cred = CredentialUtil.getLatestCredential(user);
+			}
+			catch(FactoryException e) {
+				logger.error(e);
+			}
+		}
+		return cred;
+	}
 	protected void createOrg(String path, OrganizationEnumType type) {
 		logger.info("Creating organization " + path);
 		OrganizationContext octx = ioContext.getOrganizationContext(path, type);
@@ -109,6 +129,8 @@ public class BaseTest {
 			plist.parameter("type", CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
 			BaseRecord cred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, admin, null, plist);
 			ioContext.getRecordUtil().createRecord(cred);
+			logger.info("Created credential");
+			logger.info(cred.toFullString());
 
 		} catch (NullPointerException | SystemException | FactoryException e) {
 			logger.error(e);

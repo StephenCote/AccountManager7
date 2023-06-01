@@ -123,12 +123,13 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         else {
         	lastModel = modelName;
         }
-        if(modelName.equals(ModelNames.MODEL_SELF)) {
-        	logger.error("Unresolved self reference");
+        if(modelName.equals(ModelNames.MODEL_SELF) || modelName.equals(ModelNames.MODEL_FLEX)) {
+        	logger.error("Unresolved " + modelName +" reference");
     		logger.error("Current node: " + node.toString());
     		logger.error(JSONUtil.exportObject(currentNode));
     		return null;
         }
+
         ModelSchema ltype = RecordFactory.getSchema(modelName);
         List<FieldType> fields = new ArrayList<>();
         BaseRecord type = null;

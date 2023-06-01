@@ -94,4 +94,11 @@ public class CacheAuthorizationUtil extends AuthorizationUtil implements ICache 
 		// TODO Auto-generated method stub
 		
 	}
+	
+	@Override
+	public void clearCacheByModel(String model) {
+		// TODO Auto-generated method stub
+
+	}
+	
 }

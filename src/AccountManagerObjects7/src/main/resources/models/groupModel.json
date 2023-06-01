@@ -1,6 +1,8 @@
 {
 "name": "group",
 "inherits": ["nameId", "path", "parent"],
+"icon": "folder",
+"label": "Group",
 "fields": [
 	{
 		"name": "type",

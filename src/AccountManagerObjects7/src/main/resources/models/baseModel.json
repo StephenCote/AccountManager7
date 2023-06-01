@@ -17,6 +17,12 @@
 			"identity": true,
 			"readOnly": true,
 			"maxLength": 64
+		},
+		{
+			"name": "uri",
+			"type": "string",
+			"virtual": true,
+			"maxLength": 255
 		}
 	]
 }

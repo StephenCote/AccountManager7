@@ -44,6 +44,8 @@ public class FieldSchema {
 	private Object defaultValue = null;
 	private ModelAccess access = null;
 	private String description = null;
+	private String label = null;
+	private String icon = null;
 	private List<String> rules = new ArrayList<>();
 	
 	@JsonProperty("private")

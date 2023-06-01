@@ -1,4 +1,4 @@
-package org.cote.accountmanager.schema;
+package org.cote.accountmanager.schema.type;
 
 public enum SystemPermissionEnumType {
 	UNKNOWN,

@@ -1,6 +1,8 @@
 {
 "name": "account",
 "inherits": ["directory"],
+"icon": "account_circle",
+"label": "Account",
 "fields": [
 	{
 	"name": "contactInformation",

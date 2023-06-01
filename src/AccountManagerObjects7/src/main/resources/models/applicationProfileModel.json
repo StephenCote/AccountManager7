@@ -1,0 +1,35 @@
+ {
+"name": "applicationProfile",
+"inherits": ["organizationExt"],
+"ephemeral": true,
+"fields": [
+		{
+			"name": "systemRoles",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "role"
+		},
+		{
+			"name": "userRoles",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "role"
+		},
+		{
+			"name": "systemPermissions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "permission"
+		},
+		{
+			"name": "user",
+			"type": "model",
+			"baseModel": "user"
+		},
+		{
+			"name": "person",
+			"type": "model",
+			"baseModel": "person"
+		}
+		
+]}

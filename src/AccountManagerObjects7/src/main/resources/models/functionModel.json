@@ -1,6 +1,8 @@
 {
 "name": "function",
 "inherits": ["baseAuthorization"],
+"icon": "functions",
+"label": "Function",
 "fields": [
 	{
 		"name": "facts",

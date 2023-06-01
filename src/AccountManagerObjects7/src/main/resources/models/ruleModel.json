@@ -2,6 +2,8 @@
 "name": "rule",
 "inherits": ["baseAuthorization"],
 "group": "Rules",
+"icon": "rule",
+"label": "Rule",
 "fields": [
 	{
 	"name": "rules",

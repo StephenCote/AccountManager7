@@ -1,0 +1,10 @@
+{
+	"model": "modelCategory",
+	"name": "article",
+	"prototype": true,
+    "pathName" : "Articles",
+    "childTypes" : ["data","group"],
+    "type" : "group",
+    "icon" : "article",
+    "order" : ["group","data"]
+}

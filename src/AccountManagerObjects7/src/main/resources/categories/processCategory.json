@@ -1,0 +1,7 @@
+{
+	"model": "modelCategory",
+	"name": "process",
+    "label" : "Process",
+    "order" : ["accessRequest", "methodology","process","processstep"],
+    "icon" : "insights"
+}

@@ -77,6 +77,10 @@ public class RecordFactory {
 		rawModels.put(name,  data);
 	}
 	
+	public static Map<String, String> getRawModels(){
+		return rawModels;
+	}
+	
 	@SuppressWarnings("unchecked")
 	public static <T> T getClassInstance(String cls) {
 		if(!instMap.containsKey(cls)) {

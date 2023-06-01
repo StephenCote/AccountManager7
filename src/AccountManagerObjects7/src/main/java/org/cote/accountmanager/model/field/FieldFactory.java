@@ -107,7 +107,8 @@ public class FieldFactory {
 			if(type != null && value != null) {
 				type.setValue(value);
 			}
-		} catch (ValueException | ModelException e) {
+		} catch (Exception e) {
+			logger.error("Error with " + typen.toString() + " " + name);
 			logger.error(e);
 		}
 		return type;

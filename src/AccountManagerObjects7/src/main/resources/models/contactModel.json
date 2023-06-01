@@ -1,6 +1,8 @@
 {
 "name": "contact",
 "inherits": ["directory", "description"],
+"icon": "contact_page",
+"label": "Contact",
 "fields": [
 	{
 		"name": "contactValue",

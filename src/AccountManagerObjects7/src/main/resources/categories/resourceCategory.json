@@ -1,0 +1,7 @@
+{
+	"model": "modelCategory",
+	"name": "resource",
+    "label" : "Resources",
+    "order" : ["artifact","resource","estimate","cost","time","module","ticket"],
+    "icon" : "web_asset"
+}

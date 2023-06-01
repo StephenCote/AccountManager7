@@ -1,0 +1,7 @@
+{
+	"model": "modelCategory",
+	"name": "business",
+    "label" : "Business",
+    "order" : ["goal","budget","schedule","case","requirement","model","estimate"],
+    "icon" : "business_center"
+}

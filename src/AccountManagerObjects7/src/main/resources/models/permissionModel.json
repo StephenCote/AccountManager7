@@ -2,6 +2,8 @@
 "name": "permission",
 "inherits": ["nameId", "path", "parent"],
 "constraints": ["parentId", "name", "type"],
+"icon": "shield",
+"label": "Permission",
 "fields": [
 	{
 		"name": "type",

@@ -37,6 +37,7 @@ public class QueryResult extends LooseRecord{
 			try {
 				set(FieldNames.FIELD_QUERY_KEY, query.key());
 				set(FieldNames.FIELD_QUERY_HASH, query.hash());
+				set(FieldNames.FIELD_TYPE, query.get(FieldNames.FIELD_TYPE));
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 				

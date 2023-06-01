@@ -1,0 +1,8 @@
+{
+	"model": "modelCategory",
+	"name": "identity",
+    "label" : "Identity",
+    "icon" : "account_tree",
+    "order" : ["user","person","account","role","permission","contact","address"],
+    "prototypes" : ["${application}"]
+}

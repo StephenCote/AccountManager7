@@ -1,6 +1,8 @@
 {
 "name": "organization",
 "inherits": ["nameId", "parent", "path"],
+"icon": "public",
+"label": "Organization",
 "fields": [
 	{
 		"name": "type",

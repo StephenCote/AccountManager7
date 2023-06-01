@@ -258,6 +258,46 @@ public class QueryUtil {
 		}
 		return lst;
 	}
+	
+	public static Query buildQuery(BaseRecord user, String type, String containerId, String name, long startIndex, int recordCount) {
+		String clusterField = null;
+		String clusterType = null;
+		ModelSchema ms = RecordFactory.getSchema(type);
+		if(ms == null) {
+			logger.error("Invalid model: '" + type + "'");
+			return null;
+		}
+		boolean isGroup = ms.getInherits().contains(ModelNames.MODEL_DIRECTORY);
+		boolean isParent = ms.getInherits().contains(ModelNames.MODEL_PARENT);
+		
+		Query q = null;
+		if(isGroup || isParent) {
+			if(isGroup) {
+				clusterField = FieldNames.FIELD_GROUP_ID;
+				clusterType = ModelNames.MODEL_GROUP;
+			}
+			else if(isParent) {
+				clusterField = FieldNames.FIELD_PARENT_ID;
+				clusterType = type;
+			}
+			BaseRecord pargrp = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, clusterType, containerId);
+			if(pargrp != null) {
+				q = QueryUtil.createQuery(type, clusterField, pargrp.get(FieldNames.FIELD_ID));
+			}
+
+		}
+		else {
+			logger.error("TODO: List for system");
+			q = QueryUtil.createQuery(type);
+		}
+		if(q != null) {
+			q.setRequestRange(startIndex, recordCount);
+			if(name != null) {
+				q.field(FieldNames.FIELD_NAME, name);
+			}
+		}
+		return q;
+	}
 
 
 }

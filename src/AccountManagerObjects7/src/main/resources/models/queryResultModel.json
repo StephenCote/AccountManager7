@@ -3,6 +3,12 @@
 "ioConstraints": ["file"],
 "fields": [
 	{
+		"name": "type",
+		"type": "string",
+		"required": true,
+		"maxLength": 32
+	},
+	{
 		"name": "queryKey",
 		"type": "string",
 		"maxLength": 255

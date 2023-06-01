@@ -1,0 +1,7 @@
+{
+	"model": "modelCategory",
+	"name": "form",
+    "label" : "Forms",
+    "order" : ["form","formelement","validationrule"],
+    "icon" : "dynamic_form"
+}

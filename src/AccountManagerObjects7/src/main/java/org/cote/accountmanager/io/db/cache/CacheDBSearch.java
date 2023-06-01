@@ -13,6 +13,7 @@ import org.cote.accountmanager.io.db.DBReader;
 import org.cote.accountmanager.io.db.DBSearch;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class CacheDBSearch extends DBSearch implements ICache {
@@ -73,6 +74,11 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			}
 			return match;
 		});
+	}
+	
+	@Override
+	public void clearCacheByModel(String model) {
+		cache.values().removeIf(entry -> model.equals((String)entry.get(FieldNames.FIELD_TYPE)));
 	}
 
 	@Override

@@ -154,6 +154,12 @@ public class TokenService {
 	public static Jws<Claims> extractJWTClaims(String token){
 		return Jwts.parser().setSigningKeyResolver(new AM7SigningKeyResolver()).parseClaimsJws(token);
 	}
+	
+	public static String validateTokenToSubject(String token){
+		logger.info("Validating token: '" + token + "'");
+		return Jwts.parser().setSigningKeyResolver(new AM7SigningKeyResolver()).parseClaimsJws(token).getBody().getSubject();
+	}
+	
 	public static Claims validateSpooledJWTToken(String token) throws IndexException, ReaderException {
 		return validateSpooledJWTToken(token, false, false);
 	}
@@ -357,16 +363,25 @@ public class TokenService {
 					return ModelNames.MODEL_ROLE.equals(type);
 				}
 				else {
-					String type = o.get(FieldNames.FIELD_PARTICIPATION_MODEL);
-					return ModelNames.MODEL_ROLE.equals(type);
+					return true;
+					/// String type = o.get(FieldNames.FIELD_PARTICIPATION_MODEL);
+					/// return ModelNames.MODEL_ROLE.equals(type);
 				}
 			}).collect(Collectors.toList());
 		//}
 		
 		List<String> buff = new ArrayList<>();
 		for(BaseRecord b : entsl) {
-			long id = b.get(FieldNames.FIELD_PART_ID);
-			BaseRecord rb = IOSystem.getActiveContext().getReader().read(b.get(FieldNames.FIELD_TYPE), id);
+			BaseRecord rb = null;
+			if(b.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
+				long id = b.get(FieldNames.FIELD_PART_ID);
+				rb = IOSystem.getActiveContext().getReader().read(b.get(FieldNames.FIELD_TYPE), id);
+			}
+			else {
+				rb = b;
+			}
+			
+			 
 			if(rb != null) {
 				buff.add(rb.get(FieldNames.FIELD_NAME));
 			}

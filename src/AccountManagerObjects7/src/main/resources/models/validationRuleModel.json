@@ -1,6 +1,8 @@
 {
 "name": "validationRule",
 "inherits": ["directory", "description"],
+"icon": "rule",
+"label": "Validation Rule",
 "fields": [
 	{
 		"name": "errorMessage",

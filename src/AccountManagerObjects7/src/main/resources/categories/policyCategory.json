@@ -1,0 +1,7 @@
+{
+	"model": "modelCategory",
+	"name": "policy",
+    "label" : "Policy",
+    "order" : ["policy","rule","pattern","fact","operation","function"],
+    "icon" : "policy"
+}

@@ -85,29 +85,6 @@ public class FieldUtil {
 		   if(fet != FieldEnumType.UNKNOWN) {
 			   setFlex(record, fieldName, fet, value);
 		   }
-		   /*
-		   if(value instanceof Enum) {
-			   setFlex(record, fieldName, FieldEnumType.ENUM, value);
-		   }
-		   else if(value instanceof String) {
-			   setFlex(record, fieldName, FieldEnumType.STRING, value);
-		   }
-		   else if(value instanceof Integer) {
-			   setFlex(record, fieldName, FieldEnumType.INT, value);
-		   }
-		   else if(value instanceof Long) {
-			   setFlex(record, fieldName, FieldEnumType.LONG, value);
-		   }
-		   else if(value instanceof Date) {
-			   setFlex(record, fieldName, FieldEnumType.TIMESTAMP, value);
-		   }
-		   else if(value instanceof Boolean) {
-			   setFlex(record, fieldName, FieldEnumType.BOOLEAN, value);
-		   }
-		   else if(value instanceof Double) {
-			   setFlex(record, fieldName, FieldEnumType.DOUBLE, value);
-		   }
-		   */
 		   else if(value != null){
 			   logger.error("Failed to set flex field: " + fieldName);
 		   }
@@ -141,8 +118,9 @@ public class FieldUtil {
 					logger.error("Unhandled type: " + type.toString());
 					break;
 			}
-		} catch (FieldException | ValueException | ModelException | ModelNotFoundException e) {
+		} catch (Exception e) {
 			logger.error(e);
+			logger.error("Error setting flex " + type.toString() + " " + fieldName + " in " + record.getModel());
 		}
 	} 
 	

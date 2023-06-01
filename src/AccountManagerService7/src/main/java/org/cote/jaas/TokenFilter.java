@@ -40,7 +40,7 @@ public class TokenFilter implements Filter{
 	    	}
 	    }
 	    else {
-	    	logger.warn("No bearer");
+	    	// logger.warn("No bearer");
 	    }
 	    if(didChain == false){
 	    	chain.doFilter(request, response);

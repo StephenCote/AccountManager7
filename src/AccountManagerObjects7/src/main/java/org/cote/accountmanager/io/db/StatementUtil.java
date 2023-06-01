@@ -675,14 +675,14 @@ public class StatementUtil {
 							BaseRecord crec = (BaseRecord)value;
 							if(colType.equals("bigint")) {
 								long id = 0L;
-								if(crec != null) {
+								if(crec != null && crec.hasField(FieldNames.FIELD_ID)) {
 									id = crec.get(FieldNames.FIELD_ID);
 								}
 								statement.setLong(index, id);
 							}
 							else if(colType.equals("text") || colType.startsWith("varchar")) {
 								String id = null;
-								if(crec != null) {
+								if(crec != null && crec.hasField(FieldNames.FIELD_OBJECT_ID)) {
 									id = crec.get(FieldNames.FIELD_OBJECT_ID);
 								}
 								statement.setString(index, id);

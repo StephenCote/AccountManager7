@@ -32,6 +32,11 @@ public class CacheUtil {
 			c.clearCache(key);
 		});
 	}
+	public static void clearCacheByModel(String model) {
+		cacheProviders.forEach(c -> {
+			c.clearCacheByModel(model);
+		});
+	}
 	public static void clearCache(BaseRecord rec) {
 		cacheProviders.forEach(c -> {
 			c.clearCache(rec);

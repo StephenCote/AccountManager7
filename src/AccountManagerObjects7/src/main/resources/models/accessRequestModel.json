@@ -2,6 +2,8 @@
 "name": "accessRequest",
 "inherits": ["baseAccess", "approver", "hashExt"],
 "factory": "org.cote.accountmanager.factory.AccessRequestFactory",
+"icon": "switch_access_shortcut",
+"label": "Access Request",
 "access": {
 	"roles": {
 		"create": ["Requesters"],

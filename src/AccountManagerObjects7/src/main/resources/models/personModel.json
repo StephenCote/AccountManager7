@@ -1,6 +1,8 @@
 {
 "name": "person",
 "inherits": ["directory"],
+"icon": "person",
+"label": "Person",
 "fields": [
 	{
 	"name": "description",

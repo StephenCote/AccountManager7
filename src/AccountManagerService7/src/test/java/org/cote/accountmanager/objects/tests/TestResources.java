@@ -9,8 +9,13 @@ import java.io.InputStream;
 import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOFactory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.ModelNames;
@@ -57,7 +62,7 @@ public class TestResources extends BaseTest {
 		BaseRecord user = orgContext.getAdminUser();
 		assertNotNull("User is null", user);
 		
-		BaseRecord cred = CredentialUtil.getLatestCredential(user);
+		BaseRecord cred = getCreateCredential(user, pwd);
 		assertNotNull("Cred is null", cred);
 		
 		VerificationEnumType vet = VerificationEnumType.UNKNOWN;

@@ -4,6 +4,8 @@
 	"inherits": [
 		"nameId"
 	],
+	"icon": "verified_user",
+	"label": "User",
 	"validation": {
 		"rules": [
 			{

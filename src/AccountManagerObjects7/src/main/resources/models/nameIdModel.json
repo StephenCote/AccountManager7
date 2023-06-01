@@ -1,6 +1,6 @@
 {
 "name": "nameId",
-"inherits": ["base"],
+"inherits": ["base", "controlsExt", "tagsExt"],
 "abstract": true,
 "fields": [
 	{

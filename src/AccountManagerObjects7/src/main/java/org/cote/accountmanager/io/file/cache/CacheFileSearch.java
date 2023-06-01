@@ -42,6 +42,11 @@ public class CacheFileSearch extends FileSearch implements ICache {
 	}
 	
 	@Override
+	public void clearCacheByModel(String model) {
+		cache.values().removeIf(entry -> model.equals((String)entry.get(FieldNames.FIELD_TYPE)));
+	}
+	
+	@Override
 	public QueryResult find(Query query) throws IndexException, ReaderException {
 		QueryResult res = null;
 		String hash = query.hash();
@@ -67,6 +72,8 @@ public class CacheFileSearch extends FileSearch implements ICache {
 			clearCacheByIdx(idx);
 		}
 	}
+	
+	
 
 	@Override
 	public void clearCacheByIdx(IndexEntry idx) {

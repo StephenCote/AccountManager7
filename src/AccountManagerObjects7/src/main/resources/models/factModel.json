@@ -2,6 +2,8 @@
 "name": "fact",
 "inherits": ["baseAuthorization"],
 "group": "Facts",
+"icon": "fact_check",
+"label": "Fact",
 "fields": [
 	{
 		"name": "factReference",

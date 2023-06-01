@@ -1,0 +1,13 @@
+{
+	"name": "tagsExt",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "tags",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "tag",
+			"foreign": true
+		}
+	]
+}

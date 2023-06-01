@@ -1,0 +1,7 @@
+{
+	"model": "modelCategory",
+	"name": "event",
+    "label" : "Event",
+    "order" : ["message", "location","event","trait"],
+    "icon" : "event_note"
+}

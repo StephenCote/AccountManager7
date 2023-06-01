@@ -1,5 +1,7 @@
 package org.cote.accountmanager.factory;
 
+import java.util.Iterator;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -35,13 +37,15 @@ public class FactoryBase implements IFactory {
 			rec = RecordFactory.newInstance(schema.getName());
 			if(recordTemplate != null && schema.getName().equals(recordTemplate.getModel())) {
 				// logger.info("Apply template");
-				for(FieldType f : recordTemplate.getFields()) {
+				//for(FieldType f : recordTemplate.getFields()) {
+				for(int i = 0; i < recordTemplate.getFields().size(); i++) {
+					FieldType f = recordTemplate.getFields().get(i);
 					FieldSchema fs = schema.getFieldSchema(f.getName());
 					if(fs.isReadOnly() || fs.isIdentity()) {
 						continue;
 					}
 					try {
-						// logger.info("Set " + f.getName() + " = " + recordTemplate.get(f.getName()));
+						//logger.info("Set " + f.getName() + " = " + recordTemplate.get(f.getName()));
 						rec.set(f.getName(), recordTemplate.get(f.getName()));
 					} catch (ValueException e) {
 						logger.error(e);

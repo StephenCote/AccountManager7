@@ -1,0 +1,10 @@
+{
+	"model": "modelCategory",
+	"name": "application",
+    "pathName" : "Applications",
+    "prototype": true,
+    "type" : "group",
+    "limit" : ["data","group","permission","account"],
+    "icon" : "web_asset",
+    "order" : ["account","group","permission","data"]
+}

@@ -1,0 +1,13 @@
+{
+	"name": "controlsExt",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "controls",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "control",
+			"foreign": true
+		}
+	]
+}

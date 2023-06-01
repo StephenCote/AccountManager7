@@ -37,10 +37,65 @@ public class ModelSchema {
 	private ModelIO io = null;
 	private ModelValidation validation = null;
 	
+	private String description = null;
+	private String label = null;
+	private String icon = null;
+	private List<String> categories = new ArrayList<>();
+	
 	public ModelSchema() {
 		
 	}
 	
+	
+	
+	public String getDescription() {
+		return description;
+	}
+
+
+
+	public void setDescription(String description) {
+		this.description = description;
+	}
+
+
+
+	public String getLabel() {
+		return label;
+	}
+
+
+
+	public void setLabel(String label) {
+		this.label = label;
+	}
+
+
+
+	public String getIcon() {
+		return icon;
+	}
+
+
+
+	public void setIcon(String icon) {
+		this.icon = icon;
+	}
+
+
+
+	public List<String> getCategories() {
+		return categories;
+	}
+
+
+
+	public void setCategories(List<String> categories) {
+		this.categories = categories;
+	}
+
+
+
 	public ModelValidation getValidation() {
 		return validation;
 	}

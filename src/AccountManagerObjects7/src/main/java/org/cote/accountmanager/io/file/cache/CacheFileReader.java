@@ -41,6 +41,11 @@ public class CacheFileReader extends FileReader implements ICache {
 	}
 
 	@Override
+	public void clearCacheByModel(String model) {
+		cache.values().removeIf(entry -> model.equals(entry.getModel()));
+	}
+	
+	@Override
 	public void clearCache(BaseRecord rec) {
 		if(!RecordUtil.isIdentityRecord(rec)) {
 			return;

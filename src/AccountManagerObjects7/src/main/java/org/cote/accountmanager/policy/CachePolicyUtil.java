@@ -129,6 +129,12 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		// TODO Auto-generated method stub
 		
 	}
+	
+	@Override
+	public void clearCacheByModel(String model) {
+		// TODO Auto-generated method stub
+
+	}
 
 	@Override
 	public void clearCache(BaseRecord rec) {

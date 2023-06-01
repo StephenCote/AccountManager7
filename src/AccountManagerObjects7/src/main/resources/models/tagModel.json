@@ -1,0 +1,13 @@
+{
+"name": "tag",
+"inherits": ["directory", "description"],
+"group": "Tags",
+"icon": "category",
+"label": "Tag",
+"fields": [
+	{
+		"name": "type",
+		"type": "string",
+		"maxLength": 32
+	}
+]}

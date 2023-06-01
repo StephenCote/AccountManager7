@@ -2,6 +2,8 @@
 "name": "role",
 "inherits": ["nameId", "path", "parent"],
 "constraints": ["parentId", "name", "type"],
+"icon": "badge",
+"label": "Role",
 "fields": [
 	{
 	"name": "type",

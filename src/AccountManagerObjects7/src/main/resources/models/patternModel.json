@@ -2,6 +2,8 @@
 "name": "pattern",
 "inherits": ["baseAuthorization"],
 "group": "Patterns",
+"icon": "texture",
+"label": "Pattern",
 "fields": [
 	{
 		"name": "fact",

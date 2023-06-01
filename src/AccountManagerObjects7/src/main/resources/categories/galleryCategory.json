@@ -1,0 +1,10 @@
+    {
+    	"model": "modelCategory",
+    	"name": "gallery",
+    	"prototype": true,
+        "pathName" : "GalleryHome",
+        "limit" : ["data","group"],
+        "type" : "group",
+        "icon" : "collections",
+        "order" : ["group","data"]
+    }

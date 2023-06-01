@@ -34,7 +34,6 @@ public class ThumbnailUtil {
 		//OrganizationContext oct = ioContext.getOrganizationContext(record.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 
 		IOContext ctx = IOSystem.getActiveContext();
-		ctx.getReader().populate(record);
 		
 		if(!canCreateThumbnail(record)) {
 			logger.error("Unable to create a thumbnail from content type: " + record.get(FieldNames.FIELD_CONTENT_TYPE));
@@ -71,6 +70,7 @@ public class ThumbnailUtil {
 		}
 
 		logger.info("Loading image bytes ...");
+		ctx.getReader().populate(record);
 		byte[] imageBytes = record.get(FieldNames.FIELD_BYTE_STORE);
 		if(imageBytes.length == 0 && record.hasField(FieldNames.FIELD_STREAM)) {
 			BaseRecord stream = record.get(FieldNames.FIELD_STREAM);
@@ -105,7 +105,7 @@ public class ThumbnailUtil {
 			thumb = ctx.getFactory().newInstance(ModelNames.MODEL_THUMBNAIL, owner, null, plist);
 		}
 
-		thumb.set(FieldNames.FIELD_CONTENT_TYPE, record.get(FieldNames.FIELD_CONTENT_TYPE));
+		thumb.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
 		thumb.set(FieldNames.FIELD_BYTE_STORE, thumbBytes);
 		thumb.set(FieldNames.FIELD_REFERENCE_ID, record.get(FieldNames.FIELD_OBJECT_ID));
 		thumb.set(FieldNames.FIELD_WIDTH, width);

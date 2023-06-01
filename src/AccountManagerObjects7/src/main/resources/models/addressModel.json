@@ -1,6 +1,8 @@
 {
 "name": "address",
 "inherits": ["directory", "description"],
+"icon": "maps_home_work",
+"label": "Address",
 "fields": [
 	{
 	"name": "addressLine1",

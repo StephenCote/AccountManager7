@@ -4,13 +4,16 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -31,20 +34,88 @@ import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.schema.type.StreamEnumType;
-import org.cote.accountmanager.schema.type.ValidationEnumType;
+import org.cote.accountmanager.schema.SchemaUtil;
+import org.cote.accountmanager.schema.type.*;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ContentTypeUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.GraphicsUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ThumbnailUtil;
 import org.junit.Test;
 
 public class TestData extends BaseTest {
+
+	@Test
+	public void TestTag() {
+		logger.info("Tag data");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Data");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String tagName = "Tag - " + UUID.randomUUID().toString();
+		String tagGroupPath = "~/Tags";
+		
+		String dataName = "Test Data - " + UUID.randomUUID().toString();
+		String groupPath = "~/Tagged Data";
+		ParameterList tplist = ParameterList.newParameterList("path", tagGroupPath);
+		tplist.parameter("name", tagName);
+
+		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		plist.parameter("name", dataName);
+
+		
+		BaseRecord data = null;
+		BaseRecord tag = null;
+		try {
+			tag = ioContext.getFactory().newInstance(ModelNames.MODEL_TAG, testUser1, null, plist);
+			tag = ioContext.getAccessPoint().create(testUser1, tag);
+			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
+			data = ioContext.getAccessPoint().create(testUser1, data);
+			boolean tagged = ioContext.getMemberUtil().member(testUser1, data, tag, null, true);
+			assertTrue("Failed to tag", tagged);
+			
+			List<BaseRecord> datal = ioContext.getMemberUtil().getParticipations(tag, ModelNames.MODEL_DATA);
+			logger.info("Size: " + datal.size());
+			
+			datal = ioContext.getMemberUtil().getMembers(data, ModelNames.MODEL_TAG);
+			logger.info("Size: " + datal.size());
+			
+		} catch (FactoryException | IndexException | ReaderException e) {
+			logger.error(e);
+		}
+	}
+	
+	@Test
+	public void TestExportEnum() {
+		String schema = SchemaUtil.getSchemaJSON();
+		assertNotNull("Schema is null", schema);
+	}
+	
+	@Test
+	public void TestImportFlex() {
+		/// Note: RecordDeserializer not currently picking up the foreignType property which is used by the database persistence utilities, so the model needs to be specified on the property marked as being of type model
+		///
+		String authReq = """
+			{
+				"model": "authenticationRequest",
+				"subjectType": "user",
+				"subject":{
+					"model": "user",
+					"name": "Admin",
+					"organizationPath": "/Development"
+				}
+			}
+		""";
+		BaseRecord req = JSONUtil.importObject(authReq,  LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		
+	}
+	
 
 	@Test
 	public void TestDataConstruct() {
@@ -128,5 +199,6 @@ public class TestData extends BaseTest {
 		}
 		return data;
 	}
+
 	
 }
