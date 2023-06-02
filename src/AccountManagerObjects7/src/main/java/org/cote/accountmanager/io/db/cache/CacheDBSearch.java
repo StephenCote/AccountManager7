@@ -1,5 +1,6 @@
 package org.cote.accountmanager.io.db.cache;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -18,7 +19,7 @@ import org.cote.accountmanager.util.RecordUtil;
 
 public class CacheDBSearch extends DBSearch implements ICache {
 
-	private Map<String, QueryResult> cache = new HashMap<>();
+	private Map<String, QueryResult> cache = Collections.synchronizedMap(new HashMap<>());
 	public CacheDBSearch(DBReader reader) {
 		super(reader);
 		CacheUtil.addProvider(this);
@@ -61,19 +62,21 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	@Override
 	public void clearCache(BaseRecord rec) {
 		// logger.info("TODO: Clear cache by record");
-		cache.entrySet().removeIf(entry ->{
-			QueryResult mr = entry.getValue();
-			boolean match = false;
-			for(BaseRecord r : mr.getResults()) {
-				if(rec.getModel().equals(r.getModel()) && RecordUtil.matchIdentityRecords(rec, r)) {
-					// logger.info("Clear record based on query result");
-					match = true;
-					break;
+		synchronized(cache) {
+			cache.entrySet().removeIf(entry ->{
+				QueryResult mr = entry.getValue();
+				boolean match = false;
+				for(BaseRecord r : mr.getResults()) {
+					if(rec.getModel().equals(r.getModel()) && RecordUtil.matchIdentityRecords(rec, r)) {
+						// logger.info("Clear record based on query result");
+						match = true;
+						break;
+					}
+					
 				}
-				
-			}
-			return match;
-		});
+				return match;
+			});
+		}
 	}
 	
 	@Override

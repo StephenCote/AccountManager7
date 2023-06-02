@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javax.annotation.security.DeclareRoles;
+import javax.annotation.security.RolesAllowed;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.DELETE;
@@ -20,14 +21,19 @@ import javax.ws.rs.core.Response;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
@@ -53,17 +59,21 @@ public class ModelService {
 	}
 	
 	@DELETE
-	@Path("/")
+	@Path("/{type:[A-Za-z]+}/{objectId:[0-9A-Za-z\\\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response deleteModel(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
+	public Response deleteModel(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		Query q = QueryUtil.createQuery(type, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN});
+		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		//BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 
-		if(imp == null) {
+		if(rec == null) {
+			logger.error("Failed to find: " + type + " " + objectId);
 			return Response.status(404).entity(null).build();
 		}
 
-		boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(user, imp);
+		boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(user, rec);
 		return Response.status(200).entity(deleted).build();
 	}
 	
@@ -128,11 +138,52 @@ public class ModelService {
 		return Response.status(200).entity(ops).build();
 	}
 	
+	
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/{type:[A-Za-z]+}/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam("name") String name,@Context HttpServletRequest request){
+		BaseRecord rec = ServiceUtil.generateRecordQueryResponse(type, parentId, name, request);
+		return Response.status((rec == null ? 404 : 200)).entity((rec != null ? rec.toFullString() : null)).build();
+	}
+	
+
+
+	
+	/// Specifically to allow for the variation where a factory is clustered by both group and parent
+	/// To retrieve an object using a parent id vs. the group id
+	///
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/{type:[A-Za-z]+}/parent/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getGroupedObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam("name") String name,@Context HttpServletRequest request){
+		BaseRecord rec = ServiceUtil.generateRecordQueryResponse(type, parentId, name, request);
+		return Response.status((rec == null ? 404 : 200)).entity((rec != null ? rec.toFullString() : null)).build();
+	}
+	
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/stream/{objectId:[0-9A-Za-z\\-]+}/{startIndex:[\\\\d]+}/{length:[\\\\d]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getStreamSegment(@PathParam("objectId") String objectId,@PathParam("name") String name, @PathParam("startIndex") long startIndex, @PathParam("length") int length, @Context HttpServletRequest request){
+		BaseRecord rseg = null;
+		try{
+			rseg = IOSystem.getActiveContext().getReader().read(new StreamSegmentUtil().newSegment(objectId, startIndex, length));
+		}
+		catch(ReaderException e) {
+			logger.error(e);
+		}
+		return Response.status((rseg == null ? 404 : 200)).entity((rseg != null ? rseg.toFullString() : null)).build();
+	}
+	
+	/*
 	@POST
 	@Path("/list")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response search(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
-		
+		logger.warn("**** MOVE TO LIST");
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		if(imp == null) {
@@ -147,4 +198,5 @@ public class ModelService {
 		}
 		return Response.status(200).entity(ops).build();
 	}
+	*/
 }

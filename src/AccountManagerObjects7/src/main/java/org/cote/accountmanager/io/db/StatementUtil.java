@@ -64,7 +64,7 @@ public class StatementUtil {
 				continue;
 			}
 			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
-				logger.info("Skip " + f.getName() + " because it's a foreign list");
+				// logger.info("Skip " + f.getName() + " because it's a foreign list");
 				continue;
 			}
 			names.add(f.getName());
@@ -133,7 +133,7 @@ public class StatementUtil {
 				continue;
 			}
 			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
-				logger.info("Skip " + f.getName() + " because it's a foreign list");
+				// logger.info("Skip " + f.getName() + " because it's a foreign list");
 				continue;
 			}
 			if(iter > 0) {
@@ -335,7 +335,7 @@ public class StatementUtil {
 			
 			if(!fs.isEphemeral() && !fs.isVirtual()) {
 				if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
-					logger.info("Skip " + fs.getName() + " because it's a foreign list");
+					// logger.info("Skip " + fs.getName() + " because it's a foreign list");
 					continue;
 				}
 

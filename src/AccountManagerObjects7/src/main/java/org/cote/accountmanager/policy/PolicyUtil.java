@@ -325,7 +325,9 @@ public class PolicyUtil {
 		/// If it's foreign, or defines a modelAccess, then create a rule that includes a modelAccess pattern for that specific role or permission
 		ModelSchema schema = RecordFactory.getSchema(object.getModel());
 		//for(FieldSchema fs : schema.getFields()) {
-		for(FieldType f : object.getFields()) {
+		//for(FieldType f : object.getFields()) {
+		for(int i = 0; i < object.getFields().size(); i++) {
+			FieldType f = object.getFields().get(i);
 			List<BaseRecord> patterns = new ArrayList<>(); 
 			FieldSchema fs = schema.getFieldSchema(f.getName());
 			List<String> roles = getSchemaRoles(fs.getAccess(), spet);

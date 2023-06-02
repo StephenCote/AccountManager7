@@ -21,6 +21,7 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.StreamEnumType;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class StreamProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(StreamProvider.class);
@@ -36,11 +37,19 @@ public class StreamProvider implements IProvider {
 		if(!model.inherits(ModelNames.MODEL_STREAM)) {
 			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_STREAM);
 		}
-		if(!model.hasField(FieldNames.FIELD_OBJECT_ID)) {
+		if(!model.hasField(FieldNames.FIELD_TYPE)) {
+			return;
+		}
+		if(model.getModel().equals(ModelNames.MODEL_STREAM) && (!model.hasField(FieldNames.FIELD_SEGMENTS) || ((List<BaseRecord>)model.get(FieldNames.FIELD_SEGMENTS)).size() == 0)) {
+			return;
+		}
+		//if(!model.hasField(FieldNames.FIELD_OBJECT_ID)) {
+		if(!RecordUtil.isIdentityRecord(model)) {
 			if(operation == RecordOperation.CREATE) {
 				throw new ModelException("Model " + model.getModel() + " does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
 			}
 			else {
+				
 				logger.warn("Skip segment write for model " + model.getModel() + " because it does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
 				return;
 			}

@@ -257,30 +257,6 @@ public class ListService {
 	}
 	*/
 	
-	@RolesAllowed({"user"})
-	@GET
-	@Path("/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
-	@Produces(MediaType.APPLICATION_JSON)
-	public Response getObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam("name") String name,@Context HttpServletRequest request){
-		QueryResult qr = generateQueryResponse(type, parentId, name, 0, 1, request);
-		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getUnfilteredModule())).build();
-	}
-	
-
-
-	
-	/// Specifically to allow for the variation where a factory is clustered by both group and parent
-	/// To retrieve an object using a parent id vs. the group id
-	///
-	@RolesAllowed({"user"})
-	@GET
-	@Path("/parent/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
-	@Produces(MediaType.APPLICATION_JSON)
-	public Response getGroupedObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam("name") String name,@Context HttpServletRequest request){
-		QueryResult qr = generateQueryResponse(type, parentId, name, 0, 1, request);
-		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getUnfilteredModule())).build();
-	}
-	
 	
 	@RolesAllowed({"user"})
 	@GET
@@ -288,20 +264,20 @@ public class ListService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response listObjects(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("startIndex") long startIndex, @PathParam("count") int recordCount, @Context HttpServletRequest request){
 
-		QueryResult qr = generateQueryResponse(type, objectId, null, startIndex, recordCount, request);
+		QueryResult qr = ServiceUtil.generateListQueryResponse(type, objectId, null, startIndex, recordCount, request);
 		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getUnfilteredModule())).build();
 	}
-	
-	private QueryResult generateQueryResponse(String type, String objectId, String name, long startIndex, int recordCount, HttpServletRequest request) {
-		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		Query q = QueryUtil.buildQuery(user, type, objectId, name, startIndex, recordCount);
-		if(q == null) {
-			logger.error("Invalid query object for " + type + " " + objectId);
-			return null;	
-		}
 
-		return IOSystem.getActiveContext().getAccessPoint().list(user, q);
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/{objectId:[0-9A-Za-z\\-]+}/{fields:[0-9A-Za-z\\-,]+}/{startIndex:[\\d]+}/{count:[\\d]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response listObjectsWithFields(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("fields") String fields, @PathParam("startIndex") long startIndex, @PathParam("count") int recordCount, @Context HttpServletRequest request){
+
+		QueryResult qr = ServiceUtil.generateListQueryResponse(type, objectId, null, fields.split(","), startIndex, recordCount, request);
+		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getUnfilteredModule())).build();
 	}
+
 	
 
 	/*

@@ -87,7 +87,7 @@ public class BaseTest {
 		//resetIO(null);
 
 		/// USE POSTGRESQL
-		//resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
+		//resetIO("jdbc:postgresql://localhost:15431/am7db", "am7user", "password");
 
 		/// USE H2
 		resetIO("jdbc:h2:./am7/h2", "sa", "1234");

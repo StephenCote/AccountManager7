@@ -110,6 +110,9 @@ public class StreamSegmentReader implements IReader {
         	long size = fc.size();
         	// logger.info("Read " + startPosition + " to " + (startPosition + length));
         	long maxLen = Math.min(size - startPosition, length);
+        	if(length == 0 && maxLen <= 0) {
+        		maxLen = size - startPosition;
+        	}
         	// logger.info("Read " + startPosition + " to " + maxLen);
             fc.position(startPosition);
             buffer = ByteBuffer.allocate((int)maxLen);

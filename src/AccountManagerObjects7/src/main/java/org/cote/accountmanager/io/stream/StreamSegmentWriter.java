@@ -142,8 +142,10 @@ public class StreamSegmentWriter implements IWriter {
 				if(start == 0L) {
 					start = channel.size();
 				}
+				byte[] bytes = segment.get(FieldNames.FIELD_STREAM);
+				logger.info("Writing " + stream.get(FieldNames.FIELD_NAME) + " bytes " + bytes.length + " at " + start);
 				channel.position(start);
-				ByteBuffer buff = ByteBuffer.wrap(segment.get(FieldNames.FIELD_STREAM));
+				ByteBuffer buff = ByteBuffer.wrap(bytes);
 				channel.write(buff);
 				// size = channel.size();
 

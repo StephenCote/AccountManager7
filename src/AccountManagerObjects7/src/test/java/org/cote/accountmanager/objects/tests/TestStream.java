@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.UUID;
 import java.nio.ByteBuffer;
 import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -51,6 +53,7 @@ import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
+import org.cote.accountmanager.util.StreamUtil;
 import org.junit.Test;
 
 import io.jsonwebtoken.Claims;
@@ -71,11 +74,11 @@ public class TestStream extends BaseTest {
 		}
 		return seg;
 	}
-	
+	/*
 	@Test
 	public void TestAuthorizeStreamSegment() {
 		logger.info("Test Stream Authorization");
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
 		BaseRecord testUser6 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser6", testOrgContext.getOrganizationId());
@@ -117,12 +120,36 @@ public class TestStream extends BaseTest {
 		}
 		
 	}
+	*/
+	@Test
+	public void TestStreamUtil() {
+		logger.info("Test Streaming");
+
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
+		String dataName = "Demo stream " + UUID.randomUUID().toString();
+		ParameterList plist = ParameterList.newParameterList("path", "~/Data/StreamUtil");
+		plist.parameter("name", dataName);
+		
+		String[] sampleData = new String[] {"airship.jpg", "anaconda.jpg", "antikythera.jpg", "railplane.png", "shark.webp", "steampunk.png", "sunflower.jpg"};
+		try(FileInputStream fos = new FileInputStream("./media/" + sampleData[6])){
+			
+			boolean created = StreamUtil.streamToData(testUser5, dataName, "Test stream utility", "~/Data/StreamUtil", 0L, fos);
+			assertTrue("Failed to stream into data", created);
+			
+		} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+			logger.error(e);
+		}
+		
+
+	}
 	
 	@Test
 	public void TestCreateStream() {
 		logger.info("Test Streaming");
 
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
 		String dataName = "Demo stream " + UUID.randomUUID().toString();
@@ -132,16 +159,21 @@ public class TestStream extends BaseTest {
 		BaseRecord odata = null;
 		
 		try {
+			logger.info("Create a new stream and include a segment");
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_STREAM, testUser5, null, plist);
 			data.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
 			data.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			newSegment(data, "1) This is some example data".getBytes());
 			assertNotNull("Data is null", data);
 			data = ioContext.getAccessPoint().create(testUser5, data);
-			// logger.info(data.toFullString());
+			//logger.info(data.toFullString());
 			
 			BaseRecord idata = ioContext.getAccessPoint().findById(testUser5, ModelNames.MODEL_STREAM, data.get(FieldNames.FIELD_ID));
 			assertNotNull("Data is null", idata);
+			long size = data.get(FieldNames.FIELD_SIZE);
+			assertTrue("Expected a positive size", size > 0L);
+			
+			logger.info("Writing a direct stream segment");
 			
 			/// Write a direct segment
 			BaseRecord seg = RecordFactory.newInstance(ModelNames.MODEL_STREAM_SEGMENT);
@@ -179,6 +211,6 @@ public class TestStream extends BaseTest {
 		
 		
 	}
-	
+
 	
 }

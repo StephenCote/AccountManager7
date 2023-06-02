@@ -29,6 +29,7 @@ public class GraphicsUtil {
 		
 		Image image = ImageIO.read(new ByteArrayInputStream(sourceBytes));
 		if(image == null) {
+			logger.error("Image could not be constructed");
 			return outBytes;
 		}
 		
@@ -36,7 +37,7 @@ public class GraphicsUtil {
 		int height = image.getHeight(null);
 		
 		if(width < maximumWidth && height < maximumHeight){
-			logger.debug("Undersized: " + width + " < " + maximumWidth + " / " + height + " < " + maximumHeight);
+			logger.warn("Undersized: " + width + " < " + maximumWidth + " / " + height + " < " + maximumHeight);
 			return outBytes;
 		}
 		

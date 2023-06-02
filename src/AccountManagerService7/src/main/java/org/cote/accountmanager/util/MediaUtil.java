@@ -47,6 +47,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -161,7 +162,7 @@ public class MediaUtil {
 			return;
 		}
 
-		writeBinaryContent(request, response, options, type, orgPath, subPath, name);
+		writeBinaryContent(request, response, options, type.toLowerCase(), orgPath, subPath, name);
 	}
 	public static void writeBinaryContent(
 			HttpServletRequest request,
@@ -269,15 +270,15 @@ public class MediaUtil {
 			if(options.isThumbnail()){
 				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 				q.field(FieldNames.FIELD_NAME, objName);
-				q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE});
+				q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID});
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
-				data = ThumbnailUtil.getCreateThumbnail(sdata, maxWidth, maxHeight);
+				data = ThumbnailUtil.getCreateThumbnail(sdata, options.getThumbWidth(), options.getThumbHeight());
 				if(data == null){
 					logger.warn("Thumbnail data is null for data name " + objName + " and user " + user.get(FieldNames.FIELD_NAME));
 				}
 			} /// End if thumbnail
 			else{
-				data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_GROUP_ID), objName);
+				data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), objName);
 				
 				if(data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null && ((String)data.get(FieldNames.FIELD_CONTENT_TYPE)).startsWith("image/") && restrictSize){
 					logger.info("Redirecting to restricted image path");
@@ -310,9 +311,12 @@ public class MediaUtil {
 		response.setContentType(data.get(FieldNames.FIELD_CONTENT_TYPE));
 
 		byte[] value = new byte[0];
-			BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
-			if(stream != null) {
-				logger.warn("*** TODO: Read from stream");
+			
+			if(data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
+				//logger.warn("*** TODO: Read from stream");
+				BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
+				StreamSegmentUtil ssu = new StreamSegmentUtil();
+				value = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
 			}
 			else{
 				value = data.get(FieldNames.FIELD_BYTE_STORE);

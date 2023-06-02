@@ -127,7 +127,7 @@ public class TestData extends BaseTest {
 		String[] sampleData = new String[] {"IMG_20220827_184359053.jpg", "IMG_20221230_142909291_HDR.jpg", "shutterstock-1940302522___08094459781.png", "The_George_Bennie_Railplane_System_of_Transport_poster,_1929.png"};
 		
 		try {
-			BaseRecord data = getCreateData(testUser1, "~/Data/Pictures", "c:\\tmp\\xpic\\" + sampleData[0]);
+			BaseRecord data = getCreateData(testUser1, "~/Data/Pictures", "c:\\tmp\\xpic\\" + sampleData[2]);
 			assertNotNull("Data is null", data);
 			//logger.info(data.toFullString());
 		}
@@ -195,7 +195,12 @@ public class TestData extends BaseTest {
 		data = ioContext.getAccessPoint().create(user, data);
 		
 		if(ThumbnailUtil.canCreateThumbnail(data)) {
-			ThumbnailUtil.getCreateThumbnail(data, 50, 50);
+			BaseRecord trec = ThumbnailUtil.getCreateThumbnail(data, 50, 50);
+			assertNotNull("Thumbnail record is null", trec);
+			assertTrue("Failed to emit file", FileUtil.emitFile("./thumb.png", (byte[])trec.get(FieldNames.FIELD_BYTE_STORE)));
+		}
+		else {
+			logger.error("Cannot create thumbnail from data");
 		}
 		return data;
 	}

@@ -34,7 +34,7 @@ public class ThumbnailUtil {
 		//OrganizationContext oct = ioContext.getOrganizationContext(record.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 
 		IOContext ctx = IOSystem.getActiveContext();
-		
+		ctx.getReader().populate(record);
 		if(!canCreateThumbnail(record)) {
 			logger.error("Unable to create a thumbnail from content type: " + record.get(FieldNames.FIELD_CONTENT_TYPE));
 			return null;
@@ -94,8 +94,12 @@ public class ThumbnailUtil {
 		}
 
 		byte[] thumbBytes = GraphicsUtil.createThumbnail(imageBytes, width, height);
+		if(thumbBytes.length == 0 && imageBytes.length > 0) {
+			logger.info("Image was not resized. Using source byte array.");
+			thumbBytes = imageBytes;
+		}
 		if(thumbBytes.length == 0) {
-			logger.error("Failed to generate thumbnail");
+			logger.error("Failed to generate thumbnail from " + imageBytes.length + " bytes");
 			return null;
 		}
 		

@@ -11,6 +11,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryResult;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -20,6 +23,32 @@ import org.cote.accountmanager.schema.ModelNames;
 public class ServiceUtil {
 	public static final Logger logger = LogManager.getLogger(ServiceUtil.class);
 	private static Map<UserPrincipal, BaseRecord> principalCache = Collections.synchronizedMap(new HashMap<>());
+	public static QueryResult generateListQueryResponse(String type, String objectId, String name, long startIndex, int recordCount, HttpServletRequest request) {
+		return generateListQueryResponse(type, objectId, name, new String[0], startIndex, recordCount, request);
+	}
+	public static QueryResult generateListQueryResponse(String type, String objectId, String name, String[] fields, long startIndex, int recordCount, HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query q = QueryUtil.buildQuery(user, type, objectId, name, startIndex, recordCount);
+		if(q == null) {
+			logger.error("Invalid query object for " + type + " " + objectId);
+			return null;	
+		}
+		q.setRequest(fields);
+		return IOSystem.getActiveContext().getAccessPoint().list(user, q);
+	}
+	public static BaseRecord generateRecordQueryResponse(String type, String objectId, String name, HttpServletRequest request) {
+		return generateRecordQueryResponse(type, objectId, name, new String[0], request);
+	}
+	public static BaseRecord generateRecordQueryResponse(String type, String objectId, String name, String[] fields, HttpServletRequest request) {
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query q = QueryUtil.buildQuery(user, type, objectId, name, 0L, 0);
+		if(q == null) {
+			logger.error("Invalid query object for " + type + " " + objectId);
+			return null;	
+		}
+		q.setRequest(fields);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+	}
 	
 	public static BaseRecord getPrincipalUser(HttpServletRequest request){
 		Principal principal = request.getUserPrincipal();

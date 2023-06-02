@@ -55,6 +55,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.util.ContentTypeUtil;
+import org.cote.accountmanager.util.StreamUtil;
 import org.cote.service.util.ServiceUtil;
 
 
@@ -80,14 +81,6 @@ public class MediaFormServlet extends HttpServlet {
 		// TODO Auto-generated method stub
 	}
 	
-	private BaseRecord getSegment(BaseRecord stream, byte[] data) throws FieldException, ModelNotFoundException, ValueException {
-		BaseRecord seg = RecordFactory.newInstance(ModelNames.MODEL_STREAM_SEGMENT);
-		seg.set(FieldNames.FIELD_STREAM, data);
-		seg.set(FieldNames.FIELD_STREAM_ID, stream.get(FieldNames.FIELD_OBJECT_ID));
-		return seg;
-		
-	}
-
 	/**
 	 * @see HttpServlet#doPost(HttpServletRequest request, HttpServletResponse response)
 	 */
@@ -142,51 +135,8 @@ public class MediaFormServlet extends HttpServlet {
 			    		id = Long.parseLong(Streams.asString(stream));
 			    	}
 			    } else {
-			    	
-			    	contentType = ContentTypeUtil.getTypeFromExtension(item.getName());
-			    	int read = 0;
-			    	int maxReadSize = 1048576;
-			    	byte[] bytes = new byte[maxReadSize];
-			    	streamRec = null;
-			    	ByteArrayOutputStream baos = new ByteArrayOutputStream();
-			    	while ((read = stream.read(bytes, 0, bytes.length)) != -1) {
-			    		logger.info("Reading " + read);
-			    	  /// Convert to stream?
-			    		boolean streamWrite = (baos.size() >= maxReadSize);
-			    		if(streamRec != null && streamWrite) {
-			    			logger.info("Writing segment: " + read + " bytes");
-			    			BaseRecord seg = getSegment(streamRec, Arrays.copyOf(bytes, read));
-			    			IOSystem.getActiveContext().getAccessPoint().create(user, seg);
-			    			baos = new ByteArrayOutputStream();
-			    		}
-			    		else if(streamWrite) {
-			    			logger.info("Writing stream: " + read + " bytes");
-			    			ParameterList plist = ParameterList.newParameterList("path", groupPath);
-			    			plist.parameter("name", UUID.randomUUID().toString());
-
-			    			streamRec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STREAM, user, null, plist);
-			    			streamRec.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
-			    			streamRec.set(FieldNames.FIELD_CONTENT_TYPE, contentType);
-			    			BaseRecord seg = getSegment(streamRec, Arrays.copyOf(bytes, read));
-			    			List<BaseRecord> segs = streamRec.get(FieldNames.FIELD_SEGMENTS);
-			    			segs.add(seg);
-			    			streamRec = IOSystem.getActiveContext().getAccessPoint().create(user, streamRec);
-			    			baos = new ByteArrayOutputStream();
-				    	}
-				    	else {
-				    		  // data = Arrays.copyOf(bytes, read);
-				    		  baos.write(bytes, 0, read);
-				    		  
-				    	}
-			    	}
-			    	if(streamRec == null) {
-			    		data = baos.toByteArray();
-			    	}
-			    	else if(baos.size() > 0) {
-		    			logger.info("Writing segment: " + baos.size() + " bytes");
-		    			BaseRecord seg = getSegment(streamRec, baos.toByteArray());
-		    			IOSystem.getActiveContext().getAccessPoint().create(user, seg);
-			    	}
+			    	logger.info("Handle file upload stream");
+			    	bBit = StreamUtil.streamToData(user, name, description, groupPath, groupId, stream);
 			    }
 			    stream.close();
 			}
@@ -194,34 +144,13 @@ public class MediaFormServlet extends HttpServlet {
 		catch(FieldException | ValueException | ModelNotFoundException | FactoryException | NumberFormatException | FileUploadException e){
 			logger.error(e);
 		}
-	
-		if((streamRec != null || data.length > 0) && user != null){
-			try{
-    			ParameterList plist = ParameterList.newParameterList("path", groupPath);
-    			plist.parameter("name", name);
-
-    			BaseRecord newData = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);
-    			if(groupId > 0L) newData.set(FieldNames.FIELD_GROUP_ID, groupId);
-				newData.set(FieldNames.FIELD_DESCRIPTION, description);
-				newData.set(FieldNames.FIELD_CONTENT_TYPE, contentType);
-				newData.set(FieldNames.FIELD_BYTE_STORE,  data);
-				newData.set(FieldNames.FIELD_STREAM, streamRec);
-				newData = IOSystem.getActiveContext().getAccessPoint().create(user, newData);
-				bBit = (newData != null);
-			}
-			 catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
-				logger.error(e);
-			} 
-		}
-		else {
-			logger.error("No stream, data, or user");
-		}
 		
 		response.setContentType("text/html");
 		response.getWriter().write("<html><head><title>Media Form</title><script type = \"text/javascript\">" + getResponseScript(responseId, bBit) + "</script></head>");
 		response.getWriter().write("</html>");
 		response.flushBuffer();
 	}
+	
 	private static String getResponseScript(String responseId, boolean success){
 		StringBuilder buff = new StringBuilder();
 		buff.append("window.onload = Init;");
