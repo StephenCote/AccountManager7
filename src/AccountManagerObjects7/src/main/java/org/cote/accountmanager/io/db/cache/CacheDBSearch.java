@@ -26,15 +26,20 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	}
 
 	public void clearCache() {
-		cache.clear();
+		synchronized(cache) {
+			cache.clear();
+		}
 	}
 	public void clearCache(String key) {
-		cache.remove(key);
+		synchronized(cache) {
+			cache.remove(key);
+		}
 	}
 	public void cleanupCache() {
 		clearCache();
 		CacheUtil.removeProvider(this);
 	}
+	
 	@Override
 	public void close() throws ReaderException {
 		cleanupCache();
@@ -54,7 +59,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		
 		res = super.find(query);
 		if(res != null && res.getCount() > 0) {
-			cache.put(hash, res);
+			synchronized(cache) {
+				cache.put(hash, res);
+			}
 		}
 		return res;
 	}
@@ -81,7 +88,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	
 	@Override
 	public void clearCacheByModel(String model) {
-		cache.values().removeIf(entry -> model.equals((String)entry.get(FieldNames.FIELD_TYPE)));
+		synchronized(cache) {
+			cache.values().removeIf(entry -> model.equals((String)entry.get(FieldNames.FIELD_TYPE)));
+		}
 	}
 
 	@Override
