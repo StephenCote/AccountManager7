@@ -104,6 +104,22 @@ public class RecordUtil {
 		}
 	}
 	
+	public static boolean inherits(ModelSchema ms, String fieldName) {
+		boolean outBool = false;
+		if(ms.getInherits().contains(fieldName)) {
+			outBool = true;
+		}
+		else {
+			for(String s: ms.getInherits()) {
+				ModelSchema ims = RecordFactory.getSchema(s);
+				outBool = inherits(ims, fieldName);
+				if(outBool) {
+					break;
+				}
+			}
+		}
+		return outBool;
+	}
 	public static boolean isIdentityModel(ModelSchema schema) {
 		boolean hasIdentity = false;
 		if(schema != null) {
@@ -236,9 +252,12 @@ public class RecordUtil {
 		return createRecord(rec, false);
 	}
 	public boolean createRecord(BaseRecord rec, boolean flush) {
+		return createRecord(rec, flush, false);
+	}
+	public boolean createRecord(BaseRecord rec, boolean flush, boolean skipCustomIO) {
 		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
 		IWriter useWriter = null;
-		if(ms.getIo() != null && ms.getIo().getWriter() != null) {
+		if(!skipCustomIO && ms.getIo() != null && ms.getIo().getWriter() != null) {
 			IWriter modelWriter = RecordFactory.getClassInstance(ms.getIo().getWriter());
 			if(modelWriter != null) {
 				useWriter = modelWriter;
