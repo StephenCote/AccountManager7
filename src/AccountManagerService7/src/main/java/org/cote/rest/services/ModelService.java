@@ -35,6 +35,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
@@ -51,6 +52,19 @@ public class ModelService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, type, objectId);
 
+		if(rec == null) {
+			return Response.status(404).entity(null).build();
+		}
+
+		return Response.status(200).entity(rec.toFullString()).build();
+	}
+	
+	@GET
+	@Path("/{type:[A-Za-z]+}/user/{objectType:[A-Za-z]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getUserModelRoot(@PathParam("type") String type, @PathParam("objectType") String objectType, @Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord rec = IOSystem.getActiveContext().getPathUtil().findPath(user, type, "~/", objectType, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(rec == null) {
 			return Response.status(404).entity(null).build();
 		}
