@@ -9,7 +9,7 @@
         cacheMaxSize="100000"
     />
     
-    <Resource name="tomcat/datasources/h2DS"
+    <Resource name="tomcat/datasources/postgresDS"
           auth="Container"
           type="javax.sql.DataSource"
           factory="org.apache.tomcat.jdbc.pool.DataSourceFactory"
@@ -31,25 +31,28 @@
           jmxEnabled="true"
           jdbcInterceptors="org.apache.tomcat.jdbc.pool.interceptor.ConnectionState;
             org.apache.tomcat.jdbc.pool.interceptor.StatementFinalizer"
-          username="devuser"
-          password="password"
-          driverClassName="org.h2.Driver"
-          url="jdbc:h2:c:/projects/data/am7/h2"
-          closeMethod="close"
-          />
-          <!-- 
           username="am7user"
           password="password"
           driverClassName="org.postgresql.Driver"
           url="jdbc:postgresql://localhost:15431/am72db"
-          -->
+          closeMethod="close"
+          />
+          
           <!-- 
           tomcat/datasources/h2DS
           username="devuser"
           password="password"
           driverClassName="org.h2.Driver"
           url="jdbc:h2:c:/projects/data/am7/h2"
-           -->
+          closeMethod="close"
+          />
+		-->
+		<!-- 
+          username="am7user"
+          password="password"
+          driverClassName="org.postgresql.Driver"
+          url="jdbc:postgresql://localhost:15431/am72db"
+          -->
     
     <Manager className="org.apache.catalina.session.PersistentManager" maxIdleBackup="1">
    <Store className="org.apache.catalina.session.FileStore" directory="c:/Projects/Sessions"/>
