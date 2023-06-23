@@ -138,8 +138,10 @@ public class RestServiceConfig extends ResourceConfig{
 			ResourceUtil.RESOURCE_PREFIX = "";
 			IOFactory.DEFAULT_FILE_BASE = path;
 			String dsName = context.getInitParameter("database.dsname");
+			boolean chkSchema = Boolean.parseBoolean(context.getInitParameter("database.checkSchema"));
 			//IOProperties props = getDBProperties("jdbc:h2:" + path + "/h2", "sa", "1234");
 			IOProperties props = getDBProperties(null, null, null, dsName);
+			props.setSchemaCheck(chkSchema);
 			//IOContext ioContext = IOSystem.open(RecordIO.FILE, null, null);
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 			

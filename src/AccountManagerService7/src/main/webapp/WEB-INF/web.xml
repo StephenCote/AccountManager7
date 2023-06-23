@@ -34,9 +34,14 @@
 		<param-value>false</param-value>
 	</context-param>
   <context-param>
-    <description>Database Connection Type</description>
+    <description>Database DataSource Name</description>
     <param-name>database.dsname</param-name>
-    <param-value>comp/env/tomcat/datasources/h2DS</param-value>
+    <param-value>comp/env/tomcat/datasources/postgresDS</param-value>
+  </context-param>
+    <context-param>
+    <description>Database Check Schema</description>
+    <param-name>database.checkSchema</param-name>
+    <param-value>true</param-value>
   </context-param>
 	<context-param>
 		<description>File Store Path</description>
