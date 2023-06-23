@@ -17,6 +17,8 @@ import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
 import org.cote.accountmanager.util.MemberUtil;
@@ -137,7 +139,22 @@ public class IOContext {
 	public PolicyEvaluator getPolicyEvaluator() {
 		return policyEvaluator;
 	}
-
+	public OrganizationContext findOrganizationContext(BaseRecord rec) {
+		String orgPath = rec.get(FieldNames.FIELD_ORGANIZATION_PATH);
+		
+		OrganizationContext ctx = null;
+		if(orgPath != null) {
+			ctx = getOrganizationContext(orgPath, null);
+		}
+		else {
+			long orgId = rec.get(FieldNames.FIELD_ORGANIZATION_ID);
+			BaseRecord org = recordUtil.getRecordById(null, ModelNames.MODEL_ORGANIZATION, orgId);
+			if(org != null) {
+				ctx = getOrganizationContext(org.get(FieldNames.FIELD_PATH), null);
+			}
+		}
+		return ctx;
+	}
 	public OrganizationContext getOrganizationContext(String orgPath, OrganizationEnumType orgType) {
 		if(organizations.containsKey(orgPath)) {
 			return organizations.get(orgPath);
