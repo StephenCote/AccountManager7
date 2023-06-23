@@ -185,6 +185,42 @@ public class TestAccessPoint extends BaseTest {
 		
 		return req;
 	}
+	
+	@Test
+	public void TestUserFactoryCRUD() {
+		logger.info("*** Test User Factory Op");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+
+		BaseRecord rec = null;
+		try {
+			rec = mf.newInstance(ModelNames.MODEL_USER, testOrgContext.getAdminUser());
+			rec.set(FieldNames.FIELD_NAME, "Test User - " + UUID.randomUUID().toString());
+			BaseRecord crec = ioContext.getAccessPoint().create(testOrgContext.getAdminUser(), rec);
+			// logger.info("***** CHECK USER CRUD");
+			assertNotNull("User rec is null", crec);
+			crec = ioContext.getAccessPoint().find(testOrgContext.getAdminUser(), QueryUtil.createQuery(ModelNames.MODEL_USER, FieldNames.FIELD_NAME, crec.get(FieldNames.FIELD_NAME)));
+			assertNotNull("Failed to retrieve user", crec);
+			//logger.info(crec.toFullString());
+			
+			Query q = QueryUtil.buildQuery(testOrgContext.getAdminUser(), ModelNames.MODEL_USER, null, null, 0L, 0);
+			BaseRecord chkMod = mf.newInstance(ModelNames.MODEL_USER);
+			boolean checkRead = ioContext.getPolicyUtil().readPermitted(testOrgContext.getAdminUser(), testOrgContext.getAdminUser(), null, chkMod);
+			assertTrue("Expected admin to be able to read any of user model type", checkRead);
+			//checkRead = ioContext.getPolicyUtil().readPermitted(testOrgContext.getAdminUser(),rec, null, chkMod);
+			PolicyResponseType[] prrs = ioContext.getPolicyUtil().evaluateQueryToReadPolicyResponses(testOrgContext.getAdminUser(), q);
+			assertTrue("Expected at least one policy response", prrs.length > 0);
+			logger.info(q.toFullString());
+			int count = ioContext.getAccessPoint().count(testOrgContext.getAdminUser(), q);
+			logger.info("Count: " + count);
+			
+			QueryResult qr = ioContext.getAccessPoint().list(testOrgContext.getAdminUser(), q);
+			assertTrue("Expected to retrieve list of users", qr.getResults().length > 0);
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		
+	}
 
 	@Test
 	public void TestObjectCRUD() {
