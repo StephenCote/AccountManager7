@@ -51,6 +51,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -104,6 +105,9 @@ public class PrincipalService {
 			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(oc.getAdminUser(), ModelNames.MODEL_GROUP, "/Persons", GroupEnumType.DATA.toString(), oc.getOrganizationId());
 			person = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_PERSON, dir.get(FieldNames.FIELD_OBJECT_ID), contUser.get(FieldNames.FIELD_NAME));
 		}
+		else {
+			logger.error("Context user or user were null");
+		}
 		return person;
 	}
 	
@@ -130,8 +134,10 @@ public class PrincipalService {
 
 			try {
 				app = RecordFactory.newInstance(ModelNames.MODEL_APPLICATION_PROFILE);
-				BaseRecord[] roles = IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_ROLE, FieldNames.FIELD_PARENT_ID, 0L));
-				BaseRecord[] permissions = IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_PERMISSION, FieldNames.FIELD_PARENT_ID, 0L));
+				long organizationId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
+
+				BaseRecord[] roles = IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_ROLE, FieldNames.FIELD_PARENT_ID, 0L, organizationId));
+				BaseRecord[] permissions = IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_PERMISSION, FieldNames.FIELD_PARENT_ID, 0L, organizationId));
 				List<BaseRecord> aroles = app.get(FieldNames.FIELD_SYSTEM_ROLES);
 				List<BaseRecord> uroles = app.get(FieldNames.FIELD_USER_ROLES);
 				List<BaseRecord> aperms = app.get(FieldNames.FIELD_SYSTEM_PERMISSIONS);
