@@ -257,6 +257,22 @@ public class ListService {
 	}
 	*/
 	
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/{objectId:[0-9A-Za-z\\-]+}/members/{actorType:[A-Za-z]+}/{startIndex:[\\d]+}/{count:[\\d]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response listMembers(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @PathParam("startIndex") long startIndex, @PathParam("count") int recordCount, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, type, objectId);
+		List<BaseRecord> rec = new ArrayList<>();
+		if(object != null) {
+			rec = IOSystem.getActiveContext().getAccessPoint().listMembers(user, object, actorType, null, startIndex, recordCount);
+		}
+		else {
+			logger.error("Failed to read " + type + " " + objectId);
+		}
+		return Response.status(200).entity(JSONUtil.exportObject(rec, RecordSerializerConfig.getUnfilteredModule())).build();
+	}
 	
 	@RolesAllowed({"user"})
 	@GET
