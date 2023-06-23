@@ -138,6 +138,7 @@ public class FieldNames {
 		public static final String FIELD_AGREEMENTSPEC = "agreementSpec";
 		
 		// Participation
+		public static final String FIELD_PARTICIPATION = "participation";
 		public static final String FIELD_PARTICIPATION_ID = "participationId";
 		public static final String FIELD_PARTICIPATION_MODEL = "participationModel";
 		public static final String FIELD_PARTICIPANT_ID = "participantId";
@@ -157,6 +158,8 @@ public class FieldNames {
 		public static final String FIELD_QUERY_HASH = "queryHash";
 		public static final String FIELD_QUERY_KEY = "queryKey";
 		public static final String FIELD_QUERIES = "queries";
+		public static final String FIELD_JOINS = "joins";
+		public static final String FIELD_JOIN_KEY = "joinKey";
 		public static final String FIELD_RESULTS = "results";
 		public static final String FIELD_RESPONSE = "response";
 		public static final String FIELD_ACTION = "action";
@@ -181,7 +184,9 @@ public class FieldNames {
 		
 		// Credential
 		public static final String FIELD_CREDENTIAL = "credential";
-		// public static final String FIELD_CREDENTIAL_TYPE = "credentialType";
+		public static final String FIELD_CHECK_CREDENTIAL = "checkCredential";
+		public static final String FIELD_CREDENTIAL_TYPE = "credentialType";
+		public static final String FIELD_CHECK_CREDENTIAL_TYPE = "checkCredentialType";
 		public static final String FIELD_REFERENCE_TYPE = "referenceType";
 		public static final String FIELD_REFERENCE_ID = "referenceId";
 		

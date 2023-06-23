@@ -19,6 +19,7 @@ public class FieldSchema {
 	private String baseModel = null;
 	private String baseType = null;
 	private String baseProperty = null;
+	private boolean internal = false;
 	private boolean required = false;
 	private boolean readOnly = false;
 	private boolean identity = false;
@@ -57,6 +58,42 @@ public class FieldSchema {
 	
 	
 	
+	public boolean isInternal() {
+		return internal;
+	}
+
+
+
+	public void setInternal(boolean internal) {
+		this.internal = internal;
+	}
+
+
+
+	public String getLabel() {
+		return label;
+	}
+
+
+
+	public void setLabel(String label) {
+		this.label = label;
+	}
+
+
+
+	public String getIcon() {
+		return icon;
+	}
+
+
+
+	public void setIcon(String icon) {
+		this.icon = icon;
+	}
+
+
+
 	public List<String> getRules() {
 		return rules;
 	}
