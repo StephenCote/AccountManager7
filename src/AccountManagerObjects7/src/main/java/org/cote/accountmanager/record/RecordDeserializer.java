@@ -355,7 +355,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				break;
     			case ENUM:
 					fld.getFieldValueType().setBaseClass(lft.getBaseClass());
-					fld.setValue(value.textValue().toUpperCase());
+					if(value.textValue() != null) {
+						fld.setValue(value.textValue().toUpperCase());
+					}
 					break;
     			case STRING:
     				fld.setValue(value.textValue());
@@ -367,7 +369,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				fld.setValue(value.intValue());
     				break;
     			case BLOB:
-    				fld.setValue(Base64.getDecoder().decode(value.textValue()));
+    				if(value.textValue() != null) {
+    					fld.setValue(Base64.getDecoder().decode(value.textValue()));
+    				}
     				break;
     			default:
     				logger.error("Unhandled field type: " + ifld.getValueType().toString());
