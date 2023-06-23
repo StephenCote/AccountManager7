@@ -13,6 +13,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IMember;
 import org.cote.accountmanager.io.IOContext;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
@@ -47,7 +48,7 @@ public class MemberUtil implements IMember {
 		this.writer = context.getWriter();
 		this.search = context.getSearch();
 		recordUtil = context.getRecordUtil(); 
-	}	
+	}
 	
 	public List<BaseRecord> findMembers(BaseRecord rec, String model, long id) throws IndexException, ReaderException {
 		return findMembers(rec, model, id, 0L, "ParticipationList");
@@ -84,7 +85,7 @@ public class MemberUtil implements IMember {
 			}
 		}
 		else if(reader.getRecordIo() == RecordIO.DATABASE) {
-			Query q = createParticipationQuery(null, rec, null, null);
+			Query q = QueryUtil.createParticipationQuery(null, rec, null, null);
 			if(permissionId > 0L) {
 				q.field(FieldNames.FIELD_PERMISSION_ID, permissionId);
 				q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.GRANT_PERMISSION);
@@ -140,7 +141,7 @@ public class MemberUtil implements IMember {
 		return getFileMembers(rec, "ParticipantList");
 	}
 	private List<BaseRecord> getDbMembers(BaseRecord rec, boolean byPart, String modelType) throws IndexException, ReaderException {
-		Query q = createParticipationQuery(null, (!byPart ? rec : null), (byPart ? rec : null), null);
+		Query q = QueryUtil.createParticipationQuery(null, (!byPart ? rec : null), (byPart ? rec : null), null);
 		
 		String idField = FieldNames.FIELD_PARTICIPATION_ID;
 		String modelField = FieldNames.FIELD_PARTICIPATION_MODEL;
@@ -227,27 +228,9 @@ public class MemberUtil implements IMember {
 		return outBool;
 	}
 	
-	public Query createParticipationQuery(BaseRecord contextUser, BaseRecord object, BaseRecord actor, BaseRecord effect) {
-		Query q = new Query(contextUser, ModelNames.MODEL_PARTICIPATION);
-		if(object != null) {
-			q.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.EQUALS, object.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_PARTICIPATION_MODEL, ComparatorEnumType.EQUALS, object.getModel());
-		}
-		if(actor != null) {
-			q.field(FieldNames.FIELD_PARTICIPANT_ID, ComparatorEnumType.EQUALS, actor.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, ComparatorEnumType.EQUALS, actor.getModel());
-		}
-		if(effect != null) {
-			q.field(FieldNames.FIELD_PERMISSION_ID, ComparatorEnumType.EQUALS, effect.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_EFFECT_TYPE, ComparatorEnumType.EQUALS, EffectEnumType.GRANT_PERMISSION.toString());
-		}
-
-		return q;
-	}
-	
 	public boolean member(BaseRecord user, BaseRecord object, BaseRecord actor, BaseRecord effect, boolean enable) {
 		boolean outBool = false;
-		Query q = createParticipationQuery(user, object, actor, effect);
+		Query q = QueryUtil.createParticipationQuery(user, object, actor, effect);
 		CacheUtil.clearCache(q.hash());
 		
 		QueryResult res = null;
