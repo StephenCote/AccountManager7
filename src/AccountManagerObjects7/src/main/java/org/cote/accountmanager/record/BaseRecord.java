@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -36,7 +37,8 @@ public abstract class BaseRecord {
 	private boolean internal = false;
 	
 	private Map<String, FieldType> fieldMap = new HashMap<>();
-	private List<FieldType> fields = new ArrayList<>();
+	//private List<FieldType> fields = new ArrayList<>();
+	private List<FieldType> fields = new CopyOnWriteArrayList<>();
 	
 	public BaseRecord(String name, FieldType[] inFields) {
 		model = name;
@@ -476,7 +478,8 @@ public abstract class BaseRecord {
 		return fields;
 	}
 	public void setFields(List<FieldType> inFields){
-		fields = inFields;
+		// fields = inFields;
+		fields = new CopyOnWriteArrayList<FieldType>(inFields);
 		fieldMap.clear();
 		for(FieldType f : inFields) {
 			if(fieldMap.containsKey(f.getName())) {
