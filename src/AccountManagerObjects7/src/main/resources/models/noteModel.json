@@ -1,0 +1,12 @@
+{
+"name": "note",
+"inherits": ["directory", "parent", "dateTime"],
+"group": "Notes",
+"icon": "note",
+"label": "Note",
+"fields": [
+	{
+		"name": "text",
+		"type": "string"
+	}
+]}

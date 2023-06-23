@@ -88,7 +88,24 @@
 		"name": "queries",
 		"type": "list",
 		"baseType": "model",
-		"baseModel": "query"
+		"baseModel": "query",
+		"internal": true,
+		"description": "Used to extend the query model with another table, such as participation"
+	},
+	{
+		"name": "joins",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "query",
+		"internal": true,
+		"description": "Used to hold sub-queries constructed to reconstitute foreign key fields"
+	},
+	{
+		"name": "joinKey",
+		"type": "string",
+		"maxLength": 32,
+		"internal": true,
+		"description": "Used to identify the foreignKey column that refers to the primary key.  Note: This column must exist in the model schema or will not be permitted"
 	},
 	{
 		"name": "topCount",
@@ -122,5 +139,11 @@
 		"name": "inspect",
 		"type": "boolean",
 		"description": "Indicates to listening providers not to perform some actions intended for read operations"
+	},
+	{
+		"name": "participation",
+		"type": "model",
+		"baseModel": "participation",
+		"ephemeral": true
 	}
 ]}

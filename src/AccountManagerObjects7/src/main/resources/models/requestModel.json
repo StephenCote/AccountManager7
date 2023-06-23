@@ -8,7 +8,8 @@
 		"baseModel": "$flex",
 		"type": "model",
 		"foreign": true,
-		"foreignType": "subjectType"
+		"foreignType": "subjectType",
+		"foreignField": "objectId"
 	},
 	{
 		"name": "subjectType",
