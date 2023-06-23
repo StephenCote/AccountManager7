@@ -226,8 +226,8 @@ public class TestObjectPolicy extends BaseTest {
 		}
 		assertNotNull("Test user is null", testUser1);
 		BaseRecord dat = getCreateData(testUser1, "Test Membership Data 1", "text/plain", "This is the demo data".getBytes(), "~/Data/Membership Test", orgContext.getOrganizationId());
-		BaseRecord urole1 = mf.userRole(testUser1);
-		BaseRecord uperm1 = mf.userPermission(testUser1);
+		BaseRecord urole1 = AccessSchema.userRole(testUser1);
+		BaseRecord uperm1 = AccessSchema.userPermission(testUser1);
 
 		assertNotNull("User role is null", urole1);
 		assertNotNull("User permission is null", uperm1);
@@ -372,8 +372,8 @@ public class TestObjectPolicy extends BaseTest {
 		logger.info("Setup test data");
 		
 		BaseRecord dat = getCreateData(testUser1, "Test Membership Data 1", "text/plain", "This is the demo data".getBytes(), "~/Data/Membership Test", orgContext.getOrganizationId());
-		BaseRecord urole1 = mf.userRole(testUser1);
-		BaseRecord uperm1 = mf.userPermission(testUser1);
+		BaseRecord urole1 = AccessSchema.userRole(testUser1);
+		BaseRecord uperm1 = AccessSchema.userPermission(testUser1);
 
 		logger.info("Setup test rights");
 		assertNotNull("User role is null", urole1);
@@ -447,7 +447,7 @@ public class TestObjectPolicy extends BaseTest {
 		}
 		
 		BaseRecord dat = getCreateData(testUser1, "Test Membership Data 1", "text/plain", "This is the demo data".getBytes(), "~/Data/Membership Test", (long)orgContext.getOrganizationId());
-		BaseRecord urole1 = mf.userRole(testUser1);
+		BaseRecord urole1 = AccessSchema.userRole(testUser1);
 
 		assertNotNull("User role is null", urole1);
 
