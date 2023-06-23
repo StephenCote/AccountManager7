@@ -39,7 +39,6 @@ public class DBSearch extends SearchBase {
 
 		/// Copy the query as it's likely reused to build paginated lists,
 		/// And then drop any sort key since it's not needed on the count
-
 		Query query = new Query(iquery.copyRecord());
 		query.releaseKey();
 		
@@ -70,6 +69,8 @@ public class DBSearch extends SearchBase {
 	
 	public QueryResult find(Query query) throws IndexException, ReaderException {
 		
+		// logger.info(query.toFullString());
+		
 		if(useAlternateIO(query)) {
 			return findAlternate(query);
 		}
@@ -81,10 +82,10 @@ public class DBSearch extends SearchBase {
 		
 		try (Connection con = reader.getDataSource().getConnection()){
 			sql = StatementUtil.getSelectTemplate(query);
-
+			
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
-			// logger.info(statement);
+			//logger.info(statement);
 			ResultSet rset = statement.executeQuery();
 			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
 			while(rset.next()) {

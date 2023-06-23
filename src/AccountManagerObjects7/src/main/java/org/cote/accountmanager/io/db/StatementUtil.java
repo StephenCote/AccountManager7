@@ -24,6 +24,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
@@ -172,7 +173,7 @@ public class StatementUtil {
 		}
 		ModelSchema msschema = RecordFactory.getSchema(schema.getBaseModel());
 		//logger.info("Composing inner select for " + schema.getBaseModel());
-		StringBuilder ibuff = new StringBuilder();
+		// StringBuilder ibuff = new StringBuilder();
 		List<String> fields = new ArrayList<>();
 		List<String> cols = new ArrayList<>();
 		String model = query.get(FieldNames.FIELD_TYPE);
@@ -295,13 +296,31 @@ public class StatementUtil {
 		cols.add("count(" + requestFields.get(0) + ") as A7Count");
 
 		String alias = getAlias(query);
-		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias;
+		
+		/*
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		StringBuffer joinBuff = new StringBuffer();
+		for(BaseRecord j : joins) {
+			String jmodel = j.get(FieldNames.FIELD_TYPE);
+			ModelSchema jschema = RecordFactory.getSchema(model);
+			String jalias = getAlias(j, jmodel);
+			String clause = getQueryClause(j, meta);
+			String joinCol = j.get(FieldNames.FIELD_JOIN_KEY);
+			if(jschema.getFieldSchema(joinCol) == null) {
+				throw new FieldException("Invalid join column " + joinCol + " for " + jmodel);
+			}
+			String joinKey = jalias + "." + joinCol + " = " + alias + "." + FieldNames.FIELD_ID;
+			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jmodel) + " " + jalias + " ON " + clause);
+		}
+		*/
+		String joinClause = getJoinStatement(meta, query);
+		
+		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias + joinClause;
 		buff.append(getQueryString(sql, query, meta));
 		meta.setSql(buff.toString());
 		meta.setColumns(useFields);
 		return meta;
 	}
-	
 	
 	public static DBStatementMeta getSelectTemplate(Query query) throws ModelException, FieldException {
 		DBStatementMeta meta = new DBStatementMeta(query);
@@ -327,6 +346,7 @@ public class StatementUtil {
 			});
 		}
 		//useFields.addAll(requestFields);
+		String alias = getAlias(query);
 		for(String s: requestFields) {
 			FieldSchema fs = schema.getFieldSchema(s);
 			if(fs == null) {
@@ -349,7 +369,7 @@ public class StatementUtil {
 					}
 				}
 				else {
-					cols.add(IOSystem.getActiveContext().getDbUtil().getColumnName(fs.getName()));
+					cols.add(alias + "." + IOSystem.getActiveContext().getDbUtil().getColumnName(fs.getName()));
 				}
 			}
 
@@ -360,12 +380,48 @@ public class StatementUtil {
 			throw new ModelException("No columns were specified in the query");
 		}
 		// query.setRequest(useFields.toArray(new String[0]));
-		String alias = getAlias(query);
-		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias;
+
+
+		/*
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		StringBuffer joinBuff = new StringBuffer();
+		for(BaseRecord j : joins) {
+			String jmodel = j.get(FieldNames.FIELD_TYPE);
+			String jalias = getAlias(j, jmodel);
+			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jmodel) + " " + jalias + " ON " + getQueryClause(j, meta));
+		}
+		*/
+		String joinClause = getJoinStatement(meta, query);
+
+		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias + joinClause;
+		
 		buff.append(getQueryString(sql, query, meta));
 		meta.setSql(buff.toString());
 		meta.setColumns(useFields);
 		return meta;
+	}
+	
+	private static String getJoinStatement(DBStatementMeta meta, BaseRecord query) throws FieldException {
+		String alias = getAlias(query);
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		StringBuffer joinBuff = new StringBuffer();
+		for(BaseRecord j : joins) {
+			String jmodel = j.get(FieldNames.FIELD_TYPE);
+			ModelSchema jschema = RecordFactory.getSchema(jmodel);
+			String jalias = getAlias(j, jmodel);
+			String clause = getQueryClause(j, meta);
+			String joinCol = j.get(FieldNames.FIELD_JOIN_KEY);
+			if(jschema.getFieldSchema(joinCol) == null) {
+				throw new FieldException("Invalid join column " + joinCol + " for " + jmodel);
+			}
+			String joinKey = jalias + "." + joinCol + " = " + alias + "." + FieldNames.FIELD_ID;
+			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jmodel) + " " + jalias + " ON " + joinKey);
+			if(clause.length() > 0) {
+				joinBuff.append(" AND " + clause);
+			}
+		}
+		
+		return joinBuff.toString();
 	}
 	
 	public static String getQueryString(String selectString, Query query, DBStatementMeta meta){
@@ -373,7 +429,7 @@ public class StatementUtil {
 		String pagePrefix = StatementUtil.getPaginationPrefix(query);
 		String pageSuffix = StatementUtil.getPaginationSuffix(query);
 		// String pageField = getPaginationField(query);
-		String queryClause = StatementUtil.getQueryClause(query, meta);
+		String queryClause = getQueryClause(query, meta);
 		String groupClause = query.get(FieldNames.FIELD_GROUP_CLAUSE);
 		String havingClause = query.get(FieldNames.FIELD_HAVING_CLAUSE);
 		int topCount = query.get(FieldNames.FIELD_TOP_COUNT);
@@ -514,8 +570,13 @@ public class StatementUtil {
 		else {
 			 order = "DESC";
 		}
+		String alias = getAlias(query);
 		String sort = query.get(FieldNames.FIELD_SORT_FIELD);
-		String orderClause = (query != null && order != null && sort != null ? " ORDER BY " + sort + " " + order : "");
+		if(sort != null && !RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE)).hasField(sort)) {
+			logger.error("Sort field is not defined on model - " + sort);
+			sort = null;
+		}
+		String orderClause = (query != null && order != null && sort != null ? " ORDER BY " + alias + "." + sort + " " + order : "");
 		if (!isInstructionReadyForPagination(query)) {
 			return orderClause;
 		}
@@ -542,8 +603,19 @@ public class StatementUtil {
 	}
 	public static int setStatementParameters(BaseRecord query, int startMarker, PreparedStatement statement) throws DatabaseException{
 		List<BaseRecord> fields = query.get(FieldNames.FIELD_FIELDS);
-		int len = fields.size();
+		
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
 		int paramMarker = startMarker;
+		for(BaseRecord j : joins) {
+			paramMarker = setStatementParameters(j, paramMarker, statement);
+		}
+		/*
+		if(joins.size() > 0) {
+			logger.info("Marker adjustment: " + startMarker + " to " + paramMarker);
+		}
+		*/
+		int len = fields.size();
+
 		String model = query.get(FieldNames.FIELD_TYPE);
 		ModelSchema schema = RecordFactory.getSchema(model);
 		for(int i = 0; i < len; i++){
@@ -714,9 +786,11 @@ public class StatementUtil {
 			}
 		}
 		catch (SQLException e) {
-			logger.error(e.getMessage());
+			logger.error("Error setting " + index + " for " + fieldName + " with " + value);
+			logger.error(statement.toString());
 			logger.error(e);
-			throw new DatabaseException(e.getMessage());
+			e.printStackTrace();
+			throw new DatabaseException(e);
 		}
 	}
 
