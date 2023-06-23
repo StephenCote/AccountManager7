@@ -1,5 +1,9 @@
 package org.cote.accountmanager.client;
 
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -31,6 +35,79 @@ public class AccessPoint {
 	private IOContext context = null;
 	public AccessPoint(IOContext context) {
 		this.context = context; 
+	}
+	
+	public int countMembers(BaseRecord user, BaseRecord container, String model, BaseRecord effect) {
+		Query q = QueryUtil.createQuery(model);
+		q.filterParticipation(container, model, effect);
+		return count(user, q);
+	}
+	
+	public List<BaseRecord> listMembers(BaseRecord user, BaseRecord container, String model, BaseRecord effect, long startIndex, int recordCount) {
+		Query q = QueryUtil.createQuery(model);
+		q.filterParticipation(container, model, effect);
+		q.setRequestRange(startIndex, recordCount);
+		QueryResult qr = list(user, q);
+		if(qr == null) {
+			return new ArrayList<>();
+		}
+		return Arrays.asList(qr.getResults());
+	}
+	
+	public boolean isMember(BaseRecord user, BaseRecord object, BaseRecord actor) {
+		return isMember(user, object, actor, false);
+	}
+	public boolean isMember(BaseRecord user, BaseRecord object, BaseRecord actor, boolean browseHierarchy) {
+		ActionEnumType aet = ActionEnumType.READ;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, object);
+		boolean outBool = false;
+		PolicyResponseType prr2 = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, actor);
+		if(prr2.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prr2, "Not authorized to read actor");
+			logger.error(prr2.toFullString());
+		}
+		else {
+			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, object);
+			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
+				outBool = IOSystem.getActiveContext().getMemberUtil().isMember(actor, object, browseHierarchy);
+				if(outBool) {
+					AuditUtil.closeAudit(audit, prr, null);	
+				}
+			}
+			else {
+				AuditUtil.closeAudit(audit, prr2, "Not authorized to read object");	
+			}
+		}
+		
+		return outBool;
+	}
+	
+	public boolean member(BaseRecord user, BaseRecord object, BaseRecord actor, BaseRecord effect, boolean enable) {
+		ActionEnumType aet = ActionEnumType.MODIFY;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, object);
+		boolean outBool = false;
+		PolicyResponseType prr2 = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, actor);
+		if(prr2.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prr2, "Not authorized to read actor");
+			logger.error(prr2.toFullString());
+		}
+		else {
+			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, object);
+			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
+				outBool = IOSystem.getActiveContext().getMemberUtil().member(user, object, actor, effect, enable);
+				if(outBool) {
+					AuditUtil.closeAudit(audit, prr, null);	
+				}
+				else {
+					AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "No change made");
+				}
+			}
+			else {
+				AuditUtil.closeAudit(audit, prr2, "Not authorized to update object");	
+			}
+		}
+		
+		return outBool;
 	}
 
 	public BaseRecord update(BaseRecord contextUser, BaseRecord object) {
@@ -242,7 +319,9 @@ public class AccessPoint {
 		QueryResult qr = null;
 		try {
 			query.setContextUser(contextUser);
-			query.field(FieldNames.FIELD_ORGANIZATION_ID, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(!query.hasField(FieldNames.FIELD_ORGANIZATION_ID)) {
+				query.field(FieldNames.FIELD_ORGANIZATION_ID, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+			}
 			qr = IOSystem.getActiveContext().getSearch().find(query);
 		} catch (ReaderException | IndexException e) {
 			logger.error(e);
@@ -251,17 +330,19 @@ public class AccessPoint {
 	}
 	
 	
-	/// LIST - 
+	/// COUNT and LIST - 
 	///		The AccountManager 5 security model was to restrict lists to the parent or group, or (in 6) use a very elaborate dynamic sql statement to evaluate the authorization rules
-	///		I special set of functions are written for PostgreSQL to handle this.  However, while testing directly against a file-based or H2-based persistence layer, I want to avoid the tight coupling before
-	///		the general approach is nailed down.  Because I wanted AM 7 to be primarily PBAC at the core, then authorization decisions should follow the policy
-	///		In other words - I need to write a PolicyEvaluator than can do so with direct database calls
-	///		In the meantime, the count isn't checked, and the list/search by query is restricted to group/parent based
+	///		A special set of functions are written for PostgreSQL to handle this.  However, while testing directly against a file-based or H2-based persistence layer, I want to avoid the tight coupling before
+	///		the general approach is nailed down.  Because I wanted AM 7 to be primarily PBAC at the core, authorization decisions should follow the policy
+	///		At the moment, the count and list methods inspect the query and dynamically assemble a policy based on what is being requested, so that at least one policy check becomes required to perform the action
+	///		When trying to view models and including the foreign column reference in a single result, the policy will expand to include that reference, so the context user must have entitlement to that object
+	///		The model can explicitly define roles by system permission (create, read, update, delete, execute) at the model and field level.  For example, to allow a user in the AccountUserReadersRole to read another user, the user model defines that access at the model level, as well as on the two foreign key properties so that the user is able to read them.
 	///
 	public int count(BaseRecord contextUser, Query query) {
 
 		ActionEnumType aet = ActionEnumType.READ;
 		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, null);
+		//query.field(FieldNames.FIELD_ORGANIZATION_ID, null)
 		AuditUtil.query(audit, query.key());
 		PolicyResponseType prr = null;
 		if((prr = authorizeQuery(contextUser, query)) == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
@@ -314,6 +395,15 @@ public class AccessPoint {
 		}
 		PolicyResponseType[] prrs = context.getPolicyUtil().evaluateQueryToReadPolicyResponses(contextUser, query);
 		PolicyResponseType prr = null;
+		for(PolicyResponseType pr : prrs) {
+			prr = pr;
+			if(pr.getType() == PolicyResponseEnumType.PERMIT) {
+				break;
+			}
+		}
+		return prr;
+		/*
+		PolicyResponseType prr = null;
 		PolicyResponseType vprr = null;
 		for(PolicyResponseType pr : prrs) {
 			if(vprr == null && pr.getType() == PolicyResponseEnumType.PERMIT) {
@@ -325,6 +415,7 @@ public class AccessPoint {
 			}
 		}
 		return (prr != null ? prr : vprr);
+		*/
 	}
 	
 	

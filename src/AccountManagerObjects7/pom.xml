@@ -65,19 +65,21 @@
 					<excludes>
 
 					<!--
-						<exclude>**/TestStream.java</exclude>
+						<exclude>**/TestMembership.java</exclude>
+							
 						
 					-->
 						
 						
 						<!-- Repeatable Set -->
+						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestData.java</exclude>	
-							
+						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestValidationRules.java</exclude>
 						<exclude>**/TestVault.java</exclude>	
 						<exclude>**/TestPGDatabase.java</exclude>
 						<exclude>**/TestObjectPolicy.java</exclude>
-						<exclude>**/TestAccessPoint.java</exclude>	
+						
 						<exclude>**/TestObjectConstruct.java</exclude>	
 						<exclude>**/TestH2Database.java</exclude>
 						<exclude>**/TestJournal.java</exclude>					
@@ -89,7 +91,7 @@
 						<exclude>**/TestForeignKey.java</exclude>
 						<exclude>**/TestAM6Model.java</exclude>
 						<exclude>**/TestFlexValueType.java</exclude>		
-						<exclude>**/TestNameIdMap.java</exclude>
+						
 						<exclude>**/TestValueType.java</exclude>
 						<exclude>**/TestLooseField.java</exclude>
 
@@ -97,12 +99,13 @@
 						
 						<!-- Not intended to be regularly run -->
 						<exclude>**/TestGenerator.java</exclude>
+						<exclude>**/TestNameIdMap.java</exclude>
 						
 						<!-- Currently Invalid -->
 						<exclude>**/TestFileIndexerVer2.java</exclude>
 						<exclude>**/TestFileStore.java</exclude>
 						<exclude>**/TestSerializer.java</exclude>
-						<exclude>**/TestMembership.java</exclude>
+						
 
 					</excludes>
 					<systemProperties>
