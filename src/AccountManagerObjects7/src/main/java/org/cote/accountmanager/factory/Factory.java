@@ -169,32 +169,6 @@ public class Factory {
 		}
 	}
 	
-	
-	/*
-	 * 		KeyStore ks = KeyStoreUtil.getCreateKeyStore(path, pwd);
-		KeyStore kts = KeyStoreUtil.getCreateKeyStore(tpath, pwd);
-		assertNotNull("Key store is null", ks);
-		String alias = "testUser1 - Personal CA";
-		String talias = "testUser1 - Personal Trust";
-		if(KeyStoreUtil.getCertificate(ks, alias) == null) {
-			boolean imported = false;
-			try {
-				imported = KeyStoreUtil.importCertificate(ks, ca.getCertificate().getEncoded(), alias);
-				KeyStoreUtil.saveKeyStore(ks, path, pwd);
-			} catch (CertificateEncodingException e) {
-				logger.error(e);
-				
-			}
-			assertTrue("Expected certificate to be imported", imported);
-		}
-	 */
-	
-	public BaseRecord userRole(BaseRecord user) {
-		return context.getPathUtil().findPath(user, ModelNames.MODEL_ROLE, "~/", "USER", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-	}
-	public BaseRecord userPermission(BaseRecord user) {
-		return context.getPathUtil().findPath(user, ModelNames.MODEL_PERMISSION, "~/", "USER", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-	}
 	private void setupUser(BaseRecord adminUser, BaseRecord user) {
 		
 		if(adminUser != null && user != null) {
@@ -204,9 +178,11 @@ public class Factory {
 			BaseRecord userHome = context.getPathUtil().findPath(adminUser, ModelNames.MODEL_GROUP, "/home/" + user.get(FieldNames.FIELD_NAME), "DATA", orgId);
 			
 			setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.USER.toString());
-			// setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.ROLE.toString());
+			setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.DATA.toString());
+
 			setCRUEntitlement(adminUser, user, permHome, PermissionEnumType.USER.toString());
-			// setCRUEntitlement(adminUser, user, permHome, PermissionEnumType.PERMISSION.toString());
+			setCRUEntitlement(adminUser, user, permHome, PermissionEnumType.DATA.toString());
+			
 			setCRUEntitlement(adminUser, user, userHome, PermissionEnumType.GROUP.toString());
 			setCRUEntitlement(adminUser, user, userHome, PermissionEnumType.DATA.toString());
 			setCRUEntitlement(adminUser, user, user, PermissionEnumType.DATA.toString());
@@ -270,7 +246,7 @@ public class Factory {
 					rec.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID, group);
 					rec.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH, group);
 				}
-				context.getRecordUtil().createRecord(rec, true);
+				context.getRecordUtil().createRecord(rec, true, true);
 				
 				BaseRecord pdir = context.getPathUtil().makePath(adminUser, ModelNames.MODEL_GROUP, "/Persons", "DATA", organizationId);
 				BaseRecord prec = RecordFactory.model(ModelNames.MODEL_PERSON).newInstance();
