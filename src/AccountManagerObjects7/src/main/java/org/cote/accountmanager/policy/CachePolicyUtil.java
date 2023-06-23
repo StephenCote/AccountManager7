@@ -7,6 +7,7 @@ import java.util.Map;
 
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.cache.ICache;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IReader;
@@ -14,12 +15,14 @@ import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.objects.generated.PolicyType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.CryptoUtil;
 
 public class CachePolicyUtil extends PolicyUtil implements ICache {
 	
+	private Map<String, PolicyType> policyCache;
 	private Map<String, PolicyResponseType> responseCache;
 	private Map<String, List<String>> actorCache;
 	private Map<String, List<String>> resourceCache;
@@ -34,6 +37,7 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		init();
 	}
 	private void init() {
+		policyCache = new HashMap<>();
 		responseCache = new HashMap<>();
 		actorCache = new HashMap<>();
 		resourceCache = new HashMap<>();
@@ -64,6 +68,25 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 	}
 	
 	@Override
+	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
+		String key = name + "-" + actor.get(FieldNames.FIELD_URN)+ "-" + token + "-" + resource.get(FieldNames.FIELD_URN);
+		String hash = CryptoUtil.getDigestAsString(key);
+		if(!policyCache.containsKey(hash)) {
+			PolicyType pol = super.getResourcePolicy(name, actor, token, resource).toConcrete();
+			policyCache.put(hash, pol);
+			if(isTrace()) {
+				logger.info("Cache resource policy for " + key);
+			}
+		}
+		else {
+			if(isTrace()) {
+				logger.info("Using cached resource policy for " + key);
+			}
+		}
+		return policyCache.get(hash);
+	}
+	
+	@Override
 	public PolicyResponseType evaluateResourcePolicy(BaseRecord contextUser, String policyName, BaseRecord actor, BaseRecord resource) {
 		String hash = null;
 		PolicyResponseType prr = null;
@@ -72,10 +95,10 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 			if(recU == null) {
 				recU = resource.hash();
 			}
-			// logger.info("Context Key: " + getContextKey(contextUser, policyName, actor.get(FieldNames.FIELD_URN), recU));
+			//logger.info("Context Key: " + getContextKey(contextUser, policyName, actor.get(FieldNames.FIELD_URN), recU));
 			hash = getContextHash(contextUser, policyName, actor.get(FieldNames.FIELD_URN), recU);
 			if(responseCache.containsKey(hash)) {
-				logger.debug("Cache hit " + policyName + " " + hash);
+				logger.info("Cache hit " + policyName + " " + hash);
 				prr = responseCache.get(hash);
 				if(getPolicyResponseExpired(prr)) {
 					logger.info("Response expired");
