@@ -52,4 +52,11 @@ public class AccessSchema {
 		return IOSystem.getActiveContext().getPathUtil().findPath(null, ModelNames.MODEL_PERMISSION, "/" + name, type, organizationId);
 	}
 	
+	public static BaseRecord userRole(BaseRecord user) {
+		return IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_ROLE, "~/", "USER", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+	}
+	public static BaseRecord userPermission(BaseRecord user) {
+		return IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_PERMISSION, "~/", "USER", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+	}
+	
 }

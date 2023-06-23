@@ -22,10 +22,12 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelAccess;
 import org.cote.accountmanager.schema.ModelAccessPolicies;
 import org.cote.accountmanager.schema.ModelAccessPolicyBind;
+import org.cote.accountmanager.schema.ModelAccessRoles;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.MemberUtil;
 
 public class AuthorizationUtil {
@@ -55,6 +57,25 @@ public class AuthorizationUtil {
 		this.trace = trace;
 	}
 
+	public boolean isModelAdministrator(String model, BaseRecord user) {
+		ModelSchema ms = RecordFactory.getSchema(model);
+		boolean isAdmin = false;
+		List<String> roles = Optional.ofNullable(ms)
+				.map(ModelSchema::getAccess)
+				.map(ModelAccess::getRoles)
+				.map(ModelAccessRoles::getAdmin)
+				.orElse(new ArrayList<>())
+		;
+		OrganizationContext ctx = IOSystem.getActiveContext().getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+		for(String s: roles) {
+			BaseRecord role = IOSystem.getActiveContext().getPathUtil().findPath(ctx.getAdminUser(), ModelNames.MODEL_ROLE, "/" + s, RoleEnumType.USER.toString(), ctx.getOrganizationId());
+			if(role != null && IOSystem.getActiveContext().getMemberUtil().isMember(user, role)) {
+				isAdmin = true;
+				break;
+			}
+		}
+		return isAdmin;
+	}
 
 
 	public PolicyResponseType canCreate(BaseRecord contextUser, BaseRecord actor, BaseRecord resource) {
@@ -131,7 +152,7 @@ public class AuthorizationUtil {
 			
 		}
 		if(trace) {
-			logger.info("Parts: " + parts.size());
+			logger.info("Find members with permission: " + parts.size());
 		}
 		for(BaseRecord part : parts) {
 			
