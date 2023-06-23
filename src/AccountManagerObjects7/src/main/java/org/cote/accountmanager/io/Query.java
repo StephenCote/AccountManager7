@@ -1,5 +1,6 @@
 package org.cote.accountmanager.io;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -140,6 +141,15 @@ public class Query extends LooseRecord{
 		releaseKey();
 	}
 	
+	public boolean hasQueryField(String name) {
+		List<?> vals = QueryUtil.findFieldValues(this, name, null);
+		return vals.size() > 0;
+	}
+	
+	public void filterParticipation(BaseRecord object, String actorType, BaseRecord effect) {
+		QueryUtil.filterParticipation(this, object, actorType, effect);
+	}
+	
 	/// Note: The flexible type of value is pinned here to the field type 
 	/// Also, not every type was included at this time
 	///
@@ -150,14 +160,16 @@ public class Query extends LooseRecord{
 		return field(fieldName, comparator, value, this);
 	}
 	public <T> QueryField field(String fieldName, ComparatorEnumType comparator, T value, BaseRecord parent) {
-		//BaseRecord ofield = null;
+		if(hasQueryField(fieldName)) {
+			logger.warn("Query field '" + fieldName + "' defined more than once");
+		}
 		QueryField qfield = null;
 		FieldType itype = getIRecord().getField(fieldName);
 		try {
-			//qfield = RecordFactory.newInstance(ModelNames.MODEL_QUERY_FIELD);
 			qfield = new QueryField();
 			qfield.set(FieldNames.FIELD_NAME, fieldName);
 			qfield.set(FieldNames.FIELD_COMPARATOR, comparator.toString());
+
 			/// a null field name is permitted for groups
 			if(itype != null) {
 				if(comparator == ComparatorEnumType.IN || comparator == ComparatorEnumType.NOT_IN)
@@ -165,53 +177,23 @@ public class Query extends LooseRecord{
 					qfield.setString(FieldNames.FIELD_VALUE, value);
 				}
 				else {
-					// logger.info(itype.getValueType() + " = " + value);
 					qfield.setFlex(FieldNames.FIELD_VALUE, itype.getValueType(), value);
 				}
-				/*
-				switch(itype.getValueType()) {
-					case ENUM:
-						qfield.setString(FieldNames.FIELD_VALUE, value.toString());
-						break;
-					case STRING:
-						qfield.setString(FieldNames.FIELD_VALUE, value);
-						break;
-					case INT:
-						qfield.setInt(FieldNames.FIELD_VALUE, value);
-						break;
-					case LONG:
-						qfield.setLong(FieldNames.FIELD_VALUE, value);
-						break;
-					case TIMESTAMP:
-						qfield.setDateTime(FieldNames.FIELD_VALUE, value);
-						break;
-					case BOOLEAN:
-						qfield.setBoolean(FieldNames.FIELD_VALUE, value);
-						break;
-					default:
-						logger.error("Unhandled type: " + itype.getValueType().toString());
-						break;
-				}
-				*/
+
 			}
 			else {
 				logger.error("**** Null itype for " + getIRecord().getModel() + "." + fieldName);
 				qfield.setString(FieldNames.FIELD_VALUE, null);
 			}
-			//qfield.set(FieldNames.FIELD_VALUE, value);
-			//logger.info("Value: " + value);
 		} catch (FieldException | ModelNotFoundException | ValueException | ModelException e) {
 			logger.error(e);
 		}
 		List<BaseRecord> qqueries = parent.get(FieldNames.FIELD_FIELDS);
-		//QueryField qf = new QueryField(qfield);
-		
+
 		releaseKey();
 		
 		qqueries.add(qfield);
-		//qqueries.add(qfield);		
-		
-		//return new QueryField(qfield);
+
 		return qfield;
 	}
 }

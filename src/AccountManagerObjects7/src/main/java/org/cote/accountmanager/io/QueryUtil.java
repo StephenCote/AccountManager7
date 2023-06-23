@@ -20,9 +20,11 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.EffectEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.ParameterUtil;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class QueryUtil {
 	public static final Logger logger = LogManager.getLogger(QueryUtil.class);
@@ -91,6 +93,10 @@ public class QueryUtil {
 	public static String key(BaseRecord query) {
 		String type = query.get(FieldNames.FIELD_TYPE);
 		String order = query.get(FieldNames.FIELD_ORDER);
+		String sortBy = query.get(FieldNames.FIELD_SORT_FIELD);
+		if(sortBy == null) {
+			sortBy = FieldNames.FIELD_ID;
+		}
 		String actorId = query.get(FieldNames.FIELD_CONTEXT_USER_OBJECT_ID);
 
 		if(actorId == null) {
@@ -104,7 +110,18 @@ public class QueryUtil {
 		int count = query.get(FieldNames.FIELD_RECORD_COUNT);
 		long startIndex = query.get(FieldNames.FIELD_START_RECORD);
 		
-		return (actorId + "-" + type + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + reqF + "] " + fieldKey(query));
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		List<String> jkey = new ArrayList<>();
+		for(BaseRecord j : joins) {
+			Query jq = new Query(j);
+			jkey.add(jq.key());
+		}
+		String jF = jkey.stream().collect(Collectors.joining(" || "));
+		if(jF.length() == 0) {
+			jF = "*";
+		}
+		
+		return (actorId + "-" + type + "-" + sortBy + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + jF + "] [" + reqF + "] " + fieldKey(query));
 	}
 
 	private static String fieldKey(BaseRecord field) {
@@ -205,7 +222,41 @@ public class QueryUtil {
 				importQueryFields(ComparatorEnumType.EQUALS, query, useParent, r);
 			}
 		}
-	}	
+	}
+	
+	
+	/// This constructs a subQuery added to the 'joins' list
+	public static void filterParticipation(Query query, BaseRecord object, String actorType, BaseRecord effect) {
+		Query part = createParticipationQuery(null, object, null, effect);
+		part.field(FieldNames.FIELD_PARTICIPANT_MODEL, actorType);
+		try {
+			part.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
+			query.field(FieldNames.FIELD_ORGANIZATION_ID, object.get(FieldNames.FIELD_ORGANIZATION_ID));
+			query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		joins.add(part);
+	}
+	
+	public static Query createParticipationQuery(BaseRecord contextUser, BaseRecord object, BaseRecord actor, BaseRecord effect) {
+		Query q = new Query(contextUser, ModelNames.MODEL_PARTICIPATION);
+		if(object != null) {
+			q.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.EQUALS, object.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_PARTICIPATION_MODEL, ComparatorEnumType.EQUALS, object.getModel());
+		}
+		if(actor != null) {
+			q.field(FieldNames.FIELD_PARTICIPANT_ID, ComparatorEnumType.EQUALS, actor.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, ComparatorEnumType.EQUALS, actor.getModel());
+		}
+		if(effect != null) {
+			q.field(FieldNames.FIELD_PERMISSION_ID, ComparatorEnumType.EQUALS, effect.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_EFFECT_TYPE, ComparatorEnumType.EQUALS, EffectEnumType.GRANT_PERMISSION.toString());
+		}
+
+		return q;
+	}
 
 	public static void importQueryFields(ComparatorEnumType comp, Query query, BaseRecord parent, BaseRecord rec) throws FieldException, ModelNotFoundException {
 		for(FieldType f: rec.getFields()) {
@@ -214,11 +265,17 @@ public class QueryUtil {
 	}
 	
 	public static <T> Query createQuery(String modelName, String fieldName, T val) {
+		return createQuery(modelName, fieldName, val, 0L);
+	}
+	public static <T> Query createQuery(String modelName, String fieldName, T val, long organizationId) {
 		Query query = null;
 		// logger.info("Query identity: " + modelName + "." + fieldName + " :: " + val);
 		try {
 			query = new Query(IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_QUERY, null, null, ParameterUtil.newParameterList(FieldNames.FIELD_TYPE, modelName)));
 			query.field(fieldName, ComparatorEnumType.EQUALS, val);
+			if(organizationId > 0L) {
+				query.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+			}
 		} catch (NullPointerException | FactoryException e) {
 			logger.error(e);
 			
@@ -267,9 +324,10 @@ public class QueryUtil {
 			logger.error("Invalid model: '" + type + "'");
 			return null;
 		}
-		boolean isGroup = ms.getInherits().contains(ModelNames.MODEL_DIRECTORY);
-		boolean isParent = ms.getInherits().contains(ModelNames.MODEL_PARENT);
-		
+		boolean isGroup = RecordUtil.inherits(ms, ModelNames.MODEL_DIRECTORY);
+		boolean isParent = RecordUtil.inherits(ms, ModelNames.MODEL_PARENT);
+		boolean isOrg = RecordUtil.inherits(ms, ModelNames.MODEL_ORGANIZATION_EXT);
+
 		Query q = null;
 		if(isGroup || isParent) {
 			if(isGroup) {
@@ -287,11 +345,14 @@ public class QueryUtil {
 
 		}
 		else {
-			logger.error("TODO: List for system");
+			//logger.error("TODO: List for system");
 			q = QueryUtil.createQuery(type);
 		}
 		if(q != null) {
 			q.setRequestRange(startIndex, recordCount);
+			if(isOrg) {
+				q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			}
 			if(name != null) {
 				q.field(FieldNames.FIELD_NAME, name);
 			}
