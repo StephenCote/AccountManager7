@@ -457,9 +457,10 @@ public class PolicyEvaluator {
 	}
 	private OperationResponseEnumType evaluateRoleAuthorization(BaseRecord prt,BaseRecord prr, BaseRecord pattern, BaseRecord src, BaseRecord targ, BaseRecord role) {
 		OperationResponseEnumType outResponse = OperationResponseEnumType.UNKNOWN;
-		
 		boolean authZ = memberUtil.isMember(src, role, true);
-
+		if(trace) {
+			logger.info("Evaluate role authorization: Is " + src.get(FieldNames.FIELD_URN) + " in " + role.get(FieldNames.FIELD_URN) + " = " + authZ);
+		}
 		if(authZ){
 			outResponse = OperationResponseEnumType.SUCCEEDED;
 		}
@@ -469,10 +470,10 @@ public class PolicyEvaluator {
 		OperationResponseEnumType outResponse = OperationResponseEnumType.UNKNOWN;
 		boolean authZ = authUtil.checkEntitlement(src, permission, targ);
 		if(trace) {
-			logger.info(src.toFullString());
-			logger.info(permission.toFullString());
-			logger.info(targ.toFullString());
-			logger.info("AuthZ: " + authZ);
+			// logger.info(src.toFullString());
+			// logger.info(permission.toFullString());
+			// logger.info(targ.toFullString());
+			logger.info("Evaluate permission authorization: Does  " +  src.get(FieldNames.FIELD_URN) + " have " + permission.get(FieldNames.FIELD_URN) + " = " + authZ);
 		}
 
 		if(authZ){

@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelException;
@@ -49,6 +50,7 @@ import org.cote.accountmanager.schema.ModelAccess;
 import org.cote.accountmanager.schema.ModelAccessRoles;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.ConditionEnumType;
 import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
@@ -222,8 +224,10 @@ public class PolicyUtil {
 		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
 		try {
 			Set<String> querySet = new HashSet<>();
+			/// Look through index and identity fields and compare against the values being searched for
+			/// 
 			for(FieldSchema fs : ms.getFields()) {
-				if(fs.isIdentity() || fs.isRecursive()) {
+				if(fs.isIndex() || fs.isIdentity() || fs.isRecursive()) {
 					List<?> vals = QueryUtil.findFieldValues(query, fs.getName(), null);
 					String propName = fs.getName();
 					String type = query.get(FieldNames.FIELD_TYPE);
@@ -240,16 +244,28 @@ public class PolicyUtil {
 						if(!querySet.contains(sq.key())) {
 							querySet.add(sq.key());
 							QueryResult qr = search.find(sq);
+							logger.info("Scanning " + sq.key());
 							for(BaseRecord cr : qr.getResults()) {
 								prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, query.get(FieldNames.FIELD_TOKEN), cr));
 							}
 						}
 					}
 				}
+				else {
+					// logger.info("Skip: " + fs.getName());
+				}
+			}
+			if(prrs.size() == 0) {
+				List<BaseRecord> fields = query.get(FieldNames.FIELD_FIELDS);
+				if(fields.size() == 0 && getSchemaRoles(ms.getAccess(), SystemPermissionEnumType.READ).size() > 0) {
+					logger.warn("*** Evaluate system policy for coarse model level read");
+					BaseRecord tmpRec = IOSystem.getActiveContext().getFactory().newInstance(query.get(FieldNames.FIELD_TYPE));
+					prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, null, tmpRec));
+				}
 			}
 
 		}
-		catch(ReaderException | IndexException | FieldException | ValueException | ModelNotFoundException e) {
+		catch(ReaderException | IndexException | FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 			logger.error(e);
 		}
 		return prrs.toArray(new PolicyResponseType[0]);
@@ -448,8 +464,10 @@ public class PolicyUtil {
 		ModelSchema schema = RecordFactory.getSchema(object.getModel());
 		List<String> roles = getSchemaRoles(schema.getAccess(), spet);
 		if(roles.size() > 0) {
+			//logger.info("Evaluating schema access for " + actor.get(FieldNames.FIELD_URN)+ " via " + roles.size() + " roles for " + object.get(FieldNames.FIELD_URN));
 			for(String r : roles) {
 				BaseRecord pattern = getModelAccessPattern(actor, r);
+				//logger.info(pattern.toFullString());
 				if(pattern != null) {
 					patterns.add(pattern);
 				}
@@ -649,10 +667,12 @@ public class PolicyUtil {
 		}
 		
 		if(trace) {
+			logger.info("*** POLICY BASE");
 			logger.info(policyBase);
 		}
 
 		rec = JSONUtil.importObject(policyBase, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		
 		if(rec == null) {
 			logger.error("Failed to import policy");
 			logger.error(policyBase);
@@ -674,13 +694,30 @@ public class PolicyUtil {
 		List<BaseRecord> rules = rec.get(FieldNames.FIELD_RULES);
 		
 		List<BaseRecord> schemaRules = getSchemaRules(actor, spet, resource);
-		logger.debug("Adding " + schemaRules.size() + " dynamic rules");
+		if(trace) {
+			logger.info("Adding " + schemaRules.size() + " dynamic rules");
+		}
 		rules.addAll(schemaRules);
 		
 		if(removeGroupUrn || removeParentUrn || token == null) {
 			removeUnusedRules(rules, removeGroupUrn, removeParentUrn, (token == null));
 		}
-		
+		if(rules.size() > 1) {
+			/// if(trace) {
+				/// This shouldn't be handled like this
+				/// The condition should remain all because the purpose for the additional rules was to scan for the foreign references
+				/// Therefore, need to double check where the model access rule/patterns are being included, either in an adjacent rule to account for the foreign references, or in the primary rule for the resource access
+				///
+				//logger.warn("**** BUG BUG - Reclassifying system policy to ANY rule, not ALL rules - This is not currently correct.  See code comment.");
+			/// }
+			/*
+			try {
+				rec.set(FieldNames.FIELD_CONDITION, ConditionEnumType.ANY);
+			} catch (FieldException | ValueException | ModelNotFoundException e1) {
+				logger.error(e1);
+			}
+			*/
+		}
 		return rec;
 		
 	}
@@ -746,7 +783,7 @@ public class PolicyUtil {
 		}
 		if(fact.hasField(FieldNames.FIELD_FACT_DATA_TYPE)) {
 			String fdt = fact.get(FieldNames.FIELD_FACT_DATA_TYPE);
-			if(removeToken && fdt.equals("token")) {
+			if(removeToken && fdt != null && fdt.equals("token")) {
 				outBool = false;
 			}
 			
