@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 import java.nio.ByteBuffer;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
@@ -54,6 +55,8 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.StreamUtil;
+import org.cote.accountmanager.util.ThumbnailUtil;
+import org.cote.accountmanager.util.DirectoryUtil;
 import org.junit.Test;
 
 import io.jsonwebtoken.Claims;
@@ -121,6 +124,85 @@ public class TestStream extends BaseTest {
 		
 	}
 	*/
+	
+	@Test
+	public void TestListLargeData() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Data/StreamList", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+		int count = ioContext.getAccessPoint().count(testUser1, q);
+		int maxCount = 650;
+		int iter = 0;
+		if(count == 0) {
+			DirectoryUtil du = new DirectoryUtil("c:\\users\\swcot\\Pictures");
+			List<File> files = du.dir();
+			for(File f: files) {
+				if(iter >= maxCount) {
+					break;
+				}
+				if(f.isDirectory()) {
+					continue;
+				}
+				try(FileInputStream fos = new FileInputStream(f)){
+					
+					boolean created = StreamUtil.streamToData(testUser1, f.getName(), f.getAbsolutePath(), "~/Data/StreamList", 0L, fos);
+					assertTrue("Failed to stream into data", created);
+					iter++;
+					
+				} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+					logger.error(e);
+				}
+
+			}
+			//logger.info("File count: " + files.size());
+		}
+		logger.info("Count: " + count);
+		int pages = 3;
+		long startIndex = 0L;
+		int recordCount = 10;
+		for(int i = 0; i < pages; i++) {
+			logger.info("PAGE #" + (i + 1));
+			Query pq = QueryUtil.buildQuery(testUser1, ModelNames.MODEL_DATA, group.get(FieldNames.FIELD_OBJECT_ID), null, startIndex, recordCount);
+			assertNotNull("Query is null", pq);
+			pq.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OBJECT_ID});
+			logger.info("Retrieve data list");
+			QueryResult qr = ioContext.getAccessPoint().list(testUser1, pq);
+			assertNotNull("Result is null", qr);
+			int thumbWidth = 48;
+			int thumbHeight = 48;
+			//logger.info(qr.toFullString());
+			try {
+				logger.info("Scanning page for thumbnails");
+				for(BaseRecord rec : qr.getResults()) {
+					String thumbName = rec.get(FieldNames.FIELD_NAME) + " " + thumbWidth + "x" + thumbHeight;
+					BaseRecord thumb = ioContext.getAccessPoint().findByNameInGroup(testUser1, ModelNames.MODEL_THUMBNAIL, group.get(FieldNames.FIELD_OBJECT_ID), thumbName);
+					if(thumb == null) {
+						logger.info("Creating thumbnail " + thumbName);
+						try {
+							thumb = ThumbnailUtil.getCreateThumbnail(rec, thumbWidth, thumbHeight);
+							if(thumb == null) {
+								logger.error("Failed to create thumbnail for " + rec.get(FieldNames.FIELD_URN));
+							}
+						}
+						catch(NullPointerException e) {
+							logger.error(e);
+							logger.error(rec.toFullString());
+						}
+					}
+					else {
+						logger.info("Thumbnail " + thumbName + " already exists");
+					}
+				}
+			}
+			catch(ModelNotFoundException | IndexException | ReaderException | FactoryException | IOException | FieldException | ValueException e) {
+				logger.error(e);
+			}
+			startIndex += recordCount;
+		}
+	}
+	/*
 	@Test
 	public void TestStreamUtil() {
 		logger.info("Test Streaming");
@@ -211,6 +293,6 @@ public class TestStream extends BaseTest {
 		
 		
 	}
-
+	*/
 	
 }
