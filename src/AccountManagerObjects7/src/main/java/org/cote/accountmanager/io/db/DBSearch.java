@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.SearchBase;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
 
 public class DBSearch extends SearchBase {
@@ -79,6 +80,22 @@ public class DBSearch extends SearchBase {
 		List<BaseRecord> recs = new ArrayList<>();
 		DBStatementMeta sql = null;
 		MemoryReader memReader = new MemoryReader();
+		
+		if(query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID) && query.getQueryFields().size() == 1 && query.getJoins().size() == 0) {
+			String type = query.get(FieldNames.FIELD_TYPE);
+			if(!ModelNames.MODEL_MODEL_SCHEMA.equals(type)) {
+				logger.warn("**** WARNING: Searching with only an Organization filter");
+				//logger.warn(query.toFullString());
+				StackTraceElement[] st = new Throwable().getStackTrace();
+				for(int i = 0; i < st.length; i++) {
+					logger.error(st[i].toString());
+				}
+			}
+		}
+		if(!query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID)) {
+			// logger.warn("**** Organization not defined");
+			// logger.warn(query.toFullString());
+		}
 		
 		try (Connection con = reader.getDataSource().getConnection()){
 			sql = StatementUtil.getSelectTemplate(query);
