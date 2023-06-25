@@ -141,6 +141,13 @@ public class Query extends LooseRecord{
 		releaseKey();
 	}
 	
+	public List<BaseRecord> getQueryFields(){
+		return get(FieldNames.FIELD_FIELDS);
+	}
+	public List<BaseRecord> getJoins(){
+		return get(FieldNames.FIELD_JOINS);
+	}
+	
 	public boolean hasQueryField(String name) {
 		List<?> vals = QueryUtil.findFieldValues(this, name, null);
 		return vals.size() > 0;
