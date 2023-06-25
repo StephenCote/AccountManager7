@@ -224,10 +224,16 @@ public class PolicyUtil {
 		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
 		try {
 			Set<String> querySet = new HashSet<>();
-			/// Look through index and identity fields and compare against the values being searched for
+			/// Look through fields with an access model or identity fields and compare against the values being searched for
 			/// 
 			for(FieldSchema fs : ms.getFields()) {
-				if(fs.isIndex() || fs.isIdentity() || fs.isRecursive()) {
+				/// fs.isIndex() ||
+				/*
+				if(fs.isIndex()) {
+					logger.warn("Need to consider index: " + query.get(FieldNames.FIELD_TYPE) + "." + fs.getName());
+				}
+				*/
+				if((fs.getAccess() != null && fs.getAccess().getRoles() != null) || fs.isIdentity() || fs.isRecursive()) {
 					List<?> vals = QueryUtil.findFieldValues(query, fs.getName(), null);
 					String propName = fs.getName();
 					String type = query.get(FieldNames.FIELD_TYPE);
@@ -243,8 +249,10 @@ public class PolicyUtil {
 						sq.set(FieldNames.FIELD_INSPECT, true);
 						if(!querySet.contains(sq.key())) {
 							querySet.add(sq.key());
+							if(trace) {
+								logger.info("Scanning " + query.key() + " --> " + sq.key() + " from " + type + "." + propName + "=" + x);
+							}
 							QueryResult qr = search.find(sq);
-							logger.info("Scanning " + sq.key());
 							for(BaseRecord cr : qr.getResults()) {
 								prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, query.get(FieldNames.FIELD_TOKEN), cr));
 							}
@@ -256,12 +264,24 @@ public class PolicyUtil {
 				}
 			}
 			if(prrs.size() == 0) {
-				List<BaseRecord> fields = query.get(FieldNames.FIELD_FIELDS);
-				if(fields.size() == 0 && getSchemaRoles(ms.getAccess(), SystemPermissionEnumType.READ).size() > 0) {
-					logger.warn("*** Evaluate system policy for coarse model level read");
+				// List<BaseRecord> fields = query.get(FieldNames.FIELD_FIELDS);
+				// fields.size() == 0 && 
+				if(getSchemaRoles(ms.getAccess(), SystemPermissionEnumType.READ).size() > 0) {
+					if(trace) {
+						logger.warn("*** Evaluate system policy for coarse model level read");
+					}
 					BaseRecord tmpRec = IOSystem.getActiveContext().getFactory().newInstance(query.get(FieldNames.FIELD_TYPE));
 					prrs.add(evaluateResourcePolicy(contextUser, POLICY_SYSTEM_READ_OBJECT, contextUser, null, tmpRec));
 				}
+				else {
+					if(trace) {
+						logger.info("Zero PRRs found");
+						logger.info(query.toFullString());
+					}
+				}
+			}
+			else {
+				logger.info("PRR Count: " + prrs.size());
 			}
 
 		}
