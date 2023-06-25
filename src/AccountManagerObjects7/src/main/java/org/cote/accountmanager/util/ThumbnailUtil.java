@@ -30,10 +30,11 @@ public class ThumbnailUtil {
 		}
 		return true;
 	}
-	public static BaseRecord getCreateThumbnail(BaseRecord record, int width, int height) throws IndexException, ReaderException, FactoryException, IOException, FieldException, ValueException, ModelNotFoundException {
+	public static BaseRecord getCreateThumbnail(BaseRecord irecord, int width, int height) throws IndexException, ReaderException, FactoryException, IOException, FieldException, ValueException, ModelNotFoundException {
 		//OrganizationContext oct = ioContext.getOrganizationContext(record.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 
 		IOContext ctx = IOSystem.getActiveContext();
+		BaseRecord record = irecord.copyRecord();
 		ctx.getReader().populate(record);
 		if(!canCreateThumbnail(record)) {
 			logger.error("Unable to create a thumbnail from content type: " + record.get(FieldNames.FIELD_CONTENT_TYPE));
