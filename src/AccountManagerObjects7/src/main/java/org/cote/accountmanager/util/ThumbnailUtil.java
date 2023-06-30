@@ -28,11 +28,18 @@ public class ThumbnailUtil {
 		if(contentType == null || !contentType.startsWith("image/")) {
 			return false;
 		}
+		if(!RecordUtil.isIdentityRecord(record)) {
+			logger.error("Record is not an identity record (has never been saved yet)");
+			return false;
+		}
 		return true;
 	}
 	public static BaseRecord getCreateThumbnail(BaseRecord irecord, int width, int height) throws IndexException, ReaderException, FactoryException, IOException, FieldException, ValueException, ModelNotFoundException {
 		//OrganizationContext oct = ioContext.getOrganizationContext(record.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
-
+		if(irecord == null) {
+			logger.error("Record is null");
+			return null;
+		}
 		IOContext ctx = IOSystem.getActiveContext();
 		BaseRecord record = irecord.copyRecord();
 		ctx.getReader().populate(record);
@@ -70,18 +77,18 @@ public class ThumbnailUtil {
 			}
 		}
 
-		logger.info("Loading image bytes ...");
+		logger.info("Creating thumbnail " + thumbName + " in " + thumbPath);
 		ctx.getReader().populate(record);
 		byte[] imageBytes = record.get(FieldNames.FIELD_BYTE_STORE);
 		if(imageBytes.length == 0 && record.hasField(FieldNames.FIELD_STREAM)) {
 			BaseRecord stream = record.get(FieldNames.FIELD_STREAM);
-			logger.info("Loading stream bytes ...");
+			// logger.info("Loading stream bytes ...");
 			if(stream != null) {
 				if(!stream.hasField(FieldNames.FIELD_OBJECT_ID)) {
 					ctx.getReader().populate(stream);
 				}
 				StreamSegmentUtil ssu = new StreamSegmentUtil();
-				logger.info("Streaming bytes ... ");
+				// logger.info("Streaming bytes ... ");
 				long size = stream.get(FieldNames.FIELD_SIZE);
 				if(size == 0L) {
 					logger.warn("Stream size marker is 0");
