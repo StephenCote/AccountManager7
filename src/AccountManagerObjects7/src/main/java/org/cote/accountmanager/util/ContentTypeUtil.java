@@ -522,7 +522,6 @@ public class ContentTypeUtil {
 		types.put("xpix","application/x-vnd.ls-xpix");
 		types.put("xpm","image/x-xpixmap");
 		types.put("xpm","image/xpm");
-		types.put("x-png","image/png");
 		types.put("xsr","video/x-amt-showrun");
 		types.put("xwd","image/x-xwindowdump");
 		types.put("xyz","chemical/x-pdb");
