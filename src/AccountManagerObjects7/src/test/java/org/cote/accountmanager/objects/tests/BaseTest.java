@@ -5,7 +5,10 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 
 import javax.sql.DataSource;
@@ -73,9 +76,26 @@ public class BaseTest {
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
 	protected static boolean resetDataSchema = false;
+	protected static Properties testProperties = null;
+	protected String testDataPath = null;
 	
 	@Before
 	public void setup() {
+		
+		if(testProperties == null){
+			testProperties = new Properties();
+			try {
+				InputStream fis = ClassLoader.getSystemResourceAsStream("./resource.properties"); 
+				testProperties.load(fis);
+				fis.close();
+			} catch (IOException e) {
+				logger.error(e);
+				return;
+			}
+		}
+		
+		testDataPath = testProperties.getProperty("test.data.path");
+		
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
 		/// 
 		// resetIO(null);
@@ -87,10 +107,10 @@ public class BaseTest {
 		//resetIO(null);
 
 		/// USE POSTGRESQL
-		//resetIO("jdbc:postgresql://localhost:15431/am7db", "am7user", "password");
+		resetIO("jdbc:postgresql://localhost:15431/am7db", "am7user", "password");
 
 		/// USE H2
-		resetIO("jdbc:h2:./am7/h2", "sa", "1234");
+		//resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 	}
 	@After
 	public void tearDown() throws Exception{
