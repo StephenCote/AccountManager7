@@ -51,7 +51,12 @@ public class PathProvider implements IProvider {
 					if(obj != null) {
 						model.set(lfield.getBaseProperty(), obj.get(FieldNames.FIELD_ID));
 						if(ipath.startsWith("~/") && contextUser != null) {
-							model.set(field.getName(), contextUser.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH) + ipath.substring(1));
+							String homePath = contextUser.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH);
+							if(homePath == null || homePath.length() == 0) {
+								logger.warn("Invalid home directory path - constructing from owner");
+								homePath = "/home/" + contextUser.get(FieldNames.FIELD_NAME);
+							}
+							model.set(field.getName(), homePath + ipath.substring(1));
 						}
 					}
 					else {
@@ -117,11 +122,14 @@ public class PathProvider implements IProvider {
 							if(parR == null) {
 								throw new ReaderException("Parent " + model.getModel() + " index not found for id " + parentId);
 							}
+							// IOSystem.getActiveContext().getReader().populate(parR);
+							
 							if(!parR.hasField(FieldNames.FIELD_NAME)) {
 								logger.warn("Flush Cache For Partial");
 							 	CacheUtil.clearCache(parR);
 							 	parR = IOSystem.getActiveContext().getReader().read(base, parentId);
 							}
+							
 							String name = parR.get(FieldNames.FIELD_NAME);
 							parentId = parR.get(FieldNames.FIELD_PARENT_ID);
 							pathList.add(name);
@@ -153,7 +161,7 @@ public class PathProvider implements IProvider {
 			//logger.warn("Empty path value");
 			logger.debug(model.toString());
 		}
-		logger.debug("Apply path to " + model.getModel() + " " + lfield.getName() + " == " + path);
+		// logger.info("Apply path to " + model.getModel() + " " + lfield.getName() + " == " + path);
 		model.set(lfield.getName(), path);
 	}
 	
