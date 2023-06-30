@@ -116,27 +116,38 @@ public class Query extends LooseRecord{
 		return irecord;
 	}
 	
-	public String hash() {
+	public synchronized String hash() {
 		if(hashVal == null) {
-			hashVal = CryptoUtil.getDigestAsString(key());
+			String key = key();
+			if(key == null) {
+				logger.error("Null key error");
+			}
+			try {
+				hashVal = CryptoUtil.getDigestAsString(key);
+			}
+			catch(Exception e) {
+				logger.error(e);
+				logger.error(this.toFullString());
+				e.printStackTrace();
+			}
 		}
 		return hashVal;
 	}
 	
-	public String key() {
+	public synchronized String key() {
 		if(keyVal == null) {
 			keyVal = QueryUtil.key(this);
 		}
 		return keyVal;
 	}
 
-	public void releaseKey() {
+	public synchronized void releaseKey() {
 		keyVal = null;
 		hashVal = null;
 	}
 	
 	@Override
-	public <T> void set(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {
+	public synchronized <T> void set(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {
 		super.set(fieldName, val);
 		releaseKey();
 	}
