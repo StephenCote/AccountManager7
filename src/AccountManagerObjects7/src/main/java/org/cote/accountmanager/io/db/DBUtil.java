@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import javax.naming.InitialContext;
@@ -33,6 +34,7 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class DBUtil {
 	public static final Logger logger = LogManager.getLogger(DBUtil.class);
@@ -150,8 +152,9 @@ public class DBUtil {
 
 			SharedPoolDataSource sharedPoolDS = new SharedPoolDataSource();
 			sharedPoolDS.setConnectionPoolDataSource(driver);
-			sharedPoolDS.setMaxActive(10);
-			sharedPoolDS.setMaxWait(50);
+			sharedPoolDS.setMaxIdle(3);
+			sharedPoolDS.setMaxActive(30);
+			sharedPoolDS.setMaxWait(50000);
 			sharedPoolDS.setTestOnBorrow(true);
 			sharedPoolDS.setValidationQuery("SELECT 1");
 			sharedPoolDS.setTestWhileIdle(true);
@@ -172,7 +175,7 @@ public class DBUtil {
 		return getDataSource(pgDriver);
 	}
 	
-	private Map<String, String> sequenceNames = new HashMap<>();
+	private Map<String, String> sequenceNames = new ConcurrentHashMap<>();
 	private String getSequenceName(String modelName) {
 		if(!sequenceNames.containsKey(modelName)) {
 			ModelSchema schema = RecordFactory.getSchema(modelName);
@@ -363,7 +366,7 @@ public class DBUtil {
 				continue;
 			}
 			if(idxSet.contains(f.getName())) {
-				logger.error("Index collision: (" + f.getName() + ")");
+				logger.warn(schema.getName() + " indexible field duplication: (" + f.getName() + ")");
 				continue;
 			}
 			String idx = generateIndex(schema, f.getName(), f.isIdentity());
@@ -373,19 +376,21 @@ public class DBUtil {
 			}
 			
 		}
+		List<String> constraints = RecordUtil.getConstraints(schema);
+		for(String ic : constraints) {
+			if(idxSet.contains(ic)) {
+				logger.error(schema.getName() + " Index collision: (" + ic + ")");
+				continue;
+			}
+			String idx = generateIndex(schema, ic, true);
+			if(idx != null) {
+				idxSet.add(ic);
+				buff.append(idx + "\n");
+			}
+		}
 		for(String is : schema.getInherits()) {
 			ModelSchema ischema = RecordFactory.getSchema(is);
-			for(String ic : ischema.getConstraints()) {
-				if(idxSet.contains(ic)) {
-					logger.error("Index collision: (" + ic + ")");
-					continue;
-				}
-				String idx = generateIndex(schema, ic, true);
-				if(idx != null) {
-					idxSet.add(ic);
-					buff.append(idx + "\n");
-				}
-			}
+
 			for(String ic : ischema.getHints()) {
 				if(idxSet.contains(ic)) {
 					logger.error("Index collision: (" + ic + ")");

@@ -4,6 +4,7 @@ package org.cote.accountmanager.policy;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,8 +17,8 @@ import org.cote.accountmanager.policy.operation.IOperation;
 public class OperationUtil {
 	public static final Logger logger = LogManager.getLogger(OperationUtil.class);
 
-	private static Map<String,Class<?>> operations = new HashMap<>();
-	private static Map<String,IOperation> operationInst = new HashMap<>();
+	private static Map<String,Class<?>> operations = new ConcurrentHashMap<>();
+	private static Map<String,IOperation> operationInst = new ConcurrentHashMap<>();
 	
 	public static IOperation getOperationInstance(String className, IReader reader, ISearch search){
 		Class<?> cls = getOperation(className);

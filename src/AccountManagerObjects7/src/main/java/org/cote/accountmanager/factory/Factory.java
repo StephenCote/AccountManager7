@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -53,9 +54,9 @@ public class Factory {
 	public static final String OPS_USER_NAME = "operations";
 	public static final String VAULT_USER_NAME = "vault";
 	public static final String DOCUMENT_CONTROL_USER_NAME = "documentControl";
-	private Map<String,Class<?>> factories = new HashMap<>();
-	private Map<String,IFactory> factoryInst = new HashMap<>();
-	private Map<String, List<IFactory>> factoriesMap = new HashMap<>();
+	private Map<String,Class<?>> factories = new ConcurrentHashMap<>();
+	private Map<String,IFactory> factoryInst = new ConcurrentHashMap<>();
+	private Map<String, List<IFactory>> factoriesMap = new ConcurrentHashMap<>();
 	
 	private final IOContext context;
 	public Factory(IOContext context) {
@@ -66,7 +67,12 @@ public class Factory {
 		if(path.startsWith("~/")) {
 			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
 			context.getRecordUtil().populate(homeDir);
-			path = homeDir.get(FieldNames.FIELD_PATH) + path.substring(1);
+			String homePath = homeDir.get(FieldNames.FIELD_PATH);
+			if(homePath == null || homePath.length() == 0) {
+				logger.warn("Invalid home directory path - constructing from owner");
+				homePath = "/home/" + user.get(FieldNames.FIELD_NAME);
+			}
+			path = homePath + path.substring(1);
 		}
 		BaseRecord dir = context.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, path, "DATA", organizationId);
 		BaseRecord per = context.getRecordUtil().getRecord(user, modelName, name, 0L, (long)dir.get(FieldNames.FIELD_ID), organizationId);
@@ -101,7 +107,7 @@ public class Factory {
 	
 	/// The initial user create for an organization is out of band due to dependencies on the org, so it's slightly more manual and less recursive here
 	///
-	public BaseRecord makeOrganization(String path, OrganizationEnumType orgType, long organizationId) {
+	public synchronized BaseRecord makeOrganization(String path, OrganizationEnumType orgType, long organizationId) {
 		BaseRecord org = context.getPathUtil().findPath(null, ModelNames.MODEL_ORGANIZATION, path, orgType.toString(), 0L);
 		if(org != null) {
 			return org;
@@ -120,7 +126,7 @@ public class Factory {
 		BaseRecord admin = getCreateUser(null, ADMIN_USER_NAME, null, orgId, true);
 		emitRoles(org, admin);
 		emitPermissions(org, admin);
-		setupUser(admin, admin);
+		setupUser(admin, admin, null);
 		
 		BaseRecord ops = getCreateUser(admin, OPS_USER_NAME, null, orgId);
 		BaseRecord vault = getCreateUser(admin, VAULT_USER_NAME, null, orgId);
@@ -169,13 +175,17 @@ public class Factory {
 		}
 	}
 	
-	private void setupUser(BaseRecord adminUser, BaseRecord user) {
+	private void setupUser(BaseRecord adminUser, BaseRecord user, BaseRecord personRec) {
 		
 		if(adminUser != null && user != null) {
 			long orgId = adminUser.get(FieldNames.FIELD_ORGANIZATION_ID);
 			BaseRecord roleHome = context.getPathUtil().makePath(adminUser, ModelNames.MODEL_ROLE, "/home/" + user.get(FieldNames.FIELD_NAME), "USER", orgId);
 			BaseRecord permHome = context.getPathUtil().makePath(adminUser, ModelNames.MODEL_PERMISSION, "/home/" + user.get(FieldNames.FIELD_NAME), "USER", orgId);
 			BaseRecord userHome = context.getPathUtil().findPath(adminUser, ModelNames.MODEL_GROUP, "/home/" + user.get(FieldNames.FIELD_NAME), "DATA", orgId);
+			
+			if(personRec != null) {
+				setCRUEntitlement(adminUser, user, personRec, PermissionEnumType.DATA.toString());
+			}
 			
 			setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.USER.toString());
 			setCRUEntitlement(adminUser, user, roleHome, PermissionEnumType.DATA.toString());
@@ -259,7 +269,7 @@ public class Factory {
 				users.add(rec);
 				context.getRecordUtil().createRecord(prec, true);
 				if(!skipSetup) {
-					setupUser(adminUser, rec);
+					setupUser(adminUser, rec, prec);
 				}
 			} catch (FieldException | ModelNotFoundException | ValueException  e) {
 				logger.error(e.getMessage());

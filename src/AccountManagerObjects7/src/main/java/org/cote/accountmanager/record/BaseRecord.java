@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
@@ -36,7 +37,7 @@ public abstract class BaseRecord {
 	private boolean ephemeral = false;
 	private boolean internal = false;
 	
-	private Map<String, FieldType> fieldMap = new HashMap<>();
+	private Map<String, FieldType> fieldMap = new ConcurrentHashMap<>();
 	//private List<FieldType> fields = new ArrayList<>();
 	private List<FieldType> fields = new CopyOnWriteArrayList<>();
 	
@@ -100,14 +101,14 @@ public abstract class BaseRecord {
 	}
 	public BaseRecord copyIntoRecord(BaseRecord copy, String[] outFieldNames) {
 
-		List<String> fieldNames = new ArrayList<>();
+		// List<String> fieldNames = new ArrayList<>();
 		List<FieldType> lflds = getFields();
 		Set<String> fset = new HashSet<>(Arrays.asList(outFieldNames));
 		
-		List<FieldType> ofields = new ArrayList<>();
+		List<FieldType> ofields = new CopyOnWriteArrayList<>();
 		lflds.forEach(f -> {
 			if(outFieldNames.length == 0 ||  fset.contains(f.getName())) {
-				fieldNames.add(f.getName());
+				// fieldNames.add(f.getName());
 				ofields.add(RecordFactory.newFieldInstance(f));
 			}
 		});
@@ -287,7 +288,7 @@ public abstract class BaseRecord {
 		}
 		
 	}
-   public <T> void set(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {
+   public synchronized <T> void set(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {
 		if(prototype) {
 			throw new ValueException(String.format(ValueException.PROTOTYPE_READONLY_EXCEPTION, fieldName, model));
 		}

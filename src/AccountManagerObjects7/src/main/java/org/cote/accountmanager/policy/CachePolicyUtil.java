@@ -1,9 +1,11 @@
 package org.cote.accountmanager.policy;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.cache.ICache;
@@ -37,10 +39,10 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		init();
 	}
 	private void init() {
-		policyCache = new HashMap<>();
-		responseCache = new HashMap<>();
-		actorCache = new HashMap<>();
-		resourceCache = new HashMap<>();
+		policyCache = new ConcurrentHashMap<>();
+		responseCache = new ConcurrentHashMap<>();
+		actorCache = new ConcurrentHashMap<>();
+		resourceCache = new ConcurrentHashMap<>();
 		CacheUtil.addProvider(this);		
 	}
 	private String getContextKey(BaseRecord contextUser, String policyName, String actorUrn, String resourceUrn) throws ValueException {
@@ -88,6 +90,11 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 	
 	@Override
 	public PolicyResponseType evaluateResourcePolicy(BaseRecord contextUser, String policyName, BaseRecord actor, BaseRecord resource) {
+		return evaluateResourcePolicy(contextUser, policyName, actor, null, resource);
+	}
+	
+	@Override
+	public PolicyResponseType evaluateResourcePolicy(BaseRecord contextUser, String policyName, BaseRecord actor, String accessToken, BaseRecord resource) {
 		String hash = null;
 		PolicyResponseType prr = null;
 		try {
@@ -98,16 +105,20 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 			//logger.info("Context Key: " + getContextKey(contextUser, policyName, actor.get(FieldNames.FIELD_URN), recU));
 			hash = getContextHash(contextUser, policyName, actor.get(FieldNames.FIELD_URN), recU);
 			if(responseCache.containsKey(hash)) {
-				logger.info("Cache hit " + policyName + " " + hash);
+				if(isTrace()) {
+					logger.info("Cache hit " + policyName + " " + hash);
+				}
 				prr = responseCache.get(hash);
 				if(getPolicyResponseExpired(prr)) {
-					logger.info("Response expired");
+					if(isTrace()) {
+						logger.info("Response expired");
+					}
 					responseCache.remove(hash);
 					prr = null;
 				}
 			}
 			if(prr == null) {
-				prr = super.evaluateResourcePolicy(contextUser, policyName, actor, resource);
+				prr = super.evaluateResourcePolicy(contextUser, policyName, actor, accessToken, resource);
 				if(prr != null) {
 					cache(hash, prr, actor.get(FieldNames.FIELD_URN), recU);
 				}

@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -13,7 +14,7 @@ public class ResourceUtil {
 
 	public static final Logger logger = LogManager.getLogger(ResourceUtil.class);
 	
-	private static Map<String, String> cache = new HashMap<>();
+	private static Map<String, String> cache = new ConcurrentHashMap<>();
 	public static String RESOURCE_PREFIX = "";
 
 	public static String getCategoryResource(String name) {

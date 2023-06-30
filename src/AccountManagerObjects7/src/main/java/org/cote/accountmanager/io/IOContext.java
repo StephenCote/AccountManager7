@@ -3,6 +3,7 @@ package org.cote.accountmanager.io;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -49,7 +50,7 @@ public class IOContext {
 	private boolean enforceAuthorization = true;
 	private boolean enforceValidation = true;
 	
-	private Map<String, OrganizationContext> organizations = new HashMap<>();
+	private Map<String, OrganizationContext> organizations = new ConcurrentHashMap<>();
 	
 	public IOContext() {
 		this.ioType = RecordIO.UNKNOWN;

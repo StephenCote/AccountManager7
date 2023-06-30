@@ -28,6 +28,7 @@ import java.security.spec.X509EncodedKeySpec;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import javax.crypto.Cipher;
 import javax.crypto.KeyAgreement;
@@ -80,7 +81,7 @@ public class CryptoFactory {
 	private static CryptoFactory instance = null;
 	private static SecureRandom secureRandom = null;
 	
-	private final Map<String, CryptoBean> keyRing = new HashMap<>();
+	private final Map<String, CryptoBean> keyRing = new ConcurrentHashMap<>();
 	
 	public static CryptoFactory getInstance(){
 		if(instance != null){

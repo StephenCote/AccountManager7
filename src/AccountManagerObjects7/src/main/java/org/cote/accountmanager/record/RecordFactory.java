@@ -7,6 +7,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.apache.commons.lang3.EnumUtils;
 import org.apache.logging.log4j.LogManager;
@@ -35,12 +37,12 @@ public class RecordFactory {
 	public static String GENERATED_PACKAGE_NAME = "org.cote.accountmanager.objects.generated";
 	public static final String JSON_MODEL_KEY = "model";
 
-	private static Map<String, String> looseImports = new HashMap<>();
-	private static Map<String, BaseRecord> looseBaseModels = new HashMap<>();
-	private static Map<String, ModelSchema> schemas = new HashMap<>();
-	private static Map<String, Class<?>> classMap = new HashMap<>();
-	private static Map<String, Object> instMap = new HashMap<>();
-	private static Map<String, String> rawModels = new HashMap<>();
+	private static Map<String, String> looseImports = new ConcurrentHashMap<>();
+	private static Map<String, BaseRecord> looseBaseModels = new ConcurrentHashMap<>();
+	private static Map<String, ModelSchema> schemas = new ConcurrentHashMap<>();
+	private static Map<String, Class<?>> classMap = new ConcurrentHashMap<>();
+	private static Map<String, Object> instMap = new ConcurrentHashMap<>();
+	private static Map<String, String> rawModels = new ConcurrentHashMap<>();
 	
 	public static boolean isEnumValue(String name, String value) {
 		return (getEnumValue(name, value) != null);
@@ -147,8 +149,8 @@ public class RecordFactory {
 		return newInstance(name, lbm, fieldNames);
 	}
 	public static BaseRecord newInstance(String name, BaseRecord lbm, String[] fieldNames) throws FieldException, ModelNotFoundException {
-		List<FieldType> fields = new ArrayList<>();
-		List<FieldType> instFields = new ArrayList<>();
+		List<FieldType> fields = new CopyOnWriteArrayList<>();
+		List<FieldType> instFields = new CopyOnWriteArrayList<>();
 		lbm.setModel(name);
 		BaseRecord lbmb = looseBaseModels.get(name);
 		
@@ -221,7 +223,7 @@ public class RecordFactory {
 	private static LooseRecord getBaseModel(ModelSchema lmod) {
 		LooseRecord mod = new LooseRecord();
 		mod.setModel(lmod.getName());
-		List<FieldType> fields = new ArrayList<>();
+		List<FieldType> fields = new CopyOnWriteArrayList<>();
 		int errors = 0;
 		for(FieldSchema lft : lmod.getFields()) {
 			String typev = lft.getType().toUpperCase();
@@ -273,6 +275,16 @@ public class RecordFactory {
 			q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
 			BaseRecord modelRec = IOSystem.getActiveContext().getSearch().findRecord(q);
 			if(modelRec != null) {
+				if(!modelRec.hasField(FieldNames.FIELD_SCHEMA)) {
+					logger.error("***** WTF?");
+					logger.error(q.toFullString());
+					logger.error(modelRec.toFullString());
+					StackTraceElement[] st = new Throwable().getStackTrace();
+					for(int i = 0; i < st.length; i++) {
+						logger.error(st[i].toString());
+					}
+					return null;
+				}
 				byte[] data = modelRec.get(FieldNames.FIELD_SCHEMA);
 				if(data.length > 0) {
 					ms = JSONUtil.importObject(new String(data), ModelSchema.class);

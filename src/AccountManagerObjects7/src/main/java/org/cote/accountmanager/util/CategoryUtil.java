@@ -2,6 +2,7 @@ package org.cote.accountmanager.util;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -13,7 +14,7 @@ import org.cote.accountmanager.record.RecordFactory;
 public class CategoryUtil {
 public static final Logger logger = LogManager.getLogger(CategoryUtil.class);
 	
-	private static Map<String, BaseRecord> categories = new HashMap<>();
+	private static Map<String, BaseRecord> categories = new ConcurrentHashMap<>();
 	
 	private static Pattern ruleTokenPattern = Pattern.compile("\"\\$\\{([A-Za-z]+)\\}\"", Pattern.MULTILINE);
 	

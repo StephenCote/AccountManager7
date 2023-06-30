@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -104,8 +105,8 @@ public class PolicyUtil {
 	public static final String POLICY_SYSTEM_DELETE_OBJECT = "systemDeleteObject";
 	public static final String POLICY_SYSTEM_EXECUTE_OBJECT = "systemExecuteObject";
 	
-	private static Map<String, SystemPermissionEnumType> policyNameMap = new HashMap<>();
-	private static Map<SystemPermissionEnumType, String> permissionNameMap = new HashMap<>();
+	private static Map<String, SystemPermissionEnumType> policyNameMap = new ConcurrentHashMap<>();
+	private static Map<SystemPermissionEnumType, String> permissionNameMap = new ConcurrentHashMap<>();
 	
 	static {
 		policyNameMap.put(POLICY_SYSTEM_DELETE_OBJECT, SystemPermissionEnumType.DELETE);
@@ -219,6 +220,8 @@ public class PolicyUtil {
 		return outBool;
 	}
 	
+	// public boolean 
+	
 	public PolicyResponseType[] evaluateQueryToReadPolicyResponses(BaseRecord contextUser, Query query) {
 		List<PolicyResponseType> prrs = new ArrayList<>();
 		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
@@ -233,7 +236,7 @@ public class PolicyUtil {
 					logger.warn("Need to consider index: " + query.get(FieldNames.FIELD_TYPE) + "." + fs.getName());
 				}
 				*/
-				if((fs.getAccess() != null && fs.getAccess().getRoles() != null) || fs.isIdentity() || fs.isRecursive()) {
+				if((fs.isIndex() && RecordUtil.isConstrainedByField(query, fs.getName())) || (fs.getAccess() != null && fs.getAccess().getRoles() != null) || fs.isIdentity() || fs.isRecursive()) {
 					List<?> vals = QueryUtil.findFieldValues(query, fs.getName(), null);
 					String propName = fs.getName();
 					String type = query.get(FieldNames.FIELD_TYPE);
@@ -246,6 +249,25 @@ public class PolicyUtil {
 					
 					for(Object x : vals) {
 						Query sq = QueryUtil.createQuery(type, propName, x);
+						if(fs.isIndex()) {
+							List<String> constraints = RecordUtil.getConstraints(query, propName);
+							if(constraints.size() > 0) {
+								if(trace) {
+									logger.info("Checking constrained indexed field " + fs.getName() + " / " + propName + " / " + constraints.stream().collect(Collectors.joining(",")));
+								}
+								for(String c : constraints) {
+									if(trace) {
+										logger.info("Constraining: " + c + " = " + QueryUtil.findFieldValue(query, c, null));
+									}
+									sq.field(c, QueryUtil.findFieldValue(query, c, null));
+								}
+							}
+							else {
+								if(trace) {
+									logger.info("Skipping unconstrained check on indexed field " + fs.getName());
+								}
+							}
+						}
 						sq.set(FieldNames.FIELD_INSPECT, true);
 						if(!querySet.contains(sq.key())) {
 							querySet.add(sq.key());
@@ -263,6 +285,11 @@ public class PolicyUtil {
 					// logger.info("Skip: " + fs.getName());
 				}
 			}
+			
+			if(prrs.size() == 0 && RecordUtil.isConstrained(query)) {
+				logger.warn("**** Try direct testing for a constrained query");
+			}
+			
 			if(prrs.size() == 0) {
 				// List<BaseRecord> fields = query.get(FieldNames.FIELD_FIELDS);
 				// fields.size() == 0 && 
@@ -281,7 +308,9 @@ public class PolicyUtil {
 				}
 			}
 			else {
-				logger.info("PRR Count: " + prrs.size());
+				if(trace) {
+					logger.info("PRR Count: " + prrs.size());
+				}
 			}
 
 		}

@@ -3,6 +3,7 @@ package org.cote.accountmanager.util;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -20,8 +21,8 @@ import org.cote.accountmanager.schema.type.ValidationEnumType;
 public class ValidationUtil {
 	public static final Logger logger = LogManager.getLogger(ValidationUtil.class);
 	
-	private static Map<String,Pattern> patterns = new HashMap<>();
-	private static Map<String, BaseRecord> rules = new HashMap<>();
+	private static Map<String,Pattern> patterns = new ConcurrentHashMap<>();
+	private static Map<String, BaseRecord> rules = new ConcurrentHashMap<>();
 	
 	private static Pattern ruleTokenPattern = Pattern.compile("\"\\$\\{([A-Za-z]+)\\}\"", Pattern.MULTILINE);
 	

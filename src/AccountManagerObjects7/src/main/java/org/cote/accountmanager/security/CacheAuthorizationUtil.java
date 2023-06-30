@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.cache.ICache;
@@ -17,13 +18,11 @@ import org.cote.accountmanager.util.CryptoUtil;
 
 public class CacheAuthorizationUtil extends AuthorizationUtil implements ICache {
 	
-	private Map<String, Boolean> decisionCache = new HashMap<>(); 
-	private Map<String, List<String>> keyCache = new HashMap<>();
+	private Map<String, Boolean> decisionCache = new ConcurrentHashMap<>(); 
+	private Map<String, List<String>> keyCache = new ConcurrentHashMap<>();
 	
 	public CacheAuthorizationUtil(IReader reader, IWriter writer, ISearch search) {
 		super(reader, writer, search);
-		decisionCache = new HashMap<>();
-		keyCache = new HashMap<>();
 		CacheUtil.addProvider(this);
 
 	}

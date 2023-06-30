@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -31,7 +32,7 @@ public class QueryUtil {
 	
 	public static String[] getCommonFields(String model) {
 		// List<String> flds = new ArrayList<>();
-		Set<String> flds = new HashSet<>();
+		Set<String> flds = ConcurrentHashMap.newKeySet();
 		ModelSchema ms = RecordFactory.getSchema(model);
 		flds.addAll(ms.getQuery());
 		for(String s : ms.getImplements()) {
@@ -84,13 +85,16 @@ public class QueryUtil {
 		}
 		return token;
 	}
+	/*
 	public static String hash(BaseRecord query) {
-		return hash(key(query));
+		return query.hash();
 	}
+	
 	public static String hash(String key) {
 		return CryptoUtil.getDigestAsString(key);
 	}
-	public static String key(BaseRecord query) {
+	*/
+	public synchronized static String key(BaseRecord query) {
 		String type = query.get(FieldNames.FIELD_TYPE);
 		String order = query.get(FieldNames.FIELD_ORDER);
 		String sortBy = query.get(FieldNames.FIELD_SORT_FIELD);
@@ -341,6 +345,9 @@ public class QueryUtil {
 			BaseRecord pargrp = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, clusterType, containerId);
 			if(pargrp != null) {
 				q = QueryUtil.createQuery(type, clusterField, pargrp.get(FieldNames.FIELD_ID));
+			}
+			else {
+				logger.error("***** Failed to find " + clusterType + " with objectId " + containerId);
 			}
 
 		}

@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.commons.codec.binary.Hex;
 import org.apache.logging.log4j.LogManager;
@@ -69,7 +70,7 @@ public class VaultService
 	
 	public static final Logger logger = LogManager.getLogger(VaultService.class);
 	
-	private static Map<String,VaultBean> cacheByObjectId = Collections.synchronizedMap(new HashMap<>());
+	private static Map<String,VaultBean> cacheByObjectId = new ConcurrentHashMap<>();
 	
 	/// export a version of the vault that does not include exposed (aka unencrypted) information that should be protected
 	///
