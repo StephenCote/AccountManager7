@@ -34,13 +34,13 @@ public class DBSearch extends SearchBase {
 		this.reader = reader;
 	}
 
-	public int count(Query iquery) {
+	public int count(final Query iquery) {
 
 		int count = 0;
 
 		/// Copy the query as it's likely reused to build paginated lists,
 		/// And then drop any sort key since it's not needed on the count
-		Query query = new Query(iquery.copyRecord());
+		final Query query = new Query(iquery.copyRecord());
 		query.releaseKey();
 		
 		DBStatementMeta sql = null;
@@ -68,7 +68,7 @@ public class DBSearch extends SearchBase {
 		return count;
 	}
 	
-	public QueryResult find(Query query) throws IndexException, ReaderException {
+	public QueryResult find(final Query query) throws IndexException, ReaderException {
 		
 		// logger.info(query.toFullString());
 		
@@ -84,12 +84,14 @@ public class DBSearch extends SearchBase {
 		if(query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID) && query.getQueryFields().size() == 1 && query.getJoins().size() == 0) {
 			String type = query.get(FieldNames.FIELD_TYPE);
 			if(!ModelNames.MODEL_MODEL_SCHEMA.equals(type)) {
-				logger.warn("**** WARNING: Searching with only an Organization filter");
-				//logger.warn(query.toFullString());
+				logger.warn("Searching with only an Organization filter for " + type);
+				logger.warn(query.toFullString());
+				/*
 				StackTraceElement[] st = new Throwable().getStackTrace();
 				for(int i = 0; i < st.length; i++) {
 					logger.error(st[i].toString());
 				}
+				*/
 			}
 		}
 		if(!query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID)) {
@@ -130,7 +132,7 @@ public class DBSearch extends SearchBase {
 			throw new ReaderException(e);
 		}
 		
-		QueryResult res = new QueryResult(query, recs.toArray(new BaseRecord[0]));
+		final QueryResult res = new QueryResult(query, recs.toArray(new BaseRecord[0]));
 		res.setTotalCount(count(query));
 		return res;
 	}
