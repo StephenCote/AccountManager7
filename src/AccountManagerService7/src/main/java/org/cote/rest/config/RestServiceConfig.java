@@ -129,6 +129,7 @@ public class RestServiceConfig extends ResourceConfig{
     		props.setDataSourcePassword(dataPassword);
     		props.setJndiName(jndiName);
     		props.setSchemaCheck(false);
+    		props.setReset(false);
     		return props;
     	}
 		private void initializeAccountManager(){
