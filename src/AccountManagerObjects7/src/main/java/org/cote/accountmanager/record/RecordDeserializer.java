@@ -7,6 +7,7 @@ import java.util.Date;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -131,7 +132,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         }
 
         ModelSchema ltype = RecordFactory.getSchema(modelName);
-        List<FieldType> fields = new ArrayList<>();
+        List<FieldType> fields = new CopyOnWriteArrayList<>();
         BaseRecord type = null;
         try{
         	type = RecordFactory.newInstance(modelName);
