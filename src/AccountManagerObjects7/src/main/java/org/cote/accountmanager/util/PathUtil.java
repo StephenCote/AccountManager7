@@ -43,7 +43,10 @@ public abstract class PathUtil implements IPath {
 		return makePath(owner, model, path, type, organizationId, false);
 	}
 	
-	public BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId) {
+	/// Synchronized make path - when concurrent sessions hit the hierachical create method, it's possible that the same object can be created twice, violating any constraint condition
+	/// This in turn MAY result in a corrupted cache entry (still looking into that currency issue)
+	///
+	public synchronized BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId) {
 		return makePath(owner, model, path, type, organizationId, true);
 	}
 	private BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId, boolean doCreate) {
@@ -54,7 +57,12 @@ public abstract class PathUtil implements IPath {
 		}
 		if(path.startsWith("~/")) {
 			if(owner != null) {
-				path = owner.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH) + path.substring(1);
+				String homePath = owner.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH);
+				if(homePath == null || homePath.length() == 0) {
+					logger.warn("Invalid home directory path - constructing from owner");
+					homePath = "/home/" + owner.get(FieldNames.FIELD_NAME);
+				}
+				path = homePath + path.substring(1);
 			}
 			else {
 				logger.error("Cannot resolve a relative user path without a user reference");
@@ -149,7 +157,7 @@ public abstract class PathUtil implements IPath {
 					}
 				}
 				else {
-					logger.error("Invalid search for " + model + " type " + type + " parent " + parentId + " org " + organizationId + " from '" + e + "'");
+					logger.error("Invalid search for " + model + " type " + type + " parent " + parentId + " org " + organizationId + " from '" + e + "' with " + nodes.length + " results");
 					StackTraceElement[] st = new Throwable().getStackTrace();
 					for(int i = 0; i < st.length; i++) {
 						logger.error(st[i].toString());
