@@ -58,6 +58,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.ApplicationUtil;
 import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"user"})
@@ -131,30 +132,10 @@ public class PrincipalService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		String urn = user.get(FieldNames.FIELD_URN);
 		if(!profiles.containsKey(urn)) {
-
-			try {
-				app = RecordFactory.newInstance(ModelNames.MODEL_APPLICATION_PROFILE);
-				long organizationId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
-
-				BaseRecord[] roles = IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_ROLE, FieldNames.FIELD_PARENT_ID, 0L, organizationId));
-				BaseRecord[] permissions = IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_PERMISSION, FieldNames.FIELD_PARENT_ID, 0L, organizationId));
-				List<BaseRecord> aroles = app.get(FieldNames.FIELD_SYSTEM_ROLES);
-				List<BaseRecord> uroles = app.get(FieldNames.FIELD_USER_ROLES);
-				List<BaseRecord> aperms = app.get(FieldNames.FIELD_SYSTEM_PERMISSIONS);
-				aroles.addAll(Arrays.asList(roles));
-				aperms.addAll(Arrays.asList(permissions));
-
-				app.set(FieldNames.FIELD_USER, user);
-				app.set(FieldNames.FIELD_PERSON, getPerson(user.get(FieldNames.FIELD_OBJECT_ID), request));
-				List<BaseRecord> usrRoles = IOSystem.getActiveContext().getMemberUtil().getParticipations(user, ModelNames.MODEL_ROLE);
-				uroles.addAll(usrRoles);
-				app.set(FieldNames.FIELD_ORGANIZATION_PATH, user.get(FieldNames.FIELD_ORGANIZATION_PATH));
+			app = ApplicationUtil.getApplicationProfile(user);
+			if(app != null) {
 				profiles.put(urn, app);
-			} catch (FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException e1) {
-				logger.error(e1);
 			}
-
-			
 		}
 		else {
 			app = profiles.get(urn);
