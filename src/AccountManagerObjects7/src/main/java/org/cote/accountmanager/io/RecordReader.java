@@ -77,7 +77,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 			}
 			if(!pop) {
 				try {
-					CacheUtil.clearCache(rec);
+					// CacheUtil.clearCache(rec);
 					final BaseRecord frec;
 					if(rec.hasField(FieldNames.FIELD_ID)) {
 						long id = rec.get(FieldNames.FIELD_ID);
@@ -101,14 +101,23 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 						frec = null;
 					}
 					if(frec != null) {
+						// logger.info("Populate: " + frec.getModel() + " " + frec.getFields().size());
 						frec.getFields().forEach(f -> {
 							try {
 								///  && !frec.getField(f.getName()).isNullOrEmpty()
-								if((!rec.hasField(f.getName()) || rec.getField(f.getName()).isNullOrEmpty(rec.getModel()))){
+								if(
+									
+									!rec.hasField(f.getName())
+									||
+									rec.getField(f.getName()).isNullOrEmpty(rec.getModel())
+									||
+									(f.getValueType() == FieldEnumType.ENUM && "UNKNOWN".equals(rec.get(f.getName())))
+									
+								){
 									rec.set(f.getName(), frec.get(f.getName()));
 								}
 								else {
-									/// logger.warn("Skip populate: " + f.getName());
+									// logger.warn("Skip populate: " + f.getName());
 								}
 								if(rec.getField(f.getName()).getValueType() == FieldEnumType.MODEL && foreignDepth > 0) {
 									populate(rec.get(f.getName()), foreignDepth - 1);
