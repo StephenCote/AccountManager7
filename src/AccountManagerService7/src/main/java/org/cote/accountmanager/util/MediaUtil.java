@@ -183,7 +183,7 @@ public class MediaUtil {
 		
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		
-		if(user == null) user = org.getDocumentControl();
+		/// if(user == null) user = org.getDocumentControl();
 		BaseRecord audit = AuditUtil.startAudit(user, ActionEnumType.READ, user, null);
 		writeBinaryContent(request, response, options, audit, type, org, user, objPath, objName);
 	}
@@ -241,6 +241,13 @@ public class MediaUtil {
 	) throws IOException{
 		BaseRecord data = null;
 		boolean can_view = false;
+		
+		
+		if(user == null){
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "User is null");
+			response.sendError(404);
+			return;	
+		}
 		
 		/// If the config stipulates a maximum width and height, then force thumbnail size to be no larger
 		/// If the optional force image bit is set, force all image requests through the thumbnail mechanism to prevent delivery of the full original resolution
