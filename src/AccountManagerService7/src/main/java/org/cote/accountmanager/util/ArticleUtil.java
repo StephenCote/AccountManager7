@@ -185,12 +185,12 @@ public class ArticleUtil {
 
 			user = ServiceUtil.getPrincipalUser(request);
 			if(user == null){
-				user = org.getDocumentControl();
-				if(user == null){
+				// user = org.getDocumentControl();
+				// if(user == null){
 					AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Null user identified");
 					response.sendError(404);
 					return;
-				}
+				// }
 			}
 			
 			BaseRecord[] res = IOSystem.getActiveContext().getSearch().findByName(ModelNames.MODEL_USER, subPath[0]);
