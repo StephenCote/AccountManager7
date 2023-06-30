@@ -188,6 +188,88 @@ public class RecordUtil {
 
 	}
 	
+	
+	public static List<String> getConstraints(ModelSchema ms) {
+		return getConstraints(ms, new ArrayList<>());
+	}
+	public static List<String> getConstraints(ModelSchema ms, List<String> constraints) {
+		constraints.addAll(ms.getConstraints());
+		for(String i : ms.getInherits()){
+			getConstraints(RecordFactory.getSchema(i), constraints);
+		}
+		return constraints;
+	}
+	public static boolean isConstrained(Query query) {
+		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
+		List<String> constraints = getConstraints(ms);
+
+		boolean isC = false;
+		for(String pair : constraints) {
+			String keys[] = pair.split(",");
+			int iter = 0;
+			for(String key : keys) {
+				if(query.hasQueryField(key.trim())) {
+					iter++;
+				}
+			}
+			if(iter == keys.length) {
+				isC = true;
+				break;
+			}
+		}
+		return isC;
+	}
+	public static boolean isConstrainedByField(Query query, String fieldName) {
+		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
+		List<String> constraints = getConstraints(ms);
+
+		boolean isC = false;
+		for(String pair : constraints) {
+			String keys[] = pair.split(",");
+			for(String key : keys) {
+				if(key.trim().equals(fieldName)) {
+					isC = true;
+				}
+			}
+			if(isC) {
+				break;
+			}
+		}
+		return isC;
+	}
+	public static List<String> getConstraints(Query query) {
+		return getConstraints(query, null);
+	}
+	public static List<String> getConstraints(Query query, String filterFieldName) {
+		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
+		List<String> constraints = getConstraints(ms);
+		List<String> outFields = new ArrayList<>();
+
+		for(String pair : constraints) {
+			String keys[] = pair.split(",");
+			int iter = 0;
+			boolean matchField = false;
+			List<String> chkFields = new ArrayList<>();
+			for(String keyP : keys) {
+				String key = keyP.trim();
+				if(query.hasQueryField(key.trim())) {
+					if(filterFieldName == null || !key.equals(filterFieldName)) {
+						chkFields.add(key);
+					}
+					else {
+						matchField = true;
+					}
+					iter++;
+				}
+			}
+			if(iter == keys.length && matchField) {
+				outFields = chkFields;
+				break;
+			}
+		}
+		return outFields;
+	}
+	
 	public BaseRecord findChildRecord(BaseRecord user, BaseRecord rec, String field) {
 		BaseRecord orec = null;
 		BaseRecord qreq = findByRecord(user, rec, new String[] {field});
