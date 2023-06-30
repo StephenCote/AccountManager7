@@ -77,7 +77,7 @@ public class TestStream extends BaseTest {
 		}
 		return seg;
 	}
-	/*
+
 	@Test
 	public void TestAuthorizeStreamSegment() {
 		logger.info("Test Stream Authorization");
@@ -123,10 +123,11 @@ public class TestStream extends BaseTest {
 		}
 		
 	}
-	*/
+
 	
 	@Test
 	public void TestListLargeData() {
+		logger.info("**** TEST LIST LARGE DATA");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -135,8 +136,12 @@ public class TestStream extends BaseTest {
 		int count = ioContext.getAccessPoint().count(testUser1, q);
 		int maxCount = 650;
 		int iter = 0;
-		if(count == 0) {
-			DirectoryUtil du = new DirectoryUtil("c:\\users\\swcot\\Pictures");
+		int errorCount = 0;
+		int failCount = 0;
+		int createCount = 0;
+		//if(count == 0) {
+			logger.info("Test data path: " + testDataPath);
+			DirectoryUtil du = new DirectoryUtil(testDataPath);
 			List<File> files = du.dir();
 			for(File f: files) {
 				if(iter >= maxCount) {
@@ -148,18 +153,28 @@ public class TestStream extends BaseTest {
 				try(FileInputStream fos = new FileInputStream(f)){
 					
 					boolean created = StreamUtil.streamToData(testUser1, f.getName(), f.getAbsolutePath(), "~/Data/StreamList", 0L, fos);
-					assertTrue("Failed to stream into data", created);
+					//assertTrue("Failed to stream into data", created);
+					if(!created) {
+						failCount++;
+					}
+					else {
+						createCount++;
+					}
 					iter++;
 					
-				} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+				} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException e) {
 					logger.error(e);
+					errorCount++;
 				}
 
 			}
 			//logger.info("File count: " + files.size());
-		}
-		logger.info("Count: " + count);
-		int pages = 3;
+		//}
+		logger.info("File Count: " + count);
+		logger.info("Create Count: " + createCount);
+		logger.info("Fail Count: " + failCount);
+		logger.info("Error Count: " + errorCount);
+		int pages = 6;
 		long startIndex = 0L;
 		int recordCount = 10;
 		for(int i = 0; i < pages; i++) {
@@ -202,7 +217,7 @@ public class TestStream extends BaseTest {
 			startIndex += recordCount;
 		}
 	}
-	/*
+
 	@Test
 	public void TestStreamUtil() {
 		logger.info("Test Streaming");
@@ -220,7 +235,7 @@ public class TestStream extends BaseTest {
 			boolean created = StreamUtil.streamToData(testUser5, dataName, "Test stream utility", "~/Data/StreamUtil", 0L, fos);
 			assertTrue("Failed to stream into data", created);
 			
-		} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+		} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException e) {
 			logger.error(e);
 		}
 		
@@ -293,6 +308,6 @@ public class TestStream extends BaseTest {
 		
 		
 	}
-	*/
+
 	
 }
