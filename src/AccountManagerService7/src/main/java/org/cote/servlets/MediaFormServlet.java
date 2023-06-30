@@ -45,7 +45,9 @@ import org.apache.logging.log4j.Logger;
 import org.bouncycastle.util.Arrays;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
@@ -136,12 +138,13 @@ public class MediaFormServlet extends HttpServlet {
 			    	}
 			    } else {
 			    	logger.info("Handle file upload stream");
+			    	logger.info("Stream to data: " + (user != null ? user.get(FieldNames.FIELD_URN) : "Null user") + " / name " + " / " + groupPath + " / " + groupId);
 			    	bBit = StreamUtil.streamToData(user, name, description, groupPath, groupId, stream);
 			    }
 			    stream.close();
 			}
 		}
-		catch(FieldException | ValueException | ModelNotFoundException | FactoryException | NumberFormatException | FileUploadException e){
+		catch(FieldException | ValueException | ModelNotFoundException | FactoryException | NumberFormatException | FileUploadException | IndexException | ReaderException e){
 			logger.error(e);
 		}
 		
