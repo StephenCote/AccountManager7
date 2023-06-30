@@ -39,7 +39,9 @@ import org.apache.logging.log4j.Logger;
 import org.bouncycastle.util.Arrays;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
@@ -47,6 +49,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 
 public class StreamUtil {
@@ -98,8 +101,30 @@ public class StreamUtil {
 		return seg;
 	}
 	
-	public static boolean streamToData(BaseRecord user, String name, String description, String groupPath, long groupId, InputStream stream) throws FieldException, ModelNotFoundException, ValueException, IOException, FactoryException {
+	public static boolean streamToData(BaseRecord user, String name, String description, String groupPath, long groupId, InputStream stream) throws FieldException, ModelNotFoundException, ValueException, IOException, FactoryException, IndexException, ReaderException {
     	String contentType = ContentTypeUtil.getTypeFromExtension(name);
+    	if(contentType == null) {
+    		throw new ValueException("Invalid content type");
+    	}
+    	BaseRecord group = null;
+    	if(groupId > 0L) {
+    		group = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_GROUP, groupId);
+    	}
+    	else if(groupPath != null) {
+    		group = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString());
+    	}
+    	if(group == null) {
+    		throw new ReaderException("Invalid group: " + groupPath + " / " + groupId);
+    	}
+    	if(groupId == 0L) {
+    		groupId = group.get(FieldNames.FIELD_ID);
+    	}
+    	BaseRecord[] chk = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_DATA, groupId, name);
+    	if(chk != null && chk.length > 0) {
+    		logger.warn("Data " + name + " already exists");
+    		return false;
+    	}
+    	
     	int read = 0;
     	boolean outBool = false;
     	int maxReadSize = 1048576;
