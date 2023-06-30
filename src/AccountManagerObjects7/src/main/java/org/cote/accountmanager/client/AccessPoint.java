@@ -64,7 +64,7 @@ public class AccessPoint {
 		PolicyResponseType prr2 = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, actor);
 		if(prr2.getType() != PolicyResponseEnumType.PERMIT) {
 			AuditUtil.closeAudit(audit, prr2, "Not authorized to read actor");
-			logger.error(prr2.toFullString());
+			// logger.error(prr2.toFullString());
 		}
 		else {
 			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, object);
@@ -89,7 +89,7 @@ public class AccessPoint {
 		PolicyResponseType prr2 = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, actor);
 		if(prr2.getType() != PolicyResponseEnumType.PERMIT) {
 			AuditUtil.closeAudit(audit, prr2, "Not authorized to read actor");
-			logger.error(prr2.toFullString());
+			// logger.error(prr2.toFullString());
 		}
 		else {
 			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, object);
@@ -240,6 +240,8 @@ public class AccessPoint {
 		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, null);
 		PolicyResponseType prr = null;
 		if((prr = authorizeQuery(contextUser, query)) == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			logger.error("One or more query fields were not or could not be authorized");
+			logger.error(query.toFullString());
 			AuditUtil.closeAudit(audit, prr, "One or more query fields were not or could not be authorized: " + query.key());
 			return rec;
 		}
@@ -275,7 +277,14 @@ public class AccessPoint {
 	
 	public BaseRecord findByNameInGroup(BaseRecord contextUser, String model, String groupObjectId, String name) {
 		Query groupq = getIdQuery(contextUser, ModelNames.MODEL_GROUP, FieldNames.FIELD_OBJECT_ID, groupObjectId);
-		BaseRecord group = find(contextUser, groupq);
+		/// Read the group without checking access because the user may have access the object, while not having access to the parent group
+		///
+		//BaseRecord group = find(contextUser, groupq);
+		BaseRecord group = null;
+		QueryResult qr = search(contextUser, groupq);
+		if(qr != null && qr.getResults().length > 0) {
+			group = qr.getResults()[0];
+		}
 		BaseRecord rec = null;
 		if(group != null) {
 			rec = findByNameInHierarchy(contextUser, group, FieldNames.FIELD_GROUP_ID, model, name, null);
@@ -395,6 +404,15 @@ public class AccessPoint {
 		}
 		PolicyResponseType[] prrs = context.getPolicyUtil().evaluateQueryToReadPolicyResponses(contextUser, query);
 		PolicyResponseType prr = null;
+		/*
+		String type = query.get(FieldNames.FIELD_TYPE);
+		if(type.equals(ModelNames.MODEL_GROUP)) {
+			//logger.info("PRRS: " + prrs.length);
+			if(prrs.length > 0) {
+				logger.warn(prrs[0].toFullString());
+			}
+		}
+		*/
 		for(PolicyResponseType pr : prrs) {
 			prr = pr;
 			if(pr.getType() == PolicyResponseEnumType.PERMIT) {
