@@ -25,6 +25,7 @@ public class AccessSchema {
 	public static final String ROLE_REQUESTERS = "Requesters";
 	public static final String ROLE_REQUEST_READERS = "RequestReaders";
 	public static final String ROLE_REQUEST_ADMINISTRATORS = "RequestAdministrators";
+	public static final String ROLE_HOME = "home";
 	
 	public static final String[] SYSTEM_ROLE_NAMES = new String[]{
 		ROLE_SYSTEM_ADMINISTRATOR, ROLE_DATA_ADMINISTRATOR, ROLE_DATA_READERS,ROLE_ARTICLE_AUTHORS,
