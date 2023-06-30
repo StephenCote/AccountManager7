@@ -65,16 +65,18 @@
 					<excludes>
 
 					<!--
-						<exclude>**/TestMembership.java</exclude>
-							
+						
+						<exclude>**/TestProfile.java</exclude>	
 						
 					-->
 						
 						
+						<exclude>**/TestStream.java</exclude>
 						<!-- Repeatable Set -->
+						<exclude>**/TestMembership.java</exclude>
 						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestData.java</exclude>	
-						<exclude>**/TestStream.java</exclude>
+						
 						<exclude>**/TestValidationRules.java</exclude>
 						<exclude>**/TestVault.java</exclude>	
 						<exclude>**/TestPGDatabase.java</exclude>
