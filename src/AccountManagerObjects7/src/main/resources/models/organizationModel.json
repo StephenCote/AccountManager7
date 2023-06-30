@@ -1,6 +1,7 @@
 {
 "name": "organization",
 "inherits": ["nameId", "parent", "path"],
+"constraints": ["name, parentId"],
 "icon": "public",
 "label": "Organization",
 "fields": [

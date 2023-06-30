@@ -1,7 +1,7 @@
 {
 "name": "role",
 "inherits": ["nameId", "path", "parent"],
-"constraints": ["parentId", "name", "type"],
+"constraints": ["parentId, name, type, organizationId"],
 "icon": "badge",
 "label": "Role",
 "fields": [

@@ -1,7 +1,7 @@
 {
 	"name": "directory",
 	"inherits": ["nameId"],
-	"constraints": ["name, groupId"],
+	"constraints": ["name, groupId, organizationId"],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"abstract": true,
 	"fields": [
