@@ -113,6 +113,16 @@ public class CryptoFactory {
 		secureRandom = new SecureRandom();
 	}
 	
+	public String randomKey(int length) {
+	    int lower = 48;
+	    int upper = 122;
+	    return secureRandom.ints(lower, upper + 1)
+	      .filter(i -> (i <= 57 || i >= 65) && (i <= 90 || i >= 97))
+	      .limit(length)
+	      .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append)
+	      .toString();
+	}
+	
 
 
 	public byte[] serializeCipher(CryptoBean bean){
@@ -260,17 +270,21 @@ public class CryptoFactory {
 		try{
 			SecretKeyFactory factory = SecretKeyFactory.getInstance(bean.get(FieldNames.FIELD_HASH_FIELD_KEYFUNCTION));
 
-			KeySpec spec = new javax.crypto.spec.PBEKeySpec(passKey.toCharArray(), salt, 65536, 256);
+			KeySpec spec = new javax.crypto.spec.PBEKeySpec(passKey.toCharArray(), salt, 65536, bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSIZE));
 			SecretKey tmp = factory.generateSecret(spec);
 			SecretKey secret = new SecretKeySpec(tmp.getEncoded(), bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC));
-
-			Cipher cipher = Cipher.getInstance(bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYMODE));
-			cipher.init(Cipher.ENCRYPT_MODE, secret, new IvParameterSpec(salt, 0, 16));
-			AlgorithmParameters params = cipher.getParameters();
-			byte[] iv = params.getParameterSpec(IvParameterSpec.class).getIV();
+			byte[] iv = new byte[0];
+			String keyMode = bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYMODE);
+			if(keyMode.startsWith("AES")) {
+				Cipher cipher = Cipher.getInstance(bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYMODE));
+				cipher.init(Cipher.ENCRYPT_MODE, secret, new IvParameterSpec(salt, 0, 16));
+				AlgorithmParameters params = cipher.getParameters();
+				iv = params.getParameterSpec(IvParameterSpec.class).getIV();
+			}
 			setSecretKey(bean, secret.getEncoded(), iv, encryptedPassKey);
 		} catch (NoSuchAlgorithmException | InvalidKeySpecException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException | InvalidParameterSpecException e) {
 			logger.error(e);
+			e.printStackTrace();
 			
 		}  
 	}
@@ -563,7 +577,7 @@ public class CryptoFactory {
 
 	public void setMembers(CryptoBean bean, BaseRecord rec, boolean encryptedCipher) {
 		try {
-			
+
 			for(String field : importFields) {
 				copyField(rec, bean, field);
 			}
@@ -596,12 +610,12 @@ public class CryptoFactory {
 			}
 			
 			if(rec.hasField(FieldNames.FIELD_CIPHER_FIELD_KEY) && rec.hasField(FieldNames.FIELD_CIPHER_FIELD_IV) && rec.get(FieldNames.FIELD_CIPHER_FIELD_KEY) != null) {
-				// if(!bean.hasField(FieldNames.FIELD_CIPHER) || bean.get(FieldNames.FIELD_CIPHER) == null) {
+				if(!bean.hasField(FieldNames.FIELD_CIPHER) || bean.get(FieldNames.FIELD_CIPHER) == null) {
 					bean.set(FieldNames.FIELD_CIPHER, RecordFactory.newInstance(ModelNames.MODEL_CIPHER_KEY));
-				// }
+				}
 				setSecretKey(bean, rec.get(FieldNames.FIELD_CIPHER_FIELD_KEY), rec.get(FieldNames.FIELD_CIPHER_FIELD_IV), encryptedCipher);
 			}
-
+			
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -609,6 +623,7 @@ public class CryptoFactory {
 		}
 	}
 	private void copyField(BaseRecord source, BaseRecord target, String fieldName) throws FieldException, ValueException, ModelNotFoundException {
+		//logger.info(source.toFullString());
 		if(source.hasField(fieldName) && source.getField(fieldName) != null) {
 			target.set(fieldName, source.get(fieldName));
 		}
