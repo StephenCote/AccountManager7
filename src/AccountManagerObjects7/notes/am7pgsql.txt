@@ -1,0 +1,43 @@
+CREATE OR REPLACE FUNCTION fn_membership_byid(
+	actor text,
+	actorId bigint,
+	enable boolean,
+	container text,
+	containerId bigint,
+	organizationId bigint
+	)
+    RETURNS TABLE(success boolean, memexists boolean, memerror boolean) 
+    LANGUAGE 'plpgsql'
+    COST 100
+    VOLATILE 
+    ROWS 100
+AS $BODY$
+DECLARE
+	success boolean := false;
+	memexists boolean := false;
+	memerror boolean := false;
+	partRecordId bigint;
+	partTable text;
+BEGIN
+
+	SELECT P.id FROM participation WHERE P.participationId = containerId AND P.participationModel = container AND P.participantModel = actor AND P.participantId = actorId INTO partRecordId;
+
+	IF partRecordId IS NOT NULL AND partRecordId > 0 THEN
+		memexists := true;
+		IF enable = false THEN
+			DELETE FROM participation WHERE P.participationId = containedId AND P.participationModel = container AND P.participantModel = actor AND P.participantId = actorId;
+			success := true;
+		END IF;
+	ELSIF enable = true THEN
+		IF enable = true THEN
+			INSERT INTO participation (participationModel, participationId, participantModel, participantId, affectType, affectId, organizationId) VALUES (container, containerId, actor, actorId, 'UNKNOWN', 0, organizationId);
+			success := true;
+		END IF;
+	ELSE
+		-- delete nothing
+	END IF;
+
+RETURN QUERY 
+	SELECT success, memexists, memerror;
+ END;
+$BODY$;
