@@ -1,5 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -17,6 +18,8 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import javax.crypto.Cipher;
 
 import org.bouncycastle.cert.CertIOException;
 import org.bouncycastle.cert.X509CertificateHolder;
@@ -38,7 +41,10 @@ import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
 import org.bouncycastle.asn1.x500.X500Name;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.CredentialFactory;
 import org.cote.accountmanager.factory.CryptoFactory;
 import org.cote.accountmanager.factory.IFactory;
@@ -115,18 +121,71 @@ public class TestStartup extends BaseTest {
 	*/
 	
 
+	@Test
+	public void TestFieldClone() {
+		logger.info("Test Field Clone");
+		CryptoBean bean = new CryptoBean();
+		CryptoBean bean2 = new CryptoBean();
+		CryptoBean bean3 = new CryptoBean();
+		try {
+			bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, "HmacSHA256");
+			bean.set(FieldNames.FIELD_HASH_FIELD_ALGORITHM, "HmacSHA256");
+			bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSIZE, 256);
+			CryptoFactory.getInstance().setPassKey(bean, CryptoFactory.getInstance().randomKey(256), false);
+			CryptoFactory.getInstance().setMembers(bean2, bean, false);
+			
+			Cipher encCipher = CryptoFactory.getInstance().getEncryptCipherKey(bean);
+			assertNotNull("Cipher is null", encCipher);
+			Cipher decCipher = CryptoFactory.getInstance().getDecryptCipherKey(bean);
+			assertNotNull("Cipher is null", decCipher);
+			String serial = CryptoFactory.getInstance().serialize(bean, false, false, true, true, true);
+			CryptoFactory.getInstance().importCryptoBean(bean3, serial.getBytes(), false);
+		} catch (NullPointerException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+		//logger.info(bean2.toFullString());
+		//logger.info(bean3.toFullString());
+		//CryptoFactory.getInstance().generateSecretKey(bean);
+	}
 	
 	@Test
-	public void TestSystemStartup() {
+	public void TestJWTToken() {
 		Factory mf = ioContext.getFactory();
+		boolean error = false;
 		try {
 			BaseRecord org = mf.makeOrganization("/Development", OrganizationEnumType.DEVELOPMENT, 0L);
-			BaseRecord testMember1 = mf.getCreateUser(orgContext.getAdminUser(), "testMember1", org.get(FieldNames.FIELD_ID));
+			String key = CryptoFactory.getInstance().randomKey(16);
+			BaseRecord testMember = mf.getCreateUser(orgContext.getAdminUser(), "testMember - " + key, org.get(FieldNames.FIELD_ID));
+			CryptoBean bean = TokenService.getCreateCipher(testMember);
+			assertNotNull("Bean is null", bean);
+			logger.info(bean.toFullString());
 
-			// logger.info(JSONUtil.exportObject(org, RecordSerializerConfig.getUnfilteredModule()));
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			error = true;
+		}
+		assertFalse("An error was encountered", error);
+
+	}
+	
+
+	@Test
+	public void TestSystemStartup() {
+		logger.info("Test System Startup");
+		Factory mf = ioContext.getFactory();
+		boolean error = false;
+		try {
+			BaseRecord org = mf.makeOrganization("/Development", OrganizationEnumType.DEVELOPMENT, 0L);
+			BaseRecord testMember1 = mf.getCreateUser(orgContext.getAdminUser(), "testMember4", org.get(FieldNames.FIELD_ID));
+
 			BaseRecord per1 = mf.getCreateDirectoryModel(testMember1, ModelNames.MODEL_PERSON, "Demo Person 1", "~/Persons", org.get(FieldNames.FIELD_ID));
 
-			String token = TokenService.createJWTToken(orgContext.getAdminUser());
+			String token = TokenService.createJWTToken(testMember1);
+			assertNotNull("Token is null", token);
 			logger.info("Token: " + token);
 			
 			BaseRecord tok = mf.newInstance(ModelNames.MODEL_TOKEN, testMember1, null, ParameterUtil.parameters("""
@@ -139,7 +198,7 @@ public class TestStartup extends BaseTest {
 						"value": 30
 					}
 			"""));
-			
+
 			
 			BaseRecord dok = mf.template(ModelNames.MODEL_DATA, """
 					{
@@ -153,17 +212,24 @@ public class TestStartup extends BaseTest {
 			logger.info("Test: " + dok.get(FieldNames.FIELD_NAME) + " / " + dok.getFields().size());
 
 			assertNotNull("Token is null", tok);
+			
+			String valTok = TokenService.validateTokenToSubject(token);
+			assertNotNull("Token subject is null", valTok);
+			
+			logger.info("Token subject: " + valTok);
 		}
 		catch(Exception e) {
 			logger.error(e);
-			
+			e.printStackTrace();
+			error = true;
 		}
+		assertFalse("An error was encountered", error);
 
 	}
-	
+
 	
 	/// https://stackoverflow.com/questions/11383898/how-to-create-a-x509-certificate-using-java
-	
+	/*
 	@Test
 	public void TestCertificateSetup1() {
 		
@@ -213,7 +279,7 @@ public class TestStartup extends BaseTest {
 			
 		}
 		assertNotNull("User is null", user);
-		logger.info(JSONUtil.exportObject(user, RecordSerializerConfig.getUnfilteredModule()));
+		// logger.info(JSONUtil.exportObject(user, RecordSerializerConfig.getUnfilteredModule()));
 		CryptoBean crypto = new CryptoBean();
 		CryptoFactory.getInstance().generateKeyPair(crypto);
 
@@ -261,7 +327,7 @@ public class TestStartup extends BaseTest {
 		return new JcaX509CertificateConverter()
 		.setProvider(new BouncyCastleProvider()).getCertificate(certificateBuilder.build(contentSigner));
 	}
-
+	*/
 	private SubjectKeyIdentifier createSubjectKeyId(PublicKey publicKey) throws OperatorCreationException {
 		SubjectPublicKeyInfo publicKeyInfo = SubjectPublicKeyInfo.getInstance(publicKey.getEncoded());
 		DigestCalculator digCalc = new BcDigestCalculatorProvider().get(new AlgorithmIdentifier(OIWObjectIdentifiers.idSHA1));
