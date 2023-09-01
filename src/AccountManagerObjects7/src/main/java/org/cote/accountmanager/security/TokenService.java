@@ -83,10 +83,17 @@ public class TokenService {
 	public static final int TOKEN_EXPIRY_6_HOURS = 21600;
 	private static int DEFAULT_TOKEN_EXPIRY_HOURS = TOKEN_EXPIRY_6_HOURS;
 	public static final String DEFAULT_REFERENCE_SUFFIX = "jwt";
+	private static final SignatureAlgorithm SIGNATURE_ALGORITHM = SignatureAlgorithm.HS256;
+	private static final String JWT_HASH_SPEC = "HmacSHA256";
+	private static final String JWT_KEY_SPEC = "HmacSHA256";
+	private static final int JWT_KEY_SIZE = 256;
 
 	public static CryptoBean getCreateCipher(BaseRecord actor){
 		return getCreateCipher(actor, DEFAULT_REFERENCE_SUFFIX);
 	}
+	
+
+	
 	public static CryptoBean getCreateCipher(BaseRecord actor, String referenceName){
 		BaseRecord tokenType = null;
 		CryptoBean outBean = null;
@@ -120,7 +127,19 @@ public class TokenService {
 			}
 			if(tokenType == null){
 				CryptoBean bean = new CryptoBean();
-				CryptoFactory.getInstance().generateSecretKey(bean);
+				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, JWT_KEY_SPEC);
+				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSIZE, JWT_KEY_SIZE);
+				//bean.set(FieldNames.FIELD_HASH_FIELD_ALGORITHM, JWT_HASH_SPEC);
+				if(JWT_KEY_SPEC.equals("AES")) {
+					logger.warn("Generate secret key");
+					CryptoFactory.getInstance().generateSecretKey(bean);
+				}
+				else {
+					String key = CryptoFactory.getInstance().randomKey(JWT_KEY_SIZE);
+					logger.warn("Set pass key: " + key);
+					CryptoFactory.getInstance().setPassKey(bean, key, false);
+				}
+				//CryptoFactory.getInstance().generateKeyPair(bean);
 				tokenType = TokenService.newSecurityToken(actor.get(FieldNames.FIELD_OBJECT_ID), actor.get(FieldNames.FIELD_ORGANIZATION_ID));
 				
 				tokenType.set(FieldNames.FIELD_OWNER_ID, ownerId);
@@ -152,12 +171,12 @@ public class TokenService {
 	}
 	
 	public static Jws<Claims> extractJWTClaims(String token){
-		return Jwts.parser().setSigningKeyResolver(new AM7SigningKeyResolver()).parseClaimsJws(token);
+		return Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token);
 	}
 	
 	public static String validateTokenToSubject(String token){
 		logger.info("Validating token: '" + token + "'");
-		return Jwts.parser().setSigningKeyResolver(new AM7SigningKeyResolver()).parseClaimsJws(token).getBody().getSubject();
+		return Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token).getBody().getSubject();
 	}
 	
 	public static Claims validateSpooledJWTToken(String token) throws IndexException, ReaderException {
@@ -289,6 +308,7 @@ public class TokenService {
 		}
 		if(bean.getSecretKey() == null){
 			logger.error("Null secret key");
+			logger.error(bean.toFullString());
 			return null;
 		}
 		
@@ -322,7 +342,7 @@ public class TokenService {
 		  .setSubject(persona.get(FieldNames.FIELD_NAME))
 		  .setId(persona.get(FieldNames.FIELD_URN))
 		  .compressWith(CompressionCodecs.GZIP)
-		  .signWith(SignatureAlgorithm.HS512, bean.getSecretKey())
+		  .signWith(bean.getSecretKey(), SIGNATURE_ALGORITHM)
 		  .compact();
 	}
 	
@@ -348,6 +368,7 @@ public class TokenService {
 		}
 		if(bean.getSecretKey() == null){
 			logger.error("Null secret key");
+			logger.error(bean.toFullString());
 			return null;
 		}
 		
@@ -397,6 +418,7 @@ public class TokenService {
 		Date now = cal.getTime();
 		cal.add(Calendar.MINUTE, expiryMinutes);
 		Date expires = cal.getTime();
+		
 		return Jwts.builder()
 		  .setClaims(claims)
 		  .setIssuer(contextUser.get(FieldNames.FIELD_URN))
@@ -405,7 +427,7 @@ public class TokenService {
 		  .setSubject(persona.get(FieldNames.FIELD_NAME))
 		  .setId(persona.get(FieldNames.FIELD_URN))
 		  .compressWith(CompressionCodecs.GZIP)
-		  .signWith(SignatureAlgorithm.HS512, bean.getSecretKey())
+		  .signWith(bean.getSecretKey(), SIGNATURE_ALGORITHM)
 		  .compact();
 	}
 
@@ -430,7 +452,7 @@ public class TokenService {
 		  .setSubject(user.get(FieldNames.FIELD_NAME))
 		  .setId(user.get(FieldNames.FIELD_URN))
 		  .compressWith(CompressionCodecs.GZIP)
-		  .signWith(SignatureAlgorithm.HS512, bean.getSecretKey())
+		  .signWith(bean.getSecretKey(), SIGNATURE_ALGORITHM)
 		  .compact();
 	}
 	
