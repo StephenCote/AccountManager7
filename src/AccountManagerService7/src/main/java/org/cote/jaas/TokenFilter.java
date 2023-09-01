@@ -29,7 +29,7 @@ public class TokenFilter implements Filter{
 	    int idx = -1;
 	    if (stringToken != null && (idx = stringToken.indexOf("Bearer")) > -1) {
 	    	String token = stringToken.substring(idx + 7, stringToken.length()).trim();
-	    	String urn = Jwts.parser().setSigningKeyResolver(new AM7SigningKeyResolver()).parseClaimsJws(token).getBody().getId();
+	    	String urn = Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token).getBody().getId();
 	    	BaseRecord user = IOSystem.getActiveContext().getRecordUtil().getRecordByUrn(null, ModelNames.MODEL_USER, urn);
 	    	if(user != null){
 	    		didChain = true;
