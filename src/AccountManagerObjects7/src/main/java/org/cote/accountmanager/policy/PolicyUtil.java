@@ -105,6 +105,7 @@ public class PolicyUtil {
 	public static final String POLICY_SYSTEM_DELETE_OBJECT = "systemDeleteObject";
 	public static final String POLICY_SYSTEM_EXECUTE_OBJECT = "systemExecuteObject";
 	
+	
 	private static Map<String, SystemPermissionEnumType> policyNameMap = new ConcurrentHashMap<>();
 	private static Map<SystemPermissionEnumType, String> permissionNameMap = new ConcurrentHashMap<>();
 	
@@ -116,6 +117,8 @@ public class PolicyUtil {
 		policyNameMap.put(POLICY_SYSTEM_UPDATE_OBJECT, SystemPermissionEnumType.UPDATE);
 		permissionNameMap = policyNameMap.entrySet().stream().collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
 	}
+	
+	private Map<String, String> policyBaseMap = new ConcurrentHashMap<>();
 	
 	private final IReader reader;
 	private final IWriter writer;
@@ -622,20 +625,40 @@ public class PolicyUtil {
 
 	}
 	
+	public String getPolicyBase(String resourceName) {
+		if(policyBaseMap.containsKey(resourceName)) {
+			return policyBaseMap.get(resourceName);
+		}
+		
+		String policyBase = ResourceUtil.getPolicyResource(resourceName);
+		if(policyBase == null) {
+			return null;
+		}
+		policyBase = applyResourcePattern(ruleResourceExp, ResourceType.RULE, policyBase);
+		policyBase = applyResourcePattern(patternResourceExp, ResourceType.PATTERN, policyBase);
+		policyBase = applyResourcePattern(factResourceExp, ResourceType.FACT, policyBase);
+		
+		policyBaseMap.put(resourceName, policyBase);
+		
+		return policyBase;
+	}
+	
 	/// Note: actor is for object types other than the contextUser, including other users, persons, and accounts.
 	///
 	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
 
-		String policyBase = ResourceUtil.getPolicyResource(name);
+		//String policyBase = ResourceUtil.getPolicyResource(name);
+		String policyBase = getPolicyBase(name);
 		BaseRecord rec = null;
 		if(policyBase == null) {
 			logger.error("Invalid policy resource name: " + name);
 			return rec;
 		}
+		/*
 		policyBase = applyResourcePattern(ruleResourceExp, ResourceType.RULE, policyBase);
 		policyBase = applyResourcePattern(patternResourceExp, ResourceType.PATTERN, policyBase);
 		policyBase = applyResourcePattern(factResourceExp, ResourceType.FACT, policyBase);
-
+		*/
 		policyBase = applyActorPattern(policyBase, actor);
 		policyBase = applyResourcePattern(policyBase, resource);
 		policyBase = applyTokenPattern(policyBase, token);
