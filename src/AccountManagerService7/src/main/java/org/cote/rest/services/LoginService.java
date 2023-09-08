@@ -1,6 +1,7 @@
 package org.cote.rest.services;
 
 import java.util.List;
+import java.util.UUID;
 
 import javax.annotation.security.DeclareRoles;
 import javax.annotation.security.RolesAllowed;
@@ -134,7 +135,7 @@ public class LoginService {
 		BaseRecord outResp = null;
 		try {
 			outResp = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_AUTHENTICATION_RESPONSE);
-			outResp.set("response", AuthenticationResponseEnumType.NOT_AUTHENTICATED);
+			outResp.set(FieldNames.FIELD_RESPONSE, AuthenticationResponseEnumType.NOT_AUTHENTICATED);
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -146,7 +147,7 @@ public class LoginService {
 		String outToken = null;		
 		
 		if(authnRequest != null) {
-			CredentialEnumType cet = CredentialEnumType.valueOf(authnRequest.get("credentialType"));
+			CredentialEnumType cet = CredentialEnumType.valueOf(authnRequest.get(FieldNames.FIELD_CREDENTIAL_TYPE));
 			if(cet == CredentialEnumType.UNKNOWN) {
 				cet = CredentialEnumType.HASHED_PASSWORD;
 			}
@@ -196,9 +197,10 @@ public class LoginService {
 					else {
 		        		VerificationEnumType vet = VerificationEnumType.UNKNOWN;
 		        		try {
-							vet = IOSystem.getActiveContext().getFactory().verify(sub, cred, ParameterUtil.newParameterList("password", credStr));
+							vet = IOSystem.getActiveContext().getFactory().verify(sub, cred, ParameterUtil.newParameterList(FieldNames.FIELD_PASSWORD, credStr));
 							if(vet == VerificationEnumType.VERIFIED) {
-								outToken = TokenService.createJWTToken(sub);
+								//outToken = TokenService.createJWTToken(sub);
+								outToken = TokenService.createJWTToken(sub, sub, UUID.randomUUID().toString(), TokenService.TOKEN_EXPIRY_1_WEEK);
 								//outResp.set(FieldNames.FIELD_MESSAGE, outToken);
 								List<String> toks = outResp.get("tokens");
 								toks.add(outToken);
