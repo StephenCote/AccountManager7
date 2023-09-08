@@ -26,7 +26,10 @@ package org.cote.rest.config;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import javax.servlet.ServletContext;
@@ -40,11 +43,14 @@ import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.record.RecordIO;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.jaas.AM7LoginModule;
+import org.cote.sockets.WebSocketService;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.glassfish.jersey.server.filter.RolesAllowedDynamicFeature;
 import org.glassfish.jersey.server.spi.AbstractContainerLifecycleListener;
@@ -68,35 +74,33 @@ public class RestServiceConfig extends ResourceConfig{
         @Context
         ServletContext context;
 
-        // private List<ThreadService> maintenanceThreads = new ArrayList<>();
+        private List<Threaded> maintenanceThreads = new ArrayList<>();
 
         @Override
         public void onShutdown(Container container) {
-        	/*
+        	
         	logger.info("Chirping users");
-        	WebSocketService.activeUsers().forEach(user ->{
-        		WebSocketService.chirpUser(user, new String[] {"Service going offline"});
+        	WebSocketService.activeSessions().forEach(session ->{
+        		// WebSocketService.chirpUser(user, new String[] {"Service going offline"});
+        		WebSocketService.sendMessage(session, new String[] {"Service going offline"}, true, false, true);
         	});
-        	*/
-            logger.info("Cleaning up AccountManager");
+
+        	logger.info("Cleaning up AccountManager");
 
             IOSystem.close();
-            /*
+
             try {
             	logger.info("Stopping maintenance threads");
-                for(ThreadService svc : maintenanceThreads){
+                for(Threaded svc : maintenanceThreads){
                 	svc.requestStop();
                 }
                 /// Sleep to give the threads a chance to shut down
                 ///
-				Thread.sleep(1000);
+				Thread.sleep(100);
 				
 			} catch (InterruptedException e) {
 				logger.error(e.getMessage());
 			}
-			*/
-            // maintenanceThreads.clear();
-
         }
 
     	
@@ -132,6 +136,9 @@ public class RestServiceConfig extends ResourceConfig{
     		props.setReset(false);
     		return props;
     	}
+    	
+    	private static final String threads = "org.cote.service.threads.NotificationThread";
+    	
 		private void initializeAccountManager(){
 			logger.info("Initializing Account Manager");
 			
@@ -166,29 +173,25 @@ public class RestServiceConfig extends ResourceConfig{
 				}
 			}
 			
-		/*
-			
-			logger.info("Starting Maintenance Threads");
-			String addJob = context.getInitParameter("maintenance.jobs");
 			int jobPeriod = 10000;
-			String jobPeriodStr = context.getInitParameter("maintenance.jobs.period");
+			String jobPeriodStr = context.getInitParameter("maintenance.interval");
 			if(jobPeriodStr != null) jobPeriod = Integer.parseInt(jobPeriodStr);
-			if(addJob != null){
-				String[] jobs = addJob.split(",");
+			if(threads != null){
+				String[] jobs = threads.split(",");
 				for(int i = 0; i < jobs.length;i++){
 					try {
 						logger.info("Starting " + jobs[i]);
 						Class<?> cls = Class.forName(jobs[i]);
-						ThreadService f = (ThreadService)cls.getDeclaredConstructor().newInstance();
+						Threaded f = (Threaded)cls.getDeclaredConstructor().newInstance();
 						f.setThreadDelay(jobPeriod);
 						maintenanceThreads.add(f);
-					} catch (ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException e) {
-						logger.error(FactoryException.TRACE_EXCEPTION, e);
+					} catch (InvocationTargetException | ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | NoSuchMethodException | SecurityException  e) {
+						logger.error( e);
 					}
 					
 				}
 			}
-		*/
+
 			String roleAuth = context.getInitParameter("amauthrole");
 			if(roleAuth != null && roleAuth.length() > 0){
 				AM7LoginModule.setAuthenticatedRole(roleAuth);
