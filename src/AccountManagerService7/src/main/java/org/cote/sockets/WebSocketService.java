@@ -8,8 +8,10 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.servlet.http.HttpServlet;
 import javax.websocket.CloseReason;
@@ -55,11 +57,24 @@ public class WebSocketService  extends HttpServlet {
 	//private Map<String, Session> objectIdSession = Collections.synchronizedMap(new HashMap<>());
 	private static Map<String, BaseRecord> userMap = Collections.synchronizedMap(new HashMap<>());
 	private static Map<String, Session> urnToSession = Collections.synchronizedMap(new HashMap<>());
+	private static Set<Session> sessions = Collections.synchronizedSet(new HashSet<>());
 	
+	public static List<Session> activeSessions(){
+		return new ArrayList<>(sessions);
+	}
 	public static List<BaseRecord> activeUsers(){
 		return new ArrayList<>(userMap.values());
 	}
-	
+	public static Session getSessionByUrn(String urn) {
+		return urnToSession.get(urn);
+	}
+	public static BaseRecord getUserBySession(Session session) {
+		BaseRecord user = null;
+		if(userMap.containsKey(session.getId())) {
+			user = userMap.get(session.getId());
+		}
+		return user;
+	}
 	//private static Map<String, BaseRecord> 
 
 	/*
@@ -90,10 +105,14 @@ public class WebSocketService  extends HttpServlet {
 			
 			BaseRecord msg = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_SPOOL, recipient, null, null);
 			msg.set(FieldNames.FIELD_NAME, messageName);
-			msg.set("recipientId", recipient.get(FieldNames.FIELD_ID));
-			msg.set("recipientType", recipient.getModel());
-			msg.set("senderId", sender.get(FieldNames.FIELD_ID));
-			msg.set("senderType", sender.getModel());
+			if(recipient != null) {
+				msg.set("recipientId", recipient.get(FieldNames.FIELD_ID));
+				msg.set("recipientType", recipient.getModel());
+			}
+			if(sender != null) {
+				msg.set("senderId", sender.get(FieldNames.FIELD_ID));
+				msg.set("senderType", sender.getModel());
+			}
 			msg.set(FieldNames.FIELD_DATA, messageContent.getBytes(StandardCharsets.UTF_8));
 			msg.set(FieldNames.FIELD_VALUE_TYPE, ValueEnumType.STRING);
 			msg.set(FieldNames.FIELD_SPOOL_STATUS, SpoolStatusEnumType.SPOOLED);
@@ -181,24 +200,43 @@ public class WebSocketService  extends HttpServlet {
 		sendMessage(urnToSession.get(user.get(FieldNames.FIELD_URN)), chirps, true, false, true);
 		return true;
 	}
-	private static void sendMessage(Session session) {
+	
+	public static void cleanupUserSession(BaseRecord user) {
+		if(user != null) {
+			String u2 = user.get(FieldNames.FIELD_URN);
+			if(u2 != null) {
+				userMap.entrySet().removeIf( u -> {
+					if(u.getValue() != null) {
+						String u1 = u.getValue().get(FieldNames.FIELD_URN);
+						if(u1 != null && u1.equals(u2)) {
+							urnToSession.remove(u1);
+							return true;
+						}
+					}
+					return false;
+				});
+			}
+		}
+	}
+	
+	public static void sendMessage(Session session) {
 		sendMessage(session, new String[0], true, false, false);
 	}
-	private static void sendMessage(Session session, String[] chirps, boolean count, boolean auth, boolean sync) {
-		if (!userMap.containsKey(session.getId())) {
-			logger.warn("Session is not mapped to a key");
-			return;
-		}
-		BaseRecord user = userMap.get(session.getId());
-		//asyncRemote.sendText(builder.build().toString());
-		// Send pending messages
+	public static void sendMessage(Session session, String[] chirps, boolean count, boolean auth, boolean sync) {
 		SocketMessage msg = new SocketMessage();
-		msg.setUser(user.get(FieldNames.FIELD_URN));
-		if(count) {
-			msg.setNewMessageCount(countNewMessages(session));
-		}
-		if(auth) {
-			msg.setAuthToken(TokenService.createSimpleJWTToken(user));
+		if (userMap.containsKey(session.getId())) {
+			//logger.warn("Session is not mapped to a key");
+			BaseRecord user = userMap.get(session.getId());
+			//asyncRemote.sendText(builder.build().toString());
+			// Send pending messages
+			
+			msg.setUser(user.get(FieldNames.FIELD_URN));
+			if(count) {
+				msg.setNewMessageCount(countNewMessages(session));
+			}
+			if(auth) {
+				msg.setAuthToken(TokenService.createSimpleJWTToken(user));
+			}
 		}
 		msg.getChirps().addAll(Arrays.asList(chirps));
 		if(sync) {
@@ -215,16 +253,34 @@ public class WebSocketService  extends HttpServlet {
 			asyncRemote.sendText(JSONUtil.exportObject(msg));
 		}
 	}
-
-	@OnOpen
-	public void onOpen(Session session, @PathParam("objectId") String objectId) {
-		logger.info("Opened socket for " + session.getId() + " / " + objectId);
-
+	
+	private void registerUserSession(Session session, String objectId) {
+		if(objectId == null || objectId.equals("undefined")) {
+			return;
+		}
+		
+		if(!sessions.contains(session)) {
+			logger.error("Unknown session: " + session.getId());
+			return;
+		}
+		
+		if(userMap.containsKey(session.getId())) {
+			logger.warn("User " + objectId + " already registered");
+		}
+		
 		BaseRecord user = IOSystem.getActiveContext().getRecordUtil().getRecordByObjectId(null, ModelNames.MODEL_USER, objectId);
 		if (user != null) {
 			userMap.put(session.getId(), user);
 			urnToSession.put(user.get(FieldNames.FIELD_URN), session);
 		}
+	}
+
+	@OnOpen
+	public void onOpen(Session session, @PathParam("objectId") String objectId) {
+		logger.info("Opened socket for " + session.getId() + " / " + objectId);
+		sessions.add(session);
+
+		registerUserSession(session, objectId);
 
 		sendMessage(session, new String[] {"New Session"}, false, true, false);
 	}
@@ -234,12 +290,22 @@ public class WebSocketService  extends HttpServlet {
 		BaseRecord user = userMap.get(session.getId());
 		
 		SocketMessage msg = JSONUtil.importObject(txt,  SocketMessage.class);
-	
+		if(msg.getUserId() != null) {
+			registerUserSession(session, msg.getUserId());
+		}
+		
 		BaseRecord message = msg.getSendMessage();
-		if(user != null && message != null) {
+		if(message != null) {
 			long recId = message.get("recipientId");
 			String recType = message.get("recipientType");
-			logger.info("Send message " + message.get(FieldNames.FIELD_NAME) + " to " + recId + " from " + user.get(FieldNames.FIELD_URN) + " (" + user.get(FieldNames.FIELD_OBJECT_ID) + ")");
+			//user != null &&
+			String urn = "Anonymous";
+			String uid = "Unk";
+			if(user != null) {
+				uid = user.get(FieldNames.FIELD_OBJECT_ID);
+				urn = user.get(FieldNames.FIELD_URN);
+			}
+			logger.info("Send message " + message.get(FieldNames.FIELD_NAME) + " to " + recId + " from " + user.get(FieldNames.FIELD_URN) + " (" + uid + ")");
 			if(recId > 0L && recType.equals(ModelNames.MODEL_USER)) {
 					
 				BaseRecord targUser = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, recType, recId);
@@ -272,10 +338,10 @@ public class WebSocketService  extends HttpServlet {
 		//logger.info(String.format("Closing a WebSocket (%s) due to %s", session.getId(), reason.getReasonPhrase()));
 		//newMessage(session, "Hangup the phone", "Session ended");
 		if(userMap.containsKey(session.getId())){
-			urnToSession.remove(userMap.get(session.getId()).get(FieldNames.FIELD_URN));
+			cleanupUserSession(userMap.get(session.getId()));
 		}
-		userMap.remove(session.getId());
-		
+		sessions.remove(session);
+
 	}
 	
 	@OnError
@@ -287,6 +353,7 @@ public class WebSocketService  extends HttpServlet {
 
 class SocketMessage {
 	private String user = null;
+	private String userId = null;
 	private int newMessageCount = 0;
 	private BaseRecord sendMessage = null;
 	private String authToken = null;
@@ -301,6 +368,14 @@ class SocketMessage {
 
 	public void setAuthToken(String authToken) {
 		this.authToken = authToken;
+	}
+	
+	public String getUserId() {
+		return userId;
+	}
+
+	public void setUserId(String userId) {
+		this.userId = userId;
 	}
 
 	public String getUser() {
