@@ -78,9 +78,11 @@ public class TokenService {
 	public static final String CLAIM_RESOURCE_TYPE = "resourceType";
 	public static final String CLAIM_RESOURCE_ID = "resourceId";
 	public static final int TOKEN_EXPIRY_1_MINUTE = 60;
-	public static final int TOKEN_EXPIRY_10_MINUTES = 600;
-	public static final int TOKEN_EXPIRY_1_HOUR = 3600;
-	public static final int TOKEN_EXPIRY_6_HOURS = 21600;
+	public static final int TOKEN_EXPIRY_10_MINUTES = TOKEN_EXPIRY_1_MINUTE * 10;
+	public static final int TOKEN_EXPIRY_1_HOUR = TOKEN_EXPIRY_10_MINUTES * 6;
+	public static final int TOKEN_EXPIRY_6_HOURS = TOKEN_EXPIRY_1_HOUR * 6;
+	public static final int TOKEN_EXPIRY_1_DAY = TOKEN_EXPIRY_6_HOURS * 4;
+	public static final int TOKEN_EXPIRY_1_WEEK = TOKEN_EXPIRY_1_DAY * 7;
 	private static int DEFAULT_TOKEN_EXPIRY_HOURS = TOKEN_EXPIRY_6_HOURS;
 	public static final String DEFAULT_REFERENCE_SUFFIX = "jwt";
 	private static final SignatureAlgorithm SIGNATURE_ALGORITHM = SignatureAlgorithm.HS256;
@@ -335,6 +337,7 @@ public class TokenService {
 		cal.add(Calendar.MINUTE, expiryMinutes);
 		Date expires = cal.getTime();
 		return Jwts.builder()
+		  //.setId(UUID.randomUUID().toString())
 		  .setClaims(claims)
 		  .setIssuer(authorizingUser.get(FieldNames.FIELD_URN))
 		  .setIssuedAt(now)
@@ -420,6 +423,7 @@ public class TokenService {
 		Date expires = cal.getTime();
 		
 		return Jwts.builder()
+		  //.setId(UUID.randomUUID().toString())
 		  .setClaims(claims)
 		  .setIssuer(contextUser.get(FieldNames.FIELD_URN))
 		  .setIssuedAt(now)
@@ -448,6 +452,7 @@ public class TokenService {
 		claims.put(FieldNames.FIELD_OBJECT_ID, (String)user.get(FieldNames.FIELD_OBJECT_ID));
 		claims.put(FieldNames.FIELD_ORGANIZATION_PATH, (String)user.get(FieldNames.FIELD_ORGANIZATION_PATH));
 		return Jwts.builder()
+		  //.setId(UUID.randomUUID().toString())
 		  .setClaims(claims)
 		  .setSubject(user.get(FieldNames.FIELD_NAME))
 		  .setId(user.get(FieldNames.FIELD_URN))
