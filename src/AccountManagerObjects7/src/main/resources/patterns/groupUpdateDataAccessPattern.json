@@ -1,0 +1,7 @@
+{
+	"urn": "resource.policy.pattern.groupupdatedataaccess",
+	"type": "authorization",
+	"name": "Update Object Group Data Access Pattern",
+	"fact": "${fact.actor}",
+	"match": "${fact.groupUpdateDataPermission}"
+}

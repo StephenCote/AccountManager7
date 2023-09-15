@@ -8,7 +8,8 @@
 		"${pattern.groupOwnerAccessOp}",
 		"${pattern.parentOwnerAccessOp}",
 		"${pattern.accountAdministrator}",
-		"${pattern.groupCreateAccess}",
-		"${pattern.parentCreateAccess}"
+		"${pattern.groupUpdateDataAccess}",
+		"${pattern.groupUpdateAccess}",
+		"${pattern.parentUpdateAccess}"
 	]
 }

@@ -9,6 +9,7 @@
 		"${pattern.groupOwnerAccessOp}",
 		"${pattern.parentOwnerAccessOp}",
 		"${pattern.accountAdministrator}",
+		"${pattern.groupDataReadAccess}",
 		"${pattern.groupReadAccess}",
 		"${pattern.parentReadAccess}",
 		"${pattern.resourceReadAccess}"

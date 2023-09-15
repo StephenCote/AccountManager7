@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.groupupdatedatapermission",
+	"name": "Group Update Data Permission Match",
+	"factData": "/Update",
+	"factDataType": "data",
+	"type": "permission",
+	"modelType": "group",
+	"sourceUrn": "${resourceGroupUrn}",
+	"factReference": "${resourceGroup}"
+}

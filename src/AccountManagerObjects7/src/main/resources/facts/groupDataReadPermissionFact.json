@@ -1,0 +1,10 @@
+{
+	"urn": "resource.policy.fact.groupdatareadpermission",
+	"name": "Group Data Read Permission Match",
+	"factData": "/Read",
+	"factDataType": "data",
+	"type": "permission",
+	"modelType": "group",
+	"sourceUrn": "${resourceGroupUrn}",
+	"factReference": "${resourceGroup}"
+}
