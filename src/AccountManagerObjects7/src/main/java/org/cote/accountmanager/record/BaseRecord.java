@@ -217,7 +217,7 @@ public abstract class BaseRecord {
 		}
 		
 		if(fieldMap.get(name).getValueType().equals(FieldEnumType.FLEX)) {
-			logger.error(String.format(FieldException.ABSTRACT_FIELD, model, name));
+			logger.debug(String.format(FieldException.ABSTRACT_FIELD, model, name));
 			return null;
 		}
 		return fieldMap.get(name).getValue(this);
@@ -330,7 +330,8 @@ public abstract class BaseRecord {
 		   
 	   }
 	   if(absError) {
-		   throw new FieldException(String.format(FieldException.ABSTRACT_FIELD, model, fieldName));
+		   //throw new FieldException(String.format(FieldException.ABSTRACT_FIELD, model, fieldName));
+		   //logger.warn(String.format(FieldException.ABSTRACT_FIELD, model, fieldName));
 	   }
    }
    public <T> void setFlex(String fieldName, T value) {
