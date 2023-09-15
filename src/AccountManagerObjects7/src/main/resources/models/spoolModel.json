@@ -3,7 +3,10 @@
 	"inherits": [
 		"dateTime",
 		"organizationExt",
-		"primaryKey"
+		"primaryKey",
+		"reference",
+		"recipient",
+		"sender"
 	],
 	"fields": [
 		{
@@ -53,15 +56,6 @@
 			"name": "expires",
 			"type": "boolean"
 		},
-		{
-			"name": "referenceId",
-			"type": "long"
-		},
-		{
-			"name": "referenceType",
-			"type": "string",
-			"maxLength": 32
-		},
 
 		{
 			"name": "transportType",
@@ -102,24 +96,6 @@
 			"baseModel": "group",
 			"baseProperty": "groupId",
 			"provider": "org.cote.accountmanager.provider.PathProvider"
-		},
-		{
-			"name": "senderId",
-			"type": "long"
-		},
-		{
-			"name": "senderType",
-			"type": "string",
-			"maxLength": 32
-		},
-		{
-			"name": "recipientId",
-			"type": "long"
-		},
-		{
-			"name": "recipientType",
-			"type": "string",
-			"maxLength": 32
 		},
 		{
 			"name": "modelType",

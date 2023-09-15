@@ -1,0 +1,15 @@
+{
+	"name": "recipient",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "recipientId",
+			"type": "long"
+		},
+		{
+			"name": "recipientType",
+			"type": "string",
+			"maxLength": 32
+		}
+	]
+}

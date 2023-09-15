@@ -1,0 +1,15 @@
+{
+	"name": "sender",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "senderId",
+			"type": "long"
+		},
+		{
+			"name": "senderType",
+			"type": "string",
+			"maxLength": 32
+		}
+	]
+}
