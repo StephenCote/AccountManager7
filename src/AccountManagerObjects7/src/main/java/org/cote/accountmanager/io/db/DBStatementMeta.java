@@ -9,6 +9,7 @@ public class DBStatementMeta {
 	private String sql = null;
 	private List<String> fields = new ArrayList<>();
 	private List<String> columns = new ArrayList<>();
+
 	private Query query = null;
 	
 	public DBStatementMeta() {

@@ -3,6 +3,7 @@ package org.cote.accountmanager.io.db;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -63,7 +64,6 @@ public class DBWriter extends MemoryWriter {
 	    	StatementUtil.applyPreparedStatement(model, meta, st);
 	    	int update = st.executeUpdate();
 	    	if(update > 0) {
-	    		// logger.info("Deleted: " + update);
 	    		success = true;
 	    	}
 			st.close();
@@ -84,22 +84,10 @@ public class DBWriter extends MemoryWriter {
 			op = RecordOperation.UPDATE;
 			CacheUtil.clearCache(model);
 		}
-		/*
-		logger.info(op.toString() + " " + model.getModel());
-		logger.info(model.toString());
-		model.getFields().forEach(f -> {
-			logger.info(f.getName());
-		});
-		*/
-		// RecordUtil.sortFields(model);
+
 		super.write(model);
+
 		if(!RecordUtil.isIdentityRecord(model) && (op != RecordOperation.CREATE || !RecordUtil.isIdentityModel(schema))) { 
-			logger.error("*** " + op.toString() + " " + model.getModel());
-			logger.error("**** " + model.get(FieldNames.FIELD_ID));
-			
-			logger.error("**** " + RecordUtil.isIdentityRecord(model));
-			logger.error("**** " + RecordUtil.isIdentityModel(schema));
-			logger.error(model.toString());
 			throw new WriterException("Model " + model.getModel() + " does not define an identity field");
 		}
 		
@@ -107,25 +95,31 @@ public class DBWriter extends MemoryWriter {
 		if(!model.getModel().equals(ModelNames.MODEL_AUDIT)) {
 			for(FieldType f : model.getFields()) {
 				FieldSchema fs = schema.getFieldSchema(f.getName());
-				if(fs.isForeign() && f.getValueType() == FieldEnumType.MODEL) {
-					BaseRecord bf = model.get(f.getName());
-					if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
-						/// logger.warn("**** Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
-						if(op == RecordOperation.CREATE) {
-							logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
-							// logger.info(model.toFullString());
-							try {
-								bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
-								bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
-								IOSystem.getActiveContext().getRecordUtil().createRecord(bf);
-								//logger.info(bf.toString());
+				List<BaseRecord> bfs = new ArrayList<>();
+				if(fs.isForeign()) {
+					if(f.getValueType() == FieldEnumType.MODEL) {
+						bfs.add(model.get(f.getName()));
+					}
+					else if(f.getValueType() == FieldEnumType.LIST) {
+						bfs = model.get(f.getName());
+					}
+					for(BaseRecord bf : bfs) {
+						if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
+							logger.error("**** TODO: REMOVE THIS: Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
+							if(op == RecordOperation.CREATE) {
+								logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
+								try {
+									bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
+									bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+									IOSystem.getActiveContext().getRecordUtil().createRecord(bf);
+								}
+								catch(ValueException | FieldException | ModelNotFoundException e) {
+									logger.error(e);
+								}
 							}
-							catch(ValueException | FieldException | ModelNotFoundException e) {
-								logger.error(e);
+							else {
+								logger.error("Will not update " + model.getModel() + " foreign child " + f.getName() + " without an identity reference");
 							}
-						}
-						else {
-							logger.error("Will not update " + model.getModel() + " foreign child " + f.getName() + " without an identity reference");
 						}
 					}
 				}
@@ -157,7 +151,7 @@ public class DBWriter extends MemoryWriter {
 		    	int update = st.executeUpdate();
 		    	// logger.info("Update: " + update);
 		    	if(update > 0) {
-		    		
+		    		StatementUtil.updateForeignParticipations(model);
 		    		List<FieldType> refList = model.getFields().stream().filter(o -> {
 		    			FieldSchema fs = schema.getFieldSchema(o.getName());
 		    			return fs.isReferenced();
@@ -165,7 +159,6 @@ public class DBWriter extends MemoryWriter {
 		    		}).collect(Collectors.toList());
 		    		
 		    		if(refList.size() > 0) {
-		    			// logger.info("Write referenced list");
 		    			for(FieldType f : refList) {
 		    				if(f.getValueType() == FieldEnumType.LIST) {
 		    					FieldSchema fs = schema.getFieldSchema(f.getName());
