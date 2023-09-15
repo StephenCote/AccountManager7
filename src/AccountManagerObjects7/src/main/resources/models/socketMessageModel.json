@@ -1,0 +1,31 @@
+{
+	"name": "socketMessage",
+	"ioConstraints": ["file"],
+	"fields": [
+		{
+			"name": "newMessageCount",
+			"type": "int"
+		},
+		{
+			"name": "token",
+			"type": "string"
+		},
+		{
+			"name": "message",
+			"baseModel": "spool",
+			"type": "model"
+		},
+		{
+			"name": "chirps",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "limitTest",
+			"type": "list",
+			"baseType": "int",
+			"limit": [1, 2, 3]
+		}
+
+	]
+}
