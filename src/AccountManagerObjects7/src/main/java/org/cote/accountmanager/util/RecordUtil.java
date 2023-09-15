@@ -382,13 +382,9 @@ public class RecordUtil {
 		return outBool;
 	}
 
-	public void applyNameGroupOwnership(BaseRecord user, BaseRecord rec, String name, String path, long organizationId) throws FieldException, ValueException, ModelNotFoundException {
+	public void applyNameGroupOwnership(BaseRecord user, BaseRecord rec, String name, String ipath, long organizationId) throws FieldException, ValueException, ModelNotFoundException {
 		rec.set(FieldNames.FIELD_NAME, name);
-		if(path.startsWith("~/")) {
-			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
-			populate(homeDir);
-			path = homeDir.get(FieldNames.FIELD_PATH) + path.substring(1);
-		}
+		String path = resolveUserPath(user, ipath);
 		
 		BaseRecord dir = pathUtil.makePath(user, ModelNames.MODEL_GROUP, path, "DATA", organizationId);
 		if(dir != null) {
@@ -401,13 +397,11 @@ public class RecordUtil {
 		rec.set(FieldNames.FIELD_OWNER_ID, user.get(FieldNames.FIELD_ID));
 		rec.set(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 	}
-	public BaseRecord getCreateRecord(BaseRecord user, String model, String name, String path, long organizationId) throws FieldException, ModelNotFoundException, ValueException {
+	public BaseRecord getCreateRecord(BaseRecord user, String model, String name, String ipath, long organizationId) throws FieldException, ModelNotFoundException, ValueException {
 		BaseRecord rec = null;
 		populate(user);
-		if(path.startsWith("~/")) {
-			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
-			path = homeDir.get(FieldNames.FIELD_PATH) + path.substring(1);
-		}
+		String path = resolveUserPath(user, ipath);
+
 		rec = getRecord(user, model, name, -1, path);
 		if(rec == null) {
 			rec = RecordFactory.model(model).newInstance();
@@ -465,14 +459,20 @@ public class RecordUtil {
 		return rec;
 	}
 	
-	public BaseRecord getRecord(BaseRecord user, String model, String name, long parentId, String groupPath) {
-		if(groupPath.startsWith("~/")) {
+	public String resolveUserPath(BaseRecord user, String path) {
+		String outPath = path;
+		if(outPath.startsWith("~/")) {
 			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
 			populate(homeDir);
-			groupPath = homeDir.get(FieldNames.FIELD_PATH) + groupPath.substring(1);
+			outPath = homeDir.get(FieldNames.FIELD_PATH) + outPath.substring(1);
 			
-		}
-		BaseRecord dir = pathUtil.makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		}		
+		return outPath;
+	}
+	
+	public BaseRecord getRecord(BaseRecord user, String model, String name, long parentId, String groupPath) {
+		String path = resolveUserPath(user, groupPath);
+		BaseRecord dir = pathUtil.makePath(user, ModelNames.MODEL_GROUP, path, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return getRecord(user, model, name, parentId, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
 
