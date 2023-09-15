@@ -62,16 +62,21 @@ public class RecordFactory {
 	@SuppressWarnings({ "unchecked" })
 	public static Object getEnumValue(String name, String value) {
 		Class<?> cls = getClass(name);
-		if(cls == null) return null;
+		if(cls == null || value == null) {
+			return null;
+		}
+		
 		Object enumValue = null;
 		try{
 			enumValue = Enum.valueOf((Class)cls, value);
 		}
-		catch(IllegalArgumentException iae) {
+		catch(NullPointerException | IllegalArgumentException iae) {
+			logger.error(String.format("Error looking up enum value %s for %s", value, name));
 			logger.error(iae);
 		}
 		return enumValue;
 	}
+	
 	public static void addRawModels(Map<String, String> models) {
 		rawModels.putAll(models);
 	}
