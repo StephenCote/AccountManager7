@@ -32,6 +32,7 @@ import org.cote.accountmanager.io.IWriter;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.OperationType;
@@ -384,8 +385,53 @@ public class PolicyUtil {
 	public String getPolicyName(FieldSchema fs, SystemPermissionEnumType spet) {
 		return permissionNameMap.get(spet);
 	}
-	
+	private List<PatternType> getForeignPatterns(BaseRecord actor, SystemPermissionEnumType spet, BaseRecord object, FieldType f, FieldSchema fs){
+		List<PatternType> patterns = new ArrayList<>();
+		if(spet == SystemPermissionEnumType.DELETE) {
+			logger.debug("Skip policy check for deleting object with foreign reference");
+		}
+		else {
+			//String policyName = getPolicyName(fs, SystemPermissionEnumType.READ);
+			List<BaseRecord> objects = new ArrayList<>();
+			if(fs.getFieldType() == FieldEnumType.LIST) {
+				objects = object.get(f.getName());
+				/*
+				List<BaseRecord> linkedList = object.get(f.getName());
+				for(BaseRecord rec : linkedList) {
+					patterns.addAll(getForeignPatterns(actor, spet, object, f, fs));
+				}
+				*/
+			}
+			else if(fs.getFieldType() == FieldEnumType.MODEL) {
 
+				//BaseRecord linkedObj = object.get(f.getName());
+				objects.add(object.get(f.getName()));
+			}
+			else {
+				logger.error("Unhandled field type: " + fs.getFieldType().toString());
+			}
+			for(BaseRecord linkedObj : objects) {
+				if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
+					reader.populate(linkedObj);
+				}
+	
+				if(RecordUtil.isIdentityRecord(linkedObj)) {
+					try {
+						PolicyType recPolicy = this.getResourcePolicy(POLICY_SYSTEM_READ_OBJECT, actor, null, linkedObj).toConcrete();
+						patterns.addAll(recPolicy.getRules().get(0).getPatterns());
+					}
+					catch(ReaderException e) {
+						logger.error(e);
+					}
+				}
+				else {
+					logger.warn("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
+				}
+			}
+
+		}
+		return patterns;
+	}
 	
 	public List<BaseRecord> getSchemaRules(BaseRecord actor, SystemPermissionEnumType spet, BaseRecord object){
 		List<BaseRecord> rules = new ArrayList<>();
@@ -406,17 +452,17 @@ public class PolicyUtil {
 			){
 				logger.debug("Add rule for " + fs.getName());
 				String patternStr = null;
-				BaseRecord linkedObj = null;
+				//BaseRecord linkedObj = null;
 				if(fs.isForeign()) {
 					if(spet == SystemPermissionEnumType.DELETE) {
 						logger.debug("Skip policy check for deleting object with foreign reference");
 					}
 					else {
 						String policyName = getPolicyName(fs, SystemPermissionEnumType.READ);
-	
+						patterns.addAll(getForeignPatterns(actor, spet, object, f, fs));
 						// patternStr = applyResourcePattern(factResourceExp, ResourceType.FACT, ResourceUtil.getPatternResource("resourceReadAccess"));
-	
-						linkedObj = object.get(f.getName());
+						/*
+						BaseRecord linkedObj = object.get(f.getName());
 						if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
 							reader.populate(linkedObj);
 						}
@@ -429,21 +475,11 @@ public class PolicyUtil {
 							catch(ReaderException e) {
 								logger.error(e);
 							}
-							// patternStr = applyResourcePattern(patternStr, linkedObj);
-							// patternStr = applyActorPattern(patternStr, actor);
-							/*
-							BaseRecord pattern = JSONUtil.importObject(patternStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-							if(pattern == null) {
-								logger.error("Invalid pattern");
-								logger.error(patternStr);
-								continue;
-							}
-							patterns.add(pattern);
-							*/
 						}
 						else {
 							logger.warn("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
 						}
+						*/
 					}
 				}
 				for(String r : roles) {
