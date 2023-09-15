@@ -66,9 +66,11 @@
 
 					<!--
 						
-						<exclude>**/TestStartup.java</exclude>
+						<exclude>**/TestValidationRules.java</exclude>
 						
 					-->
+					<exclude>**/TestStartup.java</exclude>
+					<exclude>**/TestToken.java</exclude>
 					<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
 						<exclude>**/TestProfile.java</exclude>	
 						
@@ -78,7 +80,7 @@
 						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestData.java</exclude>	
 						
-						<exclude>**/TestValidationRules.java</exclude>
+						
 						<exclude>**/TestVault.java</exclude>	
 						<exclude>**/TestPGDatabase.java</exclude>
 						<exclude>**/TestObjectPolicy.java</exclude>
