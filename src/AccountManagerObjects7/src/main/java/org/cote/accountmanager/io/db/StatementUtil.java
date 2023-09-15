@@ -43,12 +43,49 @@ import org.cote.accountmanager.schema.type.SqlDataEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.json.JSONArray;
 import org.json.JSONException;
 
 public class StatementUtil {
 	
 	public static final Logger logger = LogManager.getLogger(StatementUtil.class);
+	
+	public static void updateForeignParticipations(BaseRecord record) {
+		ModelSchema ms = RecordFactory.getSchema(record.getModel());
+		//BaseRecord owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, record.get(FieldNames.FIELD_OWNER_ID));
+		for(FieldType f: record.getFields()) {
+			FieldSchema fs = ms.getFieldSchema(f.getName());
+			if(fs.isEphemeral() || fs.isVirtual() || fs.isReferenced()) {
+				continue;
+			}
+			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
+				//logger.info("**** Handle " + f.getName() + " participation");
+				List<BaseRecord> frecs = record.get(f.getName());
+				for(BaseRecord rec : frecs) {
+					if(!RecordUtil.isIdentityRecord(rec)) {
+						logger.error("Record does not have an identity therefore a reference cannot be made");
+						logger.error(rec.toString());
+						continue;
+					}
+					BaseRecord owner = null;
+					if(rec.getModel().equals(ModelNames.MODEL_USER)) {
+						owner = rec;
+					}
+					else {
+						owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, rec.get(FieldNames.FIELD_OWNER_ID));
+					}
+					if(owner == null) {
+						logger.error("Record does not have an owner, therefore a reference cannot be made");
+						logger.error(rec.toString());
+						logger.error(record.toString());
+						continue;
+					}
+					IOSystem.getActiveContext().getMemberUtil().member(owner, record, rec, null, true);
+				}
+			}
+		}
+	}
 	
 	public static DBStatementMeta getInsertTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
@@ -65,7 +102,7 @@ public class StatementUtil {
 				continue;
 			}
 			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
-				// logger.info("Skip " + f.getName() + " because it's a foreign list");
+				//logger.info("Skip " + f.getName() + " because it's a foreign list");
 				continue;
 			}
 			names.add(f.getName());
@@ -243,6 +280,83 @@ public class StatementUtil {
 		
 		return buff.toString();
 	}
+	
+	public static String getParticipationSelectTemplate(Query query, FieldSchema schema) throws FieldException {
+		return getParticipationSelectTemplate(query, schema, true);
+	}
+	public static String getParticipationSelectTemplate(Query query, FieldSchema schema, boolean followRef) throws FieldException {
+		StringBuilder buff = new StringBuilder();
+		if(schema.getFieldType() != FieldEnumType.LIST && !schema.isForeign()) {
+			throw new FieldException("Field schema is not a foreign list");
+		}
+		if(schema.getBaseModel() == null) {
+			throw new FieldException("Field schema does not define a base model");
+		}
+		
+		ModelSchema msschema = RecordFactory.getSchema(schema.getBaseModel());
+		List<String> fields = new ArrayList<>();
+		List<String> cols = new ArrayList<>();
+		String model = query.get(FieldNames.FIELD_TYPE);
+		String subModel = schema.getBaseModel();
+		Query subQuery = new Query(subModel);
+		
+		try {
+			subQuery.set(FieldNames.FIELD_COUNT, query.get(FieldNames.FIELD_COUNT));
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			throw new FieldException(e);
+		} 
+		String alias = getAlias(query);
+
+		String salias = getAlias(subQuery);
+		String palias = "P" + salias;
+		
+		DBUtil util = IOSystem.getActiveContext().getDbUtil();
+		for(FieldSchema fs : msschema.getFields() ) {
+			if(fs.isVirtual() || fs.isEphemeral() || (fs.isForeign() && !followRef)) {
+				continue;
+			}
+			if((followRef && fs.isFollowReference()) || fs.isIdentity() || (schema.isReferenced() && isReferenceField(fs))) {
+				String colName = salias + "." + util.getColumnName(fs.getName());
+				cols.add(colName);
+				fields.add(fs.getName());
+			}
+			else {
+				// logger.warn("Missed " + fs.getName());
+			}
+		}
+		if(schema.isForeign()) {
+			if(util.getConnectionType() == ConnectionEnumType.H2) {
+				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+			}
+			
+			else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+				StringBuilder ajoin = new StringBuilder();
+				//for(String s : cols) {
+				for(int i = 0; i < cols.size(); i++) {
+					String s = cols.get(i);
+					String f = fields.get(i);
+					if(ajoin.length() > 0) {
+						ajoin.append(", ");
+					}
+					ajoin.append("'" + f + "', " + s);
+				}
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + subModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+			}
+			
+		}
+		
+		if(buff.length() == 0) {
+			throw new FieldException("**** Unhandled inner query: " + util.getConnectionType().toString());
+		}
+		
+		subQuery.setRequest(fields.toArray(new String[0]));
+		List<BaseRecord> queries = query.get(FieldNames.FIELD_QUERIES);
+		queries.add(subQuery);
+		
+		return buff.toString();
+	}
+	
+	
 	public static boolean isReferenceField(FieldSchema field) {
 		return (field.getName().equals(FieldNames.FIELD_REFERENCE_ID) || field.getName().equals(FieldNames.FIELD_REFERENCE_TYPE));
 	}
@@ -354,16 +468,24 @@ public class StatementUtil {
 			}
 			
 			if(!fs.isEphemeral() && !fs.isVirtual()) {
+				/*
 				if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
 					// logger.info("Skip " + fs.getName() + " because it's a foreign list");
-					continue;
+					//continue;
 				}
-
+				*/
 				
 				useFields.add(fs.getName());
 				if(fs.isReferenced()) {
 					try {
 						cols.add(getInnerReferenceSelectTemplate(query, fs));
+					} catch (FieldException e) {
+						logger.error(e);
+					}
+				}
+				else if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
+					try {
+						cols.add(getParticipationSelectTemplate(query, fs));
 					} catch (FieldException e) {
 						logger.error(e);
 					}
@@ -798,6 +920,9 @@ public class StatementUtil {
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		int subCount = 0;
+		//List<FieldType> flexCols = new ArrayList<>();
+		//List<String> flexCol
+		Map<String, FieldType> flexCols = new HashMap<>();
 		for(String col : meta.getColumns()) {
 			String colName = col;
 			FieldType f = record.getField(col);
@@ -805,7 +930,7 @@ public class StatementUtil {
 			if(f == null) {
 				throw new FieldException("Field " + record.getModel() + "." + col + " not found");
 			}
-
+			
 			switch(f.getValueType()) {
 				case ENUM:
 				case STRING:
@@ -830,7 +955,7 @@ public class StatementUtil {
 					record.set(col, rset.getBytes(colName));
 					break;
 				case LIST:
-					if(fs.isReferenced()) {
+					if(fs.isReferenced() || fs.isForeign()) {
 
 						List<BaseRecord> queries = meta.getQuery().get(FieldNames.FIELD_QUERIES);
 						if(queries.size() <= subCount) {
@@ -904,10 +1029,53 @@ public class StatementUtil {
 						break;
 						
 					}
+				case FLEX:
+					if(fs.getValueType() != null) {
+						flexCols.put(col, f);
+						break;
+					}
 				default:
 					throw new FieldException("Unhandled type: " + f.getValueType().toString());
 			}
+
 		}
+		for(String col : flexCols.keySet()) {
+			FieldType f = flexCols.get(col);
+			FieldSchema fs = ms.getFieldSchema(f.getName());
+			if(fs.getValueType() != null && record.get(fs.getValueType()) != null) {
+				FieldEnumType fvet = FieldEnumType.valueOf(record.get(fs.getValueType()));
+				switch(fvet) {
+					case ENUM:
+					case STRING:
+						record.set(f.getName(), rset.getString(col));
+						break;
+					case BOOLEAN:
+						record.set(f.getName(), rset.getBoolean(col));
+						break;
+					case LONG:
+						record.set(f.getName(), rset.getLong(col));
+						break;
+					case DOUBLE:
+						record.set(f.getName(), rset.getDouble(col));
+						break;
+					case INT:
+						record.set(f.getName(), rset.getInt(col));
+						break;
+					case TIMESTAMP:
+						record.set(f.getName(), rset.getTimestamp(col));
+						break;
+					case UNKNOWN:
+						break;
+					default:
+						logger.error("Unhandled flex value type: " + fvet.toString());
+						break;
+				}
+			}
+			else {
+				logger.error("Flex value type is null");
+			}
+		}
+		
 	}
 	private static <T> void setValueByJSONArray(BaseRecord record, JSONArray jsarr, int index, FieldSchema fs, FieldEnumType fet, String name) throws JSONException, ValueException, ModelException, FieldException, ModelNotFoundException {
 		switch(fet) {
