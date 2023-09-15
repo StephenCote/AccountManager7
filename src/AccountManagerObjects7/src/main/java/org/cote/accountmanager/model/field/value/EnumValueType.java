@@ -18,9 +18,13 @@ public class EnumValueType extends ValueType {
 		return (T)value;
 	}
 
+	@SuppressWarnings("unchecked")
 	public <T> void setValue(T value) throws ValueException {
 		//logger.info("Set enum value: " + value + " / " + this.getBaseClass());
 		String comp = null;
+		if(value == null) {
+			value = (T)"UNKNOWN";
+		}
 		if(value instanceof Enum) {
 			comp = value.toString();
 		}
