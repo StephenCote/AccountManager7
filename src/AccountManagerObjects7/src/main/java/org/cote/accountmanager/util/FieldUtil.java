@@ -229,7 +229,7 @@ public class FieldUtil {
 				}
 				break;
 			default:
-				logger.error("Unhandled value type: " + c.getValueType());
+				logger.error("Unhandled value type in compareTo: " + c.getName() + " " + c.getValueType());
 				break;
 		}
 		return comp;
@@ -275,7 +275,7 @@ public class FieldUtil {
 				comp = (boolean)f.getValue() == (boolean)c.getValue();
 				break;
 			default:
-				logger.error("Unhandled value type: " + c.getValueType());
+				logger.error("Unhandled value type checking equality: " + c.getName() + " " + c.getValueType());
 				break;
 		}
 		return comp;
@@ -312,8 +312,11 @@ public class FieldUtil {
 				String sval = (String)val;
 				outBool = (sval == null || sval.length() == 0 || (fs.getDefaultValue() != null && ((String)fs.getDefaultValue()).equals((String)val)));
 				break;
+			case FLEX:
+				outBool = (val == null);
+				break;
 			default:
-				logger.error("Unhandled value type: " + f.getValueType());
+				logger.error("Unhandled value type checking null or empty: " + f.getName() + " " + f.getValueType());
 				break;
 		}
 		return outBool;
