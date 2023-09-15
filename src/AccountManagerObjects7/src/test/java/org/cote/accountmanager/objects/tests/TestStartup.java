@@ -72,53 +72,6 @@ import io.jsonwebtoken.Jwts;
 
 public class TestStartup extends BaseTest {
 
-	/*
-	@Test
-	public void TestRelIndex() {
-		Factory mf = ioContext.getFactory();
-		BaseRecord testMember1 = mf.getCreateUser(orgContext.getAdminUser(), "testMember1", orgContext.getOrganizationId());
-		BaseRecord per1 = mf.getCreateDirectoryModel(testMember1, ModelNames.MODEL_PERSON, "Demo Person 1", "~/Persons", orgContext.getOrganizationId());
-		assertNotNull("Per1 is null", per1);
-		/ *
-		BaseRecord dir = ioContext.getPathUtil().makePath(testMember1, ModelNames.MODEL_GROUP, "~/Persons", "DATA", orgContext.getOrganizationId());
-		BaseRecord per = ioContext.getRecordUtil().getRecord(testMember1, ModelNames.MODEL_PERSON, "Demo Person 1", 0L, (long)dir.get(FieldNames.FIELD_ID), 0L);
-		assertNotNull("Per is null", per);
-		* /
-		
-	}
-	*/
-	/*
-	@Test
-	public void TestRootIndex() {
-		Factory mf = ioContext.getFactory();
-		FileIndexer2 fix = ioContext.getIndexManager().getInstance(ModelNames.MODEL_GROUP);
-		fix.setTrace(true);
-		IndexEntry2[] ents = new IndexEntry2[0];
-		try {
-			ents =fix.findIndexEntries(-1L, -1L, -1L, orgContext.getOrganizationId(), null, null, "Persons", null);
-			for(IndexEntry2 e : ents) {
-				logger.info(JSONUtil.exportObject(e, RecordSerializerConfig.getUnfilteredModule()));
-			}
-		} catch (IndexException e1) {
-			logger.error(e1);
-		}
-		assertTrue("Expected 1 result", ents.length == 1);
-		//BaseRecord pdir = ioContext.getPathUtil().makePath(orgContext.getAdminUser(), ModelNames.MODEL_GROUP, "/Persons", "DATA", orgContext.getOrganizationId());
-		
-		fix.setTrace(false);
-		//assertNotNull("PDir is null", pdir);
-		BaseRecord user = null;
-		try{
-			user = mf.getCreateUser(orgContext.getAdminUser(), "Certificate Test User 0", orgContext.getOrganizationId());
-		}
-		catch(Exception e) {
-			logger.error(e);
-			
-		}
-		assertNotNull("User is null", user);
-		logger.info(JSONUtil.exportObject(user, RecordSerializerConfig.getUnfilteredModule()));
-	}
-	*/
 	
 
 	@Test
@@ -149,29 +102,6 @@ public class TestStartup extends BaseTest {
 		//logger.info(bean3.toFullString());
 		//CryptoFactory.getInstance().generateSecretKey(bean);
 	}
-	
-	@Test
-	public void TestJWTToken() {
-		Factory mf = ioContext.getFactory();
-		boolean error = false;
-		try {
-			BaseRecord org = mf.makeOrganization("/Development", OrganizationEnumType.DEVELOPMENT, 0L);
-			String key = CryptoFactory.getInstance().randomKey(16);
-			BaseRecord testMember = mf.getCreateUser(orgContext.getAdminUser(), "testMember - " + key, org.get(FieldNames.FIELD_ID));
-			CryptoBean bean = TokenService.getCreateCipher(testMember);
-			assertNotNull("Bean is null", bean);
-			logger.info(bean.toFullString());
-
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-			error = true;
-		}
-		assertFalse("An error was encountered", error);
-
-	}
-	
 
 	@Test
 	public void TestSystemStartup() {
@@ -227,6 +157,54 @@ public class TestStartup extends BaseTest {
 
 	}
 
+	/*
+	@Test
+	public void TestRelIndex() {
+		Factory mf = ioContext.getFactory();
+		BaseRecord testMember1 = mf.getCreateUser(orgContext.getAdminUser(), "testMember1", orgContext.getOrganizationId());
+		BaseRecord per1 = mf.getCreateDirectoryModel(testMember1, ModelNames.MODEL_PERSON, "Demo Person 1", "~/Persons", orgContext.getOrganizationId());
+		assertNotNull("Per1 is null", per1);
+		/ *
+		BaseRecord dir = ioContext.getPathUtil().makePath(testMember1, ModelNames.MODEL_GROUP, "~/Persons", "DATA", orgContext.getOrganizationId());
+		BaseRecord per = ioContext.getRecordUtil().getRecord(testMember1, ModelNames.MODEL_PERSON, "Demo Person 1", 0L, (long)dir.get(FieldNames.FIELD_ID), 0L);
+		assertNotNull("Per is null", per);
+		* /
+		
+	}
+	*/
+	/*
+	@Test
+	public void TestRootIndex() {
+		Factory mf = ioContext.getFactory();
+		FileIndexer2 fix = ioContext.getIndexManager().getInstance(ModelNames.MODEL_GROUP);
+		fix.setTrace(true);
+		IndexEntry2[] ents = new IndexEntry2[0];
+		try {
+			ents =fix.findIndexEntries(-1L, -1L, -1L, orgContext.getOrganizationId(), null, null, "Persons", null);
+			for(IndexEntry2 e : ents) {
+				logger.info(JSONUtil.exportObject(e, RecordSerializerConfig.getUnfilteredModule()));
+			}
+		} catch (IndexException e1) {
+			logger.error(e1);
+		}
+		assertTrue("Expected 1 result", ents.length == 1);
+		//BaseRecord pdir = ioContext.getPathUtil().makePath(orgContext.getAdminUser(), ModelNames.MODEL_GROUP, "/Persons", "DATA", orgContext.getOrganizationId());
+		
+		fix.setTrace(false);
+		//assertNotNull("PDir is null", pdir);
+		BaseRecord user = null;
+		try{
+			user = mf.getCreateUser(orgContext.getAdminUser(), "Certificate Test User 0", orgContext.getOrganizationId());
+		}
+		catch(Exception e) {
+			logger.error(e);
+			
+		}
+		assertNotNull("User is null", user);
+		logger.info(JSONUtil.exportObject(user, RecordSerializerConfig.getUnfilteredModule()));
+	}
+	*/
+	
 	
 	/// https://stackoverflow.com/questions/11383898/how-to-create-a-x509-certificate-using-java
 	/*
