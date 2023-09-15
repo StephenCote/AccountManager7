@@ -3,6 +3,7 @@
 "inherits": ["directory", "description"],
 "icon": "rule",
 "label": "Validation Rule",
+"group": "Validation Rules",
 "fields": [
 	{
 		"name": "errorMessage",
@@ -18,14 +19,16 @@
 		"name": "replacementValueType",
 		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
 		"type": "enum",
-		"maxLength": 16
+		"maxLength": 16,
+		"default": "UNKNOWN"
 	},
 	{
 		"name": "rules",
 		"baseModel": "validationRule",
 		"baseType": "model",
 		"type": "list",
-		"foreign": true
+		"foreign": true,
+		"followReference": false
 	},
 	{
 		"name": "expression",
@@ -37,7 +40,8 @@
 		"name": "type",
 		"baseClass": "org.cote.accountmanager.schema.type.ValidationEnumType",
 		"type": "enum",
-		"maxLength": 16
+		"maxLength": 16,
+		"default": "UNKNOWN"
 	},
 	{
 		"name": "comparison",
@@ -48,7 +52,8 @@
 		"name": "comparator",
 		"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
 		"type": "enum",
-		"maxLength": 16
+		"maxLength": 16,
+		"default": "UNKNOWN"
 	},
 	{
 		"name": "allowNull",
