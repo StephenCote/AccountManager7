@@ -41,13 +41,13 @@ public class FieldSchema {
 	private boolean referenced = false;
 	private boolean followReference = true;
 	private boolean restricted = false;
-	//private FieldType defaultValue = null;
 	private Object defaultValue = null;
 	private ModelAccess access = null;
 	private String description = null;
 	private String label = null;
 	private String icon = null;
 	private List<String> rules = new ArrayList<>();
+	private List<Object> limit = new ArrayList<>();
 	
 	@JsonProperty("private")
 	private boolean priv = false;
@@ -55,62 +55,50 @@ public class FieldSchema {
 	public FieldSchema() {
 		
 	}
-	
-	
-	
+
+	public List<Object> getLimit() {
+		return limit;
+	}
+
+	public void setLimit(List<Object> limit) {
+		this.limit = limit;
+	}
+
 	public boolean isInternal() {
 		return internal;
 	}
-
-
 
 	public void setInternal(boolean internal) {
 		this.internal = internal;
 	}
 
-
-
 	public String getLabel() {
 		return label;
 	}
-
-
 
 	public void setLabel(String label) {
 		this.label = label;
 	}
 
-
-
 	public String getIcon() {
 		return icon;
 	}
-
-
 
 	public void setIcon(String icon) {
 		this.icon = icon;
 	}
 
-
-
 	public List<String> getRules() {
 		return rules;
 	}
-
-
 
 	public void setRules(List<String> rules) {
 		this.rules = rules;
 	}
 
-
-
 	public ModelAccess getAccess() {
 		return access;
 	}
-
-
 
 	public String getDescription() {
 		return description;
@@ -128,205 +116,121 @@ public class FieldSchema {
 		return recursive;
 	}
 
-
-
 	public void setRecursive(boolean recursive) {
 		this.recursive = recursive;
 	}
-
-
 
 	public boolean isRestricted() {
 		return restricted;
 	}
 
-
-
 	public void setRestricted(boolean restricted) {
 		this.restricted = restricted;
 	}
-
-
 
 	public boolean isFollowReference() {
 		return followReference;
 	}
 
-
-
-
 	public void setFollowReference(boolean followReference) {
 		this.followReference = followReference;
 	}
-
-
-
 
 	public String getValueType() {
 		return valueType;
 	}
 
-
-
-
 	public void setValueType(String valueType) {
 		this.valueType = valueType;
 	}
-
-
-
 
 	public boolean isReferenced() {
 		return referenced;
 	}
 
-
-
-
 	public void setReferenced(boolean referenced) {
 		this.referenced = referenced;
 	}
-
-
-
 
 	public String getForeignType() {
 		return foreignType;
 	}
 
-
-
-
 	public void setForeignType(String foreignType) {
 		this.foreignType = foreignType;
 	}
-
-
-
 
 	public int getMinLength() {
 		return minLength;
 	}
 
-
-
-
 	public void setMinLength(int minLength) {
 		this.minLength = minLength;
 	}
-
-
-
 
 	public int getMaxLength() {
 		return maxLength;
 	}
 
-
-
-
 	public void setMaxLength(int maxLength) {
 		this.maxLength = maxLength;
 	}
-
-
-
 
 	public boolean isAllowNull() {
 		return allowNull;
 	}
 
-
-
-
 	public void setAllowNull(boolean allowNull) {
 		this.allowNull = allowNull;
 	}
-
-
-
 
 	public boolean isPrimaryKey() {
 		return primaryKey;
 	}
 
-
-
-
 	public void setPrimaryKey(boolean primaryKey) {
 		this.primaryKey = primaryKey;
 	}
-
-
-
 
 	public boolean isSequence() {
 		return sequence;
 	}
 
-
-
-
 	public void setSequence(boolean sequence) {
 		this.sequence = sequence;
 	}
-
-
-
 
 	public boolean isIndex() {
 		return index;
 	}
 
-
-
-
 	public void setIndex(boolean index) {
 		this.index = index;
 	}
-
-
-
 
 	public boolean isInherited() {
 		return inherited;
 	}
 
-
-
-
 	public void setInherited(boolean inherited) {
 		this.inherited = inherited;
 	}
-
-
-
 
 	public String getBaseProperty() {
 		return baseProperty;
 	}
 
-
-
-
 	public void setBaseProperty(String baseProperty) {
 		this.baseProperty = baseProperty;
 	}
 
-
-
-
 	public boolean isEphemeral() {
 		return ephemeral;
 	}
-
-
+	
 	public void setEphemeral(boolean ephemeral) {
 		this.ephemeral = ephemeral;
 	}
-
-
-
 
 	public String getForeignField() {
 		if(foreignField == null) {
@@ -335,28 +239,18 @@ public class FieldSchema {
 		return foreignField;
 	}
 
-
-
-
 	public void setForeignField(String foreignField) {
 		this.foreignField = foreignField;
 	}
-
-
-
 
 	public boolean isForeign() {
 		return foreign;
 	}
 
-
-
-
 	public void setForeign(boolean foreign) {
 		this.foreign = foreign;
 	}
-
-
+	
 	@JsonProperty("private")
 	public boolean isPriv() {
 		return priv;
