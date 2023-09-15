@@ -21,11 +21,11 @@ import javax.websocket.OnMessage;
 import javax.websocket.OnOpen;
 import javax.websocket.RemoteEndpoint;
 import javax.websocket.Session;
-import javax.websocket.server.PathParam;
 import javax.websocket.server.ServerEndpoint;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -35,6 +35,10 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
@@ -43,18 +47,18 @@ import org.cote.accountmanager.schema.type.SpoolBucketEnumType;
 import org.cote.accountmanager.schema.type.SpoolNameEnumType;
 import org.cote.accountmanager.schema.type.SpoolStatusEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
+import org.cote.accountmanager.security.AM7SigningKeyResolver;
 import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.JSONUtil;
 
-@ServerEndpoint("/wss/{objectId}")
+import io.jsonwebtoken.Jwts;
+
+@ServerEndpoint(value = "/wss", configurator = WebSocketSecurityConfigurator.class)
 public class WebSocketService  extends HttpServlet {
 	private static final long serialVersionUID = 1L;
 
 	public static final Logger logger = LogManager.getLogger(WebSocketService.class);
 
-	// private Map<String, Map<String, BaseRecord>> sessionMap =
-	// Collections.synchronizedMap(new HashMap<>());
-	//private Map<String, Session> objectIdSession = Collections.synchronizedMap(new HashMap<>());
 	private static Map<String, BaseRecord> userMap = Collections.synchronizedMap(new HashMap<>());
 	private static Map<String, Session> urnToSession = Collections.synchronizedMap(new HashMap<>());
 	private static Set<Session> sessions = Collections.synchronizedSet(new HashSet<>());
@@ -75,18 +79,152 @@ public class WebSocketService  extends HttpServlet {
 		}
 		return user;
 	}
-	//private static Map<String, BaseRecord> 
+	
+	private UserPrincipal getPrincipal(Session session) {
+	    UserPrincipal principal = null;
+		if(session.getUserProperties().containsKey(WebSocketSecurityConfigurator.SESSION_PRINCIPAL)) {
+			principal = (UserPrincipal)session.getUserProperties().get(WebSocketSecurityConfigurator.SESSION_PRINCIPAL);
+		}
+		else {
+			// logger.warn("Null principal property");
+		}
+		return principal;
+	}
+	
+	private BaseRecord getRegisterUser(Session session) {
+		BaseRecord user = null;
+		if(userMap.containsKey(session.getId())) {
+			user = userMap.get(session.getId());
+		}
+		else {
+		    UserPrincipal principal = getPrincipal(session);
+		    if(principal != null) {
+		    	registerUserSession(session, principal);
+		    	user = userMap.get(session.getId());
+		    }
+		}
+		return user;
+	}
+	
+	@OnOpen
+	public void onOpen(Session session) {
+		logger.info("Opened socket for " + session.getId());
+		sessions.add(session);
+		BaseRecord user = getRegisterUser(session);
+	    if(user != null) {
+	    	logger.info("Register user by principal");
+	    	sendMessage(session, new String[] {"Authenticated"}, false, true, false);
+	    }
+	    else {
+	    	logger.info("Null principal");
+	    	sendMessage(session, new String[] {"Anonymous"}, false, true, false);
+	    }
+		
+	}
 
-	/*
-	 * private Map<String, BaseRecord> getMap(String sessionId){
-	 * if(!sessionMap.containsKey(sessionId)) { sessionMap.put(sessionId, new
-	 * HashMap<>()); } return sessionMap.get(sessionId); }
-	 */
+	@OnMessage
+	public void onMessage(String txt, Session session) throws IOException {
+		BaseRecord user = getRegisterUser(session);
 
-	//private Map<String, List<String>> buffer = Collections.synchronizedMap(new HashMap<>());
+		SocketMessage msg = new SocketMessage(JSONUtil.importObject(txt, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()));
+		BaseRecord message = msg.getMessage();
+		if(message != null) {
+			if(user == null) {
+				String token = msg.get(FieldNames.FIELD_TOKEN);
+				if(token != null) {
+			    	String urn = Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token).getBody().getId();
+			    	user = IOSystem.getActiveContext().getRecordUtil().getRecordByUrn(null, ModelNames.MODEL_USER, urn);
+			    	if(user != null) {
+			    		logger.info("Register user by token");
+			    		registerUserSession(session, user);
+			    	}
+			    	else {
+			    		logger.warn("Failed to find user based on urn: " + urn);
+			    	}
+				}
+				else {
+					logger.warn("Token not defined");
+					logger.warn(msg.toFullString());
+				}
+				if(user == null) {
+					logger.error("Null user.  TODO: Add token auth support");
+					return;
+				}
+			}
 
+			long recId = message.get("recipientId");
+			String recType = message.get("recipientType");
+			//user != null &&
+			String urn = user.get(FieldNames.FIELD_URN);
+			String uid = user.get(FieldNames.FIELD_OBJECT_ID);
+
+			logger.info("Send message " + message.get(FieldNames.FIELD_NAME) + " to " + recId + " from " + user.get(FieldNames.FIELD_URN) + " (" + uid + ")");
+			if(recId > 0L && recType.equals(ModelNames.MODEL_USER)) {
+					
+				BaseRecord targUser = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, recType, recId);
+				if (targUser != null) {
+					newMessage(user, targUser, message.get(FieldNames.FIELD_NAME), new String(message.get(FieldNames.FIELD_DATA), StandardCharsets.UTF_8), user);
+					if(!targUser.get(FieldNames.FIELD_OBJECT_ID).equals(user.get(FieldNames.FIELD_OBJECT_ID)) && urnToSession.containsKey(targUser.get(FieldNames.FIELD_URN))) {
+						logger.info("Let active session for " + targUser.get(FieldNames.FIELD_URN) + " know about their message");
+						sendMessage(urnToSession.get(targUser.get(FieldNames.FIELD_URN)));
+					}
+					else {
+						logger.info("No active session for " + targUser.get(FieldNames.FIELD_URN));
+					}
+				}
+				else {
+					logger.error("Did not find user #" + recId);
+				}
+			}
+			else {
+				logger.warn("Handle message with no recipient");
+			}
+		}
+		else {
+			logger.error("User or message was null");
+		}
+		//session.getBasicRemote().sendText(txt.toUpperCase());
+	}
+
+	@OnClose
+	public void onClose(CloseReason reason, Session session) {
+		//logger.info(String.format("Closing a WebSocket (%s) due to %s", session.getId(), reason.getReasonPhrase()));
+		//newMessage(session, "Hangup the phone", "Session ended");
+		if(userMap.containsKey(session.getId())){
+			cleanupUserSession(userMap.get(session.getId()));
+		}
+		sessions.remove(session);
+
+	}
+	
+	@OnError
+	public void onError(Session session, Throwable t) {
+		logger.error(String.format("Error in WebSocket session %s%n", session == null ? "null" : session.getId()), t);
+	}
+	
+	private void registerUserSession(Session session, BaseRecord userp) {
+		if(userp == null) {
+			logger.error("User is null");
+			return;
+		}
+		if(!sessions.contains(session)) {
+			logger.error("Unknown session: " + session.getId());
+			return;
+		}
+		
+		if(userMap.containsKey(session.getId())) {
+			logger.warn("User " + userp.get(FieldNames.FIELD_NAME) + " already registered");
+		}
+		
+		BaseRecord org = IOSystem.getActiveContext().getPathUtil().findPath(null, ModelNames.MODEL_ORGANIZATION, userp.get(FieldNames.FIELD_ORGANIZATION_PATH), null, 0L);
+		BaseRecord uuser = IOSystem.getActiveContext().getRecordUtil().getRecord(null, ModelNames.MODEL_USER, userp.get(FieldNames.FIELD_NAME), 0L, 0L, org.get(FieldNames.FIELD_ID));
+		if(uuser != null) {
+			userMap.put(session.getId(), uuser);
+			urnToSession.put(uuser.get(FieldNames.FIELD_URN), session);
+		}
+	}
+	
 	private BaseRecord newMessage(Session session, String messageName, String messageContent) {
-
 		BaseRecord user = null;
 		if(!userMap.containsKey(session.getId())) {
 			return null;
@@ -192,7 +330,7 @@ public class WebSocketService  extends HttpServlet {
 			logger.error("Null user");
 			return false;
 		}
-		if(urnToSession.containsKey(user.get(FieldNames.FIELD_URN))) {
+		if(!urnToSession.containsKey(user.get(FieldNames.FIELD_URN))) {
 			logger.warn("User does not have an active WebSocket");
 			return false;
 		}
@@ -224,18 +362,21 @@ public class WebSocketService  extends HttpServlet {
 	}
 	public static void sendMessage(Session session, String[] chirps, boolean count, boolean auth, boolean sync) {
 		SocketMessage msg = new SocketMessage();
+		
+
+
 		if (userMap.containsKey(session.getId())) {
 			//logger.warn("Session is not mapped to a key");
 			BaseRecord user = userMap.get(session.getId());
 			//asyncRemote.sendText(builder.build().toString());
 			// Send pending messages
 			
-			msg.setUser(user.get(FieldNames.FIELD_URN));
+			//msg.setUser(user.get(FieldNames.FIELD_URN));
 			if(count) {
 				msg.setNewMessageCount(countNewMessages(session));
 			}
 			if(auth) {
-				msg.setAuthToken(TokenService.createSimpleJWTToken(user));
+				msg.setToken(TokenService.createSimpleJWTToken(user));
 			}
 		}
 		msg.getChirps().addAll(Arrays.asList(chirps));
@@ -250,157 +391,63 @@ public class WebSocketService  extends HttpServlet {
 		}
 		else {
 			RemoteEndpoint.Async asyncRemote = session.getAsyncRemote();
-			asyncRemote.sendText(JSONUtil.exportObject(msg));
+			asyncRemote.sendText(JSONUtil.exportObject(msg, RecordSerializerConfig.getUnfilteredModule()));
 		}
 	}
-	
+	/*
 	private void registerUserSession(Session session, String objectId) {
 		if(objectId == null || objectId.equals("undefined")) {
 			return;
 		}
-		
-		if(!sessions.contains(session)) {
-			logger.error("Unknown session: " + session.getId());
-			return;
-		}
-		
-		if(userMap.containsKey(session.getId())) {
-			logger.warn("User " + objectId + " already registered");
-		}
-		
 		BaseRecord user = IOSystem.getActiveContext().getRecordUtil().getRecordByObjectId(null, ModelNames.MODEL_USER, objectId);
-		if (user != null) {
-			userMap.put(session.getId(), user);
-			urnToSession.put(user.get(FieldNames.FIELD_URN), session);
+		if(user != null) {
+			registerUserSession(session, user);
 		}
 	}
+	*/
 
-	@OnOpen
-	public void onOpen(Session session, @PathParam("objectId") String objectId) {
-		logger.info("Opened socket for " + session.getId() + " / " + objectId);
-		sessions.add(session);
 
-		registerUserSession(session, objectId);
 
-		sendMessage(session, new String[] {"New Session"}, false, true, false);
-	}
-
-	@OnMessage
-	public void onMessage(String txt, Session session) throws IOException {
-		BaseRecord user = userMap.get(session.getId());
-		
-		SocketMessage msg = JSONUtil.importObject(txt,  SocketMessage.class);
-		if(msg.getUserId() != null) {
-			registerUserSession(session, msg.getUserId());
-		}
-		
-		BaseRecord message = msg.getSendMessage();
-		if(message != null) {
-			long recId = message.get("recipientId");
-			String recType = message.get("recipientType");
-			//user != null &&
-			String urn = "Anonymous";
-			String uid = "Unk";
-			if(user != null) {
-				uid = user.get(FieldNames.FIELD_OBJECT_ID);
-				urn = user.get(FieldNames.FIELD_URN);
-			}
-			logger.info("Send message " + message.get(FieldNames.FIELD_NAME) + " to " + recId + " from " + user.get(FieldNames.FIELD_URN) + " (" + uid + ")");
-			if(recId > 0L && recType.equals(ModelNames.MODEL_USER)) {
-					
-				BaseRecord targUser = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, recType, recId);
-				if (targUser != null) {
-					newMessage(user, targUser, message.get(FieldNames.FIELD_NAME), new String(message.get(FieldNames.FIELD_DATA), StandardCharsets.UTF_8), user);
-					if(!targUser.get(FieldNames.FIELD_OBJECT_ID).equals(user.get(FieldNames.FIELD_OBJECT_ID)) && urnToSession.containsKey(targUser.get(FieldNames.FIELD_URN))) {
-						logger.info("Let active session for " + targUser.get(FieldNames.FIELD_URN) + " know about their message");
-						sendMessage(urnToSession.get(targUser.get(FieldNames.FIELD_URN)));
-					}
-					else {
-						logger.info("No active session for " + targUser.get(FieldNames.FIELD_URN));
-					}
-				}
-				else {
-					logger.error("Did not find user #" + recId);
-				}
-			}
-			else {
-				logger.warn("Handle message with no recipient");
-			}
-		}
-		else {
-			logger.error("User or message was null");
-		}
-		//session.getBasicRemote().sendText(txt.toUpperCase());
-	}
-
-	@OnClose
-	public void onClose(CloseReason reason, Session session) {
-		//logger.info(String.format("Closing a WebSocket (%s) due to %s", session.getId(), reason.getReasonPhrase()));
-		//newMessage(session, "Hangup the phone", "Session ended");
-		if(userMap.containsKey(session.getId())){
-			cleanupUserSession(userMap.get(session.getId()));
-		}
-		sessions.remove(session);
-
-	}
-	
-	@OnError
-	public void onError(Session session, Throwable t) {
-		logger.error(String.format("Error in WebSocket session %s%n", session == null ? "null" : session.getId()), t);
-	}
 		
 }
 
-class SocketMessage {
-	private String user = null;
-	private String userId = null;
-	private int newMessageCount = 0;
-	private BaseRecord sendMessage = null;
-	private String authToken = null;
-	private List<String> chirps = new ArrayList<>();
+class SocketMessage extends LooseRecord {
 	public SocketMessage() {
-		
+		try {
+			RecordFactory.newInstance(ModelNames.MODEL_SOCKET_MESSAGE, this, null);
+		} catch (FieldException | ModelNotFoundException e) {
+			/// ignore
+		}
+	}
+
+	public SocketMessage(BaseRecord rec) {
+		this();
+		this.setFields(rec.getFields());
 	}
 	
-	public String getAuthToken() {
-		return authToken;
-	}
-
-	public void setAuthToken(String authToken) {
-		this.authToken = authToken;
+	public void setToken(String token) {
+		try {
+			this.set(FieldNames.FIELD_TOKEN, token);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			/// ignore
+		}
 	}
 	
-	public String getUserId() {
-		return userId;
+	public void setNewMessageCount(int count) {
+		try {
+			this.set("newMessageCount", count);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			/// ignore
+		}
 	}
 
-	public void setUserId(String userId) {
-		this.userId = userId;
+	
+	public BaseRecord getMessage() {
+		return this.get(FieldNames.FIELD_MESSAGE);
 	}
-
-	public String getUser() {
-		return user;
-	}
-	public void setUser(String user) {
-		this.user = user;
-	}
-	public int getNewMessageCount() {
-		return newMessageCount;
-	}
-	public void setNewMessageCount(int newMessageCount) {
-		this.newMessageCount = newMessageCount;
-	}
-	public BaseRecord getSendMessage() {
-		return sendMessage;
-	}
-	public void setSendMessage(BaseRecord sendMessage) {
-		this.sendMessage = sendMessage;
-	}
-	public List<String> getChirps() {
-		return chirps;
-	}
-	public void setChirps(List<String> chirps) {
-		this.chirps = chirps;
+	
+	public List<String> getChirps(){
+		return this.get("chirps");
 	}
 	
 }
