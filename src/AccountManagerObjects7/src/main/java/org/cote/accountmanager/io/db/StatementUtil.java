@@ -65,7 +65,6 @@ public class StatementUtil {
 				for(BaseRecord rec : frecs) {
 					if(!RecordUtil.isIdentityRecord(rec)) {
 						logger.error("Record does not have an identity therefore a reference cannot be made");
-						logger.error(rec.toString());
 						continue;
 					}
 					BaseRecord owner = null;
@@ -77,8 +76,6 @@ public class StatementUtil {
 					}
 					if(owner == null) {
 						logger.error("Record does not have an owner, therefore a reference cannot be made");
-						logger.error(rec.toString());
-						logger.error(record.toString());
 						continue;
 					}
 					IOSystem.getActiveContext().getMemberUtil().member(owner, record, rec, null, true);
@@ -97,12 +94,14 @@ public class StatementUtil {
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		for(FieldType f: record.getFields()) {
 			FieldSchema fs = ms.getFieldSchema(f.getName());
-			if(fs.isEphemeral() || fs.isVirtual() || fs.isReferenced()) {
-				// logger.info("Skip " + f.getName());
-				continue;
-			}
-			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
-				//logger.info("Skip " + f.getName() + " because it's a foreign list");
+			if(
+				fs.isEphemeral()
+				|| fs.isVirtual()
+				|| fs.isReferenced())
+				|| (fs.isForeign() && f.getValueType() == FieldEnumType.LIST)
+			{
+				// Referenced and foreign lists are handled separately from a direct column update
+				//
 				continue;
 			}
 			names.add(f.getName());
@@ -167,11 +166,13 @@ public class StatementUtil {
 				}
 				continue;
 			}
-			else if(fs.isEphemeral() || fs.isVirtual() || fs.isReferenced() || fs.isReadOnly()) {
-				continue;
-			}
-			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
-				// logger.info("Skip " + f.getName() + " because it's a foreign list");
+			else if(
+				fs.isEphemeral()
+				|| fs.isVirtual()
+				|| fs.isReferenced()
+				|| fs.isReadOnly()
+				|| (fs.isForeign() && f.getValueType() == FieldEnumType.LIST)
+			) {
 				continue;
 			}
 			if(iter > 0) {
@@ -209,8 +210,6 @@ public class StatementUtil {
 			throw new FieldException("Field schema does not define a base model");
 		}
 		ModelSchema msschema = RecordFactory.getSchema(schema.getBaseModel());
-		//logger.info("Composing inner select for " + schema.getBaseModel());
-		// StringBuilder ibuff = new StringBuilder();
 		List<String> fields = new ArrayList<>();
 		List<String> cols = new ArrayList<>();
 		String model = query.get(FieldNames.FIELD_TYPE);
@@ -227,7 +226,6 @@ public class StatementUtil {
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		for(FieldSchema fs : msschema.getFields() ) {
 			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef)) {
-				// logger.warn("Skip " + fs.getName());
 				continue;
 			}
 			if((followRef && fs.isFollowReference()) || fs.isIdentity() || (schema.isReferenced() && isReferenceField(fs))) {
@@ -247,7 +245,7 @@ public class StatementUtil {
 			}
 		}
 		if(schema.isForeign()) {
-			throw new FieldException("**** TODO: Add in foreign lookup");
+			throw new FieldException("**** Foreign field schemas should not be handled here.  Check for fields marked as both foreign and reference");
 		}
 		else if(schema.isReferenced()) {
 			if(util.getConnectionType() == ConnectionEnumType.H2) {
@@ -326,7 +324,7 @@ public class StatementUtil {
 		}
 		if(schema.isForeign()) {
 			if(util.getConnectionType() == ConnectionEnumType.H2) {
-				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + subModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 			
 			else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
@@ -411,22 +409,6 @@ public class StatementUtil {
 
 		String alias = getAlias(query);
 		
-		/*
-		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
-		StringBuffer joinBuff = new StringBuffer();
-		for(BaseRecord j : joins) {
-			String jmodel = j.get(FieldNames.FIELD_TYPE);
-			ModelSchema jschema = RecordFactory.getSchema(model);
-			String jalias = getAlias(j, jmodel);
-			String clause = getQueryClause(j, meta);
-			String joinCol = j.get(FieldNames.FIELD_JOIN_KEY);
-			if(jschema.getFieldSchema(joinCol) == null) {
-				throw new FieldException("Invalid join column " + joinCol + " for " + jmodel);
-			}
-			String joinKey = jalias + "." + joinCol + " = " + alias + "." + FieldNames.FIELD_ID;
-			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jmodel) + " " + jalias + " ON " + clause);
-		}
-		*/
 		String joinClause = getJoinStatement(meta, query);
 		
 		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias + joinClause;
@@ -440,12 +422,12 @@ public class StatementUtil {
 		DBStatementMeta meta = new DBStatementMeta(query);
 
 		StringBuilder buff = new StringBuilder();
-		//logger.info(query.toString());
 		String model = query.get(FieldNames.FIELD_TYPE);
 		ModelSchema schema = RecordFactory.getSchema(model);
 		if(schema == null) {
 			throw new ModelException("Model '" + model + "' not found");
 		}
+
 		List<String> oRequestFields = query.get(FieldNames.FIELD_REQUEST);
 		List<String> requestFields = new ArrayList<>(oRequestFields);
 		List<String> useFields = new ArrayList<>();
@@ -453,13 +435,11 @@ public class StatementUtil {
 		List<String> cols = new ArrayList<>();
 		
 		if(requestFields.size() == 0) {
-			//logger.info("Query for all model fields");
 			schema.getFields().forEach(f -> {
-				/// && !f.isReferenced()
 				requestFields.add(f.getName());
 			});
 		}
-		//useFields.addAll(requestFields);
+
 		String alias = getAlias(query);
 		for(String s: requestFields) {
 			FieldSchema fs = schema.getFieldSchema(s);
@@ -468,14 +448,9 @@ public class StatementUtil {
 			}
 			
 			if(!fs.isEphemeral() && !fs.isVirtual()) {
-				/*
-				if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
-					// logger.info("Skip " + fs.getName() + " because it's a foreign list");
-					//continue;
-				}
-				*/
-				
+
 				useFields.add(fs.getName());
+				
 				if(fs.isReferenced()) {
 					try {
 						cols.add(getInnerReferenceSelectTemplate(query, fs));
