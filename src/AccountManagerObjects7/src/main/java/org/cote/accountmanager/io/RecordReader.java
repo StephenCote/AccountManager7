@@ -10,6 +10,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.record.RecordTranslator;
 import org.cote.accountmanager.schema.FieldNames;
@@ -77,7 +78,12 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 			}
 			if(!pop) {
 				try {
-					// CacheUtil.clearCache(rec);
+					/// Clear any cache when using FILE IO
+					/// It is currently using the record-based cache pattern vs. the query based cache pattern, so it won't open the source for any additional fields
+					///
+					if(IOSystem.getActiveContext().getIoType() == RecordIO.FILE) {
+						CacheUtil.clearCache(rec);
+					}
 					final BaseRecord frec;
 					if(rec.hasField(FieldNames.FIELD_ID)) {
 						long id = rec.get(FieldNames.FIELD_ID);
@@ -101,7 +107,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 						frec = null;
 					}
 					if(frec != null) {
-						// logger.info("Populate: " + frec.getModel() + " " + frec.getFields().size());
+						//logger.info("Populate: " + frec.getModel() + " " + frec.getFields().size());
 						frec.getFields().forEach(f -> {
 							try {
 								///  && !frec.getField(f.getName()).isNullOrEmpty()
@@ -132,6 +138,9 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					else {
 						rec.set(FieldNames.FIELD_POPULATED, true);
 					}
+					MemoryReader mread = new MemoryReader();
+					mread.read(rec);
+
 				}
 				catch(ReaderException | FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
@@ -142,6 +151,10 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 			else {
 				// logger.warn("Record already populated");
 			}
+
+		}
+		else {
+			logger.warn("Not a populatable record: " + rec.getModel());
 		}
 	}
 	
