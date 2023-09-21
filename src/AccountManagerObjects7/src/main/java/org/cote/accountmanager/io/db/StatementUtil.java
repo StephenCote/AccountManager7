@@ -97,9 +97,9 @@ public class StatementUtil {
 			if(
 				fs.isEphemeral()
 				|| fs.isVirtual()
-				|| fs.isReferenced())
+				|| fs.isReferenced()
 				|| (fs.isForeign() && f.getValueType() == FieldEnumType.LIST)
-			{
+			){
 				// Referenced and foreign lists are handled separately from a direct column update
 				//
 				continue;
@@ -199,16 +199,24 @@ public class StatementUtil {
 	}
 	
 	public static String getInnerReferenceSelectTemplate(Query query, FieldSchema schema) throws FieldException {
-		return getInnerReferenceSelectTemplate(query, schema, true);
+		return getInnerSelectTemplate(query, schema, true);
 	}
-	public static String getInnerReferenceSelectTemplate(Query query, FieldSchema schema, boolean followRef) throws FieldException {
-		StringBuilder buff = new StringBuilder();
-		if(!schema.isReferenced() && !schema.isForeign()) {
-			throw new FieldException("Field schema is not a referenced or foreign field");
+	public static String getParticipationSelectTemplate(Query query, FieldSchema schema) throws FieldException {
+		return getInnerSelectTemplate(query, schema, true);
+	}
+	private static String getInnerSelectTemplate(Query query, FieldSchema schema, boolean followRef) throws FieldException {
+		if(
+			!schema.isReferenced()
+			&& !schema.isForeign()
+			&& schema.getFieldType() != FieldEnumType.LIST
+		) {
+			throw new FieldException("Field schema is not a foreign reference or foreign list");
 		}
+		
 		if(schema.getBaseModel() == null) {
 			throw new FieldException("Field schema does not define a base model");
 		}
+		
 		ModelSchema msschema = RecordFactory.getSchema(schema.getBaseModel());
 		List<String> fields = new ArrayList<>();
 		List<String> cols = new ArrayList<>();
@@ -220,14 +228,19 @@ public class StatementUtil {
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			throw new FieldException(e);
 		} 
-		String alias = getAlias(query);
 
+		StringBuilder buff = new StringBuilder();
+		String alias = getAlias(query);
 		String salias = getAlias(subQuery);
+		String palias = "P" + salias;
+		
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
+		
 		for(FieldSchema fs : msschema.getFields() ) {
-			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef)) {
+			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef) || (fs.isForeign() && !followRef)) {
 				continue;
 			}
+			
 			if((followRef && fs.isFollowReference()) || fs.isIdentity() || (schema.isReferenced() && isReferenceField(fs))) {
 				if(fs.isReferenced()) {
 					logger.warn("**** Handle deep reference for " + model + "." + fs.getName());
@@ -244,105 +257,33 @@ public class StatementUtil {
 				// logger.warn("Missed " + fs.getName());
 			}
 		}
-		if(schema.isForeign()) {
-			throw new FieldException("**** Foreign field schemas should not be handled here.  Check for fields marked as both foreign and reference");
-		}
-		else if(schema.isReferenced()) {
-			if(util.getConnectionType() == ConnectionEnumType.H2) {
+			
+		if(util.getConnectionType() == ConnectionEnumType.H2) {
+			if(schema.isReferenced()) {
 				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
-			
-			else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-				StringBuilder ajoin = new StringBuilder();
-				//for(String s : cols) {
-				for(int i = 0; i < cols.size(); i++) {
-					String s = cols.get(i);
-					String f = fields.get(i);
-					if(ajoin.length() > 0) {
-						ajoin.append(", ");
-					}
-					ajoin.append("'" + f + "', " + s);
-				}
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
-			}
-			
-		}
-		
-		if(buff.length() == 0) {
-			throw new FieldException("**** Unhandled inner query: " + util.getConnectionType().toString());
-		}
-		
-		subQuery.setRequest(fields.toArray(new String[0]));
-		List<BaseRecord> queries = query.get(FieldNames.FIELD_QUERIES);
-		queries.add(subQuery);
-		
-		return buff.toString();
-	}
-	
-	public static String getParticipationSelectTemplate(Query query, FieldSchema schema) throws FieldException {
-		return getParticipationSelectTemplate(query, schema, true);
-	}
-	public static String getParticipationSelectTemplate(Query query, FieldSchema schema, boolean followRef) throws FieldException {
-		StringBuilder buff = new StringBuilder();
-		if(schema.getFieldType() != FieldEnumType.LIST && !schema.isForeign()) {
-			throw new FieldException("Field schema is not a foreign list");
-		}
-		if(schema.getBaseModel() == null) {
-			throw new FieldException("Field schema does not define a base model");
-		}
-		
-		ModelSchema msschema = RecordFactory.getSchema(schema.getBaseModel());
-		List<String> fields = new ArrayList<>();
-		List<String> cols = new ArrayList<>();
-		String model = query.get(FieldNames.FIELD_TYPE);
-		String subModel = schema.getBaseModel();
-		Query subQuery = new Query(subModel);
-		
-		try {
-			subQuery.set(FieldNames.FIELD_COUNT, query.get(FieldNames.FIELD_COUNT));
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			throw new FieldException(e);
-		} 
-		String alias = getAlias(query);
-
-		String salias = getAlias(subQuery);
-		String palias = "P" + salias;
-		
-		DBUtil util = IOSystem.getActiveContext().getDbUtil();
-		for(FieldSchema fs : msschema.getFields() ) {
-			if(fs.isVirtual() || fs.isEphemeral() || (fs.isForeign() && !followRef)) {
-				continue;
-			}
-			if((followRef && fs.isFollowReference()) || fs.isIdentity() || (schema.isReferenced() && isReferenceField(fs))) {
-				String colName = salias + "." + util.getColumnName(fs.getName());
-				cols.add(colName);
-				fields.add(fs.getName());
-			}
-			else {
-				// logger.warn("Missed " + fs.getName());
-			}
-		}
-		if(schema.isForeign()) {
-			if(util.getConnectionType() == ConnectionEnumType.H2) {
+			else if(schema.isForeign()) {
 				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + subModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
-			
-			else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-				StringBuilder ajoin = new StringBuilder();
-				//for(String s : cols) {
-				for(int i = 0; i < cols.size(); i++) {
-					String s = cols.get(i);
-					String f = fields.get(i);
-					if(ajoin.length() > 0) {
-						ajoin.append(", ");
-					}
-					ajoin.append("'" + f + "', " + s);
+		}
+		else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+			StringBuilder ajoin = new StringBuilder();
+			for(int i = 0; i < cols.size(); i++) {
+				String s = cols.get(i);
+				String f = fields.get(i);
+				if(ajoin.length() > 0) {
+					ajoin.append(", ");
 				}
+				ajoin.append("'" + f + "', " + s);
+			}
+			if(schema.isReferenced()) {
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+			}
+			else if(schema.isForeign()) {
 				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + subModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
-			
 		}
-		
+
 		if(buff.length() == 0) {
 			throw new FieldException("**** Unhandled inner query: " + util.getConnectionType().toString());
 		}
@@ -353,7 +294,6 @@ public class StatementUtil {
 		
 		return buff.toString();
 	}
-	
 	
 	public static boolean isReferenceField(FieldSchema field) {
 		return (field.getName().equals(FieldNames.FIELD_REFERENCE_ID) || field.getName().equals(FieldNames.FIELD_REFERENCE_TYPE));
