@@ -1,5 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -40,8 +41,11 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestVault extends BaseTest {
-	
-	
+	/*
+	 * NOTE: When using a custom vault path, such as /.testvault/ and testing with schemaReset, it's the responsibility of the dev/test to clear out that directory
+	 * Otherwise, a vault with a fixed name will fail to be created because the vault path already exists
+	 */
+
 	@Test
 	public void TestVaultLifecycle() {
 		logger.info("Test Vault Lifecycle");
@@ -206,7 +210,7 @@ public class TestVault extends BaseTest {
 		
 		logger.info("Testing random vault location");
 		
-		String vaultPath = "./am7/.testvault/";
+		String vaultPath = "./am7/.vault/";
 		BaseRecord testUser1 = this.getCreateUser("testUser1");
 		VaultService vs = new VaultService();
 		String vaultName = "testVault-" + System.currentTimeMillis();
@@ -252,34 +256,40 @@ public class TestVault extends BaseTest {
 		assertNull("Expected the vault to be null", nbean);
 	}
 
-	
 	@Test
 	public void TestFixedVaultSetup() {
-		String vaultPath = "./am7/.testvault/";
+		String vaultPath = "./am7/.vault/";
 		String vaultName2 = "Test Vault 123";
 		String vaultName = "testVault-123";
 		BaseRecord testUser1 = this.getCreateUser("testUser1");
-		VaultService vs = new VaultService();
-		VaultBean vault = vs.getVault(testUser1, vaultName2);
-		if(vault == null) {
-			boolean created = false;
-			try {
-				created = vs.createProtectedCredentialFile(testUser1, vaultPath + vaultName, "password".getBytes());
-			} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ReaderException e) {
-				logger.error(e);
-				
+		boolean error = false;
+		try {
+			VaultService vs = new VaultService();
+			VaultBean vault = vs.getVault(testUser1, vaultName2);
+			if(vault == null) {
+				boolean created = false;
+				try {
+					created = vs.createProtectedCredentialFile(testUser1, vaultPath + vaultName, "password".getBytes());
+				} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ReaderException e) {
+					logger.error(e);
+					
+				}
+				assertTrue("Vault was not created", created);
+				BaseRecord cred = vs.loadProtectedCredential(vaultPath + vaultName);
+				assertNotNull("Protected credential is null", cred);
+				VaultBean newVault = vs.newVault(testUser1, vaultPath + "vault", vaultName2);
+				vs.setProtectedCredentialPath(newVault, vaultPath + vaultName);
+				assertNotNull("Vault is null", newVault);
+				created = vs.createVault(newVault, cred);
+				vault = vs.getVault(testUser1, vaultName2);
 			}
-			assertTrue("Vault was not created", created);
-			BaseRecord cred = vs.loadProtectedCredential(vaultPath + vaultName);
-			assertNotNull("Protected credential is null", cred);
-			VaultBean newVault = vs.newVault(testUser1, vaultPath + "vault", vaultName2);
-			vs.setProtectedCredentialPath(newVault, vaultPath + vaultName);
-			assertNotNull("Vault is null", newVault);
-			created = vs.createVault(newVault, cred);
-			vault = vs.getVault(testUser1, vaultName2);
+			assertNotNull("Vault is null", vault);
 		}
-		assertNotNull("Vault is null", vault);
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+			error = true;
+		}
+		assertFalse("Error encountered", error);
 	}
-	
-
 }
