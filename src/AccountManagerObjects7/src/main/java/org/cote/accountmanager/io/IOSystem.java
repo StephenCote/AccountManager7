@@ -40,6 +40,17 @@ public class IOSystem {
 	public static IOContext getActiveContext() {
 		return activeContext;
 	}
+	
+	private static void cleanupDirectory(String subPath) {
+		DirectoryUtil du = new DirectoryUtil(IOFactory.DEFAULT_FILE_BASE + subPath);
+		List<File> files = du.dir(null, true);
+		for(File f : files) {
+			logger.info("Cleanup: " + f.getName());
+			if(!f.delete()) {
+				logger.warn("Failed to delete " + f.getName());
+			}
+		}		
+	}
 
 	public static IOContext open(RecordIO ioType, IOProperties properties) {
 		if(activeContext != null) {
@@ -57,25 +68,9 @@ public class IOSystem {
 		DBUtil dbUtil = null;
 		
 		if(properties.isReset()) {
-			/// logger.warn("**** CLEANING UP ARTIFACTS");
-			DirectoryUtil du = new DirectoryUtil(IOFactory.DEFAULT_FILE_BASE + "/.jks/");
-			List<File> files = du.dir(null, true);
-			for(File f : files) {
-				logger.info("Cleanup: " + f.getName());
-				if(!f.delete()) {
-					logger.warn("Failed to delete " + f.getName());
-				}
-			}
-			du = new DirectoryUtil(IOFactory.DEFAULT_FILE_BASE + "/.streams/");
-			files = du.dir(null, true);
-			for(File f : files) {
-				logger.info("Cleanup: " + f.getName());
-				if(!f.delete()) {
-					logger.warn("Failed to delete " + f.getName());
-				}
-
-			}
-
+			cleanupDirectory("/.jks/");
+			cleanupDirectory("/.streams/");
+			cleanupDirectory("/.vault/");
 		}
 
 		if(ioType == RecordIO.FILE) {
