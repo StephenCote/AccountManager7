@@ -200,6 +200,8 @@ public class VaultService
 		return credential.get(FieldNames.FIELD_CREDENTIAL);
 	}
 	private CryptoBean getPrimarySymmetricKey(VaultBean bean) {
+		IOSystem.getActiveContext().getRecordUtil().populate(bean.getServiceUser());
+		//logger.info(bean.getServiceUser().toFullString());
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(bean.getServiceUser().get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(org != null) {
 			return org.getOrganizationCipher();
@@ -224,10 +226,12 @@ public class VaultService
 	}
 	
 	private String getKeyPath(VaultBean vault){
+		
 		if(vault.getServiceUser() == null){
 			logger.error("Vault is not properly initialized");
 			return null;
 		}
+		IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
 		CryptoBean orgSKey = getPrimarySymmetricKey(vault);
 		return new String(CryptoUtil.decipher(orgSKey, vault.getKeyPath()));
 
@@ -305,6 +309,7 @@ public class VaultService
 	
 	public boolean createVault(VaultBean vault, BaseRecord credential){
 		try{
+			IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
 			if ((boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY) == true){
 				logger.info("Vault key already exists for " + vault.get(FieldNames.FIELD_NAME));
 				return true;
@@ -453,6 +458,7 @@ public class VaultService
 	public VaultBean getPublicVault(BaseRecord user, String name) {
 		VaultBean dvault = new VaultBean();
 		VaultBean pvault = null;
+		
 		try {
 			BaseRecord group = search.findByPath(user, ModelNames.MODEL_GROUP, "~/" + dvault.get(FieldNames.FIELD_GROUP_NAME), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			if(group == null) {
@@ -481,7 +487,7 @@ public class VaultService
 		
 		VaultBean pvault = getPublicVault(user, name);
 		if(pvault == null) {
-			logger.debug("Failed to find vault " + name);
+			logger.warn("Failed to find public vault " + name);
 			return null;
 		}
 
@@ -521,6 +527,7 @@ public class VaultService
 	public boolean initialize(VaultBean vault, BaseRecord credential) {
 		boolean init = false;
 		try {
+
 			if(vault.getServiceUser() == null){
 				throw new FieldException("Unable to locate service user");
 			}
@@ -538,8 +545,6 @@ public class VaultService
 			{
 				throw new FieldException("Unable to create path to " + vaultPath);
 			}
-	
-			recordUtil.populate(vault.getServiceUser());
 	
 			// Check for non-password protected file
 			//
@@ -561,6 +566,7 @@ public class VaultService
 	}
 	
 	private BaseRecord getVaultGroup(VaultBean vault) throws IndexException, ReaderException {
+		IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
 		return search.findByPath(vault.getServiceUser(), ModelNames.MODEL_GROUP, "~/" + vault.get(FieldNames.FIELD_GROUP_NAME), vault.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
 
@@ -678,6 +684,7 @@ public class VaultService
 	///
 	public boolean newActiveKey(VaultBean vault)  {
 		CryptoBean pubKey = getPublicKey(vault);
+		IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
 		logger.info("**** NEW ACTIVE KEY");
 		if(pubKey == null) {
 			logger.error("Public key could not be found");
@@ -968,7 +975,7 @@ public class VaultService
 	public boolean deleteVault(VaultBean vault) throws IndexException, ReaderException
 	{
 		logger.info("Cleaning up vault instance");
-		
+		IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
 		
 		String vaultLink = vault.get(FieldNames.FIELD_VAULT_LINK);
 		BaseRecord pvault = null;
