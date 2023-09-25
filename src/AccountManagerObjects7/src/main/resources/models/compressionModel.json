@@ -6,7 +6,8 @@
 		"name": "compressionType",
 		"baseClass": "org.cote.accountmanager.schema.type.CompressionEnumType",
 		"type": "enum",
-		"maxLength": 16
+		"maxLength": 16,
+		"default": "UNKNOWN"
 	}
 
 ]}

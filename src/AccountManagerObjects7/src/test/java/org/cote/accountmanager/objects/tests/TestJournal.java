@@ -89,11 +89,13 @@ public class TestJournal extends BaseTest {
 		
 		try {
 			data = RecordFactory.model("journalObject").newInstance();
-			data.set(FieldNames.FIELD_NAME, dataName);
+			ioContext.getRecordUtil().applyNameGroupOwnership(journalUser, data, dataName, "~/JournalTest", testOrgContext.getOrganizationId());
+			// data.set(FieldNames.FIELD_NAME, dataName);
 			data.set(FieldNames.FIELD_CONTENT_TYPE,  "text/plain");
 			data.set(FieldNames.FIELD_BYTE_STORE, "The data to patch".getBytes());
-			data.set(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
-			data.set(FieldNames.FIELD_ORGANIZATION_ID, testOrgContext.getOrganizationId());
+			// data.set(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			// data.set(FieldNames.FIELD_ORGANIZATION_ID, testOrgContext.getOrganizationId());
+			// data.set(FieldNames.FIELD_OWNER_ID, journalUser.get(FieldNames.FIELD_ID));
 			AttributeUtil.addAttribute(data, "Demo attribute", true);
 			ioContext.getRecordUtil().createRecord(data, true);
 
@@ -147,9 +149,12 @@ public class TestJournal extends BaseTest {
 			job1 = ioContext.getRecordUtil().getRecord(journalUser, "journalObject", testJournalName, 0L, group.get(FieldNames.FIELD_ID), testOrgContext.getOrganizationId());
 			if(job1 == null) {
 				job1 = RecordFactory.model("journalObject").newInstance();
-				job1.set(FieldNames.FIELD_NAME, testJournalName);
-				job1.set(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
-				job1.set(FieldNames.FIELD_ORGANIZATION_ID, testOrgContext.getOrganizationId());
+				
+				ioContext.getRecordUtil().applyNameGroupOwnership(journalUser, job1, testJournalName, "~/JournalTest", testOrgContext.getOrganizationId());
+				
+				// job1.set(FieldNames.FIELD_NAME, testJournalName);
+				// job1.set(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+				// job1.set(FieldNames.FIELD_ORGANIZATION_ID, testOrgContext.getOrganizationId());
 
 				assertTrue("Failed to create record", ioContext.getRecordUtil().createRecord(job1, true));
 				job1 = ioContext.getRecordUtil().getRecord(journalUser, "journalObject", testJournalName, 0L, group.get(FieldNames.FIELD_ID), testOrgContext.getOrganizationId());

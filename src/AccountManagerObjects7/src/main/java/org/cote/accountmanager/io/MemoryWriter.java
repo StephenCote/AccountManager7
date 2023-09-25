@@ -18,7 +18,7 @@ public class MemoryWriter extends RecordWriter {
 		super();
 		this.recordIo = RecordIO.MEMORY;
 	}
-	
+
 	@Override
 	public boolean write(BaseRecord rec) throws WriterException {
 		RecordOperation op = RecordOperation.CREATE;

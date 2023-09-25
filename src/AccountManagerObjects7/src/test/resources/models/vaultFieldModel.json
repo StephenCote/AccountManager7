@@ -1,0 +1,22 @@
+{
+"name": "vaultField",
+"inherits": ["directory", "description", "dateTime", "journalExt"],
+"group": "VaultTest",
+"fields": [
+	{
+		"name": "vaultText",
+		"type": "string"
+	},
+	{
+		"name": "vaultInt",
+		"type": "int"
+	},
+	{
+		"name": "vaultBool",
+		"type": "boolean"
+	},
+	{
+		"name": "vaultData",
+		"type": "blob"
+	}
+]}

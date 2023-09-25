@@ -67,6 +67,7 @@ public class CacheFileSearch extends FileSearch implements ICache {
 			idx = IOSystem.getActiveContext().getIndexManager().getInstance(rec.getModel()).findIndexEntry(rec);
 		} catch (IndexException e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 		if(idx != null) {
 			clearCacheByIdx(idx);

@@ -65,29 +65,29 @@
 					<excludes>
 
 					<!--
-						
-						<exclude>**/TestValidationRules.java</exclude>
-						
+						<exclude>**/TestVaultFields.java</exclude>
 					-->
+					<exclude>**/TestJournal.java</exclude>
+					<exclude>**/TestValidationRules.java</exclude>
 					<exclude>**/TestStartup.java</exclude>
 					<exclude>**/TestToken.java</exclude>
 					<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
 						<exclude>**/TestProfile.java</exclude>	
 						
 						<exclude>**/TestStream.java</exclude>
+						<exclude>**/TestVault.java</exclude>
 						<!-- Repeatable Set -->
 						<exclude>**/TestMembership.java</exclude>
 						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestData.java</exclude>	
 						
-						
-						<exclude>**/TestVault.java</exclude>	
+
 						<exclude>**/TestPGDatabase.java</exclude>
 						<exclude>**/TestObjectPolicy.java</exclude>
 						
 						<exclude>**/TestObjectConstruct.java</exclude>	
 						<exclude>**/TestH2Database.java</exclude>
-						<exclude>**/TestJournal.java</exclude>					
+									
 						<exclude>**/TestCryptography.java</exclude>
 						<exclude>**/TestAudit.java</exclude>
 						<exclude>**/TestQuery.java</exclude>

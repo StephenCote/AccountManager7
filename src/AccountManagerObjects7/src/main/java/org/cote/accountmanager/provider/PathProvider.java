@@ -127,7 +127,7 @@ public class PathProvider implements IProvider {
 							// IOSystem.getActiveContext().getReader().populate(parR);
 							
 							if(!parR.hasField(FieldNames.FIELD_NAME)) {
-								logger.warn("Flush Cache For Partial");
+								logger.debug("Flush Cache For Partial");
 							 	CacheUtil.clearCache(parR);
 							 	parR = IOSystem.getActiveContext().getReader().read(base, parentId);
 							}

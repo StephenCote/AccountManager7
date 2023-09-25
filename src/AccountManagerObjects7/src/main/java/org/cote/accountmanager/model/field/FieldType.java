@@ -41,6 +41,11 @@ public class FieldType {
 	public boolean isEquals(FieldType f) {
 		return FieldUtil.equals(this, f);
 	}
+
+	@JsonIgnore
+	public boolean isDefault(String model) {
+		return FieldUtil.isDefault(model, this);
+	}
 	
 	@JsonIgnore
 	public ValueType getFieldValueType() {

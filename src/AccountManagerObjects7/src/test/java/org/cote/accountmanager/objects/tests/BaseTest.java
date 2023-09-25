@@ -104,10 +104,13 @@ public class BaseTest {
 		IOFactory.PERMIT_PATH = new String[] {"c:\\tmp\\xpic"};
 		
 		/// USE FILE
-		//resetIO(null);
+		resetIO(null);
+		
+		/// USE FILE ARCHIVE (7z)
+		//resetIO("./test.7z");
 
 		/// USE POSTGRESQL
-		resetIO("jdbc:postgresql://localhost:15431/am7db", "am7user", "password");
+		//resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
 
 		/// USE H2
 		//resetIO("jdbc:h2:./am7/h2", "sa", "1234");

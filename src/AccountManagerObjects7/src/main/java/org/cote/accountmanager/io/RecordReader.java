@@ -16,6 +16,7 @@ import org.cote.accountmanager.record.RecordTranslator;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.RecordUtil;
 
 public abstract class RecordReader extends RecordTranslator implements IReader {
 	public static final Logger logger = LogManager.getLogger(RecordReader.class);
@@ -68,7 +69,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 		populate(rec, 1);
 	}
 	public void populate(BaseRecord rec, int foreignDepth) {
-		if(rec == null) {
+		if(rec == null || !RecordUtil.isIdentityRecord(rec)) {
 			return;
 		}
 		if(rec.inherits(ModelNames.MODEL_POPULATE)) {
@@ -138,8 +139,8 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					else {
 						rec.set(FieldNames.FIELD_POPULATED, true);
 					}
-					MemoryReader mread = new MemoryReader();
-					mread.read(rec);
+					// MemoryReader mread = new MemoryReader();
+					// mread.read(rec);
 
 				}
 				catch(ReaderException | FieldException | ValueException | ModelNotFoundException e) {

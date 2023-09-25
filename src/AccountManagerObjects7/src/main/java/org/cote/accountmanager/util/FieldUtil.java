@@ -280,6 +280,73 @@ public class FieldUtil {
 		}
 		return comp;
 	}
+
+	public static <T> boolean isDefault(String model, FieldType f) {
+		boolean outBool = false;
+		ModelSchema ms = RecordFactory.getSchema(model);
+		FieldSchema fs = ms.getFieldSchema(f.getName());
+
+		switch(f.getValueType()) {
+			case TIMESTAMP:
+				long d1 = ((Date)f.getValue()).getTime();
+				long d2 = 0L;
+				if(fs.getDefaultValue() != null) {
+					d2 = ((Date)fs.getDefaultValue()).getTime(); 
+				}
+				outBool = d1 == d2;
+				break;
+			case MODEL:
+				outBool = f.getValue() == null;
+				break;
+			case LIST:
+				outBool = ((List)f.getValue()).size() == 0;
+				break;
+			case BLOB:
+				outBool = ((byte[])f.getValue()).length == 0;
+				break;
+			case STRING:
+			case ENUM:
+				String sval = (String)fs.getDefaultValue();
+				outBool = (f.getValue() == null && sval == null) || (sval != null && sval.equals(f.getValue()));
+				break;
+			case LONG:
+				long l1 = f.getValue();
+				long l2 = 0L;
+				if(fs.getDefaultValue() != null) {
+					l2 = (long)fs.getDefaultValue();
+				}
+				outBool = l1 == l2;
+				break;
+			case DOUBLE:
+				double db1 = f.getValue();
+				double db2 = 0.0;
+				if(fs.getDefaultValue() != null) {
+					db2 = (double)fs.getDefaultValue();
+				}
+				outBool = db1 == db2;
+				break;
+			case INT:
+				int i1 = f.getValue();
+				int i2 = 0;
+				if(fs.getDefaultValue() != null) {
+					i2 = (int)fs.getDefaultValue();
+				}
+				outBool = i1 == i2;
+				break;
+			case BOOLEAN:
+				boolean b1 = f.getValue();
+				boolean b2 = false;
+				if(fs.getDefaultValue() != null) {
+					b2 = (boolean)fs.getDefaultValue();
+				}
+				outBool = b1 == b2;
+				break;
+			default:
+				logger.error("Unhandled value type checking default: " + f.getName() + " " + f.getValueType());
+				break;
+		}
+		return outBool;
+	}
 	
 	public static <T> boolean isNullOrEmpty(String model, FieldType f) {
 		boolean outBool = false;

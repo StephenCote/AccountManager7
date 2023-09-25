@@ -25,6 +25,7 @@ public class RecordValidator {
 	
 	public static boolean validate(RecordOperation operation, ModelSchema schema, BaseRecord record) {
 		boolean valid = false;
+		
 		if(IOSystem.getActiveContext() != null && !IOSystem.getActiveContext().isEnforceValidation()) {
 			// logger.warn("Validation is not being enforced for model " + record.getModel());
 			return true;

@@ -15,6 +15,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -23,10 +24,17 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class JournalProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(JournalProvider.class);
+	
+	
+	/*
+	 * Note: Identity fields are currently being included
+	 */
+	private static boolean INCLUDE_IDENTITY_FIELDS = true;
 	
 	private static final String[] protectedFields = new String[] {
 			FieldNames.FIELD_JOURNALED,
@@ -102,11 +110,31 @@ public class JournalProvider implements IProvider {
 		
 		for(FieldType f : model.getFields()) {
 			FieldSchema lbf = lbm.getFieldSchema(f.getName());
-			if(lbf.isEphemeral() || lbf.isVirtual() || f.getName().equals(FieldNames.FIELD_JOURNAL) || lbf.isIdentity()) {
+			
+			if(INCLUDE_IDENTITY_FIELDS && lbf.isIdentity()) {
+				continue;
+			}
+			if(lbf.isEphemeral() || lbf.isVirtual() || f.getName().equals(FieldNames.FIELD_JOURNAL)) {
 				continue;
 			}
 			if(baseLine.containsKey(f.getName()) && baseLine.get(f.getName()).isEquals(f)) {
 				continue;
+			}
+			if(f.isDefault(model.getModel())) {
+				continue;
+			}
+			
+			/// If the baseline value null and the incoming value is the default, then leave it out of the journal
+			///
+			if(f.getValueType() == FieldEnumType.ENUM) {
+				String baseLineVal = null;
+				if(baseLine.get(f.getName()) != null) {
+					baseLineVal = baseLine.get(f.getName()).getValue();
+				}
+				String lineVal = f.getValue();
+				if(baseLineVal == null && lineVal != null && lineVal.equals("UNKNOWN")) {
+					continue;
+				}
 			}
 			patchFields.add(f);
 		}
@@ -152,6 +180,8 @@ public class JournalProvider implements IProvider {
 			copyMod.set(FieldNames.FIELD_JOURNAL, null);
 			
 			jour1.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+			jour1.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
+
 			jour1.set(FieldNames.FIELD_JOURNALED, true);
 			jour1.set(FieldNames.FIELD_JOURNAL_VERSION, 1.0);
 			model.set(FieldNames.FIELD_JOURNAL, jour1);
@@ -176,12 +206,19 @@ public class JournalProvider implements IProvider {
 		
 		RecordUtil.sortFields(model);
 		ModelSchema lbm = RecordFactory.getSchema(model.getModel());
+		//logger.info(model.toFullString());
 		for(FieldType f : model.getFields()) {
 			FieldSchema lbf = lbm.getFieldSchema(f.getName());
 			if(lbf.isEphemeral() || lbf.isVirtual() || f.getName().equals(FieldNames.FIELD_JOURNAL)) {
 				continue;
 			}
+			/*
+			if(FieldUtil.isNullOrEmpty(model.getModel(), f)) {
+				continue;
+			}
+			*/
 			fieldNames.add(f.getName());
+				
 		}
 		try {
 			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_DATE, new Date());
