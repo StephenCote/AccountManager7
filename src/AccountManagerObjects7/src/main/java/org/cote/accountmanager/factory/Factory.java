@@ -23,6 +23,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.model.field.KeyStoreBean;
@@ -46,6 +47,7 @@ import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.util.CertificateUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.KeyStoreUtil;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class Factory {
 	public static final Logger logger = LogManager.getLogger(Factory.class);
@@ -66,6 +68,9 @@ public class Factory {
 	public BaseRecord getCreateDirectoryModel(BaseRecord user, String modelName, String name, String path, long organizationId) {
 		if(path.startsWith("~/")) {
 			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
+			
+			//String[] fields = RecordUtil.getPossibleFields(homeDir.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID});
+			
 			context.getRecordUtil().populate(homeDir);
 			String homePath = homeDir.get(FieldNames.FIELD_PATH);
 			if(homePath == null || homePath.length() == 0) {
@@ -198,7 +203,7 @@ public class Factory {
 			setCRUEntitlement(adminUser, user, user, PermissionEnumType.DATA.toString());
 			
 			if(!adminUser.equals(user)) {
-				logger.info("Assigning default roles");
+				logger.debug("Assigning default roles");
 				BaseRecord usersRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS, RoleEnumType.USER.toString(), orgId);
 				BaseRecord requestersRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUESTERS, RoleEnumType.USER.toString(), orgId);
 				context.getMemberUtil().member(adminUser, usersRole, user, null, true);
