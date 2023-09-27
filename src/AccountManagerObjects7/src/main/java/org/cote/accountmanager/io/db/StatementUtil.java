@@ -55,6 +55,7 @@ public class StatementUtil {
 	
 	public static final Logger logger = LogManager.getLogger(StatementUtil.class);
 	
+	
 	public static void updateForeignParticipations(BaseRecord record) {
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		//BaseRecord owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, record.get(FieldNames.FIELD_OWNER_ID));
@@ -208,6 +209,14 @@ public class StatementUtil {
 	public static String getParticipationSelectTemplate(Query query, FieldSchema schema) throws FieldException {
 		return getInnerSelectTemplate(query, schema, true);
 	}
+	
+	/// TODO: There is still an unhandled case where the different instances of the same model is used for different properties
+	/// EG: Person.dependents and Person.partners
+	/// In previous versions, this was handled by a separate ParticipantEnumType value, but it was unwieldy to manage
+	///	The current thinking is to use something like the 'foreignType' field schema property currently used with flex values to map to a dynamic model reference
+	/// Except it needs to be fixed - participantType would make the most direct sense, but it would touch a number of places where participations are constructed
+	/// 
+	
 	private static String getInnerSelectTemplate(Query query, FieldSchema schema, boolean followRef) throws FieldException {
 		if(
 			!schema.isReferenced()
@@ -298,6 +307,12 @@ public class StatementUtil {
 		List<BaseRecord> queries = query.get(FieldNames.FIELD_QUERIES);
 		queries.add(subQuery);
 		
+		/*
+		if(model.equals(ModelNames.MODEL_PERSON)) {
+			logger.info(buff.toString());
+		}
+		*/
+
 		return buff.toString();
 	}
 	
@@ -364,6 +379,7 @@ public class StatementUtil {
 		return meta;
 	}
 	
+
 	public static DBStatementMeta getSelectTemplate(Query query) throws ModelException, FieldException {
 		DBStatementMeta meta = new DBStatementMeta(query);
 
