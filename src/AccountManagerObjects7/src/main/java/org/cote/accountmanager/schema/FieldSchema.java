@@ -30,6 +30,7 @@ public class FieldSchema {
 	private boolean ephemeral = false;
 	private boolean inherited = false;
 	private String provider = null;
+	private int priority = 0;
 	private boolean index = false;
 	private boolean sequence = false;
 	private boolean primaryKey = false;
@@ -49,11 +50,29 @@ public class FieldSchema {
 	private List<String> rules = new ArrayList<>();
 	private List<Object> limit = new ArrayList<>();
 	
+	private boolean encrypt = false;
+	
 	@JsonProperty("private")
 	private boolean priv = false;
 	
 	public FieldSchema() {
 		
+	}
+
+	public int getPriority() {
+		return priority;
+	}
+
+	public void setPriority(int priority) {
+		this.priority = priority;
+	}
+
+	public boolean isEncrypt() {
+		return encrypt;
+	}
+
+	public void setEncrypt(boolean encrypt) {
+		this.encrypt = encrypt;
 	}
 
 	public List<Object> getLimit() {

@@ -8,7 +8,8 @@
 			"virtual": true,
 			"baseModel": "organization",
 			"baseProperty": "organizationId",
-			"provider": "org.cote.accountmanager.provider.PathProvider"
+			"provider": "org.cote.accountmanager.provider.PathProvider",
+			"priority": 1
 		},
 		{
 			"name": "organizationId",

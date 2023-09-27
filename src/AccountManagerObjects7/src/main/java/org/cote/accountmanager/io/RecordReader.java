@@ -1,5 +1,9 @@
 package org.cote.accountmanager.io;
 
+import java.util.Comparator;
+import java.util.List;
+import java.util.stream.Collectors;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
@@ -14,6 +18,7 @@ import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.record.RecordTranslator;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.RecordUtil;
@@ -68,11 +73,18 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 	public void populate(BaseRecord rec) {
 		populate(rec, 1);
 	}
+	public void populate(BaseRecord rec, String[] requestFields) {
+		populate(rec, requestFields, 1);
+	}
 	public void populate(BaseRecord rec, int foreignDepth) {
+		populate(rec, new String[0], foreignDepth);
+	}
+	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth) {
 		if(rec == null || !RecordUtil.isIdentityRecord(rec)) {
 			return;
 		}
 		if(rec.inherits(ModelNames.MODEL_POPULATE)) {
+			List<String> populatedFields = rec.get(FieldNames.FIELD_POPULATED_FIELDS);
 			boolean pop = false;
 			if(rec.hasField(FieldNames.FIELD_POPULATED)) {
 				pop = rec.get(FieldNames.FIELD_POPULATED);
@@ -85,6 +97,9 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					if(IOSystem.getActiveContext().getIoType() == RecordIO.FILE) {
 						CacheUtil.clearCache(rec);
 					}
+					// logger.info(String.join(", ", requestFields));
+					// final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields);
+					
 					final BaseRecord frec;
 					if(rec.hasField(FieldNames.FIELD_ID)) {
 						long id = rec.get(FieldNames.FIELD_ID);
@@ -107,6 +122,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					else {
 						frec = null;
 					}
+					
 					if(frec != null) {
 						//logger.info("Populate: " + frec.getModel() + " " + frec.getFields().size());
 						frec.getFields().forEach(f -> {
@@ -122,6 +138,9 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 									
 								){
 									rec.set(f.getName(), frec.get(f.getName()));
+									if(!populatedFields.contains(f.getName())) {
+										populatedFields.add(f.getName());
+									}
 								}
 								else {
 									// logger.warn("Skip populate: " + f.getName());
@@ -143,7 +162,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					// mread.read(rec);
 
 				}
-				catch(ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+				catch(FieldException | ValueException | ModelNotFoundException | ReaderException e) {
 					logger.error(e);
 					
 				}
@@ -175,8 +194,12 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 		
 		ModelSchema lbm = RecordFactory.getSchema(model.getModel());
 		
-		lbm.getFields().forEach(f->{
-			translateField(operation, this.recordIo, lbm, model, f, model.getField(f.getName()));
+		//lbm.getFields().forEach(f->{
+		/// Use a sorted list of the fields based on the field provider priority
+		lbm.getFields().stream().sorted(Comparator.comparingInt(FieldSchema::getPriority)).collect(Collectors.toList()).forEach( f -> {
+			if(f.isVirtual() || model.hasField(f.getName())) {
+				translateField(operation, this.recordIo, lbm, model, f, model.getField(f.getName()));
+			}
 		});
 		
 		translateModel(operation, this.recordIo, lbm, model);

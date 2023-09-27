@@ -1,6 +1,8 @@
 package org.cote.accountmanager.io;
 
 import java.io.OutputStream;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -40,13 +42,14 @@ public abstract class RecordWriter extends RecordTranslator implements IWriter {
 				}
 			}
 		}
-		for(int i = 0; i < model.getFields().size(); i++) {
-			FieldType f = model.getFields().get(i);
+		model.getFields().stream().sorted(Comparator.comparingInt(f -> lbm.getFieldSchema(f.getName()).getPriority())).collect(Collectors.toList()).forEach( f -> {
+		//for(int i = 0; i < model.getFields().size(); i++) {
+			//FieldType f = model.getFields().get(i);
 			FieldSchema lf = lbm.getFieldSchema(f.getName());
 			//logger.info("Translate field: " + recordIo.toString() + " " + operation.toString() + " "  + model.getModel() + " " + lf.getName());
 			translateField(operation, this.recordIo, lbm, model, lf, f);
 			//RecordValidator.validateField(operation, this.recordIo, lbm, model, lf, f);
-		}
+		});
 		translateModel(operation, this.recordIo, lbm, model);
 	}
 	
