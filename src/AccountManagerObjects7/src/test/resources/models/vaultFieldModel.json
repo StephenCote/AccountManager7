@@ -1,11 +1,15 @@
 {
 "name": "vaultField",
-"inherits": ["directory", "description", "dateTime", "journalExt"],
+"inherits": ["directory", "description", "dateTime", "journalExt", "vaultExt"],
 "group": "VaultTest",
+"version": "1.0",
 "fields": [
 	{
 		"name": "vaultText",
-		"type": "string"
+		"type": "string",
+		"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+		"priority": 10,
+		"encrypt": true
 	},
 	{
 		"name": "vaultInt",
@@ -17,6 +21,9 @@
 	},
 	{
 		"name": "vaultData",
-		"type": "blob"
+		"type": "blob",
+		"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+		"priority": 10,
+		"encrypt": true
 	}
 ]}

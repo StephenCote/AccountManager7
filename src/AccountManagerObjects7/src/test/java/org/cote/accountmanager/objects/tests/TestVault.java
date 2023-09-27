@@ -67,7 +67,7 @@ public class TestVault extends BaseTest {
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
 			assertNotNull("Data is null", data);
 			
-			VaultService.getInstance().setVaultBytes(vbean, data, "The super secret sauce".getBytes());
+			VaultService.getInstance().setVaultBytesLegacy(vbean, data, "The super secret sauce".getBytes());
 
 			assertTrue("Failed to create record", ioContext.getRecordUtil().createRecord(data));
 			
@@ -76,7 +76,7 @@ public class TestVault extends BaseTest {
 			VaultBean ibean = VaultService.getInstance().getVaultByObjectId(testUser1, vaultId);
 			assertNotNull("Vault bean is null");
 			
-			byte[] dec = VaultService.getInstance().extractVaultData(ibean, data);
+			byte[] dec = VaultService.getInstance().extractVaultDataLegacy(ibean, data);
 			
 			logger.info("Dec bytes: " + new String(dec));
 			
@@ -118,13 +118,13 @@ public class TestVault extends BaseTest {
 			CryptoBean akey = VaultService.getInstance().getActiveKey(orgVault);
 			assertNotNull("Active key is null", akey);
 			
-			VaultService.getInstance().setVaultBytes(orgVault, data, "The super secret sauce".getBytes());
-			VaultService.getInstance().setVaultBytes(orgVault, data, "And even more super secret sauce".getBytes());
+			VaultService.getInstance().setVaultBytesLegacy(orgVault, data, "The super secret sauce".getBytes());
+			VaultService.getInstance().setVaultBytesLegacy(orgVault, data, "And even more super secret sauce".getBytes());
 			
 			/// rotate the active key before extracting
 			VaultService.getInstance().newActiveKey(orgVault);
 			
-			byte[] decBytes = VaultService.getInstance().extractVaultData(orgVault, data);
+			byte[] decBytes = VaultService.getInstance().extractVaultDataLegacy(orgVault, data);
 			logger.info("Extracted: " + new String(decBytes));
 
 		} catch (IllegalArgumentException | NullPointerException | FactoryException | ValueException | ModelException | FieldException    e) {

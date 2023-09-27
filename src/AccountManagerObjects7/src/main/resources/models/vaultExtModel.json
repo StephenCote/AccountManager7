@@ -6,14 +6,26 @@
 		"name": "keyId",
 		"type": "string",
 		"maxLength": 64
-	}
-	,{
+	},
+	{
 		"name": "vaultId",
 		"type": "string",
 		"maxLength": 64
-	}
-	,{
+	},
+	{
 		"name": "vaulted",
 		"type": "boolean"
+	},
+	{
+		"name": "vaultedFields",
+		"type": "list",
+		"baseType": "string",
+		"ephemeral": true
+	},
+	{
+		"name": "unvaultedFields",
+		"type": "list",
+		"baseType": "string",
+		"ephemeral": true
 	}
 ]}

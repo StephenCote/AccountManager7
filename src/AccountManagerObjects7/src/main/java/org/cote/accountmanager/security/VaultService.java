@@ -37,6 +37,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.CryptoBean;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -44,9 +45,12 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.CompressionEnumType;
 import org.cote.accountmanager.schema.type.CredentialEnumType;
+import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -343,11 +347,11 @@ public class VaultService
 			CryptoFactory.getInstance().generateKeyPair(sm);
 			CryptoFactory.getInstance().generateSecretKey(sm);
 
-			logger.info("Serializing private key ...");
+			// logger.info("Serializing private key ...");
 			byte[] privateKeyConfig = CryptoFactory.getInstance().serialize(sm, true, false, false, false, true).getBytes(StandardCharsets.UTF_8);
 			String inPassword = null;
 			if(vault.getProtectedCredential() != null && (CredentialEnumType.ENCRYPTED_PASSWORD.toString().equals(vault.getProtectedCredential().get(FieldNames.FIELD_TYPE)) || CredentialEnumType.HASHED_PASSWORD.toString().equals(vault.getProtectedCredential().get(FieldNames.FIELD_TYPE)))){
-				logger.info("Protect credential ...");
+				// logger.info("Protect credential ...");
 				inPassword = new String(getProtectedCredentialValue(vault.getProtectedCredential()));
 			}
 
@@ -355,7 +359,7 @@ public class VaultService
 			//
 			if (vault.isProtected() && inPassword != null && inPassword.length() > 0)
 			{
-				logger.info("Enciphering private key ...");
+				// logger.info("Enciphering private key ...");
 				privateKeyConfig = CryptoUtil.encipher(privateKeyConfig, inPassword, saltSet.get(FieldNames.FIELD_HASH_FIELD_SALT)); 
 			}
 	
@@ -754,47 +758,7 @@ public class VaultService
 		
 	}
 	
-	public void setVaultBytes(VaultBean vault, BaseRecord obj, byte[] inData) throws ValueException, ModelException
-	{
-		if (vault.getActiveKey() == null){
-			if(getActiveKey(vault) == null){
-				throw new ValueException("Failed to establish active key");
-			}
-			if (vault.getActiveKey() == null)
-			{
-				throw new ValueException("Active key is null");
-			}
-		}
-		
-		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
-			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
-		}
-		recordUtil.populate(vault.getActiveKey());
-		logger.info("Get active key");
-		CryptoBean key = vault.getActiveKey();
-		
-		try {
-			obj.set(FieldNames.FIELD_KEY_ID, key.get(FieldNames.FIELD_OBJECT_ID));
-			obj.set(FieldNames.FIELD_VAULT_ID, vault.get(FieldNames.FIELD_VAULT_LINK));
-			obj.set(FieldNames.FIELD_VAULTED, true);
-			obj.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.UNKNOWN);
-			obj.set(FieldNames.FIELD_DATA_HASH, CryptoUtil.getDigestAsString(inData, new byte[0]));
-			if(inData.length > ByteModelUtil.MINIMUM_COMPRESSION_SIZE && ByteModelUtil.tryCompress(obj)) {
-				inData = ZipUtil.gzipBytes(inData);
-				obj.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.GZIP);
-			}
-			logger.info("Encipher data");
-			ByteModelUtil.setValue(obj, CryptoUtil.encipher(key, inData));
-			
-		}
-		catch(ClassCastException | ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		
-		logger.info("Exit from set vault bytes");
 
-	}
 	
 	/// TODO - change back to private
 	public CryptoBean getVaultCipher(VaultBean vault, String keyId) {
@@ -832,65 +796,6 @@ public class VaultService
 		vault.getSymmetricKeyMap().put(keyId, vSm);
 		return vSm;
 		*/
-	}
-	
-	public byte[] extractVaultData(VaultBean vault, BaseRecord obj) throws ModelException, ValueException, FieldException
-	{
-		byte[] outBytes = new byte[0];
-		if(vault == null){
-			logger.error("Vault reference is null");
-			return outBytes;
-		}
-		if (!(boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY)){
-			logger.warn("Vault key is not specified");
-			return outBytes;
-		}
-		
-		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
-			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
-		}
-		
-		boolean isVaulted = obj.get(FieldNames.FIELD_VAULTED);
-		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
-		String keyId = obj.get(FieldNames.FIELD_KEY_ID);
-		
-		if(!isVaulted || vaultId == null || keyId == null) {
-			logger.error("Object is not vaulted");
-			return outBytes;
-		}
-		
-		String vaultLinkId = vault.get(FieldNames.FIELD_VAULT_LINK);
-		// If the data vault id isn't the same as this vault name, then it can't be decrypted.
-		//
-		if (vaultLinkId.equals(vaultId) == false){
-			logger.error("Object vault id '" + vaultId + "' does not match the specified vault link id '" + vaultLinkId + "'.  This is a precautionary/secondary check, probably due to changing the persisted vault configuration name");
-			return outBytes;
-		}
-
-		return getVaultBytes(vault,obj, getVaultCipher(vault,keyId));
-
-	}
-	public static byte[] getVaultBytes(VaultBean vault, BaseRecord obj, CryptoBean bean) throws ModelException, ValueException, FieldException
-	{
-		
-		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
-			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
-		}
-		
-		if(bean == null){
-			logger.error("Vault cipher for " + obj.get(FieldNames.FIELD_OBJECT_ID) + " is null");
-			return new byte[0];
-		}
-		
-		byte[] ret = CryptoUtil.decipher(bean, ByteModelUtil.getValue(obj));
-		CompressionEnumType cet = CompressionEnumType.valueOf(obj.get(FieldNames.FIELD_COMPRESSION_TYPE));
-		if (cet == CompressionEnumType.GZIP && ret.length > 0)
-		{
-			ret = ZipUtil.gunzipBytes(ret);
-		}
-
-
-		return ret;
 	}
 	
 	public VaultBean getVaultByObjectId(BaseRecord user, String objectId){
@@ -1043,6 +948,269 @@ public class VaultService
 		}
 
 		return true;
+	}
+	
+
+	
+	public void vaultField(VaultBean vault, BaseRecord obj, FieldType field) throws ValueException, ModelException
+	{
+		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_VAULT_EXT);
+		}
+		ModelSchema ms = RecordFactory.getSchema(obj.getModel());
+		FieldSchema fs = ms.getFieldSchema(field.getName());
+		
+		if(!fs.isEncrypt()) {
+			throw new ModelException("Model " + obj.getModel() + " field " + field.getName() + " is not configured to be encrypted");
+		}
+		
+		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
+		String vlink = vault.get(FieldNames.FIELD_VAULT_LINK);
+		
+		/// Because multiple fields may be encrypted, they'll need to use the same vault and key associated with the record
+		///
+		if(vaultId != null && !vaultId.equals(vlink)) {
+			throw new ValueException("Specified vault does not match the recorded vault identifier");
+		}
+		String keyId = obj.get(FieldNames.FIELD_KEY_ID);
+		CryptoBean key = null;
+		if(keyId != null) {
+			key = getVaultCipher(vault, keyId);
+			if(key == null) {
+				throw new ValueException("Failed to find key " + keyId);
+			}
+		}
+		else {
+			if(vault.getActiveKey() == null && getActiveKey(vault) == null) {
+				throw new ValueException("Failed to establish active key");
+			}
+			key = vault.getActiveKey();
+			keyId = key.get(FieldNames.FIELD_OBJECT_ID);
+		}
+		recordUtil.populate(key);
+		
+		List<String> vaulted = obj.get(FieldNames.FIELD_VAULTED_FIELDS);
+		List<String> unvaulted = obj.get(FieldNames.FIELD_UNVAULTED_FIELDS);
+		if(vaulted.contains(field.getName())) {
+			logger.error("Field " + field.getName() + " is already vaulted");
+			return;
+		}
+		
+		try {
+			obj.set(FieldNames.FIELD_KEY_ID, keyId);
+			obj.set(FieldNames.FIELD_VAULT_ID, vlink);
+			obj.set(FieldNames.FIELD_VAULTED, true);
+
+			switch(field.getValueType()) {
+				case STRING:
+					String sval = field.getValue();
+					if(sval != null && sval.length() > 0) {
+						field.setValue(
+							BinaryUtil.toBase64Str(
+								CryptoUtil.encipher(key, sval.getBytes(StandardCharsets.UTF_8))
+							)
+						);
+					}
+					break;
+				case BLOB:
+					byte[] bval = field.getValue();
+					if(bval != null && bval.length > 0) {
+						field.setValue(CryptoUtil.encipher(key,  field.getValue()));
+					}
+					break;
+				default:
+					throw new ValueException("Unhandled field type: " + field.getValueType().toString());
+			}
+			
+		}
+		catch(ClassCastException | ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		unvaulted.remove(field.getName());
+		vaulted.add(field.getName());
+	}
+	
+	public void unvaultField(VaultBean vault, BaseRecord obj, FieldType field) throws ModelException, ValueException, FieldException
+	{
+		if(vault == null){
+			logger.error("Vault reference is null");
+			return;
+		}
+
+		if (!(boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY)){
+			logger.warn("Vault key is not specified");
+			return;
+		}
+		
+		if(obj == null){
+			logger.error("Object reference is null");
+			return;
+		}
+		
+		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_VAULT_EXT);
+		}
+		ModelSchema ms = RecordFactory.getSchema(obj.getModel());
+		FieldSchema fs = ms.getFieldSchema(field.getName());
+		
+		if(!fs.isEncrypt()) {
+			throw new ModelException("Model " + obj.getModel() + " field " + field.getName() + " is not configured to be encrypted");
+		}
+		
+		boolean isVaulted = obj.get(FieldNames.FIELD_VAULTED);
+		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
+		String keyId = obj.get(FieldNames.FIELD_KEY_ID);
+		
+		if(!isVaulted || vaultId == null || keyId == null) {
+			logger.error("Object is not vaulted");
+			return;
+		}
+		
+		String vaultLinkId = vault.get(FieldNames.FIELD_VAULT_LINK);
+		if (vaultLinkId.equals(vaultId) == false){
+			logger.error("Object vault id '" + vaultId + "' does not match the specified vault link id '" + vaultLinkId + "'.  This may result from changing the persisted vault configuration name.");
+			return;
+		}
+		
+		CryptoBean key = getVaultCipher(vault, keyId);
+		if(key == null) {
+			throw new ValueException("Vault cipher is null");
+		}
+		
+		List<String> vaulted = obj.get(FieldNames.FIELD_VAULTED_FIELDS);
+		List<String> unvaulted = obj.get(FieldNames.FIELD_UNVAULTED_FIELDS);
+		if(unvaulted.contains(field.getName())) {
+			logger.info("Field " + field.getName() + " was already unvaulted");
+		}
+
+		switch(field.getValueType()) {
+			case STRING:
+				String sval = field.getValue();
+				if(sval != null && sval.length() > 0) {
+					field.setValue(
+						new String(
+							CryptoUtil.decipher(key, BinaryUtil.fromBase64(
+								sval.getBytes(StandardCharsets.UTF_8)
+							)),
+							StandardCharsets.UTF_8)
+					);
+				}
+				break;
+			case BLOB:
+				byte[] bval = field.getValue();
+				if(bval != null && bval.length > 0) {
+					field.setValue(CryptoUtil.decipher(key,  field.getValue()));
+				}
+				break;
+			default:
+				throw new ValueException("Unhandled field type: " + field.getValueType().toString());
+		}
+		vaulted.remove(field.getName());
+		unvaulted.add(field.getName());
+
+	}
+	
+	public byte[] extractVaultDataLegacy(VaultBean vault, BaseRecord obj) throws ModelException, ValueException, FieldException
+	{
+		byte[] outBytes = new byte[0];
+		if(vault == null){
+			logger.error("Vault reference is null");
+			return outBytes;
+		}
+		if (!(boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY)){
+			logger.warn("Vault key is not specified");
+			return outBytes;
+		}
+		
+		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
+		}
+		
+		boolean isVaulted = obj.get(FieldNames.FIELD_VAULTED);
+		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
+		String keyId = obj.get(FieldNames.FIELD_KEY_ID);
+		
+		if(!isVaulted || vaultId == null || keyId == null) {
+			logger.error("Object is not vaulted");
+			return outBytes;
+		}
+		
+		String vaultLinkId = vault.get(FieldNames.FIELD_VAULT_LINK);
+		// If the data vault id isn't the same as this vault name, then it can't be decrypted.
+		//
+		if (vaultLinkId.equals(vaultId) == false){
+			logger.error("Object vault id '" + vaultId + "' does not match the specified vault link id '" + vaultLinkId + "'.  This is a precautionary/secondary check, probably due to changing the persisted vault configuration name");
+			return outBytes;
+		}
+
+		return getVaultBytesLegacy(vault,obj, getVaultCipher(vault,keyId));
+
+	}
+	
+	public static byte[] getVaultBytesLegacy(VaultBean vault, BaseRecord obj, CryptoBean bean) throws ModelException, ValueException, FieldException
+	{
+		
+		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
+		}
+		
+		if(bean == null){
+			logger.error("Vault cipher for " + obj.get(FieldNames.FIELD_OBJECT_ID) + " is null");
+			return new byte[0];
+		}
+		
+		byte[] ret = CryptoUtil.decipher(bean, ByteModelUtil.getValue(obj));
+		CompressionEnumType cet = CompressionEnumType.valueOf(obj.get(FieldNames.FIELD_COMPRESSION_TYPE));
+		if (cet == CompressionEnumType.GZIP && ret.length > 0)
+		{
+			ret = ZipUtil.gunzipBytes(ret);
+		}
+
+
+		return ret;
+	}
+	
+	public void setVaultBytesLegacy(VaultBean vault, BaseRecord obj, byte[] inData) throws ValueException, ModelException
+	{
+		if (vault.getActiveKey() == null){
+			if(getActiveKey(vault) == null){
+				throw new ValueException("Failed to establish active key");
+			}
+			if (vault.getActiveKey() == null)
+			{
+				throw new ValueException("Active key is null");
+			}
+		}
+		
+		if(!obj.inherits(ModelNames.MODEL_CRYPTOBYTESTORE) && !obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_CRYPTOBYTESTORE + " or " + ModelNames.MODEL_VAULT_EXT);
+		}
+		recordUtil.populate(vault.getActiveKey());
+		logger.info("Get active key");
+		CryptoBean key = vault.getActiveKey();
+		
+		try {
+			obj.set(FieldNames.FIELD_KEY_ID, key.get(FieldNames.FIELD_OBJECT_ID));
+			obj.set(FieldNames.FIELD_VAULT_ID, vault.get(FieldNames.FIELD_VAULT_LINK));
+			obj.set(FieldNames.FIELD_VAULTED, true);
+			obj.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.UNKNOWN);
+			obj.set(FieldNames.FIELD_DATA_HASH, CryptoUtil.getDigestAsString(inData, new byte[0]));
+			if(inData.length > ByteModelUtil.MINIMUM_COMPRESSION_SIZE && ByteModelUtil.tryCompress(obj)) {
+				inData = ZipUtil.gzipBytes(inData);
+				obj.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.GZIP);
+			}
+			logger.info("Encipher data");
+			ByteModelUtil.setValue(obj, CryptoUtil.encipher(key, inData));
+			
+		}
+		catch(ClassCastException | ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		
+		logger.info("Exit from set vault bytes");
+
 	}
 	
 	
