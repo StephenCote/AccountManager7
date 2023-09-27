@@ -470,7 +470,7 @@ public class CryptoFactory {
 			boolean includeECMeta = false;
 
 			if(includeSalt || includeAlgorithms) {
-				logger.info("Serialize salt and algos");
+				// logger.info("Serialize salt and algos");
 				rec.set(FieldNames.FIELD_HASH_FIELD_SALT, (includeSalt ? bean.get(FieldNames.FIELD_HASH_FIELD_SALT) : null));
 				rec.set(FieldNames.FIELD_HASH_FIELD_KEYFUNCTION, (includeAlgorithms ? bean.get(FieldNames.FIELD_HASH_FIELD_KEYFUNCTION) : null));
 				rec.set(FieldNames.FIELD_HASH_FIELD_ALGORITHM, (includeAlgorithms ? bean.get(FieldNames.FIELD_HASH_FIELD_ALGORITHM) : null));
@@ -478,7 +478,7 @@ public class CryptoFactory {
 			}
 			
 			if(bean.hasField(FieldNames.FIELD_PUBLIC) && includePublicKey) {
-				logger.info("Serialize public key");
+				// logger.info("Serialize public key");
 				String spec = bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC);
 				rec.set(FieldNames.FIELD_PUBLIC_FIELD_KEYSIZE, (includeAlgorithms ? bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEYSIZE) : 0));
 				rec.set(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC, (includeAlgorithms ? bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC) : null));
@@ -500,7 +500,7 @@ public class CryptoFactory {
 				// logger.info("Skip public key");
 			}
 			if(bean.hasField(FieldNames.FIELD_PRIVATE) && includePrivateKey) {
-				logger.info("Serialize private key");
+				// logger.info("Serialize private key");
 				String spec = bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC);
 				rec.set(FieldNames.FIELD_PRIVATE_FIELD_KEYSIZE, (includeAlgorithms ? bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSIZE) : 0));
 				rec.set(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC, (includeAlgorithms ? bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC) : null));
@@ -522,7 +522,7 @@ public class CryptoFactory {
 			}
 
 			if(bean.hasField(FieldNames.FIELD_CIPHER) && includeCipher) {
-				logger.info("Serialize cipher");
+				// logger.info("Serialize cipher");
 				// sf.serializeCipher(bean);
 				rec.set(FieldNames.FIELD_CIPHER_FIELD_IV, bean.get(FieldNames.FIELD_CIPHER_FIELD_IV));
 				rec.set(FieldNames.FIELD_CIPHER_FIELD_KEY, bean.get(FieldNames.FIELD_CIPHER_FIELD_KEY));
