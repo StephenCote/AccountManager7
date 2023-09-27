@@ -414,7 +414,7 @@ public class PolicyUtil {
 				if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
 					reader.populate(linkedObj);
 				}
-	
+
 				if(RecordUtil.isIdentityRecord(linkedObj)) {
 					try {
 						PolicyType recPolicy = this.getResourcePolicy(POLICY_SYSTEM_READ_OBJECT, actor, null, linkedObj).toConcrete();
@@ -446,11 +446,13 @@ public class PolicyUtil {
 			FieldSchema fs = schema.getFieldSchema(f.getName());
 			List<String> roles = getSchemaRoles(fs.getAccess(), spet);
 			if(
-				(fs.isForeign() || roles.size() > 0)
+				((fs.isForeign() && fs.isFollowReference()) || roles.size() > 0)
 				&&
 				!f.isNullOrEmpty(object.getModel())
 			){
-				logger.debug("Add rule for " + fs.getName());
+				if(trace) {
+					logger.info("Add rule for " + fs.getName());
+				}
 				String patternStr = null;
 				//BaseRecord linkedObj = null;
 				if(fs.isForeign()) {
@@ -775,10 +777,10 @@ public class PolicyUtil {
 		}
 		
 		if(trace) {
-			logger.info("*** POLICY BASE");
-			logger.info(policyBase);
+			// logger.info("*** POLICY BASE");
+			// logger.info(policyBase);
 		}
-
+		
 		rec = JSONUtil.importObject(policyBase, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		
 		if(rec == null) {

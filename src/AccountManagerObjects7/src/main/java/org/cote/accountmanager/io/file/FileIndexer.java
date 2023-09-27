@@ -440,8 +440,8 @@ public class FileIndexer {
 					values.add(erec);
 				}
 				else {
-					logger.warn("Record does not define an indexed field: " + f.getName());
-					logger.warn(rec.toString());
+					logger.warn("Record " + rec.getModel() + " does not define an indexed field: " + f.getName());
+					// logger.warn(rec.toString());
 				}
 			}
 		}
@@ -544,7 +544,7 @@ public class FileIndexer {
 			}
 		};
 		if(!hasIdentity) {
-			logger.error("Record does not define an identity field");
+			logger.error("Record " + rec.getModel() + " does not define an identity field");
 			logger.error(rec.toString());
 		}
 		return hasIdentity;

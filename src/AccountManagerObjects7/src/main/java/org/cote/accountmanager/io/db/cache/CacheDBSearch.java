@@ -55,7 +55,6 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			}
 			String hash = query.hash();
 			if(cache.containsKey(hash)) {
-				// logger.info("Cache hit: " + query.hash() + " " + query.key());
 				final QueryResult qr = cache.get(hash);
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = qr.get(FieldNames.FIELD_TYPE);

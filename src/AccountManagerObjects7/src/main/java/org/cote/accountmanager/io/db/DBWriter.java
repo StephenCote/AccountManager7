@@ -105,7 +105,7 @@ public class DBWriter extends MemoryWriter {
 					}
 					for(BaseRecord bf : bfs) {
 						if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
-							logger.error("**** TODO: REMOVE THIS: Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
+							/// logger.error("**** TODO: REMOVE THIS: Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
 							if(op == RecordOperation.CREATE) {
 								logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
 								try {

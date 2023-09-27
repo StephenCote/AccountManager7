@@ -77,7 +77,7 @@ public class FileSearch extends SearchBase {
 		BaseRecord[] urecs = recs;
 		List<String> requestFields = query.get(FieldNames.FIELD_REQUEST);
 		if(requestFields.size() > 0) {
-			logger.warn("Restricting response field count to " + requestFields.size());
+			logger.debug("Restricting response field count to " + requestFields.size() + " - " + String.join(", ",  requestFields));
 			urecs = new BaseRecord[recs.length];
 			for(int i = 0; i < recs.length; i++) {
 				try {

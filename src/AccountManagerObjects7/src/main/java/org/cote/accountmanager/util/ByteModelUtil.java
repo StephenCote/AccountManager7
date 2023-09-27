@@ -14,8 +14,14 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.CompressionEnumType;
 
+/*
+ * ByteModelUtil is largely a holdover from the previous AccountManager 4 - 6 design, where the data object's bytearray was conditionally enciphered, encrypted, and compressed depending on the object settings
+ * It remains in place for any object that implements the cryptoByte model, but otherwise will be replaced with field level configuration
+ */
+
 public class ByteModelUtil {
-   public static final Logger logger = LogManager.getLogger(ByteModelUtil.class);
+   
+	public static final Logger logger = LogManager.getLogger(ByteModelUtil.class);
 
    public static long FIVE_MB_BYTE_LENGTH = 5242880;
    public static long TWO_MB_BYTE_LENGTH = 2097152;
