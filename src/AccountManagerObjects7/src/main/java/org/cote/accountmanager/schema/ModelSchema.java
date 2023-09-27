@@ -42,59 +42,54 @@ public class ModelSchema {
 	private String icon = null;
 	private List<String> categories = new ArrayList<>();
 	
+	private String version = null;
+	
 	public ModelSchema() {
 		
 	}
 	
-	
-	
+	public String getVersion() {
+		if(version == null) {
+			return "0.1";
+		}
+		return version;
+	}
+
+	public void setVersion(String version) {
+		this.version = version;
+	}
+
 	public String getDescription() {
 		return description;
 	}
-
-
 
 	public void setDescription(String description) {
 		this.description = description;
 	}
 
-
-
 	public String getLabel() {
 		return label;
 	}
-
-
 
 	public void setLabel(String label) {
 		this.label = label;
 	}
 
-
-
 	public String getIcon() {
 		return icon;
 	}
-
-
 
 	public void setIcon(String icon) {
 		this.icon = icon;
 	}
 
-
-
 	public List<String> getCategories() {
 		return categories;
 	}
 
-
-
 	public void setCategories(List<String> categories) {
 		this.categories = categories;
 	}
-
-
 
 	public ModelValidation getValidation() {
 		return validation;

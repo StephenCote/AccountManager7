@@ -179,9 +179,10 @@ public class DBUtil {
 	private String getSequenceName(String modelName) {
 		if(!sequenceNames.containsKey(modelName)) {
 			ModelSchema schema = RecordFactory.getSchema(modelName);
+			String ver = schema.getVersion().replace(".", "_");
 			List<FieldSchema> fschemas = schema.getFields().stream().filter(o -> o.isSequence()).collect(Collectors.toList());
 			if(fschemas.size() > 0) {
-				String sequenceName = dataPrefix + "_" + modelName + "_" + fschemas.get(0).getName() + "_seq";
+				String sequenceName = dataPrefix + "_" + modelName + "_" + ver + "_" + fschemas.get(0).getName() + "_seq";
 				sequenceNames.put(modelName, sequenceName);
 			}
 		}
@@ -225,7 +226,9 @@ public class DBUtil {
 	}
 	
 	public String getTableName(String modelName) {
-		return dataPrefix + "_" + modelName;
+		ModelSchema ms = RecordFactory.getSchema(modelName);
+		String ver = ms.getVersion().replace(".", "_");
+		return dataPrefix + "_" + modelName + "_" + ver;
 	}
 	public String generateNewSchemaOnly(ModelSchema schema) {
 		if(schema.isEphemeral()) {
@@ -253,6 +256,8 @@ public class DBUtil {
 			return null;
 		}
 		
+		String ver = schema.getVersion().replace(".", "_");
+		
 		String tableName = getTableName(schema.getName());
 		buff.append("DROP TABLE IF EXISTS " + tableName + " CASCADE;\n");
 
@@ -261,7 +266,7 @@ public class DBUtil {
 				continue;
 			}
 			if(f.isSequence()) {
-				String sequenceName = dataPrefix + "_" + schema.getName() + "_" + f.getName() + "_seq";
+				String sequenceName = dataPrefix + "_" + schema.getName() + "_" + ver + "_" + f.getName() + "_seq";
 				buff.append("DROP SEQUENCE IF EXISTS " + sequenceName + ";\n");
 				buff.append("CREATE SEQUENCE " + sequenceName + ";\n");
 			}
@@ -335,7 +340,16 @@ public class DBUtil {
 			else {
 				FieldEnumType fet = fs.getFieldType();
 				if(
-					(( (fet != FieldEnumType.ENUM && fet != FieldEnumType.STRING) || fs.getMaxLength() == 0) && fet != FieldEnumType.INT && fet != FieldEnumType.LONG && fet != FieldEnumType.TIMESTAMP && fet != FieldEnumType.DOUBLE && fet != FieldEnumType.BOOLEAN)
+					( 
+						(fet != FieldEnumType.ENUM && fet != FieldEnumType.STRING)
+						|| fs.getMaxLength() == 0
+					)
+					&& fet != FieldEnumType.INT
+					&& fet != FieldEnumType.LONG
+					&& fet != FieldEnumType.TIMESTAMP
+					&& fet != FieldEnumType.ZONETIME
+					&& fet != FieldEnumType.DOUBLE
+					&& fet != FieldEnumType.BOOLEAN
 				) {
 					logger.warn("Model '" + schema.getName() + "' field '" + s + "' cannot be indexed in the database");
 					notIndexable = true;
@@ -353,7 +367,8 @@ public class DBUtil {
 
 		String cname = col2.stream().collect(Collectors.joining("_"));
 		String cols2 = col2.stream().collect(Collectors.joining(","));
-		String idxName = dataPrefix + "_" + schema.getName() + "_" + cname.replaceAll("\"", "") + "_idx on " + tableName + "(" + cols2 + ")";
+		String ver = schema.getVersion().replace(".", "_");
+		String idxName = dataPrefix + "_" + schema.getName() + "_" + ver + "_" + cname.replaceAll("\"", "") + "_idx on " + tableName + "(" + cols2 + ")";
 		return "CREATE" + (unique ? " UNIQUE" : "") + " INDEX " + idxName + ";";
 	}
 	
@@ -418,6 +433,9 @@ public class DBUtil {
 			case BOOLEAN:
 				outType = "boolean";
 				break;
+			case ZONETIME:
+				//outType = "timestamp with timezone";
+				//break;
 			case TIMESTAMP:
 				outType = "timestamp";
 				break;
@@ -554,7 +572,7 @@ public class DBUtil {
 		else if(fet == FieldEnumType.BOOLEAN) {
 			defStr = "false";
 		}
-		else if(fet == FieldEnumType.TIMESTAMP) {
+		else if(fet == FieldEnumType.ZONETIME || fet == FieldEnumType.TIMESTAMP) {
 			defStr = "now()";
 		}
 		buff.append(colName + " " + dataType + (allowNull ? "" : " not null") + (defStr != null ? " default " + defStr : ""));

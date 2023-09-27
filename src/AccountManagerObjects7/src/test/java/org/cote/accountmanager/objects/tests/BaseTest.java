@@ -75,7 +75,7 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
-	protected static boolean resetDataSchema = false;
+	protected static boolean resetDataSchema = true;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	
@@ -98,19 +98,21 @@ public class BaseTest {
 		
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
 		/// 
-		// resetIO(null);
+		//resetIO(null);
+		
 		// resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 		/// NOTE: Still need to add recursive query in StatementUtil for PG
 		IOFactory.PERMIT_PATH = new String[] {"c:\\tmp\\xpic"};
 		
 		/// USE FILE
-		resetIO(null);
+		//resetIO(null);
 		
 		/// USE FILE ARCHIVE (7z)
-		//resetIO("./test.7z");
+		/// There are some latent bugs in using the File Archive format, plus it's incredibly slow
+		/// resetIO("./test.7z");
 
 		/// USE POSTGRESQL
-		//resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
+		resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
 
 		/// USE H2
 		//resetIO("jdbc:h2:./am7/h2", "sa", "1234");
@@ -120,7 +122,6 @@ public class BaseTest {
 		IOSystem.close();
 		ioContext = null;
 		orgContext = null;
-
 	}
 	
 	//protected void resetIO(FileStore store, boolean follow) {
@@ -152,13 +153,10 @@ public class BaseTest {
 
 		//resetH2DBUtil("./am7/h2", "sa", "1234", false);
 
-		ioContext = IOSystem.open(ioType, properties);
-		if(ioType == RecordIO.DATABASE) {
-			// logger.info("**** BREAK MARK");
-			// return;
-		}
+
 		OrganizationContext octx = null;
 		try {
+			ioContext = IOSystem.open(ioType, properties);
 			octx = ioContext.getOrganizationContext(organizationPath, OrganizationEnumType.DEVELOPMENT);
 			assertNotNull("Context was null", octx);
 			if(!octx.isInitialized()) {
@@ -169,7 +167,7 @@ public class BaseTest {
 			else {
 				logger.debug("Working with existing organization " + organizationPath);
 			}
-		} catch (Exception e) {
+		} catch (StackOverflowError | Exception e) {
 			logger.error(e);
 			e.printStackTrace();
 			

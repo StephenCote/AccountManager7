@@ -14,5 +14,6 @@ public enum FieldEnumType {
 	MODEL,
 	STRING,
 	TIMESTAMP,
+	ZONETIME,
 	UNKNOWN
 }

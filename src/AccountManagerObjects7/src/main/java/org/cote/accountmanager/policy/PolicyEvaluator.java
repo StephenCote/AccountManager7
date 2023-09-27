@@ -284,7 +284,8 @@ public class PolicyEvaluator {
 		reader.populate(mfact);
 		FactEnumType mtype = FactEnumType.valueOf(mfact.get(FieldNames.FIELD_TYPE));
 		pfact = getFactParameter(pfact, facts);
-
+		reader.populate(pfact);
+		
 		List<String> chain = prr.get(FieldNames.FIELD_PATTERN_CHAIN);
 		String purn = pattern.get(FieldNames.FIELD_URN);
 		if(purn == null) {

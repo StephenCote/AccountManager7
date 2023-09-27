@@ -60,6 +60,7 @@ public class SqlTypeUtil {
 				outType = SqlDataEnumType.FLOAT;
 				break;
 			*/
+			case ZONETIME:
 			case TIMESTAMP:
 				outType = SqlDataEnumType.TIMESTAMP;
 				break;

@@ -1,6 +1,8 @@
 package org.cote.accountmanager.record;
 
 import java.io.IOException;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
 
@@ -135,6 +137,12 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        	case BOOLEAN:
 	        		if(f.getValue() != null) {
 	        			jgen.writeBooleanField(f.getName(), f.getValue());
+	        		}
+	        		break;
+	        	case ZONETIME:
+	        		ZonedDateTime zone = f.getValue();
+	        		if(zone != null) {
+	        			jgen.writeStringField(f.getName(), zone.format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
 	        		}
 	        		break;
 	        	case TIMESTAMP:

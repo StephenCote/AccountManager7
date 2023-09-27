@@ -1,5 +1,8 @@
 package org.cote.accountmanager.record;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.Date;
 import java.util.UUID;
 
@@ -14,6 +17,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.model.field.value.ZoneTimeValueType;
 import org.cote.accountmanager.provider.IProvider;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.schema.FieldSchema;
@@ -105,6 +109,9 @@ public abstract class RecordTranslator {
 						}
 						else if(bfield.getValueType().equals(FieldEnumType.TIMESTAMP)) {
 							model.set(lfield.getName(), new Date());							
+						}
+						else if(bfield.getValueType().equals(FieldEnumType.ZONETIME)) {
+							model.set(lfield.getName(), new ZoneTimeValueType(ZonedDateTime.ofInstant(Instant.ofEpochSecond(0), ZoneOffset.UTC)));							
 						}
 
 					} catch (FieldException | ValueException | ModelNotFoundException e) {

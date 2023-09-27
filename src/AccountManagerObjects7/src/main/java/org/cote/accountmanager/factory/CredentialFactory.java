@@ -30,8 +30,6 @@ public class CredentialFactory extends FactoryBase {
 	@Override
 	public BaseRecord newInstance(BaseRecord contextUser, BaseRecord recordTemplate, ParameterList parameterList, BaseRecord... arguments) throws FactoryException
 	{
-		logger.info("Credential Factory: newInstance");
-
 		BaseRecord owner = contextUser;//arguments[0];
 		BaseRecord targetObject = contextUser;//arguments[1];
 		if(arguments.length > 0 && arguments[0] != null) {
@@ -40,8 +38,6 @@ public class CredentialFactory extends FactoryBase {
 		BaseRecord cred = null;
 		try {
 			if (owner == null || targetObject == null) {
-				// logger.info(JSONUtil.exportObject(owner, RecordSerializerConfig.getUnfilteredModule()));
-				// logger.info(JSONUtil.exportObject(targetObject, RecordSerializerConfig.getUnfilteredModule()));
 				throw new ModelException("Null arguments");
 			}
 			cred = super.newInstance(contextUser, recordTemplate, parameterList, arguments);
@@ -49,7 +45,6 @@ public class CredentialFactory extends FactoryBase {
 			long tid = targetObject.get(FieldNames.FIELD_ID);
 			if(tid == 0L || oid == 0L) throw new ModelException("Invalid identifiers");
 			
-			//cred = RecordFactory.newInstance(ModelNames.MODEL_CREDENTIAL);
 			cred.set(FieldNames.FIELD_TYPE, CredentialEnumType.UNKNOWN.toString());
 			cred.set(FieldNames.FIELD_REFERENCE_TYPE, targetObject.getModel());
 			cred.set(FieldNames.FIELD_REFERENCE_ID, tid);

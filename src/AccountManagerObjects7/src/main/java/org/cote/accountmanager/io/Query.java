@@ -95,6 +95,14 @@ public class Query extends LooseRecord{
 		setRequestRange(startRecord, recordCount);
 	}
 
+	public String getType() {
+		return get(FieldNames.FIELD_TYPE);
+	}
+	
+	public List<String> getRequest(){
+		return get(FieldNames.FIELD_REQUEST);
+	}
+	
 	public void setRequest(String[] requestFields) {
 		try {
 			set(FieldNames.FIELD_REQUEST, Arrays.asList(requestFields));

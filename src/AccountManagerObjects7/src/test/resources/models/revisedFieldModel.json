@@ -1,0 +1,22 @@
+{
+"name": "revisedField",
+"inherits": ["nameId", "vaultExt"],
+"version": "1.0",
+"access": {
+	"roles": {
+		"create": ["AccountUsers"]
+	}
+},
+"fields": [
+	{
+		"name": "testDate",
+		"type": "zonetime"
+	},
+	{
+		"name": "testText",
+		"type": "string",
+		"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+		"priority": 0,
+		"encrypt": true
+	}
+]}

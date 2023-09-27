@@ -2,6 +2,8 @@ package org.cote.accountmanager.util;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -102,6 +104,29 @@ public class RecordUtil {
 		if(rec != null) {
 			rec.getFields().sort((f1, f2) -> f1.getName().compareTo(f2.getName()));
 		}
+	}
+	/// Given a list of field names, return ones that are valid for the model 
+	public static String[] getPossibleFields(String model, String[] fields) {
+		/// Disallowed due to stackoverflow on initial start
+
+		Set<String> fieldMap = Set.of(fields);
+		ModelSchema schema = RecordFactory.getSchema(model);
+		List<String> matFields = schema.getFields().stream().map(f -> f.getName()).filter(n -> fieldMap.contains(n)).collect(Collectors.toList());
+		return matFields.toArray(new String[0]);
+	}
+	public static String[] getCommonFields(String model) {
+		// List<String> flds = new ArrayList<>();
+
+		Set<String> flds = ConcurrentHashMap.newKeySet();
+		ModelSchema ms = RecordFactory.getSchema(model);
+		flds.addAll(ms.getQuery());
+		for(String s : ms.getImplements()) {
+			if(!s.equals(model)) {
+				ModelSchema mis = RecordFactory.getSchema(s);
+				flds.addAll(mis.getQuery());
+			}
+		}
+		return flds.toArray(new String[0]);
 	}
 	
 	public static boolean inherits(ModelSchema ms, String fieldName) {
@@ -282,18 +307,18 @@ public class RecordUtil {
 
 		BaseRecord orec = null;
 		if(!rec.hasField(FieldNames.FIELD_OBJECT_ID) && !rec.hasField(FieldNames.FIELD_ID)) {
-			logger.error("Record does not include an identity field");
-			logger.error(rec.toString());
+			//logger.warn("Record " + rec.getModel() + " does not include an identity field");
+			// logger.error(rec.toString());
 			return orec;
 		}
 		
 		Query q = new Query(rec.getModel());
 
 		q.setRequest(fields);
-		if(rec.hasField(FieldNames.FIELD_ID)) {
+		if(rec.hasField(FieldNames.FIELD_ID) && ((long)rec.get(FieldNames.FIELD_ID)) > 0L) {
 			q.field(FieldNames.FIELD_ID, ComparatorEnumType.EQUALS, rec.get(FieldNames.FIELD_ID));	
 		}
-		else if(rec.hasField(FieldNames.FIELD_OBJECT_ID)) {
+		else if(rec.hasField(FieldNames.FIELD_OBJECT_ID) && rec.get(FieldNames.FIELD_OBJECT_ID) != null) {
 			q.field(FieldNames.FIELD_OBJECT_ID, ComparatorEnumType.EQUALS, rec.get(FieldNames.FIELD_OBJECT_ID));
 		}
 		QueryResult res = find(q);
@@ -320,6 +345,9 @@ public class RecordUtil {
 	
 	public void populate(BaseRecord rec) {
 		reader.populate(rec);
+	}
+	public void populate(BaseRecord rec, String[] requestFields) {
+		reader.populate(rec, requestFields);
 	}
 	public void populate(BaseRecord rec, int foreignDepth) {
 		reader.populate(rec, foreignDepth);

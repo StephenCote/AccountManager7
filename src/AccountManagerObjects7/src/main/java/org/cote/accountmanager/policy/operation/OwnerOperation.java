@@ -6,15 +6,18 @@ import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.policy.FactUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
+import org.cote.accountmanager.util.RecordUtil;
 
 
 	public class OwnerOperation extends Operation {
@@ -30,17 +33,21 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 		}
 		@Override
 		public OperationResponseEnumType operate(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord sourceFact, BaseRecord referenceFact) {
-			// TODO Auto-generated method stub
-			// logger.info("***** Owner Access Op");
+
 			OperationResponseEnumType ort = OperationResponseEnumType.UNKNOWN;
-			// logger.info(JSONUtil.exportObject(sourceFact, RecordSerializerConfig.getUnfilteredModule()));
-			// logger.info(JSONUtil.exportObject(referenceFact, RecordSerializerConfig.getUnfilteredModule()));
 			String murn = referenceFact.get(FieldNames.FIELD_SOURCE_URN);
 			String mtype = referenceFact.get(FieldNames.FIELD_MODEL_TYPE);
 			String surn = sourceFact.get(FieldNames.FIELD_SOURCE_URN);
 			String stype = sourceFact.get(FieldNames.FIELD_MODEL_TYPE);
 			String sdat = sourceFact.get(FieldNames.FIELD_FACT_DATA);
-
+			
+			/*
+			if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+				logger.info(sourceFact.toFullString());
+				logger.info(referenceFact.toFullString());
+			}
+			*/
+			
 			if(stype == null || !ModelNames.MODEL_USER.equals(stype)) {
 				logger.error("Source type must refer to a user model: " + stype + " != " + ModelNames.MODEL_USER);
 				return OperationResponseEnumType.ERROR;
@@ -48,7 +55,6 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 			}
 			if(murn == null || mtype == null) {
 				logger.error("Reference model urn (" + murn + ") or type (" + mtype + ") was not defined");
-				//logger.error(JSONUtil.exportObject(referenceFact, RecordSerializerConfig.getUnfilteredModule()));
 				return OperationResponseEnumType.ERROR;
 			}
 
@@ -100,17 +106,24 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 			
 			if(murn != null && murn.length() > 0) {
 				try {
-					String[] flds = QueryUtil.getCommonFields(mtype);
+					String[] flds = RecordUtil.getCommonFields(mtype);
 					if(flds.length == 0) {
 						flds = new String[] {FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID};
 					}
+					/*
+					if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+						logger.info(String.join(", ", flds));
+					}
+					*/
 					Query q = QueryUtil.createQuery(mtype, FieldNames.FIELD_URN, murn);
 					q.setRequest(flds);
 					q.set(FieldNames.FIELD_INSPECT, true);
 					BaseRecord[] recs = search.find(q).getResults();
-					//BaseRecord[] recs = search.findByUrn(mtype, murn);
 					if(recs.length > 0) {
 						mrec = recs[0];
+						if(reader.getRecordIo().equals(RecordIO.FILE) && ((boolean)mrec.get(FieldNames.FIELD_POPULATED)) == false) {
+							reader.populate(mrec);
+						}
 					}
 					else {
 						logger.error("Urn could not be found: " + murn);

@@ -10,6 +10,8 @@ public interface IReader {
 	public RecordIO getRecordIo();
 	public void populate(BaseRecord rec);
 	public void populate(BaseRecord rec, int foreignDepth);
+	public void populate(BaseRecord rec, String[] requestFields);
+	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth);
 	public void close() throws ReaderException;
 	public BaseRecord read(BaseRecord rec) throws ReaderException;
 	public BaseRecord inspect(BaseRecord rec) throws ReaderException;

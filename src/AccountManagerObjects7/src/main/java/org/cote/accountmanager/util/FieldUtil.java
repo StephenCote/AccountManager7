@@ -1,5 +1,9 @@
 package org.cote.accountmanager.util;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -12,6 +16,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.model.field.value.ZoneTimeValueType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -22,37 +27,14 @@ import org.cote.accountmanager.schema.ModelSchema;
 public class FieldUtil {
 	public static final Logger logger = LogManager.getLogger(FieldUtil.class);
 	
-	public static <T> FieldEnumType getFieldType(T value) {
-		FieldEnumType fet = FieldEnumType.UNKNOWN;
-		   if(value instanceof Enum) {
-			   fet = FieldEnumType.ENUM;
-		   }
-		   else if(value instanceof String) {
-			   fet =FieldEnumType.STRING;
-		   }
-		   else if(value instanceof Integer) {
-			   fet =FieldEnumType.INT;
-		   }
-		   else if(value instanceof Long) {
-			   fet =FieldEnumType.LONG;
-		   }
-		   else if(value instanceof Date) {
-			   fet =FieldEnumType.TIMESTAMP;
-		   }
-		   else if(value instanceof Boolean) {
-			   fet =FieldEnumType.BOOLEAN;
-		   }
-		   else if(value instanceof Double) {
-			   fet =FieldEnumType.DOUBLE;
-		   }
 
-		
-		return fet;
-	}
 	public static <T> void setFlexFromString(BaseRecord record, FieldEnumType fet, String name, String value) throws NumberFormatException, ValueException, ModelException, FieldException, ModelNotFoundException{
 		switch(fet) {
 			case STRING:
 				record.setString(name, value);
+				break;
+			case ZONETIME:
+				record.setZoneTime(name, ZonedDateTime.parse(value, DateTimeFormatter.ISO_ZONED_DATE_TIME));
 				break;
 			case TIMESTAMP:
 				record.setDateTime(name, new Date(Long.parseLong(value)));
@@ -105,6 +87,9 @@ public class FieldUtil {
 				case LONG:
 					record.setLong(fieldName, value);
 					break;
+				case ZONETIME:
+					record.setZoneTime(fieldName, value);
+					break;
 				case TIMESTAMP:
 					record.setDateTime(fieldName, value);
 					break;
@@ -122,7 +107,37 @@ public class FieldUtil {
 			logger.error(e);
 			logger.error("Error setting flex " + type.toString() + " " + fieldName + " in " + record.getModel());
 		}
-	} 
+	}
+   
+   /// TODO: This is nearly identical to getValueType 
+	public static <T> FieldEnumType getFieldType(T value) {
+		FieldEnumType fet = FieldEnumType.UNKNOWN;
+		   if(value instanceof Enum) {
+			   fet = FieldEnumType.ENUM;
+		   }
+		   else if(value instanceof String) {
+			   fet =FieldEnumType.STRING;
+		   }
+		   else if(value instanceof Integer) {
+			   fet =FieldEnumType.INT;
+		   }
+		   else if(value instanceof Long) {
+			   fet =FieldEnumType.LONG;
+		   }
+		   else if(value instanceof Date) {
+			   fet = FieldEnumType.TIMESTAMP;
+		   }
+		   else if(value instanceof ZonedDateTime) {
+			   fet =FieldEnumType.ZONETIME;
+		   }
+		   else if(value instanceof Boolean) {
+			   fet =FieldEnumType.BOOLEAN;
+		   }
+		   else if(value instanceof Double) {
+			   fet =FieldEnumType.DOUBLE;
+		   }
+		return fet;
+	}
 	
 	public static <T> FieldEnumType getValueType(T val) {
 		FieldEnumType fet = FieldEnumType.UNKNOWN;
@@ -164,6 +179,11 @@ public class FieldUtil {
 		}
 		
 		switch(c.getValueType()) {
+			case ZONETIME:
+				ZonedDateTime zone1 = f.getValue();
+				ZonedDateTime zone2 = c.getValue();
+				comp = zone1.compareTo(zone2);
+				break;
 			case TIMESTAMP:
 				long d1 = ((Date)f.getValue()).getTime();
 				long d2 = ((Date)c.getValue()).getTime();
@@ -242,6 +262,11 @@ public class FieldUtil {
 		}
 		boolean comp = false;
 		switch(c.getValueType()) {
+			case ZONETIME:
+				ZonedDateTime zone1 = f.getValue();
+				ZonedDateTime zone2 = c.getValue();
+				comp = (zone1.compareTo(zone2) == 0);
+				break;
 			case TIMESTAMP:
 				long d1 = ((Date)f.getValue()).getTime();
 				long d2 = ((Date)c.getValue()).getTime();
@@ -287,6 +312,14 @@ public class FieldUtil {
 		FieldSchema fs = ms.getFieldSchema(f.getName());
 
 		switch(f.getValueType()) {
+			case ZONETIME:
+				ZonedDateTime zone1 = f.getValue();
+				ZonedDateTime zone2 =  ZonedDateTime.ofInstant(Instant.ofEpochSecond(0), ZoneOffset.UTC);
+				if(fs.getDefaultValue() != null) {
+					zone2 = (ZonedDateTime)fs.getDefaultValue();
+				}
+				outBool = (zone1.compareTo(zone2) == 0);
+				break;
 			case TIMESTAMP:
 				long d1 = ((Date)f.getValue()).getTime();
 				long d2 = 0L;
@@ -365,6 +398,7 @@ public class FieldUtil {
 				break;
 			case BOOLEAN:
 			case MODEL:
+			case ZONETIME:
 			case TIMESTAMP:
 				outBool = (val == null || (fs.getDefaultValue() != null && fs.getDefaultValue() == val));
 				break;

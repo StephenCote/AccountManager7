@@ -2,6 +2,7 @@
 "name": "nameId",
 "inherits": ["base", "controlsExt", "tagsExt"],
 "abstract": true,
+"query": ["name"],
 "fields": [
 	{
 		"label": "Name",

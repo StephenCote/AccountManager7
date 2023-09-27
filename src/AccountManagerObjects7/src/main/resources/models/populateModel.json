@@ -6,6 +6,13 @@
 			"name": "populated",
 			"type": "boolean",
 			"ephemeral": true
+		},
+		{
+			"name": "populatedFields",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true,
+			"private": true
 		}
 	]
 }

@@ -1,5 +1,7 @@
 package org.cote.accountmanager.record;
 
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -396,6 +398,10 @@ public abstract class BaseRecord {
 	   FieldType f = FieldFactory.dateTimeFieldType(name);
 	   updateField(f, val);
    }
+   public <T> void setZoneTime(String name, T val) throws ValueException, ModelException, FieldException, ModelNotFoundException {
+	   FieldType f = FieldFactory.zoneTimeFieldType(name);
+	   updateField(f, val);
+   }
    public void convertField(String name, FieldEnumType type) throws FieldException, ValueException, ModelNotFoundException {
 	   if(!hasField(name)) {
 		   throw new FieldException(String.format(FieldException.FIELD_NOT_FOUND, model, name));
@@ -414,6 +420,12 @@ public abstract class BaseRecord {
 	   				throw new FieldException(cverr);		
 	   			}
 	   			newField.setValue(Base64.getDecoder().decode((String)curField.getValue()));
+	   			break;
+	   		case ZONETIME:
+	   			if(!curType.equals(FieldEnumType.STRING)) {
+	   				throw new FieldException(cverr);		
+	   			}
+	   			newField.setValue(ZonedDateTime.parse((String)curField.getValue(), DateTimeFormatter.ISO_ZONED_DATE_TIME));
 	   			break;
 	   		case TIMESTAMP:
 	   			if(!curType.equals(FieldEnumType.LONG) && !curType.equals(FieldEnumType.STRING)) {

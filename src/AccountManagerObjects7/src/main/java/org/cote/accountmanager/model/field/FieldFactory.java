@@ -1,5 +1,8 @@
 package org.cote.accountmanager.model.field;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 
@@ -18,6 +21,7 @@ import org.cote.accountmanager.model.field.value.ListValueType;
 import org.cote.accountmanager.model.field.value.LongValueType;
 import org.cote.accountmanager.model.field.value.ModelValueType;
 import org.cote.accountmanager.model.field.value.StringValueType;
+import org.cote.accountmanager.model.field.value.ZoneTimeValueType;
 
 public class FieldFactory {
 	public static final Logger logger = LogManager.getLogger(FieldFactory.class);
@@ -29,6 +33,9 @@ public class FieldFactory {
 	}
 	public static FieldType dateTimeFieldType(String name) throws ModelException {
 		return new FieldType(name, new DateValueType(new Date(0)));
+	}
+	public static FieldType zoneTimeFieldType(String name) throws ModelException {
+		return new FieldType(name, new ZoneTimeValueType(ZonedDateTime.ofInstant(Instant.ofEpochSecond(0), ZoneOffset.UTC)));
 	}
 	public static FieldType doubleFieldType(String name) throws ModelException {
 		return new FieldType(name, new DoubleValueType(0.0));
@@ -67,6 +74,9 @@ public class FieldFactory {
 		FieldType type = null;
 		try {
 			switch(typen) {
+				case ZONETIME:
+					type = zoneTimeFieldType(name);
+				break;
 				case TIMESTAMP:
 					type = dateTimeFieldType(name);
 					break;

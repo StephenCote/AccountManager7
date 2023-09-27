@@ -1,6 +1,8 @@
 package org.cote.accountmanager.record;
 
 import java.io.IOException;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
@@ -214,6 +216,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 		private FieldType setFieldValue(JsonParser jsonParser, FieldType ifld, FieldType fld, FieldSchema lft, boolean possibleForeign, JsonNode value) throws ValueException, IOException {
 			FieldType outFld = fld;
         	switch(ifld.getValueType()) {
+	        	case ZONETIME:
+	        		fld.setValue(ZonedDateTime.parse(value.textValue(), DateTimeFormatter.ISO_ZONED_DATE_TIME));
+	        		break;
     			case TIMESTAMP:
     				fld.setValue(new Date(value.longValue()));
     				break;

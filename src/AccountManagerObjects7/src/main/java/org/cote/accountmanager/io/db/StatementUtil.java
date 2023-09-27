@@ -6,7 +6,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -235,8 +239,10 @@ public class StatementUtil {
 		String palias = "P" + salias;
 		
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
-		
+		//List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
+		//List<FieldSchema> msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
 		for(FieldSchema fs : msschema.getFields() ) {
+		//for(FieldSchema fs : msfields ) {
 			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef) || (fs.isForeign() && !followRef)) {
 				continue;
 			}
@@ -770,8 +776,11 @@ public class StatementUtil {
 				case BOOLEAN:
 					statement.setBoolean(index, ((Boolean)value).booleanValue());
 					break;
+				case ZONETIME:
+					ZonedDateTime zone = (ZonedDateTime)value;
+					statement.setTimestamp(index, Timestamp.from(zone.toInstant()));
+					break;
 				case TIMESTAMP:
-
 					statement.setTimestamp(index, new Timestamp(((Date)value).getTime()));
 					break;
 				case MODEL:
@@ -862,6 +871,9 @@ public class StatementUtil {
 					break;
 				case INT:
 					record.set(col, rset.getInt(colName));
+					break;
+				case ZONETIME:
+					record.set(col, ZonedDateTime.ofInstant(rset.getTimestamp(colName).toInstant(), ZoneOffset.UTC));
 					break;
 				case TIMESTAMP:
 					record.set(col, rset.getTimestamp(colName));
@@ -976,6 +988,9 @@ public class StatementUtil {
 					case INT:
 						record.set(f.getName(), rset.getInt(col));
 						break;
+					case ZONETIME:
+						record.set(f.getName(), ZonedDateTime.ofInstant(rset.getTimestamp(col).toInstant(), ZoneOffset.UTC));
+						break;
 					case TIMESTAMP:
 						record.set(f.getName(), rset.getTimestamp(col));
 						break;
@@ -997,6 +1012,9 @@ public class StatementUtil {
 			case ENUM:
 			case STRING:
 				record.set(name, jsarr.getString(index));
+				break;
+			case ZONETIME:
+				record.set(name, ZonedDateTime.ofInstant(Instant.ofEpochMilli(jsarr.getLong(index)), ZoneOffset.UTC));
 				break;
 			case TIMESTAMP:
 				record.set(name, new Date(jsarr.getLong(index)));

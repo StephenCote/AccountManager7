@@ -30,19 +30,6 @@ import org.cote.accountmanager.util.RecordUtil;
 public class QueryUtil {
 	public static final Logger logger = LogManager.getLogger(QueryUtil.class);
 	
-	public static String[] getCommonFields(String model) {
-		// List<String> flds = new ArrayList<>();
-		Set<String> flds = ConcurrentHashMap.newKeySet();
-		ModelSchema ms = RecordFactory.getSchema(model);
-		flds.addAll(ms.getQuery());
-		for(String s : ms.getImplements()) {
-			if(!s.equals(model)) {
-				ModelSchema mis = RecordFactory.getSchema(s);
-				flds.addAll(mis.getQuery());
-			}
-		}
-		return flds.toArray(new String[0]);
-	}
 	public static String getComparatorToken(ComparatorEnumType comp) {
 		String token = comp.toString();
 		switch(comp) {

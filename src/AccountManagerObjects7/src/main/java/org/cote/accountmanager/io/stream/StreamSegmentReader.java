@@ -163,4 +163,16 @@ public class StreamSegmentReader implements IReader {
 		
 	}
 
+	@Override
+	public void populate(BaseRecord rec, String[] requestFields) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth) {
+		// TODO Auto-generated method stub
+		
+	}
+
 }

@@ -19,6 +19,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 import org.cote.accountmanager.security.TokenService;
+import org.cote.accountmanager.util.RecordUtil;
 
 import io.jsonwebtoken.Claims;
 
@@ -74,7 +75,7 @@ public class TokenOperation extends Operation {
 		BaseRecord mrec = null;
 		if(murn != null && murn.length() > 0) {
 			try {
-				String[] flds = QueryUtil.getCommonFields(mtype);
+				String[] flds = RecordUtil.getCommonFields(mtype);
 				if(flds.length == 0) {
 					flds = new String[] {FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID};
 				}

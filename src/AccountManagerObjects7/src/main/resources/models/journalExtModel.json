@@ -7,7 +7,7 @@
 		"type": "model",
 		"baseModel": "journal",
 		"foreign": true,
-		"provider": "org.cote.accountmanager.provider.JournalProvider"
+		"provider": "org.cote.accountmanager.provider.JournalProvider",
+		"priority": 100
 	}
 ]}
-		
