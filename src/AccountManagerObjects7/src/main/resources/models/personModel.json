@@ -58,14 +58,16 @@
 	"baseType": "model",
 	"baseModel": "user",
 	"type": "list",
-	"foreign": true
+	"foreign": true,
+	"followReference": false
 	}
 	,{
 	"name": "accounts",
 	"baseType": "model",
 	"baseModel": "account",
 	"type": "list",
-	"foreign": true
+	"foreign": true,
+	"followReference": false
 	}
 	,{
 	"name": "contactInformation",
@@ -78,20 +80,23 @@
 	"baseType": "model",
 	"baseModel": "person",
 	"type": "list",
-	"foreign": true
+	"foreign": true,
+	"followReference": false
 	}
 	,{
 	"name": "dependents",
 	"baseType": "model",
 	"baseModel": "person",
 	"type": "list",
-	"foreign": true
+	"foreign": true,
+	"followReference": false
 	}
 	,{
 	"name": "notes",
 	"baseType": "model",
 	"baseModel": "data",
 	"type": "list",
-	"foreign": true
+	"foreign": true,
+	"followReference": false
 	}
 ]}
