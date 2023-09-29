@@ -13,6 +13,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
@@ -172,8 +173,14 @@ public class Query extends LooseRecord{
 		return vals.size() > 0;
 	}
 	
-	public void filterParticipation(BaseRecord object, String actorType, BaseRecord effect) {
-		QueryUtil.filterParticipation(this, object, actorType, effect);
+	public void filterParticipation(BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
+		/*
+		FieldSchema fs = null;
+		if(fieldName != null && object != null) {
+			fs = RecordFactory.getSchema(object.getModel()).getFieldSchema(fieldName);
+		}
+		*/
+		QueryUtil.filterParticipation(this, object, fieldName, actorType, effect);
 	}
 	
 	/// Note: The flexible type of value is pinned here to the field type 

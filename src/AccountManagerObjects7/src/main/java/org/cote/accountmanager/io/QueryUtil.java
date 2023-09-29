@@ -16,8 +16,10 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
@@ -217,8 +219,10 @@ public class QueryUtil {
 	
 	
 	/// This constructs a subQuery added to the 'joins' list
-	public static void filterParticipation(Query query, BaseRecord object, String actorType, BaseRecord effect) {
-		Query part = createParticipationQuery(null, object, null, effect);
+	public static void filterParticipation(Query query, BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
+		Query part = createParticipationQuery(null, object, fieldName, null, effect);
+		actorType = ParticipationFactory.getParticipantModel(object.getModel(), fieldName, actorType);
+
 		part.field(FieldNames.FIELD_PARTICIPANT_MODEL, actorType);
 		try {
 			part.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
@@ -231,15 +235,17 @@ public class QueryUtil {
 		joins.add(part);
 	}
 	
-	public static Query createParticipationQuery(BaseRecord contextUser, BaseRecord object, BaseRecord actor, BaseRecord effect) {
+	public static Query createParticipationQuery(BaseRecord contextUser, BaseRecord object, String fieldName, BaseRecord actor, BaseRecord effect) {
 		Query q = new Query(contextUser, ModelNames.MODEL_PARTICIPATION);
+		String participantModel = ParticipationFactory.getParticipantModel(object, fieldName, actor);
+
 		if(object != null) {
 			q.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.EQUALS, object.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_PARTICIPATION_MODEL, ComparatorEnumType.EQUALS, object.getModel());
 		}
 		if(actor != null) {
 			q.field(FieldNames.FIELD_PARTICIPANT_ID, ComparatorEnumType.EQUALS, actor.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, ComparatorEnumType.EQUALS, actor.getModel());
+			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, ComparatorEnumType.EQUALS, participantModel);
 		}
 		if(effect != null) {
 			q.field(FieldNames.FIELD_PERMISSION_ID, ComparatorEnumType.EQUALS, effect.get(FieldNames.FIELD_ID));

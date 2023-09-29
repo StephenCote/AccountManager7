@@ -75,7 +75,7 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
-	protected static boolean resetDataSchema = true;
+	protected static boolean resetDataSchema = false;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	
@@ -153,7 +153,7 @@ public class BaseTest {
 
 		//resetH2DBUtil("./am7/h2", "sa", "1234", false);
 
-
+		boolean error = false;
 		OrganizationContext octx = null;
 		try {
 			ioContext = IOSystem.open(ioType, properties);
@@ -161,8 +161,7 @@ public class BaseTest {
 			assertNotNull("Context was null", octx);
 			if(!octx.isInitialized()) {
 				logger.info("Creating organization " + organizationPath);
-	
-					octx.createOrganization();
+				octx.createOrganization();
 			}
 			else {
 				logger.debug("Working with existing organization " + organizationPath);
@@ -170,8 +169,10 @@ public class BaseTest {
 		} catch (StackOverflowError | Exception e) {
 			logger.error(e);
 			e.printStackTrace();
-			
+			error = true;
 		}
+		
+		assertFalse("Error encountered", error);
 
 		assertTrue("Expected org to be initialized", octx.isInitialized());
 		orgContext = octx;

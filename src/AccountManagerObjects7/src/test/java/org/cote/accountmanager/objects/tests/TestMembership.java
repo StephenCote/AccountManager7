@@ -88,7 +88,7 @@ public class TestMembership extends BaseTest {
 		ioContext.getAccessPoint().member(testUser3, crole3, testUser2, null, true);
 		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_USER);
-		q.filterParticipation(crole1, ModelNames.MODEL_USER, null);
+		q.filterParticipation(crole1, null, ModelNames.MODEL_USER, null);
 		logger.info(q.key());
 		
 		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q);
@@ -158,7 +158,7 @@ public class TestMembership extends BaseTest {
 		
 		List<BaseRecord> mems = new ArrayList<>();
 		try {
-			mems = ioContext.getMemberUtil().findMembers(crole2c, ModelNames.MODEL_USER, 0L);
+			mems = ioContext.getMemberUtil().findMembers(crole2c, null, ModelNames.MODEL_USER, 0L);
 		} catch (IndexException | ReaderException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

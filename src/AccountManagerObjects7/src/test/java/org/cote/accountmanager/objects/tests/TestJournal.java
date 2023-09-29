@@ -121,7 +121,7 @@ public class TestJournal extends BaseTest {
 	public void TestAltOrgJournal() {
 		
 		logger.info("Test Alt Org Joural");
-		
+
 		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("journalObject", "journalObject");
 		assertNotNull("Schema is null", ms);
 		ModelNames.loadCustomModels();

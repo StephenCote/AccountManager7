@@ -25,6 +25,7 @@ public class FieldSchema {
 	private boolean identity = false;
 	private boolean virtual = false;
 	private boolean foreign = false;
+	private String participantModel = null;
 	private String foreignType = null;
 	private String foreignField = null;
 	private boolean ephemeral = false;
@@ -57,6 +58,14 @@ public class FieldSchema {
 	
 	public FieldSchema() {
 		
+	}
+
+	public String getParticipantModel() {
+		return participantModel;
+	}
+
+	public void setParticipantModel(String participantModel) {
+		this.participantModel = participantModel;
 	}
 
 	public int getPriority() {

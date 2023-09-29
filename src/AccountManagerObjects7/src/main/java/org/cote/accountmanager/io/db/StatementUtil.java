@@ -235,6 +235,13 @@ public class StatementUtil {
 		List<String> cols = new ArrayList<>();
 		String model = query.get(FieldNames.FIELD_TYPE);
 		String subModel = schema.getBaseModel();
+		String participantModel = subModel;
+		if(schema.getParticipantModel() != null) {
+			participantModel = schema.getParticipantModel();
+		}
+		
+		// logger.info(subModel + " --> " + participantModel);
+		
 		Query subQuery = new Query(subModel);
 		try {
 			subQuery.set(FieldNames.FIELD_COUNT, query.get(FieldNames.FIELD_COUNT));
@@ -278,7 +285,7 @@ public class StatementUtil {
 				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 			else if(schema.isForeign()) {
-				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + subModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 		}
 		else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
@@ -295,7 +302,7 @@ public class StatementUtil {
 				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 			else if(schema.isForeign()) {
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + subModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 		}
 

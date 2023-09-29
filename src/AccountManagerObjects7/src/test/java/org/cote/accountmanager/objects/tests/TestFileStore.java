@@ -11,7 +11,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.ParticipationFactory;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.junit.Test;
@@ -40,7 +40,7 @@ public class TestFileStore extends BaseTest {
 		try {
 			
 			BaseRecord role1 = ioContext.getPathUtil().findPath(testOrgContext.getAdminUser(), "role", "/" +  AccessSchema.ROLE_ACCOUNT_USERS, "USER",testOrgContext.getOrganizationId());
-			member = ioContext.getMemberUtil().isMember(testUser1, role1);
+			member = ioContext.getMemberUtil().isMember(testUser1, role1, null);
 			if(!member) {
 				member = ioContext.getMemberUtil().member(testUser1, role1, testUser1, null, true);
 			}

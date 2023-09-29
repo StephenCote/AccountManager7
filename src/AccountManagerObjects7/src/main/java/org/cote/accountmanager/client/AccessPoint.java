@@ -39,13 +39,13 @@ public class AccessPoint {
 	
 	public int countMembers(BaseRecord user, BaseRecord container, String model, BaseRecord effect) {
 		Query q = QueryUtil.createQuery(model);
-		q.filterParticipation(container, model, effect);
+		q.filterParticipation(container, null, model, effect);
 		return count(user, q);
 	}
 	
 	public List<BaseRecord> listMembers(BaseRecord user, BaseRecord container, String model, BaseRecord effect, long startIndex, int recordCount) {
 		Query q = QueryUtil.createQuery(model);
-		q.filterParticipation(container, model, effect);
+		q.filterParticipation(container, null, model, effect);
 		q.setRequestRange(startIndex, recordCount);
 		QueryResult qr = list(user, q);
 		if(qr == null) {
@@ -69,7 +69,7 @@ public class AccessPoint {
 		else {
 			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, object);
 			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
-				outBool = IOSystem.getActiveContext().getMemberUtil().isMember(actor, object, browseHierarchy);
+				outBool = IOSystem.getActiveContext().getMemberUtil().isMember(actor, object, null, browseHierarchy);
 				if(outBool) {
 					AuditUtil.closeAudit(audit, prr, null);	
 				}

@@ -165,10 +165,10 @@ public class TestH2Database extends BaseTest {
 			boolean member = ioContext.getMemberUtil().member(user, role, iperson, null, true);
 			assertTrue("Expected to establish membership", member);
 			
-			List<BaseRecord> members = ioContext.getMemberUtil().getMembers(role, ModelNames.MODEL_PERSON);
+			List<BaseRecord> members = ioContext.getMemberUtil().getMembers(role, null, ModelNames.MODEL_PERSON);
 			assertTrue("Expected member count to be 1, instead received " + members.size(), members.size() == 1);
 			
-			boolean isMember = ioContext.getMemberUtil().isMember(iperson, role);
+			boolean isMember = ioContext.getMemberUtil().isMember(iperson, role, null);
 			assertTrue("Expected person to be in the role", isMember);
 			
 			BaseRecord permission = ioContext.getPathUtil().makePath(null, ModelNames.MODEL_PERMISSION, "/Permissions/" + pername + "/Read", PermissionEnumType.DATA.toString(), orgId);

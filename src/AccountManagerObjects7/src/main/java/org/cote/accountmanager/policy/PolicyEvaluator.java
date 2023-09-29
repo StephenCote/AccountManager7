@@ -459,7 +459,7 @@ public class PolicyEvaluator {
 	}
 	private OperationResponseEnumType evaluateRoleAuthorization(BaseRecord prt,BaseRecord prr, BaseRecord pattern, BaseRecord src, BaseRecord targ, BaseRecord role) {
 		OperationResponseEnumType outResponse = OperationResponseEnumType.UNKNOWN;
-		boolean authZ = memberUtil.isMember(src, role, true);
+		boolean authZ = memberUtil.isMember(src, role, null, true);
 		if(trace) {
 			logger.info("Evaluate role authorization: Is " + src.get(FieldNames.FIELD_URN) + " in " + role.get(FieldNames.FIELD_URN) + " = " + authZ);
 		}

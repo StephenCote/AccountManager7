@@ -83,7 +83,7 @@ public class TestData extends BaseTest {
 			List<BaseRecord> datal = ioContext.getMemberUtil().getParticipations(tag, ModelNames.MODEL_DATA);
 			logger.info("Size: " + datal.size());
 			
-			datal = ioContext.getMemberUtil().getMembers(data, ModelNames.MODEL_TAG);
+			datal = ioContext.getMemberUtil().getMembers(data, null, ModelNames.MODEL_TAG);
 			logger.info("Size: " + datal.size());
 			
 		} catch (FactoryException | IndexException | ReaderException e) {
@@ -124,10 +124,10 @@ public class TestData extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
-		String[] sampleData = new String[] {"IMG_20220827_184359053.jpg", "IMG_20221230_142909291_HDR.jpg", "shutterstock-1940302522___08094459781.png", "The_George_Bennie_Railplane_System_of_Transport_poster,_1929.png"};
+		String[] sampleData = new String[] {"airship.jpg", "anaconda.jpg", "antikythera.jpg", "railplane.png", "steampunk.png", "sunflower.png"};
 		
 		try {
-			BaseRecord data = getCreateData(testUser1, "~/Data/Pictures", "c:\\tmp\\xpic\\" + sampleData[2]);
+			BaseRecord data = getCreateData(testUser1, "~/Data/Pictures", "./media/" + sampleData[1]);
 			assertNotNull("Data is null", data);
 			//logger.info(data.toFullString());
 		}
@@ -159,7 +159,9 @@ public class TestData extends BaseTest {
 		data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);
 		data.set(FieldNames.FIELD_NAME, dataName);
 		data.set(FieldNames.FIELD_CONTENT_TYPE, ContentTypeUtil.getTypeFromExtension(dataName));
-		
+		if(fdata.length == 0) {
+			throw new ValueException("Invalid file: " + filePath);
+		}
 		if(fdata.length > ByteModelUtil.MAXIMUM_BYTE_LENGTH) {
 			/// NOTE: When creating a stream, and creating segments separately, and then attaching that stream to another object
 			/// The size re-calculation done in the segment writer will affect the persistence layer, not the instance of the stream object

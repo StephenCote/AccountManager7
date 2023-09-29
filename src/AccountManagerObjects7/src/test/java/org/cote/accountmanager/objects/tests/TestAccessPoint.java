@@ -109,7 +109,7 @@ public class TestAccessPoint extends BaseTest {
 		BaseRecord usersRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS, null, testOrgContext.getOrganizationId());
 		
 		PolicyResponseType canRead = ioContext.getAuthorizationUtil().canRead(testUser1, testUser1, testUser1.get(FieldNames.FIELD_HOME_DIRECTORY));
-		logger.info("In Role? " + ioContext.getMemberUtil().isMember(testUser1, usersRole));
+		logger.info("In Role? " + ioContext.getMemberUtil().isMember(testUser1, usersRole, null));
 		logger.info("Can Read? " + (canRead.getType() == PolicyResponseEnumType.PERMIT));
 		PolicyResponseType prr = null;
 		try {

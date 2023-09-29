@@ -69,7 +69,7 @@ public class AuthorizationUtil {
 		OrganizationContext ctx = IOSystem.getActiveContext().getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		for(String s: roles) {
 			BaseRecord role = IOSystem.getActiveContext().getPathUtil().findPath(ctx.getAdminUser(), ModelNames.MODEL_ROLE, "/" + s, RoleEnumType.USER.toString(), ctx.getOrganizationId());
-			if(role != null && IOSystem.getActiveContext().getMemberUtil().isMember(user, role)) {
+			if(role != null && IOSystem.getActiveContext().getMemberUtil().isMember(user, role, null)) {
 				isAdmin = true;
 				break;
 			}
@@ -146,7 +146,7 @@ public class AuthorizationUtil {
 		boolean outBool = false;
 		List<BaseRecord> parts = new ArrayList<>();
 		try {
-			parts = memberUtil.findMembers(object, null, 0, permission.get(FieldNames.FIELD_ID));
+			parts = memberUtil.findMembers(object, null, null, 0, permission.get(FieldNames.FIELD_ID));
 		} catch (IndexException | ReaderException e) {
 			logger.error(e);
 			
@@ -180,7 +180,7 @@ public class AuthorizationUtil {
 				try {
 					BaseRecord role = reader.read(type, partId);
 					if(role != null) {
-						outBool = memberUtil.isMember(actor, role, true);
+						outBool = memberUtil.isMember(actor, role, null, true);
 					}
 				} catch (ReaderException e) {
 					logger.error(e);

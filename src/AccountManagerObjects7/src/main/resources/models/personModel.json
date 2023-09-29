@@ -81,7 +81,8 @@
 	"baseModel": "person",
 	"type": "list",
 	"foreign": true,
-	"followReference": false
+	"followReference": false,
+	"participantModel": "person.partner"
 	}
 	,{
 	"name": "dependents",
@@ -89,7 +90,8 @@
 	"baseModel": "person",
 	"type": "list",
 	"foreign": true,
-	"followReference": false
+	"followReference": false,
+	"participantModel": "person.dependent"
 	}
 	,{
 	"name": "notes",

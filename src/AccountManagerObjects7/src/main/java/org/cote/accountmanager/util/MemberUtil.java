@@ -21,9 +21,11 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.ParticipationFactory;
+import org.cote.accountmanager.factory.ParticipationFactory;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.EffectEnumType;
@@ -50,31 +52,40 @@ public class MemberUtil implements IMember {
 		recordUtil = context.getRecordUtil(); 
 	}
 	
-	public List<BaseRecord> findMembers(BaseRecord rec, String model, long id) throws IndexException, ReaderException {
-		return findMembers(rec, model, id, 0L, "ParticipationList");
+	public List<BaseRecord> findMembers(BaseRecord rec, String fieldName, String model, long id) throws IndexException, ReaderException {
+		return findMembers(rec, fieldName, model, id, 0L, "ParticipationList");
 	}
-	public List<BaseRecord> findMembers(BaseRecord rec, String model, long id, long permissionId) throws IndexException, ReaderException {
-		return findMembers(rec, model, id, permissionId, "ParticipationList");
+	public List<BaseRecord> findMembers(BaseRecord rec, String fieldName, String model, long id, long permissionId) throws IndexException, ReaderException {
+		return findMembers(rec, fieldName, model, id, permissionId, "ParticipationList");
 	}
-	public List<BaseRecord> findParticipants(BaseRecord rec, String model, long id) throws IndexException, ReaderException {
-		return findMembers(rec, model, id, 0L, "ParticipantList");
+	public List<BaseRecord> findParticipants(BaseRecord rec, String fieldName, String model, long id) throws IndexException, ReaderException {
+		return findMembers(rec, fieldName, model, id, 0L, "ParticipantList");
 	}
-	public List<BaseRecord> findParticipants(BaseRecord rec, String model, long id, long permissionId) throws IndexException, ReaderException {
-		return findMembers(rec, model, id, permissionId, "ParticipantList");
+	public List<BaseRecord> findParticipants(BaseRecord rec, String fieldName, String model, long id, long permissionId) throws IndexException, ReaderException {
+		return findMembers(rec, fieldName, model, id, permissionId, "ParticipantList");
 	}
-	private List<BaseRecord> findMembers(BaseRecord rec, String model, long id, long permissionId, String nameSuffix) throws IndexException, ReaderException {
+	private List<BaseRecord> findMembers(BaseRecord rec, String fieldName, String model, long id, long permissionId, String nameSuffix) throws IndexException, ReaderException {
 		
 		List<BaseRecord> list = new ArrayList<>();
+		/*
+		FieldSchema fs = null;
+		if(fieldName != null) {
+			fs = RecordFactory.getSchema(rec.getModel()).getFieldSchema(fieldName);
+		}
+		*/
+		final String partModel = ParticipationFactory.getParticipantModel(rec.getModel(), fieldName, model);
+		
 		if(reader.getRecordIo() == RecordIO.FILE) {
 			BaseRecord plist = getFileMembers(rec, nameSuffix);
 			if(plist != null) {
+
 				List<BaseRecord> parts = plist.get(FieldNames.FIELD_PARTS);
 				list = parts.stream().filter(o ->{
 					long mid = o.get(FieldNames.FIELD_PART_ID);
 					long pid = o.get(FieldNames.FIELD_PERMISSION_ID);
 					String type = o.get(FieldNames.FIELD_TYPE);
 					return (
-						(model == null || model.equals(type))
+						(partModel == null || partModel.equals(type))
 						&&
 						(id == 0L || id == mid)
 						&&
@@ -85,7 +96,7 @@ public class MemberUtil implements IMember {
 			}
 		}
 		else if(reader.getRecordIo() == RecordIO.DATABASE) {
-			Query q = QueryUtil.createParticipationQuery(null, rec, null, null);
+			Query q = QueryUtil.createParticipationQuery(null, rec, fieldName, null, null);
 			if(permissionId > 0L) {
 				q.field(FieldNames.FIELD_PERMISSION_ID, permissionId);
 				q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.GRANT_PERMISSION);
@@ -93,8 +104,8 @@ public class MemberUtil implements IMember {
 			else {
 				q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.AGGREGATE);
 			}
-			if(model != null) {
-				q.field(FieldNames.FIELD_PARTICIPANT_MODEL, model);
+			if(partModel != null) {
+				q.field(FieldNames.FIELD_PARTICIPANT_MODEL, partModel);
 			}
 			if(id > 0L) {
 				q.field(FieldNames.FIELD_PARTICIPANT_ID, id);
@@ -108,8 +119,9 @@ public class MemberUtil implements IMember {
 		}
 		return list;
 	}
-	public List<BaseRecord> getMembers(BaseRecord rec, String memberModelType) throws IndexException, ReaderException {
+	public List<BaseRecord> getMembers(BaseRecord rec, String fieldName, String memberModelType) throws IndexException, ReaderException {
 		List<BaseRecord> recs = new ArrayList<>();
+
 		if(reader.getRecordIo() == RecordIO.FILE) {
 			BaseRecord prec = getFileMembers(rec);
 			if(prec != null) {
@@ -117,7 +129,7 @@ public class MemberUtil implements IMember {
 			}
 		}
 		else if(reader.getRecordIo() == RecordIO.DATABASE) {
-			recs = getDbMembers(rec, false, memberModelType);
+			recs = getDbMembers(rec, fieldName, false, memberModelType);
 		}
 		return recs;
 	}
@@ -130,7 +142,7 @@ public class MemberUtil implements IMember {
 			}
 		}
 		else if(reader.getRecordIo() == RecordIO.DATABASE) {
-			recs = getDbMembers(rec, true, participationModelType);
+			recs = getDbMembers(rec, null, true, participationModelType);
 		}
 		return recs;
 	}
@@ -140,8 +152,8 @@ public class MemberUtil implements IMember {
 	private BaseRecord getFileParticipants(BaseRecord rec) throws IndexException, ReaderException {
 		return getFileMembers(rec, "ParticipantList");
 	}
-	private List<BaseRecord> getDbMembers(BaseRecord rec, boolean byPart, String modelType) throws IndexException, ReaderException {
-		Query q = QueryUtil.createParticipationQuery(null, (!byPart ? rec : null), (byPart ? rec : null), null);
+	private List<BaseRecord> getDbMembers(BaseRecord rec, String fieldName, boolean byPart, String modelType) throws IndexException, ReaderException {
+		Query q = QueryUtil.createParticipationQuery(null, (!byPart ? rec : null), fieldName, (byPart ? rec : null), null);
 		
 		String idField = FieldNames.FIELD_PARTICIPATION_ID;
 		String modelField = FieldNames.FIELD_PARTICIPATION_MODEL;
@@ -201,14 +213,14 @@ public class MemberUtil implements IMember {
 		return list;
 	}
 	
-	public boolean isMember(BaseRecord actor, BaseRecord object) {
-		return isMember(actor, object, false);
+	public boolean isMember(BaseRecord actor, BaseRecord object, String fieldName) {
+		return isMember(actor, object, fieldName, false);
 	}
-	public boolean isMember(BaseRecord actor, BaseRecord object, boolean browseHierarchy) {
+	public boolean isMember(BaseRecord actor, BaseRecord object, String fieldName, boolean browseHierarchy) {
 		boolean outBool = false;
 		
 		try {
-			List<BaseRecord> parts = findMembers(object, actor.getModel(), actor.get(FieldNames.FIELD_ID));
+			List<BaseRecord> parts = findMembers(object, fieldName, actor.getModel(), actor.get(FieldNames.FIELD_ID));
 			if(parts.size() > 0) {
 				outBool = true;
 			}
@@ -217,7 +229,7 @@ public class MemberUtil implements IMember {
 				if(parentId > 0L) {
 					BaseRecord oparent =reader.read(object.getModel(), parentId);
 					if(oparent != null) {
-						outBool = isMember(actor, oparent, browseHierarchy);
+						outBool = isMember(actor, oparent, fieldName, browseHierarchy);
 					}
 				}
 			}
@@ -229,8 +241,12 @@ public class MemberUtil implements IMember {
 	}
 	
 	public boolean member(BaseRecord user, BaseRecord object, BaseRecord actor, BaseRecord effect, boolean enable) {
+		return member(user, object, null, actor, effect, enable);
+	}
+	public boolean member(BaseRecord user, BaseRecord object, String fieldName, BaseRecord actor, BaseRecord effect, boolean enable) {
 		boolean outBool = false;
-		Query q = QueryUtil.createParticipationQuery(user, object, actor, effect);
+		
+		Query q = QueryUtil.createParticipationQuery(user, object, fieldName, actor, effect);
 		CacheUtil.clearCache(q.hash());
 		
 		QueryResult res = null;
@@ -263,10 +279,10 @@ public class MemberUtil implements IMember {
 		
 		BaseRecord part1 = null;
 		if(effect != null) {
-			part1 = ParticipationFactory.newParticipation(user, object, actor, effect);
+			part1 = ParticipationFactory.newParticipation(user, object, fieldName, actor, effect);
 		}
 		else {
-			part1 = ParticipationFactory.newParticipation(user, object, actor);
+			part1 = ParticipationFactory.newParticipation(user, object, fieldName, actor);
 		}
 		return recordUtil.createRecord(part1);
 	}
