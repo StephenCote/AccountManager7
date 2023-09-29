@@ -7,6 +7,8 @@ import static org.junit.Assert.assertTrue;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Arrays;
+import java.util.List;
 import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -31,6 +33,36 @@ import org.cote.accountmanager.util.RecordUtil;
 import org.junit.Test;
 
 public class TestFieldRevisions extends BaseTest {
+	
+	@Test
+	public void TestFieldParticipationModel() {
+		
+		//String[] attrs = RecordUtil.getCommonFields(ModelNames.MODEL_DATA);
+		//logger.info("Common: " + attrs.length);
+		//List<String> attrs = Arrays.asList(RecordUtil.getCommonFields(ModelNames.MODEL_DATA));
+		//logger.info("Common: " + attrs.size());
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Revised Population");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String testPerson1 = "Demo Person 1 " + UUID.randomUUID().toString();
+		String testPerson2 = "Demo Person 2 " + UUID.randomUUID().toString();
+		String testPerson3 = "Demo Person 3 " + UUID.randomUUID().toString();
+		BaseRecord per1 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson1, "~/Persons", testOrgContext.getOrganizationId());
+		BaseRecord per2 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson2, "~/Persons", testOrgContext.getOrganizationId());
+		BaseRecord per3 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson3, "~/Persons", testOrgContext.getOrganizationId());
+		
+		ioContext.getMemberUtil().member(testUser1, per1, FieldNames.FIELD_PARTNERS, per3, null, true);
+		boolean enable = ioContext.getMemberUtil().member(testUser1, per1, FieldNames.FIELD_DEPENDENTS, per2, null, true);
+		assertTrue("Expected to add dependent", enable);
+		boolean ismem = ioContext.getMemberUtil().isMember(per2, per1, FieldNames.FIELD_DEPENDENTS);
+		assertTrue("Expected to be dependent", ismem);
+
+		BaseRecord xper1 = ioContext.getAccessPoint().findByObjectId(testUser1, ModelNames.MODEL_PERSON, per1.get(FieldNames.FIELD_OBJECT_ID));
+		assertNotNull("Person is null", xper1);
+		
+		logger.info(xper1.toFullString());
+	}
 
 	@Test
 	public void TestRevisedPopulation() {
@@ -56,7 +88,7 @@ public class TestFieldRevisions extends BaseTest {
 			String[] qfs = RecordUtil.getPossibleFields(ModelNames.MODEL_DATA, new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_ACCOUNTS});
 			logger.info(String.join(", ", qfs));
 			
-			logger.info(data.toFullString());
+			//logger.info(data.toFullString());
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);

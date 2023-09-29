@@ -98,6 +98,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 						CacheUtil.clearCache(rec);
 					}
 					// logger.info(String.join(", ", requestFields));
+					/// TODO: Still need to delineate between the requested fields and the query fields, the following call will fail at present
 					// final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields);
 					
 					final BaseRecord frec;

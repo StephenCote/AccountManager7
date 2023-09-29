@@ -46,6 +46,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.FunctionEnumType;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.ScriptUtil;
 
@@ -144,14 +145,15 @@ public class FactUtil {
 		}
 		T outResponse = null;
 
-		Object subject = null;
+		BaseRecord subject = null;
 		try {
 			if(prt.get(FieldNames.FIELD_SUBJECT) != null){
 				/// FieldNames.FIELD_SUBJECT_TYPE), 
 				BaseRecord[] subs = search.findByUrn(prt.get(FieldNames.FIELD_SUBJECT_TYPE), prt.get(FieldNames.FIELD_SUBJECT));
 				if(subs.length > 0) {
 					subject = subs[0];
-					reader.populate((BaseRecord)subject);
+					String[] fields = RecordUtil.getPossibleFields(subject.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID});
+					reader.populate(subject, fields);
 							
 				}
 			}

@@ -281,13 +281,9 @@ public class RecordFactory {
 			BaseRecord modelRec = IOSystem.getActiveContext().getSearch().findRecord(q);
 			if(modelRec != null) {
 				if(!modelRec.hasField(FieldNames.FIELD_SCHEMA)) {
-					logger.error("***** WTF?");
+					logger.error("***** Error loading schema");
 					logger.error(q.toFullString());
 					logger.error(modelRec.toFullString());
-					StackTraceElement[] st = new Throwable().getStackTrace();
-					for(int i = 0; i < st.length; i++) {
-						logger.error(st[i].toString());
-					}
 					return null;
 				}
 				byte[] data = modelRec.get(FieldNames.FIELD_SCHEMA);

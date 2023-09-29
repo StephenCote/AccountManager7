@@ -36,6 +36,7 @@ import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RuleEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
 import org.cote.accountmanager.util.MemberUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ScriptUtil;
 
 public class PolicyEvaluator {
@@ -280,11 +281,13 @@ public class PolicyEvaluator {
 		if(mfact == null){
 			throw new ValueException("Match fact is null");
 		}
-		reader.populate(fact);
-		reader.populate(mfact);
+		
+		reader.populate(fact, RecordUtil.getPossibleFields(fact.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
+		reader.populate(mfact, RecordUtil.getPossibleFields(mfact.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
+
 		FactEnumType mtype = FactEnumType.valueOf(mfact.get(FieldNames.FIELD_TYPE));
 		pfact = getFactParameter(pfact, facts);
-		reader.populate(pfact);
+		reader.populate(pfact, RecordUtil.getPossibleFields(pfact.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
 		
 		List<String> chain = prr.get(FieldNames.FIELD_PATTERN_CHAIN);
 		String purn = pattern.get(FieldNames.FIELD_URN);

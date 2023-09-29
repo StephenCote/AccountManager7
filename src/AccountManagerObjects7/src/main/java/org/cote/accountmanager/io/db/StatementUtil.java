@@ -255,10 +255,20 @@ public class StatementUtil {
 		String palias = "P" + salias;
 		
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
-		//List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
+
+		List<FieldSchema> msfields = msschema.getFields();
+		
+		/// Skip restricting to common fields for modelSchema and until the persistence layer is in the 'open' state
+		/// This is to stop recursive queries when first starting
+		///
+		if(IOSystem.isOpen() && !model.equals(ModelNames.MODEL_MODEL_SCHEMA)) {
+			List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
+			msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
+		}
 		//List<FieldSchema> msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
-		for(FieldSchema fs : msschema.getFields() ) {
-		//for(FieldSchema fs : msfields ) {
+		//logger.info("Field size: " + msfields.size());
+		//for(FieldSchema fs : msschema.getFields() ) {
+		for(FieldSchema fs : msfields ) {
 			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef) || (fs.isForeign() && !followRef)) {
 				continue;
 			}

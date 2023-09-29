@@ -240,11 +240,12 @@ public class AccessPoint {
 		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, null);
 		PolicyResponseType prr = null;
 		
-		/*
+		
 		if(query.getRequest().size() == 0) {
 			query.setRequest(RecordUtil.getCommonFields(query.getType()));
 		}
-		*/
+		// logger.info(query.key());
+		
 		if((prr = authorizeQuery(contextUser, query)) == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			logger.error("One or more query fields were not or could not be authorized");
 			logger.error(query.toFullString());
@@ -258,8 +259,11 @@ public class AccessPoint {
 		AuditUtil.query(audit, query.key());
 		if(qr != null && qr.getCount() > 0) {
 			BaseRecord chkRec = qr.getResults()[0];
+			//logger.info(qr.toFullString());
 			AuditUtil.auditResource(audit, rec);
+			/// Evaluating authorization on the object will 
 			prr = IOSystem.getActiveContext().getAuthorizationUtil().canRead(contextUser, contextUser, chkRec);
+			//logger.info(chkRec.toFullString());
 			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
 				rec = chkRec;
 			}

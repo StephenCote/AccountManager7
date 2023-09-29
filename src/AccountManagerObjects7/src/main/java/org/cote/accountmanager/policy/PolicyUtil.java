@@ -412,7 +412,7 @@ public class PolicyUtil {
 			}
 			for(BaseRecord linkedObj : objects) {
 				if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
-					reader.populate(linkedObj);
+					reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
 				}
 
 				if(RecordUtil.isIdentityRecord(linkedObj)) {

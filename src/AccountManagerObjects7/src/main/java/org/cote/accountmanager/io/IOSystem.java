@@ -27,12 +27,20 @@ public class IOSystem {
 	public static final Logger logger = LogManager.getLogger(IOSystem.class);
 	private static boolean followForeignKeys = false;
 	private static IOContext activeContext = null;
+	private static boolean open = false;
 	
 	private IOSystem() {
 
 	}
 	
 	
+	
+	public static boolean isOpen() {
+		return open;
+	}
+
+
+
 	public static IOContext open(RecordIO ioType) {
 		return open(ioType, null);
 	}
@@ -53,6 +61,9 @@ public class IOSystem {
 	}
 
 	public static IOContext open(RecordIO ioType, IOProperties properties) {
+		
+		open = false;
+		
 		if(activeContext != null) {
 			logger.error("An active context already exists");
 			return null;
@@ -150,6 +161,8 @@ public class IOSystem {
 			RecordFactory.model(s);
 		}
 		
+		open = true;
+		
 		return activeContext;
 	}
 	
@@ -157,7 +170,9 @@ public class IOSystem {
 		close(activeContext);
 	}
 	public static void close(IOContext context) {
-
+		
+		open = false;
+		
 		if(context != null) {
 			try {
 				if(context.getIndexManager() != null) {

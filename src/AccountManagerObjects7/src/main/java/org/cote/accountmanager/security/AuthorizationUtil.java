@@ -29,6 +29,7 @@ import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.MemberUtil;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class AuthorizationUtil {
 	
@@ -130,7 +131,7 @@ public class AuthorizationUtil {
 			/// return oprr;
 		}
 		
-		reader.populate(resource);
+		reader.populate(resource, RecordUtil.getPossibleFields(resource.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
 		
 		PolicyResponseType prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(contextUser, policyName, actor, token, resource);
 		

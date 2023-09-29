@@ -78,7 +78,7 @@ public class ThumbnailUtil {
 		}
 
 		logger.info("Creating thumbnail " + thumbName + " in " + thumbPath);
-		ctx.getReader().populate(record);
+		// ctx.getReader().populate(record);
 		byte[] imageBytes = record.get(FieldNames.FIELD_BYTE_STORE);
 		if(imageBytes.length == 0 && record.hasField(FieldNames.FIELD_STREAM)) {
 			BaseRecord stream = record.get(FieldNames.FIELD_STREAM);

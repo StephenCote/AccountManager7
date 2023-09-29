@@ -56,35 +56,30 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			String hash = query.hash();
 			if(cache.containsKey(hash)) {
 				final QueryResult qr = cache.get(hash);
+				// logger.info("Cache hit: " + query.key());
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = qr.get(FieldNames.FIELD_TYPE);
 				if(!qt.equals(qrt)) {
 					logger.error("****** MISMATCHED CACHED RESULT TYPE!!! " + qt + " -> " + qrt);
-					logger.error("Query hash: " + hash + " / " + query.hash() + " / " + qr.get(FieldNames.FIELD_QUERY_HASH));
-					logger.error(query.toFullString());
-					logger.error(qr.toFullString());
 					throw new ReaderException("Mismatched result type: Cached query for " + qt + " contains " + qrt);
 				}
 				return qr;
 				//return cache.get(hash);
 			}
 			
-			// logger.info(query.key());
+			// logger.info("Query: " + query.key());
 
-				final QueryResult res = super.find(query);
-				if(res != null && res.getCount() > 0) {
-					String qt = query.get(FieldNames.FIELD_TYPE);
-					String qrt = res.get(FieldNames.FIELD_TYPE);
-					if(!qt.equals(qrt)) {
-						logger.error("****** MISMATCHED RESULT TYPE ENTERING CACHE!!! " + qt + " -> " + qrt);
-						logger.error("Query hash: " + hash + " / " + query.hash() + " / " + res.get(FieldNames.FIELD_QUERY_HASH));
-						logger.error(query.toFullString());
-						logger.error(res.toFullString());
-		
-					}
-					cache.put(hash, res);
+			final QueryResult res = super.find(query);
+			if(res != null && res.getCount() > 0) {
+				String qt = query.get(FieldNames.FIELD_TYPE);
+				String qrt = res.get(FieldNames.FIELD_TYPE);
+				if(!qt.equals(qrt)) {
+					logger.error("****** MISMATCHED RESULT TYPE ENTERING CACHE!!! " + qt + " -> " + qrt);
+					throw new ReaderException("Mismatched result type entering cache: Query for " + qt + " contains " + qrt);
 				}
-				return res;
+				cache.put(hash, res);
+			}
+			return res;
 
 	}
 
