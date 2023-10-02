@@ -11,11 +11,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.QueryUtil;
@@ -51,6 +53,10 @@ public class TestFieldRevisions extends BaseTest {
 		BaseRecord per1 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson1, "~/Persons", testOrgContext.getOrganizationId());
 		BaseRecord per2 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson2, "~/Persons", testOrgContext.getOrganizationId());
 		BaseRecord per3 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson3, "~/Persons", testOrgContext.getOrganizationId());
+		CacheUtil.clearCache(per3);
+		BaseRecord vper3 = ioContext.getRecordUtil().findByRecord(null, per3, new String[] {FieldNames.FIELD_NAME});
+		assertNotNull("VPer3 is null", vper3);
+		logger.info(vper3.toFullString());
 		
 		ioContext.getMemberUtil().member(testUser1, per1, FieldNames.FIELD_PARTNERS, per3, null, true);
 		boolean enable = ioContext.getMemberUtil().member(testUser1, per1, FieldNames.FIELD_DEPENDENTS, per2, null, true);
