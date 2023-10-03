@@ -111,19 +111,36 @@ public class RecordUtil {
 
 		Set<String> fieldMap = Set.of(fields);
 		ModelSchema schema = RecordFactory.getSchema(model);
-		List<String> matFields = schema.getFields().stream().map(f -> f.getName()).filter(n -> fieldMap.contains(n)).collect(Collectors.toList());
+		List<String> matFields = schema.getFields().stream()
+			.filter(f -> (
+					fieldMap.contains(f.getName())
+					&& !f.isEphemeral()
+					&& !f.isVirtual()
+				)
+			)
+			.map(f -> f.getName())
+			.collect(Collectors.toList())
+		;
 		return matFields.toArray(new String[0]);
+	}
+	public static String[] getFieldNames(String model) {
+		ModelSchema ms = RecordFactory.getSchema(model);
+		return ms.getFields().stream().map(f -> f.getName()).collect(Collectors.toList()).toArray(new String[0]);
 	}
 	public static String[] getCommonFields(String model) {
 		// List<String> flds = new ArrayList<>();
 
 		Set<String> flds = ConcurrentHashMap.newKeySet();
 		ModelSchema ms = RecordFactory.getSchema(model);
-		flds.addAll(ms.getQuery());
+		if(ms.getQuery() != null) {
+			flds.addAll(ms.getQuery());
+		}
 		for(String s : ms.getImplements()) {
 			if(!s.equals(model)) {
 				ModelSchema mis = RecordFactory.getSchema(s);
-				flds.addAll(mis.getQuery());
+				if(mis.getQuery() != null) {
+					flds.addAll(mis.getQuery());
+				}
 			}
 		}
 		return flds.toArray(new String[0]);
@@ -175,8 +192,9 @@ public class RecordUtil {
 			return false;
 		}
 		if(!isIdentityRecord(rec)) {
-			logger.error("Record does not contain identity information");
-			logger.error(rec.toString());
+			logger.debug("Record does not contain identity information");
+			logger.debug(rec.toString());
+			return false;
 		}
 
 		long id = idx.getValue(FieldEnumType.LONG, FieldNames.FIELD_ID, 0L);
@@ -320,6 +338,14 @@ public class RecordUtil {
 		}
 		else if(rec.hasField(FieldNames.FIELD_OBJECT_ID) && rec.get(FieldNames.FIELD_OBJECT_ID) != null) {
 			q.field(FieldNames.FIELD_OBJECT_ID, ComparatorEnumType.EQUALS, rec.get(FieldNames.FIELD_OBJECT_ID));
+		}
+		else if(rec.hasField(FieldNames.FIELD_URN) && rec.get(FieldNames.FIELD_URN) != null) {
+			q.field(FieldNames.FIELD_URN, ComparatorEnumType.EQUALS, rec.get(FieldNames.FIELD_URN));
+		}
+		else {
+			logger.error("Invalid query!");
+			logger.error(rec.toFullString());
+			return orec;
 		}
 		QueryResult res = find(q);
 		if(res != null && res.getResponse() == OperationResponseEnumType.SUCCEEDED && res.getResults().length > 0) {
