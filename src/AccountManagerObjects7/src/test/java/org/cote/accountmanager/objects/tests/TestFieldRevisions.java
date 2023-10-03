@@ -4,10 +4,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.time.Instant;
 import java.time.ZonedDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -17,14 +14,15 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -39,10 +37,15 @@ public class TestFieldRevisions extends BaseTest {
 	@Test
 	public void TestFieldParticipationModel() {
 		
-		//String[] attrs = RecordUtil.getCommonFields(ModelNames.MODEL_DATA);
-		//logger.info("Common: " + attrs.length);
-		//List<String> attrs = Arrays.asList(RecordUtil.getCommonFields(ModelNames.MODEL_DATA));
-		//logger.info("Common: " + attrs.size());
+		// logger.info(ioContext.getDbUtil().generateSchema(RecordFactory.getSchema(ModelNames.MODEL_GROUP)));
+		if(ioContext.getIoType() == RecordIO.FILE) {
+			logger.error("****** TODO: The file system support for foreign lists needs to be updated to link the encoded foreign keyed lists to the participation table");
+			logger.error("****** TODO: The database approach only uses the participation table, while the file-based system used a foreign key list on the persisted object");
+			return;
+		}
+
+		String[] fields = RecordUtil.getPossibleFields(ModelNames.MODEL_CREDENTIAL, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID});
+		logger.info("Credential possible: " + String.join(", ", fields));
 		
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Revised Population");
 		Factory mf = ioContext.getFactory();
@@ -51,12 +54,23 @@ public class TestFieldRevisions extends BaseTest {
 		String testPerson2 = "Demo Person 2 " + UUID.randomUUID().toString();
 		String testPerson3 = "Demo Person 3 " + UUID.randomUUID().toString();
 		BaseRecord per1 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson1, "~/Persons", testOrgContext.getOrganizationId());
+		// per1.set(FieldNames.FIELD_DESCRIPTION, "Example description");
+		
+		
 		BaseRecord per2 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson2, "~/Persons", testOrgContext.getOrganizationId());
+		
+		
+		/*
+		List<BaseRecord> p1d = per1.get(FieldNames.FIELD_DEPENDENTS);
+		p1d.add(per2);
+		ioContext.getAccessPoint().update(testUser1, per1);
+		*/
+		
 		BaseRecord per3 = mf.getCreateDirectoryModel(testUser1, ModelNames.MODEL_PERSON, testPerson3, "~/Persons", testOrgContext.getOrganizationId());
-		CacheUtil.clearCache(per3);
+		
 		BaseRecord vper3 = ioContext.getRecordUtil().findByRecord(null, per3, new String[] {FieldNames.FIELD_NAME});
 		assertNotNull("VPer3 is null", vper3);
-		logger.info(vper3.toFullString());
+		assertTrue("Expected only one field - name - Received " + vper3.getFields().size(), vper3.getFields().size() == 1);
 		
 		ioContext.getMemberUtil().member(testUser1, per1, FieldNames.FIELD_PARTNERS, per3, null, true);
 		boolean enable = ioContext.getMemberUtil().member(testUser1, per1, FieldNames.FIELD_DEPENDENTS, per2, null, true);
@@ -64,10 +78,30 @@ public class TestFieldRevisions extends BaseTest {
 		boolean ismem = ioContext.getMemberUtil().isMember(per2, per1, FieldNames.FIELD_DEPENDENTS);
 		assertTrue("Expected to be dependent", ismem);
 
+		/// If not specifying which fields to request, only the 'common query' fields will be returned
+		///
+		
 		BaseRecord xper1 = ioContext.getAccessPoint().findByObjectId(testUser1, ModelNames.MODEL_PERSON, per1.get(FieldNames.FIELD_OBJECT_ID));
 		assertNotNull("Person is null", xper1);
-		
+
 		logger.info(xper1.toFullString());
+
+		
+		/// Get everything
+		/*
+		Query pq1 = QueryUtil.createQuery(ModelNames.MODEL_PERSON, FieldNames.FIELD_OBJECT_ID, xper1.get(FieldNames.FIELD_OBJECT_ID));
+		pq1.setRequest(RecordUtil.getFieldNames(ModelNames.MODEL_PERSON));
+		BaseRecord xper2 = ioContext.getAccessPoint().find(testUser1, pq1);
+		assertNotNull("Person is null", xper2);
+		logger.info(xper2.toFullString());
+		*/
+		CacheUtil.clearCache();
+		ioContext.getRecordUtil().populate(xper1, new String[] {FieldNames.FIELD_DEPENDENTS});
+		List<BaseRecord> depends = xper1.get(FieldNames.FIELD_DEPENDENTS);
+		assertTrue("Expected one dependent", depends.size() > 0);
+		logger.info(xper1.toFullString());
+
+
 	}
 
 	@Test
@@ -138,8 +172,9 @@ public class TestFieldRevisions extends BaseTest {
 			ndata = ioContext.getAccessPoint().create(testUser1, data);
 			
 			assertNotNull("New Data is null", ndata);
-			
-			odata = ioContext.getAccessPoint().find(testUser1, QueryUtil.createQuery("revisedField", FieldNames.FIELD_OBJECT_ID, ndata.get(FieldNames.FIELD_OBJECT_ID)));
+			Query pq1 = QueryUtil.createQuery("revisedField", FieldNames.FIELD_OBJECT_ID, ndata.get(FieldNames.FIELD_OBJECT_ID));
+			// pq1.setRequest(RecordUtil.getCommonFields("revisedField"));
+			odata = ioContext.getAccessPoint().find(testUser1, pq1);
 			
 			assertNotNull("Data is null", odata);
 		}
