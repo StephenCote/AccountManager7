@@ -23,7 +23,6 @@ import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
 import org.cote.accountmanager.objects.generated.PolicyRequestType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.generated.PolicyType;
-import org.cote.accountmanager.policy.PolicyDefinitionUtil;
 import org.cote.accountmanager.policy.PolicyEvaluator;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordSerializerConfig;
@@ -35,7 +34,6 @@ import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ParameterUtil;
 import org.junit.Test;
 
 public class TestObjectPolicy extends BaseTest {

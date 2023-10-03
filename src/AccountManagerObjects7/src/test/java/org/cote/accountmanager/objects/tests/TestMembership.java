@@ -1,56 +1,26 @@
 package org.cote.accountmanager.objects.tests;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
-import org.cote.accountmanager.exceptions.DatabaseException;
-import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
-import org.cote.accountmanager.exceptions.ModelException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBReader;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
-import org.cote.accountmanager.objects.generated.FactType;
-import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
-import org.cote.accountmanager.objects.generated.PolicyRequestType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
-import org.cote.accountmanager.objects.generated.PolicyType;
-import org.cote.accountmanager.policy.PolicyDefinitionUtil;
-import org.cote.accountmanager.policy.PolicyEvaluator;
-import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
-import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
 
 public class TestMembership extends BaseTest {

@@ -6,28 +6,18 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
-import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordValidator;
@@ -41,11 +31,7 @@ import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
 import org.cote.accountmanager.util.MemberUtil;
-import org.cote.accountmanager.util.ParameterUtil;
-import org.cote.accountmanager.util.PathUtil;
-import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.ValidationUtil;
-import org.junit.Before;
 import org.junit.Test;
 
 public class TestValidationRules extends BaseTest {

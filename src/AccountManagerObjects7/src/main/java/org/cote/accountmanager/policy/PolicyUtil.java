@@ -2,7 +2,6 @@ package org.cote.accountmanager.policy;
 
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -52,7 +51,6 @@ import org.cote.accountmanager.schema.ModelAccess;
 import org.cote.accountmanager.schema.ModelAccessRoles;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.schema.type.ConditionEnumType;
 import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
@@ -412,7 +410,7 @@ public class PolicyUtil {
 			}
 			for(BaseRecord linkedObj : objects) {
 				if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
-					reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
+					reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getModel(), PolicyEvaluator.FIELD_POPULATION));
 				}
 
 				if(RecordUtil.isIdentityRecord(linkedObj)) {

@@ -4,11 +4,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -19,17 +15,13 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ScriptException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.model.field.FieldType;
-import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
 import org.cote.accountmanager.objects.generated.PolicyRequestType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.generated.PolicyType;
-import org.cote.accountmanager.policy.PolicyDefinitionUtil;
 import org.cote.accountmanager.policy.PolicyEvaluator;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -40,10 +32,8 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
-import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ParameterUtil;
 import org.junit.Test;
 
 public class TestQuery extends BaseTest {

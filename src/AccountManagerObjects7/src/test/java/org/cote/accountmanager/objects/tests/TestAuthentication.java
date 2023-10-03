@@ -1,58 +1,33 @@
 package org.cote.accountmanager.objects.tests;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import org.bouncycastle.util.Arrays;
-import org.bouncycastle.operator.OperatorCreationException;
-import org.bouncycastle.cert.CertIOException;
-
-import java.security.cert.Certificate;
-import java.security.InvalidKeyException;
-import java.security.KeyStore;
-import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
-import java.security.SignatureException;
-import java.security.cert.CertificateEncodingException;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.UUID;
 
+import org.bouncycastle.util.Arrays;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.factory.CryptoFactory;
 import org.cote.accountmanager.factory.Factory;
-
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.model.field.CryptoBean;
-import org.cote.accountmanager.model.field.KeyStoreBean;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.CredentialEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
+import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.KeyStoreUtil;
 import org.cote.accountmanager.util.ParameterUtil;
-import org.cote.accountmanager.util.BinaryUtil;
-import org.cote.accountmanager.util.CertificateUtil;
-
 import org.junit.Test;
 
 public class TestAuthentication extends BaseTest {

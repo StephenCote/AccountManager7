@@ -71,11 +71,13 @@ public class PathProvider implements IProvider {
 		}
 		String path = null;
 		String mname = null;
+		
 		if(model.hasField(FieldNames.FIELD_NAME)) {
 			mname = model.get(FieldNames.FIELD_NAME);
 		}
 		if(lfield.getBaseModel() != null && lfield.getBaseProperty() != null) {
 			String baseProp = lfield.getBaseProperty();
+			
 			if(model.hasField(lfield.getBaseProperty())) {
 				long baseId = model.get(lfield.getBaseProperty());
 				if(baseId > 0L) {
@@ -96,6 +98,7 @@ public class PathProvider implements IProvider {
 			}
 			else {
 				logger.debug("Model " + model.getModel() + " does not define " + lfield.getBaseProperty());
+				return;
 			}
 		}
 		else if(model.inherits(ModelNames.MODEL_PARENT) && model.hasField(FieldNames.FIELD_PARENT_ID)) {

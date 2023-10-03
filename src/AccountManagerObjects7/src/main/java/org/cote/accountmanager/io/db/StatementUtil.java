@@ -28,7 +28,6 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
@@ -468,10 +467,18 @@ public class StatementUtil {
 		}
 		*/
 		String joinClause = getJoinStatement(meta, query);
-
-		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias + joinClause;
 		
-		buff.append(getQueryString(sql, query, meta));
+		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias + joinClause;
+
+		String queryClause = getQueryString(sql, query, meta);
+		/*
+		if(queryClause == null || queryClause.length() == 0) {
+			logger.error(query.toFullString());
+			throw new FieldException("Query clause is null or empty");
+		}
+		*/
+		
+		buff.append(queryClause);
 		meta.setSql(buff.toString());
 		meta.setColumns(useFields);
 		return meta;

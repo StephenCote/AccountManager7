@@ -15,11 +15,9 @@ import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestObjectConstruct extends BaseTest {

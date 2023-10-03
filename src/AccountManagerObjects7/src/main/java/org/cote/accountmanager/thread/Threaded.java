@@ -2,7 +2,6 @@ package org.cote.accountmanager.thread;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FactoryException;
 
 public abstract class Threaded implements Runnable {
 	public static final Logger logger = LogManager.getLogger(Threaded.class);

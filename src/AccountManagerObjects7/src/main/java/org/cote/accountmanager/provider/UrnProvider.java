@@ -1,13 +1,7 @@
 package org.cote.accountmanager.provider;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -19,7 +13,6 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;

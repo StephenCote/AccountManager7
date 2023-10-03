@@ -3,16 +3,9 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.MissingFormatArgumentException;
-
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.factory.ParticipationFactory;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.junit.Test;
 

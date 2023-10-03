@@ -248,10 +248,11 @@ public class AccessPoint {
 		
 		if((prr = authorizeQuery(contextUser, query)) == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
 			logger.error("One or more query fields were not or could not be authorized");
-			logger.error(query.toFullString());
+			// logger.error(query.toFullString());
 			if(prr != null) {
 				logger.error(prr.toFullString());
 			}
+			
 			AuditUtil.closeAudit(audit, prr, "One or more query fields were not or could not be authorized: " + query.key());
 			return rec;
 		}

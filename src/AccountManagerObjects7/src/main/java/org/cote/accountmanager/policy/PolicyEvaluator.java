@@ -42,6 +42,7 @@ import org.cote.accountmanager.util.ScriptUtil;
 public class PolicyEvaluator {
 
 	public static final Logger logger = LogManager.getLogger(PolicyEvaluator.class);
+	protected static String[] FIELD_POPULATION = new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID};
 
 	/*
 	private static DatatypeFactory dtFactory = null;	
@@ -262,6 +263,7 @@ public class PolicyEvaluator {
 		}
 		return success;
 	}
+		
 	private boolean evaluatePattern(BaseRecord pattern, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws ValueException, ScriptException, IndexException, ReaderException, FieldException, ModelNotFoundException, ModelException{
 		PatternEnumType ptype = PatternEnumType.valueOf(pattern.get(FieldNames.FIELD_TYPE));
 		
@@ -282,12 +284,12 @@ public class PolicyEvaluator {
 			throw new ValueException("Match fact is null");
 		}
 		
-		reader.populate(fact, RecordUtil.getPossibleFields(fact.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
-		reader.populate(mfact, RecordUtil.getPossibleFields(mfact.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
+		reader.populate(fact, RecordUtil.getPossibleFields(fact.getModel(), FIELD_POPULATION));
+		reader.populate(mfact, RecordUtil.getPossibleFields(mfact.getModel(), FIELD_POPULATION));
 
 		FactEnumType mtype = FactEnumType.valueOf(mfact.get(FieldNames.FIELD_TYPE));
 		pfact = getFactParameter(pfact, facts);
-		reader.populate(pfact, RecordUtil.getPossibleFields(pfact.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
+		reader.populate(pfact, RecordUtil.getPossibleFields(pfact.getModel(), FIELD_POPULATION));
 		
 		List<String> chain = prr.get(FieldNames.FIELD_PATTERN_CHAIN);
 		String purn = pattern.get(FieldNames.FIELD_URN);
@@ -406,10 +408,13 @@ public class PolicyEvaluator {
 			logger.error("Expected both fact and match fact to define a factory type");
 			return OperationResponseEnumType.ERROR;
 		}
+		
 		BaseRecord p = futil.recordRead(contextUser, fact, matchFact);
 		BaseRecord g = futil.recordRead(contextUser, matchFact, matchFact);
 		if(p == null || g == null){
 			logger.error("The " + (g == null ? "match ":"") + "fact reference " + (g == null ? matchFact.get(FieldNames.FIELD_URN) : fact.get(FieldNames.FIELD_URN)) + " was null");
+			logger.error(fact.toFullString());
+			logger.error(matchFact.toFullString());
 			return OperationResponseEnumType.ERROR;
 		}
 		if(matype == FactEnumType.PERMISSION){

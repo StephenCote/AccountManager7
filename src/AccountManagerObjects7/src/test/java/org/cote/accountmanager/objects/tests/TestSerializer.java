@@ -2,11 +2,8 @@ package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -20,22 +17,14 @@ import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.JsonReader;
-import org.cote.accountmanager.io.JsonWriter;
 import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.MemoryWriter;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.file.FileIndexer;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
-import org.cote.accountmanager.record.RecordOperation;
-import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
-import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestSerializer extends BaseTest {

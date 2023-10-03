@@ -9,7 +9,6 @@ import java.util.Date;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ModelException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.value.BooleanValueType;
 import org.cote.accountmanager.model.field.value.ByteArrayValueType;
 import org.cote.accountmanager.model.field.value.DateValueType;

@@ -1,7 +1,6 @@
 package org.cote.accountmanager.model.field.value;
 
 import java.time.ZonedDateTime;
-import java.util.Date;
 
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;

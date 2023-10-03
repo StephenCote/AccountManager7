@@ -11,9 +11,9 @@ import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.WriterException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IMember;
 import org.cote.accountmanager.io.IOContext;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
@@ -21,11 +21,8 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.factory.ParticipationFactory;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.EffectEnumType;
@@ -255,7 +252,6 @@ public class MemberUtil implements IMember {
 		}
 		catch(Exception e) {
 			logger.error(e);
-			
 		}
 		if(res != null && res.getCount() > 0) {
 			if(!enable) {

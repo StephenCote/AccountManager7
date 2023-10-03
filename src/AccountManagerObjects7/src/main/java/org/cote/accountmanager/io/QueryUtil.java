@@ -1,10 +1,7 @@
 package org.cote.accountmanager.io;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -13,19 +10,17 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.EffectEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
-import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
 

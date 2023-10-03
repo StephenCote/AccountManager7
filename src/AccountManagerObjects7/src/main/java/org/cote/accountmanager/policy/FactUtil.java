@@ -152,7 +152,7 @@ public class FactUtil {
 				BaseRecord[] subs = search.findByUrn(prt.get(FieldNames.FIELD_SUBJECT_TYPE), prt.get(FieldNames.FIELD_SUBJECT));
 				if(subs.length > 0) {
 					subject = subs[0];
-					String[] fields = RecordUtil.getPossibleFields(subject.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID});
+					String[] fields = RecordUtil.getPossibleFields(subject.getModel(), PolicyEvaluator.FIELD_POPULATION);
 					reader.populate(subject, fields);
 							
 				}
@@ -296,9 +296,11 @@ public class FactUtil {
 					surn = contextUser.get(FieldNames.FIELD_URN);
 				}
 				if(idPattern.matcher(surn).matches()){
+					// logger.warn("Read by id: " + surn);
 					outObj = (T)reader.read(stype, Long.parseLong(surn));
 				}
 				else if(surn.length() > 0){
+					// logger.warn("Read by urn: " + surn);
 					outObj = (T)reader.readByUrn(stype, surn);
 				}
 				else {
@@ -306,7 +308,7 @@ public class FactUtil {
 				}
 			}
 			else if(fdata != null) {
-				//logger.info("Find: " + stype + " " + fdata);
+				// logger.info("Find: " + stype + " " + fdata);
 				outObj = (T)IOSystem.getActiveContext().getPathUtil().findPath(null, stype, fdata, fdataType, organizationId);
 				if(outObj == null) {
 					logger.error("Failed to find: " + stype + " " + fdata);

@@ -6,7 +6,6 @@ import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.Query;

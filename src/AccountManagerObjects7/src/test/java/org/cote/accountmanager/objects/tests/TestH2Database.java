@@ -4,31 +4,12 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.sql.Array;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
-import javax.sql.DataSource;
-
-import org.apache.commons.dbcp.cpdsadapter.DriverAdapterCPDS;
-import org.apache.commons.dbcp.datasources.SharedPoolDataSource;
 import org.cote.accountmanager.cache.CacheUtil;
-import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
-import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.SystemException;
@@ -36,26 +17,15 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.SqlTypeUtil;
-import org.cote.accountmanager.io.db.StatementUtil;
-import org.cote.accountmanager.model.field.FieldEnumType;
-import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
-import org.cote.accountmanager.util.AttributeUtil;
-import org.cote.accountmanager.util.FieldUtil;
-import org.cote.accountmanager.util.RecordUtil;
 import org.junit.Test;
-import org.json.JSONArray;
-import org.json.JSONObject;
 
 public class TestH2Database extends BaseTest {
 

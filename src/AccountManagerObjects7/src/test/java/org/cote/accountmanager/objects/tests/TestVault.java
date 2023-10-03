@@ -5,13 +5,9 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
-import javax.crypto.Cipher;
-
-import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
@@ -25,19 +21,12 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.model.field.CryptoBean;
-import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.model.field.VaultBean;
-import org.cote.accountmanager.objects.generated.PolicyType;
-import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.security.VaultService;
-import org.cote.accountmanager.util.CryptoUtil;
-import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestVault extends BaseTest {

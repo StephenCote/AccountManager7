@@ -2,73 +2,33 @@ package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
-import java.math.BigInteger;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
 import java.security.PublicKey;
-import java.security.cert.CertificateException;
-import java.security.cert.X509Certificate;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.List;
-import java.util.UUID;
-import java.util.stream.Collectors;
 
 import javax.crypto.Cipher;
 
-import org.bouncycastle.cert.CertIOException;
-import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
+import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
+import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
+import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
 import org.bouncycastle.cert.X509ExtensionUtils;
-import org.bouncycastle.cert.X509v3CertificateBuilder;
-import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
-import org.bouncycastle.jce.provider.BouncyCastleProvider;
-import org.bouncycastle.operator.ContentSigner;
 import org.bouncycastle.operator.DigestCalculator;
 import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.bc.BcDigestCalculatorProvider;
-import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
-import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
-import org.bouncycastle.asn1.x509.AuthorityKeyIdentifier;
-import org.bouncycastle.asn1.x509.BasicConstraints;
-import org.bouncycastle.asn1.x509.Extension;
-import org.bouncycastle.asn1.x509.SubjectKeyIdentifier;
-import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
-import org.bouncycastle.asn1.oiw.OIWObjectIdentifiers;
-import org.bouncycastle.asn1.x500.X500Name;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.factory.CredentialFactory;
 import org.cote.accountmanager.factory.CryptoFactory;
-import org.cote.accountmanager.factory.IFactory;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOContext;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.file.FileIndexer;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordIO;
-import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.TokenService;
-import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.junit.Test;
-
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
 
 public class TestStartup extends BaseTest {
 

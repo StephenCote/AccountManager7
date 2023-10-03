@@ -1,7 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
 import org.cote.accountmanager.policy.PolicyUtil;
-import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
 
 public class TestAutoDBAuthZPolicy extends BaseTest{

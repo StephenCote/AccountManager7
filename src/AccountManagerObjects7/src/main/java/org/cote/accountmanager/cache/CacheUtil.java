@@ -1,6 +1,5 @@
 package org.cote.accountmanager.cache;
 
-import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -9,7 +8,6 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.schema.FieldNames;
 
 public class CacheUtil {
 	public static final Logger logger = LogManager.getLogger(CacheUtil.class);

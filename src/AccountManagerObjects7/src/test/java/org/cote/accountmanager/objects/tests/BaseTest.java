@@ -4,67 +4,36 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.List;
 import java.util.Properties;
-import java.util.UUID;
 
-import javax.sql.DataSource;
-
-import org.apache.commons.dbcp.cpdsadapter.DriverAdapterCPDS;
-import org.apache.commons.dbcp.datasources.SharedPoolDataSource;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.StoreException;
 import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.file.cache.CacheFileReader;
-import org.cote.accountmanager.io.file.cache.CacheFileSearch;
-import org.cote.accountmanager.io.file.cache.CacheFileWriter;
-import org.cote.accountmanager.cache.CacheUtil;
-import org.cote.accountmanager.io.file.FileSearch;
-import org.cote.accountmanager.io.file.FileStore;
-import org.cote.accountmanager.io.file.FileWriter;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.objects.generated.FactType;
-import org.cote.accountmanager.objects.generated.OperationType;
-import org.cote.accountmanager.objects.generated.PatternType;
-import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
-import org.cote.accountmanager.objects.generated.PolicyRequestType;
 import org.cote.accountmanager.objects.generated.PolicyType;
-import org.cote.accountmanager.objects.generated.RuleType;
-import org.cote.accountmanager.policy.CachePolicyUtil;
-import org.cote.accountmanager.policy.PolicyDefinitionUtil;
-import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
-import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.schema.type.OperationEnumType;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
-import org.cote.accountmanager.schema.type.PatternEnumType;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.MemberUtil;
-import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.After;
 import org.junit.Before;
@@ -75,7 +44,7 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
-	protected static boolean resetDataSchema = false;
+	protected static boolean resetDataSchema = true;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	
@@ -105,18 +74,19 @@ public class BaseTest {
 		IOFactory.PERMIT_PATH = new String[] {"c:\\tmp\\xpic"};
 		
 		/// USE FILE
-		//resetIO(null);
+		// resetIO(null);
 		
 		/// USE FILE ARCHIVE (7z)
 		/// There are some latent bugs in using the File Archive format, plus it's incredibly slow
 		/// resetIO("./test.7z");
 
 		/// USE POSTGRESQL
-		resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
+		resetIO("jdbc:postgresql://localhost:15431/am7db", "am7user", "password");
 
 		/// USE H2
-		//resetIO("jdbc:h2:./am7/h2", "sa", "1234");
+		// resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 	}
+	
 	@After
 	public void tearDown() throws Exception{
 		IOSystem.close();

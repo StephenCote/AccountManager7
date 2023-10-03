@@ -5,15 +5,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
-import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -24,8 +20,6 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.generated.PolicyType;
 import org.cote.accountmanager.policy.PolicyUtil;
@@ -38,15 +32,12 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
-import org.cote.accountmanager.schema.type.SystemPermissionEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.junit.Test;
-
-import io.jsonwebtoken.Claims;
 
 public class TestAccessPoint extends BaseTest {
 

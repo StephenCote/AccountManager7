@@ -3,7 +3,6 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.List;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -13,27 +12,16 @@ import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOContext;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.file.FileIndexer;
 import org.cote.accountmanager.io.file.Index;
 import org.cote.accountmanager.io.file.IndexEntry;
-import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordIO;
-import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
-import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestFileIndexerVer2 extends BaseTest {

@@ -24,7 +24,6 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class JournalProvider implements IProvider {
