@@ -5,6 +5,7 @@
 		{
 			"name": "id",
 			"type": "long",
+			"index": true,
 			"identity": true,
 			"readOnly": true,
 			"private": true,
