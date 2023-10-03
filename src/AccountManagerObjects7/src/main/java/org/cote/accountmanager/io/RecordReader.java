@@ -2,6 +2,7 @@ package org.cote.accountmanager.io;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -86,9 +87,20 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 		if(rec.inherits(ModelNames.MODEL_POPULATE)) {
 			List<String> populatedFields = rec.get(FieldNames.FIELD_POPULATED_FIELDS);
 			boolean pop = false;
+			boolean fullPop = false;
+			if(requestFields.length > 0) {
+				Set<String> pmap = Set.of(requestFields);
+				List<String> filt = populatedFields.stream().filter(o -> pmap.contains(o)).collect(Collectors.toList());
+				pop = filt.size() == requestFields.length;
+			}
+			else {
+				pop = rec.get(FieldNames.FIELD_POPULATED);
+			}
+			/*
 			if(rec.hasField(FieldNames.FIELD_POPULATED)) {
 				pop = rec.get(FieldNames.FIELD_POPULATED);
 			}
+			*/
 			if(!pop) {
 				try {
 					/// Clear any cache when using FILE IO
@@ -97,10 +109,10 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					if(IOSystem.getActiveContext().getIoType() == RecordIO.FILE) {
 						CacheUtil.clearCache(rec);
 					}
-					// logger.info(String.join(", ", requestFields));
+					// logger.info(rec.getModel() + " / " + String.join(", ", requestFields));
 					/// TODO: Still need to delineate between the requested fields and the query fields, the following call will fail at present
-					// final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields);
-					
+					final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields);
+					/*
 					final BaseRecord frec;
 					if(rec.hasField(FieldNames.FIELD_ID)) {
 						long id = rec.get(FieldNames.FIELD_ID);
@@ -123,7 +135,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					else {
 						frec = null;
 					}
-					
+					*/
 					if(frec != null) {
 						//logger.info("Populate: " + frec.getModel() + " " + frec.getFields().size());
 						frec.getFields().forEach(f -> {
@@ -154,7 +166,9 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 								
 							}
 						});
-						rec.set(FieldNames.FIELD_POPULATED, true);
+						if(requestFields.length == 0) {
+							rec.set(FieldNames.FIELD_POPULATED, true);
+						}
 					}
 					else {
 						rec.set(FieldNames.FIELD_POPULATED, true);
@@ -163,7 +177,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					// mread.read(rec);
 
 				}
-				catch(FieldException | ValueException | ModelNotFoundException | ReaderException e) {
+				catch(FieldException | ValueException | ModelNotFoundException  e) {
 					logger.error(e);
 					
 				}
