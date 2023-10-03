@@ -1,15 +1,17 @@
 {
-"name": "parent",
-"abstract": true,
-"fields": [
-	{
-		"name": "parentId",
-		"type": "long",
-		"baseProperty": "id",
-		"baseModel": "$self",
-		"required": true,
-		"index": true,
-		"default": 0,
-		"recursive": true
-	}
-]}
+	"name": "parent",
+	"abstract": true,
+	"query": ["parentId"],
+	"fields": [
+		{
+			"name": "parentId",
+			"type": "long",
+			"baseProperty": "id",
+			"baseModel": "$self",
+			"required": true,
+			"index": true,
+			"default": 0,
+			"recursive": true
+		}
+	]
+}
