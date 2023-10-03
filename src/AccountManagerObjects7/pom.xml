@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.cote.accountmanager</groupId>
@@ -13,11 +15,11 @@
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<graalvm.version>23.0.1</graalvm.version>
-	    <jacoco.version>0.8.10</jacoco.version>
-	    <sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
-	    <sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
-	    <sonar.jacoco.reportPath>${project.basedir}/../target/jacoco.exec</sonar.jacoco.reportPath>
-	    <sonar.language>java</sonar.language>
+		<jacoco.version>0.8.10</jacoco.version>
+		<sonar.java.coveragePlugin>jacoco</sonar.java.coveragePlugin>
+		<sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
+		<sonar.jacoco.reportPath>${project.basedir}/../target/jacoco.exec</sonar.jacoco.reportPath>
+		<sonar.language>java</sonar.language>
 
 	</properties>
 
@@ -64,56 +66,48 @@
 					</includes>
 					<excludes>
 
-					<!--
+						<!--
 						<exclude>**/TestFieldRevisions.java</exclude>
-					-->
+						-->
 
+						<exclude>**/TestVaultFields.java</exclude>
 						<exclude>**/TestMembership.java</exclude>
+						<exclude>**/TestData.java</exclude>
+						<exclude>**/TestJournal.java</exclude>
+						<exclude>**/TestValidationRules.java</exclude>
+						<exclude>**/TestStartup.java</exclude>
+						<exclude>**/TestToken.java</exclude>
+						<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
+						<exclude>**/TestProfile.java</exclude>
 						<exclude>**/TestAccessPoint.java</exclude>
-						<exclude>**/TestData.java</exclude>	
-					<exclude>**/TestVaultFields.java</exclude>
-					<exclude>**/TestJournal.java</exclude>
-					<exclude>**/TestValidationRules.java</exclude>
-					<exclude>**/TestStartup.java</exclude>
-					<exclude>**/TestToken.java</exclude>
-					<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
-						<exclude>**/TestProfile.java</exclude>	
-						
 						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestVault.java</exclude>
-						
+
 						<!-- Repeatable Set -->
-						
 
 						<exclude>**/TestPGDatabase.java</exclude>
 						<exclude>**/TestObjectPolicy.java</exclude>
-						
-						<exclude>**/TestObjectConstruct.java</exclude>	
+						<exclude>**/TestObjectConstruct.java</exclude>
 						<exclude>**/TestH2Database.java</exclude>
-									
 						<exclude>**/TestCryptography.java</exclude>
 						<exclude>**/TestAudit.java</exclude>
 						<exclude>**/TestQuery.java</exclude>
 						<exclude>**/TestAuthentication.java</exclude>
-						
 						<exclude>**/TestForeignKey.java</exclude>
 						<exclude>**/TestAM6Model.java</exclude>
-						<exclude>**/TestFlexValueType.java</exclude>		
-						
+						<exclude>**/TestFlexValueType.java</exclude>
 						<exclude>**/TestValueType.java</exclude>
 						<exclude>**/TestLooseField.java</exclude>
 
-
-						
 						<!-- Not intended to be regularly run -->
 						<exclude>**/TestGenerator.java</exclude>
 						<exclude>**/TestNameIdMap.java</exclude>
-						
+
 						<!-- Currently Invalid -->
 						<exclude>**/TestFileIndexerVer2.java</exclude>
 						<exclude>**/TestFileStore.java</exclude>
 						<exclude>**/TestSerializer.java</exclude>
-						
+
 
 					</excludes>
 					<systemProperties>
@@ -129,20 +123,20 @@
 				<artifactId>jacoco-maven-plugin</artifactId>
 				<version>0.8.10</version>
 				<executions>
-        <execution>
-            <id>jacoco-initialize</id>
-            <goals>
-                <goal>prepare-agent</goal>
-            </goals>
-        </execution>
-        <execution>
-            <id>jacoco-site</id>
-            <phase>package</phase>
-            <goals>
-                <goal>report</goal>
-            </goals>
-        </execution>
-    </executions>
+					<execution>
+						<id>jacoco-initialize</id>
+						<goals>
+							<goal>prepare-agent</goal>
+						</goals>
+					</execution>
+					<execution>
+						<id>jacoco-site</id>
+						<phase>package</phase>
+						<goals>
+							<goal>report</goal>
+						</goals>
+					</execution>
+				</executions>
 			</plugin>
 			<!--
 			<plugin>
@@ -217,7 +211,7 @@
 			<scope>provided</scope>
 		</dependency>
 -->
-	<!--
+		<!--
 		<dependency>
 			<groupId>org.cote.accountmanager</groupId>
 			<artifactId>objects</artifactId>
@@ -249,19 +243,19 @@
 		</dependency>
 		-->
 		<dependency>
-		    <groupId>org.bouncycastle</groupId>
-		    <artifactId>bcprov-jdk18on</artifactId>
-		    <version>1.76</version>
-		    <!--
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcprov-jdk18on</artifactId>
+			<version>1.76</version>
+			<!--
 		    <scope>provided</scope>
 		    -->
 		</dependency>
-		
+
 		<dependency>
-		    <groupId>org.bouncycastle</groupId>
-		    <artifactId>bcpkix-jdk18on</artifactId>
-		    <version>1.76</version>
-		    <!--
+			<groupId>org.bouncycastle</groupId>
+			<artifactId>bcpkix-jdk18on</artifactId>
+			<version>1.76</version>
+			<!--
 		    <scope>provided</scope>
 		    -->
 		</dependency>
@@ -282,8 +276,8 @@
 			<artifactId>log4j-web</artifactId>
 			<version>2.20.0</version>
 		</dependency>
-		
-	<!--
+
+		<!--
 		<dependency>
 			<groupId>org.apache.tika</groupId>
 			<artifactId>tika-core</artifactId>
@@ -306,22 +300,22 @@
 			<version>1.0</version>
 		</dependency>
 	-->
-	<dependency>
-	    <groupId>org.apache.commons</groupId>
-	    <artifactId>commons-lang3</artifactId>
-	    <version>3.13.0</version>
-	</dependency>
+		<dependency>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-lang3</artifactId>
+			<version>3.13.0</version>
+		</dependency>
 
 		<dependency>
 			<groupId>com.fasterxml.jackson.jaxrs</groupId>
 			<artifactId>jackson-jaxrs-json-provider</artifactId>
 			<version>2.15.2</version>
 		</dependency>
-	<dependency>
-	    <groupId>com.fasterxml.jackson.datatype</groupId>
-	    <artifactId>jackson-datatype-jsr310</artifactId>
-	    <version>2.15.2</version>
-	</dependency>
+		<dependency>
+			<groupId>com.fasterxml.jackson.datatype</groupId>
+			<artifactId>jackson-datatype-jsr310</artifactId>
+			<version>2.15.2</version>
+		</dependency>
 
 		<!--
 		<dependency>
@@ -354,60 +348,60 @@
 		</dependency>
 		-->
 		<dependency>
-		    <groupId>io.jsonwebtoken</groupId>
-		    <artifactId>jjwt-impl</artifactId>
-		    <version>0.11.5</version>
-		    <scope>runtime</scope>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-impl</artifactId>
+			<version>0.11.5</version>
+			<scope>runtime</scope>
 		</dependency>
 		<dependency>
-		    <groupId>io.jsonwebtoken</groupId>
-		    <artifactId>jjwt-jackson</artifactId>
-		    <version>0.11.5</version>
-		    <scope>runtime</scope>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-jackson</artifactId>
+			<version>0.11.5</version>
+			<scope>runtime</scope>
 		</dependency>
 
-				<dependency>
-		    <groupId>io.jsonwebtoken</groupId>
-		    <artifactId>jjwt-api</artifactId>
-		    <version>0.11.5</version>
+		<dependency>
+			<groupId>io.jsonwebtoken</groupId>
+			<artifactId>jjwt-api</artifactId>
+			<version>0.11.5</version>
 		</dependency>
 
-    <dependency>
-      <groupId>org.graalvm.js</groupId>
-      <artifactId>js</artifactId>
-      <version>${graalvm.version}</version>
-    </dependency>  
-    <dependency>
-      <groupId>org.graalvm.js</groupId>
-      <artifactId>js-scriptengine</artifactId>
-      <version>${graalvm.version}</version>
-    </dependency>
-    <dependency>
-        <groupId>org.graalvm.sdk</groupId>
-        <artifactId>graal-sdk</artifactId>
-        <version>${graalvm.version}</version>
-    </dependency>
-<dependency>
-    <groupId>com.h2database</groupId>
-    <artifactId>h2</artifactId>
-    <version>2.2.224</version>
-</dependency>
-<dependency>
-	<groupId>org.postgresql</groupId>
-	<artifactId>postgresql</artifactId>
-	<version>42.6.0</version>
-</dependency>
+		<dependency>
+			<groupId>org.graalvm.js</groupId>
+			<artifactId>js</artifactId>
+			<version>${graalvm.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.graalvm.js</groupId>
+			<artifactId>js-scriptengine</artifactId>
+			<version>${graalvm.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>org.graalvm.sdk</groupId>
+			<artifactId>graal-sdk</artifactId>
+			<version>${graalvm.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>com.h2database</groupId>
+			<artifactId>h2</artifactId>
+			<version>2.2.224</version>
+		</dependency>
+		<dependency>
+			<groupId>org.postgresql</groupId>
+			<artifactId>postgresql</artifactId>
+			<version>42.6.0</version>
+		</dependency>
 
-<dependency>
-    <groupId>commons-dbcp</groupId>
-    <artifactId>commons-dbcp</artifactId>
-    <version>1.4</version>
-</dependency>
-<dependency>
-    <groupId>org.json</groupId>
-    <artifactId>json</artifactId>
-    <version>20230618</version>
-</dependency>
+		<dependency>
+			<groupId>commons-dbcp</groupId>
+			<artifactId>commons-dbcp</artifactId>
+			<version>1.4</version>
+		</dependency>
+		<dependency>
+			<groupId>org.json</groupId>
+			<artifactId>json</artifactId>
+			<version>20230618</version>
+		</dependency>
 
 		<!--
 <dependency>
