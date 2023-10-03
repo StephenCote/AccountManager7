@@ -63,6 +63,7 @@ public class DBSearch extends SearchBase {
 			if(sql != null) {
 				logger.error(JSONUtil.exportObject(sql));
 			}
+			e.printStackTrace();
 		}
 		
 		return count;
@@ -85,7 +86,7 @@ public class DBSearch extends SearchBase {
 			String type = query.get(FieldNames.FIELD_TYPE);
 			if(!ModelNames.MODEL_MODEL_SCHEMA.equals(type)) {
 				logger.warn("Searching with only an Organization filter for " + type);
-				logger.warn(query.toFullString());
+				//logger.warn(query.toFullString());
 				/*
 				StackTraceElement[] st = new Throwable().getStackTrace();
 				for(int i = 0; i < st.length; i++) {
@@ -104,7 +105,13 @@ public class DBSearch extends SearchBase {
 			
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
-			//logger.info(statement);
+			
+			/*
+			if(ModelNames.MODEL_GROUP.equals(query.get(FieldNames.FIELD_TYPE))) {
+				logger.info(statement);
+			}
+			*/
+			
 			ResultSet rset = statement.executeQuery();
 			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
 			while(rset.next()) {
@@ -133,7 +140,13 @@ public class DBSearch extends SearchBase {
 		}
 		
 		final QueryResult res = new QueryResult(query, recs.toArray(new BaseRecord[0]));
-		res.setTotalCount(count(query));
+		
+		/// Only compute the total count if a pagination limit was provided
+		int recordCount = query.get(FieldNames.FIELD_RECORD_COUNT);
+		if(recordCount > 0) {
+			res.setTotalCount(count(query));
+		}
+		
 		return res;
 	}
 	
