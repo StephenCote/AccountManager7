@@ -4,7 +4,6 @@ import java.lang.reflect.InvocationTargetException;
 import java.security.KeyStore;
 import java.security.cert.CertificateEncodingException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -23,7 +22,6 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.model.field.KeyStoreBean;
@@ -69,7 +67,7 @@ public class Factory {
 		if(path.startsWith("~/")) {
 			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
 			
-			String[] fields = RecordUtil.getPossibleFields(homeDir.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID});
+			String[] fields = RecordUtil.getPossibleFields(homeDir.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_PARENT_ID});
 			context.getRecordUtil().populate(homeDir, fields);
 			
 			String homePath = homeDir.get(FieldNames.FIELD_PATH);
