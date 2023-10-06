@@ -217,7 +217,7 @@ public class ArticleUtil {
 			/// So if a user isn't in this role, they obviously don't want to share anything this way, so stop checking
 			///
 			role = IOSystem.getActiveContext().getPathUtil().findPath(org.getAdminUser(), ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_ARTICLE_AUTHORS, RoleEnumType.USER.toString(), organizationId);
-			if(!IOSystem.getActiveContext().getMemberUtil().isMember(targUser, role, true)) {
+			if(!IOSystem.getActiveContext().getMemberUtil().isMember(targUser, role, null, true)) {
 				AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "User " + subPath[0] + " is not an authorized author in : '" + sBaseDir + "Author' role");
 				response.sendError(404);
 				return;
