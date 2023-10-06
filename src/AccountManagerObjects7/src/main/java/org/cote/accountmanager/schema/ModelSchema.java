@@ -42,12 +42,26 @@ public class ModelSchema {
 	private String icon = null;
 	private List<String> categories = new ArrayList<>();
 	
+	/// Dedicated participation is used to indicate that any participations for this model are to be made in a dedicated table
+	/// Otherwise, participations will be stored in the common participation table
+	/// This is to allow for models with large participation datasets use their own tablespace
+	/// This value only affects database IO
+	private boolean dedicatedParticipation = false;
+	
 	private String version = null;
 	
 	public ModelSchema() {
 		
 	}
 	
+	public boolean isDedicatedParticipation() {
+		return dedicatedParticipation;
+	}
+
+	public void setDedicatedParticipation(boolean dedicatedParticipation) {
+		this.dedicatedParticipation = dedicatedParticipation;
+	}
+
 	public String getVersion() {
 		if(version == null) {
 			return "0.1";

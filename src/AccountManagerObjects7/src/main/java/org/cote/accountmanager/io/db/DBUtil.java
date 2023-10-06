@@ -25,6 +25,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
@@ -174,28 +175,50 @@ public class DBUtil {
 	}
 	
 	private Map<String, String> sequenceNames = new ConcurrentHashMap<>();
+	/*
 	private String getSequenceName(String modelName) {
-		if(!sequenceNames.containsKey(modelName)) {
+		return getSequenceName(null, modelName);
+	}
+	*/
+	private String getSequenceName(ModelSchema baseSchema, String modelName) {
+		String keyName = modelName;
+		if(modelName.equals(ModelNames.MODEL_PARTICIPATION) && baseSchema != null && baseSchema.isDedicatedParticipation()) {
+			keyName = baseSchema.getName() + "_" + modelName;
+		}
+		if(!sequenceNames.containsKey(keyName)) {
 			ModelSchema schema = RecordFactory.getSchema(modelName);
 			String ver = schema.getVersion().replace(".", "_");
 			List<FieldSchema> fschemas = schema.getFields().stream().filter(o -> o.isSequence()).collect(Collectors.toList());
 			if(fschemas.size() > 0) {
-				String sequenceName = dataPrefix + "_" + modelName + "_" + ver + "_" + fschemas.get(0).getName() + "_seq";
-				sequenceNames.put(modelName, sequenceName);
+				String sequenceName = dataPrefix + "_" + keyName + "_" + ver + "_" + fschemas.get(0).getName() + "_seq";
+				sequenceNames.put(keyName, sequenceName);
 			}
 		}
-		return sequenceNames.get(modelName);
+		return sequenceNames.get(keyName);
+	}
+	protected long getNextIdForRecord(BaseRecord record) throws DatabaseException {
+		ModelSchema schema = null;
+		if(record.getModel().equals(ModelNames.MODEL_PARTICIPATION) && record.hasField(FieldNames.FIELD_PARTICIPATION_MODEL)) {
+			schema = RecordFactory.getSchema(record.get(FieldNames.FIELD_PARTICIPATION_MODEL));
+		}
+		return getNextId(schema, record.getModel());
 	}
 	protected long getNextId(String modelName) throws DatabaseException {
-		List<Long> ids = getNextIds(modelName, 1);
+		return getNextId(null, modelName);
+	}
+	protected long getNextId(ModelSchema baseSchema, String modelName) throws DatabaseException {
+		List<Long> ids = getNextIds(baseSchema, modelName, 1);
 		if(ids.size() > 0) {
 			return ids.get(0);
 		}
 		return 0L;
 	}
 	protected List<Long> getNextIds(String modelName, int count) throws DatabaseException {
+		return getNextIds(null, modelName, count);
+	}
+	protected List<Long> getNextIds(ModelSchema baseSchema, String modelName, int count) throws DatabaseException {
 		List<Long> ids = new ArrayList<>();
-		String sequenceName = getSequenceName(modelName);
+		String sequenceName = getSequenceName(baseSchema, modelName);
 		
 		if(sequenceName == null || sequenceName.length() == 0) {
 			throw new DatabaseException("Sequence name for " + modelName + " is null");
@@ -224,11 +247,34 @@ public class DBUtil {
 	}
 	
 	public String getTableName(String modelName) {
+		return getTableName(null, modelName);
+	}
+
+	public String getTableNameByRecord(BaseRecord record, String modelName) {
+		ModelSchema schema = null;
+		if(record != null && record.getModel().equals(ModelNames.MODEL_PARTICIPATION) && record.hasField(FieldNames.FIELD_PARTICIPATION_MODEL)) {
+			String ppType = record.get(FieldNames.FIELD_PARTICIPATION_MODEL);
+			if(ppType != null) {
+				schema = RecordFactory.getSchema(ppType);
+			}
+		}
+		return getTableName(schema, modelName);
+	}
+	
+	public String getTableName(ModelSchema schema, String modelName) {
 		ModelSchema ms = RecordFactory.getSchema(modelName);
 		String ver = ms.getVersion().replace(".", "_");
-		return dataPrefix + "_" + modelName + "_" + ver;
+		String useName = modelName;
+		if(ModelNames.MODEL_PARTICIPATION.equals(modelName) && schema != null && schema.isDedicatedParticipation()) {
+			useName = schema.getName() + "_" + modelName;
+		}
+		return dataPrefix + "_" + useName + "_" + ver;
 	}
+	
 	public String generateNewSchemaOnly(ModelSchema schema) {
+		return generateNewSchemaOnly(null, schema);
+	}
+	public String generateNewSchemaOnly(ModelSchema baseSchema, ModelSchema schema) {
 		if(schema.isEphemeral()) {
 			logger.warn("Schema " + schema.getName() + " is ephemeral");
 			return null;
@@ -237,13 +283,16 @@ public class DBUtil {
 			logger.warn("Schema " + schema.getName() + " is constrained from using a database schema");
 			return null;
 		}
-		if(haveTable(schema.getName())) {
+		if(haveTable(baseSchema, schema.getName())) {
 			logger.warn("Schema " + schema.getName() + " already exists");
 			return null;
 		}
-		return generateSchema(schema);
+		return generateSchema(baseSchema, schema);
 	}
 	public String generateSchema(ModelSchema schema) {
+		return generateSchema(null, schema);
+	}
+	public String generateSchema(ModelSchema baseSchema, ModelSchema schema) {
 		StringBuilder buff = new StringBuilder();
 		FieldSchema primary = null;
 		List<FieldSchema> idents = new ArrayList<>();
@@ -254,9 +303,16 @@ public class DBUtil {
 			return null;
 		}
 		
+		
+		/*
 		String ver = schema.getVersion().replace(".", "_");
 		
-		String tableName = getTableName(schema.getName());
+		String seqPref = "";
+		if(schema.getName().equals(ModelNames.MODEL_PARTICIPATION) && baseSchema != null && baseSchema.isDedicatedParticipation()) {
+			seqPref = baseSchema.getName() + "_";
+		}
+		*/
+		String tableName = getTableName(baseSchema, schema.getName());
 		buff.append("DROP TABLE IF EXISTS " + tableName + " CASCADE;\n");
 
 		for(FieldSchema f : schema.getFields()) {
@@ -264,7 +320,8 @@ public class DBUtil {
 				continue;
 			}
 			if(f.isSequence()) {
-				String sequenceName = dataPrefix + "_" + schema.getName() + "_" + ver + "_" + f.getName() + "_seq";
+				String sequenceName = getSequenceName(baseSchema, schema.getName());
+				// String sequenceName = dataPrefix + "_" + seqPref + schema.getName() + "_" + ver + "_" + f.getName() + "_seq";
 				buff.append("DROP SEQUENCE IF EXISTS " + sequenceName + ";\n");
 				buff.append("CREATE SEQUENCE " + sequenceName + ";\n");
 			}
@@ -289,21 +346,21 @@ public class DBUtil {
 		List<String> schemaLines = new ArrayList<>();
 		
 		if(primary != null) {
-			String line = generateSchemaLine(schema, primary);
+			String line = generateSchemaLine(baseSchema, schema, primary);
 			if(line != null) {
 				schemaLines.add(line);
 			}
 				
 		}
 		for(FieldSchema f : idents) {
-			String line = generateSchemaLine(schema, f);
+			String line = generateSchemaLine(baseSchema, schema, f);
 			if(line != null) {
 				schemaLines.add(line);
 			}
 
 		}
 		for(FieldSchema f : flds) {
-			String line = generateSchemaLine(schema, f);
+			String line = generateSchemaLine(baseSchema, schema, f);
 			if(line != null) {
 				schemaLines.add(line);
 			}
@@ -316,15 +373,23 @@ public class DBUtil {
 		buff.append(schemaBlock + "\n");
 		buff.append(");\n");
 
-		buff.append(generateIndices(schema));
+		buff.append(generateIndices(baseSchema, schema));
 		
+		if(schema.isDedicatedParticipation()) {
+			buff.append(generateSchema(schema, RecordFactory.getSchema(ModelNames.MODEL_PARTICIPATION)));
+		}
 		
 		// logger.info(buff.toString());
 		
 		return buff.toString();
 	}
+	/*
 	private String generateIndex(ModelSchema schema, String cols, boolean unique) {
-		String tableName = getTableName(schema.getName());
+		return generateIndex(null, schema, cols, unique);
+	}
+	*/
+	private String generateIndex(ModelSchema baseSchema, ModelSchema schema, String cols, boolean unique) {
+		String tableName = getTableName(baseSchema, schema.getName());
 		
 		List<String> coll = Arrays.asList(cols.replaceAll(" ",  "").split(","));
 		List<String> col2 = new ArrayList<>();
@@ -366,11 +431,19 @@ public class DBUtil {
 		String cname = col2.stream().collect(Collectors.joining("_"));
 		String cols2 = col2.stream().collect(Collectors.joining(","));
 		String ver = schema.getVersion().replace(".", "_");
-		String idxName = dataPrefix + "_" + schema.getName() + "_" + ver + "_" + cname.replaceAll("\"", "") + "_idx on " + tableName + "(" + cols2 + ")";
+		String schemaPref = "";
+		if(baseSchema != null && baseSchema.isDedicatedParticipation() && schema.getName().equals(ModelNames.MODEL_PARTICIPATION)) {
+			schemaPref = baseSchema.getName() + "_";
+		}
+		String idxName = dataPrefix + "_" + schemaPref + schema.getName() + "_" + ver + "_" + cname.replaceAll("\"", "") + "_idx on " + tableName + "(" + cols2 + ")";
 		return "CREATE" + (unique ? " UNIQUE" : "") + " INDEX " + idxName + ";";
 	}
-	
+	/*
 	private String generateIndices(ModelSchema schema) {
+		return generateIndices(null, schema);
+	}
+	*/
+	private String generateIndices(ModelSchema baseSchema, ModelSchema schema) {
 		
 		StringBuilder buff = new StringBuilder();
 		Set<String> idxSet = new HashSet<>();
@@ -382,7 +455,7 @@ public class DBUtil {
 				logger.warn(schema.getName() + " indexible field duplication: (" + f.getName() + ")");
 				continue;
 			}
-			String idx = generateIndex(schema, f.getName(), f.isIdentity());
+			String idx = generateIndex(baseSchema, schema, f.getName(), f.isIdentity());
 			if(idx != null) {
 				idxSet.add(f.getName());
 				buff.append(idx + "\n");
@@ -395,7 +468,7 @@ public class DBUtil {
 				logger.error(schema.getName() + " Index collision: (" + ic + ")");
 				continue;
 			}
-			String idx = generateIndex(schema, ic, true);
+			String idx = generateIndex(baseSchema, schema, ic, true);
 			if(idx != null) {
 				idxSet.add(ic);
 				buff.append(idx + "\n");
@@ -409,7 +482,7 @@ public class DBUtil {
 					logger.error("Index collision: (" + ic + ")");
 					continue;
 				}
-				String idx = generateIndex(schema, ic, false);
+				String idx = generateIndex(baseSchema, schema, ic, false);
 				if(idx != null) {
 					idxSet.add(ic);
 					buff.append(idx + "\n");
@@ -540,7 +613,7 @@ public class DBUtil {
 		}
 		return outName;
 	}
-	protected String generateSchemaLine(ModelSchema schema, FieldSchema fschema) {
+	protected String generateSchemaLine(ModelSchema baseSchema, ModelSchema schema, FieldSchema fschema) {
 		StringBuilder buff = new StringBuilder();
 		boolean allowNull = false;
 		if(fschema.getType() == null) {
@@ -562,7 +635,7 @@ public class DBUtil {
 		String colName = getColumnName(fschema.getName());
 		if(fschema.isSequence()) {
 			/// TODO - fix this typo
-			defStr = "nextval('" + getSequenceName(schema.getName()) + "')";
+			defStr = "nextval('" + getSequenceName(baseSchema, schema.getName()) + "')";
 		}
 		else if(fet == FieldEnumType.INT || fet == FieldEnumType.DOUBLE || fet == FieldEnumType.LONG) {
 			defStr = "0";
@@ -579,9 +652,12 @@ public class DBUtil {
 		
 	}
 	
-	public boolean haveTable(String table) {
+	public boolean haveTable(String modelName) {
+		return haveTable(null, modelName);
+	}
+	public boolean haveTable(ModelSchema schema, String modelName) {
     	int count = 0;
-    	String useName = getTableName(table);
+    	String useName = getTableName(schema, modelName);
     	
     	if(this.connectionType == ConnectionEnumType.H2) {
     		useName = useName.toUpperCase();

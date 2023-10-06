@@ -107,7 +107,7 @@ public class MemberUtil implements IMember {
 			if(id > 0L) {
 				q.field(FieldNames.FIELD_PARTICIPANT_ID, id);
 			}
-
+			
 			QueryResult qr = search.find(q);
 			list.addAll(Arrays.asList(qr.getResults()));
 		}

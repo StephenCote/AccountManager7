@@ -28,6 +28,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
@@ -90,11 +91,12 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getInsertTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
-		buff.append("INSERT INTO " + IOSystem.getActiveContext().getDbUtil().getTableName(record.getModel()) + " (");
+		ModelSchema ms = RecordFactory.getSchema(record.getModel());
+		buff.append("INSERT INTO " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getModel()) + " (");
 		List<String> names = new ArrayList<>();
 		List<String> columns = new ArrayList<>();
 		List<String> tokens = new ArrayList<>();
-		ModelSchema ms = RecordFactory.getSchema(record.getModel());
+		
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		for(FieldType f: record.getFields()) {
 			FieldSchema fs = ms.getFieldSchema(f.getName());
@@ -125,7 +127,7 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getDeleteTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
-		buff.append("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(record.getModel()));
+		buff.append("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getModel()));
 		List<String> names = new ArrayList<>();
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
@@ -155,7 +157,7 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getUpdateTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
-		buff.append("UPDATE " + IOSystem.getActiveContext().getDbUtil().getTableName(record.getModel()) + " SET ");
+		buff.append("UPDATE " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getModel()) + " SET ");
 		List<String> names = new ArrayList<>();
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
@@ -228,11 +230,12 @@ public class StatementUtil {
 		if(schema.getBaseModel() == null) {
 			throw new FieldException("Field schema does not define a base model");
 		}
-		
+		String model = query.get(FieldNames.FIELD_TYPE);
+		ModelSchema mschema = RecordFactory.getSchema(model);
 		ModelSchema msschema = RecordFactory.getSchema(schema.getBaseModel());
 		List<String> fields = new ArrayList<>();
 		List<String> cols = new ArrayList<>();
-		String model = query.get(FieldNames.FIELD_TYPE);
+		
 		String subModel = schema.getBaseModel();
 		String participantModel = subModel;
 		if(schema.getParticipantModel() != null) {
@@ -291,10 +294,10 @@ public class StatementUtil {
 			
 		if(util.getConnectionType() == ConnectionEnumType.H2) {
 			if(schema.isReferenced()) {
-				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 			else if(schema.isForeign()) {
-				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 		}
 		else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
@@ -308,10 +311,10 @@ public class StatementUtil {
 				ajoin.append("'" + f + "', " + s);
 			}
 			if(schema.isReferenced()) {
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 			else if(schema.isForeign()) {
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(subModel) + " " + salias + " INNER JOIN " + util.getTableName(ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
 			}
 		}
 
@@ -388,7 +391,7 @@ public class StatementUtil {
 		
 		String joinClause = getJoinStatement(meta, query);
 		
-		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias + joinClause;
+		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(schema, model) + " " + alias + joinClause;
 		buff.append(getQueryString(sql, query, meta));
 		meta.setSql(buff.toString());
 		meta.setColumns(useFields);
@@ -404,6 +407,13 @@ public class StatementUtil {
 		ModelSchema schema = RecordFactory.getSchema(model);
 		if(schema == null) {
 			throw new ModelException("Model '" + model + "' not found");
+		}
+		ModelSchema mschema = null;
+		if(schema.getName().equals(ModelNames.MODEL_PARTICIPATION)) {
+			String pmodel = QueryUtil.findFieldValue(query, FieldNames.FIELD_PARTICIPATION_MODEL, null);
+			if(pmodel != null) {
+				mschema = RecordFactory.getSchema(pmodel);
+			}
 		}
 
 		List<String> oRequestFields = query.get(FieldNames.FIELD_REQUEST);
@@ -454,29 +464,10 @@ public class StatementUtil {
 			logger.error(query.toString());
 			throw new ModelException("No columns were specified in the query");
 		}
-		// query.setRequest(useFields.toArray(new String[0]));
 
-
-		/*
-		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
-		StringBuffer joinBuff = new StringBuffer();
-		for(BaseRecord j : joins) {
-			String jmodel = j.get(FieldNames.FIELD_TYPE);
-			String jalias = getAlias(j, jmodel);
-			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jmodel) + " " + jalias + " ON " + getQueryClause(j, meta));
-		}
-		*/
 		String joinClause = getJoinStatement(meta, query);
-		
-		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " " + alias + joinClause;
-
+		String sql = "SELECT " + cols.stream().collect(Collectors.joining(", ")) + " FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(mschema, model) + " " + alias + joinClause;
 		String queryClause = getQueryString(sql, query, meta);
-		/*
-		if(queryClause == null || queryClause.length() == 0) {
-			logger.error(query.toFullString());
-			throw new FieldException("Query clause is null or empty");
-		}
-		*/
 		
 		buff.append(queryClause);
 		meta.setSql(buff.toString());
@@ -498,7 +489,7 @@ public class StatementUtil {
 				throw new FieldException("Invalid join column " + joinCol + " for " + jmodel);
 			}
 			String joinKey = jalias + "." + joinCol + " = " + alias + "." + FieldNames.FIELD_ID;
-			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jmodel) + " " + jalias + " ON " + joinKey);
+			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jschema, jmodel) + " " + jalias + " ON " + joinKey);
 			if(clause.length() > 0) {
 				joinBuff.append(" AND " + clause);
 			}

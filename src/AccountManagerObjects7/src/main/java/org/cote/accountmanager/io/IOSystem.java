@@ -101,8 +101,9 @@ public class IOSystem {
 				logger.info("Scanning model schema");
 				for(String m : ModelNames.MODELS) {
 					ModelSchema schema = RecordFactory.getSchema(m);
+					
 					if(RecordUtil.isIdentityModel(schema)) {
-						if(!dbUtil.isConstrained(schema) && (!dbUtil.haveTable(m) || properties.isReset())) {
+						if(!dbUtil.isConstrained(schema) && (!dbUtil.haveTable(schema, m) || properties.isReset())) {
 							String dbSchema = (properties.isReset() ? dbUtil.generateSchema(schema) : dbUtil.generateNewSchemaOnly(schema));
 							if(dbSchema != null) {
 								dbUtil.execute(dbSchema);

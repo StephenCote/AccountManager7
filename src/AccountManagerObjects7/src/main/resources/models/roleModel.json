@@ -4,6 +4,7 @@
 "constraints": ["parentId, name, type, organizationId"],
 "icon": "badge",
 "label": "Role",
+"dedicatedParticipation": true,
 "fields": [
 	{
 	"name": "type",

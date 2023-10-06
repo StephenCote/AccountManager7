@@ -23,11 +23,20 @@ public class FieldSchema {
 	private boolean required = false;
 	private boolean readOnly = false;
 	private boolean identity = false;
+	
+	/// Virtual is used to indicate the field contains a non-persistent generated value
+	/// For example, path is a virtual field in that it is computed when the field is requested
+	/// TODO: This field may be renamed to 'computed' and include computation qualifiers, such as dependent fields
+	/// At the moment, the designated provider is responsible for checking and/or populating required fields
+	///
 	private boolean virtual = false;
 	private boolean foreign = false;
 	private String participantModel = null;
 	private String foreignType = null;
 	private String foreignField = null;
+	
+	/// Ephemeral is used to indicate the field is not persisted and is not guaranteed to exist between operations
+	/// For example, these fields will not be persisted, journaled, or hashed
 	private boolean ephemeral = false;
 	private boolean inherited = false;
 	private String provider = null;
@@ -42,7 +51,11 @@ public class FieldSchema {
 	private String valueType = null;
 	private boolean referenced = false;
 	private boolean followReference = true;
+	
+	/// Restricted is used to avoid inclusion in operations such as field hashing
+	///
 	private boolean restricted = false;
+	
 	private Object defaultValue = null;
 	private ModelAccess access = null;
 	private String description = null;
