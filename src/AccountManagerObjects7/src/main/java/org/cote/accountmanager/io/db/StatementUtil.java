@@ -488,8 +488,15 @@ public class StatementUtil {
 			if(jschema.getFieldSchema(joinCol) == null) {
 				throw new FieldException("Invalid join column " + joinCol + " for " + jmodel);
 			}
+			ModelSchema mschema = null;
+			if(jmodel.equals(ModelNames.MODEL_PARTICIPATION)) {
+				String ptype = QueryUtil.findFieldValue(j, FieldNames.FIELD_PARTICIPATION_MODEL, null);
+				if(ptype != null) {
+					mschema = RecordFactory.getSchema(ptype);
+				}
+			}
 			String joinKey = jalias + "." + joinCol + " = " + alias + "." + FieldNames.FIELD_ID;
-			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(jschema, jmodel) + " " + jalias + " ON " + joinKey);
+			joinBuff.append(" INNER JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(mschema, jmodel) + " " + jalias + " ON " + joinKey);
 			if(clause.length() > 0) {
 				joinBuff.append(" AND " + clause);
 			}

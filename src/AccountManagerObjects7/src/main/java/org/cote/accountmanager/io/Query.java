@@ -172,12 +172,6 @@ public class Query extends LooseRecord{
 	}
 	
 	public void filterParticipation(BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
-		/*
-		FieldSchema fs = null;
-		if(fieldName != null && object != null) {
-			fs = RecordFactory.getSchema(object.getModel()).getFieldSchema(fieldName);
-		}
-		*/
 		QueryUtil.filterParticipation(this, object, fieldName, actorType, effect);
 	}
 	

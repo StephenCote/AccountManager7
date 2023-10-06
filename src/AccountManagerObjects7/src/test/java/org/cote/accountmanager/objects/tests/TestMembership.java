@@ -64,7 +64,7 @@ public class TestMembership extends BaseTest {
 		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q);
 		assertNotNull("Result was null", qr);
 		logger.info("Test direct list of query - result count: " + qr.getResults().length);
-		assertTrue("Expected one member", qr.getResults().length == 1);
+		assertTrue("Expected one member, received " + qr.getResults().length, qr.getResults().length == 1);
 		
 		logger.info("Test listMembers interface, which constructs the query");
 		int count = ioContext.getAccessPoint().countMembers(testUser1, crole1, ModelNames.MODEL_USER, null);
