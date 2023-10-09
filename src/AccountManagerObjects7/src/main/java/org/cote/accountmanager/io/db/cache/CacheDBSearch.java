@@ -22,7 +22,11 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	/// For some reason, the mapped values become transposed somehow
 
 	private Map<String, QueryResult> cache = new ConcurrentHashMap<>();
+
+	public static boolean ENABLE_STATISTICS = false;
+	public static Map<String, Integer> CACHE_STATISTICS = new ConcurrentHashMap<>();
 	// Collections.synchronizedMap(new HashMap<>());
+
 	public CacheDBSearch(DBReader reader) {
 		super(reader);
 		CacheUtil.addProvider(this);
@@ -54,6 +58,14 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			String hash = query.hash();
 			if(cache.containsKey(hash)) {
 				final QueryResult qr = cache.get(hash);
+				if(ENABLE_STATISTICS) {
+					if(!CACHE_STATISTICS.containsKey(query.key())) {
+						CACHE_STATISTICS.put(query.key(), 1);
+					}
+					else {
+						CACHE_STATISTICS.put(query.key(), CACHE_STATISTICS.get(query.key()) + 1);
+					}
+				}
 				// logger.info("Cache hit: " + query.key());
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = qr.get(FieldNames.FIELD_TYPE);
@@ -68,6 +80,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			// logger.info("Query: " + query.key());
 
 			final QueryResult res = super.find(query);
+			if(ENABLE_STATISTICS) {
+				CACHE_STATISTICS.put(query.key(), 1);
+			}
 			if(res != null && res.getCount() > 0) {
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = res.get(FieldNames.FIELD_TYPE);

@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -20,6 +21,7 @@ import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.SearchBase;
+import org.cote.accountmanager.io.db.cache.CacheDBSearch;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -28,6 +30,16 @@ import org.cote.accountmanager.util.JSONUtil;
 
 public class DBSearch extends SearchBase {
 	public static final Logger logger = LogManager.getLogger(DBSearch.class);
+	public static boolean ENABLE_STATISTICS = false;
+	public static List<String> STATISTICS = new CopyOnWriteArrayList<>();
+
+	public static void enableStatistics(boolean enabled) {
+		ENABLE_STATISTICS = enabled;
+		CacheDBSearch.ENABLE_STATISTICS = enabled;
+		STATISTICS.clear();
+		CacheDBSearch.STATISTICS.clear();
+	}
+
 	private final DBReader reader;
 
 	public DBSearch(DBReader reader) {
@@ -47,6 +59,9 @@ public class DBSearch extends SearchBase {
 		
 		try (Connection con = reader.getDataSource().getConnection()){
 			query.set(FieldNames.FIELD_SORT_FIELD, null);
+			if(ENABLE_STATISTICS) {
+				STATISTICS.add(query.key());
+			}
 			
 			sql = StatementUtil.getCountTemplate(query);
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
@@ -65,6 +80,7 @@ public class DBSearch extends SearchBase {
 			}
 			e.printStackTrace();
 		}
+		
 		
 		return count;
 	}
@@ -86,18 +102,10 @@ public class DBSearch extends SearchBase {
 			String type = query.get(FieldNames.FIELD_TYPE);
 			if(!ModelNames.MODEL_MODEL_SCHEMA.equals(type)) {
 				logger.warn("Searching with only an Organization filter for " + type);
-				//logger.warn(query.toFullString());
-				/*
-				StackTraceElement[] st = new Throwable().getStackTrace();
-				for(int i = 0; i < st.length; i++) {
-					logger.error(st[i].toString());
-				}
-				*/
 			}
 		}
-		if(!query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID)) {
-			// logger.warn("**** Organization not defined");
-			// logger.warn(query.toFullString());
+		if(ENABLE_STATISTICS) {
+			STATISTICS.add(query.key());
 		}
 		
 		try (Connection con = reader.getDataSource().getConnection()){
@@ -105,12 +113,6 @@ public class DBSearch extends SearchBase {
 			
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
-			
-			/*
-			if(ModelNames.MODEL_GROUP.equals(query.get(FieldNames.FIELD_TYPE))) {
-				logger.info(statement);
-			}
-			*/
 			
 			ResultSet rset = statement.executeQuery();
 			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
