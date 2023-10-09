@@ -189,7 +189,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 
 		}
 		else {
-			logger.warn("Not a populatable record: " + rec.getModel());
+			logger.debug("Not a populatable record: " + rec.getModel());
 		}
 	}
 	

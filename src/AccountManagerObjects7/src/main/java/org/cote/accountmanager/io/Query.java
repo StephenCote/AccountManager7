@@ -167,6 +167,9 @@ public class Query extends LooseRecord{
 	}
 	
 	public boolean hasQueryField(String name) {
+		if(name == null) {
+			return false;
+		}
 		List<?> vals = QueryUtil.findFieldValues(this, name, null);
 		return vals.size() > 0;
 	}

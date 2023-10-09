@@ -109,12 +109,9 @@ import org.cote.accountmanager.util.RecordUtil;
 					if(flds.length == 0) {
 						flds = new String[] {FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID};
 					}
-					/*
-					if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
-						logger.info(String.join(", ", flds));
-					}
-					*/
-					Query q = QueryUtil.createQuery(mtype, FieldNames.FIELD_URN, murn);
+
+					boolean bId = FactUtil.idPattern.matcher(murn).matches();
+					Query q = QueryUtil.createQuery(mtype, (bId ? FieldNames.FIELD_ID : FieldNames.FIELD_URN), (bId ? Long.parseLong(murn) : murn));
 					q.setRequest(flds);
 					q.set(FieldNames.FIELD_INSPECT, true);
 					BaseRecord[] recs = search.find(q).getResults();

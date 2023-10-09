@@ -264,7 +264,9 @@ public class QueryUtil {
 		// logger.info("Query identity: " + modelName + "." + fieldName + " :: " + val);
 		try {
 			query = new Query(IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_QUERY, null, null, ParameterUtil.newParameterList(FieldNames.FIELD_TYPE, modelName)));
-			query.field(fieldName, ComparatorEnumType.EQUALS, val);
+			if(fieldName != null) {
+				query.field(fieldName, ComparatorEnumType.EQUALS, val);
+			}
 			if(organizationId > 0L) {
 				query.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 			}

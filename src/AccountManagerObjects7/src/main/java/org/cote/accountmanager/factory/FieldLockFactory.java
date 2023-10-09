@@ -2,7 +2,6 @@ package org.cote.accountmanager.factory;
 
 import java.util.Date;
 import java.util.GregorianCalendar;
-import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;

@@ -104,8 +104,9 @@ public class TestQuery extends BaseTest {
 		try {
 			query = ioContext.getFactory().newInstance(ModelNames.MODEL_QUERY, null, null, null, ioContext.getFactory().template(ModelNames.MODEL_DATA, tmpStr), ioContext.getFactory().template(ModelNames.MODEL_DATA, tmpStr2));
 		}
-		catch(FactoryException e) {
+		catch(NullPointerException | FactoryException e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 		assertNotNull("Query is null", query);
 		// logger.info(JSONUtil.exportObject(query, RecordSerializerConfig.getUnfilteredModule()));

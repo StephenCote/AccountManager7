@@ -46,7 +46,7 @@ public class AuditUtil {
 				rname += resource.get(FieldNames.FIELD_URN);
 			}
 			else if(resource.hasField(FieldNames.FIELD_ID)) {
-				rname += resource.getModel() + resource.get(FieldNames.FIELD_ID);
+				rname += resource.getModel() + " #" + resource.get(FieldNames.FIELD_ID);
 			}
 		}
 		if(rname == null) {

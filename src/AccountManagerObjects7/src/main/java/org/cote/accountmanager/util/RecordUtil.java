@@ -590,4 +590,5 @@ public class RecordUtil {
 	public void flush() {
 		writer.flush();
 	}
+	
 }

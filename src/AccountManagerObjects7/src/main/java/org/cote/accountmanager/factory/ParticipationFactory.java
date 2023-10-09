@@ -59,10 +59,6 @@ public class ParticipationFactory {
 		///
 		else if(ppid.equals(paid) && !partc.getModel().equals(ModelNames.MODEL_USER)) {
 			logger.error("Participation and partipant identifiers should not match: " + partc.getModel() + " " + ppid);
-			StackTraceElement[] st = new Throwable().getStackTrace();
-			for(int i = 0; i < st.length; i++) {
-				logger.error(st[i].toString());
-			}
 			return null;
 		}
 		

@@ -301,11 +301,6 @@ public abstract class BaseRecord {
 
 		FieldType f = getField(fieldName);
 		if(f != null) {
-			/*
-			if(this.model.equals(ModelNames.MODEL_CIPHER_KEY) && fieldName.equals(FieldNames.FIELD_ENCRYPT)) {
-				logger.warn("*** " + fieldName + " == " + val);
-			}
-			*/
 			f.setValue(this, val);
 		}
 		else {
@@ -335,32 +330,6 @@ public abstract class BaseRecord {
 	   }
    }
    public <T> void setFlex(String fieldName, T value) {
-	   /*
-	   if(value instanceof Enum) {
-		   setFlex(fieldName, FieldEnumType.ENUM, value);
-	   }
-	   else if(value instanceof String) {
-		   setFlex(fieldName, FieldEnumType.STRING, value);
-	   }
-	   else if(value instanceof Integer) {
-		   setFlex(fieldName, FieldEnumType.INT, value);
-	   }
-	   else if(value instanceof Long) {
-		   setFlex(fieldName, FieldEnumType.LONG, value);
-	   }
-	   else if(value instanceof Date) {
-		   setFlex(fieldName, FieldEnumType.TIMESTAMP, value);
-	   }
-	   else if(value instanceof Boolean) {
-		   setFlex(fieldName, FieldEnumType.BOOLEAN, value);
-	   }
-	   else if(value instanceof Double) {
-		   setFlex(fieldName, FieldEnumType.DOUBLE, value);
-	   }
-	   else if(value != null){
-		   logger.error("Failed to set flex field: " + fieldName);
-	   }
-	   */
 	   FieldUtil.setFlex(this, fieldName, value);
    }
 
@@ -471,6 +440,9 @@ public abstract class BaseRecord {
    }
 	
 	public FieldType getField(String name) {
+		if(name == null) {
+			return null;
+		}
 		return fieldMap.get(name);
 	}
 	

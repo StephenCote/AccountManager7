@@ -413,8 +413,6 @@ public class PolicyEvaluator {
 		BaseRecord g = futil.recordRead(contextUser, matchFact, matchFact);
 		if(p == null || g == null){
 			logger.error("The " + (g == null ? "match ":"") + "fact reference " + (g == null ? matchFact.get(FieldNames.FIELD_URN) : fact.get(FieldNames.FIELD_URN)) + " was null");
-			logger.error(fact.toFullString());
-			logger.error(matchFact.toFullString());
 			return OperationResponseEnumType.ERROR;
 		}
 		if(matype == FactEnumType.PERMISSION){

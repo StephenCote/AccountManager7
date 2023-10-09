@@ -69,7 +69,14 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 	
 	@Override
 	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
-		String key = name + "-" + actor.get(FieldNames.FIELD_URN)+ "-" + token + "-" + resource.get(FieldNames.FIELD_URN);
+		String recId = null;
+		if(resource.hasField(FieldNames.FIELD_URN)) {
+			recId = resource.get(FieldNames.FIELD_URN);
+		}
+		else {
+			recId = resource.hash();
+		}
+		String key = name + "-" + actor.get(FieldNames.FIELD_URN)+ "-" + token + "-" + recId;
 		String hash = CryptoUtil.getDigestAsString(key);
 		if(!policyCache.containsKey(hash)) {
 			PolicyType pol = super.getResourcePolicy(name, actor, token, resource).toConcrete();
@@ -96,7 +103,10 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		String hash = null;
 		PolicyResponseType prr = null;
 		try {
-			String recU =  resource.get(FieldNames.FIELD_URN);
+			String recU =  null;
+			if(resource.hasField(FieldNames.FIELD_URN)) {
+				resource.get(FieldNames.FIELD_URN);
+			}
 			if(recU == null) {
 				recU = resource.hash();
 			}

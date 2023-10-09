@@ -651,7 +651,13 @@ public class PolicyUtil {
 		String outStr = m.replaceAll("null");
 		
 		m = resourceUrnExp.matcher(outStr);
-		String recUrn = resource.get(FieldNames.FIELD_URN);
+		String recUrn = null;
+		if(resource.hasField(FieldNames.FIELD_URN)) {
+			recUrn = resource.get(FieldNames.FIELD_URN);
+		}
+		else if(resource.hasField(FieldNames.FIELD_ID) && ((long)resource.get(FieldNames.FIELD_ID)) > 0L) {
+			recUrn = Long.toString(resource.get(FieldNames.FIELD_ID));
+		}
 		outStr = m.replaceAll((recUrn != null ? recUrn : ""));
 		
 		m = resourceTypeExp.matcher(outStr);
