@@ -42,6 +42,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bouncycastle.jce.ECNamedCurveTable;
 import org.bouncycastle.jce.spec.ECParameterSpec;
+import org.bouncycastle.jce.spec.IESParameterSpec;
 import org.bouncycastle.util.io.pem.PemObject;
 import org.bouncycastle.util.io.pem.PemReader;
 import org.bouncycastle.util.io.pem.PemWriter;
@@ -69,12 +70,6 @@ public class CryptoFactory {
 
 	private static String[] importFields = new String[] {
 			FieldNames.FIELD_PUBLIC, FieldNames.FIELD_PRIVATE, FieldNames.FIELD_CIPHER, FieldNames.FIELD_HASH
-/*
-			FieldNames.FIELD_PUBLIC_FIELD_KEYSIZE,FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC,FieldNames.FIELD_PUBLIC_FIELD_KEYMODE,
-			FieldNames.FIELD_PRIVATE_FIELD_KEYSIZE,FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC,FieldNames.FIELD_PRIVATE_FIELD_KEYMODE,FieldNames.FIELD_CIPHER_FIELD_IV,FieldNames.FIELD_CIPHER_FIELD_KEY,
-			FieldNames.FIELD_CIPHER_FIELD_ENCRYPT,FieldNames.FIELD_CIPHER_FIELD_KEYSIZE,FieldNames.FIELD_CIPHER_FIELD_KEYSPEC,FieldNames.FIELD_CIPHER_FIELD_KEYMODE,FieldNames.FIELD_HASH_FIELD_KEYFUNCTION,
-			FieldNames.FIELD_HASH_FIELD_ALGORITHM, FieldNames.FIELD_HASH_FIELD_PRNG
-*/
 	};
 	
 	private static CryptoFactory instance = null;
@@ -228,8 +223,6 @@ public class CryptoFactory {
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, "AES");
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYMODE, "AES/CBC/PKCS5Padding");
 			}
-			//bean.set(FieldNames.FIELD_HASH_PROVIDER, "PBKDF2WithHmacSHA512");
-			//bean.set(FieldNames.FIELD_HASH_PROVIDER, null)
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -259,7 +252,6 @@ public class CryptoFactory {
 	}
 	
 	public void setPassKey(CryptoBean bean, String passKey, boolean encryptedPassKey){
-		//if(!bean.hasField(FieldNames.FIELD_HASH_FIELD_SALT)) CryptoUtil.setRandomSalt(bean);
 		setSalt(bean);
 		setPassKey(bean, passKey, bean.get(FieldNames.FIELD_HASH_FIELD_SALT), encryptedPassKey);
 	}
@@ -296,11 +288,9 @@ public class CryptoFactory {
 				if(iv.length > 0) {
 					decIv = CryptoUtil.decrypt(bean, iv);
 				}
-				// logger.info("Dec: " + decKey.length);
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
 			}
 			String spec = bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC);
-			// logger.info("Dec Key: " + decKey.length + " / " + spec);
 			bean.setSecretKey(new SecretKeySpec(decKey, spec));
 			
 			bean.set(FieldNames.FIELD_CIPHER_FIELD_IV, iv);
@@ -329,7 +319,6 @@ public class CryptoFactory {
 	public void setPrivateKey(CryptoBean bean, byte[] privateKey){
 		PrivateKey privKey = null;
 		try{
-			// logger.info("**** Set Private Key: " + privateKey.length + " / " + bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
 	        KeyFactory kFact = KeyFactory.getInstance(bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
 			PKCS8EncodedKeySpec privKeySpec = new PKCS8EncodedKeySpec(privateKey);
 			privKey = kFact.generatePrivate(privKeySpec);		
@@ -365,15 +354,13 @@ public class CryptoFactory {
 				logger.error("Null Pem object");
 				return;
 			}
-			/// KeyFactory keyGen = KeyFactory.getInstance(bean.get("asymmetricCipherKeySpec"));
 			KeyFactory keyGen = KeyFactory.getInstance(bean.get(FieldNames.FIELD_AGREEMENTSPEC));
 			PublicKey pubK = keyGen.generatePublic(new X509EncodedKeySpec(spki.getContent()));
         	bean.setPublicKey(pubK);
-        	//bean.set("publicKeybytes", pubK.getEncoded());
 		}
 		catch(NoSuchAlgorithmException | InvalidKeySpecException | IOException  e) {
 			logger.error(e);
-			
+			e.printStackTrace();
 		}
 	}
 	public void setECDSAPrivateKey(CryptoBean bean, byte[] ecdsaKey) {
@@ -385,15 +372,14 @@ public class CryptoFactory {
 				logger.error("Null Pem object");
 				return;
 			}
-			/// KeyFactory keyGen = KeyFactory.getInstance(bean.get("asymmetricCipherKeySpec"));
+
 			KeyFactory keyGen = KeyFactory.getInstance(bean.get(FieldNames.FIELD_AGREEMENTSPEC));
 			PrivateKey privK = keyGen.generatePrivate(new PKCS8EncodedKeySpec(spki.getContent()));
         	bean.setPrivateKey(privK);
-        	//bean.set("privateKeybytes", privK.getEncoded());
-
 		}
 		catch(NoSuchAlgorithmException | InvalidKeySpecException | IOException e) {
 			logger.error(e);
+			e.printStackTrace();
 			
 		}
 	}
@@ -405,8 +391,6 @@ public class CryptoFactory {
 			if(!bean.hasField(FieldNames.FIELD_PUBLIC) || bean.get(FieldNames.FIELD_PUBLIC) == null) {
 				bean.set(FieldNames.FIELD_PUBLIC, RecordFactory.newInstance(ModelNames.MODEL_KEY));
 			}
-			//bean.set(FieldNames.FIELD_PUBLIC_FIELD_KEY, rsaKey);
-			// logger.info("Set RSA Public Key: " + keyStr);
 			BaseRecord key = reader.read(ModelNames.MODEL_KEY_SET, keyStr);
 			byte[] modBytes = key.get(FieldNames.FIELD_RSA_MODULUS);
 			byte[] expBytes = key.get(FieldNames.FIELD_RSA_EXPONENT);
@@ -414,7 +398,6 @@ public class CryptoFactory {
 		}
 		catch(ReaderException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			
 		}
 
 	}
@@ -424,9 +407,7 @@ public class CryptoFactory {
 			if(!bean.hasField(FieldNames.FIELD_PRIVATE) || bean.get(FieldNames.FIELD_PRIVATE) == null) {
 				bean.set(FieldNames.FIELD_PRIVATE, RecordFactory.newInstance(ModelNames.MODEL_KEY));
 			}
-			//bean.set("privateKeybytes", rsaKey);
 			String keyStr = new String(rsaKey, StandardCharsets.UTF_8);
-			// logger.info("Set RSA Private Key: " + keyStr);
 			BaseRecord key = reader.read(ModelNames.MODEL_KEY_SET, keyStr);
 			byte[] modBytes = key.get(FieldNames.FIELD_RSA_MODULUS);
 			byte[] dBytes = key.get(FieldNames.FIELD_RSA_IEXPONENT);
@@ -434,7 +415,6 @@ public class CryptoFactory {
 		}
 		catch(ReaderException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			
 		}
 	}
 	public void setPrivateKey(CryptoBean bean, byte[] modBytes, byte[] dBytes){
@@ -463,13 +443,11 @@ public class CryptoFactory {
 		CryptoFactory sf = getInstance();
 
 		try {
-			
 			rec = RecordFactory.newInstance(ModelNames.MODEL_KEY_SET);
 			
 			boolean includeECMeta = false;
 
 			if(includeSalt || includeAlgorithms) {
-				// logger.info("Serialize salt and algos");
 				rec.set(FieldNames.FIELD_HASH_FIELD_SALT, (includeSalt ? bean.get(FieldNames.FIELD_HASH_FIELD_SALT) : null));
 				rec.set(FieldNames.FIELD_HASH_FIELD_KEYFUNCTION, (includeAlgorithms ? bean.get(FieldNames.FIELD_HASH_FIELD_KEYFUNCTION) : null));
 				rec.set(FieldNames.FIELD_HASH_FIELD_ALGORITHM, (includeAlgorithms ? bean.get(FieldNames.FIELD_HASH_FIELD_ALGORITHM) : null));
@@ -477,7 +455,6 @@ public class CryptoFactory {
 			}
 			
 			if(bean.hasField(FieldNames.FIELD_PUBLIC) && includePublicKey) {
-				// logger.info("Serialize public key");
 				String spec = bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC);
 				rec.set(FieldNames.FIELD_PUBLIC_FIELD_KEYSIZE, (includeAlgorithms ? bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEYSIZE) : 0));
 				rec.set(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC, (includeAlgorithms ? bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC) : null));
@@ -492,14 +469,12 @@ public class CryptoFactory {
 				else {
 					logger.error("Unhandled spec: " + spec);
 				}
-				// rec.set(FieldNames.FIELD_PUBLIC, bean.get(FieldNames.FIELD_PUBLIC));
 				rec.set(FieldNames.FIELD_PUBLIC_FIELD_KEY, bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEY));
 			}
 			else {
 				// logger.info("Skip public key");
 			}
 			if(bean.hasField(FieldNames.FIELD_PRIVATE) && includePrivateKey) {
-				// logger.info("Serialize private key");
 				String spec = bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC);
 				rec.set(FieldNames.FIELD_PRIVATE_FIELD_KEYSIZE, (includeAlgorithms ? bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSIZE) : 0));
 				rec.set(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC, (includeAlgorithms ? bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC) : null));
@@ -521,8 +496,6 @@ public class CryptoFactory {
 			}
 
 			if(bean.hasField(FieldNames.FIELD_CIPHER) && includeCipher) {
-				// logger.info("Serialize cipher");
-				// sf.serializeCipher(bean);
 				rec.set(FieldNames.FIELD_CIPHER_FIELD_IV, bean.get(FieldNames.FIELD_CIPHER_FIELD_IV));
 				rec.set(FieldNames.FIELD_CIPHER_FIELD_KEY, bean.get(FieldNames.FIELD_CIPHER_FIELD_KEY));
 				rec.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, bean.get(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT));
@@ -622,7 +595,6 @@ public class CryptoFactory {
 		}
 	}
 	private void copyField(BaseRecord source, BaseRecord target, String fieldName) throws FieldException, ValueException, ModelNotFoundException {
-		//logger.info(source.toFullString());
 		if(source.hasField(fieldName) && source.getField(fieldName) != null) {
 			target.set(fieldName, source.get(fieldName));
 		}
@@ -634,15 +606,6 @@ public class CryptoFactory {
 		return getCipherKey(bean, true);
 	}
 	private Cipher getCipherKey(CryptoBean bean,  boolean decrypt){
-		/*
-		if(decrypt && bean.getDecryptCipherKey() != null) {
-			// logger.warn("**** " + bean.getDecryptCipherKey());
-			return bean.getDecryptCipherKey();
-		}
-		else if(bean.getEncryptCipherKey() != null) {
-			return bean.getEncryptCipherKey();
-		}
-		*/
 
 		boolean bECD = ((String)bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC)).startsWith("EC");
 		if(
@@ -659,14 +622,14 @@ public class CryptoFactory {
 
 		Cipher cipherKey = null;
        try {
-    	   /// "symmetricCipherKeySpec"
     	cipherKey = Cipher.getInstance((bECD ? bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC) : bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYMODE)));
-    	//cipherKey = Cipher.getInstance(bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC));
+
 		int mode = Cipher.ENCRYPT_MODE;
 		if(decrypt) mode = Cipher.DECRYPT_MODE;
 
 		if(bECD) {
-			cipherKey.init(mode,  (decrypt ? bean.getPrivateKey() : bean.getPublicKey()));
+			IESParameterSpec params = new IESParameterSpec(null, null, 256, 256, null);
+			cipherKey.init(mode,  (decrypt ? bean.getPrivateKey() : bean.getPublicKey()), params);
 		}
 		else if(bean.get(FieldNames.FIELD_CIPHER_FIELD_IV) != null && ((byte[])bean.get(FieldNames.FIELD_CIPHER_FIELD_IV)).length > 0){
 			boolean encrypted = bean.get(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT);
@@ -744,41 +707,13 @@ public class CryptoFactory {
 			
 			ret = true;
 		} catch (NullPointerException | NoSuchAlgorithmException | InvalidKeyException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e.getMessage());
 			logger.error(e);
-			
+			e.printStackTrace();
 			
 		}
 		return ret;
 	}
-	/*
-	public void configureECBean(CryptoBean bean) {
-		try {
-			if(!bean.hasField(FieldNames.FIELD_PUBLIC) || bean.get(FieldNames.FIELD_PUBLIC) == null) {
-				bean.set(FieldNames.FIELD_PUBLIC, RecordFactory.newInstance(ModelNames.MODEL_KEY));
-			}
-			if(!bean.hasField(FieldNames.FIELD_PRIVATE) || bean.get(FieldNames.FIELD_PRIVATE) == null) {
-				bean.set(FieldNames.FIELD_PRIVATE, RecordFactory.newInstance(ModelNames.MODEL_KEY));
-			}
-			if(!bean.hasField(FieldNames.FIELD_CIPHER) || bean.get(FieldNames.FIELD_CIPHER) == null) {
-				bean.set(FieldNames.FIELD_CIPHER, RecordFactory.newInstance(ModelNames.MODEL_CIPHER_FIELD_KEY));
-			}
-	
-			bean.set(FieldNames.FIELD_AGREEMENTSPEC, "ECDH");
-			bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, "AES/GCM/NoPadding");
-			//bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYMODE, null);
-			bean.set(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC, "ECIES");
-			bean.set(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC, "ECIES");
-			bean.set(FieldNames.FIELD_HASH_PROVIDER, "SHA256withECDSA");
-			bean.set(FieldNames.FIELD_CURVE_NAME, "secp256k1");
-			bean.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
-		}
-		catch(FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-			
-		}
-	}
-	*/
+
 	public void configureECBean(CryptoBean bean) {
 		try {
 			if(!bean.hasField(FieldNames.FIELD_PUBLIC) || bean.get(FieldNames.FIELD_PUBLIC) == null) {
@@ -788,26 +723,20 @@ public class CryptoFactory {
 			}
 			if(!bean.hasField(FieldNames.FIELD_PRIVATE) || bean.get(FieldNames.FIELD_PRIVATE) == null) {
 				bean.set(FieldNames.FIELD_PRIVATE, RecordFactory.newInstance(ModelNames.MODEL_KEY));
-				bean.set(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC, "ECIES");
-			}
+				bean.set(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC, "ECIES");			}
 			if(!bean.hasField(FieldNames.FIELD_CIPHER) || bean.get(FieldNames.FIELD_CIPHER) == null) {
 				bean.set(FieldNames.FIELD_CIPHER, RecordFactory.newInstance(ModelNames.MODEL_CIPHER_KEY));
-				//bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, "AES/GCM/NoPadding");
-				
-				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, "ECIES");
-				
-				//bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYMODE, "ECIES");
+				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, "ECIES");				
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_ENCRYPT, true);
 			}
 	
 			bean.set(FieldNames.FIELD_AGREEMENTSPEC, "ECDH");
 			bean.set(FieldNames.FIELD_HASH_FIELD_KEYFUNCTION, "SHA256withECDSA");
 			bean.set(FieldNames.FIELD_CURVE_NAME, "secp256k1");
-			
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			
+			e.printStackTrace();
 		}
 	}
 
@@ -815,7 +744,6 @@ public class CryptoFactory {
 		configureECBean(bean);
 		return (generateKeyPair(bean) && generateSecretKey(bean));
 	}
-	
 	
 	public boolean generateKeyPair(CryptoBean bean){
 
@@ -844,20 +772,14 @@ public class CryptoFactory {
         	bean.setPublicKey(keyPair.getPublic());
         	bean.setPrivateKey(keyPair.getPrivate());
         	
-			/* the public key */
 			bean.set(FieldNames.FIELD_PUBLIC_FIELD_KEY, keyPair.getPublic().getEncoded());
 			bean.set(FieldNames.FIELD_PRIVATE_FIELD_KEY, keyPair.getPrivate().getEncoded());
-        	
-        	/*
-        	bean.set(FieldNames.FIELD_PUBLIC_FIELD_KEY, this.serialize(bean, false, true, true, false, true).getBytes(StandardCharsets.UTF_8));
-        	byte[] privKey = this.serialize(bean, true, false, true, false, true).getBytes(StandardCharsets.UTF_8);
-        	// logger.info("Serialize private key spec: " + new String(privKey));
-        	bean.set(FieldNames.FIELD_PRIVATE_FIELD_KEY, privKey);
-        	*/
+
 			ret = true;
 		}
 		catch(Exception e){
 			logger.error(e);
+			e.printStackTrace();
 			
 		}
 		return ret;

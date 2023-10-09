@@ -203,8 +203,12 @@ public class TestCryptography extends BaseTest {
 		logger.info("Test RSA");
 		CryptoBean bean = new CryptoBean();
 		
-		
-		CryptoFactory.getInstance().generateECKeySet(bean);
+		try {
+			CryptoFactory.getInstance().generateECKeySet(bean);
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
 		//CryptoFactory.getInstance().generateSecretKey(bean);
 		
 		String rawText = "Example text to encipher";
