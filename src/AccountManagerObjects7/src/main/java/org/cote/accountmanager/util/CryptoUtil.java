@@ -42,6 +42,7 @@ import javax.crypto.IllegalBlockSizeException;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.bouncycastle.jce.spec.IESParameterSpec;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.GeneralException;
@@ -173,8 +174,6 @@ public class CryptoUtil {
 		digest.reset();
 		digest.update(salt);
 		return digest.digest(inBytes);
-		/// digest.update(inBytes,0,inBytes.length);
-		//return digest.digest();
 	}
 
 	public static CryptoBean getPasswordBean(String password, byte[] salt){
@@ -198,7 +197,7 @@ public class CryptoUtil {
 
 		byte[] ret = new byte[0];
 		boolean bECD = ((String)bean.get(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC)).startsWith("EC");
-		//logger.info(JSONUtil.exportObject(bean, RecordSerializerConfig.getFilteredModule()));
+
 		Cipher cipher = CryptoFactory.getInstance().getDecryptCipherKey(bean);
 
 		if(cipher == null || ((!bECD && bean.getSecretKey() == null) && (bean.getPrivateKey() == null))) {
@@ -251,8 +250,14 @@ public class CryptoUtil {
 				return ret;
 			}
 
-
-    	    cipher.init(Cipher.ENCRYPT_MODE, key);
+			boolean bECD = ((String)bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEYSPEC)).startsWith("EC");
+			if(bECD) {
+				IESParameterSpec params = new IESParameterSpec(null, null, 256, 256, null);
+				cipher.init(Cipher.ENCRYPT_MODE, key, params);
+			}
+			else {
+				cipher.init(Cipher.ENCRYPT_MODE, key);
+			}
 			ret = cipher.doFinal(data);
 		}
 		catch(Exception e){
@@ -272,10 +277,15 @@ public class CryptoUtil {
 			return ret;
 		}
 		try{
-			/// boolean bECD = bean..get("asymmetricCipherKeySpec").startsWith("EC");
-			/// Cipher cipher = Cipher.getInstance((bECD ? bean.getCipherKeySpec() : bean..get("asymmetricCipherKeySpec")));
 			Cipher cipher = Cipher.getInstance(bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
-			cipher.init(Cipher.DECRYPT_MODE, key);
+			boolean bECD = ((String)bean.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC)).startsWith("EC");
+			if(bECD) {
+				IESParameterSpec params = new IESParameterSpec(null, null, 256, 256, null);
+				cipher.init(Cipher.DECRYPT_MODE, key, params);
+			}
+			else {
+				cipher.init(Cipher.DECRYPT_MODE, key);
+			}
 			ret = cipher.doFinal(data);
 		}
 		catch(Exception e){
