@@ -3,6 +3,7 @@
 "inherits": ["directory"],
 "icon": "person",
 "label": "Person",
+"dedicatedParticipation": true,
 "fields": [
 	{
 	"name": "description",

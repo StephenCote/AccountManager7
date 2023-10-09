@@ -3,10 +3,10 @@
 	"abstract": true,
 	"fields": [
 		{
-		"name": "referenceType",
-		"type": "string",
-		"maxLength": 64,
-		"index": true
+			"name": "referenceType",
+			"type": "string",
+			"maxLength": 64,
+			"index": true
 		},
 		{
 			"name": "referenceId",

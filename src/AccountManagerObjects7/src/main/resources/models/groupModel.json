@@ -4,6 +4,7 @@
 "constraints": ["name, parentId, organizationId"],
 "icon": "folder",
 "label": "Group",
+"dedicatedParticipation": true,
 "fields": [
 	{
 		"name": "type",
