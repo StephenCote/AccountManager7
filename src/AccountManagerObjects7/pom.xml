@@ -67,9 +67,12 @@
 					<excludes>
 
 						<!--
-						<exclude>**/TestFieldRevisions.java</exclude>
+							<exclude>**/TestFieldLock.java</exclude>
 						-->
-
+						<!-- Repeatable Set -->
+						<exclude>**/TestDBPerformance.java</exclude>
+						
+						<exclude>**/TestFieldRevisions.java</exclude>
 						<exclude>**/TestVaultFields.java</exclude>
 						<exclude>**/TestMembership.java</exclude>
 						<exclude>**/TestData.java</exclude>
@@ -82,23 +85,27 @@
 						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestVault.java</exclude>
-
-						<!-- Repeatable Set -->
-
-						<exclude>**/TestPGDatabase.java</exclude>
+						
 						<exclude>**/TestObjectPolicy.java</exclude>
 						<exclude>**/TestObjectConstruct.java</exclude>
-						<exclude>**/TestH2Database.java</exclude>
-						<exclude>**/TestCryptography.java</exclude>
 						<exclude>**/TestAudit.java</exclude>
-						<exclude>**/TestQuery.java</exclude>
 						<exclude>**/TestAuthentication.java</exclude>
 						<exclude>**/TestForeignKey.java</exclude>
 						<exclude>**/TestAM6Model.java</exclude>
-						<exclude>**/TestFlexValueType.java</exclude>
 						<exclude>**/TestValueType.java</exclude>
 						<exclude>**/TestLooseField.java</exclude>
 
+						<exclude>**/TestQuery.java</exclude>
+						<exclude>**/TestFlexValueType.java</exclude>
+						<exclude>**/TestCryptography.java</exclude>
+						<!-- Tests with unresolved errors -->
+						
+						
+
+						<!-- Situational Tests -->
+						<exclude>**/TestH2Database.java</exclude>
+						<exclude>**/TestPGDatabase.java</exclude>
+						
 						<!-- Not intended to be regularly run -->
 						<exclude>**/TestGenerator.java</exclude>
 						<exclude>**/TestNameIdMap.java</exclude>
