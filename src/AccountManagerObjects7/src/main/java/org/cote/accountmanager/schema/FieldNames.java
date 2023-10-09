@@ -261,7 +261,8 @@ public class FieldNames {
 		public static final String FIELD_USER_ROLES = "userRoles";
 		public static final String FIELD_SYSTEM_PERMISSIONS = "systemPermissions";
 		
-		
 		public static final String FIELD_USER = "user";
 		public static final String FIELD_PERSON = "person";
+		
+		public static final String FIELD_FIELD_NAME = "fieldName";
 }

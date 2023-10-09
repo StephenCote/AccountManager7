@@ -3,6 +3,7 @@ package org.cote.accountmanager.client;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -17,6 +18,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -26,6 +28,7 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.FieldLockUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
@@ -110,6 +113,12 @@ public class AccessPoint {
 		return outBool;
 	}
 
+	public boolean isLocked(BaseRecord contextUser, BaseRecord object) {
+		List<String> fields = FieldLockUtil.getFieldLocks(contextUser, object);
+		List<FieldType> locked = object.getFields().stream().filter(f -> fields.contains(f.getName())).collect(Collectors.toList());
+		return (locked.size() > 0);
+	}
+	
 	public BaseRecord update(BaseRecord contextUser, BaseRecord object) {
 		BaseRecord outObj = null;
 		BaseRecord cobj = object.copyRecord();
@@ -120,8 +129,14 @@ public class AccessPoint {
 		}
 
 		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, cobj);
+
 		PolicyResponseType prr = null;
 		if(aet == ActionEnumType.MODIFY) {
+			if(isLocked(contextUser, object)) {
+				AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
+				return outObj;
+			}
+
 			prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, cobj);
 		}
 		else {
@@ -155,6 +170,12 @@ public class AccessPoint {
 
 		ActionEnumType aet = ActionEnumType.DELETE;
 		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, object);
+
+		if(isLocked(contextUser, object)) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
+			return outBool;
+		}
+
 		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(contextUser, contextUser, object);
 		if(prr.getType() == PolicyResponseEnumType.PERMIT) {
 			if(context.getRecordUtil().deleteRecord(object)) {

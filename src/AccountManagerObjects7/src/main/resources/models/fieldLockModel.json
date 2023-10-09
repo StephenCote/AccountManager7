@@ -1,0 +1,36 @@
+{
+	"name": "fieldLock",
+	"inherits": [
+		"dateTime",
+		"organizationExt",
+		"reference",
+		"primaryKey"
+	],
+	"access": {
+		"roles": {
+			"create": ["AccountUsers"],
+			"read": ["AccountUsers"]
+		}
+	},
+	"constraints": ["referenceId, referenceType, fieldName, organizationId"],
+	"factory": "org.cote.accountmanager.factory.FieldLockFactory",
+	"fields": [
+
+		{
+			"name": "fieldName",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "enabled",
+			"type": "boolean"
+		},
+		{
+			"name": "ownerId",
+			"type": "long",
+			"required": true,
+			"private": true
+		}
+
+	]
+}
