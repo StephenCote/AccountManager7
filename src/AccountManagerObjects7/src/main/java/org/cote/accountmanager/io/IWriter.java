@@ -11,6 +11,7 @@ public interface IWriter {
 	public void flush();
 	public RecordIO getRecordIo();
 	public void close() throws WriterException;
+	public int write(BaseRecord[] recs) throws WriterException;
 	public boolean write(BaseRecord rec) throws WriterException;
 	public boolean write(BaseRecord rec, OutputStream stream) throws WriterException;
 	public boolean delete(BaseRecord rec) throws WriterException;

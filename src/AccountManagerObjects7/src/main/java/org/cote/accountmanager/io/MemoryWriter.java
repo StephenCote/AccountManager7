@@ -20,6 +20,17 @@ public class MemoryWriter extends RecordWriter {
 	}
 
 	@Override
+	public int write(BaseRecord[] recs) throws WriterException {
+		int writeCount = 0;
+		for(int i = 0; i < recs.length; i++) {
+			if(write(recs[0])) {
+				writeCount++;
+			}
+		}
+		return writeCount;
+	}
+	
+	@Override
 	public boolean write(BaseRecord rec) throws WriterException {
 		RecordOperation op = RecordOperation.CREATE;
 		if(RecordUtil.isIdentityRecord(rec)) {
@@ -65,5 +76,6 @@ public class MemoryWriter extends RecordWriter {
 		// TODO Auto-generated method stub
 		
 	}
+
 
 }

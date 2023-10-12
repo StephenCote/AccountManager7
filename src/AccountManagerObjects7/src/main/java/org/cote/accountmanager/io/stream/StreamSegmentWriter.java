@@ -47,6 +47,11 @@ public class StreamSegmentWriter implements IWriter {
 		// TODO Auto-generated method stub
 		
 	}
+	
+	@Override
+	public int write(BaseRecord[] recs) throws WriterException {
+		throw new WriterException("Bulk segment write operations are not supported");
+	}
 
 	@Override
 	public boolean write(BaseRecord rec) throws WriterException {

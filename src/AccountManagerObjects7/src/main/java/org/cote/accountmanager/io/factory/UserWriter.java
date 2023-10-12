@@ -34,6 +34,11 @@ public class UserWriter implements IWriter {
 		// TODO Auto-generated method stub
 		
 	}
+	
+	@Override
+	public int write(BaseRecord[] recs) throws WriterException {
+		throw new WriterException("Bulk user write operations are not supported");
+	}
 
 	@Override
 	public boolean write(BaseRecord rec) throws WriterException {
@@ -77,5 +82,6 @@ public class UserWriter implements IWriter {
 		// TODO Auto-generated method stub
 		
 	}
+
 	
 }

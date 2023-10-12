@@ -118,6 +118,51 @@ public class AccessPoint {
 		List<FieldType> locked = object.getFields().stream().filter(f -> fields.contains(f.getName())).collect(Collectors.toList());
 		return (locked.size() > 0);
 	}
+	public int create(BaseRecord contextUser, BaseRecord[] objects) {
+		return update(contextUser, objects);
+	}
+	public int update(BaseRecord contextUser, BaseRecord[] objects) {
+		BaseRecord outObj = null;
+		if(objects.length == 0) {
+			return 0;
+		}
+		BaseRecord firstObject = objects[0];
+		ActionEnumType aet = ActionEnumType.ADD;
+		if(RecordUtil.isIdentityRecord(firstObject)) {
+			aet = ActionEnumType.MODIFY;
+		}
+
+
+		List<BaseRecord> records = new ArrayList<>();
+		
+		for(BaseRecord obj : objects) {
+			BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, obj);
+
+			PolicyResponseType prr = null;
+			if(aet == ActionEnumType.MODIFY) {
+				if(isLocked(contextUser, obj)) {
+					AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
+					continue;
+				}
+				prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, obj);
+			}
+			else {
+				prr = IOSystem.getActiveContext().getAuthorizationUtil().canCreate(contextUser, contextUser, obj);
+			}
+			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
+				records.add(obj.copyRecord());
+				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, null);
+			}
+			else {
+				AuditUtil.closeAudit(audit, prr, null);
+			}
+		}
+		
+		int writeCount = context.getRecordUtil().updateRecords(objects);
+		
+		return writeCount;
+	}
+	
 	
 	public BaseRecord update(BaseRecord contextUser, BaseRecord object) {
 		BaseRecord outObj = null;

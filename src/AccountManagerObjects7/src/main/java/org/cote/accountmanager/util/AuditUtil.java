@@ -89,6 +89,7 @@ public class AuditUtil {
 	}
 	public static void auditResource(BaseRecord audit, BaseRecord resource) {
 		try {
+			audit.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getModel());
 			audit.set(FieldNames.FIELD_RESOURCE, resource);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -155,7 +156,8 @@ public class AuditUtil {
 					logger.error(st[i].toString());
 				}
 			}
-			IOSystem.getActiveContext().getRecordUtil().createRecord(audit);
+			// IOSystem.getActiveContext().getRecordUtil().createRecord(audit);
+			IOSystem.getActiveContext().getQueue().enqueue(audit);
 			print(audit);
 			
 		} catch (FieldException | ValueException | ModelNotFoundException e) {

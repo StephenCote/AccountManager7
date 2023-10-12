@@ -1,6 +1,7 @@
 package org.cote.accountmanager.util;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -242,6 +243,16 @@ public class RecordUtil {
 		}
 		return constraints;
 	}
+	public static List<String> getHints(ModelSchema ms) {
+		return getHints(ms, new ArrayList<>());
+	}
+	public static List<String> getHints(ModelSchema ms, List<String> hints) {
+		hints.addAll(ms.getHints());
+		for(String i : ms.getInherits()){
+			getHints(RecordFactory.getSchema(i), hints);
+		}
+		return hints;
+	}
 	public static boolean isConstrained(Query query) {
 		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
 		List<String> constraints = getConstraints(ms);
@@ -417,6 +428,77 @@ public class RecordUtil {
 			logger.error(e);
 		}
 		return outBool;
+	}
+	
+	public boolean isSimilar(BaseRecord[] models) {
+		if(models.length == 0) {
+			return false;
+		}
+		else if(models.length == 1) {
+			return true;
+		}
+		
+		Set<String> mlist = Arrays.asList(models).stream().map(m -> m.getModel()).collect(Collectors.toSet());
+		BaseRecord firstModel = models[0];
+		List<BaseRecord> rlist = Arrays.asList(models).stream().filter(m -> m.getFields().size() != firstModel.getFields().size()).collect(Collectors.toList());
+		/*
+		if(mlist.size() != 1 || rlist.size() > 0) {
+			logger.info("Is Similar: " + mlist.size() + " / " + rlist.size());
+			for(BaseRecord rec: rlist) {
+				logger.warn(firstModel.getFields().size() + " :: " + rec.getFields().size());
+			}
+		}
+		*/
+		return (mlist.size() == 1 && rlist.size() == 0);
+	}
+	
+	public int updateRecords(BaseRecord[] recs) {
+		return createRecords(recs, true);
+	}
+	
+	public int createRecords(BaseRecord[] recs) {
+		return createRecords(recs, false);
+	}
+	public int createRecords(BaseRecord[] recs, boolean flush) {
+		return createRecords(recs, flush, false);
+	}
+	
+	public int createRecords(BaseRecord[] recs, boolean flush, boolean skipCustomIO) {
+		if(recs.length == 0) {
+			return 0;
+		}
+		if(!isSimilar(recs)) {
+			logger.error("Models are not similar enough to be processed concurrently");
+			return 0;
+		}
+		ModelSchema ms = RecordFactory.getSchema(recs[0].getModel());
+		IWriter useWriter = null;
+		if(!skipCustomIO && ms.getIo() != null && ms.getIo().getWriter() != null) {
+			IWriter modelWriter = RecordFactory.getClassInstance(ms.getIo().getWriter());
+			if(modelWriter != null) {
+				useWriter = modelWriter;
+			}
+			else {
+				logger.error("Failed to instantiate the customer writer: " + ms.getIo().getWriter());
+				return 0;
+			}
+		}
+		else {
+			useWriter = writer;
+		}
+		for(BaseRecord rec : recs) {
+			useWriter.translate(RecordOperation.INSPECT, rec);
+		}
+		int writeCount = 0;
+		try {
+			writeCount = useWriter.write(recs);
+			if(flush) {
+				useWriter.flush();
+			}
+		} catch (WriterException e) {
+			logger.error(e);
+		}
+		return writeCount;
 	}
 
 	public boolean deleteRecord(BaseRecord rec) {
