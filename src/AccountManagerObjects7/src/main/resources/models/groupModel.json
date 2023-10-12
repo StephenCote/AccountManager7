@@ -1,6 +1,6 @@
 {
 "name": "group",
-"inherits": ["nameId", "path", "parent"],
+"inherits": ["nameId", "path", "parent", "description"],
 "constraints": ["name, parentId, organizationId"],
 "icon": "folder",
 "label": "Group",

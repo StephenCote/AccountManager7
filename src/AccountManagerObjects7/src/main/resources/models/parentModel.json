@@ -2,6 +2,14 @@
 	"name": "parent",
 	"abstract": true,
 	"query": ["parentId"],
+	"validation": {
+		"rules": [
+			{
+				"fields": ["parentId"],
+				"rules": ["$notInParent"]
+			}
+		]
+	},
 	"fields": [
 		{
 			"name": "parentId",

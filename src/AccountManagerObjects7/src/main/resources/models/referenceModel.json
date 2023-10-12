@@ -1,17 +1,16 @@
 {
 	"name": "reference",
 	"abstract": true,
+	"hints": ["referenceType, referenceId"],
 	"fields": [
 		{
 			"name": "referenceType",
 			"type": "string",
-			"maxLength": 64,
-			"index": true
+			"maxLength": 64
 		},
 		{
 			"name": "referenceId",
-			"type": "long",
-			"index": true
+			"type": "long"
 		}
 	]
 }

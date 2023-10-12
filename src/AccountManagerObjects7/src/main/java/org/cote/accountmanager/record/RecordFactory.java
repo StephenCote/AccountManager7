@@ -281,8 +281,6 @@ public class RecordFactory {
 			if(modelRec != null) {
 				if(!modelRec.hasField(FieldNames.FIELD_SCHEMA)) {
 					logger.error("***** Error loading schema");
-					logger.error(q.toFullString());
-					logger.error(modelRec.toFullString());
 					return null;
 				}
 				byte[] data = modelRec.get(FieldNames.FIELD_SCHEMA);
@@ -302,7 +300,7 @@ public class RecordFactory {
 		IOContext ioContext = IOSystem.getActiveContext();
 		OrganizationContext sysOrg = ioContext.getOrganizationContext("/System", null);
 		if(ims == null) {
-			logger.error("Null schema");
+			logger.error("Null schema for: " + name);
 			return null;
 		}
 		
@@ -332,11 +330,11 @@ public class RecordFactory {
 								ModelNames.releaseCustomModelNames();
 							}
 							else {
-								logger.error("**** Schema not defined for " + name);
+								logger.debug("**** Schema not defined for " + name);
 							}
 						}
 						else {
-							logger.warn("Schema is constrained or already exists");
+							logger.debug("Schema is constrained or already exists");
 						}
 					}
 					else {
@@ -379,10 +377,8 @@ public class RecordFactory {
 	public static ModelSchema getCustomSchemaFromResource(String name, String resourceName) {
 		ModelSchema ms = RecordFactory.getIOSchema(name);
 		if(ms == null) {
-			logger.info("Load resource");
 			String schema = ResourceUtil.getModelResource(resourceName);
 			if(schema != null) {
-				logger.info("Create user resource entry");
 				ms = RecordFactory.importSchemaFromUser(name, schema);
 			}
 		}

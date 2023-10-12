@@ -4,7 +4,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import javax.sql.DataSource;
@@ -75,6 +78,195 @@ public class DBWriter extends MemoryWriter {
 		return success;
 	}
 	
+	
+	private int maxBatchSize = 250;
+	
+	private void updateAutoCreate(RecordOperation op, ModelSchema schema, BaseRecord model, Map<String, List<BaseRecord>> autoCreate) throws FieldException, ValueException, ModelNotFoundException {
+		List<BaseRecord> parts = StatementUtil.getForeignParticipations(model);
+		if(!autoCreate.containsKey(ModelNames.MODEL_PARTICIPATION)) {
+			autoCreate.put(ModelNames.MODEL_PARTICIPATION, new ArrayList<>());
+		}
+		autoCreate.get(ModelNames.MODEL_PARTICIPATION).addAll(parts);
+
+		List<FieldType> refList = model.getFields().stream().filter(o -> {
+			FieldSchema fs = schema.getFieldSchema(o.getName());
+			return fs.isReferenced();
+
+		}).collect(Collectors.toList());
+		long rid = model.get(FieldNames.FIELD_ID);
+		if(refList.size() > 0) {
+			for(FieldType f : refList) {
+				if(f.getValueType() == FieldEnumType.LIST) {
+					FieldSchema fs = schema.getFieldSchema(f.getName());
+					
+					if(fs.getBaseType().equals(ModelNames.MODEL_MODEL)) {
+						List<BaseRecord> vals = model.get(f.getName());
+						for(BaseRecord erec : vals) {
+							if(!erec.inherits(ModelNames.MODEL_REFERENCE)) {
+								logger.error("Model " + erec.getModel() + " does not inherit from the reference model");
+								continue;
+							}
+							if(FieldUtil.isNullOrEmpty(erec.getModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
+								erec.set(FieldNames.FIELD_REFERENCE_ID, rid);
+								erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getModel());
+								if(erec.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {
+									erec.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+								}
+								if(!autoCreate.containsKey(erec.getModel())) {
+									autoCreate.put(erec.getModel(), new ArrayList<>());
+								}
+								autoCreate.get(erec.getModel()).add(erec);
+							}
+						}
+					}
+					else {
+						logger.error("**** Handle Referenced Type That Is Not a Model");
+					}
+				}
+				else {
+					logger.error("**** Handle Referenced Type " + f.getValueType().toString());
+				}
+			}
+    	}
+	}
+	
+	public synchronized int write(BaseRecord[] models) throws WriterException {
+		int writeCount = 0;
+		int batch = 0;
+		if(models.length == 0) {
+			return 0;
+		}
+		
+		if(!IOSystem.getActiveContext().getRecordUtil().isSimilar(models)) {
+			logger.error("Model list must be consistent and with the same model name");
+		}
+		
+		RecordOperation op = RecordOperation.CREATE;
+		BaseRecord firstModel = models[0];
+		ModelSchema schema = RecordFactory.getSchema(firstModel.getModel());
+		String objectId = (firstModel.hasField(FieldNames.FIELD_OBJECT_ID) ? firstModel.get(FieldNames.FIELD_OBJECT_ID) : null);
+		long id = (firstModel.hasField(FieldNames.FIELD_ID) ? firstModel.get(FieldNames.FIELD_ID) : 0L);
+		if(id > 0L || objectId != null) {
+			op = RecordOperation.UPDATE;
+		}
+		
+		Map<String, List<BaseRecord>> autoCreate = new HashMap<>();
+		if(autoCreate.size() > 0) {
+			logger.error("TODO: Re-implement auto creation of foreign references");
+		}
+		
+		for(BaseRecord rec : models) {
+			if(op == RecordOperation.UPDATE) {
+				CacheUtil.clearCache(rec);
+			}
+			super.write(rec);
+		}
+		
+		if(!RecordUtil.isIdentityRecord(firstModel) && (op != RecordOperation.CREATE || !RecordUtil.isIdentityModel(schema))) { 
+			throw new WriterException("Model " + firstModel.getModel() + " does not define an identity field");
+		}
+		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
+
+	    try (Connection con = dataSource.getConnection()){
+	    	List<Long> ids = new ArrayList<>();
+	    	if(op == RecordOperation.CREATE) {
+				ids = dbUtil.getNextIds(firstModel.getModel(), models.length);
+				if(ids.size() != models.length) {
+					throw new WriterException("Failed to obtain next identifier");
+				}
+		    }
+			boolean lastCommit = con.getAutoCommit();
+			con.setAutoCommit(false);
+	    	
+	    	DBStatementMeta meta = null;
+	    	if(op == RecordOperation.CREATE) {
+	    		meta = StatementUtil.getInsertTemplate(firstModel);
+	    	}
+	    	else {
+	    		meta = StatementUtil.getUpdateTemplate(firstModel);
+	    	}
+	    	PreparedStatement st = con.prepareStatement(meta.getSql());
+	    	for(int i = 0; i < models.length; i++) {
+	    		BaseRecord model = models[i];
+	    		if(op == RecordOperation.CREATE) {
+	    			long rid = ids.get(i);
+	    			model.set(FieldNames.FIELD_ID, rid);
+	    			updateAutoCreate(op, schema, model, autoCreate);
+	    		}
+		    	StatementUtil.applyPreparedStatement(model, meta, st);
+				st.addBatch();
+				batch++;
+				if(batch >= maxBatchSize || (batch > 0 && i == (models.length - 1))){
+					st.executeBatch();
+					st.clearBatch();
+					writeCount += batch;
+					batch=0;
+				}
+	    	}
+			st.close();
+
+			con.setAutoCommit(lastCommit);
+
+		}
+	    catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			e.printStackTrace();
+	    }
+
+	    /// logger.debug("Post batch write - " + writeCount + " records written. " + autoCreate.size() + " model lists to autoCreate");
+	    autoCreate.forEach((k ,v) -> {
+	    	if(v.size() > 0) {
+	    		logger.info("Auto create: " + k + " " + v.size());
+	    		IOSystem.getActiveContext().getRecordUtil().createRecords(v.toArray(new BaseRecord[0]));
+	    	}
+	    });
+		return writeCount;
+	}
+	
+	protected Map<String, List<BaseRecord>> getAutoCreateList(BaseRecord model, RecordOperation op){
+		//List<BaseRecord> autoCreate = new ArrayList<>();
+		Map<String, List<BaseRecord>> autoCreate = new HashMap<>();
+		ModelSchema schema = RecordFactory.getSchema(model.getModel());
+		if(schema.isAutoCreateForeignReference()) {
+			for(FieldType f : model.getFields()) {
+				FieldSchema fs = schema.getFieldSchema(f.getName());
+				List<BaseRecord> bfs = new ArrayList<>();
+				if(fs.isForeign()) {
+					if(f.getValueType() == FieldEnumType.MODEL) {
+						bfs.add(model.get(f.getName()));
+					}
+					else if(f.getValueType() == FieldEnumType.LIST) {
+						bfs = model.get(f.getName());
+					}
+					for(BaseRecord bf : bfs) {
+						if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
+							/// logger.error("**** TODO: REMOVE THIS: Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
+							if(op == RecordOperation.CREATE) {
+								logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
+								try {
+									bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
+									bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+									if(!autoCreate.containsKey(bf.getModel())) {
+										autoCreate.put(bf.getModel(), new ArrayList<>());
+									}
+									autoCreate.get(bf.getModel()).add(bf);
+								}
+								catch(ValueException | FieldException | ModelNotFoundException e) {
+									logger.error(e);
+								}
+							}
+							else {
+								logger.error("Will not update " + model.getModel() + " foreign child " + f.getName() + " without an identity reference");
+							}
+						}
+					}
+				}
+				
+			}
+		}
+		return autoCreate;
+	}
+	
 	public synchronized boolean write(BaseRecord model) throws WriterException {
 		RecordOperation op = RecordOperation.CREATE;
 		ModelSchema schema = RecordFactory.getSchema(model.getModel());
@@ -91,8 +283,7 @@ public class DBWriter extends MemoryWriter {
 			throw new WriterException("Model " + model.getModel() + " does not define an identity field");
 		}
 		
-		/// TODO: Make this a schema property to not auto-create foreign objects
-		if(!model.getModel().equals(ModelNames.MODEL_AUDIT)) {
+		if(schema.isAutoCreateForeignReference()) {
 			for(FieldType f : model.getFields()) {
 				FieldSchema fs = schema.getFieldSchema(f.getName());
 				List<BaseRecord> bfs = new ArrayList<>();

@@ -25,6 +25,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
@@ -54,11 +55,47 @@ import org.json.JSONException;
 public class StatementUtil {
 	
 	public static final Logger logger = LogManager.getLogger(StatementUtil.class);
-	
+
+	public static List<BaseRecord> getForeignParticipations(BaseRecord record) {
+		ModelSchema ms = RecordFactory.getSchema(record.getModel());
+		List<BaseRecord> parts = new ArrayList<>();
+		for(FieldType f: record.getFields()) {
+			FieldSchema fs = ms.getFieldSchema(f.getName());
+			if(fs.isEphemeral() || fs.isVirtual() || fs.isReferenced()) {
+				continue;
+			}
+			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
+				List<BaseRecord> frecs = record.get(f.getName());
+				for(BaseRecord rec : frecs) {
+					if(!RecordUtil.isIdentityRecord(rec)) {
+						logger.error("Record does not have an identity therefore a reference cannot be made");
+						continue;
+					}
+					BaseRecord owner = null;
+					if(rec.getModel().equals(ModelNames.MODEL_USER)) {
+						owner = rec;
+					}
+					else {
+						owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, rec.get(FieldNames.FIELD_OWNER_ID));
+					}
+					if(owner == null) {
+						logger.error("Record does not have an owner, therefore a reference cannot be made");
+						continue;
+					}
+					parts.add(ParticipationFactory.newParticipation(owner, record, fs.getParticipantModel(), rec));
+				}
+			}
+		}
+		return parts;
+	}
 	
 	public static void updateForeignParticipations(BaseRecord record) {
+		List<BaseRecord> parts = getForeignParticipations(record);
+		for(BaseRecord rec : parts) {
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+		}
+		/*
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
-		//BaseRecord owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, record.get(FieldNames.FIELD_OWNER_ID));
 		for(FieldType f: record.getFields()) {
 			FieldSchema fs = ms.getFieldSchema(f.getName());
 			if(fs.isEphemeral() || fs.isVirtual() || fs.isReferenced()) {
@@ -87,6 +124,7 @@ public class StatementUtil {
 				}
 			}
 		}
+		*/
 	}
 	
 	public static DBStatementMeta getInsertTemplate(BaseRecord record) {
@@ -211,12 +249,9 @@ public class StatementUtil {
 		return getInnerSelectTemplate(query, schema, true);
 	}
 	
-	/// TODO: There is still an unhandled case where the different instances of the same model is used for different properties
-	/// EG: Person.dependents and Person.partners
-	/// In previous versions, this was handled by a separate ParticipantEnumType value, but it was unwieldy to manage
-	///	The current thinking is to use something like the 'foreignType' field schema property currently used with flex values to map to a dynamic model reference
-	/// Except it needs to be fixed - participantType would make the most direct sense, but it would touch a number of places where participations are constructed
-	/// 
+	/// Different instances of the same model may use different properties by specifying a 'participantModel' on the field.
+	/// For example: 'person.dependent' and 'person.partner'
+	///
 	
 	private static String getInnerSelectTemplate(Query query, FieldSchema schema, boolean followRef) throws FieldException {
 		if(
@@ -764,6 +799,7 @@ public class StatementUtil {
 	private static <T> void setStatementParameter(PreparedStatement statement, String model, String fieldName, ComparatorEnumType comp, FieldEnumType dataType, T value, int index) throws DatabaseException{
 		ModelSchema ms = RecordFactory.getSchema(model);
 		FieldSchema fs = ms.getFieldSchema(fieldName);
+		String colType = null;
 		if(index <= 0){
 			throw new DatabaseException("Prepared Statement index is 1-based, not 0-based, and the index must be greater than or equal to 1");
 		}
@@ -821,12 +857,23 @@ public class StatementUtil {
 				case TIMESTAMP:
 					statement.setTimestamp(index, new Timestamp(((Date)value).getTime()));
 					break;
+				case FLEX:
+					if(!ModelNames.MODEL_MODEL.equals(fs.getType())){
+						throw new DatabaseException("Unhandled flex type:" + dataType + " for " + model + "." + fieldName + " at index " + index + " with base " + fs.getBaseModel() + " / " + fs.getValueType());
+					}
+					else {
+						colType = IOSystem.getActiveContext().getDbUtil().getDataType(fs, FieldEnumType.valueOf(fs.getType().toUpperCase()));
+					}
+					
 				case MODEL:
 					
 					if(fs.isForeign()) {
-						String colType = IOSystem.getActiveContext().getDbUtil().getDataType(fs, dataType);
+						if(colType == null) {
+							colType = IOSystem.getActiveContext().getDbUtil().getDataType(fs, dataType);
+						}
 						/// TODO: Need to handle the foreignField config
 						///
+						/// logger.info("Col type: " + colType);
 						if(colType != null) {
 							BaseRecord crec = (BaseRecord)value;
 							if(colType.equals("bigint")) {
@@ -866,7 +913,8 @@ public class StatementUtil {
 						break;
 					}
 				default:
-					throw new DatabaseException("Unhandled data type:" + dataType + " for index " + index);
+					
+					throw new DatabaseException("Unhandled data type:" + dataType + " for " + model + "." + fieldName + " at index " + index);
 			}
 		}
 		catch (SQLException e) {
@@ -885,6 +933,8 @@ public class StatementUtil {
 		//List<FieldType> flexCols = new ArrayList<>();
 		//List<String> flexCol
 		Map<String, FieldType> flexCols = new HashMap<>();
+		Map<String, FieldType> modelCols = new HashMap<>();
+		
 		for(String col : meta.getColumns()) {
 			String colName = col;
 			FieldType f = record.getField(col);
@@ -963,36 +1013,8 @@ public class StatementUtil {
 				case MODEL:
 					// logger.warn("TODO: Implement foreign key resolution");
 					if(fs.getBaseModel() != null) {
-						BaseRecord crec = RecordFactory.newInstance(fs.getBaseModel());
-						ModelSchema cms = RecordFactory.getSchema(fs.getBaseModel());
-						FieldSchema fcs = cms.getFieldSchema(FieldNames.FIELD_ID);
-						boolean haveId = false;
-						if(fs.getForeignField() != null) {
-							fcs = cms.getFieldSchema(fs.getForeignField());
-						}
-						FieldType fld = crec.getField(fcs.getName());
-						if(fld.getValueType() == FieldEnumType.STRING) {
-							String id = rset.getString(colName);
-							if(id != null) {
-								haveId = true;
-								crec.set(fcs.getName(), id);
-							}
-						}
-						else if(fld.getValueType() == FieldEnumType.LONG) {
-							long lid = rset.getLong(colName);
-							if(lid > 0L) {
-								haveId = true;
-								crec.set(fcs.getName(), lid);
-							}
-						}
-						else {
-							logger.error("Unhandled type: " + fld.getValueType().toString());
-						}
-						if(haveId) {
-							record.set(col, crec);
-						}
+						modelCols.put(col, f);
 						break;
-						
 					}
 				case FLEX:
 					if(fs.getValueType() != null) {
@@ -1004,6 +1026,58 @@ public class StatementUtil {
 			}
 
 		}
+
+		for(String col : modelCols.keySet()) {
+			FieldType f = modelCols.get(col);
+			FieldSchema fs = ms.getFieldSchema(f.getName());
+			String modelName = fs.getBaseModel();
+			if(fs.isForeign() && ModelNames.MODEL_FLEX.equals(modelName) && fs.getForeignType() != null) {
+				modelName = record.get(fs.getForeignType());
+			}
+			if(modelName == null || ModelNames.MODEL_FLEX.equals(modelName)) {
+				logger.error("Unhandled model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType());
+				continue;
+				//throw new FieldException("Unhandled model type: " + modelName);
+			}
+			// logger.info("Model - " + col + " " + modelName);
+			BaseRecord crec = RecordFactory.newInstance(modelName);
+			ModelSchema cms = RecordFactory.getSchema(modelName);
+			// logger.info("Handling model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType() + " -> " + modelName);
+			boolean haveId = false;
+			if(fs.isForeign()) {
+				FieldSchema fcs = cms.getFieldSchema(FieldNames.FIELD_ID);
+
+				if(fs.getForeignField() != null) {
+					fcs = cms.getFieldSchema(fs.getForeignField());
+				}
+				FieldType fld = crec.getField(fcs.getName());
+				if(fld.getValueType() == FieldEnumType.STRING) {
+					String id = rset.getString(col);
+					if(id != null) {
+						haveId = true;
+						crec.set(fcs.getName(), id);
+					}
+				}
+				else if(fld.getValueType() == FieldEnumType.LONG) {
+					long lid = rset.getLong(col);
+					if(lid > 0L) {
+						haveId = true;
+						crec.set(fcs.getName(), lid);
+					}
+				}
+				else {
+					logger.error("Unhandled type: " + fld.getValueType().toString());
+				}
+			}
+			else {
+				crec = JSONUtil.importObject(rset.getString(col), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+				haveId = true;
+			}
+			if(haveId) {
+				record.set(col, crec);
+			}
+		}
+
 		for(String col : flexCols.keySet()) {
 			FieldType f = flexCols.get(col);
 			FieldSchema fs = ms.getFieldSchema(f.getName());

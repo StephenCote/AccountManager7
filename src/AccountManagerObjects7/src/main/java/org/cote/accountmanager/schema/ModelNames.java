@@ -114,6 +114,7 @@ public class ModelNames {
 	public static final String MODEL_NOTE = "note";
 	
 	public static final String MODEL_FIELD_LOCK = "fieldLock";
+	public static final String MODEL_SUBJECT = "subject";
 	
 	public static final String MODEL_MODEL_CATEGORY = "modelCategory";
 	
@@ -146,7 +147,7 @@ public class ModelNames {
 		}
 	}
 	
-	private static List<String> listCustomModels() {
+	public static List<String> listCustomModels() {
 		List<String> names = new ArrayList<>();
 		if(IOSystem.getActiveContext() == null || !IOSystem.getActiveContext().isInitialized()) {
 			return names;

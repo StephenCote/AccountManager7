@@ -1,0 +1,17 @@
+{
+"name": "subject",
+"abstract": true,
+"fields": [
+	{
+		"name": "subject",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "subjectType"
+	},
+	{
+		"name": "subjectType",
+		"type": "string",
+		"maxLength": 64
+	}
+]}

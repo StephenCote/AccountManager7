@@ -462,6 +462,7 @@ public class DBUtil {
 			}
 			
 		}
+		
 		List<String> constraints = RecordUtil.getConstraints(schema);
 		for(String ic : constraints) {
 			if(idxSet.contains(ic)) {
@@ -474,22 +475,20 @@ public class DBUtil {
 				buff.append(idx + "\n");
 			}
 		}
-		for(String is : schema.getInherits()) {
-			ModelSchema ischema = RecordFactory.getSchema(is);
 
-			for(String ic : ischema.getHints()) {
-				if(idxSet.contains(ic)) {
-					logger.error("Index collision: (" + ic + ")");
-					continue;
-				}
-				String idx = generateIndex(baseSchema, schema, ic, false);
-				if(idx != null) {
-					idxSet.add(ic);
-					buff.append(idx + "\n");
-				}
-
+		List<String> hints = RecordUtil.getHints(schema);
+		for(String ic : hints) {
+			if(idxSet.contains(ic)) {
+				logger.error("Index collision: (" + ic + ")");
+				continue;
+			}
+			String idx = generateIndex(baseSchema, schema, ic, false);
+			if(idx != null) {
+				idxSet.add(ic);
+				buff.append(idx + "\n");
 			}
 		}
+		
 		return buff.toString();
 	}
 	
@@ -530,9 +529,7 @@ public class DBUtil {
 					outType = "text";
 				}
 				break;
-			case FLEX:
-				outType = "text";
-				break;
+
 			case INT:
 				outType = "int";
 				break;
@@ -557,6 +554,9 @@ public class DBUtil {
 				break;
 			case LONG:
 				outType = "bigint";
+				break;
+			case FLEX:
+				outType = "text";
 				break;
 			case MODEL:
 				if(!schema.isForeign()) {

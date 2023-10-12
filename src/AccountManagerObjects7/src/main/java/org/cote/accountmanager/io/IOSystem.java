@@ -69,14 +69,14 @@ public class IOSystem {
 			return null;
 		}
 		
-		ModelNames.loadModels();
-		
 		IReader reader = null;
 		IWriter writer = null;
 		ISearch search = null;
 		FileIndexManager fim = null;
 		FileStore store = null;
 		DBUtil dbUtil = null;
+		boolean checkPersistedSchema = false;
+		ModelNames.loadModels();
 		
 		if(properties.isReset()) {
 			cleanupDirectory("/.jks/");
@@ -85,6 +85,7 @@ public class IOSystem {
 		}
 
 		if(ioType == RecordIO.FILE) {
+			
 			fim = new FileIndexManager(IOFactory.DEFAULT_FILE_BASE);
 			reader = IOFactory.getReader(ioType, IOFactory.DEFAULT_FILE_BASE, store, followForeignKeys);
 			writer = IOFactory.getWriter(ioType, reader, IOFactory.DEFAULT_FILE_BASE, store);
@@ -95,10 +96,10 @@ public class IOSystem {
 				logger.error("Missing IOProperties");
 				return null;
 			}
-			// dbUtil = new DBUtil(properties);
 			dbUtil = DBUtil.getInstance(properties);
 			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset()) {
 				logger.info("Scanning model schema");
+				checkPersistedSchema = true;
 				for(String m : ModelNames.MODELS) {
 					ModelSchema schema = RecordFactory.getSchema(m);
 					if(RecordUtil.isIdentityModel(schema)) {
@@ -116,7 +117,11 @@ public class IOSystem {
 						logger.debug("Skip model without identity: " + m);
 					}
 				}
+
 			}
+			
+			
+			
 			
 			reader = IOFactory.getReader(ioType, dbUtil.getDataSource());
 			writer = IOFactory.getWriter(ioType, dbUtil.getDataSource());
@@ -155,6 +160,15 @@ public class IOSystem {
 			}
 		}
 
+		if(checkPersistedSchema && ioType == RecordIO.DATABASE) {
+			List<String> models = ModelNames.listCustomModels();
+			if(models.size() == 0) {
+				for(String m : ModelNames.MODELS) {
+					ModelSchema schema = RecordFactory.getCustomSchemaFromResource(m, m);
+				}
+			}
+		}
+		
 		/// Custom models are stored in the /System organization
 		///
 		for(String s : ModelNames.getCustomModelNames()) {
@@ -175,6 +189,9 @@ public class IOSystem {
 		
 		if(context != null) {
 			try {
+				if(context.getQueue() != null) {
+					context.getQueue().requestStop();
+				}
 				if(context.getIndexManager() != null) {
 					context.getIndexManager().flush();
 					context.getIndexManager().clearCache();

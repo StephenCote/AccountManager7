@@ -1,26 +1,12 @@
 {
 "name": "request",
 "abstract": true,
+"inherits": ["subject"],
 "fields": [
-
-	{
-		"name": "subject",
-		"baseModel": "$flex",
-		"type": "model",
-		"foreign": true,
-		"foreignType": "subjectType",
-		"foreignField": "objectId"
-	},
-	{
-		"name": "subjectType",
-		"type": "string",
-		"maxLength": 64
-	},
 	{
 		"name": "action",
 		"baseClass": "org.cote.accountmanager.schema.type.ActionEnumType",
 		"type": "enum",
-		"index": true,
 		"maxLength": 16
 	}
 ]}
