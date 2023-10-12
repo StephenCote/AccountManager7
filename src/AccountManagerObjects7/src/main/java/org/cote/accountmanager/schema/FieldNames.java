@@ -265,4 +265,8 @@ public class FieldNames {
 		public static final String FIELD_PERSON = "person";
 		
 		public static final String FIELD_FIELD_NAME = "fieldName";
+		
+		public static final String FIELD_FUNCTION = "function";
+		
+		public static final String FIELD_CLASS = "class";
 }

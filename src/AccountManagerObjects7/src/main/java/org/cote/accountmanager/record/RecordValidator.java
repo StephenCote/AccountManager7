@@ -1,5 +1,6 @@
 package org.cote.accountmanager.record;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -21,9 +22,31 @@ public class RecordValidator {
 	}
 	public static boolean validate(RecordOperation operation, BaseRecord record) {
 		return validate(operation, RecordFactory.getSchema(record.getModel()), record);
+		/*
+		ModelSchema schema = RecordFactory.getSchema(record.getModel());
+		int valid = 0;
+		for(String impl : schema.getImplements()) {
+			logger.info("Validating " + impl);
+			if(validate(operation, RecordFactory.getSchema(impl), record)) {
+				valid++;
+			}
+		}
+		return (valid == schema.getImplements().size());
+		*/
 	}
 	
-	public static boolean validate(RecordOperation operation, ModelSchema schema, BaseRecord record) {
+	public static List<ModelValidation> getValidations(ModelSchema schema, BaseRecord record) {
+		List<ModelValidation> valids = new ArrayList<>();
+		for(String impl : schema.getImplements()) {
+			ModelSchema ischema = RecordFactory.getSchema(impl);
+			if(ischema.getValidation() != null) {
+				valids.add(ischema.getValidation());
+			}
+		}
+		return valids;
+	}
+	
+	private static boolean validate(RecordOperation operation, ModelSchema schema, BaseRecord record) {
 		boolean valid = false;
 		
 		if(IOSystem.getActiveContext() != null && !IOSystem.getActiveContext().isEnforceValidation()) {
@@ -35,16 +58,32 @@ public class RecordValidator {
 			return true;
 		}
 		
+		/// logger.info("**** Validating " + record.getModel());
+		
 		int errors = 0;
 		int ruleCount = 0;
 		int successCount = 0;
-		ModelValidation schemav = schema.getValidation();
-		
+		//ModelValidation schemav = schema.getValidation();
+		List<ModelValidation> schemavs = getValidations(schema, record);
 		for(FieldType f : record.getFields()) {
 			FieldSchema fs = schema.getFieldSchema(f.getName());
 			switch(f.getValueType()) {
 				case ENUM:
 				case STRING:
+
+					String val = f.getValue();
+					if(fs.getMaxLength() > 0 && val != null && val.length() > fs.getMaxLength()) {
+						logger.error("Value '" + val + "' exceeds maximum length " + fs.getMaxLength());
+						errors++;
+						break;
+					}
+					if(fs.getMinLength() > 0 && (val == null || val.length() < fs.getMinLength())){
+						logger.error("Value '" + val + "' does not meet the minimum length " + fs.getMinLength());
+						errors++;
+						break;
+					}
+
+				default:
 					for(String r : fs.getRules()) {
 						BaseRecord rule = ValidationUtil.getRule(r);
 						ruleCount++;
@@ -58,12 +97,11 @@ public class RecordValidator {
 							}
 						}
 					}
-					if(schemav != null) {
-						List<ModelRule> srules = schemav.getRules().stream().filter(o -> {
+					if(schemavs.size() > 0) {
+						List<ModelRule> srules = schemavs.stream().flatMap(r -> r.getRules().stream()).filter(o -> {
 							return o.getFields().contains(f.getName());
 
 						}).collect(Collectors.toList());
-						// logger.info("Scanning model level rules: " + srules.size());
 						for(ModelRule mr : srules) {
 							for(String r: mr.getRules()) {
 								BaseRecord rule = ValidationUtil.getRule(r);
@@ -80,17 +118,6 @@ public class RecordValidator {
 							}
 						}
 					}
-					String val = f.getValue();
-					if(fs.getMaxLength() > 0 && val != null && val.length() > fs.getMaxLength()) {
-						logger.error("Value '" + val + "' exceeds maximum length " + fs.getMaxLength());
-						errors++;
-					}
-					if(fs.getMinLength() > 0 && (val == null || val.length() < fs.getMinLength())){
-						logger.error("Value '" + val + "' does not meet the minimum length " + fs.getMinLength());
-						errors++;
-					}
-					break;
-				default:
 					break;
 			}
 		}

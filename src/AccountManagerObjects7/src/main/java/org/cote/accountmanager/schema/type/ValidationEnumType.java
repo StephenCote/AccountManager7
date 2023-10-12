@@ -35,6 +35,7 @@ public enum ValidationEnumType {
 
     UNKNOWN,
     BOOLEAN,
+    FUNCTION,
     REPLACEMENT,
     NONE;
 

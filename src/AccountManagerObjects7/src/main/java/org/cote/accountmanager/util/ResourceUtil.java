@@ -25,6 +25,15 @@ public class ResourceUtil {
 	public static String getFunctionResource(String name) {
 		return getResource(RESOURCE_PREFIX + "functions/" + name + "Function.js");
 	}
+	public static String getFunctionResourceObject(String name) {
+		return getResource(RESOURCE_PREFIX + "functions/" + name + "Function.json");
+	}
+	public static String getScriptResourceObject(String name) {
+		String rec = BinaryUtil.toBase64Str(getResource(RESOURCE_PREFIX + "functions/javascript/" + name + "Function.js"));
+		// return "{\"type\": \"javascript\", \"data\": {\"dataBytesStore\": \"" + rec + "\"}}";
+		return "{\"dataBytesStore\": \"" + rec + "\"}";
+	}
+	
 	public static String getFactResource(String name) {
 		return getResource(RESOURCE_PREFIX + "facts/" + name + "Fact.json");
 	}

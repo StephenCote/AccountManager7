@@ -1,0 +1,6 @@
+{
+	"model": "validationRule",
+	"name": "notInParent",
+	"type": "function",
+	"function": "!{notInParent}"
+}

@@ -6,9 +6,13 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
+import org.apache.logging.log4j.util.Strings;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IPath;
@@ -32,9 +36,69 @@ import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
 import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.ValidationUtil;
+import org.cote.accountmanager.validator.HierarchyValidator;
 import org.junit.Test;
 
 public class TestValidationRules extends BaseTest {
+	
+	@Test
+	public void TestFunctionRule() {
+		logger.info("Test function rule");
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Validation Rules");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		try {
+			BaseRecord parentDir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Parent", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+			BaseRecord childDir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Parent/Child", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+			BaseRecord grandDir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Parent/Child/GrandChild", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+	
+			grandDir.set(FieldNames.FIELD_DESCRIPTION, "New description - " + UUID.randomUUID().toString());
+			
+			//ModelSchema schema = RecordFactory.getSchema(ModelNames.MODEL_GROUP);
+			// logger.info(Strings.join(schema.getImplements(), ','));
+
+			ioContext.getAccessPoint().update(testUser1, grandDir);
+			
+			parentDir.set(FieldNames.FIELD_PARENT_ID, grandDir.get(FieldNames.FIELD_ID));
+			logger.info("In parent: " + HierarchyValidator.checkHierarchy(parentDir, FieldNames.FIELD_PARENT_ID));
+			
+		}
+		catch(StackOverflowError | Exception e) {
+			e.printStackTrace();
+		}
+		
+	}
+
+	
+	@Test
+	public void TestFieldValidation() {
+
+		BaseRecord data = null;
+		BaseRecord user = null;
+		try {
+			data = RecordFactory.newInstance(ModelNames.MODEL_DATA);
+			data.set(FieldNames.FIELD_NAME, "   This   ");
+			boolean valid = RecordValidator.validate(data);
+			assertTrue("Expected data to be valid", valid);
+			assertTrue("Expected name value to be trimmed", "This".equals(data.get(FieldNames.FIELD_NAME)));
+			
+			user = RecordFactory.newInstance(ModelNames.MODEL_USER);
+			user.set(FieldNames.FIELD_NAME, "   This   ");
+
+			valid = RecordValidator.validate(user);
+			assertFalse("Expected user to be invalid", valid);
+			assertTrue("Expected name value to be trimmed", "This".equals(user.get(FieldNames.FIELD_NAME)));
+			
+			user.set(FieldNames.FIELD_NAME, "   This2  ");
+			valid = RecordValidator.validate(user);
+			assertTrue("Expected user to be valid", valid);
+			assertTrue("Expected name value to be trimmed", "This2".equals(user.get(FieldNames.FIELD_NAME)));
+
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+	}
 	
 	@Test
 	public void TestSystemRules() {
@@ -49,8 +113,6 @@ public class TestValidationRules extends BaseTest {
 		BaseRecord ops = testOrgContext.getOpsUser();
 		BaseRecord admin = testOrgContext.getAdminUser();
 		BaseRecord dir = ioContext.getPathUtil().makePath(admin, ModelNames.MODEL_GROUP, "/Validation Rules", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		//ioContext.getAccessPoint().delete(admin, dir);
-		//dir = ioContext.getPathUtil().makePath(admin, ModelNames.MODEL_GROUP, "/Validation Rules", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		assertNotNull("Directory is null", dir);
 		
 		if(ioContext.getAuthorizationUtil().canRead(admin, ops, dir).getType() != PolicyResponseEnumType.PERMIT) {
@@ -69,16 +131,6 @@ public class TestValidationRules extends BaseTest {
 		assertTrue("Ops user is not authorized to create", au.canUpdate(ops, ops, dir).getType() == PolicyResponseEnumType.PERMIT);
 			
 		Query query = QueryUtil.createQuery(ModelNames.MODEL_VALIDATION_RULE, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		/*
-		try {
-			DBStatementMeta meta = StatementUtil.getSelectTemplate(query);
-			logger.info(query.toFullString());
-			logger.info(meta.getSql());
-		} catch (ModelException | FieldException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		*/
 		QueryResult rec = ioContext.getAccessPoint().list(ops, query);
 		logger.info("Cleaning up " + rec.getResults().length);
 		for(BaseRecord rc : rec.getResults()) {
@@ -86,13 +138,10 @@ public class TestValidationRules extends BaseTest {
 		}
 		
 		BaseRecord rule = ValidationUtil.getRule("$notEmpty").copyRecord();
-		// applyGroupOwnership(ops, dir, rule);
 		try {
-			
-			//BaseRecord crule = ioContext.getAccessPoint().create(ops, rule);
 			BaseRecord crule = recursiveCreate(ops, dir, rule);
 			assertNotNull("Created rule is null", crule);
-			
+			logger.info(crule.toFullString());
 			BaseRecord lrule = ioContext.getAccessPoint().findByObjectId(ops, ModelNames.MODEL_VALIDATION_RULE, crule.get(FieldNames.FIELD_OBJECT_ID));
 			assertNotNull("Rule is null", lrule);
 			
@@ -167,37 +216,6 @@ public class TestValidationRules extends BaseTest {
 			e.printStackTrace();
 		}
 		
-	}
-	
-	@Test
-	public void TestFieldValidation() {
-
-		BaseRecord data = null;
-		BaseRecord user = null;
-		try {
-			data = RecordFactory.newInstance(ModelNames.MODEL_DATA);
-			data.set(FieldNames.FIELD_NAME, "   This   ");
-			boolean valid = RecordValidator.validate(data);
-			assertTrue("Expected data to be valid", valid);
-			assertTrue("Expected name value to be trimmed", "This".equals(data.get(FieldNames.FIELD_NAME)));
-			
-			user = RecordFactory.newInstance(ModelNames.MODEL_USER);
-			user.set(FieldNames.FIELD_NAME, "   This   ");
-
-			valid = RecordValidator.validate(user);
-			assertFalse("Expected user to be invalid", valid);
-			assertTrue("Expected name value to be trimmed", "This".equals(user.get(FieldNames.FIELD_NAME)));
-			
-			user.set(FieldNames.FIELD_NAME, "   This2  ");
-			valid = RecordValidator.validate(user);
-			assertTrue("Expected user to be valid", valid);
-			assertTrue("Expected name value to be trimmed", "This2".equals(user.get(FieldNames.FIELD_NAME)));
-
-			// boolean valid = ValidationUtil.validateFieldWithRule(data, data.getField(FieldNames.FIELD_NAME), rule);
-			// logger.info("Valid: " + valid);
-		} catch (FieldException | ModelNotFoundException | ValueException e) {
-			logger.error(e);
-		}
 	}
 	
 }

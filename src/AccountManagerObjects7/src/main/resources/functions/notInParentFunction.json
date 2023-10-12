@@ -1,0 +1,7 @@
+{
+	"name": "notInParent",
+	"urn": "resource.function.notinparent",
+	"type": "java",
+	"class": "org.cote.accountmanager.validator.HierarchyValidator",
+	"data": "&{notInParent}"
+}

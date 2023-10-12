@@ -5,29 +5,23 @@
 "label": "Function",
 "fields": [
 	{
-		"name": "facts",
-		"baseModel": "functionFact",
-		"type": "list",
-		"baseType": "model",
-		"foreign": true
-	}
-	,{
-		"name": "functionData",
+		"name": "data",
 		"baseModel": "data",
 		"type": "model",
 		"foreign": true
 	}
 	,{
-		"name": "functionType",
+		"name": "type",
 		"baseClass": "org.cote.accountmanager.schema.type.FunctionEnumType",
 		"type": "enum",
 		"maxLength": 16
-	}
-	,{
-		"name": "sourceUrl",
-		"type": "string"
-	}
-	,{
+	},
+	{
+		"name": "class",
+		"type": "string",
+		"maxLength": 127
+	},
+	{
 		"name": "sourceUrn",
 		"type": "string",
 		"maxLength": 127
