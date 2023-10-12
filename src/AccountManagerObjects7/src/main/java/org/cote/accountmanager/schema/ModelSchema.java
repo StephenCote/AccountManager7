@@ -48,12 +48,22 @@ public class ModelSchema {
 	/// This value only affects database IO
 	private boolean dedicatedParticipation = false;
 	
+	private boolean autoCreateForeignReference = true;
+	
 	private String version = null;
 	
 	public ModelSchema() {
 		
 	}
 	
+	public boolean isAutoCreateForeignReference() {
+		return autoCreateForeignReference;
+	}
+
+	public void setAutoCreateForeignReference(boolean autoCreateForeignReference) {
+		this.autoCreateForeignReference = autoCreateForeignReference;
+	}
+
 	public boolean isDedicatedParticipation() {
 		return dedicatedParticipation;
 	}
