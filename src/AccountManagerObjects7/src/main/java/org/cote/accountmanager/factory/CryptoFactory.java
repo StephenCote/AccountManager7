@@ -58,11 +58,9 @@ import org.cote.accountmanager.io.JsonWriter;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.CryptoUtil;
-import org.cote.accountmanager.util.JSONUtil;
 
 
 public class CryptoFactory {
@@ -170,9 +168,6 @@ public class CryptoFactory {
 		}
 		catch(FieldException | ModelNotFoundException | ValueException | WriterException | NoSuchAlgorithmException | InvalidKeySpecException e) {
 			logger.error(e);
-			logger.error(JSONUtil.exportObject(bean, RecordSerializerConfig.getForeignUnfilteredModule()));
-			e.printStackTrace();
-			
 		}
 		return bean.get(FieldNames.FIELD_PUBLIC_FIELD_KEY);
 		
@@ -275,8 +270,6 @@ public class CryptoFactory {
 			setSecretKey(bean, secret.getEncoded(), iv, encryptedPassKey);
 		} catch (NoSuchAlgorithmException | InvalidKeySpecException | NoSuchPaddingException | InvalidKeyException | InvalidAlgorithmParameterException | InvalidParameterSpecException e) {
 			logger.error(e);
-			e.printStackTrace();
-			
 		}  
 	}
 	public void setSecretKey(CryptoBean bean, byte[] key, byte[] iv, boolean encryptedCipher){
@@ -360,7 +353,6 @@ public class CryptoFactory {
 		}
 		catch(NoSuchAlgorithmException | InvalidKeySpecException | IOException  e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 	}
 	public void setECDSAPrivateKey(CryptoBean bean, byte[] ecdsaKey) {
@@ -379,8 +371,6 @@ public class CryptoFactory {
 		}
 		catch(NoSuchAlgorithmException | InvalidKeySpecException | IOException e) {
 			logger.error(e);
-			e.printStackTrace();
-			
 		}
 	}
 	public void setRSAPublicKey(CryptoBean bean, byte[] rsaKey){
@@ -708,8 +698,6 @@ public class CryptoFactory {
 			ret = true;
 		} catch (NullPointerException | NoSuchAlgorithmException | InvalidKeyException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			e.printStackTrace();
-			
 		}
 		return ret;
 	}
@@ -736,7 +724,6 @@ public class CryptoFactory {
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 	}
 
@@ -779,8 +766,6 @@ public class CryptoFactory {
 		}
 		catch(Exception e){
 			logger.error(e);
-			e.printStackTrace();
-			
 		}
 		return ret;
 	}

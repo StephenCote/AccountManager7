@@ -78,7 +78,6 @@ public class DBSearch extends SearchBase {
 			if(sql != null) {
 				logger.error(JSONUtil.exportObject(sql));
 			}
-			e.printStackTrace();
 		}
 		
 		
@@ -136,7 +135,6 @@ public class DBSearch extends SearchBase {
 			
 		} catch (NullPointerException | ModelException | FieldException | DatabaseException | SQLException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
-			e.printStackTrace();
 			if(sql != null) {
 				logger.error(JSONUtil.exportObject(sql));
 			}

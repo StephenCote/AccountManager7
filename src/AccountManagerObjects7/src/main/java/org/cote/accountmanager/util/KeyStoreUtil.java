@@ -80,7 +80,6 @@ public class KeyStoreUtil {
 				fos.close();
 			} catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
 				logger.error(e);
-				e.printStackTrace();
 			}
 		}
 		return getKeyStore(path,password);
@@ -96,7 +95,6 @@ public class KeyStoreUtil {
 		}
 		 catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return saved;
 	}
@@ -117,9 +115,6 @@ public class KeyStoreUtil {
 		}
 		catch(KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e){
 			logger.error(e);
-			logger.error("Path:" + path);
-			logger.error("Pwd len: " + password.length);
-			e.printStackTrace();
 		}
 		finally{
 			try {
@@ -140,7 +135,6 @@ public class KeyStoreUtil {
 		outByte = baos.toByteArray();
 		} catch (KeyStoreException | NoSuchAlgorithmException | CertificateException | IOException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 
 	   return outByte;
@@ -158,7 +152,6 @@ public class KeyStoreUtil {
 			store.load(new ByteArrayInputStream(keystoreBytes), password);
 		} catch (NoSuchAlgorithmException | CertificateException | IOException | KeyStoreException e) {
 			logger.error(e);
-			e.printStackTrace();
 			store = null;
 		} 
 	      return store;
@@ -173,7 +166,6 @@ public class KeyStoreUtil {
 		}
 		catch(CertificateException e){
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return cert;
 	}
@@ -187,7 +179,6 @@ public class KeyStoreUtil {
 		}
 		catch(KeyStoreException e){
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return outBool;
 	}
@@ -221,9 +212,7 @@ public class KeyStoreUtil {
 		    }
 		}
 		catch(KeyStoreException | UnrecoverableKeyException | NoSuchAlgorithmException e){
-			logger.error(e.getMessage());
 			logger.error(e);
-			e.printStackTrace();
 		}
 	    return outBool;
 

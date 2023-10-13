@@ -152,13 +152,10 @@ public class StreamSegmentWriter implements IWriter {
 				channel.position(start);
 				ByteBuffer buff = ByteBuffer.wrap(bytes);
 				channel.write(buff);
-				// size = channel.size();
-
 				lock.release();
             }
 	    } catch (IOException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 	}
 

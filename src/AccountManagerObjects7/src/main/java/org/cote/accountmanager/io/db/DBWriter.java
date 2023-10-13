@@ -4,7 +4,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -210,10 +209,8 @@ public class DBWriter extends MemoryWriter {
 		}
 	    catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			e.printStackTrace();
 	    }
 
-	    /// logger.debug("Post batch write - " + writeCount + " records written. " + autoCreate.size() + " model lists to autoCreate");
 	    autoCreate.forEach((k ,v) -> {
 	    	if(v.size() > 0) {
 	    		logger.info("Auto create: " + k + " " + v.size());
@@ -392,7 +389,6 @@ public class DBWriter extends MemoryWriter {
 			} catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 				logger.error(model.toString());
-				e.printStackTrace();
 		    }
 		}
 		else if(op == RecordOperation.UPDATE) {

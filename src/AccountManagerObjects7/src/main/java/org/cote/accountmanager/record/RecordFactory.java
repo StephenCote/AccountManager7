@@ -351,7 +351,6 @@ public class RecordFactory {
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 
 		return ms;

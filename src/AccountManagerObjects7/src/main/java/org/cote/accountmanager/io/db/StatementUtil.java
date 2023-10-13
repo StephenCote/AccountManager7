@@ -788,7 +788,6 @@ public class StatementUtil {
 					statement.setArray(paramMarker++, arr);
 				} catch (SQLException e) {
 					logger.error(e.getMessage());
-					e.printStackTrace();
 					throw new DatabaseException(e.getMessage());
 				}
 			}
@@ -919,9 +918,7 @@ public class StatementUtil {
 		}
 		catch (SQLException e) {
 			logger.error("Error setting " + index + " for " + fieldName + " with " + value);
-			logger.error(statement.toString());
 			logger.error(e);
-			e.printStackTrace();
 			throw new DatabaseException(e);
 		}
 	}

@@ -119,10 +119,6 @@ public class BaseTest {
 		logger.info("Reset IO");
 		clearIO();
 		
-		// IOFactory.DEFAULT_FILE_BASE = "./am7/" + UUID.randomUUID().toString();
-
-		//resetH2DBUtil("./am7/h2", "sa", "1234", false);
-
 		boolean error = false;
 		OrganizationContext octx = null;
 		try {
@@ -138,7 +134,6 @@ public class BaseTest {
 			}
 		} catch (StackOverflowError | Exception e) {
 			logger.error(e);
-			e.printStackTrace();
 			error = true;
 		}
 		

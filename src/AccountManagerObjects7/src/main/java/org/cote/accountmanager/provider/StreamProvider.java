@@ -125,46 +125,6 @@ public class StreamProvider implements IProvider {
 			ssu.updateStreamSize(stream);
 		}
 	}
-	
-
-	
-	/*
-	private void writeSegments(BaseRecord stream) throws ModelException {
-		List<BaseRecord> segments = stream.get(FieldNames.FIELD_SEGMENTS);
-		String path = getFileStreamPath(stream);
-		if(isRestrictedPath(path)) {
-			throw new ModelException("Path " + path + " is restricted");
-		}
-		FileUtil.makePath(path.substring(0, path.lastIndexOf("/")));
-		long size = 0L;
-		try (
-			RandomAccessFile writer = new RandomAccessFile(path, "rw");
-			FileChannel channel = writer.getChannel()
-		){
-            FileLock lock = channel.tryLock();
-
-            while (!lock.isValid()) {
-                lock = channel.tryLock();
-            }
-            if(lock.isValid()) {
-				for(BaseRecord segment : segments) {
-					long start = segment.get(FieldNames.FIELD_START_POSITION);
-					if(start == 0L) {
-						start = channel.size();
-					}
-					channel.position(start);
-					ByteBuffer buff = ByteBuffer.wrap(segment.get(FieldNames.FIELD_STREAM));
-					channel.write(buff);
-					size = channel.size();
-				}
-				lock.release();
-            }
-	    } catch (IOException e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-	}
-	*/
 
 	@Override
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model,

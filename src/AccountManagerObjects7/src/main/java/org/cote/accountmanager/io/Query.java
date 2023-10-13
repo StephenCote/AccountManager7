@@ -134,8 +134,6 @@ public class Query extends LooseRecord{
 			}
 			catch(Exception e) {
 				logger.error(e);
-				logger.error(this.toFullString());
-				e.printStackTrace();
 			}
 		}
 		return hashVal;

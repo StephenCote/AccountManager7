@@ -122,7 +122,6 @@ public class TokenOperation extends Operation {
 				
 			} catch (IndexException | ReaderException e) {
 				logger.error(e);
-				e.printStackTrace();
 			}
 		}
 		else {

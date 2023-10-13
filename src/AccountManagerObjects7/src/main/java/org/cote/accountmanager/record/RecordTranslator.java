@@ -39,8 +39,6 @@ public abstract class RecordTranslator {
 				prov.provide(null, operation, lmodel, model);
 			} catch (ModelException | FieldException | ValueException | ModelNotFoundException | ReaderException e) {
 				logger.error(e);
-				e.printStackTrace();
-				
 			}
 		}
 	}
@@ -55,7 +53,6 @@ public abstract class RecordTranslator {
 				prov.provide(null, operation, lmodel, model, lfield, field);
 			} catch (ModelException | FieldException | ValueException | ModelNotFoundException | ReaderException e) {
 				logger.error(e);
-				e.printStackTrace();
 			}
 		}
 		

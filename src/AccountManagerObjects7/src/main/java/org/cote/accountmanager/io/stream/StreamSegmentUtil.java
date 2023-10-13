@@ -89,7 +89,6 @@ public class StreamSegmentUtil {
 				stream = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_STREAM, streamId);
 			} catch (ReaderException e) {
 				logger.error(e);
-				e.printStackTrace();
 			}
 		}
 		return stream;
@@ -176,7 +175,6 @@ public class StreamSegmentUtil {
         }
 	    catch (IOException e) {
 			logger.error(e);
-			/// e.printStackTrace();
 		}
 		return size;
 

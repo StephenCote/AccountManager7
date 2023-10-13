@@ -128,8 +128,6 @@ public class StreamSegmentReader implements IReader {
  
         } catch (IOException | FieldException | ValueException | ModelNotFoundException e) {
             logger.error(e);
-
-            e.printStackTrace();
         }
     }
 

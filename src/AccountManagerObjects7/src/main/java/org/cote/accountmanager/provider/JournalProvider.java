@@ -70,7 +70,6 @@ public class JournalProvider implements IProvider {
 		}
 		catch(Exception e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 	}
 	

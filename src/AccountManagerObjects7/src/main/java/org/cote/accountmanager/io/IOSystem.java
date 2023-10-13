@@ -155,7 +155,6 @@ public class IOSystem {
 					oc.createOrganization();
 				} catch (NullPointerException | SystemException e) {
 					logger.error(e);
-					e.printStackTrace();
 				}
 			}
 		}

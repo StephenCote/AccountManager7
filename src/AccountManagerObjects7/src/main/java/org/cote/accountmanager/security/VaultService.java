@@ -409,8 +409,6 @@ public class VaultService
 		}
 		catch(IllegalArgumentException | NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException e){
 			logger.error(e);
-			e.printStackTrace();
-			
 		}
 		return true;
 	}
@@ -431,29 +429,14 @@ public class VaultService
 			return null;
 		}
 		
-		String keyId = key.get(FieldNames.FIELD_CIPHER_FIELD_KEY_ID);
-		
 		if(vault.getVaultKey() == null && getVaultKey(vault) == null) {
 			logger.error("Vault key is null");
 			return null;
 		}
 		CryptoBean vaultKey = vault.getVaultKey();
 		CryptoBean activeBean = null;
-		// logger.info("Key id: " + keyId);
-		//logger.info(vaultKey.toFullString());
-		// try {
-			// key.set(FieldNames.FIELD_PRIVATE, vaultKey.get(FieldNames.FIELD_PRIVATE));
-			// logger.info(vaultKey.toFullString());
-			// logger.info(key.toFullString());
-			activeBean = new CryptoBean(key, vaultKey.getPrivateKey(), vaultKey.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
-			// key.set(FieldNames.FIELD_PRIVATE, null);
-			vault.setActiveKey(activeBean);
-		/*
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		*/
+		activeBean = new CryptoBean(key, vaultKey.getPrivateKey(), vaultKey.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
+		vault.setActiveKey(activeBean);
 		return activeBean;
 	}
 	
@@ -1023,7 +1006,6 @@ public class VaultService
 		}
 		catch(ClassCastException | ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		unvaulted.remove(field.getName());
 		vaulted.add(field.getName());
@@ -1204,7 +1186,6 @@ public class VaultService
 		}
 		catch(ClassCastException | ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		
 		logger.info("Exit from set vault bytes");

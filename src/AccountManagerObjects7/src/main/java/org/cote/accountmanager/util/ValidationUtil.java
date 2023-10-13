@@ -18,7 +18,6 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.FunctionEnumType;
-import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 import org.cote.accountmanager.schema.type.ValidationEnumType;
 
 public class ValidationUtil {
