@@ -21,9 +21,9 @@ public class ModelValueType extends ValueType {
 
 	public <T> void setValue(T inValue) throws ValueException {
 		
-		if(inValue != null && !this.getBaseModel().equals(ModelNames.MODEL_FLEX)) {
+		if(inValue != null && (this.getBaseModel() == null || !this.getBaseModel().equals(ModelNames.MODEL_FLEX))) {
 			BaseRecord m = (BaseRecord)inValue;
-		
+			this.setBaseModel(m.getModel());
 			if(this.getBaseModel() == null || RecordFactory.getSchema(this.getBaseModel()) == null) {
 				throw new ValueException(String.format(ValueException.MODEL_VALUE_EXCEPTION, this.getBaseModel()));
 			}

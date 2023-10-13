@@ -1070,8 +1070,14 @@ public class StatementUtil {
 				}
 			}
 			else {
-				crec = JSONUtil.importObject(rset.getString(col), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-				haveId = true;
+				String colStr = rset.getString(col);
+				if(colStr != null) { 
+					crec = JSONUtil.importObject(colStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+					haveId = true;
+				}
+				else {
+					logger.debug("Null value for " + col);
+				}
 			}
 			if(haveId) {
 				record.set(col, crec);

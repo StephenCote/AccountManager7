@@ -36,7 +36,7 @@ public class TestFieldRevisions extends BaseTest {
 	
 	@Test
 	public void TestFieldParticipationModel() {
-		
+		logger.info("Testing field level participation support");
 		// logger.info(ioContext.getDbUtil().generateSchema(RecordFactory.getSchema(ModelNames.MODEL_GROUP)));
 		if(ioContext.getIoType() == RecordIO.FILE) {
 			logger.error("****** TODO: The file system support for foreign lists needs to be updated to link the encoded foreign keyed lists to the participation table");

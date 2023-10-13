@@ -357,6 +357,10 @@ public abstract class BaseRecord {
 	   FieldType f = FieldFactory.stringFieldType(name);
 	   updateField(f, val);
    }
+   public <T> void setModel(String name, T val) throws ValueException, ModelException, FieldException, ModelNotFoundException {
+	   FieldType f = FieldFactory.modelFieldType(name);
+	   updateField(f, val);
+   }
    public <T> void setByteArray(String name, T val) throws ValueException, ModelException, FieldException, ModelNotFoundException {
 	   FieldType f = FieldFactory.byteArrayFieldType(name);
 	   updateField(f, val);

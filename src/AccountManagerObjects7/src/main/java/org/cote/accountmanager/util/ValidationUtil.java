@@ -190,7 +190,7 @@ public class ValidationUtil {
 						outBool = true;
 					}
 					else{
-						logger.warn("Validation of " + field.getName() + " failed pattern " + expression + " because " + (m != null && m.matches()) + " was false or " + allowNull + " is true and " +(val == null || val.length() == 0));
+						logger.warn("Validation of " + record.getModel() + "." + field.getName() + " (" + val + ") failed pattern " + expression + " because " + (m != null && m.matches()) + " was false or " + allowNull + " is true and " +(val == null || val.length() == 0));
 					}
 					break;
 				default:

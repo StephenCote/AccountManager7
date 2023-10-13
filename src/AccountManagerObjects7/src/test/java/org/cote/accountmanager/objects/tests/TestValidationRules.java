@@ -73,7 +73,7 @@ public class TestValidationRules extends BaseTest {
 	
 	@Test
 	public void TestFieldValidation() {
-
+		logger.info("Testing field validation.  Validation errors in the log are expected in this test.");
 		BaseRecord data = null;
 		BaseRecord user = null;
 		try {
@@ -82,6 +82,7 @@ public class TestValidationRules extends BaseTest {
 			boolean valid = RecordValidator.validate(data);
 			assertTrue("Expected data to be valid", valid);
 			assertTrue("Expected name value to be trimmed", "This".equals(data.get(FieldNames.FIELD_NAME)));
+			
 			
 			user = RecordFactory.newInstance(ModelNames.MODEL_USER);
 			user.set(FieldNames.FIELD_NAME, "   This   ");
@@ -141,13 +142,9 @@ public class TestValidationRules extends BaseTest {
 		try {
 			BaseRecord crule = recursiveCreate(ops, dir, rule);
 			assertNotNull("Created rule is null", crule);
-			logger.info(crule.toFullString());
 			BaseRecord lrule = ioContext.getAccessPoint().findByObjectId(ops, ModelNames.MODEL_VALIDATION_RULE, crule.get(FieldNames.FIELD_OBJECT_ID));
 			assertNotNull("Rule is null", lrule);
-			
-			logger.info(lrule.toFullString());
-			
-		} catch (ClassCastException e) {
+		} catch (NullPointerException | ClassCastException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} 

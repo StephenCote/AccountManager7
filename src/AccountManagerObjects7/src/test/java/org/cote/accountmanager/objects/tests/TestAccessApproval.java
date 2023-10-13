@@ -141,12 +141,14 @@ public class TestAccessApproval extends BaseTest {
 	}
 	
 	private BaseRecord[] getAccessRequests(BaseRecord requestAdmin, BaseRecord requestor)  {
+		logger.info("Get access requests for " + requestor.get(FieldNames.FIELD_NAME));
 		BaseRecord[] recs = new BaseRecord[0];
 		try {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_ACCESS_REQUEST, FieldNames.FIELD_APPROVAL_STATUS, ApprovalResponseEnumType.REQUEST.toString());
 			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CREATED_DATE);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING.toString());
 			q.field(FieldNames.FIELD_SUBJECT_TYPE, requestor.getModel());
+			logger.info(requestor.copyRecord(new String[] {FieldNames.FIELD_ID}).toFullString());
 			q.field(FieldNames.FIELD_SUBJECT, requestor.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			QueryResult qr = ioContext.getAccessPoint().list(requestAdmin, q);
 			if(qr != null) {
@@ -155,6 +157,7 @@ public class TestAccessApproval extends BaseTest {
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 		return recs;
 	}

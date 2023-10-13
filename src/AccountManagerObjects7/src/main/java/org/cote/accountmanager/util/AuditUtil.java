@@ -88,6 +88,9 @@ public class AuditUtil {
 		return audit;
 	}
 	public static void auditResource(BaseRecord audit, BaseRecord resource) {
+		if(resource == null) {
+			return;
+		}
 		try {
 			audit.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getModel());
 			audit.set(FieldNames.FIELD_RESOURCE, resource);

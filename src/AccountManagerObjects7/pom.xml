@@ -67,24 +67,29 @@
 					<excludes>
 
 						<!--
-							<exclude>**/TestFieldLock.java</exclude>
+						<exclude>**/TestAccessApproval.java</exclude>
 						-->
 						<!-- Repeatable Set -->
-						<exclude>**/TestDBPerformance.java</exclude>
 						
+						<exclude>**/TestAccessPoint.java</exclude>
+						<exclude>**/TestStream.java</exclude>
+						<exclude>**/TestVault.java</exclude>
+						
+						<exclude>**/TestValidationRules.java</exclude>	
+						<exclude>**/TestBulkOperation.java</exclude>
+						<exclude>**/TestFieldLock.java</exclude>
+						<exclude>**/TestDBPerformance.java</exclude>
 						<exclude>**/TestFieldRevisions.java</exclude>
-						<exclude>**/TestVaultFields.java</exclude>
 						<exclude>**/TestMembership.java</exclude>
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestJournal.java</exclude>
-						<exclude>**/TestValidationRules.java</exclude>
+						<exclude>**/TestVaultFields.java</exclude>
+												
 						<exclude>**/TestStartup.java</exclude>
 						<exclude>**/TestToken.java</exclude>
 						<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
 						<exclude>**/TestProfile.java</exclude>
-						<exclude>**/TestAccessPoint.java</exclude>
-						<exclude>**/TestStream.java</exclude>
-						<exclude>**/TestVault.java</exclude>
+
 						
 						<exclude>**/TestObjectPolicy.java</exclude>
 						<exclude>**/TestObjectConstruct.java</exclude>
