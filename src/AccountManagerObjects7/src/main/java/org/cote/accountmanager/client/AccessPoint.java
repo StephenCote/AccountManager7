@@ -158,7 +158,7 @@ public class AccessPoint {
 			}
 		}
 		
-		int writeCount = context.getRecordUtil().updateRecords(objects);
+		int writeCount = context.getRecordUtil().updateRecords(records.toArray(new BaseRecord[0]));
 		
 		return writeCount;
 	}
@@ -215,7 +215,11 @@ public class AccessPoint {
 
 		ActionEnumType aet = ActionEnumType.DELETE;
 		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, object);
-
+		if(contextUser == null || object == null) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "One or more required parameters was null");
+			return outBool;
+			
+		}
 		if(isLocked(contextUser, object)) {
 			AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
 			return outBool;
@@ -484,15 +488,7 @@ public class AccessPoint {
 		}
 		PolicyResponseType[] prrs = context.getPolicyUtil().evaluateQueryToReadPolicyResponses(contextUser, query);
 		PolicyResponseType prr = null;
-		/*
-		String type = query.get(FieldNames.FIELD_TYPE);
-		if(type.equals(ModelNames.MODEL_GROUP)) {
-			//logger.info("PRRS: " + prrs.length);
-			if(prrs.length > 0) {
-				logger.warn(prrs[0].toFullString());
-			}
-		}
-		*/
+
 		for(PolicyResponseType pr : prrs) {
 			prr = pr;
 			if(pr.getType() == PolicyResponseEnumType.PERMIT) {
@@ -500,20 +496,6 @@ public class AccessPoint {
 			}
 		}
 		return prr;
-		/*
-		PolicyResponseType prr = null;
-		PolicyResponseType vprr = null;
-		for(PolicyResponseType pr : prrs) {
-			if(vprr == null && pr.getType() == PolicyResponseEnumType.PERMIT) {
-				vprr = pr;
-			}
-			if(pr.getType() != PolicyResponseEnumType.PERMIT) {
-				prr = pr;
-				break;
-			}
-		}
-		return (prr != null ? prr : vprr);
-		*/
 	}
 	
 	
