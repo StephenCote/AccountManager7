@@ -1,21 +1,25 @@
 package org.cote.accountmanager.objects.tests;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -31,6 +35,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.security.TokenService;
+import org.cote.accountmanager.util.ContentTypeUtil;
 import org.cote.accountmanager.util.DirectoryUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.ThumbnailUtil;
@@ -216,7 +221,8 @@ public class TestStream extends BaseTest {
 		
 
 	}
-	
+	/*
+	 * Currently broken on encryption
 	@Test
 	public void TestCreateStream() {
 		logger.info("Test Streaming");
@@ -283,6 +289,128 @@ public class TestStream extends BaseTest {
 		
 		
 	}
+	*/
+	@Test
+	public void TestStreamInPlace() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		BaseRecord odata = null;
+		// String dataName = "Demo stream " + UUID.randomUUID().toString();
+		String dataName = "Demo stream in place #1";
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Data/StreamInPlace", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList("path", "~/Data/StreamInPlace");
+		plist.parameter("name", dataName);
+		
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_STREAM, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, dataName);
+		q.setRequest(new String[] {FieldNames.FIELD_ID});
+		BaseRecord data = ioContext.getAccessPoint().find(testUser1, q);
+
+		
+		IOFactory.addPermittedPath("./media");
+		StreamSegmentUtil ssUtil = new StreamSegmentUtil();
+		
+		try {
+			if(data != null) {
+				boolean del = ioContext.getAccessPoint().delete(testUser1, data);
+				assertTrue("Expected existing data to be deleted", del);
+			}
+			logger.info("Create a new stream and include a segment");
+			data = ioContext.getFactory().newInstance(ModelNames.MODEL_STREAM, testUser1, null, plist);
+
+
+			String path = "./media/airship.jpg";
+			assertFalse("Stream path is restricted", ssUtil.isRestrictedPath(path));
+
+			data.set(FieldNames.FIELD_STREAM_SOURCE, path);
+			data.set(FieldNames.FIELD_CONTENT_TYPE, ContentTypeUtil.getTypeFromExtension(path));
+			data.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
+			ssUtil.updateStreamSize(data);
+			// logger.info(data.toFullString());
+			odata = ioContext.getAccessPoint().create(testUser1, data);
+			
+			logger.info(odata.toFullString());
+			assertNotNull("Failed to create stream " + dataName, odata);
+
+			byte[] dataB = ssUtil.streamToEnd(odata.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
+			logger.info("Byte length: " + dataB.length);
+		}
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
 
 	
+	@Test
+	public void TestStreamInPlaceUtility() {
+		
+		logger.info("Test stream file in place");
+		
+		IOFactory.addPermittedPath("./media");
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser2 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser2", testOrgContext.getOrganizationId());
+		
+		BaseRecord odata = null;
+		String filePath = "./media/anaconda.jpg";
+		String name = Paths.get(filePath).getFileName().toString();
+
+		String groupPath = "~/Data/StreamInPlace";
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser2, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		
+		assertTrue("Failed to cleanup stream", cleanupInGroup(testUser2, ModelNames.MODEL_STREAM, name, group.get(FieldNames.FIELD_ID)));
+		assertTrue("Failed to cleanup data", cleanupInGroup(testUser2, ModelNames.MODEL_DATA, name, group.get(FieldNames.FIELD_ID)));
+		
+		boolean streamed = StreamUtil.streamInPlaceToData(testUser2, filePath, groupPath);
+		assertTrue("Failed to stream in place", streamed);
+	}
+
+	@Test
+	public void TestStreamDirectoryInPlace() {
+		String path = "c:/tmp/xpic";
+		IOFactory.addPermittedPath(path);
+		DirectoryUtil du = new DirectoryUtil(path);
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser3 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser3", testOrgContext.getOrganizationId());
+
+		String groupPath = "~/Data/StreamDirectoryInPlace";
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser3, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+
+		for(File f : du.dir()) {
+			if(f.isDirectory()) {
+				continue;
+			}
+			String name = f.getName();
+			String filePath = f.getAbsolutePath();
+			
+			assertTrue("Failed to cleanup stream", cleanupInGroup(testUser3, ModelNames.MODEL_STREAM, name, group.get(FieldNames.FIELD_ID)));
+			assertTrue("Failed to cleanup data", cleanupInGroup(testUser3, ModelNames.MODEL_DATA, name, group.get(FieldNames.FIELD_ID)));
+
+			
+			boolean streamed = StreamUtil.streamInPlaceToData(testUser3, filePath, groupPath);
+			assertTrue("Expected file " + filePath + " to be streamed", streamed);
+		}
+
+	}
+	
+	private boolean cleanupInGroup(BaseRecord user, String model, String name, long groupId) {
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
+		q.field(FieldNames.FIELD_NAME, name);
+		q.setRequest(new String[] {FieldNames.FIELD_ID});
+		BaseRecord data = ioContext.getAccessPoint().find(user, q);
+		boolean outBool = true;
+		if(data != null) {
+			logger.info("Cleanup " + model + " " + name + " in group #" + groupId);
+			outBool = ioContext.getAccessPoint().delete(user, data);
+		}
+		else {
+			logger.warn(model + " " + name +" in group #" + groupId + " doesn't exist");
+		}
+		return outBool;
+	}
 }

@@ -31,6 +31,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
 
@@ -42,8 +44,14 @@ import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -98,6 +106,73 @@ public class StreamUtil {
 		}
 		seg.set(FieldNames.FIELD_START_POSITION, start);
 		return seg;
+	}
+	
+	public static boolean streamInPlaceToData(BaseRecord user, String filePath, String groupPath) {
+		boolean outBool = false;
+		StreamSegmentUtil ssUtil = new StreamSegmentUtil();
+		if(ssUtil.isRestrictedPath(filePath)) {
+			logger.error("Path is restricted: " + filePath);
+			return outBool;
+		}
+		Path path = Paths.get(filePath);
+		String name = path.getFileName().toString();
+		
+		BaseRecord group = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString());
+		if(group == null) {
+			logger.error("Unable to find or create group: " + groupPath);
+			return outBool;
+		}
+		long groupId = group.get(FieldNames.FIELD_ID);
+
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, groupId);
+		q.field(FieldNames.FIELD_NAME, name);
+		q.setRequest(new String[] {FieldNames.FIELD_ID});
+		BaseRecord qdata = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+    	
+		if(qdata != null) {
+    		logger.error("Data " + name + " already exists in " + groupPath);
+    		return outBool;
+    	}
+    	
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		
+		try {
+			BaseRecord stream = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STREAM, user, null, plist);
+			stream.set(FieldNames.FIELD_STREAM_SOURCE, filePath);
+			stream.set(FieldNames.FIELD_CONTENT_TYPE, ContentTypeUtil.getTypeFromExtension(name));
+			stream.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
+			ssUtil.updateStreamSize(stream);
+			long size = stream.get(FieldNames.FIELD_SIZE);
+			if(size == 0L) {
+				logger.error("Failed to obtain stream size");
+				return outBool;
+			}
+			logger.info("Create stream object - " + name);
+			BaseRecord nstream = IOSystem.getActiveContext().getAccessPoint().create(user, stream);
+			if(nstream == null) {
+				logger.error("Failed to create stream object");
+				return outBool;
+			}
+			
+			BaseRecord data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);
+			data.set(FieldNames.FIELD_GROUP_ID, groupId);
+			data.set(FieldNames.FIELD_CONTENT_TYPE, ContentTypeUtil.getTypeFromExtension(name));
+			data.set(FieldNames.FIELD_STREAM, nstream);
+			data.set(FieldNames.FIELD_SIZE, size);
+			logger.info("Create data object - " + name);
+			BaseRecord ndata = IOSystem.getActiveContext().getAccessPoint().create(user, data);
+			if(ndata == null) {
+				logger.error("Failed to create data object");
+				return outBool;
+			}
+			outBool = true;
+		}
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return outBool;
 	}
 	
 	public static boolean streamToData(BaseRecord user, String name, String description, String groupPath, long groupId, InputStream stream) throws FieldException, ModelNotFoundException, ValueException, IOException, FactoryException, IndexException, ReaderException {
