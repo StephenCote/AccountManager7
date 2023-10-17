@@ -2,6 +2,8 @@ package org.cote.accountmanager.factory;
 
 import java.util.Date;
 import java.util.GregorianCalendar;
+import java.util.List;
+import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -9,7 +11,9 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.ApprovalResponseEnumType;
@@ -24,9 +28,7 @@ public class AccessRequestFactory extends FactoryBase {
 	@Override
 	public BaseRecord newInstance(BaseRecord contextUser, BaseRecord recordTemplate, ParameterList parameterList, BaseRecord... arguments) throws FactoryException
 	{
-		BaseRecord subject = null;
-		BaseRecord resource = null;
-
+		/*
 		if(arguments.length > 0) {
 			if(arguments.length > 1) {
 				subject = arguments[0];
@@ -37,6 +39,13 @@ public class AccessRequestFactory extends FactoryBase {
 				resource = arguments[0];
 			}
 		}
+		*/
+		BaseRecord subject = null;
+		BaseRecord submitter = null;
+		BaseRecord resource = null;
+		BaseRecord entitlement = null;
+		BaseRecord requester = null;
+		long parentId = 0L;
 		
 		ActionEnumType aet = ActionEnumType.UNKNOWN;
 		ApprovalResponseEnumType apet = ApprovalResponseEnumType.UNKNOWN;
@@ -49,22 +58,50 @@ public class AccessRequestFactory extends FactoryBase {
 			if(responseStr != null) {
 				apet = ApprovalResponseEnumType.valueOf(responseStr);
 			}
+			entitlement = parameterList.getParameter(FieldNames.FIELD_ENTITLEMENT, BaseRecord.class, null);
+			subject = parameterList.getParameter(FieldNames.FIELD_SUBJECT, BaseRecord.class, null);
+			submitter = parameterList.getParameter(FieldNames.FIELD_SUBMITTER, BaseRecord.class, null);
+			requester = parameterList.getParameter(FieldNames.FIELD_REQUESTER, BaseRecord.class, null);
+			resource = parameterList.getParameter(FieldNames.FIELD_RESOURCE, BaseRecord.class, null);
+			// parentId = parameterList.getParameter(FieldNames.FIELD_PARENT_ID, Long.class, 0L);
 		}
 		BaseRecord access = super.newInstance(contextUser, recordTemplate, parameterList, arguments);
 		
+		
 		try {
+			List<BaseRecord> msgs = access.get(FieldNames.FIELD_MESSAGES);
+			BaseRecord msg = RecordFactory.newInstance(ModelNames.MODEL_SPOOL);
+			msg.set(FieldNames.FIELD_DATA, ("AccessRequestFactory: " + UUID.randomUUID()).getBytes());
+			msgs.add(msg);
+			access.set(FieldNames.FIELD_NAME, "Access Request - " + UUID.randomUUID().toString());
+			
 			if(contextUser != null) {
 				access.set(FieldNames.FIELD_ORGANIZATION_ID, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 			}
-
-			
+			if(requester != null) {
+				access.set(FieldNames.FIELD_REQUESTER, requester.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
+				access.set(FieldNames.FIELD_REQUESTER_TYPE, requester.getModel());
+			}			
 			if(subject != null) {
-				access.set(FieldNames.FIELD_SUBJECT, subject);
+				access.set(FieldNames.FIELD_SUBJECT, subject.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
 				access.set(FieldNames.FIELD_SUBJECT_TYPE, subject.getModel());
 			}
+			if(submitter != null) {
+				access.set(FieldNames.FIELD_SUBMITTER, submitter.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
+				access.set(FieldNames.FIELD_SUBMITTER_TYPE, submitter.getModel());
+			}
+			if(entitlement != null) {
+				access.set(FieldNames.FIELD_ENTITLEMENT, entitlement.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
+				access.set(FieldNames.FIELD_ENTITLEMENT_TYPE, entitlement.getModel());
+			}
+			/*
+			if(parentId > 0L) {
+				access.set(FieldNames.FIELD_PARENT_ID, parentId);
+			}
+			*/
 			if(resource != null) {
 				if(RecordUtil.isIdentityRecord(resource)) {
-					access.set(FieldNames.FIELD_RESOURCE, resource);
+					access.set(FieldNames.FIELD_RESOURCE, resource.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
 				}
 				else {
 					access.set(FieldNames.FIELD_RESOURCE_DATA, resource);
