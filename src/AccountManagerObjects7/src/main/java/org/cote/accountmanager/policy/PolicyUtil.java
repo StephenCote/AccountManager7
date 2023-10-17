@@ -251,6 +251,7 @@ public class PolicyUtil {
 					
 					for(Object x : vals) {
 						Query sq = QueryUtil.createQuery(type, propName, x);
+						sq.setRequest(RecordUtil.getPossibleFields(type, PolicyEvaluator.FIELD_POPULATION));
 						if(fs.isIndex()) {
 							List<String> constraints = RecordUtil.getConstraints(query, propName);
 							if(constraints.size() > 0) {
@@ -689,18 +690,13 @@ public class PolicyUtil {
 	///
 	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
 
-		//String policyBase = ResourceUtil.getPolicyResource(name);
 		String policyBase = getPolicyBase(name);
 		BaseRecord rec = null;
 		if(policyBase == null) {
 			logger.error("Invalid policy resource name: " + name);
 			return rec;
 		}
-		/*
-		policyBase = applyResourcePattern(ruleResourceExp, ResourceType.RULE, policyBase);
-		policyBase = applyResourcePattern(patternResourceExp, ResourceType.PATTERN, policyBase);
-		policyBase = applyResourcePattern(factResourceExp, ResourceType.FACT, policyBase);
-		*/
+
 		policyBase = applyActorPattern(policyBase, actor);
 		policyBase = applyResourcePattern(policyBase, resource);
 		policyBase = applyTokenPattern(policyBase, token);
@@ -735,6 +731,10 @@ public class PolicyUtil {
 				else {
 					logger.error("Group could not be found");
 					logger.error(resource.toString());
+					StackTraceElement[] st = new Throwable().getStackTrace();
+					for(int i = 0; i < st.length; i++) {
+						logger.error(st[i].toString());
+					}
 				}
 			}
 			else {

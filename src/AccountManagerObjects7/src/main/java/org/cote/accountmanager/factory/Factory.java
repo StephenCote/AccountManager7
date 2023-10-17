@@ -286,7 +286,7 @@ public class Factory {
 	private void emitPermissions(BaseRecord org, BaseRecord admin) {
 		for(String p :  AccessSchema.SYSTEM_PERMISSION_NAMES) {
 			for(String s:  AccessSchema.SYSTEM_PERMISSION_TYPES) {
-				context.getPathUtil().makePath(admin, "permission", "/" + p, s.toUpperCase(), org.get("id"));
+				context.getPathUtil().makePath(admin, ModelNames.MODEL_PERMISSION, "/" + p, s.toUpperCase(), org.get("id"));
 			}
 		}
 	}

@@ -112,9 +112,11 @@ public class DBSearch extends SearchBase {
 			
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
-			if(ModelNames.MODEL_AUDIT.equals(query.get(FieldNames.FIELD_TYPE))){
+			
+			if((boolean)query.get(FieldNames.FIELD_DEBUG) == true){
 				logger.info(statement);
 			}
+			
 			ResultSet rset = statement.executeQuery();
 			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
 			while(rset.next()) {
@@ -135,9 +137,13 @@ public class DBSearch extends SearchBase {
 			
 		} catch (NullPointerException | ModelException | FieldException | DatabaseException | SQLException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
-			if(sql != null) {
-				logger.error(JSONUtil.exportObject(sql));
+			if((boolean)query.get(FieldNames.FIELD_DEBUG) == true){
+				if(sql != null) {
+					logger.error(JSONUtil.exportObject(sql));
+				}
+				
 			}
+			e.printStackTrace();
 			throw new ReaderException(e);
 		}
 		

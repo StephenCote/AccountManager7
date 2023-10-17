@@ -27,6 +27,10 @@ import org.cote.accountmanager.util.RecordUtil;
 public class QueryUtil {
 	public static final Logger logger = LogManager.getLogger(QueryUtil.class);
 	
+	/// Restrict the query key to the following fields to prevent gratuitous message size and/or leaking sensitive or encrypted values through the audit log
+	///
+	private static String[] keyFields = new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OBJECT_ID};
+	
 	public static String getComparatorToken(ComparatorEnumType comp) {
 		String token = comp.toString();
 		switch(comp) {
@@ -69,15 +73,7 @@ public class QueryUtil {
 		}
 		return token;
 	}
-	/*
-	public static String hash(BaseRecord query) {
-		return query.hash();
-	}
-	
-	public static String hash(String key) {
-		return CryptoUtil.getDigestAsString(key);
-	}
-	*/
+
 	public synchronized static String key(BaseRecord query) {
 		String type = query.get(FieldNames.FIELD_TYPE);
 		String order = query.get(FieldNames.FIELD_ORDER);
@@ -145,6 +141,10 @@ public class QueryUtil {
 					if(f.getField(FieldNames.FIELD_VALUE).getValueType().equals(FieldEnumType.STRING)) {
 						quote = "\"";
 					}
+					else if(f.getField(FieldNames.FIELD_VALUE).getValueType().equals(FieldEnumType.MODEL)) {
+						BaseRecord mod = (BaseRecord)value;
+						value = mod.copyRecord(RecordUtil.getPossibleFields(mod.getModel(), keyFields));
+					}
 					buff.append(" " + quote + value + quote);
 				}
 				
@@ -152,14 +152,11 @@ public class QueryUtil {
 			buff.append(")");
 		}
 
-
 		return buff.toString();
 	}
 	
 	public static Query createQuery(String model) {
 		ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_TYPE, model);
-		// logger.info(JSONUtil.exportObject(plist, RecordSerializerConfig.getUnfilteredModule()));
-		// ParameterUtil.newParameter(plist, FieldNames.FIELD_GROUP_ID, testData.get(FieldNames.FIELD_GROUP_ID));
 		Query query = null;
 		try {
 			query = new Query(IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_QUERY, null, null, plist));
@@ -212,8 +209,6 @@ public class QueryUtil {
 		}
 	}
 	
-	
-	/// This constructs a subQuery added to the 'joins' list
 	public static void filterParticipation(Query query, BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
 		Query part = createParticipationQuery(null, object, fieldName, null, effect);
 		actorType = ParticipationFactory.getParticipantModel(object.getModel(), fieldName, actorType);
@@ -261,7 +256,6 @@ public class QueryUtil {
 	}
 	public static <T> Query createQuery(String modelName, String fieldName, T val, long organizationId) {
 		Query query = null;
-		// logger.info("Query identity: " + modelName + "." + fieldName + " :: " + val);
 		try {
 			query = new Query(IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_QUERY, null, null, ParameterUtil.newParameterList(FieldNames.FIELD_TYPE, modelName)));
 			if(fieldName != null) {
@@ -342,7 +336,6 @@ public class QueryUtil {
 
 		}
 		else {
-			//logger.error("TODO: List for system");
 			q = QueryUtil.createQuery(type);
 		}
 		if(q != null) {

@@ -205,8 +205,6 @@ public class PolicyEvaluator {
 		int size = (patterns.size() + rules.size());
 
 		for(BaseRecord crule : rules) {
-		//for(int i = 0; i < rules.size(); i++){
-			//RuleType crule = rules.get(i);
 			reader.populate(crule);
 			boolean bRule = evaluateRule(crule, facts, prt, prr);
 			if(bRule){
@@ -224,7 +222,6 @@ public class PolicyEvaluator {
 			}
 		}
 		for(BaseRecord pat : patterns) {
-			// logger.info(JSONUtil.exportObject(pat, RecordSerializerConfig.getFilteredModule()));
 			reader.populate(pat);
 			boolean bPat = evaluatePattern(pat, facts, prt, prr);
 			
@@ -304,8 +301,6 @@ public class PolicyEvaluator {
 		/// Operation - fork processing over to a custom-defined class or function
 		///
 		else if(ptype == PatternEnumType.OPERATION){
-			// logger.warn(JSONUtil.exportObject(pattern, RecordSerializerConfig.getUnfilteredModule()));
-
 			String cls = null;
 			BaseRecord op = pattern.get(FieldNames.FIELD_OPERATION);
 			if(op != null) {
@@ -412,7 +407,13 @@ public class PolicyEvaluator {
 		BaseRecord p = futil.recordRead(contextUser, fact, matchFact);
 		BaseRecord g = futil.recordRead(contextUser, matchFact, matchFact);
 		if(p == null || g == null){
-			logger.error("The " + (g == null ? "match ":"") + "fact reference " + (g == null ? matchFact.get(FieldNames.FIELD_URN) : fact.get(FieldNames.FIELD_URN)) + " was null");
+			/// This is marked only for trace because, at the moment, complex policies may have one or more invalid conditions particularly when new objects are being created or loading objects with flexible foreign dependencies
+			///
+			if(trace) {
+				logger.error("The " + (g == null ? "match ":"") + "fact reference " + (g == null ? matchFact.get(FieldNames.FIELD_URN) : fact.get(FieldNames.FIELD_URN)) + " was null");
+				logger.error(fact.toFullString());
+				logger.error(matchFact.toFullString());
+			}
 			return OperationResponseEnumType.ERROR;
 		}
 		if(matype == FactEnumType.PERMISSION){
