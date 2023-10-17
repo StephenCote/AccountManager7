@@ -1,13 +1,15 @@
 {
-"name": "tag",
-"inherits": ["directory", "description"],
-"group": "Tags",
-"icon": "category",
-"label": "Tag",
-"fields": [
-	{
-		"name": "type",
-		"type": "string",
-		"maxLength": 32
-	}
-]}
+	"name": "tag",
+	"inherits": ["directory", "description"],
+	"group": "Tags",
+	"icon": "category",
+	"label": "Tag",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "type",
+			"type": "string",
+			"maxLength": 32
+		}
+	]
+}

@@ -1,17 +1,19 @@
 {
-"name": "permission",
-"inherits": ["nameId", "path", "parent"],
-"constraints": ["parentId, name, type, organizationId"],
-"icon": "shield",
-"label": "Permission",
-"fields": [
-	{
-		"label": "Type",
-		"name": "type",
-		"baseClass": "org.cote.accountmanager.schema.type.PermissionEnumType",
-		"type": "enum",
-		"index": true,
-		"maxLength": 16
-	}
-
-]}
+	"name": "permission",
+	"inherits": ["nameId", "path", "parent"],
+	"constraints": ["parentId, name, type, organizationId"],
+	"icon": "shield",
+	"label": "Permission",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"label": "Type",
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.PermissionEnumType",
+			"type": "enum",
+			"index": true,
+			"maxLength": 16
+		}
+	
+	]
+}

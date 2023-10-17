@@ -3,15 +3,22 @@
 "abstract": true,
 "fields": [
 	{
-		"name": "entitlementModel",
-		"baseClass": "org.cote.accountmanager.schema.type.ApproverEnumType",
-		"type": "enum",
-		"default": "UNKNOWN",
+		"name": "entitlementType",
+		"type": "string",
 		"maxLength": 32
 	},
 	{
-		"name": "entitlementId",
-		"type": "long"
+		"name": "entitlement",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "entitlementType",
+		"access": {
+			"roles": {
+				"read": ["AccountUsersReaders", "RequestReaders", "RoleReaders", "PermissionReaders"]
+			}
+		}
+
 	}
 
 ]}

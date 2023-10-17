@@ -8,12 +8,16 @@
 		"baseModel": "$flex",
 		"type": "model",
 		"foreign": true,
-		"foreignType": "approverType"
+		"foreignType": "approverType",
+		"access": {
+			"roles": {
+				"read": ["AccountUsersReaders", "RequestReaders"]
+			}
+		}
 	},
 	{
 		"name": "approverType",
-		"type": "enum",
-		"baseClass": "org.cote.accountmanager.schema.type.ApproverEnumType",
+		"type": "string",
 		"maxLength": 64
 	},
 
@@ -22,12 +26,16 @@
 		"baseModel": "$flex",
 		"type": "model",
 		"foreign": true,
-		"foreignType": "delegateType"
+		"foreignType": "delegateType",
+		"access": {
+			"roles": {
+				"read": ["AccountUsersReaders", "RequestReaders"]
+			}
+		}
 	},
 	{
 		"name": "delegateType",
-		"type": "enum",
-		"baseClass": "org.cote.accountmanager.schema.type.ApproverEnumType",
+		"type": "string",
 		"maxLength": 64
 	}
 

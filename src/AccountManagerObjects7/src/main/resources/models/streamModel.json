@@ -1,11 +1,14 @@
 {
 "name": "stream",
-"inherits": ["directory", "description", "dateTime", "contentType"],
+"inherits": ["directory", "description", "dateTime", "contentType", "vaultExt"],
 "provider": "org.cote.accountmanager.provider.StreamProvider",
 "fields": [
 	{
 		"name": "streamSource",
-		"type": "string"
+		"type": "string",
+		"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+		"priority": 10,
+		"encrypt": true
 	},
 	{
 		"name": "type",

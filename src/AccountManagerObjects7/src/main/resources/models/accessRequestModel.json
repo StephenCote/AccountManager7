@@ -8,7 +8,7 @@
 	"roles": {
 		"create": ["Requesters"],
 		"read": ["RequestReaders"],
-		"update": ["RequestAdministrators"],
+		"update": ["RequestUpdaters", "RequestAdministrators"],
 		"delete": ["RequestAdministrators"],
 		"admin": ["RequestAdministrators"]
 	}
@@ -16,7 +16,8 @@
 "fields": [
 	{
 		"name": "messages",
-		"baseModel": "messageSpool",
+		"baseModel": "spool",
+		"baseType": "model",
 		"type": "list"
 	},
 	{
@@ -27,7 +28,7 @@
 		"maxLength": 32,
 		"access": {
 			"roles": {
-				"update": ["/Approvers"]
+				"update": ["/Approvers", "RequestUpdaters"]
 			}
 		}
 	}

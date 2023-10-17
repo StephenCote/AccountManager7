@@ -1,19 +1,25 @@
 {
 "name": "baseAccess",
-"inherits": ["nameId", "reference", "request", "entitlement", "dateTime", "description"],
+"inherits": ["nameId", "parent", "request", "entitlement", "dateTime", "description"],
 "fields": [
 	{
 		"name": "resourceData",
 		"baseModel": "$flex",
 		"type": "model",
-		"foreignType": "resourceType"
+		"foreignType": "resourceType",
+		"description": "Placeholder for serialized non-persisted objects"
 	},
 	{
 		"name": "resource",
 		"baseModel": "$flex",
 		"type": "model",
 		"foreign": true,
-		"foreignType": "resourceType"
+		"foreignType": "resourceType",
+		"access": {
+			"roles": {
+				"read": ["RequestReaders"]
+			}
+		}
 	},
 	{
 		"name": "resourceType",

@@ -1,7 +1,7 @@
 {
 	"name": "base",
 	"abstract": true,
-	"inherits": ["attributeList", "organizationExt", "populate", "primaryKey", "urn"],
+	"inherits": ["attributeList", "organizationExt", "populate", "primaryKey", "urn", "debug"],
 	"factory": "org.cote.accountmanager.factory.BaseFactory",
 	"query": ["id", "urn", "objectId", "ownerId"],
 	"fields": [

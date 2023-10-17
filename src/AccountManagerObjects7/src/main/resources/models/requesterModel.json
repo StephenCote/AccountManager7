@@ -1,0 +1,17 @@
+{
+"name": "requester",
+"abstract": true,
+"fields": [
+	{
+		"name": "requester",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "subjectType"
+	},
+	{
+		"name": "requesterType",
+		"type": "string",
+		"maxLength": 64
+	}
+]}

@@ -1,0 +1,11 @@
+{
+	"name": "debug",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "debug",
+			"type": "boolean",
+			"ephemeral": true
+		}
+	]
+}

@@ -145,5 +145,11 @@
 		"type": "model",
 		"baseModel": "participation",
 		"ephemeral": true
+	},
+	{
+		"name": "debug",
+		"type": "boolean",
+		"ephemeral": true,
+		"description": "For some reason, inheriting from 'debug' leads to a stackover flow, likely due to how query is used to initially lookup models loaded into the system"
 	}
 ]}
