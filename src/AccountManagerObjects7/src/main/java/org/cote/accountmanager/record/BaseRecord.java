@@ -58,7 +58,7 @@ public abstract class BaseRecord {
 	
 	@JsonIgnore
 	public String toString() {
-		return RecordUtil.toJSONString(this);
+		return RecordUtil.toJSONString(this, true);
 	}
 	
 	@JsonIgnore

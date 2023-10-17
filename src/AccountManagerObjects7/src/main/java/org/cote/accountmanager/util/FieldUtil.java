@@ -57,7 +57,7 @@ public class FieldUtil {
 			case LIST:
 			case MODEL:
 			default:
-				logger.error("Unhandled type: " + fet.toString());
+				logger.error("Unhandled type (setFlexFromString): " + fet.toString());
 				break;
 		}
 	}
@@ -68,6 +68,10 @@ public class FieldUtil {
 		   }
 		   else if(value != null){
 			   logger.error("Failed to set flex field: " + fieldName);
+				StackTraceElement[] st = new Throwable().getStackTrace();
+				for(int i = 0; i < st.length; i++) {
+					logger.error(st[i].toString());
+				}
 		   }
 	   }
    public static <T> void setFlex(BaseRecord record, String fieldName, FieldEnumType type, T value) {
@@ -98,8 +102,11 @@ public class FieldUtil {
 				case DOUBLE:
 					record.setDouble(fieldName, value);
 					break;
+				case MODEL:
+					record.setModel(fieldName, value);
+					break;
 				default:
-					logger.error("Unhandled type: " + type.toString());
+					logger.error("Unhandled type (setFlex): " + type.toString());
 					break;
 			}
 		} catch (Exception e) {
@@ -111,6 +118,9 @@ public class FieldUtil {
    /// TODO: This is nearly identical to getValueType 
 	public static <T> FieldEnumType getFieldType(T value) {
 		FieldEnumType fet = FieldEnumType.UNKNOWN;
+			if(value == null) {
+				return fet;
+			}
 		   if(value instanceof Enum) {
 			   fet = FieldEnumType.ENUM;
 		   }
@@ -135,9 +145,19 @@ public class FieldUtil {
 		   else if(value instanceof Double) {
 			   fet =FieldEnumType.DOUBLE;
 		   }
+		   else if(value instanceof LooseRecord) {
+			   fet =FieldEnumType.MODEL;
+		   }
+		   else if(value instanceof byte[]) {
+				fet = FieldEnumType.BLOB;
+			}
+			else {
+				logger.error("Unchecked type: " + value.toString());
+			}
 		return fet;
 	}
 	
+	/*
 	public static <T> FieldEnumType getValueType(T val) {
 		FieldEnumType fet = FieldEnumType.UNKNOWN;
 		if(val instanceof LooseRecord) {
@@ -169,6 +189,7 @@ public class FieldUtil {
 		}
 		return fet;
 	}
+	*/
 	
 	public static int compareTo(FieldType c, FieldType f) {
 		int comp = 0;

@@ -67,12 +67,11 @@
 					<excludes>
 
 						<!--
-						<exclude>**/TestAccessApproval.java</exclude>
-						-->
-						<!-- Repeatable Set -->
-						
-						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestStream.java</exclude>
+						-->
+						<exclude>**/TestAccessApproval.java</exclude>
+						<exclude>**/TestAccessPoint.java</exclude>
+						
 						<exclude>**/TestVault.java</exclude>
 						
 						<exclude>**/TestValidationRules.java</exclude>	
@@ -103,6 +102,10 @@
 						<exclude>**/TestQuery.java</exclude>
 						<exclude>**/TestFlexValueType.java</exclude>
 						<exclude>**/TestCryptography.java</exclude>
+						
+						<!-- Repeatable Set -->
+						
+						
 						<!-- Tests with unresolved errors -->
 						
 						

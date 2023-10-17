@@ -562,10 +562,12 @@ public class StatementUtil {
 				.replaceAll("#PAGE#", pageField)
 		;
 		*/
-		
+
 		String queryClauseCond = (queryClause.length() == 0 ? " " : " AND ");
-		return pagePrefix + modSelectString + " WHERE " + queryClause
+		String clause = queryClause
 			+ (organizationId > 0L ? queryClauseCond + alias + "." + dbUtil.getColumnName(FieldNames.FIELD_ORGANIZATION_ID) + "=" + organizationId : "")
+		;
+		return pagePrefix + modSelectString + " " + (clause .length() > 1 ? "WHERE " + clause : "")
 			+ (groupClause != null ? " GROUP BY " + groupClause : "")
 			+ (havingClause != null ? " HAVING " + havingClause : "")
 			+ pageSuffix
@@ -1031,12 +1033,12 @@ public class StatementUtil {
 			if(fs.isForeign() && ModelNames.MODEL_FLEX.equals(modelName) && fs.getForeignType() != null) {
 				modelName = record.get(fs.getForeignType());
 			}
-			if(modelName == null || ModelNames.MODEL_FLEX.equals(modelName)) {
-				logger.error("Unhandled model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType());
+			if(modelName == null || ModelNames.MODEL_FLEX.equals(modelName) || ModelNames.MODEL_UNKNOWN.equals(modelName)) {
+				/// This isn't necessarily an error because empty flex foreign models won't have a valid type for optional fields 
+				/// logger.error("Unhandled model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType() + " / " + fs.isForeign() + " / " + record.get(fs.getForeignType()));
 				continue;
-				//throw new FieldException("Unhandled model type: " + modelName);
 			}
-			// logger.info("Model - " + col + " " + modelName);
+
 			BaseRecord crec = RecordFactory.newInstance(modelName);
 			ModelSchema cms = RecordFactory.getSchema(modelName);
 			// logger.info("Handling model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType() + " -> " + modelName);

@@ -163,12 +163,12 @@ public class TestAccessPoint extends BaseTest {
 	/// Create an access request that can be reviewed, approved, and signed, and then issue a token for that request which can be evaluated
 	/// by a token access policy.
 	///
-	private BaseRecord newAccessRequest(BaseRecord owner, BaseRecord requestor, ActionEnumType action, BaseRecord object) {
-		OrganizationContext orgC = IOSystem.getActiveContext().getOrganizationContext(requestor.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+	private BaseRecord newAccessRequest(BaseRecord owner, BaseRecord requester, ActionEnumType action, BaseRecord object) {
+		OrganizationContext orgC = IOSystem.getActiveContext().getOrganizationContext(requester.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		Factory mf = ioContext.getFactory();
 		BaseRecord req = null;
 		try {
-			req = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACCESS_REQUEST, owner, null, ParameterUtil.newParameterList(FieldNames.FIELD_ACTION, action), requestor, object);
+			req = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACCESS_REQUEST, owner, null, ParameterUtil.newParameterList(FieldNames.FIELD_ACTION, action), requester, object);
 		} catch (FactoryException e) {
 			// TODO Auto-generated catch block
 			e.printStackTrace();

@@ -34,6 +34,7 @@ import org.cote.accountmanager.exceptions.GeneralException;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.type.CollectionType;
 import com.fasterxml.jackson.databind.type.TypeFactory;
@@ -97,8 +98,10 @@ public class JSONUtil {
 	public static <T> String exportObject(T obj){
 	    return exportObject(obj, null);
 	}
-	
 	public static <T> String exportObject(T obj, SimpleModule module){
+		return exportObject(obj, module, false);
+	}
+	public static <T> String exportObject(T obj, SimpleModule module, boolean noPrettyPrint){
 		ObjectMapper mapper = new ObjectMapper();
         if(module != null) {
             mapper.registerModule(module);
@@ -106,7 +109,8 @@ public class JSONUtil {
 		mapper.setSerializationInclusion(Include.NON_EMPTY);
 		 String outStr = null;
 		try {
-			outStr = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
+			ObjectWriter writer = (noPrettyPrint ? mapper.writer() : mapper.writerWithDefaultPrettyPrinter());
+			outStr = writer.writeValueAsString(obj);
 		} catch (IOException e) {
 			logger.error(e.getMessage());
 			logger.error(GeneralException.TRACE_EXCEPTION,e);

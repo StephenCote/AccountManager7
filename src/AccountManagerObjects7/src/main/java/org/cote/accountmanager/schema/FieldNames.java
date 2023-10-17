@@ -22,7 +22,7 @@ public class FieldNames {
 		public static final String FIELD_POPULATED_FIELDS = "populatedFields";
 		public static final String FIELD_STATUS = "status";
 		public static final String FIELD_DESCRIPTION = "description";
-		
+		public static final String FIELD_DEBUG = "debug";
 
 		/// Journal
 		public static final String FIELD_JOURNAL = "journal";
@@ -56,6 +56,7 @@ public class FieldNames {
 		public static final String FIELD_PARAMETERS = "parameters";
 		public static final String FIELD_PATTERN = "pattern";
 		public static final String FIELD_MESSAGE = "message";
+		public static final String FIELD_MESSAGES = "messages";
 		public static final String FIELD_FACTS = "facts";
 		public static final String FIELD_MATCH = "match";
 		public static final String FIELD_FACT = "fact";
@@ -269,4 +270,12 @@ public class FieldNames {
 		public static final String FIELD_FUNCTION = "function";
 		
 		public static final String FIELD_CLASS = "class";
+		
+		/// Access Approval
+		public static final String FIELD_ENTITLEMENT = "entitlement";
+		public static final String FIELD_ENTITLEMENT_TYPE = "entitlementType";
+		public static final String FIELD_REQUESTER = "requester";
+		public static final String FIELD_REQUESTER_TYPE = "requesterType";
+		public static final String FIELD_SUBMITTER = "requester";
+		public static final String FIELD_SUBMITTER_TYPE = "requesterType";
 }

@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -26,18 +27,15 @@ import org.cote.accountmanager.util.ContentTypeUtil;
 public class StreamSegmentUtil {
 	public static final Logger logger = LogManager.getLogger(StreamSegmentUtil.class);
 	
-	private List<Path> permittedPaths = new ArrayList<>();;
+	// private List<Path> permittedPaths = new ArrayList<>();;
 	
 	public StreamSegmentUtil() {
-		// permittedPaths =  new Path[]{Paths.get(IOFactory.DEFAULT_FILE_BASE).toAbsolutePath()};
+		/*
 		permittedPaths.add(Paths.get(IOFactory.DEFAULT_FILE_BASE));
 		for(String p : IOFactory.PERMIT_PATH) {
 			permittedPaths.add(Paths.get(p));	
 		}
-	}
-	
-	public void addPermittedPath(String path) {
-		permittedPaths.add(Paths.get(path));
+		*/
 	}
 	
 	public byte[] streamToEnd(String streamId, long start, long len) {
@@ -100,13 +98,16 @@ public class StreamSegmentUtil {
 			logger.warn("Stream source is null");
 			return restricted;
 		}
-		for(Path cpath : permittedPaths) {
+
+		for(String spath : IOFactory.PERMIT_PATH) {
+			Path cpath = Paths.get(spath);
 			Path path2 = Paths.get(path).toAbsolutePath();
 			if(path2.startsWith(cpath.toAbsolutePath())) {
 				restricted = false;
 				break;
 			}
 		}
+
 		return restricted;
 	}
 	
@@ -116,6 +117,11 @@ public class StreamSegmentUtil {
 		if(source == null) {
 			long organizationId = stream.get(FieldNames.FIELD_ORGANIZATION_ID);
 			long groupId = stream.get(FieldNames.FIELD_GROUP_ID);
+			String objectId = stream.get(FieldNames.FIELD_OBJECT_ID);
+			if(objectId == null) {
+				logger.warn("Object id is missing.  Assigning a temporary name");
+				objectId = "Temporary-" + UUID.randomUUID().toString();
+			}
 			String orgPath = stream.get(FieldNames.FIELD_ORGANIZATION_PATH);
 			String groupPath = stream.get(FieldNames.FIELD_GROUP_PATH);
 			String contentType = stream.get(FieldNames.FIELD_CONTENT_TYPE);
@@ -135,9 +141,9 @@ public class StreamSegmentUtil {
 			else {
 				orgPath = orgPath.substring(1).replace('/', '.');
 			}
-			String fullPath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + orgPath + groupPath + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
-			String densePath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + organizationId + "/" + groupId + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
-			// source = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + orgPath + groupPath + "/" + stream.get(FieldNames.FIELD_OBJECT_ID) + ext;
+			String fullPath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + orgPath + groupPath + "/" + objectId + ext;
+			String densePath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + organizationId + "/" + groupId + "/" + objectId + ext;
+
 			source = densePath;
 			try {
 				stream.set(FieldNames.FIELD_STREAM_SOURCE, source);

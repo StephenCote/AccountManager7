@@ -1,5 +1,11 @@
 package org.cote.accountmanager.io;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import javax.sql.DataSource;
 
 import org.apache.logging.log4j.LogManager;
@@ -28,8 +34,14 @@ import org.cote.accountmanager.util.RecordUtil;
 public class IOFactory {
 	public static final Logger logger = LogManager.getLogger(IOFactory.class);
 	public static String DEFAULT_FILE_BASE = "./am7";
-	public static String[] PERMIT_PATH = new String[0];
+	public static List<String> PERMIT_PATH = new ArrayList<>(Arrays.asList(new String[] { DEFAULT_FILE_BASE }));
 
+	public static void addPermittedPath(String path) {
+		if(!PERMIT_PATH.contains(path)) {
+			PERMIT_PATH.add(path);
+		}
+	}
+	
 	public static FileStore getStore(String name) {
 		return getStore(DEFAULT_FILE_BASE, name);
 	}

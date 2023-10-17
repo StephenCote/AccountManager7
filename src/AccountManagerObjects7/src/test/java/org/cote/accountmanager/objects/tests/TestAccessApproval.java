@@ -5,8 +5,13 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.GregorianCalendar;
 import java.util.List;
 
+import org.apache.commons.lang3.EnumUtils;
+
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelException;
@@ -14,20 +19,26 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.ApprovalResponseEnumType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
+import org.cote.accountmanager.util.ParameterUtil;
 import org.junit.Test;
 
 /// Migrating from AM6 version - 2023/10/12
@@ -37,13 +48,24 @@ public class TestAccessApproval extends BaseTest {
 	private boolean cleanupApprovers = true;
 	private boolean cleanupRemovedRequests = false;
 	/*
+	 * NEW [for AM7]
+	 * 
+	 * Requester - the entity making the request
+	 * Submitter - the entity submitting the request (may be the same as requester)
+	 * Subject - the entity for whom the request is being made
+	 * Resource - the entity to which the request action will apply 
+	 * Entitlement - the role or permission to affect subject's interaction with resource
+	 * Approver - the entity to which the request is assigned for approval
+	 * Delegate - an alternate entity which may be assigned for delegating approval
+	 * 
+	 * OLD [for AM6]
 	 * 
 	 * Request + Approval is structured as follows
 	 *    Request [MessageSpoolType]
 	 *       Some
 	 *    Approval is 
 	 * 
-	 * NEW
+	 * OLD [was NEW for AM6]
 	 * 
 	 * I request [ACTION|ACCESS] to [RESOURCE] {on behalf of} == AccessRequestType
 	 * [ACTION|ACCESS] to [RESOURCE] requires [ROLE|GROUP|PERSON] approval at level # == ApproverType
@@ -69,38 +91,81 @@ public class TestAccessApproval extends BaseTest {
 	 */
 
 	@Test
-	public void TestCountRequests() {
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Access Approval");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord testRequestReader =  mf.getCreateUser(testOrgContext.getAdminUser(), "testRequestReader", testOrgContext.getOrganizationId());
-		BaseRecord requestReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
-		if(!ioContext.getMemberUtil().isMember(testRequestReader, requestReaderRole, null)) {
-			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), requestReaderRole, testRequestReader, null, true);
-		}
-
-		BaseRecord dir = ioContext.getAccessPoint().make(testUser1, ModelNames.MODEL_GROUP, "~/Parent", GroupEnumType.DATA.toString());
-
-		// String schema = ioContext.getDbUtil().generateSchema(RecordFactory.getSchema(ModelNames.MODEL_ACCESS_REQUEST));
-		// logger.info(schema);
-		/*
+	public void TestCountAudit() {
+		boolean error = false;
 		try {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_AUDIT);
-			q.field(FieldNames.FIELD_ID, ComparatorEnumType.GREATER_THAN, 0L);
+			// q.set(FieldNames.FIELD_DEBUG, true);
 			q.setRequestRange(0, 10);
 			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CREATED_DATE);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING.toString());
 			QueryResult qr = ioContext.getSearch().find(q);
-			logger.info("Received: " + qr.getCount());
-			if(qr.getCount() > 0) {
-				logger.info(qr.getResults()[0].toFullString());
-			}
+			logger.info("Audit count: " + qr.getCount());
 		}
 		catch(ValueException | FieldException | ModelNotFoundException | IndexException | ReaderException e) {
 			logger.error(e);
+			error = true;
 		}
-		*/
+		assertFalse("Error encountered", error);
+	}
+	
+	@Test
+	public void TestCountRequests() {
+		
+		if(ioContext.getIoType() == RecordIO.FILE) {
+			logger.error("****** TODO: The file system support for flexible foreign keyed fields depends updating the deserializer to defer that object until the foreignType value is known from the adjacent property");
+			return;
+		}
+		
+		// String schema = ioContext.getDbUtil().generateSchema(RecordFactory.getSchema(ModelNames.MODEL_ACCESS_REQUEST));
+		// logger.info(schema);
+
+		logger.info("Testing count requests");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Access Approval");
+		Factory mf = ioContext.getFactory();
+		
+		logger.info("Setting up test users");
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord testRole1 = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_ROLE, "~/Access Roles/Access 1", RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		BaseRecord testUser2 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser2", testOrgContext.getOrganizationId());
+		BaseRecord testRequestReader =  mf.getCreateUser(testOrgContext.getAdminUser(), "testRequestReader", testOrgContext.getOrganizationId());
+		BaseRecord requestReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		BaseRecord requestUpdaterRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_UPDATERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		BaseRecord accountReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		BaseRecord roleReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ROLE_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		if(!ioContext.getMemberUtil().isMember(testUser1, accountReaderRole, null)) {
+			logger.info("Assigning test users to role in order to be authorized to see foreign user references");
+			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), accountReaderRole, testUser1, null, true);
+			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), accountReaderRole, testRequestReader, null, true);
+		}
+		if(!ioContext.getMemberUtil().isMember(testRequestReader, requestReaderRole, null)) {
+			logger.info("Assigning test request reader/updater to roles in order to be authorized to read system roles, read requests, and update request status");
+			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), requestReaderRole, testRequestReader, null, true);
+			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), requestUpdaterRole, testRequestReader, null, true);	
+			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), roleReaderRole, testRequestReader, null, true);
+		}
+		
+		logger.info("Mark pending testUser1 requests for removal");
 		cleanupRequestsForUser(testRequestReader, testUser1);
+		
+		
+		logger.info("Creating a directory object for a test user to request access to.");
+		BaseRecord dir = ioContext.getAccessPoint().make(testUser1, ModelNames.MODEL_GROUP, "~/Parent", GroupEnumType.DATA.toString());
+		
+		logger.info("Create an access request to add testUser2 to a role owned by testUser1");
+		BaseRecord req = newAccessRequest(testUser1, testUser1, testUser1, ActionEnumType.ADD, testUser2, null, testRole1, 0L);
+		BaseRecord xrex = ioContext.getAccessPoint().create(testUser1, req);
+		assertNotNull("Request was null", xrex);
+
+		logger.info("Create an access request to let testUser2 read testUser1's directory");
+		BaseRecord dataReadPerm = AccessSchema.getSystemPermission("Read", "DATA", testOrgContext.getOrganizationId());
+		
+		BaseRecord req2 = newAccessRequest(testUser1, testUser1, testUser1, ActionEnumType.GRANT, testUser2, dir, dataReadPerm, 0L);
+		BaseRecord xrex2 = ioContext.getAccessPoint().create(testUser1, req2);
+		assertNotNull("Request was null", xrex2);
+		
+		BaseRecord[] reqs = getAccessRequests(testUser1, testUser1);
+		assertTrue("Expected two pending requests; received " + reqs.length, reqs.length == 2);
 		
 		/*
 		boolean error = false;
@@ -121,6 +186,28 @@ public class TestAccessApproval extends BaseTest {
 	
 	private void cleanupRequestsForUser(BaseRecord requestAdmin, BaseRecord user)  {
 		BaseRecord[] reqs = getAccessRequests(requestAdmin, user);
+		logger.info("Current open requests: " + reqs.length);
+		List<BaseRecord> mod = new ArrayList<>();
+		try {
+			if(reqs.length > 0) {
+				/*
+				ioContext.getPolicyUtil().setTrace(true);
+				PolicyResponseType prt = ioContext.getAuthorizationUtil().canUpdate(requestAdmin, requestAdmin, reqs[0].copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_APPROVAL_STATUS}));
+				logger.info(prt.toFullString());
+				ioContext.getPolicyUtil().setTrace(false);
+				*/
+				for(BaseRecord req : reqs) {
+					BaseRecord lreq = req.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_APPROVAL_STATUS});
+					lreq.set(FieldNames.FIELD_APPROVAL_STATUS, ApprovalResponseEnumType.REMOVE);
+					mod.add(lreq);
+				}
+				int upd = ioContext.getAccessPoint().update(requestAdmin, mod.toArray(new BaseRecord[0]));
+				assertTrue("Expected all records to be updated", reqs.length == upd);
+			}
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
 		/*
 		List<AccessRequestType> reqs = RequestService.listOpenAccessRequests(testUser);
 		if(reqs.size() > 0) {
@@ -140,27 +227,58 @@ public class TestAccessApproval extends BaseTest {
 		*/
 	}
 	
-	private BaseRecord[] getAccessRequests(BaseRecord requestAdmin, BaseRecord requestor)  {
-		logger.info("Get access requests for " + requestor.get(FieldNames.FIELD_NAME));
+	private BaseRecord[] getAccessRequests(BaseRecord requestAdmin, BaseRecord requester)  {
+		logger.info("Get access requests for " + requester.get(FieldNames.FIELD_NAME));
 		BaseRecord[] recs = new BaseRecord[0];
 		try {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_ACCESS_REQUEST, FieldNames.FIELD_APPROVAL_STATUS, ApprovalResponseEnumType.REQUEST.toString());
 			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CREATED_DATE);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING.toString());
-			q.field(FieldNames.FIELD_SUBJECT_TYPE, requestor.getModel());
-			logger.info(requestor.copyRecord(new String[] {FieldNames.FIELD_ID}).toFullString());
-			q.field(FieldNames.FIELD_SUBJECT, requestor.copyRecord(new String[] {FieldNames.FIELD_ID}));
+			q.field(FieldNames.FIELD_REQUESTER_TYPE, requester.getModel());
+			q.field(FieldNames.FIELD_REQUESTER, requester.copyRecord(new String[] {FieldNames.FIELD_ID}));
+			// q.set(FieldNames.FIELD_DEBUG, true);
+			
+			/*
+			PolicyResponseType[] prts = ioContext.getPolicyUtil().evaluateQueryToReadPolicyResponses(requestAdmin, q);
+			for(PolicyResponseType p: prts) {
+				logger.info(p.toFullString());
+			}
+			*/
 			QueryResult qr = ioContext.getAccessPoint().list(requestAdmin, q);
 			if(qr != null) {
 				recs = qr.getResults();
 			}
 		}
-		catch(FieldException | ValueException | ModelNotFoundException e) {
+		catch(ClassCastException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
 		return recs;
 	}
+	
+	private BaseRecord newAccessRequest(BaseRecord owner, BaseRecord submitter, BaseRecord requester, ActionEnumType action,  BaseRecord subject, BaseRecord resource, BaseRecord entitlement, long parentId) {
+		OrganizationContext orgC = IOSystem.getActiveContext().getOrganizationContext(requester.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+		Factory mf = ioContext.getFactory();
+		BaseRecord req = null;
+		ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_ACTION, action);
+		plist.parameter(FieldNames.FIELD_ENTITLEMENT, entitlement);
+		plist.parameter(FieldNames.FIELD_RESOURCE, resource);
+		plist.parameter(FieldNames.FIELD_SUBMITTER, submitter);
+		plist.parameter(FieldNames.FIELD_REQUESTER, requester);
+		plist.parameter(FieldNames.FIELD_SUBJECT, subject);
+		plist.parameter(FieldNames.FIELD_RESPONSE, ApprovalResponseEnumType.REQUEST.toString());
+		// plist.parameter(FieldNames.FIELD_PARENT_ID, parentId);
+		try {
+			req = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACCESS_REQUEST, owner, null, plist);
+		} catch (FactoryException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		return req;
+	}
+
+
 	
 	/*
 	@Test
@@ -454,29 +572,19 @@ public class TestAccessApproval extends BaseTest {
 	private void deleteRequestsForUser(UserType user) throws FactoryException, ArgumentException {
 		RequestService.deleteAccessRequestsByOwner(user);
 	}
-	private AccessRequestType newAccessRequest(UserType owner, ActionEnumType action, NameIdType requestor, NameIdType delegate, NameIdType targetObject, NameIdType entitlement, long parentId) throws FactoryException, ArgumentException {
-		RequestFactory rFact = ((RequestFactory)Factories.getFactory(FactoryEnumType.REQUEST));
-		
-		AccessRequestType req= rFact.newAccessRequest(owner, action, requestor, delegate, targetObject, entitlement, parentId);
-		assertNotNull("Request is null", req);
-		assertTrue("Failed to add request",rFact.add(req));
-		List<AccessRequestType> reqs = rFact.getAccessRequestsForType(testUser, requestor, delegate, targetObject, ApprovalResponseEnumType.REQUEST,parentId, testUser.getOrganizationId());
-		if(reqs.size() > 0) req = reqs.get(reqs.size()-1);
-		else req = null;
-		return req;
-	}
+
 	
-	private List<AccessRequestType> getAccessRequests(UserType owner, ActionEnumType action, NameIdType requestor, NameIdType delegate, NameIdType targetObject, NameIdType entitlement, long parentId) throws FactoryException, ArgumentException {
-		return getAccessRequests(owner, action, requestor, delegate, targetObject, entitlement, 0L, 0, parentId);
+	private List<AccessRequestType> getAccessRequests(UserType owner, ActionEnumType action, NameIdType requester, NameIdType delegate, NameIdType targetObject, NameIdType entitlement, long parentId) throws FactoryException, ArgumentException {
+		return getAccessRequests(owner, action, requester, delegate, targetObject, entitlement, 0L, 0, parentId);
 	}
-	private List<AccessRequestType> getAccessRequests(UserType owner, ActionEnumType action, NameIdType requestor, NameIdType delegate, NameIdType targetObject, NameIdType entitlement, long startRecord, int recordCount, long parentId) throws FactoryException, ArgumentException {
+	private List<AccessRequestType> getAccessRequests(UserType owner, ActionEnumType action, NameIdType requester, NameIdType delegate, NameIdType targetObject, NameIdType entitlement, long startRecord, int recordCount, long parentId) throws FactoryException, ArgumentException {
 		RequestFactory rFact = ((RequestFactory)Factories.getFactory(FactoryEnumType.REQUEST));
-		return rFact.getAccessRequestsForType(testUser, requestor, delegate, targetObject, ApprovalResponseEnumType.REQUEST,parentId, startRecord, recordCount, testUser.getOrganizationId());
+		return rFact.getAccessRequestsForType(testUser, requester, delegate, targetObject, ApprovalResponseEnumType.REQUEST,parentId, startRecord, recordCount, testUser.getOrganizationId());
 	}
 
-	private int countAccessRequests(UserType owner, ActionEnumType action, NameIdType requestor, NameIdType delegate, NameIdType targetObject, NameIdType entitlement, long parentId) throws FactoryException, ArgumentException {
+	private int countAccessRequests(UserType owner, ActionEnumType action, NameIdType requester, NameIdType delegate, NameIdType targetObject, NameIdType entitlement, long parentId) throws FactoryException, ArgumentException {
 		RequestFactory rFact = ((RequestFactory)Factories.getFactory(FactoryEnumType.REQUEST));
-		return rFact.countAccessRequestsForType(testUser, requestor, delegate, targetObject, ApprovalResponseEnumType.REQUEST,parentId, testUser.getOrganizationId());
+		return rFact.countAccessRequestsForType(testUser, requester, delegate, targetObject, ApprovalResponseEnumType.REQUEST,parentId, testUser.getOrganizationId());
 	}
 	
 	private List<ApproverType> getCreateApprovers(UserType user, NameIdType approver, NameIdType object, NameIdType entitlement, int level, ApprovalEnumType approvalType) throws FactoryException, ArgumentException{
