@@ -20,7 +20,8 @@ public class ResourceUtil {
 		return getResource(RESOURCE_PREFIX + "categories/" + name + "Category.json");
 	}
 	public static String getModelResource(String name) {
-		return getResource(RESOURCE_PREFIX + "models/" + name + "Model.json");
+		String namePath = name.replaceAll("\\.", "/");
+		return getResource(RESOURCE_PREFIX + "models/" + namePath + "Model.json");
 	}
 	public static String getFunctionResource(String name) {
 		return getResource(RESOURCE_PREFIX + "functions/" + name + "Function.js");

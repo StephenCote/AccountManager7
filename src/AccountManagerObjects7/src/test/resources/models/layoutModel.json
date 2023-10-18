@@ -1,0 +1,6 @@
+{
+"name": "link",
+"inherits": ["nameId", "common.generic"],
+"fields": [
+
+]}

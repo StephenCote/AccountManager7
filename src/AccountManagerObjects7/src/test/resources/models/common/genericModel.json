@@ -1,0 +1,10 @@
+{
+	"name": "common.generic",
+	"abstract": true,
+	"fields":[
+		{
+			"name": "genericString",
+			"type": "string"
+		}
+	]
+}
