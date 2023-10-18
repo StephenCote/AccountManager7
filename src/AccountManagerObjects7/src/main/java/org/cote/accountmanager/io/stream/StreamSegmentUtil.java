@@ -13,15 +13,20 @@ import java.util.UUID;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.security.VaultService;
 import org.cote.accountmanager.util.ContentTypeUtil;
 
 public class StreamSegmentUtil {
@@ -151,26 +156,54 @@ public class StreamSegmentUtil {
 				logger.error(e);
 			}
 		}
+		else {
+			/// When encrypting the streamSource field, it's necessary to manually decrypt the field value during initial create stream operations and auto-writing segments
+			/// This is because the streamSource field is encrypted before the model-level stream provider is invoked, wherein the segments are written to the then encrypted stream source.
+			///
+			if(stream.inherits(ModelNames.MODEL_VAULT_EXT)) {
+				FieldSchema fs = RecordFactory.getSchema(ModelNames.MODEL_STREAM).getFieldSchema(FieldNames.FIELD_STREAM_SOURCE);
+				if(fs.isEncrypt()) {
+					List<String> vfields = stream.get(FieldNames.FIELD_VAULTED_FIELDS);
+					if(vfields.contains(FieldNames.FIELD_STREAM_SOURCE)) {
+						logger.warn("Decrypting stream source in-flight - This will happen when segments are auto-created with stream creation");
+						source = null;
+						BaseRecord crec = stream.copyRecord();
+						OrganizationContext org = IOSystem.getActiveContext().findOrganizationContext(crec);
+						VaultBean vault = org.getVault();
+						try {
+							VaultService.getInstance().unvaultField(vault, crec, crec.getField(FieldNames.FIELD_STREAM_SOURCE));
+							source = crec.get(FieldNames.FIELD_STREAM_SOURCE);
+						} catch (ModelException | ValueException | FieldException e) {
+							logger.error(e);
+						}
+					}
+					else {
+						/// Expected behavior that the value is already decrypted
+					}
+				}
+			}
+		}
 		return source;
 	}
 	
 	public void updateStreamSize(BaseRecord stream) {
 		try {
-			stream.set(FieldNames.FIELD_SIZE, getStreamSize(stream));
+			stream.set(FieldNames.FIELD_SIZE, getFileStreamSize(stream));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 	}
 	
-	public long getStreamSize(BaseRecord stream) {
-		String streamSource = stream.get(FieldNames.FIELD_STREAM_SOURCE);
+	public long getFileStreamSize(BaseRecord stream) {
+		String streamSource = getFileStreamPath(stream); 
+		//stream.get(FieldNames.FIELD_STREAM_SOURCE);
 		long outSize = 0L;
 		if(streamSource != null) {
-			outSize = getStreamSize(streamSource);
+			outSize = getFileStreamSize(streamSource);
 		}
 		return outSize;
 	}
-	private long getStreamSize(String streamSource) {
+	private long getFileStreamSize(String streamSource) {
 		StreamSegmentUtil ssu = new StreamSegmentUtil();
 		long size = 0L;
 		try (

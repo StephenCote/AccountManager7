@@ -55,18 +55,9 @@ public class StreamProvider implements IProvider {
 			}
 		}
 		if(operation == RecordOperation.CREATE || operation == RecordOperation.UPDATE) {
-			logger.info("***** " + operation.toString() + " with segments");
 			StreamEnumType set = StreamEnumType.valueOf(model.get("type"));
-			// logger.info(model.toFullString());
-			/*
-			StackTraceElement[] st = new Throwable().getStackTrace();
-			for(int i = 0; i < st.length; i++) {
-				logger.error(st[i].toString());
-			}
-			*/
 			switch(set) {
 				case FILE:
-					// logger.info("Handle file stream write");
 					writeSegments(model);
 					break;
 				default:
@@ -99,10 +90,9 @@ public class StreamProvider implements IProvider {
 		}
 		
 		StreamSegmentUtil ssu = new StreamSegmentUtil();
-		/// String streamSource = stream.get(FieldNames.FIELD_STREAM_SOURCE);
 		String streamSource = ssu.getFileStreamPath(stream);
 		if(ssu.isRestrictedPath(streamSource)) {
-			logger.warn("Will not write to a restricted location");
+			logger.warn("Will not write to a restricted location: " + streamSource);
 			return;
 		}
 		

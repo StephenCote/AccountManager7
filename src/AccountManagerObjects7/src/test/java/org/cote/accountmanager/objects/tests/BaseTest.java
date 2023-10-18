@@ -44,7 +44,7 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
-	protected static boolean resetDataSchema = true;
+	protected static boolean resetDataSchema = false;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	

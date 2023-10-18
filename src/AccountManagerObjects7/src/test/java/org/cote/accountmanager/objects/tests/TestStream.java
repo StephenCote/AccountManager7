@@ -221,8 +221,7 @@ public class TestStream extends BaseTest {
 		
 
 	}
-	/*
-	 * Currently broken on encryption
+
 	@Test
 	public void TestCreateStream() {
 		logger.info("Test Streaming");
@@ -243,10 +242,23 @@ public class TestStream extends BaseTest {
 			data.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			newSegment(data, "1) This is some example data".getBytes());
 			assertNotNull("Data is null", data);
-			data = ioContext.getAccessPoint().create(testUser5, data);
-			//logger.info(data.toFullString());
 			
+			/// Corner-case issue when setting a field to be encrypted
+			/// And that field may receive a default value via a model-level provider
+			/// Then the field won't be encrypted.  At the moment, a FieldException will be thrown, caught, and sunk in RecordTranslator
+			/// This needs to be fixed so a record with incomplete field translation isn't persisted
+			/// Either way, though, it's necessary to set any default value at a field level provider vs. model level provider,
+			/// Or at the time the record is created instead of at the model level provider
+			///
+			StreamSegmentUtil ssu = new StreamSegmentUtil();
+			ssu.getFileStreamPath(data);
+			
+			/// When a segment is added to a new stream to be auto created, and the stream source field is encrypted
+			/// Then the field is already encrypted at the time the segment is created
+			///
+			data = ioContext.getAccessPoint().create(testUser5, data);
 			BaseRecord idata = ioContext.getAccessPoint().findById(testUser5, ModelNames.MODEL_STREAM, data.get(FieldNames.FIELD_ID));
+
 			assertNotNull("Data is null", idata);
 			long size = data.get(FieldNames.FIELD_SIZE);
 			assertTrue("Expected a positive size", size > 0L);
@@ -257,6 +269,9 @@ public class TestStream extends BaseTest {
 			BaseRecord seg = RecordFactory.newInstance(ModelNames.MODEL_STREAM_SEGMENT);
 			seg.set(FieldNames.FIELD_STREAM, "\n2) This is some more data to add".getBytes());
 			seg.set(FieldNames.FIELD_STREAM_ID, idata.get(FieldNames.FIELD_OBJECT_ID));
+
+
+
 			boolean created = ioContext.getRecordUtil().createRecord(seg);
 			assertTrue("Expected to create the segment", created);
 			
@@ -266,13 +281,13 @@ public class TestStream extends BaseTest {
 			
 			QueryResult qr = ioContext.getSearch().find(q);
 			assertNotNull("Result is null", qr);
-			// logger.info(qr.toFullString());
+
 			assertTrue("Expected 1 result", qr.getTotalCount() == 1);
 			BaseRecord seg1 = qr.getResults()[0];
 			String txt = new String((byte[])seg1.get(FieldNames.FIELD_STREAM));
 			logger.info("Streamed back: " + txt);
 			
-			StreamSegmentUtil ssu = new StreamSegmentUtil();
+			
 			
 			byte[] allBytes = ssu.streamToEnd(idata.get(FieldNames.FIELD_OBJECT_ID), 0L, 10L);
 			logger.info(new String(allBytes));
@@ -289,7 +304,7 @@ public class TestStream extends BaseTest {
 		
 		
 	}
-	*/
+
 	@Test
 	public void TestStreamInPlace() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
@@ -397,7 +412,7 @@ public class TestStream extends BaseTest {
 		}
 
 	}
-	
+
 	private boolean cleanupInGroup(BaseRecord user, String model, String name, long groupId) {
 		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
 		q.field(FieldNames.FIELD_NAME, name);

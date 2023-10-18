@@ -43,6 +43,8 @@ public abstract class RecordTranslator {
 		}
 	}
 	
+	/// TODO: Need to return a value indicating the translation was successful
+	///
 	protected void translateField(RecordOperation operation, RecordIO io, ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) {
 		
 		FieldType bfield = RecordFactory.model(model.getModel()).getField(lfield.getName());

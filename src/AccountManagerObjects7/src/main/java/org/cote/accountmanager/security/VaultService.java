@@ -35,6 +35,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.CryptoBean;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
@@ -51,6 +52,7 @@ import org.cote.accountmanager.schema.type.CredentialEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.CryptoUtil;
+import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
@@ -944,6 +946,10 @@ public class VaultService
 		if(!fs.isEncrypt()) {
 			throw new ModelException("Model " + obj.getModel() + " field " + field.getName() + " is not configured to be encrypted");
 		}
+		if(FieldUtil.isNullOrEmpty(obj.getModel(), field)) {
+			logger.warn("Do not vault null or empty value");
+			return;
+		}
 		
 		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
 		String vlink = vault.get(FieldNames.FIELD_VAULT_LINK);
@@ -1028,6 +1034,21 @@ public class VaultService
 			return;
 		}
 		
+		if(field == null) {
+			logger.error("Field reference is null");
+			return;
+		}
+		
+		List<String> vaulted = obj.get(FieldNames.FIELD_VAULTED_FIELDS);
+		List<String> unvaulted = obj.get(FieldNames.FIELD_UNVAULTED_FIELDS);
+		
+		if(FieldUtil.isNullOrEmpty(obj.getModel(), field)) {
+			logger.warn("Marking null or empty field as being decrypted");
+			vaulted.remove(field.getName());
+			unvaulted.add(field.getName());
+			return;
+		}
+		
 		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
 			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_VAULT_EXT);
 		}
@@ -1058,8 +1079,6 @@ public class VaultService
 			throw new ValueException("Vault cipher is null");
 		}
 		
-		List<String> vaulted = obj.get(FieldNames.FIELD_VAULTED_FIELDS);
-		List<String> unvaulted = obj.get(FieldNames.FIELD_UNVAULTED_FIELDS);
 		if(unvaulted.contains(field.getName())) {
 			logger.info("Field " + field.getName() + " was already unvaulted");
 		}
@@ -1068,6 +1087,7 @@ public class VaultService
 			case STRING:
 				String sval = field.getValue();
 				if(sval != null && sval.length() > 0) {
+					// logger.warn("Decrypt: '" + sval + "'");
 					field.setValue(
 						new String(
 							CryptoUtil.decipher(key, BinaryUtil.fromBase64(
