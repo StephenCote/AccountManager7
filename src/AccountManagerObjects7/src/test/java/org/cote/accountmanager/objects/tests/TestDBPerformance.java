@@ -1,16 +1,10 @@
 package org.cote.accountmanager.objects.tests;
 
-import org.cote.accountmanager.exceptions.IndexException;
-import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.QueryResult;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBSearch;
 import org.cote.accountmanager.io.db.cache.CacheDBSearch;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.schema.ModelNames;
 import org.junit.Test;
 
 public class TestDBPerformance extends BaseTest {

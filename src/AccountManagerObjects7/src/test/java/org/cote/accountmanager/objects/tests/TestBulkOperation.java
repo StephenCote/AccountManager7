@@ -12,7 +12,6 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
@@ -24,7 +23,6 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.util.FieldLockUtil;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {

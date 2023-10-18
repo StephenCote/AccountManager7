@@ -214,7 +214,6 @@ public class RecordFactory {
 		
 		if(rawModels.containsKey(name)) {
 			looseImports.put(name, rawModels.get(name));
-			//logger.info(rawModels.get(name));
 			return rawModels.get(name);
 		}
 		String file = ResourceUtil.getModelResource(name);
