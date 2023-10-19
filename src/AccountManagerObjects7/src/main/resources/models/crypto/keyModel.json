@@ -1,6 +1,6 @@
 {
-	"name": "key",
-	"inherits": ["base"],
+	"name": "crypto.key",
+	"inherits": ["common.base"],
 	"fields": [
 		{
 			"name": "key",

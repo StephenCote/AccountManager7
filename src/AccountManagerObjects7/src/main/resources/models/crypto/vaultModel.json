@@ -1,5 +1,5 @@
 {
-"name": "vault",
+"name": "crypto.vault",
 "inherits": ["directory", "dateTime"],
 "ephemeral": false,
 "fields": [
@@ -23,27 +23,27 @@
 	},
 	{
 		"name": "activeKey",
-		"baseModel": "keySet",
+		"baseModel": "crypto.keySet",
 		"type": "model",
 		"foreign": true,
 		"ephemeral": false
 	},
 	{
 		"name": "vaultKey",
-		"baseModel": "keySet",
+		"baseModel": "crypto.keySet",
 		"type": "model",
 		"foreign": true,
 		"ephemeral": true
 	},
 	{
 		"name": "public",
-		"baseModel": "keySet",
+		"baseModel": "crypto.keySet",
 		"type": "model",
 		"foreign": true
 	},
 	{
 		"name": "salt",
-		"baseModel": "keySet",
+		"baseModel": "crypto.keySet",
 		"type": "model",
 		"foreign": true
 	},

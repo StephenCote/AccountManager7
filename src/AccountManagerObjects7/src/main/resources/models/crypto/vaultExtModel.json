@@ -1,5 +1,5 @@
 {
-"name": "vaultExt",
+"name": "crypto.vaultExt",
 "abstract": true,
 "fields": [
 	{

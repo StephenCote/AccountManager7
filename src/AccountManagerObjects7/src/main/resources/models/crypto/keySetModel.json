@@ -1,29 +1,29 @@
 {
-	"name": "keySet",
+	"name": "crypto.keySet",
 	"inherits": ["directory"],
 	"factory": "org.cote.accountmanager.factory.KeyFactory",
 	"fields": [
 		{
 			"name": "hash",
-			"baseModel": "hash",
+			"baseModel": "crypto.hash",
 			"type": "model",
 			"foreign": true
 		},
 		{
 			"name": "public",
-			"baseModel": "key",
+			"baseModel": "crypto.key",
 			"type": "model",
 			"foreign": true
 		},
 		{
 			"name": "private",
-			"baseModel": "key",
+			"baseModel": "crypto.key",
 			"type": "model",
 			"foreign": true
 		},
 		{
 			"name": "cipher",
-			"baseModel": "cipherKey",
+			"baseModel": "crypto.cipherKey",
 			"type": "model",
 			"foreign": true
 		},

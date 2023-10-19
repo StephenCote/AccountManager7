@@ -23,7 +23,7 @@ public class RuleType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(RuleType.class);
 	public RuleType(){
 		try {
-			RecordFactory.newInstance("rule", this, null);
+			RecordFactory.newInstance("policy.rule", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

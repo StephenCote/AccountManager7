@@ -1,5 +1,5 @@
 {
-"name": "cipherExt",
+"name": "crypto.cipherExt",
 "abstract": true,
 "fields": [
 

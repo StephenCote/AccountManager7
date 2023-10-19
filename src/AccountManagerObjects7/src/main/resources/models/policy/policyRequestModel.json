@@ -1,16 +1,16 @@
 {
-	"name": "policyRequest",
+	"name": "policy.policyRequest",
 	"factory": "org.cote.accountmanager.factory.PolicyRequestFactory",
 	"fields": [
 		{
 			"name": "attributes",
-			"baseModel": "attribute",
+			"baseModel": "common.attribute",
 			"baseType": "model",
 			"type": "list"
 		},
 		{
 			"name": "facts",
-			"baseModel": "fact",
+			"baseModel": "policy.fact",
 			"baseType": "model",
 			"type": "list"
 		},

@@ -1,6 +1,6 @@
 {
 "name": "journalObject",
-"inherits": ["directory", "cryptoByteStore", "description", "dateTime", "journalExt"],
+"inherits": ["directory", "crypto.cryptoByteStore", "description", "dateTime", "journalExt"],
 "group": "Journal",
 "fields": [
 	{

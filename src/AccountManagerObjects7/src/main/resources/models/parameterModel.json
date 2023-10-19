@@ -1,6 +1,6 @@
 {
 	"name": "parameter",
-	"inherits": ["attribute"],
+	"inherits": ["common.attribute"],
 	"ioConstraints": ["file"],
 	"fields": []
 }

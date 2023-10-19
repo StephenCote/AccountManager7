@@ -21,7 +21,7 @@ public class PolicyDefinitionType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(PolicyDefinitionType.class);
 	public PolicyDefinitionType(){
 		try {
-			RecordFactory.newInstance("policyDefinition", this, null);
+			RecordFactory.newInstance("policy.policyDefinition", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

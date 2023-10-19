@@ -22,7 +22,7 @@ public class PolicyResponseType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(PolicyResponseType.class);
 	public PolicyResponseType(){
 		try {
-			RecordFactory.newInstance("policyResponse", this, null);
+			RecordFactory.newInstance("policy.policyResponse", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

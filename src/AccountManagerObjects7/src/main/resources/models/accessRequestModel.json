@@ -1,6 +1,6 @@
 {
 "name": "accessRequest",
-"inherits": ["baseAccess", "approver", "hashExt"],
+"inherits": ["baseAccess", "approver", "crypto.hashExt"],
 "factory": "org.cote.accountmanager.factory.AccessRequestFactory",
 "icon": "switch_access_shortcut",
 "label": "Access Request",

@@ -2,7 +2,7 @@
 "name": "journalEntry",
 "abstract": false,
 "emitModel": true,
-"inherits": ["hashExt"],
+"inherits": ["crypto.hashExt"],
 "fields": [
 	{
 		"name": "journalDate",

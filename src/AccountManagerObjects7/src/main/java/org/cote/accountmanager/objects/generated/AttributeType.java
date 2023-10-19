@@ -17,7 +17,7 @@ public class AttributeType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(AttributeType.class);
 	public AttributeType(){
 		try {
-			RecordFactory.newInstance("attribute", this, null);
+			RecordFactory.newInstance("common.attribute", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

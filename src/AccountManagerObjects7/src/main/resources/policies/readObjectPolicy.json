@@ -1,5 +1,5 @@
 {
-	"model": "policy",
+	"model": "policy.policy",
 	"urn": "policy.readObject",
 	"rules": [
 		{

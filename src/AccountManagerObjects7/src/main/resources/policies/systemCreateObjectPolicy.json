@@ -1,5 +1,5 @@
 {
-	"model": "policy",
+	"model": "policy.policy",
 	"urn": "resource.policy.systemcreateobject",
 	"enabled": true,
 	"condition": "all",

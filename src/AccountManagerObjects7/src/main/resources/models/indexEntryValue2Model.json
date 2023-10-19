@@ -1,6 +1,6 @@
 {
 	"name": "indexEntryValue2",
 	"ioConstraints": ["file"],
-	"inherits": ["attribute"],
+	"inherits": ["common.attribute"],
 	"fields": []
 }

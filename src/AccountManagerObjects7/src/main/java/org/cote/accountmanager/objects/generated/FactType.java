@@ -23,7 +23,7 @@ public class FactType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(FactType.class);
 	public FactType(){
 		try {
-			RecordFactory.newInstance("fact", this, null);
+			RecordFactory.newInstance("policy.fact", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

@@ -1,6 +1,6 @@
 {
 "name": "journal",
-"inherits": ["base"],
+"inherits": ["common.base"],
 "abstract": false,
 "fields": [
 	{

@@ -1,10 +1,10 @@
 {
-	"name": "policyDefinition",
+	"name": "policy.policyDefinition",
 	"inherits": ["dateTime", "organizationExt"],
 	"fields": [
 		{
 			"name": "parameters",
-			"baseModel": "fact",
+			"baseModel": "policy.fact",
 			"baseType": "model",
 			"type": "list"
 		},

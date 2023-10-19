@@ -1,5 +1,5 @@
 {
-"name": "fact",
+"name": "policy.fact",
 "inherits": ["baseAuthorization"],
 "group": "Facts",
 "icon": "fact_check",

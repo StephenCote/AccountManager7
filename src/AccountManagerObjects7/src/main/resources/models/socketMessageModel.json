@@ -1,6 +1,6 @@
 {
 	"name": "socketMessage",
-	"ioConstraints": ["file"],
+	"ioConstraints": ["unknown"],
 	"fields": [
 		{
 			"name": "newMessageCount",

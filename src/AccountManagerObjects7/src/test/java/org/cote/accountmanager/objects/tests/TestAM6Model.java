@@ -156,7 +156,7 @@ public class TestAM6Model extends BaseTest {
 		logger.info("Implements: " + k);
 	});
 	
-	LooseModel bmod = ModelFactory.getLooseModel("cryptoByteStore");
+	LooseModel bmod = ModelFactory.getLooseModel("crypto.cryptoByteStore");
 	bmod.getFields().forEach(s -> {
 		logger.info("Field " + s.getName());
 	});

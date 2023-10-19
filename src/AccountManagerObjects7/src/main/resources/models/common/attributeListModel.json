@@ -1,12 +1,12 @@
 {
-	"name": "attributeList",
+	"name": "common.attributeList",
 	"abstract": true,
 	"fields": [
 		{
 			"name": "attributes",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "attribute",
+			"baseModel": "common.attribute",
 			"referenced": true,
 			"followReference": false
 		}

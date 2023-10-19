@@ -127,7 +127,7 @@ public class TestCryptography extends BaseTest {
 		assertNotNull("Hash Algorithm was null", hashAlgo);
 		
 		try {
-			bean.set("cipher", RecordFactory.newInstance("cipherKey"));
+			bean.set("cipher", RecordFactory.newInstance(ModelNames.MODEL_CIPHER_KEY));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			

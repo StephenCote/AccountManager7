@@ -1,6 +1,6 @@
 {
 "name": "data",
-"inherits": ["directory", "cryptoByteStore", "description", "dateTime", "streamExt"],
+"inherits": ["directory", "crypto.cryptoByteStore", "description", "dateTime", "streamExt"],
 "group": "Data",
 "icon": "data_object",
 "label": "Data",

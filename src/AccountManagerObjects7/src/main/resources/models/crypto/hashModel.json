@@ -1,6 +1,6 @@
 {
-	"name": "hash",
-	"inherits": ["base"],
+	"name": "crypto.hash",
+	"inherits": ["common.base"],
 	"fields": [
 		{
 			"name": "keyFunction",

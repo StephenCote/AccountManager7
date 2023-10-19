@@ -1,6 +1,6 @@
 {
 "name": "audit",
-"inherits": ["dateTime", "organizationExt", "description", "primaryKey", "signature", "hashExt", "subject"],
+"inherits": ["dateTime", "organizationExt", "description", "primaryKey", "signature", "crypto.hashExt", "subject"],
 "factory": "org.cote.accountmanager.factory.AuditFactory",
 "autoCreateForeignReference": false,
 "fields": [
@@ -56,7 +56,7 @@
 	},
 	{
 		"name": "policy",
-		"baseModel": "policyResponse",
+		"baseModel": "policy.policyResponse",
 		"type": "model"
 	}
 ]}

@@ -26,27 +26,27 @@ public class ModelNames {
 	
 	public static final String MODEL_ACCOUNT = "account";
 	public static final String MODEL_ADDRESS = "address";
-	public static final String MODEL_ATTRIBUTE = "attribute";
-	public static final String MODEL_ATTRIBUTE_LIST = "attributeList";
-	public static final String MODEL_BASE = "base";
-	public static final String MODEL_CIPHER_KEY = "cipherKey";
+	public static final String MODEL_ATTRIBUTE = "common.attribute";
+	public static final String MODEL_ATTRIBUTE_LIST = "common.attributeList";
+	public static final String MODEL_BASE = "common.base";
+	public static final String MODEL_CIPHER_KEY = "crypto.cipherKey";
 	public static final String MODEL_CONTACT = "contact";
 	public static final String MODEL_CONTACT_INFORMATION = "contactInformation";
 	public static final String MODEL_CONTROL = "control";
 	public static final String MODEL_CREDENTIAL = "credential";
-	public static final String MODEL_CRYPTOBYTESTORE = "cryptoByteStore";
+	public static final String MODEL_CRYPTOBYTESTORE = "crypto.cryptoByteStore";
 	public static final String MODEL_DATA = "data";
 	public static final String MODEL_PATH = "path";
 	public static final String MODEL_DIRECTORY = "directory";
-	public static final String MODEL_FACT = "fact";
+	public static final String MODEL_FACT = "policy.fact";
 	public static final String MODEL_GROUP = "group";
-	public static final String MODEL_HASH = "hash";
+	public static final String MODEL_HASH = "crypto.hash";
 	public static final String MODEL_JOURNAL = "journal";
 	public static final String MODEL_JOURNAL_ENTRY = "journalEntry";
 	public static final String MODEL_JOURNAL_EXT = "journalExt";
-	public static final String MODEL_KEY = "key";
-	public static final String MODEL_KEY_SET = "keySet";
-	public static final String MODEL_KEY_STORE = "keyStore";
+	public static final String MODEL_KEY = "crypto.key";
+	public static final String MODEL_KEY_SET = "crypto.keySet";
+	public static final String MODEL_KEY_STORE = "crypto.keyStore";
 	// public static final String MODEL_STORE = "store";
 	public static final String MODEL_OPERATION = "operation";
 	public static final String MODEL_ORGANIZATION = "organization";
@@ -55,20 +55,20 @@ public class ModelNames {
 	public static final String MODEL_PARTICIPATION = "participation";
 	public static final String MODEL_PARTICIPATION_LIST = "participationList";
 	public static final String MODEL_PARTICIPATION_ENTRY = "participationEntry";
-	public static final String MODEL_PATTERN = "pattern";
+	public static final String MODEL_PATTERN = "policy.pattern";
 	public static final String MODEL_PERMISSION = "permission";
 	public static final String MODEL_AUDIT = "audit";
 	
 	public static final String MODEL_PERSON = "person";
-	public static final String MODEL_POLICY = "policy";
-	public static final String MODEL_POLICY_DEFINITION = "policyDefinition";
-	public static final String MODEL_POLICY_REQUEST = "policyRequest";
-	public static final String MODEL_POLICY_RESPONSE = "policyResponse";
+	public static final String MODEL_POLICY = "policy.policy";
+	public static final String MODEL_POLICY_DEFINITION = "policy.policyDefinition";
+	public static final String MODEL_POLICY_REQUEST = "policy.policyRequest";
+	public static final String MODEL_POLICY_RESPONSE = "policy.policyResponse";
 	
 	public static final String MODEL_POPULATE = "populate";
 	public static final String MODEL_ROLE = "role";
 	public static final String MODEL_RSA_KEY = "rsaKey";
-	public static final String MODEL_RULE = "rule";
+	public static final String MODEL_RULE = "policy.rule";
 	public static final String MODEL_SELF = "$self";
 	public static final String MODEL_FLEX = "$flex";
 	public static final String MODEL_SIMPLE_BYTE_STORE = "simpleByteStore";
@@ -85,8 +85,8 @@ public class ModelNames {
 	public static final String MODEL_PARAMETER_LIST = "parameterList";
 	public static final String MODEL_PARAMETER = "parameter";
 	
-	public static final String MODEL_VAULT = "vault";
-	public static final String MODEL_VAULT_EXT = "vaultExt";
+	public static final String MODEL_VAULT = "crypto.vault";
+	public static final String MODEL_VAULT_EXT = "crypto.vaultExt";
 	
 	public static final String MODEL_INDEX_STORE = "indexStore";
 	public static final String MODEL_INDEX2 = "index2";

@@ -1,6 +1,12 @@
 {
-"name": "link",
-"inherits": ["nameId", "common.generic"],
+"name": "layout",
+"inherits": ["nameId", "common.generic", "journalExt"],
+"dedicatedParticipation": true,
+"access": {
+	"roles": {
+		"create": ["AccountUsers"]
+	}
+},
 "fields": [
 
 ]}

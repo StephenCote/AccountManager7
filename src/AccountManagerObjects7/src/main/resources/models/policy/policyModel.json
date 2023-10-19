@@ -1,5 +1,5 @@
 {
-	"name": "policy",
+	"name": "policy.policy",
 	"inherits": ["baseAuthorization"],
 	"group": "Policies",
 	"icon": "policy",
@@ -7,7 +7,7 @@
 	"fields": [
 		{
 			"name": "rules",
-			"baseModel": "rule",
+			"baseModel": "policy.rule",
 			"baseType": "model",
 			"type": "list",
 			"foreign": true

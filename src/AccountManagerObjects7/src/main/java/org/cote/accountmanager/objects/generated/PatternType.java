@@ -23,7 +23,7 @@ public class PatternType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(PatternType.class);
 	public PatternType(){
 		try {
-			RecordFactory.newInstance("pattern", this, null);
+			RecordFactory.newInstance("policy.pattern", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

@@ -1,6 +1,6 @@
 {
-	"name": "policyResponse",
-	"inherits": ["attributeList", "score", "description"],
+	"name": "policy.policyResponse",
+	"inherits": ["common.attributeList", "score", "description"],
 	"fields": [
 		{
 			"name": "message",
@@ -15,7 +15,7 @@
 		{
 			"name": "responseData",
 			"baseType": "model",
-			"baseModel": "base",
+			"baseModel": "common.base",
 			"type": "list"
 		},
 		{

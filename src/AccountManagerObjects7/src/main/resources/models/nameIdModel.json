@@ -1,6 +1,6 @@
 {
 "name": "nameId",
-"inherits": ["base", "controlsExt", "tagsExt"],
+"inherits": ["common.base", "controlsExt", "tagsExt"],
 "abstract": true,
 "query": ["name"],
 "fields": [

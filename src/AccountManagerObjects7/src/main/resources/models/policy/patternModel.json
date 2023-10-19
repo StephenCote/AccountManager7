@@ -1,5 +1,5 @@
 {
-"name": "pattern",
+"name": "policy.pattern",
 "inherits": ["baseAuthorization"],
 "group": "Patterns",
 "icon": "texture",
@@ -7,13 +7,13 @@
 "fields": [
 	{
 		"name": "fact",
-		"baseModel": "fact",
+		"baseModel": "policy.fact",
 		"type": "model",
 		"foreign": true
 	}
 	,{
 		"name": "match",
-		"baseModel": "fact",
+		"baseModel": "policy.fact",
 		"type": "model",
 		"foreign": true
 	}

@@ -1,5 +1,5 @@
 {
-	"model": "rule",
+	"model": "policy.rule",
 	"urn": "generic.policy.rule.onerequired",
 	"type": "permit",
 	"condition": "any",

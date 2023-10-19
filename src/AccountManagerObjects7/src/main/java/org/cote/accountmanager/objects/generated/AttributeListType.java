@@ -20,7 +20,7 @@ public abstract class AttributeListType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(AttributeListType.class);
 	public AttributeListType(){
 		try {
-			RecordFactory.newInstance("attributeList", this, null);
+			RecordFactory.newInstance("common.attributeList", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

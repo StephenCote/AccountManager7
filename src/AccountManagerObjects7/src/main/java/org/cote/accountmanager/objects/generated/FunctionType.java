@@ -32,16 +32,7 @@ public class FunctionType extends LooseRecord {
 		setFieldList(rec.getFields());
 		setFieldMap(rec.getFieldMap());
 	}
-	public List<FunctionFactType> getFacts() {
-		return TypeUtil.convertRecordList(get("facts"));
-	}
-	public void setFacts(List<FunctionFactType> facts) {
-		try {
-			set("facts", facts);
-		} catch (FieldException | ModelNotFoundException | ValueException e) {
-			logger.error(e);
-		}
-	}
+
 
 	public FunctionEnumType getFunctionType() {
 		return FunctionEnumType.valueOf(get("functionType"));

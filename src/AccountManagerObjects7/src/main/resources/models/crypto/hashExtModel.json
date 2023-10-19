@@ -1,5 +1,5 @@
 {
-"name": "hashExt",
+"name": "crypto.hashExt",
 "abstract": true,
 "fields": [
 	{

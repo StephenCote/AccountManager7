@@ -1,6 +1,6 @@
 {
 "name": "revisedField",
-"inherits": ["nameId", "vaultExt"],
+"inherits": ["nameId", "crypto.vaultExt"],
 "version": "1.0",
 "access": {
 	"roles": {
