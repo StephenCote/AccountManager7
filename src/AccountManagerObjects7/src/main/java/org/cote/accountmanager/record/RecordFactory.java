@@ -1,6 +1,9 @@
 package org.cote.accountmanager.record;
 
 import java.lang.reflect.InvocationTargetException;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +15,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import org.apache.commons.lang3.EnumUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -306,8 +310,9 @@ public class RecordFactory {
 		ModelSchema ms = null;
 		
 		try {
+
 			ims.setName(name);
-			BaseRecord rec = RecordFactory.newInstance(ModelNames.MODEL_MODEL_SCHEMA);
+			BaseRecord rec = newInstance(ModelNames.MODEL_MODEL_SCHEMA);
 			rec.set(FieldNames.FIELD_OWNER_ID, sysOrg.getOpsUser().get(FieldNames.FIELD_ID));
 			rec.set(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
 			rec.set(FieldNames.FIELD_NAME, name);
@@ -372,13 +377,86 @@ public class RecordFactory {
 		return mod;
 	}
 	
+	public static void unloadSchema(String name) {
+		looseImports.remove(name);
+		looseBaseModels.remove(name);
+		schemas.remove(name);
+		rawModels.remove(name);
+		ResourceUtil.releaseModelResource(name);
+	}
+	
+	public static boolean releaseCustomSchema(String name) {
+		IOContext ctx = IOSystem.getActiveContext();
+		
+		if(ModelNames.MODELS.contains(name)) {
+			logger.error("Unable to release system level models");
+			return false;
+		}
+		
+		ModelSchema ms = RecordFactory.getSchema(name);
+		if(ms == null) {
+			logger.warn("Unknown schema: " + name);
+			return false;
+		}
+		
+		OrganizationContext sysOrg = ctx.getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, null);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
+		BaseRecord rec = ctx.getAccessPoint().find(sysOrg.getAdminUser(), q);
+
+		if(rec == null) {
+			logger.warn("Model schema entry for " + name + " was not found");
+			// return false;
+		}
+		else if(!ctx.getAccessPoint().delete(sysOrg.getAdminUser(), rec)) {
+			logger.warn("Failed to delete schema entry for " + name);
+			return false;
+		}
+		boolean released = false;
+		logger.warn("**** RELEASING SCHEMA: " + name);
+		if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
+			StringBuilder sql = new StringBuilder();
+			
+			sql.append("DROP TABLE IF EXISTS " + ctx.getDbUtil().getTableName(name) + " CASCADE;\n");
+			if(ms.isDedicatedParticipation()) {
+				sql.append("DROP TABLE IF EXISTS " + ctx.getDbUtil().getTableName(ms, ModelNames.MODEL_PARTICIPATION) + " CASCADE;\n");
+			}
+			if(rec != null) {
+			    try (Connection con = ctx.getDbUtil().getDataSource().getConnection(); PreparedStatement st = con.prepareStatement(sql.toString());){
+			    	st.execute();
+			    	released = true;
+			    	logger.warn("**** RELEASED SCHEMA: " + name);
+			    }
+			    catch(SQLException e) {
+			    	logger.error(e);
+			    }
+			}
+		}
+		else if(IOSystem.getActiveContext().getIoType() == RecordIO.FILE) {
+			logger.warn("TODO: Cleanup file-based schema storage");
+			released = true;
+		}
+		
+		if(released) {
+			unloadSchema(name);
+			CacheUtil.clearCache();
+		}
+		
+		return released;
+
+	}
+	
 	public static ModelSchema getCustomSchemaFromResource(String name, String resourceName) {
-		ModelSchema ms = RecordFactory.getIOSchema(name);
+		ModelSchema ms = getIOSchema(name);
 		if(ms == null) {
 			String schema = ResourceUtil.getModelResource(resourceName);
 			if(schema != null) {
-				ms = RecordFactory.importSchemaFromUser(name, schema);
+				ms = importSchemaFromUser(name, schema);
 			}
+		}
+		if(ms != null) {
+			/// Invoke model to force dependency lookups, otherwise, new models won't be discoverable until the next IOSystem recycle
+			model(name);
 		}
 		return ms;
 	}
