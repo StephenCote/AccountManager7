@@ -19,6 +19,11 @@ public class ResourceUtil {
 	public static String getCategoryResource(String name) {
 		return getResource(RESOURCE_PREFIX + "categories/" + name + "Category.json");
 	}
+	
+	public static void releaseModelResource(String name) {
+		cache.remove(name.replaceAll("\\.", "/"));
+	}
+	
 	public static String getModelResource(String name) {
 		String namePath = name.replaceAll("\\.", "/");
 		return getResource(RESOURCE_PREFIX + "models/" + namePath + "Model.json");
