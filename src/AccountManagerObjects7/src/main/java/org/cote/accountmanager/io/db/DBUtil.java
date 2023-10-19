@@ -181,9 +181,9 @@ public class DBUtil {
 	}
 	*/
 	private String getSequenceName(ModelSchema baseSchema, String modelName) {
-		String keyName = modelName;
+		String keyName = modelName.replace('.', '_');
 		if(modelName.equals(ModelNames.MODEL_PARTICIPATION) && baseSchema != null && baseSchema.isDedicatedParticipation()) {
-			keyName = baseSchema.getName() + "_" + modelName;
+			keyName = baseSchema.getName().replace('.', '_') + "_" + modelName;
 		}
 		if(!sequenceNames.containsKey(keyName)) {
 			ModelSchema schema = RecordFactory.getSchema(modelName);
@@ -264,7 +264,7 @@ public class DBUtil {
 	public String getTableName(ModelSchema schema, String modelName) {
 		ModelSchema ms = RecordFactory.getSchema(modelName);
 		String ver = ms.getVersion().replace(".", "_");
-		String useName = modelName;
+		String useName = modelName.replace('.', '_');
 		if(ModelNames.MODEL_PARTICIPATION.equals(modelName) && schema != null && schema.isDedicatedParticipation()) {
 			useName = schema.getName() + "_" + modelName;
 		}
@@ -433,9 +433,9 @@ public class DBUtil {
 		String ver = schema.getVersion().replace(".", "_");
 		String schemaPref = "";
 		if(baseSchema != null && baseSchema.isDedicatedParticipation() && schema.getName().equals(ModelNames.MODEL_PARTICIPATION)) {
-			schemaPref = baseSchema.getName() + "_";
+			schemaPref = baseSchema.getName().replace('.', '_') + "_";
 		}
-		String idxName = dataPrefix + "_" + schemaPref + schema.getName() + "_" + ver + "_" + cname.replaceAll("\"", "") + "_idx on " + tableName + "(" + cols2 + ")";
+		String idxName = dataPrefix + "_" + schemaPref + schema.getName().replace('.', '_') + "_" + ver + "_" + cname.replaceAll("\"", "") + "_idx on " + tableName + "(" + cols2 + ")";
 		return "CREATE" + (unique ? " UNIQUE" : "") + " INDEX " + idxName + ";";
 	}
 	/*
