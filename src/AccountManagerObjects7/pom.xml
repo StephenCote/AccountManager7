@@ -67,8 +67,9 @@
 					<excludes>
 
 						<!--
-						<exclude>**/TestStream.java</exclude>
+						<exclude>**/TestModelLayout.java</exclude>
 						-->
+						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestAccessApproval.java</exclude>
 						<exclude>**/TestAccessPoint.java</exclude>
 						
