@@ -73,7 +73,8 @@ public abstract class BaseRecord {
 	
 	public <T> T toConcrete() {
 		T obj = null;
-		String clsName = RecordFactory.GENERATED_PACKAGE_NAME + "." + model.substring(0, 1).toUpperCase() + model.substring(1) + "Type";
+		String useName = model.substring(model.lastIndexOf(".") + 1);
+		String clsName = RecordFactory.GENERATED_PACKAGE_NAME + "." + useName.substring(0, 1).toUpperCase() + useName.substring(1) + "Type";
 
 		@SuppressWarnings("unchecked")
 		Class<T> cls = (Class<T>)RecordFactory.getClass(clsName);
