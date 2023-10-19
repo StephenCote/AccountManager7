@@ -65,7 +65,7 @@ public class CryptoBean extends LooseRecord {
 	public CryptoBean() {
 		try {
 			RecordFactory.newInstance(ModelNames.MODEL_KEY_SET, this, null);
-			set(ModelNames.MODEL_HASH, RecordFactory.newInstance(ModelNames.MODEL_HASH));
+			set(FieldNames.FIELD_HASH, RecordFactory.newInstance(ModelNames.MODEL_HASH));
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			/// ignore
 		}
