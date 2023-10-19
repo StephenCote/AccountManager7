@@ -220,7 +220,7 @@ public class JournalProvider implements IProvider {
 		}
 		try {
 			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_DATE, new Date());
-			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_MODIFIED, model);
+			entry.set(FieldNames.FIELD_JOURNAL_ENTRY_MODIFIED, model.copyRecord(fieldNames.toArray(new String[0])));
 			entry.set(FieldNames.FIELD_HASH, model.hash(fieldNames.toArray(new String[0])).getBytes());
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
