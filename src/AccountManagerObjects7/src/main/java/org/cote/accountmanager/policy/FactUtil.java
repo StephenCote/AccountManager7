@@ -246,7 +246,7 @@ public class FactUtil {
 			logger.error("Source URL is null");
 			return null;
 		}
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(contextUser, "group", sourceFact.get(FieldNames.FIELD_SOURCE_URL), "DATA", contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(contextUser, ModelNames.MODEL_GROUP, sourceFact.get(FieldNames.FIELD_SOURCE_URL), "DATA", contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(dir == null) {
 			throw new ValueException("Invalid group path " + sourceFact.get(FieldNames.FIELD_SOURCE_URL));
 		}

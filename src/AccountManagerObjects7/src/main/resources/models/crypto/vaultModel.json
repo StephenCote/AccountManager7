@@ -1,6 +1,6 @@
 {
 "name": "crypto.vault",
-"inherits": ["directory", "dateTime"],
+"inherits": ["data.directory", "dateTime"],
 "ephemeral": false,
 "fields": [
 	{
@@ -49,19 +49,19 @@
 	},
 	{
 		"name": "serviceUser",
-		"baseModel": "user",
+		"baseModel": "system.user",
 		"type": "model",
 		"foreign": true
 	},
 	{
 		"name": "credential",
-		"baseModel": "credential",
+		"baseModel": "auth.credential",
 		"type": "model",
 		"foreign": false
 	},
 	{
 		"name": "protectedCredential",
-		"baseModel": "credential",
+		"baseModel": "auth.credential",
 		"type": "model",
 		"foreign": true,
 		"ephemeral": true
@@ -72,7 +72,7 @@
 	},
 	{
 		"name": "vaultGroup",
-		"baseModel": "group",
+		"baseModel": "auth.group",
 		"type": "model",
 		"foreign": true
 	},

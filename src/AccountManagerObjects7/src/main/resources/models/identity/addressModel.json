@@ -1,0 +1,52 @@
+{
+"name": "identity.address",
+"inherits": ["data.directory", "description"],
+"icon": "maps_home_work",
+"label": "Address",
+"fields": [
+	{
+	"name": "addressLine1",
+	"type": "string",
+	"maxLength": 127
+	}
+	,{
+	"name": "addressLine2",
+	"type": "string",
+	"maxLength": 127
+	}
+	,{
+	"name": "city",
+	"type": "string",
+	"maxLength": 127
+	}
+	,{
+	"name": "region",
+	"type": "string",
+	"maxLength": 127
+	}
+	,{
+	"name": "state",
+	"type": "string",
+	"maxLength": 40
+	}
+	,{
+	"name": "postalCode",
+	"type": "string",
+	"maxLength": 12
+	}
+	,{
+	"name": "country",
+	"type": "string",
+	"maxLength": 40
+	}
+	,{
+	"name": "locationType",
+	"baseClass": "org.cote.accountmanager.schema.type.LocationEnumType",
+	"type": "enum",
+	"maxLength": 16
+	}
+	,{
+	"name": "preferred",
+	"type": "boolean"
+	}
+]}

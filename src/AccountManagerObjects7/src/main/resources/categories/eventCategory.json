@@ -1,5 +1,5 @@
 {
-	"model": "modelCategory",
+	"model": "system.modelCategory",
 	"name": "event",
     "label" : "Event",
     "order" : ["message", "location","event","trait"],

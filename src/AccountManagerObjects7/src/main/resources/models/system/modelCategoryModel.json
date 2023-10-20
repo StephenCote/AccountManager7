@@ -1,0 +1,46 @@
+{
+"name": "system.modelCategory",
+"inherits": ["nameId", "description"],
+"fields": [
+	{
+		"name": "icon",
+		"type": "string",
+		"maxLength": 25
+	},
+	{
+		"name": "order",
+		"type": "list",
+		"baseType": "string"
+	},
+	{
+		"name": "limit",
+		"type": "list",
+		"baseType": "string"
+	},
+	{
+		"name": "label",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "type",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "pathName",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "prototype",
+		"type": "boolean"
+	},
+	{
+		"name": "prototypes",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "modelCategory",
+		"foreign": true
+	}
+]}

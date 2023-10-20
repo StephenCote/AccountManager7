@@ -1,0 +1,7 @@
+{
+	"name": "file.indexStore",
+	"inherits": ["file.simpleByteStore"],
+	"ioConstraints": ["file"],
+	"fields": [
+	]
+}

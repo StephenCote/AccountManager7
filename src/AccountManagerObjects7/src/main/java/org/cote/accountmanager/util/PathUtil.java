@@ -99,6 +99,12 @@ public abstract class PathUtil implements IPath {
 					if(!doCreate) {
 						logger.warn("Failed to find '" + e + "' " + (type != null ? "of type (" + type + ") " : "") + "in parent " + parentId + " in path " + path + ", create = false");
 						node = null;
+						/*
+						StackTraceElement[] st = new Throwable().getStackTrace();
+						for(int i = 0; i < st.length; i++) {
+							logger.error(st[i].toString());
+						}
+						*/
 						break;
 					}
 					else {

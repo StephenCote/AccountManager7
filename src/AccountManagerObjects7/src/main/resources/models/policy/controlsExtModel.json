@@ -1,0 +1,14 @@
+{
+	"name": "policy.controlsExt",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "controls",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "policy.control",
+			"foreign": true,
+			"followReference": false
+		}
+	]
+}

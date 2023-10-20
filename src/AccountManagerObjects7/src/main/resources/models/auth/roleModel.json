@@ -1,0 +1,16 @@
+{
+"name": "auth.role",
+"inherits": ["nameId", "path", "common.parent"],
+"constraints": ["parentId, name, type, organizationId"],
+"icon": "badge",
+"label": "Role",
+"dedicatedParticipation": true,
+"fields": [
+	{
+	"name": "type",
+	"baseClass": "org.cote.accountmanager.schema.type.RoleEnumType",
+	"type": "enum",
+	"index": true,
+	"maxLength": 16
+	}
+]}

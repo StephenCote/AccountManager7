@@ -7,6 +7,7 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.AccessSchema;
+import org.cote.accountmanager.schema.ModelNames;
 import org.junit.Test;
 
 public class TestFileStore extends BaseTest {
@@ -32,7 +33,7 @@ public class TestFileStore extends BaseTest {
 		
 		try {
 			
-			BaseRecord role1 = ioContext.getPathUtil().findPath(testOrgContext.getAdminUser(), "role", "/" +  AccessSchema.ROLE_ACCOUNT_USERS, "USER",testOrgContext.getOrganizationId());
+			BaseRecord role1 = ioContext.getPathUtil().findPath(testOrgContext.getAdminUser(), ModelNames.MODEL_ROLE, "/" +  AccessSchema.ROLE_ACCOUNT_USERS, "USER",testOrgContext.getOrganizationId());
 			member = ioContext.getMemberUtil().isMember(testUser1, role1, null);
 			if(!member) {
 				member = ioContext.getMemberUtil().member(testUser1, role1, testUser1, null, true);
@@ -75,7 +76,7 @@ public class TestFileStore extends BaseTest {
 		}
 		try {
 			
-			BaseRecord role1 = ioContext.getPathUtil().findPath(testOrgContext.getAdminUser(), "role", "/" +  AccessSchema.ROLE_ACCOUNT_USERS, "USER", testOrgContext.getOrganizationId());
+			BaseRecord role1 = ioContext.getPathUtil().findPath(testOrgContext.getAdminUser(), ModelNames.MODEL_ROLE, "/" +  AccessSchema.ROLE_ACCOUNT_USERS, "USER", testOrgContext.getOrganizationId());
 			assertNotNull("Role is null", role1);
 		}
 		catch(Exception e) {
@@ -89,12 +90,12 @@ public class TestFileStore extends BaseTest {
 		/// use raw file system, and don't follow foreign keys
 		///
 		resetIO(null);
-		BaseRecord role1 = pathUtil.makePath(testUser1, "role", "/" + AccessSchema.ROLE_ACCOUNT_USERS, "USER", devOrganization.get("id"));
+		BaseRecord role1 = pathUtil.makePath(testUser1, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_ACCOUNT_USERS, "USER", devOrganization.get("id"));
 		BaseRecord perm1 = pathUtil.makePath(testUser1, "permission", "/Read", "USER", devOrganization.get("id"));
 		try {
 			BaseRecord part1 = RecordFactory.model("participation").newInstance();
 			part1.set("participationId", role1.get("id"));
-			part1.set("participationModel", "role");
+			part1.set("participationModel", ModelNames.MODEL_ROLE);
 			part1.set("participantId", testUser1.get("id"));
 			part1.set("participantModel", testUser1.getModel());
 			part1.set("enabled",  true);

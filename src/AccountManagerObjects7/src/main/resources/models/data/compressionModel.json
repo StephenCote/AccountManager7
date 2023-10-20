@@ -1,0 +1,13 @@
+{
+"name": "data.compression",
+"abstract": true,
+"fields": [
+	{
+		"name": "compressionType",
+		"baseClass": "org.cote.accountmanager.schema.type.CompressionEnumType",
+		"type": "enum",
+		"maxLength": 16,
+		"default": "UNKNOWN"
+	}
+
+]}

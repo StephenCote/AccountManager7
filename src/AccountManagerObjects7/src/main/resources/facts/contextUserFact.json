@@ -2,6 +2,6 @@
 	"name": "User Actor",
 	"urn": "resource.policy.fact.contextuser",
 	"type": "parameter",
-	"modelType": "user",
+	"modelType": "system.user",
 	"sourceUrn": "${contextUser}"
 }

@@ -1,0 +1,24 @@
+{
+"name": "auth.entitlement",
+"abstract": true,
+"fields": [
+	{
+		"name": "entitlementType",
+		"type": "string",
+		"maxLength": 32
+	},
+	{
+		"name": "entitlement",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "entitlementType",
+		"access": {
+			"roles": {
+				"read": ["AccountUsersReaders", "RequestReaders", "RoleReaders", "PermissionReaders"]
+			}
+		}
+
+	}
+
+]}

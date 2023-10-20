@@ -6,7 +6,7 @@
 "fields": [
 	{
 		"name": "data",
-		"baseModel": "data",
+		"baseModel": "data.data",
 		"type": "model",
 		"foreign": true
 	}

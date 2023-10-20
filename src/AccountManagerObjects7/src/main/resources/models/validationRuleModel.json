@@ -1,6 +1,6 @@
 {
 "name": "validationRule",
-"inherits": ["directory", "description"],
+"inherits": ["data.directory", "description"],
 "icon": "rule",
 "label": "Validation Rule",
 "group": "Validation Rules",

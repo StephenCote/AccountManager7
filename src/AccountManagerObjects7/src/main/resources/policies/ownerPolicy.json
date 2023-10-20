@@ -8,7 +8,7 @@
 					"fact": {
 						"urn": "ownerFactUrn",
 						"type": "parameter",
-						"modelType": "user",
+						"modelType": "system.user",
 						"sourceDataType": "VARCHAR",
 						"name": "Object Owner"
 					},

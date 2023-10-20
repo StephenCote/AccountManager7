@@ -1,6 +1,6 @@
 {
 	"name": "permission",
-	"inherits": ["nameId", "path", "parent"],
+	"inherits": ["nameId", "path", "common.parent"],
 	"constraints": ["parentId, name, type, organizationId"],
 	"icon": "shield",
 	"label": "Permission",

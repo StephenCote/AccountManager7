@@ -7,13 +7,13 @@
 			"name": "systemRoles",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "role"
+			"baseModel": "auth.role"
 		},
 		{
 			"name": "userRoles",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "role"
+			"baseModel": "auth.role"
 		},
 		{
 			"name": "systemPermissions",
@@ -24,12 +24,12 @@
 		{
 			"name": "user",
 			"type": "model",
-			"baseModel": "user"
+			"baseModel": "system.user"
 		},
 		{
 			"name": "person",
 			"type": "model",
-			"baseModel": "person"
+			"baseModel": "identity.person"
 		}
 		
 ]}

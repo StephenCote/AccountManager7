@@ -16,7 +16,7 @@
 						"name": "Owner Policy Function",
 						"sourceDataType": "varchar",
 						"type": "function",
-						"modelType": "data",
+						"modelType": "data.data",
 						"urn": "ownerMatchUrn"
 					},
 					"type": "function",

@@ -203,7 +203,7 @@ public class TestNameIdMap {
 
 		Map<String, String> exp = NameIdExporter.instance().export(UserType.class);
 		RecordFactory.addRawModels(exp);
-		BaseRecord userType = RecordFactory.model("user");
+		BaseRecord userType = RecordFactory.model("system.user");
 		assertNotNull("User type was null", userType);
 		BaseRecord userInst = null;
 		try{

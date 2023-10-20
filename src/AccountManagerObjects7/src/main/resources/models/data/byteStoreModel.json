@@ -1,0 +1,25 @@
+{
+"name": "data.byteStore",
+"abstract": true,
+"inherits": ["data.compression", "data.contentType"],
+"fields": [
+
+	{
+		"name": "dataBytesStore",
+		"type": "blob"
+	},
+	{
+		"name": "dataHash",
+		"type": "string",
+		"maxLength": 128
+	},
+	{
+		"name": "readDataBytes",
+		"type": "boolean",
+		"virtual": true
+	},
+	{
+		"name": "size",
+		"type": "long"
+	}
+]}

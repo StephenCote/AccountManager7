@@ -6,9 +6,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -153,6 +155,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         int errors = 0;
         // logger.warn("DESERIALIZE " + modelName);
         NodeLink lastNode = currentNode;
+        
+        Map<String, JsonNode> foreignFlex = new HashMap<>();
+        
         while(pairs.hasNext()) {
         	Map.Entry<String, JsonNode> entry = pairs.next();
         	String fname = entry.getKey();
@@ -181,18 +186,23 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 					logger.error("Loose field " + fname + " could not be found");
 				}
 				else if(value != null) {
-					currentNode = new NodeLink(null);
-					currentNode.setFieldName(fname);
-					currentNode.setModel(modelName);
-					currentNode.setSchema(lft);
+
 
             		try {
-            			fld = setFieldValue(jsonParser, ifld, fld, lft, possibleForeign, value);
+            			if(possibleForeign && lft.getType().equals(ModelNames.MODEL_MODEL) && lft.getBaseModel() != null && lft.getBaseModel().equals(ModelNames.MODEL_FLEX) && lft.getForeignType() != null) {
+            				foreignFlex.put(fname, value);
+            			}
+            			else {
+        					currentNode = new NodeLink(null);
+        					currentNode.setFieldName(fname);
+        					currentNode.setModel(modelName);
+        					currentNode.setSchema(lft);
+            				fld = setFieldValue(jsonParser, ifld, fld, lft, possibleForeign, value);
+            			}
             		}
             		catch(ValueException e) {
             			logger.error(modelName + " - " + fname);
             			logger.error(e);
-            			
             		}
             	}
 				if(fld == null) {
@@ -203,6 +213,27 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 				}
         	}
         }
+        for(String k : foreignFlex.keySet()) {
+        	FieldType ifld = type.getField(k);
+        	FieldSchema lft = ltype.getFieldSchema(k);
+			currentNode = new NodeLink(null);
+			currentNode.setFieldName(k);
+			currentNode.setModel(modelName);
+			currentNode.setSchema(lft);
+			String foreignType = null;
+			Optional<FieldType> ofld = fields.stream().filter(f -> f.getName().equals(lft.getForeignType())).findFirst();
+			if(ofld.isPresent()) {
+				foreignType = ofld.get().getValue();
+			}
+			logger.warn(type.toFullString());
+        	try {
+        		FieldType fld = FieldFactory.fieldByType(ifld.getValueType(), k, ifld.getValue());
+				fld = setFieldValue(jsonParser, ifld, fld, lft, foreignType, true, foreignFlex.get(k));
+			} catch (ValueException | IOException e) {
+				logger.error(e);
+			}
+        	
+        }
         currentNode = lastNode;
         if(errors > 0) {
         	return null;
@@ -212,8 +243,11 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         return (T)type;
         
        }
-       
-		private FieldType setFieldValue(JsonParser jsonParser, FieldType ifld, FieldType fld, FieldSchema lft, boolean possibleForeign, JsonNode value) throws ValueException, IOException {
+	
+	private FieldType setFieldValue(JsonParser jsonParser, FieldType ifld, FieldType fld, FieldSchema lft, boolean possibleForeign, JsonNode value) throws ValueException, IOException {
+		return setFieldValue(jsonParser, ifld, fld, lft, null, possibleForeign, value);
+	}
+	private FieldType setFieldValue(JsonParser jsonParser, FieldType ifld, FieldType fld, FieldSchema lft, String foreignType, boolean possibleForeign, JsonNode value) throws ValueException, IOException {
 			FieldType outFld = fld;
         	switch(ifld.getValueType()) {
 	        	case ZONETIME:
@@ -309,45 +343,31 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				BaseRecord val = null;
     				fld.getFieldValueType().setBaseModel(lft.getBaseModel());
     				if(possibleForeign && lft.isForeign()) {
-    					/*
-    					if(this.reader == null) {
-    						logger.error("Reader was not provided to dematerialize the foreign key");
+    					String fmodel = lft.getBaseModel();
+    					if(foreignType != null) {
+    						fmodel = foreignType;
     					}
-    					else {
-    					*/
-    						//try {
-    							/// NOTE: testing flush index here while resolving a latency issue with saving the index
-    							/// this.reader.flush();
-	    						if(value.isNumber()) {
-	    							// val = this.reader.read(lft.getBaseModel(), value.longValue());
-	    							val = IOSystem.getActiveContext().getSearch().findRecord(QueryUtil.createQuery(lft.getBaseModel(), FieldNames.FIELD_ID, value.longValue()));
-	    						}
-	    						else if(value.isTextual()) {
-	    							String txtVal = value.textValue();
-	    							if(txtVal.startsWith("{")) {
-	    								logger.warn("Detected direct reference in foreign field " + lft.getName());
-	    								val = mapper.treeToValue(value, LooseRecord.class);
-	    							}
-	    							else {
-	    								val = IOSystem.getActiveContext().getSearch().findRecord(QueryUtil.createQuery(lft.getBaseModel(), FieldNames.FIELD_OBJECT_ID, txtVal));
-	    								if(val == null) {
-	    									logger.warn("Failed to find foreign key: " + txtVal);
-	    								}
-	    							}
-	    							// val = this.reader.read(lft.getBaseModel(), value.textValue());
-	    						}
-	    						else {
-	    							logger.error("Unhandled foreign key value for " + fld.getName());
-	    						}
-	    						filterFields(val);
-	    					/*
-    						}
-    						catch(ReaderException e) {
-    							
-    							throw new ValueException(e.getMessage());
-    						}
-    						*/
-    					// }
+						if(value.isNumber()) {
+							val = IOSystem.getActiveContext().getSearch().findRecord(QueryUtil.createQuery(fmodel, FieldNames.FIELD_ID, value.longValue()));
+						}
+						else if(value.isTextual()) {
+							String txtVal = value.textValue();
+							if(txtVal.startsWith("{")) {
+								logger.warn("Detected direct reference in foreign field " + lft.getName());
+								val = mapper.treeToValue(value, LooseRecord.class);
+							}
+							else {
+								val = IOSystem.getActiveContext().getSearch().findRecord(QueryUtil.createQuery(fmodel, FieldNames.FIELD_OBJECT_ID, txtVal));
+								if(val == null) {
+									logger.warn("Failed to find foreign key: " + txtVal);
+								}
+							}
+						}
+						else {
+							logger.error("Unhandled foreign key value for " + fld.getName());
+						}
+						filterFields(val);
+
     				}
     				else if(!value.isNull()){
     					val = mapper.treeToValue(value, LooseRecord.class);

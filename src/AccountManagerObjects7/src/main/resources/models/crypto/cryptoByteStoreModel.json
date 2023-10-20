@@ -1,6 +1,6 @@
 {
 "name": "crypto.cryptoByteStore",
 "abstract": true,
-"inherits": ["byteStore", "crypto.cipherExt", "crypto.vaultExt"],
+"inherits": ["data.byteStore", "crypto.cipherExt", "crypto.vaultExt"],
 "fields": []
 }

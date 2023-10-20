@@ -1,5 +1,5 @@
 {
-	"model": "modelCategory",
+	"model": "system.modelCategory",
 	"name": "process",
     "label" : "Process",
     "order" : ["accessRequest", "methodology","process","processstep"],

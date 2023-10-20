@@ -1,0 +1,17 @@
+{
+	"name": "file.indexEntry2",
+	"ioConstraints": ["file"],
+	"fields": [
+		{
+			"name": "type",
+			"type": "string",
+			"maxLength": 32
+		},
+		{
+			"name": "values",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "file.indexEntryValue2"
+		}
+	]
+}

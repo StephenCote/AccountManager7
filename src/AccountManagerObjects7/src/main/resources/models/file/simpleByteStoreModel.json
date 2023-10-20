@@ -1,0 +1,10 @@
+{
+	"name": "file.simpleByteStore",
+	"inherits": ["file.indexEntry"],
+	"ioConstraints": ["file"],
+	"fields": [
+	{
+		"name": "dataBytesStore",
+		"type": "blob"
+	}
+]}

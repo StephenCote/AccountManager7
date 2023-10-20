@@ -4,5 +4,5 @@
 	"factData": "${modelRole}",
 	"factDataType": "user",
 	"type": "role",
-	"modelType": "role"
+	"modelType": "auth.role"
 }

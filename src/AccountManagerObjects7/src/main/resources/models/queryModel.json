@@ -75,7 +75,7 @@
 	{
 		"name": "contextUser",
 		"type": "model",
-		"baseModel": "user",
+		"baseModel": "system.user",
 		"foreign": true
 	},
 	{

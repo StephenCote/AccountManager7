@@ -1,0 +1,15 @@
+{
+	"name": "data.tag",
+	"inherits": ["data.directory", "description"],
+	"group": "Tags",
+	"icon": "category",
+	"label": "Tag",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "type",
+			"type": "string",
+			"maxLength": 32
+		}
+	]
+}

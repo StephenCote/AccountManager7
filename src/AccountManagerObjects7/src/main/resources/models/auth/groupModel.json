@@ -1,0 +1,17 @@
+{
+"name": "auth.group",
+"inherits": ["nameId", "path", "common.parent", "description"],
+"constraints": ["name, parentId, organizationId"],
+"icon": "folder",
+"label": "Group",
+"dedicatedParticipation": true,
+"fields": [
+	{
+		"name": "type",
+		"baseClass": "org.cote.accountmanager.schema.type.GroupEnumType",
+		"type": "enum",
+		"required": true,
+		"index": true,
+		"maxLength": 16
+	}
+]}

@@ -87,13 +87,13 @@
 		{
 			"name": "groupId",
 			"type": "long",
-			"baseModel": "group"
+			"baseModel": "auth.group"
 		},
 		{
 			"name": "groupPath",
 			"type": "string",
 			"virtual": true,
-			"baseModel": "group",
+			"baseModel": "auth.group",
 			"baseProperty": "groupId",
 			"provider": "org.cote.accountmanager.provider.PathProvider"
 		},

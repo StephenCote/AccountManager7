@@ -1,0 +1,10 @@
+{
+"name": "data.contentType",
+"abstract": true,
+"fields": [
+	{
+		"name": "contentType",
+		"type": "string",
+		"maxLength": 64
+	}
+]}

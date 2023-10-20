@@ -1,6 +1,6 @@
 {
 "name": "vaultField",
-"inherits": ["directory", "description", "dateTime", "journalExt", "crypto.vaultExt"],
+"inherits": ["data.directory", "description", "dateTime", "data.journalExt", "crypto.vaultExt"],
 "group": "VaultTest",
 "version": "1.0",
 "fields": [

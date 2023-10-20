@@ -1,0 +1,35 @@
+{
+	"name": "data.thumbnail",
+	"inherits": ["data.directory", "crypto.cryptoByteStore"],
+	"access": {
+		"policies": {
+			"bind": {
+				"objectId": "referenceId",
+				"model": "data.data",
+				"description": "Defer to the object identified by 'propertyName' when performing policy evaluations.  This is to allow for ephemeral objects to be authorized and audited in a uniform fashion"
+			}
+		}
+	},
+	"fields": [
+		{
+			"name": "referenceId",
+			"type": "string",
+			"maxLength": 60
+		},
+		{
+			"name": "referenceType",
+			"type": "string",
+			"maxLength": 32,
+			"default": "data"
+		},
+		{
+			"name": "width",
+			"type": "int"
+		},
+		{
+			"name": "height",
+			"type": "int"
+		}
+
+	]
+}

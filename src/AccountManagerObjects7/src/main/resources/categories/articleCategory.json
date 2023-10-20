@@ -1,5 +1,5 @@
 {
-	"model": "modelCategory",
+	"model": "system.modelCategory",
 	"name": "article",
 	"prototype": true,
     "pathName" : "Articles",

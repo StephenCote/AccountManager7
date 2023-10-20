@@ -1,0 +1,12 @@
+{
+"name": "data.note",
+"inherits": ["data.directory", "common.parent", "dateTime"],
+"group": "Notes",
+"icon": "note",
+"label": "Note",
+"fields": [
+	{
+		"name": "text",
+		"type": "string"
+	}
+]}

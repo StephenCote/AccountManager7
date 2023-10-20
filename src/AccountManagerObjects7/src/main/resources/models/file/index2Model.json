@@ -1,0 +1,18 @@
+{
+	"name": "file.index2",
+	"factory": "org.cote.accountmanager.factory.ParameterListFactory",
+	"ioConstraints": ["file"],
+	"fields": [
+		{
+			"name": "lastId",
+			"type": "long",
+			"default": 100
+		},
+		{
+			"name": "entries",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "file.indexEntry2"
+		}
+	]
+}

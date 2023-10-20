@@ -9,14 +9,14 @@
 						"urn": "actorFactUrn",
 						"type": "parameter",
 						"name": "Actor",
-						"modelType": "user"
+						"modelType": "system.user"
 					},
 					"match": {
 						"urn": "actorMatchUrn",
 						"name": "Admin Role Fact",
 						"factData": "/AccountAdministrators",
 						"type": "role",
-						"modelType": "role",
+						"modelType": "auth.role",
 						"sourceUrn": "replace"
 					},
 					"type": "authorization",

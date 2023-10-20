@@ -1,0 +1,25 @@
+{
+	"name": "common.parent",
+	"abstract": true,
+	"query": ["parentId"],
+	"validation": {
+		"rules": [
+			{
+				"fields": ["parentId"],
+				"rules": ["$notInParent"]
+			}
+		]
+	},
+	"fields": [
+		{
+			"name": "parentId",
+			"type": "long",
+			"baseProperty": "id",
+			"baseModel": "$self",
+			"required": true,
+			"index": true,
+			"default": 0,
+			"recursive": true
+		}
+	]
+}

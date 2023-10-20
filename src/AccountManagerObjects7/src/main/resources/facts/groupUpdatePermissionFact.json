@@ -4,7 +4,7 @@
 	"factData": "/Update",
 	"factDataType": "group",
 	"type": "permission",
-	"modelType": "group",
+	"modelType": "auth.group",
 	"sourceUrn": "${resourceGroupUrn}",
 	"factReference": "${resourceGroup}"
 }

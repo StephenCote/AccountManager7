@@ -91,40 +91,7 @@ public class StatementUtil {
 	
 	public static void updateForeignParticipations(BaseRecord record) {
 		List<BaseRecord> parts = getForeignParticipations(record);
-		for(BaseRecord rec : parts) {
-			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
-		}
-		/*
-		ModelSchema ms = RecordFactory.getSchema(record.getModel());
-		for(FieldType f: record.getFields()) {
-			FieldSchema fs = ms.getFieldSchema(f.getName());
-			if(fs.isEphemeral() || fs.isVirtual() || fs.isReferenced()) {
-				continue;
-			}
-			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
-				//logger.info("**** Handle " + f.getName() + " participation");
-				List<BaseRecord> frecs = record.get(f.getName());
-				for(BaseRecord rec : frecs) {
-					if(!RecordUtil.isIdentityRecord(rec)) {
-						logger.error("Record does not have an identity therefore a reference cannot be made");
-						continue;
-					}
-					BaseRecord owner = null;
-					if(rec.getModel().equals(ModelNames.MODEL_USER)) {
-						owner = rec;
-					}
-					else {
-						owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, rec.get(FieldNames.FIELD_OWNER_ID));
-					}
-					if(owner == null) {
-						logger.error("Record does not have an owner, therefore a reference cannot be made");
-						continue;
-					}
-					IOSystem.getActiveContext().getMemberUtil().member(owner, record, rec, null, true);
-				}
-			}
-		}
-		*/
+		IOSystem.getActiveContext().getRecordUtil().createRecords(parts.toArray(new BaseRecord[0]));
 	}
 	
 	public static DBStatementMeta getInsertTemplate(BaseRecord record) {

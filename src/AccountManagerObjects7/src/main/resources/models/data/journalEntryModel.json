@@ -1,0 +1,30 @@
+{
+"name": "data.journalEntry",
+"abstract": false,
+"emitModel": true,
+"inherits": ["crypto.hashExt"],
+"fields": [
+	{
+		"name": "journalDate",
+		"type": "timestamp"
+	},
+	{
+		"name": "version",
+		"type": "double"
+	},
+	{
+		"name": "baseline",
+		"type": "boolean"
+	},
+
+	{
+		"name": "modified",
+		"baseModel": "$flex",
+		"type": "model"
+	},
+	{
+		"name": "fields",
+		"type": "list",
+		"baseType": "string"
+	}
+]}

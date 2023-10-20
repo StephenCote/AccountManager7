@@ -1,5 +1,5 @@
     {
-    	"model": "modelCategory",
+    	"model": "system.modelCategory",
     	"name": "gallery",
     	"prototype": true,
         "pathName" : "GalleryHome",

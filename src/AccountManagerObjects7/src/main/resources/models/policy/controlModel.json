@@ -1,0 +1,23 @@
+{
+"name": "policy.control",
+"inherits": ["nameId", "dateTime", "reference"],
+"icon": "app_blocking",
+"label": "Control",
+"fields": [
+	{
+		"name": "controlId",
+		"type": "long"
+	},
+	{
+		"name": "controlType",
+		"baseClass": "org.cote.accountmanager.schema.type.ControlEnumType",
+		"type": "enum",
+		"maxLength": 16
+	},
+	{
+		"name": "action",
+		"baseClass": "org.cote.accountmanager.schema.type.ControlActionEnumType",
+		"type": "enum",
+		"maxLength": 16
+	}
+]}

@@ -266,7 +266,7 @@ public class DBUtil {
 		String ver = ms.getVersion().replace(".", "_");
 		String useName = modelName.replace('.', '_');
 		if(ModelNames.MODEL_PARTICIPATION.equals(modelName) && schema != null && schema.isDedicatedParticipation()) {
-			useName = schema.getName() + "_" + modelName;
+			useName = schema.getName().replace('.', '_') + "_" + useName;
 		}
 		return dataPrefix + "_" + useName + "_" + ver;
 	}

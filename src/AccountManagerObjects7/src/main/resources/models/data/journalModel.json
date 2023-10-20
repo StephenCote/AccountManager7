@@ -1,0 +1,24 @@
+{
+"name": "data.journal",
+"inherits": ["common.base"],
+"abstract": false,
+"fields": [
+	{
+		"name": "journaled",
+		"type": "boolean"
+	},
+	{
+		"name": "journalHash",
+		"type": "blob"
+	},
+	{
+		"name": "journalVersion",
+		"type": "double"
+	},
+	{
+		"name": "journalEntries",
+		"baseModel": "data.journalEntry",
+		"baseType": "model",
+		"type": "list"
+	}
+]}

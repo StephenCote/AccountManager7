@@ -1,5 +1,5 @@
 {
-	"model": "modelCategory",
+	"model": "system.modelCategory",
     "label" : "Assets",
     "name": "asset",
     "order" : ["application", "gallery","article", "data", "note", "group", "tag"],

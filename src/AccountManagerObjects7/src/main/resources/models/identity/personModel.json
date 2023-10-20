@@ -1,0 +1,105 @@
+{
+"name": "identity.person",
+"inherits": ["data.directory"],
+"icon": "person",
+"label": "Person",
+"dedicatedParticipation": true,
+"fields": [
+	{
+	"name": "description",
+	"type": "string",
+	"maxLength": 255
+	}
+	,{
+	"name": "firstName",
+	"type": "string",
+	"maxLength": 127
+	}
+	,{
+	"name": "middleName",
+	"type": "string",
+	"maxLength": 127
+	}
+	,{
+	"name": "lastName",
+	"type": "string",
+	"maxLength": 127
+	}
+	,{
+	"name": "title",
+	"type": "string",
+	"maxLength": 32
+	}
+	,{
+	"name": "suffix",
+	"type": "string",
+	"maxLength": 32
+	}
+	,{
+	"name": "birthDate",
+	"type": "timestamp"
+	}
+	,{
+	"name": "gender",
+	"type": "string",
+	"maxLength": 10
+	}
+	,{
+	"name": "alias",
+	"type": "string",
+	"maxLength": 64
+	}
+	,{
+	"name": "prefix",
+	"type": "string",
+	"maxLength": 10
+	}
+	,{
+	"name": "users",
+	"baseType": "model",
+	"baseModel": "system.user",
+	"type": "list",
+	"foreign": true,
+	"followReference": false
+	}
+	,{
+	"name": "accounts",
+	"baseType": "model",
+	"baseModel": "identity.account",
+	"type": "list",
+	"foreign": true,
+	"followReference": false
+	}
+	,{
+	"name": "contactInformation",
+	"baseModel": "identity.contactInformation",
+	"type": "model",
+	"foreign": true
+	}
+	,{
+	"name": "partners",
+	"baseType": "model",
+	"baseModel": "identity.person",
+	"type": "list",
+	"foreign": true,
+	"followReference": false,
+	"participantModel": "person.partner"
+	}
+	,{
+	"name": "dependents",
+	"baseType": "model",
+	"baseModel": "identity.person",
+	"type": "list",
+	"foreign": true,
+	"followReference": false,
+	"participantModel": "person.dependent"
+	}
+	,{
+	"name": "notes",
+	"baseType": "model",
+	"baseModel": "data.note",
+	"type": "list",
+	"foreign": true,
+	"followReference": false
+	}
+]}

@@ -1,5 +1,5 @@
 {
-	"model": "modelCategory",
+	"model": "system.modelCategory",
 	"name": "project",
     "label" : "Project",
     "order" : ["lifecycle", "project", "stage", "work", "task"],

@@ -1,0 +1,30 @@
+{
+	"name": "file.indexEntry",
+	"ioConstraints": ["file"],
+	"abstract": true,
+	"fields": [
+	{
+		"name": "id",
+		"type": "long",
+		"identity": true,
+		"readOnly": true,
+		"private": true
+	}
+	,{
+		"name": "objectId",
+		"type": "string",
+		"identity": true,
+		"readOnly": true,
+		"maxLength": 40
+	},
+	{
+		"name": "name",
+		"type": "string",
+		"required": true
+	},
+	{
+		"name": "indexModel",
+		"type": "string",
+		"maxLength": 32
+	}
+]}

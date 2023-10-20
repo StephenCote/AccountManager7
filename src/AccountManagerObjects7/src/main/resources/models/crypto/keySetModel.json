@@ -1,6 +1,6 @@
 {
 	"name": "crypto.keySet",
-	"inherits": ["directory"],
+	"inherits": ["data.directory"],
 	"factory": "org.cote.accountmanager.factory.KeyFactory",
 	"fields": [
 		{

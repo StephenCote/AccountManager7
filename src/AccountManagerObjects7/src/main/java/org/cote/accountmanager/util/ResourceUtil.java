@@ -36,7 +36,6 @@ public class ResourceUtil {
 	}
 	public static String getScriptResourceObject(String name) {
 		String rec = BinaryUtil.toBase64Str(getResource(RESOURCE_PREFIX + "functions/javascript/" + name + "Function.js"));
-		// return "{\"type\": \"javascript\", \"data\": {\"dataBytesStore\": \"" + rec + "\"}}";
 		return "{\"dataBytesStore\": \"" + rec + "\"}";
 	}
 	

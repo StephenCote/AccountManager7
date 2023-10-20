@@ -89,7 +89,7 @@ public class TestData extends BaseTest {
 				"model": "authenticationRequest",
 				"subjectType": "user",
 				"subject":{
-					"model": "user",
+					"model": "system.user",
 					"name": "Admin",
 					"organizationPath": "/Development"
 				}
