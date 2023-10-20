@@ -78,7 +78,7 @@ public class TestResources extends BaseTest {
 	public void TestResources() {
 		logger.info("Test resources");
 		String contents = null;
-		BufferedInputStream is = new BufferedInputStream(ClassLoader.getSystemResourceAsStream("models/userModel.json"));
+		BufferedInputStream is = new BufferedInputStream(ClassLoader.getSystemResourceAsStream("models/system/userModel.json"));
 		try {
 			contents = StreamUtil.streamToString(is);
 		} catch (IOException e) {
@@ -87,7 +87,7 @@ public class TestResources extends BaseTest {
 		}
 		//logger.info("Contents: " + contents);
 		assertNotNull("Contents are null", contents);
-		ModelSchema schema = RecordFactory.getSchema("user");
+		ModelSchema schema = RecordFactory.getSchema("system.user");
 		assertNotNull("Schema is null", schema);
 		
 	}
