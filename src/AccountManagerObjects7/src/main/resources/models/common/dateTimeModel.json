@@ -1,5 +1,5 @@
 {
-	"name": "dateTime",
+	"name": "common.dateTime",
 	"abstract": "true",
 	"factory": "org.cote.accountmanager.factory.DateTimeFactory",
 	"fields":[

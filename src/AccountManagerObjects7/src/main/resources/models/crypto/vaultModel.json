@@ -1,6 +1,6 @@
 {
 "name": "crypto.vault",
-"inherits": ["data.directory", "dateTime"],
+"inherits": ["data.directory", "common.dateTime"],
 "ephemeral": false,
 "fields": [
 	{

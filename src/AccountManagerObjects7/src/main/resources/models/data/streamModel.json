@@ -1,6 +1,6 @@
 {
 "name": "data.stream",
-"inherits": ["data.directory", "description", "dateTime", "data.contentType", "crypto.vaultExt"],
+"inherits": ["data.directory", "common.description", "common.dateTime", "data.contentType", "crypto.vaultExt"],
 "provider": "org.cote.accountmanager.provider.StreamProvider",
 "fields": [
 	{

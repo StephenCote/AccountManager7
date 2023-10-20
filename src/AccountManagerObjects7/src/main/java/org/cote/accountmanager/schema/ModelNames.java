@@ -48,13 +48,13 @@ public class ModelNames {
 	public static final String MODEL_KEY_SET = "crypto.keySet";
 	public static final String MODEL_KEY_STORE = "crypto.keyStore";
 	// public static final String MODEL_STORE = "store";
-	public static final String MODEL_OPERATION = "operation";
+	public static final String MODEL_OPERATION = "policy.operation";
 	public static final String MODEL_ORGANIZATION = "organization";
 	public static final String MODEL_ORGANIZATION_EXT = "organizationExt";
 	public static final String MODEL_PARENT = "common.parent";
 	public static final String MODEL_PARTICIPATION = "participation";
-	public static final String MODEL_PARTICIPATION_LIST = "participationList";
-	public static final String MODEL_PARTICIPATION_ENTRY = "participationEntry";
+	public static final String MODEL_PARTICIPATION_LIST = "file.participationList";
+	public static final String MODEL_PARTICIPATION_ENTRY = "file.participationEntry";
 	public static final String MODEL_PATTERN = "policy.pattern";
 	public static final String MODEL_PERMISSION = "auth.permission";
 	public static final String MODEL_AUDIT = "system.audit";
@@ -108,7 +108,7 @@ public class ModelNames {
 	public static final String MODEL_THUMBNAIL = "data.thumbnail";
 	public static final String MODEL_VALIDATION_RULE = "validationRule";
 	public static final String MODEL_APPLICATION_PROFILE = "applicationProfile";
-	public static final String MODEL_FUNCTION = "function";
+	public static final String MODEL_FUNCTION = "policy.function";
 	public static final String MODEL_TAG = "data.tag";
 	public static final String MODEL_SOCKET_MESSAGE = "socketMessage";
 	public static final String MODEL_NOTE = "data.note";

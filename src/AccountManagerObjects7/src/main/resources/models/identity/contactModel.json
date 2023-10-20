@@ -1,6 +1,6 @@
 {
 "name": "identity.contact",
-"inherits": ["data.directory", "description"],
+"inherits": ["data.directory", "common.description"],
 "icon": "contact_page",
 "label": "Contact",
 "fields": [

@@ -1,6 +1,6 @@
 {
 	"name": "policy.policyResponse",
-	"inherits": ["common.attributeList", "score", "description"],
+	"inherits": ["common.attributeList", "score", "common.description"],
 	"fields": [
 		{
 			"name": "message",

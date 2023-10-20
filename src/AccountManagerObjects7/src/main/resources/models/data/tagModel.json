@@ -1,6 +1,6 @@
 {
 	"name": "data.tag",
-	"inherits": ["data.directory", "description"],
+	"inherits": ["data.directory", "common.description"],
 	"group": "Tags",
 	"icon": "category",
 	"label": "Tag",

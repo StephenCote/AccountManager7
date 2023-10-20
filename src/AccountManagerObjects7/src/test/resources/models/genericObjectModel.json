@@ -1,6 +1,6 @@
 {
 	"name": "genericObject",
-	"inherits": ["common", "dateTime"],
+	"inherits": ["common", "common.dateTime"],
 	"fields":[
 		{
 			"name": "name",

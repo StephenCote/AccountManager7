@@ -1,7 +1,7 @@
 {
 	"name": "spool",
 	"inherits": [
-		"dateTime",
+		"common.dateTime",
 		"organizationExt",
 		"primaryKey",
 		"reference",

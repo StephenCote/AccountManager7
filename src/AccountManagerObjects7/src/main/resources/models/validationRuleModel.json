@@ -1,6 +1,6 @@
 {
 "name": "validationRule",
-"inherits": ["data.directory", "description"],
+"inherits": ["data.directory", "common.description"],
 "icon": "rule",
 "label": "Validation Rule",
 "group": "Validation Rules",
@@ -38,7 +38,7 @@
 	{
 		"name": "function",
 		"type": "model",
-		"baseModel": "function",
+		"baseModel": "policy.function",
 		"foreign": true,
 		"followReference": false
 	},

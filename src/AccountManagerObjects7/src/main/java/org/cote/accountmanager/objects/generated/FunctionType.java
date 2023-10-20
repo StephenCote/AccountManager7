@@ -22,7 +22,7 @@ public class FunctionType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(FunctionType.class);
 	public FunctionType(){
 		try {
-			RecordFactory.newInstance("function", this, null);
+			RecordFactory.newInstance("policy.function", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

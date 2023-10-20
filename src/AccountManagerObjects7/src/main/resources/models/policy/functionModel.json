@@ -1,5 +1,5 @@
 {
-"name": "function",
+"name": "policy.function",
 "inherits": ["policy.baseAuthorization"],
 "icon": "functions",
 "label": "Function",

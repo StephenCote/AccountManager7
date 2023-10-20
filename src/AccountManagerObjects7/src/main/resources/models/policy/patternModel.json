@@ -19,7 +19,7 @@
 	}
 	,{
 		"name": "operation",
-		"baseModel": "operation",
+		"baseModel": "policy.operation",
 		"type": "model",
 		"foreign": true
 	},

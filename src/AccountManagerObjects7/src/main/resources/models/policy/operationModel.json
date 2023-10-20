@@ -1,5 +1,5 @@
 {
-"name": "operation",
+"name": "policy.operation",
 "inherits": ["policy.baseAuthorization"],
 "group": "Operations",
 "icon": "call_to_action",

@@ -1,7 +1,7 @@
 {
 	"name": "system.fieldLock",
 	"inherits": [
-		"dateTime",
+		"common.dateTime",
 		"organizationExt",
 		"reference",
 		"primaryKey"

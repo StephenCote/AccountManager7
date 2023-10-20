@@ -1,6 +1,6 @@
 {
 "name": "policy.control",
-"inherits": ["common.nameId", "dateTime", "reference"],
+"inherits": ["common.nameId", "common.dateTime", "reference"],
 "icon": "app_blocking",
 "label": "Control",
 "fields": [

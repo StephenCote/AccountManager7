@@ -1,6 +1,6 @@
 {
 "name": "data.note",
-"inherits": ["data.directory", "common.parent", "dateTime"],
+"inherits": ["data.directory", "common.parent", "common.dateTime"],
 "group": "Notes",
 "icon": "note",
 "label": "Note",

@@ -1,5 +1,5 @@
 {
-"name": "participationList",
+"name": "file.participationList",
 "inherits": ["organizationExt"],
 "ioConstraints": ["file"],
 "fields": [
@@ -23,6 +23,6 @@
 			"name": "parts",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "participationEntry"
+			"baseModel": "file.participationEntry"
 		}
 ]}

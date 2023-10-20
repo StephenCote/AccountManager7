@@ -1,6 +1,6 @@
 {
 "name": "identity.address",
-"inherits": ["data.directory", "description"],
+"inherits": ["data.directory", "common.description"],
 "icon": "maps_home_work",
 "label": "Address",
 "fields": [
