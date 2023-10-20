@@ -43,7 +43,7 @@ public class TestVaultFields extends BaseTest {
 		
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, "group", "~/AccessTest", "DATA", testOrgContext.getOrganizationId());
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/AccessTest", "DATA", testOrgContext.getOrganizationId());
 		logger.info("Check for vault in " + testOrgContext.getOrganizationPath() + " (#" + testOrgContext.getOrganizationId() + ")");
 		VaultBean vault = testOrgContext.getVault();
 		assertNotNull("Vault is null", vault);

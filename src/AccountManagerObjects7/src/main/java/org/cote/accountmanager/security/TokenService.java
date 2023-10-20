@@ -67,7 +67,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 public class TokenService {
 	public static final Logger logger = LogManager.getLogger(TokenService.class);
 	private static final Pattern userType = Pattern.compile("^user$");
-	private static final Pattern personaType = Pattern.compile("^(user|person|account)$");
+	private static final Pattern personaType = Pattern.compile("^(system\\.user|identity\\.person|identity\\.account)$");
 	
 	public static final String CLAIM_TOKEN_ID = "tokenId";
 	public static final String CLAIM_OBJECT_ID = "objectId";

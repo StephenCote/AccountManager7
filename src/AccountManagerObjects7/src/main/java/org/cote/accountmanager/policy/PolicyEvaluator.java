@@ -441,7 +441,6 @@ public class PolicyEvaluator {
 					/// datatype may be set based on the model, and the model type may be compounded
 					///
 					if(fdtype != null) {
-						logger.warn("*** Nudge type: " + ftype + "/" + fdtype);
 						fdtype = fdtype.substring(fdtype.lastIndexOf(".") + 1);
 					}
 

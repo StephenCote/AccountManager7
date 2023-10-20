@@ -152,10 +152,6 @@ public class RecordFactory {
 	public static BaseRecord newInstance(String name, String[] fieldNames) throws FieldException, ModelNotFoundException {
 		LooseRecord lbm = new LooseRecord();
 		if(!looseBaseModels.containsKey(name)) {
-			StackTraceElement[] st = new Throwable().getStackTrace();
-			for(int i = 0; i < st.length; i++) {
-				logger.error(st[i].toString());
-			}
 			throw new ModelNotFoundException(String.format(ModelNotFoundException.NOT_FOUND, name));
 		}
 		return newInstance(name, lbm, fieldNames);
@@ -191,10 +187,6 @@ public class RecordFactory {
 	
 	public static FieldType newFieldInstance(String model, String field) throws ModelNotFoundException, FieldException {
 		if(!looseBaseModels.containsKey(model)) {
-			StackTraceElement[] st = new Throwable().getStackTrace();
-			for(int i = 0; i < st.length; i++) {
-				logger.error(st[i].toString());
-			}
 			throw new ModelNotFoundException(String.format(ModelNotFoundException.NOT_FOUND, model));
 		}
 		BaseRecord lbmb = looseBaseModels.get(model);

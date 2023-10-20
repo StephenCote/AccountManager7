@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.ScriptUtil;
 import org.junit.Test;
 
@@ -57,7 +58,7 @@ public class TestAM6Model extends BaseTest {
 		logger.info("Test Record Path");
 		BaseRecord rec = null;
 		try {
-			rec = ioContext.getPathUtil().makePath(testUser1, "group",  "~/Demo Path", "DATA", org.getOrganizationId());
+			rec = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP,  "~/Demo Path", "DATA", org.getOrganizationId());
 		} catch (ClassCastException | NullPointerException e) {
 			logger.error(e);
 			
@@ -70,7 +71,7 @@ public class TestAM6Model extends BaseTest {
 		logger.info("Test Byte Access");
 		BaseRecord model = null;
 		try {
-			model = RecordFactory.model("data").newInstance(new String[] {"name", "dataBytesStore"});
+			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {"name", "dataBytesStore"});
 			assertNotNull("Model was null", model);
 			
 			model.set("name", "Demo Data");
@@ -97,9 +98,9 @@ public class TestAM6Model extends BaseTest {
 		BaseRecord model = null;
 		BaseRecord proto = null;
 		try {
-			proto = RecordFactory.model("data");
+			proto = RecordFactory.model(ModelNames.MODEL_DATA);
 			assertNotNull("Protoype was null", proto);
-			model = RecordFactory.model("data").newInstance(new String[] {"name", "dataBytesStore"});
+			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {"name", "dataBytesStore"});
 			assertNotNull("Model was null", model);
 			
 			model.set("name", "Demo Data");
@@ -121,7 +122,7 @@ public class TestAM6Model extends BaseTest {
 		BaseRecord model = null;
 		MemoryWriter writer = new MemoryWriter();
 		try {
-			model = RecordFactory.model("data").newInstance(new String[] {"name", "dataBytesStore"});
+			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {"name", "dataBytesStore"});
 			model.set("name", "Demo Data");
 			model.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			String demoData = "This is the demo data that we're going to be working with for now";

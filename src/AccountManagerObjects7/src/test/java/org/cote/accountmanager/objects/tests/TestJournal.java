@@ -81,7 +81,7 @@ public class TestJournal extends BaseTest {
 
 		assertNotNull("Organization is null", testOrgContext);
 		assertNotNull("Journal user is null", journalUser);
-		BaseRecord group = ioContext.getPathUtil().makePath(journalUser, "group", "~/JournalTest", "DATA", testOrgContext.getOrganizationId());
+		BaseRecord group = ioContext.getPathUtil().makePath(journalUser, ModelNames.MODEL_GROUP, "~/JournalTest", "DATA", testOrgContext.getOrganizationId());
 		BaseRecord data = null;
 		
 		try {
@@ -138,7 +138,7 @@ public class TestJournal extends BaseTest {
 			
 		}
 		assertNotNull("Journal user is null", journalUser);
-		BaseRecord group = ioContext.getPathUtil().makePath(journalUser, "group", "~/JournalTest", "DATA", testOrgContext.getOrganizationId());
+		BaseRecord group = ioContext.getPathUtil().makePath(journalUser, ModelNames.MODEL_GROUP, "~/JournalTest", "DATA", testOrgContext.getOrganizationId());
 		assertNotNull("Group is null", group);
 		BaseRecord job1 = null;
 		BaseRecord jour1 = null;

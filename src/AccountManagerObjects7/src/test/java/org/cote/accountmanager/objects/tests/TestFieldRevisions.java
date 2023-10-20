@@ -110,7 +110,7 @@ public class TestFieldRevisions extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		String groupPath = "~/Random Group " + UUID.randomUUID().toString();
-		//BaseRecord group = ioContext.getPathUtil().makePath(testUser1, "group", groupPath, "DATA", testOrgContext.getOrganizationId());
+		//BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, "DATA", testOrgContext.getOrganizationId());
 		String dataName = "Random data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", groupPath);
 		plist.parameter("name", dataName);
