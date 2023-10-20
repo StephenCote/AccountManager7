@@ -1,5 +1,5 @@
 {
-"name": "approver",
+"name": "access.approver",
 "abstract": true,
 "inherits": ["signature"],
 "fields": [

@@ -1,5 +1,5 @@
 {
-"name": "authenticationResponse",
+"name": "auth.authenticationResponse",
 "inherits": ["response"],
 "fields": [
 

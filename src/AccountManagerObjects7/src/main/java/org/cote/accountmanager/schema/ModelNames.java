@@ -93,13 +93,13 @@ public class ModelNames {
 	public static final String MODEL_INDEX_ENTRY2 = "file.indexEntry2";
 	public static final String MODEL_INDEX_ENTRY_VALUE2 = "file.indexEntryValue2";
 	
-	public static final String MODEL_AUTHENTICATION_REQUEST = "authenticationRequest";
-	public static final String MODEL_AUTHENTICATION_RESPONSE = "authenticationResponse";
+	public static final String MODEL_AUTHENTICATION_REQUEST = "auth.authenticationRequest";
+	public static final String MODEL_AUTHENTICATION_RESPONSE = "auth.authenticationResponse";
 	
 	public static final String MODEL_REFERENCE = "reference";
 	public static final String MODEL_REQUEST = "request";
 	public static final String MODEL_ENTITLEMENT = "auth.entitlement";
-	public static final String MODEL_ACCESS_REQUEST = "accessRequest";
+	public static final String MODEL_ACCESS_REQUEST = "access.accessRequest";
 	
 	public static final String MODEL_STREAM = "data.stream";
 	public static final String MODEL_STREAM_SEGMENT = "data.streamSegment";

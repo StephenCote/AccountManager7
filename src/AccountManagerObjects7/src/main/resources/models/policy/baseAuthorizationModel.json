@@ -1,5 +1,5 @@
 {
-"name": "baseAuthorization",
+"name": "policy.baseAuthorization",
 "abstract": true,
 "inherits": ["data.directory", "description", "dateTime", "score", "order"],
 "fields": [

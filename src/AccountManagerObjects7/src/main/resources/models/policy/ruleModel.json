@@ -1,6 +1,6 @@
 {
 "name": "policy.rule",
-"inherits": ["baseAuthorization"],
+"inherits": ["policy.baseAuthorization"],
 "group": "Rules",
 "icon": "rule",
 "label": "Rule",

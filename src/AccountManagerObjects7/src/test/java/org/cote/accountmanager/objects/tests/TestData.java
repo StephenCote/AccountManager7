@@ -86,7 +86,7 @@ public class TestData extends BaseTest {
 		///
 		String authReq = """
 			{
-				"model": "authenticationRequest",
+				"model": "auth.authenticationRequest",
 				"subjectType": "user",
 				"subject":{
 					"model": "system.user",

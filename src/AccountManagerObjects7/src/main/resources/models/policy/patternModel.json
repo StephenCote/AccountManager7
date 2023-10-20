@@ -1,6 +1,6 @@
 {
 "name": "policy.pattern",
-"inherits": ["baseAuthorization"],
+"inherits": ["policy.baseAuthorization"],
 "group": "Patterns",
 "icon": "texture",
 "label": "Pattern",
