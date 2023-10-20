@@ -424,24 +424,27 @@ public class PolicyEvaluator {
 				perm = g;
 			}
 			else if(fdata != null) {
+
 				if(FactUtil.idPattern.matcher(fdata).matches()){
-			
+					logger.warn("*** Find Perm: " + fdata);
 					perm = reader.read(matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE), Long.parseLong(fdata));
 				}
 				else if(fdata.indexOf("/") > -1) {
 
 					String fdtype = matchFact.get(FieldNames.FIELD_FACT_DATA_TYPE);
-					/// datatype may be set based on the model, and the model type may be compounded
-					///
-					if(fdtype != null) {
-						fdtype = fdtype.substring(fdtype.lastIndexOf(".") + 1);
-					}
 					if(fdtype != null && (fdtype.equals(ModelNames.MODEL_PERMISSION) ||  fdtype.equals(ModelNames.MODEL_ROLE))) {
 						if(trace) {
 							logger.info("Stipulating permission/role type '" + fdtype + "' relative to the actor type '" + ftype + "'.  This is likely from the internally generated policy");
 						}
 						fdtype = ftype.substring(ftype.lastIndexOf(".") + 1);
 					}
+					/// datatype may be set based on the model, and the model type may be compounded
+					///
+					if(fdtype != null) {
+						logger.warn("*** Nudge type: " + ftype + "/" + fdtype);
+						fdtype = fdtype.substring(fdtype.lastIndexOf(".") + 1);
+					}
+
 					if(trace) {
 						logger.info("Find " + fdtype + " permission by path: " + fdata + " in " +  contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 					}

@@ -119,6 +119,8 @@ public class TestAccessApproval extends BaseTest {
 		logger.info("Setting up test users");
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		BaseRecord testRole1 = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_ROLE, "~/Access Roles/Access 1", RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Role is null", testRole1);
+		
 		BaseRecord testUser2 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser2", testOrgContext.getOrganizationId());
 		BaseRecord testRequestReader =  mf.getCreateUser(testOrgContext.getAdminUser(), "testRequestReader", testOrgContext.getOrganizationId());
 		BaseRecord requestReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());

@@ -255,7 +255,7 @@ public class FactUtil {
 	
 
 	private BaseRecord getRecordFromFactPath(BaseRecord contextUser, String model, BaseRecord sourceFact, BaseRecord referenceFact) throws ValueException {
-		BaseRecord permission = IOSystem.getActiveContext().getPathUtil().findPath(contextUser, model, sourceFact.get(FieldNames.FIELD_SOURCE_URL), sourceFact.get("sourceType"), contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord permission = IOSystem.getActiveContext().getPathUtil().findPath(contextUser, model, sourceFact.get(FieldNames.FIELD_SOURCE_URL), sourceFact.get(FieldNames.FIELD_SOURCE_TYPE), contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(permission == null) throw new ValueException("Invalid " + model + " path " + sourceFact.get(FieldNames.FIELD_SOURCE_URL));
 		return permission;
 	}
@@ -309,7 +309,7 @@ public class FactUtil {
 			}
 			else if(fdata != null) {
 				// logger.info("Find: " + stype + " " + fdata);
-				outObj = (T)IOSystem.getActiveContext().getPathUtil().findPath(null, stype, fdata, fdataType, organizationId);
+				outObj = (T)IOSystem.getActiveContext().getPathUtil().findPath(null, stype, fdata, fdataType.substring(fdataType.lastIndexOf(".") + 1), organizationId);
 				if(outObj == null) {
 					logger.error("Failed to find: " + stype + " " + fdata);
 				}

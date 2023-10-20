@@ -225,10 +225,15 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 			if(ofld.isPresent()) {
 				foreignType = ofld.get().getValue();
 			}
-			logger.warn(type.toFullString());
         	try {
         		FieldType fld = FieldFactory.fieldByType(ifld.getValueType(), k, ifld.getValue());
 				fld = setFieldValue(jsonParser, ifld, fld, lft, foreignType, true, foreignFlex.get(k));
+				if(fld == null) {
+					logger.error("Null field for " + k);
+				}
+				else {
+					fields.add(fld);
+				}
 			} catch (ValueException | IOException e) {
 				logger.error(e);
 			}

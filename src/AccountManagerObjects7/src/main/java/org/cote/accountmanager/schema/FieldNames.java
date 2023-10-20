@@ -64,9 +64,14 @@ public class FieldNames {
 		public static final String FIELD_FACT_FIELD_MODEL_TYPE = FIELD_FACT + "." + FIELD_MODEL_TYPE;
 		public static final String FIELD_SOURCE_URN = "sourceUrn";
 		public static final String FIELD_SOURCE_URL = "sourceUrl";
+		
 		public static final String FIELD_SCORE = "score";
 		public static final String FIELD_DECISION_AGE = "decisionAge";
 		public static final String FIELD_SOURCE_DATA = "sourceData";
+		
+		/// Depracet sourceType?
+		public static final String FIELD_SOURCE_TYPE = "sourceType";
+		/// Deprecate sourceDataType?
 		public static final String FIELD_SOURCE_DATA_TYPE = "sourceDataType";
 		public static final String FIELD_FACT_DATA = "factData";
 		public static final String FIELD_FACT_DATA_TYPE = "factDataType";
