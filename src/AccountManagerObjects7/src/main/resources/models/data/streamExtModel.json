@@ -1,10 +1,10 @@
 {
-"name": "streamExt",
+"name": "data.streamExt",
 "abstract": true,
 "fields": [
 	{
 		"name": "stream",
-		"baseModel": "stream",
+		"baseModel": "data.stream",
 		"type": "model",
 		"foreign": true
 	}

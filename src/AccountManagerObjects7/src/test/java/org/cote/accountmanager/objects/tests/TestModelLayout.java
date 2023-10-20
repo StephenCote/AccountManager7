@@ -52,7 +52,6 @@ public class TestModelLayout extends BaseTest {
 		String tagName = "Test Tag - " + UUID.randomUUID().toString();
 		ParameterList plist2 = ParameterUtil.newParameterList("name", tagName);
 		plist2.parameter("path", "~/Tags");
-
 		
 		try {
 			newData = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);

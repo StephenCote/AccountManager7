@@ -2,7 +2,7 @@
 	"name": "system.user",
 	"constraints": ["name, organizationId"],
 	"inherits": [
-		"nameId"
+		"common.nameId"
 	],
 	"icon": "verified_user",
 	"label": "User",

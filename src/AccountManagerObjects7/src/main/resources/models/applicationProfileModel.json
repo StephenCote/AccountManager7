@@ -19,7 +19,7 @@
 			"name": "systemPermissions",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "permission"
+			"baseModel": "auth.permission"
 		},
 		{
 			"name": "user",

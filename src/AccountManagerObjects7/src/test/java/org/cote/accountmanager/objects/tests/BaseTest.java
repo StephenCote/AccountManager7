@@ -44,7 +44,7 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
-	protected static boolean resetDataSchema = false;
+	protected static boolean resetDataSchema = true;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	
@@ -74,7 +74,7 @@ public class BaseTest {
 		IOFactory.addPermittedPath("c:\\tmp\\xpic");
 
 		/// USE FILE
-		resetIO(null);
+		// resetIO(null);
 		
 		/// USE FILE ARCHIVE (7z)
 		/// There are some latent bugs in using the File Archive format, plus it's incredibly slow
@@ -84,7 +84,7 @@ public class BaseTest {
 		// resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
 
 		/// USE H2
-		// resetIO("jdbc:h2:./am7/h2", "sa", "1234");
+		resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 	}
 	
 	@After

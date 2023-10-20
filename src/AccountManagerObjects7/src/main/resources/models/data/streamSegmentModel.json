@@ -1,5 +1,5 @@
 {
-	"name": "streamSegment",
+	"name": "data.streamSegment",
 	"ephemeral": true,
 	"io": {
 		"reader": "org.cote.accountmanager.io.stream.StreamSegmentReader",
@@ -10,7 +10,7 @@
 		"policies": {
 			"bind": {
 				"objectId": "streamId",
-				"model": "stream",
+				"model": "data.stream",
 				"description": "Defer to the object identified by 'propertyName' when performing policy evaluations.  This is to allow for ephemeral objects to be authorized and audited in a uniform fashion"
 			}
 		}

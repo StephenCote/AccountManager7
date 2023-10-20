@@ -61,7 +61,7 @@ public class ParameterUtil {
 			parameterConstruct = "{\"parameters\": [" + parameterConstruct.trim() + "]}";
 		}
 		
-		return new ParameterList(RecordFactory.importRecord("parameterList", parameterConstruct));
+		return new ParameterList(RecordFactory.importRecord(ModelNames.MODEL_PARAMETER_LIST, parameterConstruct));
 	}
 	
 	public static <T> T getParameter(ParameterList record, String name, Class<T> clazz, T defVal) throws FactoryException {

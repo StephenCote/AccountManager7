@@ -1,6 +1,6 @@
 {
 "name": "organization",
-"inherits": ["nameId", "common.parent", "path"],
+"inherits": ["common.nameId", "common.parent", "common.path"],
 "constraints": ["name, parentId"],
 "icon": "public",
 "label": "Organization",

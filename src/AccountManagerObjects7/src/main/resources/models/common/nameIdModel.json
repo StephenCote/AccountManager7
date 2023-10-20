@@ -1,5 +1,5 @@
 {
-"name": "nameId",
+"name": "common.nameId",
 "inherits": ["common.base", "policy.controlsExt", "data.tagsExt"],
 "abstract": true,
 "query": ["name"],

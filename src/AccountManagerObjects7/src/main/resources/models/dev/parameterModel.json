@@ -1,5 +1,5 @@
 {
-	"name": "parameter",
+	"name": "dev.parameter",
 	"inherits": ["common.attribute"],
 	"ioConstraints": ["file"],
 	"fields": []

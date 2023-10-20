@@ -1,6 +1,6 @@
 {
 "name": "layout",
-"inherits": ["nameId", "common.generic", "data.journalExt"],
+"inherits": ["common.nameId", "common.generic", "data.journalExt"],
 "dedicatedParticipation": true,
 "access": {
 	"roles": {

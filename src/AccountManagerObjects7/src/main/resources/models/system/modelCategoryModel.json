@@ -1,6 +1,6 @@
 {
 "name": "system.modelCategory",
-"inherits": ["nameId", "description"],
+"inherits": ["common.nameId", "description"],
 "fields": [
 	{
 		"name": "icon",

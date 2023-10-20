@@ -1,6 +1,6 @@
 {
 "name": "auth.role",
-"inherits": ["nameId", "path", "common.parent"],
+"inherits": ["common.nameId", "common.path", "common.parent"],
 "constraints": ["parentId, name, type, organizationId"],
 "icon": "badge",
 "label": "Role",

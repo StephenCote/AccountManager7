@@ -1,6 +1,6 @@
 {
 "name": "auth.group",
-"inherits": ["nameId", "path", "common.parent", "description"],
+"inherits": ["common.nameId", "common.path", "common.parent", "description"],
 "constraints": ["name, parentId, organizationId"],
 "icon": "folder",
 "label": "Group",

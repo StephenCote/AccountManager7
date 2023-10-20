@@ -1,6 +1,6 @@
 {
 "name": "system.modelSchema",
-"inherits": ["nameId"],
+"inherits": ["common.nameId"],
 "constraints": ["name, organizationId"],
 "fields": [
 	{

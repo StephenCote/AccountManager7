@@ -1,6 +1,6 @@
 {
 "name": "identity.contactInformation",
-"inherits": ["nameId"],
+"inherits": ["common.nameId"],
 "fields": [
 	{
 	"name": "contacts",

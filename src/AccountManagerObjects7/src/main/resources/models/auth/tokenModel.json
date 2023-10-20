@@ -1,5 +1,5 @@
 {
-	"name": "token",
+	"name": "auth.token",
 	"inherits": ["spool"],
 	"factory": "org.cote.accountmanager.factory.TokenFactory",
 	"fields": [

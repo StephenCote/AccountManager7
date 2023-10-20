@@ -7,7 +7,7 @@
 "fields": [
 	{
 		"name": "factReference",
-		"baseModel": "nameId",
+		"baseModel": "common.nameId",
 		"type": "model",
 		"ephemeral": "true"
 	},

@@ -36,7 +36,7 @@ public class ModelNames {
 	public static final String MODEL_CREDENTIAL = "auth.credential";
 	public static final String MODEL_CRYPTOBYTESTORE = "crypto.cryptoByteStore";
 	public static final String MODEL_DATA = "data.data";
-	public static final String MODEL_PATH = "path";
+	public static final String MODEL_PATH = "common.path";
 	public static final String MODEL_DIRECTORY = "data.directory";
 	public static final String MODEL_FACT = "policy.fact";
 	public static final String MODEL_GROUP = "auth.group";
@@ -56,7 +56,7 @@ public class ModelNames {
 	public static final String MODEL_PARTICIPATION_LIST = "participationList";
 	public static final String MODEL_PARTICIPATION_ENTRY = "participationEntry";
 	public static final String MODEL_PATTERN = "policy.pattern";
-	public static final String MODEL_PERMISSION = "permission";
+	public static final String MODEL_PERMISSION = "auth.permission";
 	public static final String MODEL_AUDIT = "system.audit";
 	
 	public static final String MODEL_PERSON = "identity.person";
@@ -65,9 +65,9 @@ public class ModelNames {
 	public static final String MODEL_POLICY_REQUEST = "policy.policyRequest";
 	public static final String MODEL_POLICY_RESPONSE = "policy.policyResponse";
 	
-	public static final String MODEL_POPULATE = "populate";
+	public static final String MODEL_POPULATE = "common.populate";
 	public static final String MODEL_ROLE = "auth.role";
-	public static final String MODEL_RSA_KEY = "rsaKey";
+	public static final String MODEL_RSA_KEY = "crypto.rsaKey";
 	public static final String MODEL_RULE = "policy.rule";
 	public static final String MODEL_SELF = "$self";
 	public static final String MODEL_FLEX = "$flex";
@@ -80,10 +80,10 @@ public class ModelNames {
 	public static final String MODEL_QUERY_FIELD = "queryField";
 	public static final String MODEL_QUERY_RESULT = "queryResult";
 	
-	public static final String MODEL_TOKEN = "token";
+	public static final String MODEL_TOKEN = "auth.token";
 	
-	public static final String MODEL_PARAMETER_LIST = "parameterList";
-	public static final String MODEL_PARAMETER = "parameter";
+	public static final String MODEL_PARAMETER_LIST = "dev.parameterList";
+	public static final String MODEL_PARAMETER = "dev.parameter";
 	
 	public static final String MODEL_VAULT = "crypto.vault";
 	public static final String MODEL_VAULT_EXT = "crypto.vaultExt";
@@ -101,8 +101,8 @@ public class ModelNames {
 	public static final String MODEL_ENTITLEMENT = "auth.entitlement";
 	public static final String MODEL_ACCESS_REQUEST = "accessRequest";
 	
-	public static final String MODEL_STREAM = "stream";
-	public static final String MODEL_STREAM_SEGMENT = "streamSegment";
+	public static final String MODEL_STREAM = "data.stream";
+	public static final String MODEL_STREAM_SEGMENT = "data.streamSegment";
 	
 	public static final String MODEL_CONTENT_TYPE = "data.contentType";
 	public static final String MODEL_THUMBNAIL = "data.thumbnail";
@@ -113,12 +113,12 @@ public class ModelNames {
 	public static final String MODEL_SOCKET_MESSAGE = "socketMessage";
 	public static final String MODEL_NOTE = "data.note";
 	
-	public static final String MODEL_FIELD_LOCK = "fieldLock";
+	public static final String MODEL_FIELD_LOCK = "system.fieldLock";
 	public static final String MODEL_SUBJECT = "subject";
 	
 	public static final String MODEL_MODEL_CATEGORY = "system.modelCategory";
 	
-	public static final String MODEL_DEBUG = "debug";
+	public static final String MODEL_DEBUG = "dev.debug";
 	
 	public static List<String> MODELS = Arrays.asList(
 		MODEL_ORGANIZATION, MODEL_SIMPLE_BYTE_STORE, MODEL_USER, MODEL_ACCOUNT, MODEL_PERSON, MODEL_GROUP, MODEL_ATTRIBUTE, MODEL_ROLE,

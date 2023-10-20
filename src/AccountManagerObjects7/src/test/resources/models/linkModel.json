@@ -1,6 +1,6 @@
 {
 "name": "link",
-"inherits": ["nameId"],
+"inherits": ["common.nameId"],
 "fields": [
 	{
 		"name": "next",

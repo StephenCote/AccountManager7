@@ -1,5 +1,5 @@
 {
-	"name": "fieldLock",
+	"name": "system.fieldLock",
 	"inherits": [
 		"dateTime",
 		"organizationExt",

@@ -1,5 +1,5 @@
 {
-"name": "stream",
+"name": "data.stream",
 "inherits": ["data.directory", "description", "dateTime", "data.contentType", "crypto.vaultExt"],
 "provider": "org.cote.accountmanager.provider.StreamProvider",
 "fields": [
@@ -25,7 +25,7 @@
 		"name": "segments",
 		"type": "list",
 		"baseType": "model",
-		"baseModel": "streamSegment",
+		"baseModel": "data.streamSegment",
 		"ephemeral": true
 	}
 ]}
