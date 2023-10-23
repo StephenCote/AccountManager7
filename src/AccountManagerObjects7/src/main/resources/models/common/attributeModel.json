@@ -1,6 +1,6 @@
 {
 "name": "common.attribute",
-"inherits": ["common.base", "reference"],
+"inherits": ["common.base", "common.reference"],
 "followReference": false,
 "fields": [
 	{

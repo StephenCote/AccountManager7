@@ -1,6 +1,6 @@
 {
-"name": "response",
-"inherits": ["organizationExt"],
+"name": "policy.response",
+"inherits": ["system.organizationExt"],
 "abstract": true,
 "fields": [
 

@@ -14,6 +14,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
@@ -28,7 +29,7 @@ public class TestValueType {
 	public void TestValueType() {
 		BaseRecord org = null;
 		try {
-			org = RecordFactory.model("organization").newInstance();
+			org = RecordFactory.model(ModelNames.MODEL_ORGANIZATION).newInstance();
 			assertNotNull("Org is null", org);
 
 			FieldType name = org.getField("name");

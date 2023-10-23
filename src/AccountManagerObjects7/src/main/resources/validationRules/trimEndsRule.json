@@ -1,5 +1,5 @@
 {
-	"model": "validationRule",
+	"model": "policy.validationRule",
 	"name": "trimEnds",
 	"type": "none",
 	"rules": ["${trimBegin}", "${trimEnd}"]

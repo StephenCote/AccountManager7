@@ -15,6 +15,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
@@ -31,7 +32,7 @@ public class TestLooseField {
 
 		BaseRecord invmod = null;
 		try{
-			invmod = RecordFactory.newInstance("organization");
+			invmod = RecordFactory.newInstance(ModelNames.MODEL_ORGANIZATION);
 		}
 		catch(FieldException | ModelNotFoundException e) {
 			logger.error(e);

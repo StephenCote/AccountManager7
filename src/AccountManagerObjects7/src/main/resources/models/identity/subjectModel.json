@@ -1,16 +1,16 @@
 {
-"name": "submitter",
+"name": "identity.subject",
 "abstract": true,
 "fields": [
 	{
-		"name": "submitter",
+		"name": "subject",
 		"baseModel": "$flex",
 		"type": "model",
 		"foreign": true,
 		"foreignType": "subjectType"
 	},
 	{
-		"name": "submitterType",
+		"name": "subjectType",
 		"type": "string",
 		"maxLength": 64
 	}

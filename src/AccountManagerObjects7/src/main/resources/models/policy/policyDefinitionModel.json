@@ -1,6 +1,6 @@
 {
 	"name": "policy.policyDefinition",
-	"inherits": ["common.dateTime", "organizationExt"],
+	"inherits": ["common.dateTime", "system.organizationExt"],
 	"fields": [
 		{
 			"name": "parameters",

@@ -117,7 +117,7 @@ public class TestSerializer extends BaseTest {
 			recordUtil.createRecord(record);
 			recordUtil.createRecord(record2);
 
-			BaseRecord[] records = getSearch().findByName("organization", "Test Child 1");
+			BaseRecord[] records = getSearch().findByName(ModelNames.MODEL_ORGANIZATION, "Test Child 1");
 			assertTrue("Expected 1 record, received " + records.length, records.length == 1);
 		
 		} catch (IndexException | ReaderException e) {
@@ -255,7 +255,7 @@ public class TestSerializer extends BaseTest {
 		try {
 			writer.write(record);
 			
-			BaseRecord[] results = search.findByName("organization", record1Name);
+			BaseRecord[] results = search.findByName(ModelNames.MODEL_ORGANIZATION, record1Name);
 			assertTrue("Expected 1 result", results.length == 1);
 			search1 = results[0];
 			long id = search1.get("id");
@@ -264,7 +264,7 @@ public class TestSerializer extends BaseTest {
 			writer.write(record2);
 			writer.flush();
 			
-			results = search.findByNameInParent("organization", id, "Test Child 1");
+			results = search.findByNameInParent(ModelNames.MODEL_ORGANIZATION, id, "Test Child 1");
 			assertTrue("Expected 1 result, and found " + results.length, results.length == 1);
 			search2 = results[0];
 			

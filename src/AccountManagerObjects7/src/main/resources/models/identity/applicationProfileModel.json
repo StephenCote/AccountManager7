@@ -1,6 +1,6 @@
  {
-"name": "applicationProfile",
-"inherits": ["organizationExt"],
+"name": "identity.applicationProfile",
+"inherits": ["system.organizationExt"],
 "ephemeral": true,
 "fields": [
 		{

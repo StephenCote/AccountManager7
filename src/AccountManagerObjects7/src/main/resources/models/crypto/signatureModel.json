@@ -1,5 +1,5 @@
 {
-	"name": "signature",
+	"name": "crypto.signature",
 	"abstract": true,
 	"fields": [
 	{

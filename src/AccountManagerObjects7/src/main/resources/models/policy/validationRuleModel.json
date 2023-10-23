@@ -1,5 +1,5 @@
 {
-"name": "validationRule",
+"name": "policy.validationRule",
 "inherits": ["data.directory", "common.description"],
 "icon": "rule",
 "label": "Validation Rule",
@@ -24,7 +24,7 @@
 	},
 	{
 		"name": "rules",
-		"baseModel": "validationRule",
+		"baseModel": "policy.validationRule",
 		"baseType": "model",
 		"type": "list",
 		"foreign": true,

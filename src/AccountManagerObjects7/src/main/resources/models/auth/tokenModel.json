@@ -1,6 +1,6 @@
 {
 	"name": "auth.token",
-	"inherits": ["spool"],
+	"inherits": ["message.spool"],
 	"factory": "org.cote.accountmanager.factory.TokenFactory",
 	"fields": [
 	]

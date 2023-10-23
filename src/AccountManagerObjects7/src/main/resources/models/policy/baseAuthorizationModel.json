@@ -1,7 +1,7 @@
 {
 "name": "policy.baseAuthorization",
 "abstract": true,
-"inherits": ["data.directory", "common.description", "common.dateTime", "score", "common.order"],
+"inherits": ["data.directory", "common.description", "common.dateTime", "policy.score", "common.order"],
 "fields": [
 
 ]}

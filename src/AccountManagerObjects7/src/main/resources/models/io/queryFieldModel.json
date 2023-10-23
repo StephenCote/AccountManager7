@@ -1,5 +1,5 @@
 {
-"name": "queryField",
+"name": "io.queryField",
 "ioConstraints": ["unknown"],
 "fields": [
 	{

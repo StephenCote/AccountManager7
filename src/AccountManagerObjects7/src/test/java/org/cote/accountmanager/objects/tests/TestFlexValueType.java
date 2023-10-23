@@ -16,6 +16,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
@@ -62,7 +63,7 @@ public class TestFlexValueType extends BaseTest {
 	public void TestFlexValue() {
 		BaseRecord model = null;
 		try {
-			model = RecordFactory.model("validationRule").newInstance();
+			model = RecordFactory.model(ModelNames.MODEL_VALIDATION_RULE).newInstance();
 			assertNotNull("Model was null", model);
 			
 			logger.info(JSONUtil.exportObject(model, RecordSerializerConfig.getUnfilteredModule()));

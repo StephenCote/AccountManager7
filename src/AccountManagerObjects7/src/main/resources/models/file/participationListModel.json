@@ -1,6 +1,6 @@
 {
 "name": "file.participationList",
-"inherits": ["organizationExt"],
+"inherits": ["system.organizationExt"],
 "ioConstraints": ["file"],
 "fields": [
 		{

@@ -1,12 +1,12 @@
 {
-	"name": "organizationExt",
+	"name": "system.organizationExt",
 	"abstract": true,
 	"fields": [
 		{
 			"name": "organizationPath",
 			"type": "string",
 			"virtual": true,
-			"baseModel": "organization",
+			"baseModel": "system.organization",
 			"baseProperty": "organizationId",
 			"provider": "org.cote.accountmanager.provider.PathProvider",
 			"priority": 1

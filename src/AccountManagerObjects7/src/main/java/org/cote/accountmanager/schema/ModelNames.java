@@ -22,7 +22,7 @@ public class ModelNames {
 	
 	public static final String MODEL_MODEL = "model";
 	public static final String MODEL_MODEL_SCHEMA = "system.modelSchema";
-	public static final String MODEL_PRIMARY_KEY = "primaryKey";
+	public static final String MODEL_PRIMARY_KEY = "system.primaryKey";
 	
 	public static final String MODEL_ACCOUNT = "identity.account";
 	public static final String MODEL_ADDRESS = "identity.address";
@@ -49,10 +49,10 @@ public class ModelNames {
 	public static final String MODEL_KEY_STORE = "crypto.keyStore";
 	// public static final String MODEL_STORE = "store";
 	public static final String MODEL_OPERATION = "policy.operation";
-	public static final String MODEL_ORGANIZATION = "organization";
-	public static final String MODEL_ORGANIZATION_EXT = "organizationExt";
+	public static final String MODEL_ORGANIZATION = "system.organization";
+	public static final String MODEL_ORGANIZATION_EXT = "system.organizationExt";
 	public static final String MODEL_PARENT = "common.parent";
-	public static final String MODEL_PARTICIPATION = "participation";
+	public static final String MODEL_PARTICIPATION = "system.participation";
 	public static final String MODEL_PARTICIPATION_LIST = "file.participationList";
 	public static final String MODEL_PARTICIPATION_ENTRY = "file.participationEntry";
 	public static final String MODEL_PATTERN = "policy.pattern";
@@ -73,12 +73,12 @@ public class ModelNames {
 	public static final String MODEL_FLEX = "$flex";
 	public static final String MODEL_SIMPLE_BYTE_STORE = "file.simpleByteStore";
 	public static final String MODEL_UNKNOWN = "unknown";
-	public static final String MODEL_SPOOL = "spool";
+	public static final String MODEL_SPOOL = "message.spool";
 	public static final String MODEL_USER = "system.user";
 	
-	public static final String MODEL_QUERY = "query";
-	public static final String MODEL_QUERY_FIELD = "queryField";
-	public static final String MODEL_QUERY_RESULT = "queryResult";
+	public static final String MODEL_QUERY = "io.query";
+	public static final String MODEL_QUERY_FIELD = "io.queryField";
+	public static final String MODEL_QUERY_RESULT = "io.queryResult";
 	
 	public static final String MODEL_TOKEN = "auth.token";
 	
@@ -96,8 +96,8 @@ public class ModelNames {
 	public static final String MODEL_AUTHENTICATION_REQUEST = "auth.authenticationRequest";
 	public static final String MODEL_AUTHENTICATION_RESPONSE = "auth.authenticationResponse";
 	
-	public static final String MODEL_REFERENCE = "reference";
-	public static final String MODEL_REQUEST = "request";
+	public static final String MODEL_REFERENCE = "common.reference";
+	public static final String MODEL_REQUEST = "access.request";
 	public static final String MODEL_ENTITLEMENT = "auth.entitlement";
 	public static final String MODEL_ACCESS_REQUEST = "access.accessRequest";
 	
@@ -106,15 +106,15 @@ public class ModelNames {
 	
 	public static final String MODEL_CONTENT_TYPE = "data.contentType";
 	public static final String MODEL_THUMBNAIL = "data.thumbnail";
-	public static final String MODEL_VALIDATION_RULE = "validationRule";
-	public static final String MODEL_APPLICATION_PROFILE = "applicationProfile";
+	public static final String MODEL_VALIDATION_RULE = "policy.validationRule";
+	public static final String MODEL_APPLICATION_PROFILE = "identity.applicationProfile";
 	public static final String MODEL_FUNCTION = "policy.function";
 	public static final String MODEL_TAG = "data.tag";
-	public static final String MODEL_SOCKET_MESSAGE = "socketMessage";
+	public static final String MODEL_SOCKET_MESSAGE = "message.socketMessage";
 	public static final String MODEL_NOTE = "data.note";
 	
 	public static final String MODEL_FIELD_LOCK = "system.fieldLock";
-	public static final String MODEL_SUBJECT = "subject";
+	public static final String MODEL_SUBJECT = "identity.subject";
 	
 	public static final String MODEL_MODEL_CATEGORY = "system.modelCategory";
 	

@@ -1,5 +1,5 @@
 {
-"name": "organization",
+"name": "system.organization",
 "inherits": ["common.nameId", "common.parent", "common.path"],
 "constraints": ["name, parentId"],
 "icon": "public",

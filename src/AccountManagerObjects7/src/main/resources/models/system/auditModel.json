@@ -1,6 +1,6 @@
 {
 "name": "system.audit",
-"inherits": ["common.dateTime", "organizationExt", "common.description", "primaryKey", "signature", "crypto.hashExt", "subject"],
+"inherits": ["common.dateTime", "system.organizationExt", "common.description", "system.primaryKey", "crypto.signature", "crypto.hashExt", "identity.subject"],
 "factory": "org.cote.accountmanager.factory.AuditFactory",
 "autoCreateForeignReference": false,
 "fields": [

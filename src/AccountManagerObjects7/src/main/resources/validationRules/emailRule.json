@@ -1,5 +1,5 @@
 {
-	"model": "validationRule",
+	"model": "policy.validationRule",
 	"name": "emailRule",
 	"expression": "^[a-zA-Z0-9_!#$%&’*+/=?`{|}~^.-]+@[a-zA-Z0-9.-]+$",
 	"type": "boolean"

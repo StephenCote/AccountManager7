@@ -1,12 +1,12 @@
 {
-	"name": "spool",
+	"name": "message.spool",
 	"inherits": [
 		"common.dateTime",
-		"organizationExt",
-		"primaryKey",
-		"reference",
-		"recipient",
-		"sender"
+		"system.organizationExt",
+		"system.primaryKey",
+		"common.reference",
+		"message.recipient",
+		"message.sender"
 	],
 	"fields": [
 		{

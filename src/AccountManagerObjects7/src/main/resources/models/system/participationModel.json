@@ -1,6 +1,6 @@
 {
-"name": "participation",
-"inherits": ["organizationExt", "primaryKey"],
+"name": "system.participation",
+"inherits": ["system.organizationExt", "system.primaryKey"],
 "provider": "org.cote.accountmanager.provider.ParticipationProvider",
 "fields": [
 	{

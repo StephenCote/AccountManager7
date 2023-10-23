@@ -1,7 +1,7 @@
 {
-"name": "request",
+"name": "access.request",
 "abstract": true,
-"inherits": ["subject", "submitter", "requester"],
+"inherits": ["identity.subject", "access.submitter", "access.requester"],
 "fields": [
 	{
 		"name": "action",

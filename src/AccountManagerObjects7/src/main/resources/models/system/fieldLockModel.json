@@ -2,9 +2,9 @@
 	"name": "system.fieldLock",
 	"inherits": [
 		"common.dateTime",
-		"organizationExt",
-		"reference",
-		"primaryKey"
+		"system.organizationExt",
+		"common.reference",
+		"system.primaryKey"
 	],
 	"access": {
 		"roles": {

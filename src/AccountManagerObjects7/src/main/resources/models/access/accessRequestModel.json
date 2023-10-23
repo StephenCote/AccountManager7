@@ -16,7 +16,7 @@
 "fields": [
 	{
 		"name": "messages",
-		"baseModel": "spool",
+		"baseModel": "message.spool",
 		"baseType": "model",
 		"type": "list"
 	},

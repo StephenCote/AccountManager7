@@ -1,5 +1,5 @@
 {
-"name": "requester",
+"name": "access.requester",
 "abstract": true,
 "fields": [
 	{

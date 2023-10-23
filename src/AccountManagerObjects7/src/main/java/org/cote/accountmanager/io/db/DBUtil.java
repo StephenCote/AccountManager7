@@ -183,7 +183,7 @@ public class DBUtil {
 	private String getSequenceName(ModelSchema baseSchema, String modelName) {
 		String keyName = modelName.replace('.', '_');
 		if(modelName.equals(ModelNames.MODEL_PARTICIPATION) && baseSchema != null && baseSchema.isDedicatedParticipation()) {
-			keyName = baseSchema.getName().replace('.', '_') + "_" + modelName;
+			keyName = (baseSchema.getName() + "_" + modelName).replace('.', '_');
 		}
 		if(!sequenceNames.containsKey(keyName)) {
 			ModelSchema schema = RecordFactory.getSchema(modelName);

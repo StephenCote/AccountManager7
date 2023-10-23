@@ -1,6 +1,6 @@
 {
 "name": "auth.authenticationRequest",
-"inherits": ["request"],
+"inherits": ["access.request"],
 "fields": [
 
 	{

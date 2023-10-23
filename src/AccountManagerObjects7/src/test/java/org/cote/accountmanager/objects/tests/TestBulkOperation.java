@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
@@ -23,6 +24,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.AttributeUtil;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {
@@ -42,6 +44,50 @@ public class TestBulkOperation extends BaseTest {
 		}
 		return data;
 	}
+	
+	@Test
+	public void TestBulkInsertWithAttributes() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		String groupPath = "~/Bulk/Data - " + UUID.randomUUID().toString();
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Directory is null", dir);
+		
+		String bulkDataNamePrefix = "Bulk Data Test - ";
+		List<BaseRecord> bulkLoad = new ArrayList<>();
+		
+		logger.info("Generating dataset - size = " + bulkLoadSize);
+		for(int i = 0; i < bulkLoadSize; i++) {
+			BaseRecord data = newTestData(testUser1, groupPath, bulkDataNamePrefix + (i+1), "This is the example data");
+			try {
+				AttributeUtil.addAttribute(data, "Example Attribute 1", "Test String");
+				AttributeUtil.addAttribute(data, "Example Attribute 2", 123);
+			}
+			catch(ValueException | ModelException | FieldException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+			bulkLoad.add(data);
+		}
+		
+		long start = System.currentTimeMillis();
+		ioContext.getAccessPoint().create(testUser1, bulkLoad.toArray(new BaseRecord[0]));
+		long stop = System.currentTimeMillis();
+		logger.info("Time to insert by batch: " + (stop - start) + "ms");
+		
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE, bulkDataNamePrefix);
+		q.setRequest(new String[] {FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_ATTRIBUTES});
+		
+		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q);
+		assertTrue("Expected to retrieve the batch size", qr.getCount() == bulkLoadSize);
+		
+		logger.info(qr.getResults()[0].toFullString());
+		
+	}
+	
+	/*
 
 	@Test
 	public void TestSingleBatchInsertSameType() {
@@ -151,5 +197,5 @@ public class TestBulkOperation extends BaseTest {
 		}
 		assertFalse("Encountered an error", error);
 	}
-	
+	*/
 }

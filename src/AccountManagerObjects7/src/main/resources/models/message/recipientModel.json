@@ -1,5 +1,5 @@
 {
-	"name": "recipient",
+	"name": "message.recipient",
 	"abstract": true,
 	"fields": [
 		{

@@ -1,6 +1,6 @@
 {
 "name": "auth.authenticationResponse",
-"inherits": ["response"],
+"inherits": ["policy.response"],
 "fields": [
 
 	{

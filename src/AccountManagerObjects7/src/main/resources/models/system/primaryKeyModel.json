@@ -1,5 +1,5 @@
 {
-	"name": "primaryKey",
+	"name": "system.primaryKey",
 	"abstract": true,
 	"fields": [
 		{

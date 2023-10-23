@@ -1,6 +1,6 @@
 {
 "name": "access.baseAccess",
-"inherits": ["common.nameId", "common.parent", "request", "auth.entitlement", "common.dateTime", "common.description"],
+"inherits": ["common.nameId", "common.parent", "access.request", "auth.entitlement", "common.dateTime", "common.description"],
 "fields": [
 	{
 		"name": "resourceData",

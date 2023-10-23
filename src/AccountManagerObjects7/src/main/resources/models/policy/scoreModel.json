@@ -1,5 +1,5 @@
 {
-"name": "score",
+"name": "policy.score",
 "abstract": true,
 "fields": [
 	{

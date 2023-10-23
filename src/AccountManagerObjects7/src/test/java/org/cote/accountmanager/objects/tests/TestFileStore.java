@@ -93,7 +93,7 @@ public class TestFileStore extends BaseTest {
 		BaseRecord role1 = pathUtil.makePath(testUser1, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_ACCOUNT_USERS, "USER", devOrganization.get("id"));
 		BaseRecord perm1 = pathUtil.makePath(testUser1, ModelNames.MODEL_PERMISSION, "/Read", "USER", devOrganization.get("id"));
 		try {
-			BaseRecord part1 = RecordFactory.model("participation").newInstance();
+			BaseRecord part1 = RecordFactory.model(ModelNames.MODEL_PARTICIPATION).newInstance();
 			part1.set("participationId", role1.get("id"));
 			part1.set("participationModel", ModelNames.MODEL_ROLE);
 			part1.set("participantId", testUser1.get("id"));
