@@ -4,10 +4,24 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
+import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.CSVParser;
+import org.apache.commons.csv.CSVRecord;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
@@ -22,9 +36,13 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.AlignmentEnumType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {
@@ -45,6 +63,264 @@ public class TestBulkOperation extends BaseTest {
 		return data;
 	}
 	
+	private BaseRecord newTrait(BaseRecord owner, String path, String name, TraitEnumType type, AlignmentEnumType alignment) {
+		ParameterList plist = ParameterList.newParameterList("path", path);
+		plist.parameter("name", name);
+		BaseRecord data = null;
+		try {
+			data = ioContext.getFactory().newInstance(ModelNames.MODEL_TRAIT, owner, null, plist);
+			data.set(FieldNames.FIELD_TYPE, type);
+			data.set(FieldNames.FIELD_ALIGNMENT, alignment);
+		}
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return data;
+	}
+	
+	private List<BaseRecord> loadWNDataFile(BaseRecord owner, String groupPath, String path){
+		List<BaseRecord> words = new ArrayList<>();
+		long start = System.currentTimeMillis();
+		CSVFormat csvFormat = CSVFormat.Builder.create().setDelimiter(' ').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build();
+		CSVParser  csvFileParser = null;
+		BufferedReader bir = null;
+		Set<String> wordSet = new HashSet<>();
+		Map<String, Integer> varSet = new HashMap<>();
+		CSVRecord lastRecord = null;
+		boolean error = false;
+		try{
+			bir = new BufferedReader(new InputStreamReader(new FileInputStream(path),StandardCharsets.UTF_8));
+			csvFileParser = new CSVParser(bir, csvFormat);
+
+			for(CSVRecord record : csvFileParser){
+				lastRecord = record;
+				String id = record.get(0);
+				if(id.matches("^\\d{8}$")){
+					
+					// logger.info("Size: " + record.size());
+					String type = record.get(2);
+					String name = record.get(4);
+
+					int var = 0;
+					if(!varSet.containsKey(name)) {
+						varSet.put(name, 0);
+					}
+					else {
+						var = varSet.get(name) + 1;
+						varSet.put(name, var);
+					}
+					// int var = Integer.parseInt("0" + record.get(5), 16);
+					String key = var + "-" + type + "-" + name;
+					if(
+						type == null || type.length() == 0
+						|| name == null || name.length() == 0
+					) {
+						logger.warn("Invalid type/name: " + key);
+						continue;
+					}
+						
+					
+					if(wordSet.contains(key)) {
+						logger.warn("Duplicate: " + key);
+						continue;
+					}
+					wordSet.add(key);
+
+					boolean startDesc = false;
+					boolean startExamp = false;
+					boolean breakOut = false;
+					StringBuilder desc = new StringBuilder();
+					StringBuilder examp = new StringBuilder();
+					for(int i = 5; i < record.size(); i++) {
+						String tmp = record.get(i);
+						if(tmp.startsWith("\"")) {
+							tmp = tmp.substring(1, tmp.length());
+							startExamp = true;
+							startDesc = false;
+						}
+						if(startDesc) {
+							if(desc.length() > 0) {
+								desc.append(" ");
+							}
+							if(tmp.endsWith(";")) {
+								tmp = tmp.substring(0, tmp.length() - 1);
+							}
+							desc.append(tmp);
+						}
+						if(startExamp) {
+							if(examp.length() > 0) {
+								examp.append(" ");
+							}
+							if(tmp.endsWith("\"") || tmp.endsWith("\";")) {
+								if(tmp.lastIndexOf("\"") > 0) {
+									tmp = tmp.substring(0, tmp.lastIndexOf("\""));
+								}
+								else {
+									tmp = "";
+								}
+								breakOut = true;
+							}
+							examp.append(tmp);
+						}
+						if(tmp.equals("|")) {
+							startDesc = true;
+						}
+						if(breakOut) {
+							break;
+						}
+						
+					}
+
+					ParameterList plist = ParameterList.newParameterList("path", groupPath);
+					plist.parameter("name", name);
+					BaseRecord word = ioContext.getFactory().newInstance(ModelNames.MODEL_WORD, owner, null, plist);
+					word.set("definition", desc.toString());
+					word.set("example", examp.toString());
+					word.set("variant", var);
+					word.set(FieldNames.FIELD_TYPE, type);
+					words.add(word);
+				}
+			}
+		}
+		catch(StringIndexOutOfBoundsException | IOException | FactoryException | FieldException | ValueException | ModelNotFoundException  e){
+			logger.error(e.getMessage());
+			e.printStackTrace();
+			if(lastRecord != null) {
+				logger.error(lastRecord.toString());
+			}
+			error = true;
+
+		}
+		if(error) {
+			return new ArrayList<>();
+		}
+		return words;
+	}
+	
+	@Test
+	public void TestWordNetLoad() {
+		
+		AuditUtil.setLogToConsole(false);
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		// String groupPath = "~/Bulk/Word - " + UUID.randomUUID().toString();
+
+		String groupPath = "~/Bulk/Words";
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Directory is null", dir);
+
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		int cnt = ioContext.getAccessPoint().count(testUser1, q);
+		logger.info("Working with: " + cnt);
+		if(cnt == 0) {
+		
+			String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
+
+			try {
+
+				String[] exts = new String[] {"adv", "adj", "verb", "noun"};
+				for(String ext: exts) {
+					long start = System.currentTimeMillis();
+					logger.info("Processing: " + ext);
+					List<BaseRecord> words = loadWNDataFile(testUser1, groupPath, wnetPath + "/data." + ext);
+					assertTrue("Expected records to process", words.size() > 0);
+					long stop = System.currentTimeMillis();
+					logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
+					start = System.currentTimeMillis();
+					ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]));
+					stop = System.currentTimeMillis();
+					logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
+	
+				}
+			}
+			catch(Exception e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
+
+		}
+	}
+	
+	/*
+	public List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath){
+		String traitsPath = testProperties.getProperty("test.datagen.path") + "/traits.json";
+		File f = new File(traitsPath);
+		assertTrue("Data file does not exist", f.exists());
+		
+		Map<String, String[]> traits = JSONUtil.getMap(traitsPath, String.class,String[].class);
+		assertTrue("Expected to load some data", traits.size() > 0);
+		
+		List<BaseRecord> traitrecs = new ArrayList<>();
+		Set<String> traitset = new HashSet<>();
+		traits.forEach((k, v) -> {
+			if(!k.equals("alignment")) {
+				final AlignmentEnumType align;
+				if(k.equals("positive")) {
+					align = AlignmentEnumType.LAWFULGOOD;
+				}
+				else if(k.equals("negative")) {
+					align = AlignmentEnumType.CHAOTICEVIL;
+				}
+				else {
+					align = AlignmentEnumType.NEUTRAL;
+				}
+
+				Arrays.asList(v).forEach(s -> {
+					if(s != null && !traitset.contains(s)) {
+						traitset.add(s);
+						traitrecs.add(newTrait(owner, groupPath, s, TraitEnumType.PERSON, align));
+					}
+					else {
+						logger.warn("Invalid or dupe: " + s);
+					}
+				});
+			}
+		});
+		assertTrue("Expected traits to be queued", traitrecs.size() > 0);
+		
+		return traitrecs;
+
+	}
+	
+	@Test
+	public void TestLoadTraits() {
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		String groupPath = "~/Bulk/Trait - " + UUID.randomUUID().toString();
+
+		
+		//logger.info("Received: " + traits.size());
+		List<BaseRecord> traitrecs = getBulkTraits(testUser1, groupPath);
+
+		logger.info("Single load: " + traitrecs.size() + " traits");
+		long start = System.currentTimeMillis();
+		for(BaseRecord rec : traitrecs) {
+			ioContext.getAccessPoint().create(testUser1, rec);
+		}
+		long stop = System.currentTimeMillis();
+		long diff1 = (stop - start);
+
+
+		groupPath = "~/Bulk/Trait - " + UUID.randomUUID().toString();
+		traitrecs = getBulkTraits(testUser1, groupPath);
+		
+		logger.info("Bulk load: " + traitrecs.size() + " traits");
+		start = System.currentTimeMillis();
+		ioContext.getAccessPoint().create(testUser1, traitrecs.toArray(new BaseRecord[0]));
+		stop = System.currentTimeMillis();
+		
+		logger.info("Time to insert individually: " + diff1 + "ms");
+		logger.info("Time to insert by batch: " + (stop - start) + "ms");
+
+	}
+	*/
+	/*
 	@Test
 	public void TestBulkInsertWithAttributes() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
@@ -86,7 +362,7 @@ public class TestBulkOperation extends BaseTest {
 		logger.info(qr.getResults()[0].toFullString());
 		
 	}
-	
+	*/
 	/*
 
 	@Test
