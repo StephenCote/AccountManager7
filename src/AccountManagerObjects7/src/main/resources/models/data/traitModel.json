@@ -1,0 +1,26 @@
+{
+	"name": "data.trait",
+	"inherits": [
+		"data.directory",
+		"common.description",
+		"policy.score"
+	],
+	"constraints": ["name, type, groupId, organizationId"],
+	"group": "Traits",
+	"icon": "category",
+	"label": "Trait",
+	"fields": [
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.TraitEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "alignment",
+			"baseClass": "org.cote.accountmanager.schema.type.AlignmentEnumType",
+			"type": "enum",
+			"maxLength": 32
+		}
+	]
+}

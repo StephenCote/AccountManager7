@@ -1,28 +1,10 @@
 {
 	"name": "common.base",
 	"abstract": true,
-	"inherits": ["common.attributeList", "system.organizationExt", "common.populate", "system.primaryKey", "common.urn", "dev.debug"],
+	"inherits": ["common.ownerId", "common.objectId", "common.attributeList", "system.organizationExt", "common.populate", "system.primaryKey", "common.urn", "dev.debug"],
 	"factory": "org.cote.accountmanager.factory.BaseFactory",
 	"query": ["id", "urn", "objectId", "ownerId"],
 	"fields": [
-		{
-			"name": "ownerId",
-			"type": "long",
-			"required": true,
-			"private": true
-		},
-		{
-			"name": "objectId",
-			"type": "string",
-			"identity": true,
-			"readOnly": true,
-			"maxLength": 64
-		},
-		{
-			"name": "uri",
-			"type": "string",
-			"virtual": true,
-			"maxLength": 255
-		}
+
 	]
 }

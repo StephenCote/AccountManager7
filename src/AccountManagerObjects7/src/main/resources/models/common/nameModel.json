@@ -1,0 +1,15 @@
+{
+"name": "common.name",
+"abstract": true,
+"fields": [
+	{
+		"label": "Name",
+		"name": "name",
+		"type": "string",
+		"required": true,
+		"index": true,
+		"allowNull": false,
+		"maxLength":256,
+		"rules": ["$notEmpty"]
+	}
+]}

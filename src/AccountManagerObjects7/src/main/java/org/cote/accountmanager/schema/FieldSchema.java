@@ -61,6 +61,7 @@ public class FieldSchema {
 	private String description = null;
 	private String label = null;
 	private String icon = null;
+
 	private List<String> rules = new ArrayList<>();
 	private List<Object> limit = new ArrayList<>();
 	

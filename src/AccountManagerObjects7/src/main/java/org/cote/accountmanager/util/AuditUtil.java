@@ -18,6 +18,11 @@ import org.cote.accountmanager.schema.type.ResponseEnumType;
 
 public class AuditUtil {
 	public static final Logger logger = LogManager.getLogger(AuditUtil.class);
+	private static boolean logToConsole = true;
+	
+	public static void setLogToConsole(boolean b) {
+		logToConsole = b;
+	}
 	
 	public static String getAuditString(BaseRecord audit) {
 		StringBuilder buff = new StringBuilder();
@@ -168,13 +173,15 @@ public class AuditUtil {
 		}
 	}
 	public static void print(BaseRecord audit) {
-		String auditStr = getAuditString(audit);
-		ResponseEnumType ret = ResponseEnumType.valueOf(audit.get(FieldNames.FIELD_RESPONSE));
-		if(ret == ResponseEnumType.PERMIT) {
-			logger.info("AUDIT " + auditStr);
-		}
-		else {
-			logger.warn("AUDIT " + auditStr);
+		if(logToConsole) {
+			String auditStr = getAuditString(audit);
+			ResponseEnumType ret = ResponseEnumType.valueOf(audit.get(FieldNames.FIELD_RESPONSE));
+			if(ret == ResponseEnumType.PERMIT) {
+				logger.info("AUDIT " + auditStr);
+			}
+			else {
+				logger.warn("AUDIT " + auditStr);
+			}
 		}
 	}
 				

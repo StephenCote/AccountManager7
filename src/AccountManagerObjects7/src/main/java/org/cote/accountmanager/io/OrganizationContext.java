@@ -80,6 +80,7 @@ public class OrganizationContext {
 	public boolean initialize(BaseRecord org) {
 		// logger.info("Initialize org from record");
 		if(org == null) {
+			logger.error("Organization is null");
 			return false;
 		}
 		this.organization = org;
@@ -92,10 +93,12 @@ public class OrganizationContext {
 		docControl =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.DOCUMENT_CONTROL_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));
 
 		if(adminUser == null) {
+			logger.error("Administration user is null");
 			return false;
 		}
 		
 		if(initializeStores(org) == false) {
+			logger.error("Failed to initialize key stores");
 			return false;
 		}
 		initialized = true;

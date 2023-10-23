@@ -1,17 +1,8 @@
 {
 "name": "common.nameId",
-"inherits": ["common.base", "policy.controlsExt", "data.tagsExt"],
+"inherits": ["common.name", "common.base", "policy.controlsExt", "data.tagsExt"],
 "abstract": true,
 "query": ["name"],
 "fields": [
-	{
-		"label": "Name",
-		"name": "name",
-		"type": "string",
-		"required": true,
-		"index": true,
-		"allowNull": false,
-		"maxLength":256,
-		"rules": ["$notEmpty"]
-	}
+
 ]}

@@ -1,0 +1,44 @@
+{
+	"name": "data.word",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.name",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Words",
+	"icon": "category",
+	"label": "Word",
+	"constraints": [
+		"name, variant, type, groupId, organizationId"
+	],
+	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
+	"query": [
+		"groupId"
+	],
+	"fields": [
+		{
+			"name": "variant",
+			"type": "int"
+		},
+		{
+			"name": "type",
+			"type": "string",
+			"maxLength": 1
+		},
+		{
+			"name": "definition",
+			"type": "string",
+			"maxLength": 512
+		},
+		{
+			"name": "example",
+			"type": "string",
+			"maxLength": 512
+		}
+	]
+}

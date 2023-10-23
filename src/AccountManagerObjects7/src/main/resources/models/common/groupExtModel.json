@@ -1,0 +1,23 @@
+{
+	"name": "common.groupExt",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "groupId",
+			"type": "long",
+			"baseProperty": "id",
+			"baseModel": "auth.group",
+			"index": true,
+			"recursive": true
+		},
+		{
+			"name": "groupPath",
+			"type": "string",
+			"virtual": true,
+			"baseModel": "auth.group",
+			"baseProperty": "groupId",
+			"provider": "org.cote.accountmanager.provider.PathProvider",
+			"priority": 1
+		}
+	]
+}

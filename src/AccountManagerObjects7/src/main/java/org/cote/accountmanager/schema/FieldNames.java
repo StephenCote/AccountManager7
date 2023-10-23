@@ -283,4 +283,7 @@ public class FieldNames {
 		public static final String FIELD_REQUESTER_TYPE = "requesterType";
 		public static final String FIELD_SUBMITTER = "requester";
 		public static final String FIELD_SUBMITTER_TYPE = "requesterType";
+		
+		/// Import
+		public static final String FIELD_ALIGNMENT = "alignment";
 }

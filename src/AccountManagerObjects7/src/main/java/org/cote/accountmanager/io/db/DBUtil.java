@@ -628,7 +628,8 @@ public class DBUtil {
 		if(dataType == null) {
 			return null;
 		}
-		if(!fschema.isIdentity() && (fschema.isAllowNull() || fet == FieldEnumType.BLOB || fet == FieldEnumType.STRING)) {
+		/// || fet == FieldEnumType.STRING
+		if(!fschema.isIdentity() && (fschema.isAllowNull() || fet == FieldEnumType.BLOB)) {
 			allowNull = true;
 		}
 		String defStr = null;

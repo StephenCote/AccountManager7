@@ -13,7 +13,7 @@ import org.cote.accountmanager.util.RecordUtil;
 
 public class BatchQueue extends Threaded {
 	public static final Logger logger = LogManager.getLogger(BatchQueue.class);
-	private int threadDelay = 1000;
+	private int threadDelay = 5000;
 	private boolean stopRequested=false;
 	private Thread svcThread = null;
 	
@@ -29,6 +29,9 @@ public class BatchQueue extends Threaded {
 	
 	public void enqueue(BaseRecord record) {
 		Map<String, List<BaseRecord>> map = createQueue;
+		if(record == null) {
+			logger.warn("Attempted to enqueue a null record");
+		}
 		if(RecordUtil.isIdentityRecord(record)) {
 			map = updateQueue;
 		}
@@ -58,9 +61,7 @@ public class BatchQueue extends Threaded {
 		}
 		
 	}
-	private void processQueue(Map<String, List<BaseRecord>> map) {
-		Map<String, List<BaseRecord>> useMap = new ConcurrentHashMap<>(map);
-		map.clear();
+	private void processQueue(Map<String, List<BaseRecord>> useMap) {
 		useMap.forEach((k, v) -> {
 			if(v.size() > 0) {
 				logger.info("Processing " + k + " " + v.size() + " record(s)");
@@ -69,8 +70,12 @@ public class BatchQueue extends Threaded {
 		});
 	}
 	public void execute(){
-		processQueue(createQueue);
-		processQueue(updateQueue);
+		Map<String, List<BaseRecord>> useMap = new ConcurrentHashMap<>(createQueue);
+		createQueue.clear();
+		processQueue(useMap);
+		useMap = new ConcurrentHashMap<>(updateQueue);
+		updateQueue.clear();
+		processQueue(useMap);
 	}
 	
 	@Override

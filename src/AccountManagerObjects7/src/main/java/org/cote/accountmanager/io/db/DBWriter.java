@@ -78,7 +78,7 @@ public class DBWriter extends MemoryWriter {
 	}
 	
 	
-	private int maxBatchSize = 250;
+	private int maxBatchSize = 2000;
 	
 	private void updateAutoCreate(RecordOperation op, ModelSchema schema, BaseRecord model, Map<String, List<BaseRecord>> autoCreate) throws FieldException, ValueException, ModelNotFoundException {
 		List<BaseRecord> parts = StatementUtil.getForeignParticipations(model);
@@ -199,11 +199,12 @@ public class DBWriter extends MemoryWriter {
 					st.executeBatch();
 					st.clearBatch();
 					writeCount += batch;
+					// logger.info("Batch write: " + batch + "/" + writeCount +" of " + models.length);
 					batch=0;
 				}
 	    	}
 			st.close();
-
+			con.commit();
 			con.setAutoCommit(lastCommit);
 
 		}

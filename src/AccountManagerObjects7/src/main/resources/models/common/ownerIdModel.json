@@ -1,0 +1,12 @@
+{
+	"name": "common.ownerId",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "ownerId",
+			"type": "long",
+			"required": true,
+			"private": true
+		}
+	]
+}

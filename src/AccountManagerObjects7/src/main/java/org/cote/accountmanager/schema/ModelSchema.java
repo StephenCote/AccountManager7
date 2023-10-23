@@ -25,6 +25,7 @@ public class ModelSchema {
 
 	private List<FieldSchema> fields = new ArrayList<>();
 	private List<String> inherits = new ArrayList<>();
+	private List<String> likeInherits = new ArrayList<>();
 	private List<String> implist = new ArrayList<>();
 	private List<String> constraints = new ArrayList<>();
 	private List<String> ioConstraints = new ArrayList<>();
@@ -56,6 +57,14 @@ public class ModelSchema {
 		
 	}
 	
+	public List<String> getLikeInherits() {
+		return likeInherits;
+	}
+
+	public void setLikeInherits(List<String> likeInherits) {
+		this.likeInherits = likeInherits;
+	}
+
 	public boolean isAutoCreateForeignReference() {
 		return autoCreateForeignReference;
 	}

@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -94,7 +95,17 @@ public class RecordUtil {
 		}
 
 		BaseRecord crec = rec.copyRecord(fieldNames.toArray(new String[0]));
-		return CryptoUtil.getDigestAsString(toJSONString(crec));
+		String hash = null;
+		try{
+			hash = CryptoUtil.getDigestAsString(toJSONString(crec));
+		}
+		catch(Exception e) {
+			logger.error(e);
+			logger.error(crec.toFullString());
+			e.printStackTrace();
+			hash = "Tmp hash - " + UUID.randomUUID().toString();
+		}
+		return hash;
 	}
 	public static String hash(BaseRecord rec, String[] fieldNames) {
 		BaseRecord crec = rec.copyRecord(fieldNames);
@@ -152,7 +163,7 @@ public class RecordUtil {
 	
 	public static boolean inherits(ModelSchema ms, String fieldName) {
 		boolean outBool = false;
-		if(ms.getInherits().contains(fieldName)) {
+		if(ms.getInherits().contains(fieldName) || ms.getLikeInherits().contains(fieldName)) {
 			outBool = true;
 		}
 		else {

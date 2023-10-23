@@ -22,7 +22,7 @@ public class DirectoryFactory extends FactoryBase {
 	public BaseRecord newInstance(BaseRecord contextUser, BaseRecord recordTemplate, ParameterList parameterList, BaseRecord... arguments) throws FactoryException
 	{
 		
-		logger.error("*** New directory - this shouldn't be hit for an abstract model");
+		// logger.error("*** New directory - this shouldn't be hit for an abstract model");
 		BaseRecord dir = super.newInstance(contextUser, recordTemplate, parameterList, arguments);
 		return dir;
 	}

@@ -1,0 +1,13 @@
+{
+	"name": "common.objectId",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "objectId",
+			"type": "string",
+			"identity": true,
+			"readOnly": true,
+			"maxLength": 64
+		}
+	]
+}

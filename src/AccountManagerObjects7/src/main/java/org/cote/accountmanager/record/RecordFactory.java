@@ -575,6 +575,11 @@ public class RecordFactory {
 		impSet.add(name);
 		int errors = 0;
 		if(mod != null) {
+			for(String imp : mod.getLikeInherits()) {
+				if(!impSet.contains(imp)) {
+					impSet.add(imp);
+				}
+			}
 			for(String imp : mod.getInherits()) {
 				if(!impSet.contains(imp)) {
 					impSet.add(imp);
