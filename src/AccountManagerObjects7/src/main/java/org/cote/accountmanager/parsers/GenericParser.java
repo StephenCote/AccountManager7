@@ -57,7 +57,12 @@ public class GenericParser {
 
 			for(CSVRecord record : csvFileParser){
 				BaseRecord obj = IOSystem.getActiveContext().getFactory().newInstance(model, owner, null, plist);
+				String fcell = record.get(0);
+				if(fcell == null || fcell.length() == 0 || fcell.startsWith("#")) {
+					continue;
+				}
 				for(int i = 0; i < fields.length; i++) {
+
 					if(fields[i] == null) {
 						continue;
 					}

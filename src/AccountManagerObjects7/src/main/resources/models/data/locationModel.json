@@ -1,0 +1,67 @@
+{
+	"name": "data.location",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.parent",
+		"common.description",
+		"common.name",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.attributeList"
+	],
+	"dedicatedParticipation": true,
+	"fields": [
+		
+		{
+			"name": "boundaries",
+			"baseType": "model",
+			"baseModel": "data.location",
+			"type": "list",
+			"foreign": true,
+			"followReference": false,
+			"participantModel": "location.boundary"
+		},
+		{
+			"name": "borders",
+			"baseType": "model",
+			"baseModel": "data.location",
+			"type": "list",
+			"foreign": true,
+			"followReference": false,
+			"participantModel": "location.border"
+		},
+		{
+			"name": "childLocations",
+			"baseType": "model",
+			"baseModel": "data.location",
+			"type": "list",
+			"foreign": true,
+			"followReference": false,
+			"participantModel": "location.child"
+
+		},
+		{
+			"name": "geographyType",
+			"baseClass": "org.cote.accountmanager.schema.type.GeographyEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "classification",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "longitude",
+			"type": "double"
+		},
+		{
+			"name": "latitude",
+			"type": "double"
+		}
+	]
+}

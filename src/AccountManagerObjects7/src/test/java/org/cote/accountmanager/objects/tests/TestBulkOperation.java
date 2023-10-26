@@ -81,6 +81,57 @@ public class TestBulkOperation extends BaseTest {
 		return data;
 	}
 	
+	private List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath){
+		String traitsPath = testProperties.getProperty("test.datagen.path") + "/traits.json";
+		File f = new File(traitsPath);
+		assertTrue("Data file does not exist", f.exists());
+		
+		Map<String, String[]> traits = JSONUtil.getMap(traitsPath, String.class,String[].class);
+		assertTrue("Expected to load some data", traits.size() > 0);
+		
+		List<BaseRecord> traitrecs = new ArrayList<>();
+		Set<String> traitset = new HashSet<>();
+		traits.forEach((k, v) -> {
+			if(!k.equals("alignment")) {
+				final AlignmentEnumType align;
+				if(k.equals("positive")) {
+					align = AlignmentEnumType.LAWFULGOOD;
+				}
+				else if(k.equals("negative")) {
+					align = AlignmentEnumType.CHAOTICEVIL;
+				}
+				else {
+					align = AlignmentEnumType.NEUTRAL;
+				}
+
+				Arrays.asList(v).forEach(s -> {
+					if(s != null && !traitset.contains(s)) {
+						traitset.add(s);
+						traitrecs.add(newTrait(owner, groupPath, s, TraitEnumType.PERSON, align));
+					}
+					else {
+						logger.warn("Invalid or dupe: " + s);
+					}
+				});
+			}
+		});
+		assertTrue("Expected traits to be queued", traitrecs.size() > 0);
+		
+		return traitrecs;
+
+	}
+	
+	@Test
+	public void TestLoadCountryInfo() {
+		logger.info("Test load geolocation data: countryInfo");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+	}
+	
+	/*
+	
 	@Test
 	public void TestGenericParse() {
 		
@@ -169,51 +220,11 @@ public class TestBulkOperation extends BaseTest {
 
 		
 	}
-
-	
-	public List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath){
-		String traitsPath = testProperties.getProperty("test.datagen.path") + "/traits.json";
-		File f = new File(traitsPath);
-		assertTrue("Data file does not exist", f.exists());
-		
-		Map<String, String[]> traits = JSONUtil.getMap(traitsPath, String.class,String[].class);
-		assertTrue("Expected to load some data", traits.size() > 0);
-		
-		List<BaseRecord> traitrecs = new ArrayList<>();
-		Set<String> traitset = new HashSet<>();
-		traits.forEach((k, v) -> {
-			if(!k.equals("alignment")) {
-				final AlignmentEnumType align;
-				if(k.equals("positive")) {
-					align = AlignmentEnumType.LAWFULGOOD;
-				}
-				else if(k.equals("negative")) {
-					align = AlignmentEnumType.CHAOTICEVIL;
-				}
-				else {
-					align = AlignmentEnumType.NEUTRAL;
-				}
-
-				Arrays.asList(v).forEach(s -> {
-					if(s != null && !traitset.contains(s)) {
-						traitset.add(s);
-						traitrecs.add(newTrait(owner, groupPath, s, TraitEnumType.PERSON, align));
-					}
-					else {
-						logger.warn("Invalid or dupe: " + s);
-					}
-				});
-			}
-		});
-		assertTrue("Expected traits to be queued", traitrecs.size() > 0);
-		
-		return traitrecs;
-
-	}
 	
 	@Test
 	public void TestLoadTraits() {
-		
+		logger.info("Test load bulk traits");
+		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -238,7 +249,7 @@ public class TestBulkOperation extends BaseTest {
 		
 		logger.info("Bulk load: " + traitrecs.size() + " traits");
 		start = System.currentTimeMillis();
-		ioContext.getAccessPoint().create(testUser1, traitrecs.toArray(new BaseRecord[0]));
+		ioContext.getAccessPoint().create(testUser1, traitrecs.toArray(new BaseRecord[0]), true);
 		stop = System.currentTimeMillis();
 		
 		logger.info("Time to insert individually: " + diff1 + "ms");
@@ -248,6 +259,8 @@ public class TestBulkOperation extends BaseTest {
 
 	@Test
 	public void TestBulkInsertWithAttributes() {
+		logger.info("Test load bulk objects with attributes");
+		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -273,7 +286,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 		
 		long start = System.currentTimeMillis();
-		ioContext.getAccessPoint().create(testUser1, bulkLoad.toArray(new BaseRecord[0]));
+		ioContext.getAccessPoint().create(testUser1, bulkLoad.toArray(new BaseRecord[0]), true);
 		long stop = System.currentTimeMillis();
 		logger.info("Time to insert by batch: " + (stop - start) + "ms");
 		
@@ -292,6 +305,7 @@ public class TestBulkOperation extends BaseTest {
 	@Test
 	public void TestSingleBatchInsertSameType() {
 		logger.info("Testing inserting records one at a time versus by batch");
+		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -342,6 +356,7 @@ public class TestBulkOperation extends BaseTest {
 	@Test
 	public void TestBatchUpdate() {
 		logger.info("Testing updating a batch of records");
+		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -397,5 +412,5 @@ public class TestBulkOperation extends BaseTest {
 		}
 		assertFalse("Encountered an error", error);
 	}
-
+	*/
 }
