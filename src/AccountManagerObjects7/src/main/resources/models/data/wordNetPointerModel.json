@@ -1,0 +1,27 @@
+{
+	"name": "data.wordNetPointer",
+	"ioConstraints": ["unknown"],
+	"icon": "category",
+	"label": "Word Pointer",
+	"fields": [
+
+		{
+			"name": "offset",
+			"type": "string",
+			"maxLength": 8,
+			"description": "WordNet synset offset"
+		},
+		{
+			"name": "pos",
+			"type": "string",
+			"maxLength": 1,
+			"description": "Reference to the word type"
+		},
+		{
+			"name": "sourceTarget",
+			"type": "string",
+			"description": "Distinguishes lexical and semantic pointers. The first two digits indicates the word number in the current (source) synset, the last two digits indicate the word number in the target synset. A value of 0000 means that pointer_symbol represents a semantic relation between the current (source) synset and the target synset indicated by synset_offset.",
+			"maxLength": 4
+		}
+	]
+}

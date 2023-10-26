@@ -1,0 +1,14 @@
+{
+	"name": "data.wordNetAlt",
+	"ioConstraints": ["unknown"],
+	"icon": "category",
+	"label": "Word Alternative",
+	"inherits": ["common.name"],
+	"fields": [
+		{
+			"name": "lexId",
+			"type": "int",
+			"description": "Appended to lemma to identify a sense in the lexicographer file"
+		}
+	]
+}
