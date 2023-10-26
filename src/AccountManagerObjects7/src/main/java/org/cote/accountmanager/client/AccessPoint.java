@@ -2,7 +2,9 @@ package org.cote.accountmanager.client;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -34,12 +36,29 @@ import org.cote.accountmanager.util.RecordUtil;
 
 public class AccessPoint {
 	public static final Logger logger = LogManager.getLogger(AccessPoint.class);
+	private boolean permitBulkContainerApproval = false;
+	private int maximumBatchSize = 2000;
 	
 	private IOContext context = null;
+	
 	public AccessPoint(IOContext context) {
 		this.context = context; 
 	}
 	
+	
+	
+	public boolean isPermitBulkContainerApproval() {
+		return permitBulkContainerApproval;
+	}
+
+
+
+	public void setPermitBulkContainerApproval(boolean permitBulkContainerApproval) {
+		this.permitBulkContainerApproval = permitBulkContainerApproval;
+	}
+
+
+
 	public int countMembers(BaseRecord user, BaseRecord container, String model, BaseRecord effect) {
 		Query q = QueryUtil.createQuery(model);
 		q.filterParticipation(container, null, model, effect);
@@ -67,7 +86,6 @@ public class AccessPoint {
 		PolicyResponseType prr2 = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, actor);
 		if(prr2.getType() != PolicyResponseEnumType.PERMIT) {
 			AuditUtil.closeAudit(audit, prr2, "Not authorized to read actor");
-			// logger.error(prr2.toFullString());
 		}
 		else {
 			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, object);
@@ -92,7 +110,6 @@ public class AccessPoint {
 		PolicyResponseType prr2 = IOSystem.getActiveContext().getAuthorizationUtil().canRead(user, user, actor);
 		if(prr2.getType() != PolicyResponseEnumType.PERMIT) {
 			AuditUtil.closeAudit(audit, prr2, "Not authorized to read actor");
-			// logger.error(prr2.toFullString());
 		}
 		else {
 			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, object);
@@ -121,7 +138,15 @@ public class AccessPoint {
 	public int create(BaseRecord contextUser, BaseRecord[] objects) {
 		return update(contextUser, objects);
 	}
+	public int create(BaseRecord contextUser, BaseRecord[] objects, boolean permitBulkApproval) {
+		return update(contextUser, objects, permitBulkApproval);
+	}
+	
 	public int update(BaseRecord contextUser, BaseRecord[] objects) {
+		return update(contextUser, objects, permitBulkContainerApproval);
+	}
+	
+	public int update(BaseRecord contextUser, BaseRecord[] objects, boolean permitBulkApproval) {
 		BaseRecord outObj = null;
 		if(objects.length == 0) {
 			return 0;
@@ -134,32 +159,93 @@ public class AccessPoint {
 
 
 		List<BaseRecord> records = new ArrayList<>();
-		
+
+		/// permitBulkContainerApproval will stash the first approval for a model type at the container level, and skip checking individual authorizations for remaining items
+		/// this will improve performance on large data loads, but at the risk of unintentionally allowing or denying bulk operations that might otherwise evaluate differently
+		///
+		Map<String, PolicyResponseType> containerSet = new HashMap<>();
+		int writeCount = 0;
 		for(BaseRecord obj : objects) {
 			BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, obj);
 
 			PolicyResponseType prr = null;
+			
+			String setKey = null;
+			
+			boolean hideClose = false;
+			if(permitBulkApproval) {
+				
+				long setId = 0L;
+				if(obj.inherits(ModelNames.MODEL_PARENT)) {
+					setId = obj.get(FieldNames.FIELD_PARENT_ID);
+					setKey = obj.getModel() + "-parent-" + aet.toString() + "-" + Long.toString(setId);
+					
+				}
+				else if(obj.inherits(ModelNames.MODEL_DIRECTORY)) {
+					setId = obj.get(FieldNames.FIELD_GROUP_ID);
+					setKey = obj.getModel() + "-group-" + aet.toString() + "-" + Long.toString(setId);
+					
+				}
+				if(setKey != null) {
+					if(!containerSet.containsKey(setKey)) {
+						BaseRecord cont = findById(contextUser, (obj.inherits(ModelNames.MODEL_PARENT) ? obj.getModel() : ModelNames.MODEL_GROUP), setId);
+						if(cont != null) {
+							prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, cont);
+							containerSet.put(setKey, prr);
+							logger.warn("Container-level bulk approval will be used for " + setKey);
+						}
+						else {
+							logger.warn("Failed to read container: falling out of bulk approval");
+							permitBulkApproval = false;
+						}
+					}
+					else {
+						prr = containerSet.get(setKey);
+						hideClose = true;
+					}
+				}
+				else {
+					logger.warn("Model " + obj.getModel() + " not able to use bulk approvals");
+					// permitBulkApproval = false;
+				}
+			}
+
 			if(aet == ActionEnumType.MODIFY) {
 				if(isLocked(contextUser, obj)) {
 					AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
 					continue;
 				}
-				prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, obj);
+				if(prr == null) {
+					prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, obj);
+				}
 			}
-			else {
+			else if(prr == null){
 				prr = IOSystem.getActiveContext().getAuthorizationUtil().canCreate(contextUser, contextUser, obj);
 			}
+
 			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
 				records.add(obj.copyRecord());
-				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, null);
+				if(!hideClose) {
+					AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, null);
+				}
 			}
 			else {
-				AuditUtil.closeAudit(audit, prr, null);
+				if(!hideClose) {
+					AuditUtil.closeAudit(audit, prr, null);
+				}
+			}
+			if(records.size() >= maximumBatchSize) {
+				writeCount += context.getRecordUtil().updateRecords(records.toArray(new BaseRecord[0]));
+				// logger.info("Send batch: " + records.size() + "/" + writeCount +" of " + objects.length);
+				records.clear();
 			}
 		}
-		
-		int writeCount = context.getRecordUtil().updateRecords(records.toArray(new BaseRecord[0]));
-		
+		if(records.size() > 0) {
+			writeCount += context.getRecordUtil().updateRecords(records.toArray(new BaseRecord[0]));
+			// logger.info("Send batch: " + records.size() + "/" + writeCount +" of " + objects.length);
+			records.clear();
+		}
+
 		return writeCount;
 	}
 	
