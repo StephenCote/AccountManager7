@@ -14,17 +14,12 @@ import org.cote.accountmanager.util.RecordUtil;
 public class BatchQueue extends Threaded {
 	public static final Logger logger = LogManager.getLogger(BatchQueue.class);
 	private int threadDelay = 5000;
-	private boolean stopRequested=false;
-	private Thread svcThread = null;
 	
 	private final Map<String, List<BaseRecord>> createQueue = new ConcurrentHashMap<>();
 	private final Map<String, List<BaseRecord>> updateQueue = new ConcurrentHashMap<>();
 	
 	public BatchQueue(){
-		logger.info("Starting batch queue");
-		svcThread = new Thread(this);
-		svcThread.setPriority(Thread.MIN_PRIORITY);
-		svcThread.start();
+		this.setThreadDelay(threadDelay);
 	}
 	
 	public void enqueue(BaseRecord record) {
@@ -41,58 +36,23 @@ public class BatchQueue extends Threaded {
 		map.get(record.getModel()).add(record);
 	}
 
-	public int getThreadDelay() {
-		return threadDelay;
-	}
-
-	public void setThreadDelay(int threadDelay) {
-		this.threadDelay = threadDelay;
-	}
-
-	public void requestStop(){
-		logger.info("Stopping queue");
-		stopRequested=true;
-		svcThread.interrupt();
-		try{
-			execute();
-		}
-		catch(Exception e){
-			logger.error(e);
-		}
-		
-	}
-	private void processQueue(Map<String, List<BaseRecord>> useMap) {
+	private void processQueue(String queueType, Map<String, List<BaseRecord>> useMap) {
 		useMap.forEach((k, v) -> {
 			if(v.size() > 0) {
-				logger.info("Processing " + k + " " + v.size() + " record(s)");
+				logger.info("Processing " + queueType + " " + k + " " + v.size() + " record(s)");
 				IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
 			}
 		});
 	}
+	
+	@Override
 	public void execute(){
 		Map<String, List<BaseRecord>> useMap = new ConcurrentHashMap<>(createQueue);
 		createQueue.clear();
-		processQueue(useMap);
+		processQueue("create", useMap);
 		useMap = new ConcurrentHashMap<>(updateQueue);
 		updateQueue.clear();
-		processQueue(useMap);
+		processQueue("update", useMap);
 	}
-	
-	@Override
-	public void run(){
-		while (!stopRequested){
-			try{
-				Thread.sleep(threadDelay);
-			}
-			catch (InterruptedException ex){
-				/* ... */
-			}
-			try{
-				execute();
-			}
-			catch(Exception e){
-				logger.error(e);
-			}
-		}
-	}
+
 }
