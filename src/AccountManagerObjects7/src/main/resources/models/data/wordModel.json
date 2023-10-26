@@ -14,7 +14,7 @@
 	"icon": "category",
 	"label": "Word",
 	"constraints": [
-		"name, variant, type, groupId, organizationId"
+		"name, gender, groupId, organizationId"
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"query": [
@@ -22,23 +22,16 @@
 	],
 	"fields": [
 		{
-			"name": "variant",
-			"type": "int"
+			"name": "gender",
+			"type": "string",
+			"maxLength": 2,
+			"description": "Placeholder for gendered words"
 		},
 		{
-			"name": "type",
-			"type": "string",
-			"maxLength": 1
-		},
-		{
-			"name": "definition",
-			"type": "string",
-			"maxLength": 512
-		},
-		{
-			"name": "example",
-			"type": "string",
-			"maxLength": 512
+			"name": "count",
+			"type": "int",
+			"description": "Placeholder for tracking frequency; used in wordNetModel for number of words in the synset"
 		}
+
 	]
 }
