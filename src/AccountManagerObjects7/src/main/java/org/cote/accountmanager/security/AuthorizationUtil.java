@@ -98,7 +98,10 @@ public class AuthorizationUtil {
 		return canDo(contextUser, PolicyUtil.POLICY_SYSTEM_UPDATE_OBJECT, ActionEnumType.MODIFY, actor, null, resource);
 	}
 	
-	protected PolicyResponseType canDo(BaseRecord contextUser, String policyName, ActionEnumType action, BaseRecord actor, String token, BaseRecord resource) {
+	protected PolicyResponseType canDo(BaseRecord contextUser, String policyName, ActionEnumType action, BaseRecord actor, String token, BaseRecord inRec) {
+		
+		final BaseRecord resource = inRec.copyRecord();
+		
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(org == null) {
 			logger.error("Failed to load organization context: " + contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH));
