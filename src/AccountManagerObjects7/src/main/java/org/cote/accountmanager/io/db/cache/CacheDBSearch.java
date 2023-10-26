@@ -22,6 +22,10 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	/// For some reason, the mapped values become transposed somehow
 
 	private Map<String, QueryResult> cache = new ConcurrentHashMap<>();
+	
+	private int maximumCacheSize = 10000;
+	private int maximumCacheAgeMS = 360000;
+	private long cacheRefreshed = 0L;
 
 	public static boolean ENABLE_STATISTICS = false;
 	public static Map<String, Integer> CACHE_STATISTICS = new ConcurrentHashMap<>();
@@ -30,6 +34,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	public CacheDBSearch(DBReader reader) {
 		super(reader);
 		CacheUtil.addProvider(this);
+		cacheRefreshed = System.currentTimeMillis();
 	}
 
 	public void clearCache() {
@@ -41,6 +46,17 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	public void cleanupCache() {
 		clearCache();
 		CacheUtil.removeProvider(this);
+	}
+	
+	private void checkCache() {
+		long now = System.currentTimeMillis();
+		if( (now - cacheRefreshed) > maximumCacheAgeMS
+			|| cache.size() > maximumCacheSize
+		){
+			logger.info("Clearing search cache");
+			cacheRefreshed = now;
+			cache.clear();
+		}
 	}
 	
 	@Override
@@ -56,6 +72,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 				throw new ReaderException("Null query key");
 			}
 			String hash = query.hash();
+
+			checkCache();
+			
 			if(cache.containsKey(hash)) {
 				final QueryResult qr = cache.get(hash);
 				if(ENABLE_STATISTICS) {
@@ -71,9 +90,17 @@ public class CacheDBSearch extends DBSearch implements ICache {
 				String qrt = qr.get(FieldNames.FIELD_TYPE);
 				if(!qt.equals(qrt)) {
 					logger.error("****** MISMATCHED CACHED RESULT TYPE!!! " + qt + " -> " + qrt);
-					throw new ReaderException("Mismatched result type: Cached query for " + qt + " contains " + qrt);
+					logger.error("****** " + query.key() + " -> " + qr.get(FieldNames.FIELD_QUERY_KEY));
+					logger.error(query.toFullString());
+					logger.error(qr.toFullString());
+					logger.error("****** Invalidating cache entries for both");
+					cache.remove(query.hash());
+					cache.remove(qr.get(FieldNames.FIELD_QUERY_HASH));
+					/// throw new ReaderException("Mismatched result type: Cached query for " + qt + " contains " + qrt);
 				}
-				return qr;
+				else {
+					return qr;
+				}
 				//return cache.get(hash);
 			}
 			

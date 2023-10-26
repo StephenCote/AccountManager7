@@ -1,6 +1,7 @@
 package org.cote.accountmanager.policy;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,6 +27,10 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 	private Map<String, PolicyResponseType> responseCache;
 	private Map<String, List<String>> actorCache;
 	private Map<String, List<String>> resourceCache;
+	
+	private int maximumCacheSize = 10000;
+	private int maximumCacheAgeMS = 360000;
+	private long cacheRefreshed = 0L;
 
 	public CachePolicyUtil(IReader reader, IWriter writer, ISearch search) {
 		super(reader, writer, search);
@@ -37,6 +42,7 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		init();
 	}
 	private void init() {
+		cacheRefreshed = System.currentTimeMillis();
 		policyCache = new ConcurrentHashMap<>();
 		responseCache = new ConcurrentHashMap<>();
 		actorCache = new ConcurrentHashMap<>();
@@ -139,7 +145,23 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		return prr;
 	}
 	
-	private void cache(String key, PolicyResponseType prr, String actorUrn, String resourceUrn) {
+	private synchronized void checkCache() {
+		long now = System.currentTimeMillis();
+		if( (now - cacheRefreshed) > maximumCacheAgeMS
+			|| responseCache.size() > maximumCacheSize
+			|| resourceCache.size() > maximumCacheSize
+			|| actorCache.size() > maximumCacheSize
+		){
+			logger.info("Clearing policy cache");
+			cacheRefreshed = now;
+			responseCache.clear();
+			actorCache.clear();
+			resourceCache.clear();
+		}
+	}
+	
+	private synchronized void cache(String key, PolicyResponseType prr, String actorUrn, String resourceUrn) {
+		checkCache();
 		if(!responseCache.containsKey(key)) {
 			// logger.info("Cache " + key);
 			responseCache.put(key,  prr);
