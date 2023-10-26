@@ -28,11 +28,14 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.parsers.GenericParser;
+import org.cote.accountmanager.parsers.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -78,173 +81,96 @@ public class TestBulkOperation extends BaseTest {
 		return data;
 	}
 	
-	private List<BaseRecord> loadWNDataFile(BaseRecord owner, String groupPath, String path){
-		List<BaseRecord> words = new ArrayList<>();
-		long start = System.currentTimeMillis();
-		CSVFormat csvFormat = CSVFormat.Builder.create().setDelimiter(' ').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build();
-		CSVParser  csvFileParser = null;
-		BufferedReader bir = null;
-		Set<String> wordSet = new HashSet<>();
-		Map<String, Integer> varSet = new HashMap<>();
-		CSVRecord lastRecord = null;
-		boolean error = false;
-		try{
-			bir = new BufferedReader(new InputStreamReader(new FileInputStream(path),StandardCharsets.UTF_8));
-			csvFileParser = new CSVParser(bir, csvFormat);
-
-			for(CSVRecord record : csvFileParser){
-				lastRecord = record;
-				String id = record.get(0);
-				if(id.matches("^\\d{8}$")){
-					
-					// logger.info("Size: " + record.size());
-					String type = record.get(2);
-					String name = record.get(4);
-
-					int var = 0;
-					if(!varSet.containsKey(name)) {
-						varSet.put(name, 0);
-					}
-					else {
-						var = varSet.get(name) + 1;
-						varSet.put(name, var);
-					}
-					// int var = Integer.parseInt("0" + record.get(5), 16);
-					String key = var + "-" + type + "-" + name;
-					if(
-						type == null || type.length() == 0
-						|| name == null || name.length() == 0
-					) {
-						logger.warn("Invalid type/name: " + key);
-						continue;
-					}
-						
-					
-					if(wordSet.contains(key)) {
-						logger.warn("Duplicate: " + key);
-						continue;
-					}
-					wordSet.add(key);
-
-					boolean startDesc = false;
-					boolean startExamp = false;
-					boolean breakOut = false;
-					StringBuilder desc = new StringBuilder();
-					StringBuilder examp = new StringBuilder();
-					for(int i = 5; i < record.size(); i++) {
-						String tmp = record.get(i);
-						if(tmp.startsWith("\"")) {
-							tmp = tmp.substring(1, tmp.length());
-							startExamp = true;
-							startDesc = false;
-						}
-						if(startDesc) {
-							if(desc.length() > 0) {
-								desc.append(" ");
-							}
-							if(tmp.endsWith(";")) {
-								tmp = tmp.substring(0, tmp.length() - 1);
-							}
-							desc.append(tmp);
-						}
-						if(startExamp) {
-							if(examp.length() > 0) {
-								examp.append(" ");
-							}
-							if(tmp.endsWith("\"") || tmp.endsWith("\";")) {
-								if(tmp.lastIndexOf("\"") > 0) {
-									tmp = tmp.substring(0, tmp.lastIndexOf("\""));
-								}
-								else {
-									tmp = "";
-								}
-								breakOut = true;
-							}
-							examp.append(tmp);
-						}
-						if(tmp.equals("|")) {
-							startDesc = true;
-						}
-						if(breakOut) {
-							break;
-						}
-						
-					}
-
-					ParameterList plist = ParameterList.newParameterList("path", groupPath);
-					plist.parameter("name", name);
-					BaseRecord word = ioContext.getFactory().newInstance(ModelNames.MODEL_WORD, owner, null, plist);
-					word.set("definition", desc.toString());
-					word.set("example", examp.toString());
-					word.set("variant", var);
-					word.set(FieldNames.FIELD_TYPE, type);
-					words.add(word);
-				}
-			}
-		}
-		catch(StringIndexOutOfBoundsException | IOException | FactoryException | FieldException | ValueException | ModelNotFoundException  e){
-			logger.error(e.getMessage());
-			e.printStackTrace();
-			if(lastRecord != null) {
-				logger.error(lastRecord.toString());
-			}
-			error = true;
-
-		}
-		if(error) {
-			return new ArrayList<>();
-		}
-		return words;
-	}
-	
 	@Test
-	public void TestWordNetLoad() {
+	public void TestGenericParse() {
+		
+		logger.info("Test Generic Parser");
+		logger.info("Test depends on external US data for common baby names by year.  See ./notes/dataNotes.txt");
 		
 		AuditUtil.setLogToConsole(false);
-		
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
+			
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
-		// String groupPath = "~/Bulk/Word - " + UUID.randomUUID().toString();
+		String groupPath = "~/Bulk/Names - " + UUID.randomUUID().toString();
 
-		String groupPath = "~/Bulk/Words";
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		assertNotNull("Directory is null", dir);
 
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		int cnt = ioContext.getAccessPoint().count(testUser1, q);
-		logger.info("Working with: " + cnt);
-		if(cnt == 0) {
-		
-			String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
+		String wnetPath = testProperties.getProperty("test.datagen.path") + "/names";
 
-			try {
-
-				String[] exts = new String[] {"adv", "adj", "verb", "noun"};
-				for(String ext: exts) {
-					long start = System.currentTimeMillis();
-					logger.info("Processing: " + ext);
-					List<BaseRecord> words = loadWNDataFile(testUser1, groupPath, wnetPath + "/data." + ext);
-					assertTrue("Expected records to process", words.size() > 0);
-					long stop = System.currentTimeMillis();
-					logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
-					start = System.currentTimeMillis();
-					ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]));
-					stop = System.currentTimeMillis();
-					logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
-	
-				}
+		try {
+			int maxLines = 5000;
+			String[] files = new String[] {"yob2022.txt"};
+			for(String file : files) {
+				long start = System.currentTimeMillis();
+				logger.info("Processing: " + file);
+				
+				List<BaseRecord> words = GenericParser.parseFile(testUser1, ModelNames.MODEL_WORD, new String[] {"name", "gender", "count"}, groupPath, wnetPath + "/" + file, maxLines);
+				long stop = System.currentTimeMillis();
+				logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
+				
+				start = System.currentTimeMillis();
+				ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]), true);
+				stop = System.currentTimeMillis();
+				logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
 			}
-			catch(Exception e) {
-				logger.error(e);
-				e.printStackTrace();
-			}
-
+			
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
 		}
 	}
 	
-	/*
+	@Test
+	public void TestWordNetParse() {
+		
+		AuditUtil.setLogToConsole(false);
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		String groupPath = "~/Bulk/Word - " + UUID.randomUUID().toString();
+
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Directory is null", dir);
+
+		String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
+
+		try {
+			int maxLines = 1000;
+			String[] exts = new String[] {"adj", "adv", "verb", "noun"};
+			for(String ext: exts) {
+				long start = System.currentTimeMillis();
+				logger.info("Processing: " + ext);
+				
+				
+				List<BaseRecord> words = WordNetParser.parseWNDataFile(testUser1, groupPath, wnetPath + "/data." + ext, maxLines);
+				long stop = System.currentTimeMillis();
+				logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
+				
+				assertTrue("Expected records to match max size " + maxLines + " but instead received " + words.size(), ((maxLines == 0 && words.size() > 0 )|| (words.size() == maxLines)));
+
+				start = System.currentTimeMillis();
+				ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]), true);
+				stop = System.currentTimeMillis();
+				logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
+				
+			}
+			
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+		
+	}
+
+	
 	public List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath){
 		String traitsPath = testProperties.getProperty("test.datagen.path") + "/traits.json";
 		File f = new File(traitsPath);
@@ -319,8 +245,7 @@ public class TestBulkOperation extends BaseTest {
 		logger.info("Time to insert by batch: " + (stop - start) + "ms");
 
 	}
-	*/
-	/*
+
 	@Test
 	public void TestBulkInsertWithAttributes() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
@@ -362,8 +287,7 @@ public class TestBulkOperation extends BaseTest {
 		logger.info(qr.getResults()[0].toFullString());
 		
 	}
-	*/
-	/*
+
 
 	@Test
 	public void TestSingleBatchInsertSameType() {
@@ -473,5 +397,5 @@ public class TestBulkOperation extends BaseTest {
 		}
 		assertFalse("Encountered an error", error);
 	}
-	*/
+
 }
