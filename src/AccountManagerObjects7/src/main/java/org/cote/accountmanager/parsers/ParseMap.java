@@ -2,11 +2,16 @@ package org.cote.accountmanager.parsers;
 
 public class ParseMap {
 	private String columnName = null;
-	private int columnIndex = 0;
+	private int columnIndex = -1;
 	private String fieldName = null;
 	
 	public ParseMap() {
 		
+	}
+	
+	public ParseMap(String fieldName, int columnIndex) {
+		this.fieldName = fieldName;
+		this.columnIndex = columnIndex;
 	}
 
 	public String getColumnName() {

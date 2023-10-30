@@ -13,6 +13,7 @@
 		"system.primaryKey",
 		"common.attributeList"
 	],
+	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"dedicatedParticipation": true,
 	"fields": [
 		

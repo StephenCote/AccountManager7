@@ -56,6 +56,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.SystemPermissionEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
+import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -761,7 +762,7 @@ public class PolicyUtil {
 						par = pathUtil.findPath(null, resource.getModel(), path, null, resource.get(FieldNames.FIELD_ORGANIZATION_ID));
 					}
 				}
-				if(par != null) {
+				if(par != null && !FieldUtil.isNullOrEmpty(par.getModel(), par.getField(FieldNames.FIELD_URN))) {
 					policyBase = p.replaceAll((String)par.get(FieldNames.FIELD_URN));
 				}
 				else {

@@ -37,6 +37,9 @@ public class MemoryWriter extends RecordWriter {
 			op = RecordOperation.UPDATE;
 		}
 		if((recordIo == RecordIO.FILE || recordIo == RecordIO.DATABASE) && !RecordValidator.validate(op, rec)) {
+			if(rec != null) {
+				logger.error(rec.toFullString());
+			}
 			throw new WriterException("Record failed validation in IO " + this.recordIo);
 		}
 		prepareTranscription(op, rec);

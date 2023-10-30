@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -34,13 +35,18 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
+
 import org.cote.accountmanager.parsers.GenericParser;
+import org.cote.accountmanager.parsers.ParseMap;
 import org.cote.accountmanager.parsers.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.AlignmentEnumType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.GeographyEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
@@ -124,10 +130,147 @@ public class TestBulkOperation extends BaseTest {
 	@Test
 	public void TestLoadCountryInfo() {
 		logger.info("Test load geolocation data: countryInfo");
+		// AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
+		String groupPath = "~/Bulk/Geo - " + UUID.randomUUID().toString();
+
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+
+		List<ParseMap> map = new ArrayList<>();
+		map.add(new ParseMap("iso", 0));
+		map.add(new ParseMap("iso3", 1));
+		map.add(new ParseMap("name", 4));
+		map.add(new ParseMap("capital", 5));
+		map.add(new ParseMap("continent", 8));
+		map.add(new ParseMap("currencyCode", 10));
+		map.add(new ParseMap("currencyName", 11));
+		map.add(new ParseMap("languages", 15));
+		map.add(new ParseMap("geonameid", 16));
+		map.add(new ParseMap("neighbors", 17));
+		
+		String locPath = testProperties.getProperty("test.datagen.path") + "/location";
+		int maxLines = 0;
+		
+		CSVFormat csvFormat = CSVFormat.TDF;
+		BaseRecord template = null;
+		try {
+			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
+			template.set("geoType", "country");
+			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		long start = System.currentTimeMillis();
+		List<BaseRecord> locs = GenericParser.parseFile(testUser1, ModelNames.MODEL_GEO_LOCATION, map.toArray(new ParseMap[0]), groupPath, locPath + "/countryInfo.txt", maxLines, template, csvFormat);
+		long stop = System.currentTimeMillis();
+		logger.info("Parsed: " + locs.size() + " in " + (stop - start) + "ms");
+		assertTrue("Expected records to match max size " + maxLines + " but instead received " + locs.size(), ((maxLines == 0 && locs.size() > 0 )|| (locs.size() == maxLines)));
+		start = System.currentTimeMillis();
+		ioContext.getAccessPoint().create(testUser1, locs.toArray(new BaseRecord[0]), true);
+		stop = System.currentTimeMillis();
+		logger.info("Imported: " + locs.size() + " in " + (stop - start) + "ms");
+		
+		/// Admin 1
+		logger.info("Load Admin 1 Codes");
+
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.field("geoType", "country");
+		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
+		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q);
+
+		logger.info("Retrieved " + qr.getCount() + " country items");
+		
+		map = new ArrayList<>();
+		map.add(new ParseMap("code", 0));
+		map.add(new ParseMap("altName", 1));
+		map.add(new ParseMap("name", 2));
+		map.add(new ParseMap("geonameid", 3));
+		
+		template = null;
+		try {
+			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
+			template.set("geoType", "admin1");
+			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		
+		start = System.currentTimeMillis();
+		locs = GenericParser.parseFile(testUser1, ModelNames.MODEL_GEO_LOCATION, map.toArray(new ParseMap[0]), groupPath, locPath + "/admin1CodesASCII.txt", maxLines, template, csvFormat);
+		stop = System.currentTimeMillis();
+		
+		logger.info("Mapping location parent");
+		List<BaseRecord> qra = Arrays.asList(qr.getResults());
+		for(BaseRecord loc : locs) {
+			String code = loc.get("code");
+			if(code != null) {
+				try {
+					String[] pair = code.split("\\.");
+					Optional<BaseRecord> orec = qra.stream().filter(p -> pair[0].equals(p.get("iso"))).findFirst();
+					if(orec.isPresent()) {
+						BaseRecord prec = orec.get();
+						loc.set(FieldNames.FIELD_PARENT_ID, prec.get(FieldNames.FIELD_ID));
+					}
+				} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
+					logger.error(e);
+					e.printStackTrace();
+					break;
+				}
+
+			}
+		}
+		
+		logger.info("Parsed: " + locs.size() + " in " + (stop - start) + "ms");
+		assertTrue("Expected records to match max size " + maxLines + " but instead received " + locs.size(), ((maxLines == 0 && locs.size() > 0 )|| (locs.size() == maxLines)));
+		start = System.currentTimeMillis();
+		logger.info(locs.get(0).toFullString());
+		try {
+			ioContext.getAccessPoint().create(testUser1, locs.toArray(new BaseRecord[0]), true);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		stop = System.currentTimeMillis();
+		logger.info("Imported: " + locs.size() + " in " + (stop - start) + "ms");
+
+		/// Admin 2
+		logger.info("Load Admin 2 Codes");
+		map = new ArrayList<>();
+		map.add(new ParseMap("code", 0));
+		map.add(new ParseMap("name", 1));
+		map.add(new ParseMap("geonameid", 3));
+		
+		template = null;
+		try {
+			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
+			template.set("geoType", "admin2");
+			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		
+		start = System.currentTimeMillis();
+		locs = GenericParser.parseFile(testUser1, ModelNames.MODEL_GEO_LOCATION, map.toArray(new ParseMap[0]), groupPath, locPath + "/admin2Codes.txt", maxLines, template, csvFormat);
+
+		stop = System.currentTimeMillis();
+		
+		logger.info("Parsed: " + locs.size() + " in " + (stop - start) + "ms");
+		assertTrue("Expected records to match max size " + maxLines + " but instead received " + locs.size(), ((maxLines == 0 && locs.size() > 0 )|| (locs.size() == maxLines)));
+		start = System.currentTimeMillis();
+		ioContext.getAccessPoint().create(testUser1, locs.toArray(new BaseRecord[0]), true);
+		stop = System.currentTimeMillis();
+		logger.info("Imported: " + locs.size() + " in " + (stop - start) + "ms");
+
+		
+
+	
 	}
 	
 	/*

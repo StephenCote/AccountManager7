@@ -1,0 +1,70 @@
+{
+	"name": "data.geoLocation",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"data.location"
+	],
+	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "altName",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "code",
+			"type": "string",
+			"maxLength": 32
+		},	
+		{
+			"name": "geoType",
+			"type": "string",
+			"maxLength": 16
+		},		
+		{
+			"name": "iso",
+			"type": "string",
+			"maxLength": 8
+		},
+		{
+			"name": "iso3",
+			"type": "string",
+			"maxLength": 8
+		},
+		{
+			"name": "languages",
+			"baseType": "string",
+			"type": "list"
+		},
+		{
+			"name": "neighbors",
+			"baseType": "string",
+			"type": "list"
+		},
+		{
+			"name": "capital",
+			"type": "string",
+			"maxLength": 127		
+		},
+		{
+			"name": "continent",
+			"type": "string",
+			"maxLength": 127		
+		},
+		{
+			"name": "currencyCode",
+			"type": "string",
+			"maxLength": 4		
+		},
+		{
+			"name": "currencyName",
+			"type": "string",
+			"maxLength": 127		
+		},
+		{
+			"name": "geonameid",
+			"type": "int"
+		}
+	]
+}
