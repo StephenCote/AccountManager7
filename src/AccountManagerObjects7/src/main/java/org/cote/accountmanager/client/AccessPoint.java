@@ -31,6 +31,7 @@ import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.FieldLockUtil;
+import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
@@ -176,19 +177,22 @@ public class AccessPoint {
 			if(permitBulkApproval) {
 				
 				long setId = 0L;
-				if(obj.inherits(ModelNames.MODEL_PARENT)) {
+				boolean useParent = false;
+				if(obj.inherits(ModelNames.MODEL_PARENT) && !FieldUtil.isNullOrEmpty(obj.getModel(), obj.getField(FieldNames.FIELD_PARENT_ID))) {
 					setId = obj.get(FieldNames.FIELD_PARENT_ID);
 					setKey = obj.getModel() + "-parent-" + aet.toString() + "-" + Long.toString(setId);
+					useParent = true;
 					
 				}
-				else if(obj.inherits(ModelNames.MODEL_DIRECTORY)) {
+				else if(obj.inherits(ModelNames.MODEL_DIRECTORY) && !FieldUtil.isNullOrEmpty(obj.getModel(), obj.getField(FieldNames.FIELD_GROUP_ID))) {
 					setId = obj.get(FieldNames.FIELD_GROUP_ID);
 					setKey = obj.getModel() + "-group-" + aet.toString() + "-" + Long.toString(setId);
 					
 				}
 				if(setKey != null) {
 					if(!containerSet.containsKey(setKey)) {
-						BaseRecord cont = findById(contextUser, (obj.inherits(ModelNames.MODEL_PARENT) ? obj.getModel() : ModelNames.MODEL_GROUP), setId);
+						logger.info("Find - " + (useParent ? obj.getModel() : ModelNames.MODEL_GROUP) + " " + setId);
+						BaseRecord cont = findById(contextUser, (useParent ? obj.getModel() : ModelNames.MODEL_GROUP), setId);
 						if(cont != null) {
 							prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, cont);
 							containerSet.put(setKey, prr);
