@@ -21,6 +21,11 @@
 			"baseClass": "org.cote.accountmanager.schema.type.AlignmentEnumType",
 			"type": "enum",
 			"maxLength": 32
+		},
+		{
+			"name": "code",
+			"type": "string",
+			"maxLength": 32
 		}
 	]
 }

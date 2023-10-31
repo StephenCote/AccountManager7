@@ -15,6 +15,7 @@
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"dedicatedParticipation": true,
+	"query": ["name", "id", "objectId", "ownerId"],
 	"fields": [
 		
 		{

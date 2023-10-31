@@ -53,7 +53,29 @@ public class GenericParser {
 		return parseFile(owner, model, fields, groupPath, path, maxCount, null, null);
 	}
 	public static List<BaseRecord> parseFile(BaseRecord owner, String model, ParseMap[] fields, String groupPath, String path, int maxCount, BaseRecord template, CSVFormat csvFormat){
+		ParseConfiguration cfg = new ParseConfiguration();
+		cfg.setCsvFormat(csvFormat);
+		cfg.setOwner(owner);
+		cfg.setModel(model);
+		cfg.setFields(fields);
+		cfg.setGroupPath(groupPath);
+		cfg.setFilePath(path);
+		cfg.setMaxCount(maxCount);
+		cfg.setTemplate(template);
+		return parseFile(cfg);
+	}
+	public static List<BaseRecord> parseFile(ParseConfiguration cfg){
+		return parseFile(cfg, null);
+	}
+	public static List<BaseRecord> parseFile(ParseConfiguration cfg, IParseWriter writer){
 		List<BaseRecord> objs = new ArrayList<>();
+		CSVFormat csvFormat = cfg.getCsvFormat();
+		String model = cfg.getModel();
+		ParseMap[] fields = cfg.getFields();
+		String groupPath = cfg.getGroupPath();
+		BaseRecord owner = cfg.getOwner();
+		int maxCount = cfg.getMaxCount();
+		
 		if(csvFormat == null) {
 			csvFormat = CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build();
 		}
@@ -62,19 +84,28 @@ public class GenericParser {
 		boolean error = false;
 		CSVRecord lastRecord = null;
 		ModelSchema ms = RecordFactory.getSchema(model);
+		long start = System.currentTimeMillis();
+		
 		try{
-			bir = new BufferedReader(new InputStreamReader(new FileInputStream(path),StandardCharsets.UTF_8));
+			bir = new BufferedReader(new InputStreamReader(new FileInputStream(cfg.getFilePath()),StandardCharsets.UTF_8));
 			csvFileParser = new CSVParser(bir, csvFormat);
 			ParameterList plist = null;
 			if(groupPath != null) {
 				plist = ParameterList.newParameterList("path", groupPath);
 			}
-
+			int batchSize = 0;
+			int totalSize = 0;
+			if(writer != null) {
+				batchSize = writer.getBatchSize();
+			}
 			for(CSVRecord record : csvFileParser){
 				lastRecord = record;
-				BaseRecord obj = IOSystem.getActiveContext().getFactory().newInstance(model, owner, template, plist);
+				BaseRecord obj = IOSystem.getActiveContext().getFactory().newInstance(model, owner, cfg.getTemplate(), plist);
 				String fcell = record.get(0);
 				if(fcell == null || fcell.length() == 0 || fcell.startsWith("#")) {
+					continue;
+				}
+				if(cfg.getInterceptor() != null && cfg.getInterceptor().filterRow(cfg, record)) {
 					continue;
 				}
 				for(int i = 0; i < fields.length; i++) {
@@ -95,23 +126,44 @@ public class GenericParser {
 					else {
 						rval = record.get(i);
 					}
+					
+					if(cfg.getInterceptor() != null) {
+						rval = cfg.getInterceptor().filterField(cfg, record, field, fs, ft, rval);
+					}
+					if(field.getInterceptor() != null) {
+						rval = field.getInterceptor().filterField(cfg, record, field, fs, ft, rval);
+					}
+					
 					if(rval != null) {
 						switch(ft.getValueType()) {
 							case STRING:
 								ft.setValue(rval);
 								break;
 							case INT:
-								ft.setValue(Integer.parseInt(rval));
+								if(rval.length() > 0) {
+									ft.setValue(Integer.parseInt(rval));
+								}
 								break;
 							case LONG:
-								ft.setValue(Long.parseLong(rval));
+								if(rval.length() > 0) {
+									ft.setValue(Long.parseLong(rval));
+								}
 								break;
 							case BOOLEAN:
-								ft.setValue(Boolean.parseBoolean(rval));
+								if(rval.length() > 0) {
+									ft.setValue(Boolean.parseBoolean(rval));
+								}
+								break;
+							case DOUBLE:
+								if(rval.length() > 0) {
+									ft.setValue(Double.parseDouble(rval));
+								}
 								break;
 							case LIST:
 								if(fs.getBaseType().equals("string")) {
-									ft.setValue(Arrays.asList(rval.split(",")));
+									 if(rval.length() > 0) {
+										 ft.setValue(Arrays.asList(rval.split(",")));
+									 }
 									break;
 								}
 								else {
@@ -128,11 +180,22 @@ public class GenericParser {
 				
 
 				objs.add(obj);
-				
-				if(maxCount > 0 && objs.size() >= maxCount) {
+				if(batchSize > 0 && objs.size() >= batchSize) {
+					logger.info("Batch parse " + objs.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+					start = System.currentTimeMillis();
+					writer.write(cfg, objs);
+					objs.clear();
+				}
+				if(maxCount > 0 && totalSize >= maxCount) {
 					break;
 				}
+				totalSize++;
 			}
+			if(batchSize > 0 && objs.size() > 0) {
+				logger.info("Batch parse " + objs.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+				writer.write(cfg, objs);
+			}
+
 		}
 		catch(IndexOutOfBoundsException | NumberFormatException | IOException | FactoryException | ValueException  e){
 			logger.error(e.getMessage());
@@ -148,76 +211,6 @@ public class GenericParser {
 		}
 		return objs;
 	}
-	/*
-	public static List<BaseRecord> parseFile(BaseRecord owner, String model, String[] fields, String groupPath, String path, int maxCount){	
-		List<BaseRecord> objs = new ArrayList<>();
-
-		CSVFormat csvFormat = CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build();
-		CSVParser  csvFileParser = null;
-		BufferedReader bir = null;
-		boolean error = false;
-		try{
-			bir = new BufferedReader(new InputStreamReader(new FileInputStream(path),StandardCharsets.UTF_8));
-			csvFileParser = new CSVParser(bir, csvFormat);
-			ParameterList plist = null;
-			if(groupPath != null) {
-				plist = ParameterList.newParameterList("path", groupPath);
-			}
-
-			for(CSVRecord record : csvFileParser){
-				BaseRecord obj = IOSystem.getActiveContext().getFactory().newInstance(model, owner, null, plist);
-				String fcell = record.get(0);
-				if(fcell == null || fcell.length() == 0 || fcell.startsWith("#")) {
-					continue;
-				}
-				for(int i = 0; i < fields.length; i++) {
-
-					if(fields[i] == null) {
-						continue;
-					}
-					FieldType ft = obj.getField(fields[i]);
-					String rval = record.get(i);
-					if(rval != null) {
-						switch(ft.getValueType()) {
-							case STRING:
-								ft.setValue(rval);
-								break;
-							case INT:
-								ft.setValue(Integer.parseInt(rval));
-								break;
-							case LONG:
-								ft.setValue(Long.parseLong(rval));
-								break;
-							case BOOLEAN:
-								ft.setValue(Boolean.parseBoolean(rval));
-								break;
-
-							default:
-								logger.warn("Unhandled value type: " + ft.getValueType().toString() + " for " + fields[i]);
-								break;
-						}
-					}
-				}
-				
-
-				objs.add(obj);
-				
-				if(maxCount > 0 && objs.size() >= maxCount) {
-					break;
-				}
-			}
-		}
-		catch(StringIndexOutOfBoundsException | IOException | FactoryException | ValueException  e){
-			logger.error(e.getMessage());
-			e.printStackTrace();
-			error = true;
-
-		}
-		if(error) {
-			return new ArrayList<>();
-		}
-		return objs;
-	}
-	*/
+	
 }
 

@@ -15,7 +15,8 @@
 			"name": "organizationId",
 			"type": "long",
 			"required": true,
-			"index": true
+			"index": true,
+			"dynamicPolicy": false
 		}
 	]
 }

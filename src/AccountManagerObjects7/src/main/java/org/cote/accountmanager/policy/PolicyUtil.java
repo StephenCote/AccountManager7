@@ -225,6 +225,7 @@ public class PolicyUtil {
 	
 	// public boolean 
 	
+	
 	public PolicyResponseType[] evaluateQueryToReadPolicyResponses(BaseRecord contextUser, Query query) {
 		List<PolicyResponseType> prrs = new ArrayList<>();
 		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));
@@ -239,7 +240,9 @@ public class PolicyUtil {
 					logger.warn("Need to consider index: " + query.get(FieldNames.FIELD_TYPE) + "." + fs.getName());
 				}
 				*/
-				if((fs.isIndex() && RecordUtil.isConstrainedByField(query, fs.getName())) || (fs.getAccess() != null && fs.getAccess().getRoles() != null) || fs.isIdentity() || fs.isRecursive()) {
+				/// TODO: Revisit logic of basing dynamic policy growth on constrained fields vs. using a dynamicPolicy flag on the field
+				/// 
+				if((fs.isIndex() && RecordUtil.isConstrainedByField(query, fs.getName()) && fs.isDynamicPolicy()) || (fs.getAccess() != null && fs.getAccess().getRoles() != null) || fs.isIdentity() || fs.isRecursive()) {
 					List<?> vals = QueryUtil.findFieldValues(query, fs.getName(), null);
 					String propName = fs.getName();
 					String type = query.get(FieldNames.FIELD_TYPE);
@@ -276,7 +279,7 @@ public class PolicyUtil {
 						if(!querySet.contains(sq.key())) {
 							querySet.add(sq.key());
 							if(trace) {
-								logger.info("Scanning " + query.key() + " --> " + sq.key() + " from " + type + "." + propName + "=" + x);
+								logger.info("Scanning (" + fs.getName() + ") " + query.key() + " --> " + sq.key() + " from " + type + "." + propName + "=" + x);
 							}
 							QueryResult qr = search.find(sq);
 							for(BaseRecord cr : qr.getResults()) {
@@ -762,7 +765,7 @@ public class PolicyUtil {
 						par = pathUtil.findPath(null, resource.getModel(), path, null, resource.get(FieldNames.FIELD_ORGANIZATION_ID));
 					}
 				}
-				if(par != null && !FieldUtil.isNullOrEmpty(par.getModel(), par.getField(FieldNames.FIELD_URN))) {
+				if(par != null && resource.hasField(FieldNames.FIELD_URN) && !FieldUtil.isNullOrEmpty(par.getModel(), par.getField(FieldNames.FIELD_URN))) {
 					policyBase = p.replaceAll((String)par.get(FieldNames.FIELD_URN));
 				}
 				else {

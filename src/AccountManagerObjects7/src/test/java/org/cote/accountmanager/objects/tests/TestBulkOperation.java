@@ -23,23 +23,32 @@ import java.util.UUID;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
+import org.apache.logging.log4j.util.Strings;
+
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryField;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 
 import org.cote.accountmanager.parsers.GenericParser;
+import org.cote.accountmanager.parsers.ParseConfiguration;
 import org.cote.accountmanager.parsers.ParseMap;
 import org.cote.accountmanager.parsers.WordNetParser;
+import org.cote.accountmanager.parsers.data.WordParser;
+import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -52,6 +61,7 @@ import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {
@@ -127,10 +137,137 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	
+	
+	@Test
+	public void TestLocationParent() {
+		logger.info("Test location parent");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String groupPath = "~/Bulk/Geo - " + UUID.randomUUID().toString();
+
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		String locName = "Parent Loc";
+		String chdName = "Child Loc";
+		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		plist.parameter("name", locName);
+		BaseRecord loc = null;
+		try {
+			loc = ioContext.getFactory().newInstance(ModelNames.MODEL_LOCATION, testUser1, null, plist);
+			loc = ioContext.getAccessPoint().create(testUser1, loc);
+		} catch (FactoryException e) {
+			logger.error(e);
+		}
+		assertNotNull("Loc is null", loc);
+
+		String[] names = RecordUtil.getCommonFields(ModelNames.MODEL_LOCATION);
+
+		BaseRecord lloc = ioContext.getAccessPoint().findByObjectId(testUser1, ModelNames.MODEL_LOCATION, loc.get(FieldNames.FIELD_OBJECT_ID));
+		assertNotNull("Unable to lookup location", lloc);
+
+	}
+	
+	private int cleanupTrait(long groupId, long organizationId) {
+		Query lq = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, groupId);
+		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		int deleted = 0;
+		try {
+			deleted = ioContext.getWriter().delete(lq);
+		} catch (WriterException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return deleted;
+	}
+	
+
+	private boolean resetCountryInfo = false;
+
 	@Test
 	public void TestLoadCountryInfo() {
+		logger.info("Test load geolocation data");
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String groupPath = "~/CountryInfo";
+
+		long records = GeoParser.loadInfo(testUser1, groupPath, testProperties.getProperty("test.datagen.path") + "/location", new String[] {"GB"}, resetCountryInfo);
+		logger.info("Total geolocation records in " + groupPath + ": " + records);
+	}
+	
+	@Test
+	public void TestNamesParse() {
+		logger.info("Test load names data");
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String groupPath = "~/Words/Names";
+		String wnetPath = testProperties.getProperty("test.datagen.path") + "/names/yob2022.txt";
+		try {
+			WordParser.loadNames(testUser1, groupPath, wnetPath, false);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, groupPath));
+		logger.info("Total word records in " + groupPath + ": " + records);
+	}
+
+	
+	@Test
+	public void TestSurNamesParse() {
+		logger.info("Test load surnames data");
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String groupPath = "~/Words/SurNames";
+		String wnetPath = testProperties.getProperty("test.datagen.path") + "/surnames/Names_2010Census.csv";
+		try {
+			WordParser.loadSurnames(testUser1, groupPath, wnetPath, true);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, groupPath));
+		logger.info("Total word records in " + groupPath + ": " + records);
+	}
+	
+	
+	@Test
+	public void TestOccupationsParse() {
+		logger.info("Test load occupation data");
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String groupPath = "~/Words/Occupations";
+		String occPath = testProperties.getProperty("test.datagen.path") + "/occupations/noc_2021_version_1.0_-_elements.csv";
+		try {
+			WordParser.loadOccupations(testUser1, groupPath, occPath, false);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, groupPath));
+		logger.info("Total word records in " + groupPath + ": " + records);
+	}
+	
+	/*
+	@Test
+	public void TestLoadCountryInfoRandomBulk() {
 		logger.info("Test load geolocation data: countryInfo");
-		// AuditUtil.setLogToConsole(false);
+		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -267,12 +404,9 @@ public class TestBulkOperation extends BaseTest {
 		ioContext.getAccessPoint().create(testUser1, locs.toArray(new BaseRecord[0]), true);
 		stop = System.currentTimeMillis();
 		logger.info("Imported: " + locs.size() + " in " + (stop - start) + "ms");
-
-		
-
-	
 	}
-	
+	*/
+
 	/*
 	
 	@Test
