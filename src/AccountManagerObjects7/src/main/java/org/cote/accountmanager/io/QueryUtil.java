@@ -2,6 +2,7 @@ package org.cote.accountmanager.io;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -286,7 +287,15 @@ public class QueryUtil {
 		}
 		return outVal;
 	}
-
+	public static BaseRecord findField(BaseRecord query, String fieldName) {
+		BaseRecord qf = null;
+		List<BaseRecord> queries = query.get(FieldNames.FIELD_FIELDS);
+		Optional<BaseRecord> oq = queries.stream().filter(q -> fieldName.equals(q.get(FieldNames.FIELD_NAME))).findFirst();
+		if(oq.isPresent()) {
+			qf = oq.get();
+		}
+		return qf;
+	}
 	public static <T> List<T> findFieldValues(BaseRecord query, String fieldName, T defVal) {
 		return findFieldValues(query, fieldName, defVal, new ArrayList<T>());
 	}

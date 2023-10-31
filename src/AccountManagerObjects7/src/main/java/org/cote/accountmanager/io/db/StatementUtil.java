@@ -130,6 +130,38 @@ public class StatementUtil {
 		return meta;
 	}
 	
+	public static DBStatementMeta getDeleteTemplate(Query query) throws ModelException, FieldException {
+		DBStatementMeta meta = new DBStatementMeta(query);
+
+		StringBuilder buff = new StringBuilder();
+		String model = query.get(FieldNames.FIELD_TYPE);
+		ModelSchema schema = RecordFactory.getSchema(model);
+		if(schema == null) {
+			throw new ModelException("Model '" + model + "' not found");
+		}
+		ModelSchema mschema = null;
+		if(schema.getName().equals(ModelNames.MODEL_PARTICIPATION)) {
+			String pmodel = QueryUtil.findFieldValue(query, FieldNames.FIELD_PARTICIPATION_MODEL, null);
+			if(pmodel != null) {
+				mschema = RecordFactory.getSchema(pmodel);
+			}
+		}
+
+		if(!query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID)) {
+			throw new FieldException("An organization id is required to delete based on a query");
+		}
+		
+		String alias = getAlias(query);
+		String joinClause = getJoinStatement(meta, query);
+		String sql = "DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(mschema, model) + " " + alias + joinClause;
+		String queryClause = getQueryString(sql, query, meta);
+		
+		buff.append(queryClause);
+		meta.setSql(buff.toString());
+
+		return meta;
+	}
+	
 	public static DBStatementMeta getDeleteTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
 		buff.append("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getModel()));
@@ -342,10 +374,16 @@ public class StatementUtil {
 	}
 	
 	public static String getAlias(BaseRecord query) {
+		if(!query.inherits(ModelNames.MODEL_QUERY)) {
+			return null;
+		}
 		return getAlias(query, query.get(FieldNames.FIELD_TYPE));
 	}
 	
 	public static String getAlias(BaseRecord query, String model) {
+		if(!query.inherits(ModelNames.MODEL_QUERY)) {
+			return null;
+		}
 		String alias = query.get(FieldNames.FIELD_ALIAS);
 		if(alias == null) {
 			// alias = RandomStringUtils.randomAlphabetic(3).toUpperCase();
@@ -547,72 +585,81 @@ public class StatementUtil {
 	}
 	public static String getQueryClause(BaseRecord query, DBStatementMeta meta, String joinType)
 	{
+		return getQueryClause(query, null, meta, joinType);
+	}
+	private static String getQueryClause(BaseRecord query, BaseRecord baseQuery, DBStatementMeta meta, String joinType)
+	{
 		//DBStatementMeta meta = new DBStatementMeta();
 		String paramToken = "?";
 		StringBuilder matchBuff = new StringBuilder();
 		List<BaseRecord> queries = query.get(FieldNames.FIELD_FIELDS);
 		String alias = getAlias(query);
-		DBUtil util = IOSystem.getActiveContext().getDbUtil();
+		if(alias == null && baseQuery != null) {
+			alias = getAlias(baseQuery);
+		}
 		for (int i = 0; i < queries.size(); i++)
 		{
 			QueryField qf = new QueryField(queries.get(i));
 			boolean incField = true;
 			String fieldNameOrig = qf.get(FieldNames.FIELD_NAME);
-			String fieldName = alias + "." + IOSystem.getActiveContext().getDbUtil().getColumnName(fieldNameOrig);
+			
 			ComparatorEnumType fieldComp = ComparatorEnumType.valueOf(qf.get(FieldNames.FIELD_COMPARATOR));
 			if (i > 0) matchBuff.append(" " + joinType + " ");
 			if(fieldComp == ComparatorEnumType.GROUP_AND || fieldComp == ComparatorEnumType.GROUP_OR){
 				String useType = (fieldComp == ComparatorEnumType.GROUP_AND ? "AND" : "OR");
 				List<BaseRecord> queries2 = query.get(FieldNames.FIELD_FIELDS);
 				if(!queries2.isEmpty()){
-					matchBuff.append("(" + getQueryClause(qf, meta, useType) + ")");
+					matchBuff.append("(" + getQueryClause(qf, (baseQuery != null ? baseQuery : query), meta, useType) + ")");
 				}
 			}
-			else if (fieldComp == ComparatorEnumType.EQUALS)
-			{
-				matchBuff.append(fieldName + " = " + paramToken);
-			}
-			else if (fieldComp == ComparatorEnumType.NOT_EQUALS)
-			{
-				matchBuff.append(String.format("NOT %s = %s", fieldName, paramToken));
-			}
-			else if (fieldComp == ComparatorEnumType.LIKE)
-			{
-				matchBuff.append(String.format("%s LIKE %s", fieldName, paramToken));
-			}
-			else if (fieldComp == ComparatorEnumType.IN || fieldComp == ComparatorEnumType.NOT_IN)
-			{
-				String notStr = (fieldComp == ComparatorEnumType.NOT_IN ? " NOT " : "");
-				matchBuff.append(String.format("%s %s = ANY(%s)", fieldName, notStr, paramToken));
-				/*
-				if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-					matchBuff.append(String.format("%s %s IN (%s)", fieldName, notStr, paramToken));
+			else {
+				String fieldName = alias + "." + IOSystem.getActiveContext().getDbUtil().getColumnName(fieldNameOrig);
+				if (fieldComp == ComparatorEnumType.EQUALS)
+				{
+					matchBuff.append(fieldName + " = " + paramToken);
 				}
-				else if(util.getConnectionType() == ConnectionEnumType.H2) {
+				else if (fieldComp == ComparatorEnumType.NOT_EQUALS)
+				{
+					matchBuff.append(String.format("NOT %s = %s", fieldName, paramToken));
+				}
+				else if (fieldComp == ComparatorEnumType.LIKE)
+				{
+					matchBuff.append(String.format("%s LIKE %s", fieldName, paramToken));
+				}
+				else if (fieldComp == ComparatorEnumType.IN || fieldComp == ComparatorEnumType.NOT_IN)
+				{
+					String notStr = (fieldComp == ComparatorEnumType.NOT_IN ? " NOT " : "");
 					matchBuff.append(String.format("%s %s = ANY(%s)", fieldName, notStr, paramToken));
+					/*
+					if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+						matchBuff.append(String.format("%s %s IN (%s)", fieldName, notStr, paramToken));
+					}
+					else if(util.getConnectionType() == ConnectionEnumType.H2) {
+						matchBuff.append(String.format("%s %s = ANY(%s)", fieldName, notStr, paramToken));
+					}
+					*/
+					
 				}
-				*/
-				
-			}
-			else if (fieldComp == ComparatorEnumType.ANY || fieldComp == ComparatorEnumType.NOT_ANY)
-			{
-				String notStr = (fieldComp == ComparatorEnumType.NOT_ANY ? " NOT " : "");
-				matchBuff.append(String.format("%s %s = ANY(%s)", notStr, fieldName, paramToken));
-			}
-			else if (fieldComp == ComparatorEnumType.GREATER_THAN || fieldComp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
-			{
-				matchBuff.append(fieldName + " >" + (fieldComp == ComparatorEnumType.GREATER_THAN_OR_EQUALS ? "=" : "") + " " + paramToken);
-			}
-			else if (fieldComp == ComparatorEnumType.LESS_THAN || fieldComp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
-			{
-				matchBuff.append(fieldName + " <" + (fieldComp == ComparatorEnumType.LESS_THAN_OR_EQUALS ? "=" : "") + " " + paramToken);
-			}
-			else{
-				logger.error("Unhandled Comparator: " + fieldComp);
-				incField = false;
-			}
-			if(incField) {
-				meta.getFields().add(fieldNameOrig);
+				else if (fieldComp == ComparatorEnumType.ANY || fieldComp == ComparatorEnumType.NOT_ANY)
+				{
+					String notStr = (fieldComp == ComparatorEnumType.NOT_ANY ? " NOT " : "");
+					matchBuff.append(String.format("%s %s = ANY(%s)", notStr, fieldName, paramToken));
+				}
+				else if (fieldComp == ComparatorEnumType.GREATER_THAN || fieldComp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+				{
+					matchBuff.append(fieldName + " >" + (fieldComp == ComparatorEnumType.GREATER_THAN_OR_EQUALS ? "=" : "") + " " + paramToken);
+				}
+				else if (fieldComp == ComparatorEnumType.LESS_THAN || fieldComp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
+				{
+					matchBuff.append(fieldName + " <" + (fieldComp == ComparatorEnumType.LESS_THAN_OR_EQUALS ? "=" : "") + " " + paramToken);
+				}
+				else{
+					logger.error("Unhandled Comparator: " + fieldComp);
+					incField = false;
+				}
+				if(incField) {
+					meta.getFields().add(fieldNameOrig);
+				}
 			}
 
 		}
@@ -687,12 +734,24 @@ public class StatementUtil {
 		setStatementParameters(query, 1, statement);
 	}
 	public static int setStatementParameters(BaseRecord query, int startMarker, PreparedStatement statement) throws DatabaseException{
+		return setStatementParameters(query, null, startMarker, statement);
+	}
+	public static int setStatementParameters(BaseRecord query, BaseRecord baseQuery, int startMarker, PreparedStatement statement) throws DatabaseException{
 		List<BaseRecord> fields = query.get(FieldNames.FIELD_FIELDS);
 		
-		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		List<BaseRecord> joins = new ArrayList<>();
+		String model = null;
+		if(query.inherits(ModelNames.MODEL_QUERY)) {
+			joins = query.get(FieldNames.FIELD_JOINS);
+			model = query.get(FieldNames.FIELD_TYPE);
+		}
+		else if(baseQuery != null) {
+			joins = baseQuery.get(FieldNames.FIELD_JOINS);
+			model = baseQuery.get(FieldNames.FIELD_TYPE);
+		}
 		int paramMarker = startMarker;
 		for(BaseRecord j : joins) {
-			paramMarker = setStatementParameters(j, paramMarker, statement);
+			paramMarker = setStatementParameters(j, baseQuery, paramMarker, statement);
 		}
 		/*
 		if(joins.size() > 0) {
@@ -701,7 +760,7 @@ public class StatementUtil {
 		*/
 		int len = fields.size();
 
-		String model = query.get(FieldNames.FIELD_TYPE);
+		
 		ModelSchema schema = RecordFactory.getSchema(model);
 		for(int i = 0; i < len; i++){
 			BaseRecord field = fields.get(i);
@@ -715,7 +774,7 @@ public class StatementUtil {
 				throw new DatabaseException("Unexpected field type for " + field.get(FieldNames.FIELD_NAME));
 			}
 			if(comp == ComparatorEnumType.GROUP_AND || comp == ComparatorEnumType.GROUP_OR){
-				paramMarker = setStatementParameters(field, paramMarker, statement);
+				paramMarker = setStatementParameters(field, (baseQuery != null ? baseQuery : query), paramMarker, statement);
 			}
 			else if (
 				comp == ComparatorEnumType.EQUALS

@@ -14,6 +14,7 @@ public interface IWriter {
 	public int write(BaseRecord[] recs) throws WriterException;
 	public boolean write(BaseRecord rec) throws WriterException;
 	public boolean write(BaseRecord rec, OutputStream stream) throws WriterException;
+	public int delete(Query query) throws WriterException;
 	public boolean delete(BaseRecord rec) throws WriterException;
 	public boolean delete(BaseRecord rec, OutputStream stream) throws WriterException;
 	public void translate(RecordOperation operation, BaseRecord rec);

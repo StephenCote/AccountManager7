@@ -16,11 +16,13 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.MemoryWriter;
+import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
@@ -51,8 +53,31 @@ public class DBWriter extends MemoryWriter {
 	}
 	
 
+	@Override
+	public synchronized int delete(Query query) throws WriterException {
+		
+		int deleted = 0;
+		CacheUtil.clearCache(query);
+	    try (Connection con = dataSource.getConnection()){
+			DBStatementMeta meta = StatementUtil.getDeleteTemplate(query);
+			if(meta == null) {
+				return deleted;
+			}
 
+	    	PreparedStatement statement = con.prepareStatement(meta.getSql());
+			StatementUtil.setStatementParameters(query, statement);
+	    	deleted = statement.executeUpdate();
 
+	    	statement.close();
+		} catch (SQLException | DatabaseException | ModelException | FieldException e) {
+			logger.error(e);
+	    }
+		
+
+		return deleted;
+	}
+
+	@Override
 	public synchronized boolean delete(BaseRecord model) throws WriterException {
 		//RecordOperation op = RecordOperation.DELETE;
 		boolean success = false;

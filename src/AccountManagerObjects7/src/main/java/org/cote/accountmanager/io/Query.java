@@ -163,7 +163,9 @@ public class Query extends LooseRecord{
 	public List<BaseRecord> getJoins(){
 		return get(FieldNames.FIELD_JOINS);
 	}
-	
+	public BaseRecord getQueryField(String fieldName) {
+		return QueryUtil.findField(this,  fieldName);
+	}
 	public boolean hasQueryField(String name) {
 		if(name == null) {
 			return false;
@@ -187,7 +189,7 @@ public class Query extends LooseRecord{
 	}
 	public <T> QueryField field(String fieldName, ComparatorEnumType comparator, T value, BaseRecord parent) {
 		if(hasQueryField(fieldName)) {
-			logger.warn("Query field '" + fieldName + "' defined more than once");
+			logger.info("Query field '" + fieldName + "' defined more than once.  This is expected for compound queries");
 		}
 		QueryField qfield = null;
 		FieldType itype = getIRecord().getField(fieldName);
@@ -208,7 +210,7 @@ public class Query extends LooseRecord{
 
 			}
 			else {
-				logger.error("**** Null itype for " + getIRecord().getModel() + "." + fieldName);
+				// logger.error("**** Null itype for " + getIRecord().getModel() + "." + fieldName);
 				qfield.setString(FieldNames.FIELD_VALUE, null);
 			}
 		} catch (FieldException | ModelNotFoundException | ValueException | ModelException e) {

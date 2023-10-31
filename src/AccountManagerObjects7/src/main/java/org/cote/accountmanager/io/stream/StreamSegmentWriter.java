@@ -13,6 +13,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IWriter;
+import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.record.RecordOperation;
@@ -157,6 +158,11 @@ public class StreamSegmentWriter implements IWriter {
 	    } catch (IOException e) {
 			logger.error(e);
 		}
+	}
+
+	@Override
+	public int delete(Query query) throws WriterException {
+		throw new WriterException("Bulk delete operations based on a query are not supported");
 	}
 
 }

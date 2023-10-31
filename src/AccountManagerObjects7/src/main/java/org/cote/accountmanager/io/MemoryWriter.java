@@ -80,5 +80,10 @@ public class MemoryWriter extends RecordWriter {
 		
 	}
 
+	@Override
+	public int delete(Query query) throws WriterException {
+		throw new WriterException(WriterException.NOT_IMPLEMENTED);
+	}
+
 
 }

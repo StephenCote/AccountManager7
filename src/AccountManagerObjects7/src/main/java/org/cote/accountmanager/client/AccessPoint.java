@@ -191,12 +191,16 @@ public class AccessPoint {
 				}
 				if(setKey != null) {
 					if(!containerSet.containsKey(setKey)) {
-						logger.info("Find - " + (useParent ? obj.getModel() : ModelNames.MODEL_GROUP) + " " + setId);
+						if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+							logger.warn("Find - " + (useParent ? obj.getModel() : ModelNames.MODEL_GROUP) + " " + setId);
+						}
 						BaseRecord cont = findById(contextUser, (useParent ? obj.getModel() : ModelNames.MODEL_GROUP), setId);
 						if(cont != null) {
 							prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, cont);
 							containerSet.put(setKey, prr);
-							logger.warn("Container-level bulk approval will be used for " + setKey);
+							if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+								logger.warn("Container-level bulk approval will be used for " + setKey);
+							}
 						}
 						else {
 							logger.warn("Failed to read container: falling out of bulk approval");
@@ -332,6 +336,60 @@ public class AccessPoint {
 		
 	}
 	
+	public boolean delete(BaseRecord contextUser, Query query) {
+		boolean outBool = false;
+
+		ActionEnumType aet = ActionEnumType.DELETE;
+
+		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, null);
+		PolicyResponseType prr = null;
+
+		if(contextUser == null || query == null) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "One or more required parameters was null");
+			return outBool;
+		}
+
+		if((prr = authorizeQuery(contextUser, query)) == null || prr.getType() != PolicyResponseEnumType.PERMIT) {
+			logger.error("One or more query fields were not or could not be authorized");
+			if(prr != null) {
+				logger.error(prr.toFullString());
+			}
+			
+			AuditUtil.closeAudit(audit, prr, "One or more query fields were not or could not be authorized: " + query.key());
+			return false;
+		}
+		
+		logger.warn("TODO: Check locks based on query");
+		
+		/// Need to add in the policy check for a variable delete request
+		///
+		AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Not implemented");
+		return false;
+		/*
+		if(isLocked(contextUser, object)) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.DENY, "One or more fields are locked");
+			return outBool;
+		}
+		*/
+		/*
+		PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canDelete(contextUser, contextUser, object);
+		if(prr.getType() == PolicyResponseEnumType.PERMIT) {
+			if(context.getRecordUtil().deleteRecord(object)) {
+				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, null);
+				outBool = true;
+			}
+			else {
+				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to delete record");
+			}
+		}
+		else {
+			AuditUtil.closeAudit(audit, prr, null);
+		}
+		return outBool;
+		*/
+		
+	}
+	
 	public BaseRecord findByObjectId(BaseRecord contextUser, String model, String objectId) {
 		if(model == null || objectId == null) {
 			failAudit(ActionEnumType.READ, ResponseEnumType.INVALID, contextUser, null, null, "Invalid model or objectId");
@@ -422,9 +480,12 @@ public class AccessPoint {
 			BaseRecord chkRec = qr.getResults()[0];
 			//logger.info(qr.toFullString());
 			AuditUtil.auditResource(audit, rec);
-			/// Evaluating authorization on the object will 
+			/// Evaluating authorization on the object will
+			if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+				logger.warn(chkRec.toFullString());
+			}
 			prr = IOSystem.getActiveContext().getAuthorizationUtil().canRead(contextUser, contextUser, chkRec);
-			//logger.info(chkRec.toFullString());
+			
 			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
 				rec = chkRec;
 			}

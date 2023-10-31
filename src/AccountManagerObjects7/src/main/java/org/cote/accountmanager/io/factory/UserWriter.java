@@ -8,6 +8,7 @@ import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IWriter;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.record.RecordOperation;
@@ -81,6 +82,11 @@ public class UserWriter implements IWriter {
 	public void translate(RecordOperation operation, BaseRecord rec) {
 		// TODO Auto-generated method stub
 		
+	}
+
+	@Override
+	public int delete(Query query) throws WriterException {
+		throw new WriterException("Bulk delete operations based on a query are not supported");
 	}
 
 	
