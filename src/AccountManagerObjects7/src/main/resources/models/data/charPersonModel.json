@@ -1,0 +1,19 @@
+{
+	"name": "data.charPerson",
+	"inherits": [
+		"identity.person",
+		"common.alignment"
+	],
+	"factory": "org.cote.accountmanager.factory.WorldFactory",
+	"group": "Persons",
+	"icon": "note",
+	"label": "Character Person",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "trades",
+			"type": "list",
+			"baseType": "string"
+		}
+	]
+}

@@ -19,6 +19,18 @@
 		"foreign": true
 	},
 	{
+		"name": "addresses",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "contacts",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "features",
 		"type": "list",
 		"baseType": "string"

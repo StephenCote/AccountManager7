@@ -1,52 +1,62 @@
 {
-"name": "identity.address",
-"inherits": ["data.directory", "common.description"],
-"icon": "maps_home_work",
-"label": "Address",
-"fields": [
-	{
-	"name": "street",
-	"type": "string",
-	"maxLength": 127
-	}
-	,{
-	"name": "street2",
-	"type": "string",
-	"maxLength": 127
-	}
-	,{
-	"name": "city",
-	"type": "string",
-	"maxLength": 127
-	}
-	,{
-	"name": "region",
-	"type": "string",
-	"maxLength": 127
-	}
-	,{
-	"name": "state",
-	"type": "string",
-	"maxLength": 40
-	}
-	,{
-	"name": "postalCode",
-	"type": "string",
-	"maxLength": 12
-	}
-	,{
-	"name": "country",
-	"type": "string",
-	"maxLength": 40
-	}
-	,{
-	"name": "locationType",
-	"baseClass": "org.cote.accountmanager.schema.type.LocationEnumType",
-	"type": "enum",
-	"maxLength": 16
-	}
-	,{
-	"name": "preferred",
-	"type": "boolean"
-	}
-]}
+	"name": "identity.address",
+	"inherits": [
+		"data.directory",
+		"common.description"
+	],
+	"icon": "maps_home_work",
+	"label": "Address",
+	"fields": [
+		{
+			"name": "street",
+			"type": "string",
+			"maxLength": 127
+		},
+		{
+			"name": "street2",
+			"type": "string",
+			"maxLength": 127
+		},
+		{
+			"name": "city",
+			"type": "string",
+			"maxLength": 127
+		},
+		{
+			"name": "region",
+			"type": "string",
+			"maxLength": 127
+		},
+		{
+			"name": "state",
+			"type": "string",
+			"maxLength": 40
+		},
+		{
+			"name": "postalCode",
+			"type": "string",
+			"maxLength": 12
+		},
+		{
+			"name": "country",
+			"type": "string",
+			"maxLength": 40
+		},
+		{
+			"name": "locationType",
+			"baseClass": "org.cote.accountmanager.schema.type.LocationEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "location",
+			"baseModel": "data.geoLocation",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "preferred",
+			"type": "boolean"
+		}
+	]
+}

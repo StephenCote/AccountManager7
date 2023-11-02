@@ -6,12 +6,17 @@
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"dedicatedParticipation": true,
-	"constraints": ["geonameid, parentId, groupId, organizationId"],
+	"constraints": ["geonameid, altgeonameid, parentId, groupId, organizationId"],
+	"hints": ["geonameid"],
 	"fields": [
 		{
 			"name": "altName",
 			"type": "string",
 			"maxLength": 256
+		},
+		{
+			"name": "altgeonameid",
+			"type": "int"
 		},
 		{
 			"name": "code",
@@ -20,6 +25,11 @@
 		},	
 		{
 			"name": "geoType",
+			"type": "string",
+			"maxLength": 16
+		},
+		{
+			"name": "altType",
 			"type": "string",
 			"maxLength": 16
 		},
