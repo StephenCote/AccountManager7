@@ -1,4 +1,4 @@
-package org.cote.accountmanager.parsers;
+package org.cote.accountmanager.parsers.wordnet;
 
 import java.io.BufferedReader;
 import java.io.FileInputStream;
@@ -26,6 +26,9 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.parsers.IParseWriter;
+import org.cote.accountmanager.parsers.ParseConfiguration;
+import org.cote.accountmanager.parsers.ParseMap;
 import org.cote.accountmanager.parsers.data.DataInterceptor;
 import org.cote.accountmanager.parsers.data.DataParseWriter;
 import org.cote.accountmanager.parsers.geo.GeoParseWriter;

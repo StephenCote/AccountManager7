@@ -46,7 +46,7 @@ import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.parsers.GenericParser;
 import org.cote.accountmanager.parsers.ParseConfiguration;
 import org.cote.accountmanager.parsers.ParseMap;
-import org.cote.accountmanager.parsers.WordNetParser;
+import org.cote.accountmanager.parsers.wordnet.WordNetParser;
 import org.cote.accountmanager.parsers.data.DataParseWriter;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
