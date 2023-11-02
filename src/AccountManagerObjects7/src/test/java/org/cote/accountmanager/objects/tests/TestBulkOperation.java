@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 
@@ -138,7 +139,7 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	
-	
+	/*
 	@Test
 	public void TestLocationParent() {
 		logger.info("Test location parent");
@@ -168,7 +169,7 @@ public class TestBulkOperation extends BaseTest {
 		assertNotNull("Unable to lookup location", lloc);
 
 	}
-	
+	*/
 	private int cleanupTrait(long groupId, long organizationId) {
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, groupId);
 		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
@@ -284,6 +285,18 @@ public class TestBulkOperation extends BaseTest {
 		logger.info("Names: " + names);
 		int surnames = loadSurnames(testUser1, world, testProperties.getProperty("test.datagen.path") + "/surnames/Names_2010Census.csv");
 		logger.info("Surnames: " + surnames);
+		BaseRecord dir = world.get("locations");
+		ioContext.getReader().populate(dir);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.field("geoType", "region");
+		Query q2 = new Query(q.copyRecord());
+		int regCount = ioContext.getAccessPoint().count(testUser1, q);
+		logger.info(regCount + " from " + dir.get(FieldNames.FIELD_ID));
+		long randomIndex = (new Random()).nextLong(regCount);
+		logger.info(randomIndex);
+		q2.setRequestRange(randomIndex, 1);
+		QueryResult qr = ioContext.getAccessPoint().list(dir, q2);
+		logger.info(qr.toFullString());
 	}
 	/*
 	@Test

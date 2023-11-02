@@ -3,6 +3,7 @@
 	"inherits": [
 		"data.directory",
 		"common.description",
+		"common.alignment",
 		"policy.score"
 	],
 	"constraints": ["name, type, groupId, organizationId"],
@@ -13,12 +14,6 @@
 		{
 			"name": "type",
 			"baseClass": "org.cote.accountmanager.schema.type.TraitEnumType",
-			"type": "enum",
-			"maxLength": 32
-		},
-		{
-			"name": "alignment",
-			"baseClass": "org.cote.accountmanager.schema.type.AlignmentEnumType",
 			"type": "enum",
 			"maxLength": 32
 		},

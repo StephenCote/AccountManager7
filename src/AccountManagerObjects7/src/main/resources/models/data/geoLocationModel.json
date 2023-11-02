@@ -69,6 +69,11 @@
 			"maxLength": 127		
 		},
 		{
+			"name": "postalCode",
+			"type": "string",
+			"maxLength": 10		
+		},
+		{
 			"name": "geonameid",
 			"type": "int"
 		}

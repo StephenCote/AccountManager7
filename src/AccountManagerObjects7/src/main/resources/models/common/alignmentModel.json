@@ -1,0 +1,12 @@
+{
+	"name": "common.alignment",
+	"abstract": "true",
+	"fields":[
+		{
+			"name": "alignment",
+			"baseClass": "org.cote.accountmanager.schema.type.AlignmentEnumType",
+			"type": "enum",
+			"maxLength": 32
+		}
+	]
+}

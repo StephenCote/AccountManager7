@@ -5,12 +5,12 @@
 "label": "Address",
 "fields": [
 	{
-	"name": "addressLine1",
+	"name": "street",
 	"type": "string",
 	"maxLength": 127
 	}
 	,{
-	"name": "addressLine2",
+	"name": "street2",
 	"type": "string",
 	"maxLength": 127
 	}

@@ -131,6 +131,7 @@ public class ModelNames {
 	public static final String MODEL_LOCATION = "data.location";
 	public static final String MODEL_GEO_LOCATION = "data.geoLocation";
 	public static final String MODEL_WORLD = "data.world";
+	public static final String MODEL_ALIGNMENT = "common.alignment";
 	
 	public static List<String> MODELS = Arrays.asList(
 		MODEL_ORGANIZATION, MODEL_SIMPLE_BYTE_STORE, MODEL_USER, MODEL_ACCOUNT, MODEL_PERSON, MODEL_GROUP, MODEL_ATTRIBUTE, MODEL_ROLE,

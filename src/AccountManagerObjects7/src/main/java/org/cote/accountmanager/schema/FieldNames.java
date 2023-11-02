@@ -286,4 +286,10 @@ public class FieldNames {
 		
 		/// Import
 		public static final String FIELD_ALIGNMENT = "alignment";
+		public static final String FIELD_CITY = "city";
+		public static final String FIELD_STATE = "state";
+		public static final String FIELD_REGION = "region";
+		public static final String FIELD_POST = "postalCode";
+		public static final String FIELD_STREET = "street";
+		public static final String FIELD_STREET2 = "street2";
 }
