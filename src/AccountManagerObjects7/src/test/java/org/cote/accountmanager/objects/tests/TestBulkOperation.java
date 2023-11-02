@@ -47,6 +47,7 @@ import org.cote.accountmanager.parsers.GenericParser;
 import org.cote.accountmanager.parsers.ParseConfiguration;
 import org.cote.accountmanager.parsers.ParseMap;
 import org.cote.accountmanager.parsers.WordNetParser;
+import org.cote.accountmanager.parsers.data.DataParseWriter;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.record.BaseRecord;
@@ -183,7 +184,206 @@ public class TestBulkOperation extends BaseTest {
 	
 
 	private boolean resetCountryInfo = false;
+	
+	
+	private String worldName = "Demo World";
+	private String worldPath = "~/Worlds";
+	
+	private BaseRecord getWorld(BaseRecord user, String[] features) {
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, worldPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord rec = ioContext.getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
+		if(rec == null) {
+			ParameterList plist = ParameterList.newParameterList("path", worldPath);
+			plist.parameter("name", worldName);
+			try {
+				BaseRecord world = ioContext.getFactory().newInstance(ModelNames.MODEL_WORLD, user, null, plist);
+				world.set("features", Arrays.asList(features));
+				ioContext.getAccessPoint().create(user, world);
+				rec = ioContext.getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
+			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
 
+		}
+		
+		return rec;
+	}
+	
+	private int loadOccupations(BaseRecord user, BaseRecord world, String basePath) {
+		ioContext.getReader().populate(world);
+		BaseRecord occDir = world.get("occupations");
+		ioContext.getReader().populate(occDir);
+
+		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, resetCountryInfo);
+		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
+
+	}
+	
+	private int loadLocations(BaseRecord user, BaseRecord world, String basePath) {
+		List<String> feats = world.get("features");
+		String[] features = feats.toArray(new String[0]);
+		ioContext.getReader().populate(world);
+		BaseRecord locDir = world.get("locations");
+		ioContext.getReader().populate(locDir);
+
+		GeoParser.loadInfo(user, locDir.get(FieldNames.FIELD_PATH), testProperties.getProperty("test.datagen.path") + "/location", features, resetCountryInfo);
+		
+		return ioContext.getAccessPoint().count(user, GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID)));
+
+	}
+	private int loadDictionary(BaseRecord user, BaseRecord world, String basePath) {
+		AuditUtil.setLogToConsole(false);
+
+		ioContext.getReader().populate(world);
+		BaseRecord dictDir = world.get("dictionary");
+		ioContext.getReader().populate(dictDir);
+		
+		String groupPath = dictDir.get(FieldNames.FIELD_PATH);
+		String wnetPath = basePath;
+		
+		WordNetParser.loadAdverbs(user, groupPath, wnetPath, 0, false);
+		WordNetParser.loadAdjectives(user, groupPath, wnetPath, 0, false);
+		WordNetParser.loadNouns(user, groupPath, wnetPath, 0, false);
+		WordNetParser.loadVerbs(user, groupPath, wnetPath, 0, false);
+		return ioContext.getAccessPoint().count(user, WordNetParser.getQuery(user, null, groupPath));
+	}
+	private int loadNames(BaseRecord user, BaseRecord world, String basePath) {
+		ioContext.getReader().populate(world);
+		BaseRecord nameDir = world.get("names");
+		ioContext.getReader().populate(nameDir);
+		
+		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
+
+		WordParser.loadNames(user, groupPath, basePath, resetCountryInfo);
+		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, groupPath));
+
+	}
+	private int loadSurnames(BaseRecord user, BaseRecord world, String basePath) {
+		ioContext.getReader().populate(world);
+		BaseRecord nameDir = world.get("surnames");
+		ioContext.getReader().populate(nameDir);
+		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
+		WordParser.loadSurnames(user, groupPath, basePath,resetCountryInfo);
+		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
+	}
+	
+	@Test
+	public void TestWorld() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord world = getWorld(testUser1, new String[] {"GB", "IE"});
+		assertNotNull("World is null", world);
+		int dict = loadDictionary(testUser1, world, testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict");
+		logger.info("Dictionary words: " + dict);
+		int locs = loadLocations(testUser1, world, testProperties.getProperty("test.datagen.path") + "/location");
+		logger.info("Locations: " + locs);
+		int occs = loadOccupations(testUser1, world, testProperties.getProperty("test.datagen.path") + "/occupations/noc_2021_version_1.0_-_elements.csv");
+		logger.info("Occupations: " + occs);
+		int names = loadNames(testUser1, world, testProperties.getProperty("test.datagen.path") + "/names/yob2022.txt");
+		logger.info("Names: " + names);
+		int surnames = loadSurnames(testUser1, world, testProperties.getProperty("test.datagen.path") + "/surnames/Names_2010Census.csv");
+		logger.info("Surnames: " + surnames);
+	}
+	/*
+	@Test
+	public void TestWorldModel() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList("path", worldPath);
+		plist.parameter("name", worldName);
+		BaseRecord world = null;
+		
+		try {
+			String dataPath = "~/Demo Path";
+			//BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, dataPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+			String dataName = "Test Data - " + UUID.randomUUID().toString();
+			BaseRecord testData = newTestData(testUser1, "~/Demo Data", dataName, "Example data");
+			BaseRecord nrec = ioContext.getAccessPoint().create(testUser1, testData);
+			logger.info(nrec.toFullString());
+			world = ioContext.getFactory().newInstance(ModelNames.MODEL_WORLD, testUser1, null, plist);
+			// world = ioContext.getFactory().newInstance(ModelNames.MODEL_WORLD);
+			//logger.info(world.inherits(ModelNames.MODEL_DIRECTORY));
+		}
+		catch(FactoryException e) {
+			logger.error(e);
+		}
+		assertNotNull("World is null", world);
+		logger.info(world.toFullString());
+	}
+	*/
+
+	/*
+	@Test
+	public void TestWordNetParse() {
+		
+		AuditUtil.setLogToConsole(false);
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		String groupPath = "~/Dictionary";
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
+		
+		WordNetParser.loadAdverbs(testUser1, groupPath, wnetPath, 0, false);
+		WordNetParser.loadAdjectives(testUser1, groupPath, wnetPath, 0, false);
+		WordNetParser.loadNouns(testUser1, groupPath, wnetPath, 0, false);
+		WordNetParser.loadVerbs(testUser1, groupPath, wnetPath, 0, false);
+		int count = ioContext.getAccessPoint().count(testUser1, WordNetParser.getQuery(testUser1, null, groupPath));
+		logger.info("Dictionary word count: " + count);
+	}
+	*/
+	/*
+	@Test
+	public void TestWordNetParse() {
+		
+		AuditUtil.setLogToConsole(false);
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		String groupPath = "~/Bulk/Word - " + UUID.randomUUID().toString();
+
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		assertNotNull("Directory is null", dir);
+
+		String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
+
+		try {
+			int maxLines = 10000;
+			// "adj", "adv", "verb", 
+			String[] exts = new String[] {"noun"};
+			for(String ext: exts) {
+				long start = System.currentTimeMillis();
+				logger.info("Processing: " + ext);
+				
+				
+				List<BaseRecord> words = WordNetParser.parseWNDataFile(testUser1, groupPath, wnetPath + "/data." + ext, maxLines, new DataParseWriter());
+				long stop = System.currentTimeMillis();
+				logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
+				
+				// assertTrue("Expected records to match max size " + maxLines + " but instead received " + words.size(), ((maxLines == 0 && words.size() > 0 )|| (words.size() == maxLines)));
+
+				start = System.currentTimeMillis();
+				ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]), true);
+				stop = System.currentTimeMillis();
+				logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
+				
+			}
+			
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+	}
+	*/
+	
+	/*
 	@Test
 	public void TestLoadCountryInfo() {
 		logger.info("Test load geolocation data");
@@ -194,7 +394,7 @@ public class TestBulkOperation extends BaseTest {
 
 		String groupPath = "~/CountryInfo";
 
-		long records = GeoParser.loadInfo(testUser1, groupPath, testProperties.getProperty("test.datagen.path") + "/location", new String[] {"GB"}, resetCountryInfo);
+		long records = GeoParser.loadInfo(testUser1, groupPath, testProperties.getProperty("test.datagen.path") + "/location", new String[] {"GB", "IE"}, resetCountryInfo);
 		logger.info("Total geolocation records in " + groupPath + ": " + records);
 	}
 	
@@ -215,10 +415,9 @@ public class TestBulkOperation extends BaseTest {
 			logger.error(e);
 			e.printStackTrace();
 		}
-		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, groupPath));
+		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, ModelNames.MODEL_WORD, groupPath));
 		logger.info("Total word records in " + groupPath + ": " + records);
 	}
-
 	
 	@Test
 	public void TestSurNamesParse() {
@@ -231,16 +430,15 @@ public class TestBulkOperation extends BaseTest {
 		String groupPath = "~/Words/SurNames";
 		String wnetPath = testProperties.getProperty("test.datagen.path") + "/surnames/Names_2010Census.csv";
 		try {
-			WordParser.loadSurnames(testUser1, groupPath, wnetPath, true);
+			WordParser.loadSurnames(testUser1, groupPath, wnetPath, false);
 		}
 		catch(Exception e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
-		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, groupPath));
+		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, ModelNames.MODEL_CENSUS_WORD, groupPath));
 		logger.info("Total word records in " + groupPath + ": " + records);
 	}
-	
 	
 	@Test
 	public void TestOccupationsParse() {
@@ -259,10 +457,10 @@ public class TestBulkOperation extends BaseTest {
 			logger.error(e);
 			e.printStackTrace();
 		}
-		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, groupPath));
+		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, ModelNames.MODEL_WORD, groupPath));
 		logger.info("Total word records in " + groupPath + ": " + records);
 	}
-	
+	*/
 	/*
 	@Test
 	public void TestLoadCountryInfoRandomBulk() {
@@ -494,8 +692,6 @@ public class TestBulkOperation extends BaseTest {
 			logger.error(e);
 			e.printStackTrace();
 		}
-
-		
 	}
 	
 	@Test
