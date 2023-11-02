@@ -288,14 +288,14 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord dir = world.get("locations");
 		ioContext.getReader().populate(dir);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field("geoType", "region");
+		q.field("geoType", "feature");
 		Query q2 = new Query(q.copyRecord());
 		int regCount = ioContext.getAccessPoint().count(testUser1, q);
 		logger.info(regCount + " from " + dir.get(FieldNames.FIELD_ID));
 		long randomIndex = (new Random()).nextLong(regCount);
 		logger.info(randomIndex);
 		q2.setRequestRange(randomIndex, 1);
-		QueryResult qr = ioContext.getAccessPoint().list(dir, q2);
+		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q2);
 		logger.info(qr.toFullString());
 	}
 	/*
