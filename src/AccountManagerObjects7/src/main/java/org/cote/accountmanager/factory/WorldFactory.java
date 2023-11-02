@@ -42,6 +42,8 @@ public class WorldFactory extends FactoryBase {
 				IPath pu = IOSystem.getActiveContext().getPathUtil();
 				try {
 					long orgId = contextUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+					newRecord.set("addresses", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Addresses", GroupEnumType.DATA.toString(), orgId));
+					newRecord.set("contacts", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Contacts", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("population", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Population", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("locations", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Locations", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("events", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Events", GroupEnumType.DATA.toString(), orgId));

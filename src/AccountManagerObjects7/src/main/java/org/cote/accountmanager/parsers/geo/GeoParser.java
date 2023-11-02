@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.apache.commons.csv.CSVFormat;
+import org.apache.commons.csv.QuoteMode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -20,6 +21,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.parsers.GenericParser;
 import org.cote.accountmanager.parsers.ParseConfiguration;
 import org.cote.accountmanager.parsers.ParseMap;
+import org.cote.accountmanager.parsers.data.DataInterceptor;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -33,7 +35,8 @@ public class GeoParser {
 	/// Parser for geolocation data from GeoNames Gazetteer - http://download.geonames.org/export/dump/
 
 	public static final Logger logger = LogManager.getLogger(GeoParser.class);
-	
+	/// .Builder.create().setDelimiter('\t').setRecordSeparator("\r\n").setQuote('"').setIgnoreSurroundingSpaces(true).build()
+	private static CSVFormat defaultFormat = CSVFormat.TDF;
 	public static Query getQuery(String geoType, String isoCode, long groupId, long organizationId) {
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, groupId);
 		if(geoType != null) {
@@ -79,87 +82,115 @@ public class GeoParser {
 
 	public static long loadInfo(BaseRecord user, String groupPath, String basePath, String[] isoCodes, boolean resetCountryInfo) {
 		long count = 0;
-		int mcount = loadCountryInfo(user, groupPath, basePath, 0, resetCountryInfo);
-		if(mcount == 0) {
-		logger.error("Failed to load country info");
-			return 0;
-		}
-		count += mcount;
-		mcount = loadAdmin1Info(user, groupPath, basePath, 0, resetCountryInfo);
-		if(mcount == 0) {
-		logger.error("Failed to load admin1 info");
-			return 0;
-		}
-		count += mcount;
-		
-		mcount = loadAdmin2Info(user, groupPath, basePath, 0, resetCountryInfo);
-		if(mcount == 0) {
-		logger.error("Failed to load admin2 info");
-			return 0;
-		}
-		count += mcount;
-		for(String iso : isoCodes) {
-			mcount = loadFeatureInfo(user, groupPath, basePath, iso, 0, resetCountryInfo);
+		try {
+			int mcount = loadCountryInfo(user, groupPath, basePath, 0, resetCountryInfo);
 			if(mcount == 0) {
-				logger.error("Failed to load feature info for " + iso);
+				logger.error("Failed to load country info");
 				return 0;
 			}
 			count += mcount;
+			mcount = loadAdmin1Info(user, groupPath, basePath, 0, resetCountryInfo);
+			if(mcount == 0) {
+			logger.error("Failed to load admin1 info");
+				return 0;
+			}
+			count += mcount;
+			
+			mcount = loadAdmin2Info(user, groupPath, basePath, 0, resetCountryInfo);
+			if(mcount == 0) {
+			logger.error("Failed to load admin2 info");
+				return 0;
+			}
+			count += mcount;
+			
+			mcount = loadAlternateNamesInfo(user, groupPath, basePath, 0, resetCountryInfo);
+			if(mcount == 0) {
+			logger.error("Failed to load alternate names info");
+				return 0;
+			}
+			count += mcount;
+			
+			for(String iso : isoCodes) {
+				mcount = loadFeatureInfo(user, groupPath, basePath, iso, 0, false);
+				if(mcount == 0) {
+					logger.error("Failed to load feature info for " + iso);
+					return 0;
+				}
+				count += mcount;
+			}
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
 		}
 		return count;
 	}
 	
 	public static int loadCountryInfo(BaseRecord user, String groupPath, String basePath, int maxLines,boolean resetCountryInfo) {
-		logger.info("Load country information into " + groupPath);
+		// logger.info("Load country information into " + groupPath);
 		int count = countCleanupLocation(user, groupPath, "country", null, resetCountryInfo);
 		if(count == 0) {
 			ParseConfiguration cfg = GeoParser.newCountryParseConfiguration(user, groupPath, basePath, maxLines);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
 		}
 		return count;
 	}
 	
 	
 	public static int loadAdmin1Info(BaseRecord user, String groupPath, String basePath, int maxLines, boolean resetCountryInfo) {
-		logger.info("Load admin1 information into " + groupPath);
+		// logger.info("Load admin1 information into " + groupPath);
 		int count = countCleanupLocation(user, groupPath, "admin1", null, resetCountryInfo);
 		if(count == 0) {
 			ParseConfiguration cfg = GeoParser.newAdmin1ParseConfiguration(user, groupPath, basePath, maxLines);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
 		}
 
 		return count;
 	}
 	
 	public static int loadAdmin2Info(BaseRecord user, String groupPath, String basePath, int maxLines, boolean resetCountryInfo) {
-		logger.info("Load admin2 information into " + groupPath);
+		// logger.info("Load admin2 information into " + groupPath);
 		int count = countCleanupLocation(user, groupPath, "admin2", null, resetCountryInfo);
 		if(count == 0) {
 			ParseConfiguration cfg = GeoParser.newAdmin2ParseConfiguration(user, groupPath, basePath, maxLines);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
 		}
 
 		return count;
 	}
 	
 	public static int loadFeatureInfo(BaseRecord user, String groupPath, String basePath, String isoCode, int maxLines, boolean resetCountryInfo) {
-		logger.info("Load " + isoCode + " feature information into " + groupPath);
+		// logger.info("Load " + isoCode + " feature information into " + groupPath);
 		int count = countCleanupLocation(user, groupPath, "feature", isoCode, resetCountryInfo);
 		if(count == 0) {
 			ParseConfiguration cfg = GeoParser.newFeatureParseConfiguration(user, groupPath, basePath, isoCode, maxLines);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
+		}
+
+		return count;
+	}
+	
+	public static int loadAlternateNamesInfo(BaseRecord user, String groupPath, String basePath, int maxLines, boolean resetCountryInfo) {
+		// logger.info("Load alternate names information into " + groupPath);
+		int count = countCleanupLocation(user, groupPath, "alternateName", null, resetCountryInfo);
+		if(count == 0) {
+			ParseConfiguration cfg = GeoParser.newAlternateNameParseConfiguration(user, groupPath, basePath, maxLines);
+			count = importFile(cfg);
+		}
+		else {
+			// logger.info(count + " records have already been loaded.");
 		}
 
 		return count;
@@ -202,13 +233,49 @@ public class GeoParser {
 		
 		ParseConfiguration cfg = new ParseConfiguration();
 		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
-		cfg.setCsvFormat(CSVFormat.TDF);
+		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/countryInfo.txt");
 		cfg.setGroupPath(groupPath);
 		cfg.setMaxCount(maxLines);
 		cfg.setOwner(user);
 		cfg.setTemplate(template);
+		
+		return cfg;
+	}
+	
+	public static ParseConfiguration newAlternateNameParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
+		logger.info("New Alternate Name Parse Configuration");
+		List<ParseMap> map = new ArrayList<>();
+		map.add(new ParseMap("altgeonameid", 1));
+		map.add(new ParseMap("geonameid", 0));
+		map.add(new ParseMap("altType", 2));
+		map.add(new ParseMap("name", 3));
+		
+	
+		BaseRecord template = null;
+		try {
+			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
+			template.set("geoType", "alternateName");
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	
+		ParseConfiguration cfg = new ParseConfiguration();
+		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
+		cfg.setCsvFormat(defaultFormat);
+		cfg.setFields(map.toArray(new ParseMap[0]));
+		cfg.setFilePath(basePath + "/alternateNamesV2.txt");
+		cfg.setGroupPath(groupPath);
+		cfg.setMaxCount(maxLines);
+		cfg.setOwner(user);
+		cfg.setTemplate(template);
+
+		ParseMap filter = new ParseMap(null, 2);
+		filter.setMatchValue("post");
+		cfg.setFilters(new ParseMap[] {filter});
+		cfg.setInterceptor(new DataInterceptor());
 		
 		return cfg;
 	}
@@ -248,7 +315,7 @@ public class GeoParser {
 		
 		ParseConfiguration cfg = new ParseConfiguration();
 		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
-		cfg.setCsvFormat(CSVFormat.TDF);
+		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/" + isoCode.toUpperCase() + ".txt");
 		cfg.setGroupPath(groupPath);
@@ -288,7 +355,7 @@ public class GeoParser {
 
 		ParseConfiguration cfg = new ParseConfiguration();
 		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
-		cfg.setCsvFormat(CSVFormat.TDF);
+		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/admin1CodesASCII.txt");
 		cfg.setGroupPath(groupPath);
@@ -301,7 +368,7 @@ public class GeoParser {
 
 		return cfg;
 	}
-	
+
 	public static ParseConfiguration newAdmin2ParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
 		logger.info("New Admin 2 Parse Configuration");
 		List<ParseMap> map = new ArrayList<>();
@@ -328,7 +395,7 @@ public class GeoParser {
 
 		ParseConfiguration cfg = new ParseConfiguration();
 		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
-		cfg.setCsvFormat(CSVFormat.TDF);
+		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/admin2Codes.txt");
 		cfg.setGroupPath(groupPath);

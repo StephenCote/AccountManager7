@@ -64,6 +64,7 @@ import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
+import org.cote.accountmanager.util.WorldUtil;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {
@@ -267,13 +268,34 @@ public class TestBulkOperation extends BaseTest {
 		WordParser.loadSurnames(user, groupPath, basePath,resetCountryInfo);
 		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
+	/*
+	@Test
+	public void TestAltNames() {
+		logger.info("Test load alternate geo names");
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String groupPath = "~/CountryInfo";
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		GeoParser.loadAlternateNamesInfo(testUser1, groupPath, testProperties.getProperty("test.datagen.path") + "/location", 0, false);
+		int count = ioContext.getAccessPoint().count(testUser1, GeoParser.getQuery("alternateName", null, dir.get(FieldNames.FIELD_ID), testOrgContext.getOrganizationId()));
+		logger.info("Count: " + count);
+	}
+	*/
 	
 	@Test
 	public void TestWorld() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord world = getWorld(testUser1, new String[] {"GB", "IE"});
+		BaseRecord world = getWorld(testUser1, new String[] {"US"});
+		List<String> features = world.get("features");
+		if(!features.contains("US")) {
+			features.add("US");
+			ioContext.getAccessPoint().update(testUser1, world);
+		}
 		assertNotNull("World is null", world);
 		int dict = loadDictionary(testUser1, world, testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict");
 		logger.info("Dictionary words: " + dict);
@@ -296,8 +318,21 @@ public class TestBulkOperation extends BaseTest {
 		logger.info(randomIndex);
 		q2.setRequestRange(randomIndex, 1);
 		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q2);
-		logger.info(qr.toFullString());
+		assertTrue("No locations", qr.getCount()  >0);
+		//logger.info(qr.toFullString());
+		AuditUtil.setLogToConsole(false);
+		BaseRecord addr1 = WorldUtil.randomAddress(testUser1, qr.getResults()[0], "~/Addresses");
+		assertNotNull("addr is null", addr1);
+		//logger.info(addr1.toFullString());
+		
+		for(int i = 0; i < 10; i++) {
+			BaseRecord per1 = WorldUtil.randomPerson(testUser1, world);
+
+			assertNotNull("per is null", per1);
+			logger.info(per1.toFullString());
+		}
 	}
+	
 	/*
 	@Test
 	public void TestWorldModel() {
