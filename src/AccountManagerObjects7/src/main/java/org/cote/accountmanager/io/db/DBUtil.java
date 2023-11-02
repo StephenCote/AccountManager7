@@ -52,6 +52,8 @@ public class DBUtil {
 	private String pgDriver = "org.postgresql.Driver";
 	
 	private static DBUtil instance = null;
+	private static boolean useFieldIndexGuidance = true;
+	
 	public static DBUtil getInstance(IOProperties props) {
 		if(instance == null) {
 			instance = new DBUtil(props);
@@ -447,22 +449,25 @@ public class DBUtil {
 		
 		StringBuilder buff = new StringBuilder();
 		Set<String> idxSet = new HashSet<>();
-		for(FieldSchema f : schema.getFields()) {
-			if(!f.isIndex()) {
-				continue;
+		/// Note: The original reason of marking certain fields to be indexed was primarily for the initial file-based index system
+		/// However, for a database, it makes more sense to use the hints and constraints
+		if(useFieldIndexGuidance) {
+			for(FieldSchema f : schema.getFields()) {
+				if(!f.isIndex()) {
+					continue;
+				}
+				if(idxSet.contains(f.getName())) {
+					logger.warn(schema.getName() + " indexible field duplication: (" + f.getName() + ")");
+					continue;
+				}
+				String idx = generateIndex(baseSchema, schema, f.getName(), f.isIdentity());
+				if(idx != null) {
+					idxSet.add(f.getName());
+					buff.append(idx + "\n");
+				}
+				
 			}
-			if(idxSet.contains(f.getName())) {
-				logger.warn(schema.getName() + " indexible field duplication: (" + f.getName() + ")");
-				continue;
-			}
-			String idx = generateIndex(baseSchema, schema, f.getName(), f.isIdentity());
-			if(idx != null) {
-				idxSet.add(f.getName());
-				buff.append(idx + "\n");
-			}
-			
 		}
-		
 		List<String> constraints = RecordUtil.getConstraints(schema);
 		for(String ic : constraints) {
 			if(idxSet.contains(ic)) {
