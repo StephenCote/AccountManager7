@@ -199,9 +199,10 @@ public class GeoParser {
 	public static int importFile(ParseConfiguration cfg) {
 		
 		long start = System.currentTimeMillis();
+		/// TODO: Revise parser to only use the writer and return the total write count
 		List<BaseRecord> recs = GenericParser.parseFile(cfg, new GeoParseWriter());
 		long stop = System.currentTimeMillis();
-		logger.info("Parsed " + recs.size() + " from " + cfg.getFilePath() + " in " + (stop - start) + "ms");
+		logger.info("Parsed locations from " + cfg.getFilePath() + " in " + (stop - start) + "ms");
 		
 		return recs.size();
 	}
