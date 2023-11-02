@@ -112,14 +112,14 @@ public class WordNetParser {
 	private static String adjectiveWordType = "s";
 
 	private static int loadWords(BaseRecord user, String groupPath, String basePath, String ext, String type, int maxLines, boolean reset) {
-		logger.info("Load words to " + groupPath);
+		// logger.info("Load words to " + groupPath);
 		int count = countCleanupWords(user, groupPath, type, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newWordNetParseConfiguration(user, groupPath, basePath + "/data." + ext, maxLines);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
 		}
 		return count;
 	}
@@ -272,7 +272,7 @@ public class WordNetParser {
 					words.add(word);
 					
 					if(batchSize > 0 && words.size() >= batchSize) {
-						logger.info("Batch parse " + words.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+						// logger.info("Batch parse " + words.size() + " in " + (System.currentTimeMillis() - start) + "ms");
 						start = System.currentTimeMillis();
 						writer.write(cfg, words);
 						words.clear();
@@ -284,7 +284,7 @@ public class WordNetParser {
 				}
 			}
 			if(batchSize > 0 && words.size() > 0) {
-				logger.info("Batch parse " + words.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+				// logger.info("Batch parse " + words.size() + " in " + (System.currentTimeMillis() - start) + "ms");
 				writer.write(cfg, words);
 			}
 		}

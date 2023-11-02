@@ -32,7 +32,7 @@ public class DataParseWriter implements IParseWriter {
 		
 		int created = IOSystem.getActiveContext().getAccessPoint().create(cfg.getOwner(), records.toArray(new BaseRecord[0]), true);
 		long stop = System.currentTimeMillis();
-		logger.info("Wrote: " + created + " in " + (stop - start) + "ms");
+		// logger.info("Wrote: " + created + " in " + (stop - start) + "ms");
 		return created;
 	}
 

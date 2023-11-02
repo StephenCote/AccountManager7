@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -102,7 +103,6 @@ public class GenericParser {
 			}
 			for(CSVRecord record : csvFileParser){
 				lastRecord = record;
-				BaseRecord obj = IOSystem.getActiveContext().getFactory().newInstance(model, owner, cfg.getTemplate(), plist);
 				String fcell = record.get(0);
 				if(fcell == null || fcell.length() == 0 || fcell.startsWith("#")) {
 					continue;
@@ -110,6 +110,7 @@ public class GenericParser {
 				if(cfg.getInterceptor() != null && cfg.getInterceptor().filterRow(cfg, record)) {
 					continue;
 				}
+				BaseRecord obj = IOSystem.getActiveContext().getFactory().newInstance(model, owner, cfg.getTemplate(), plist);
 				for(int i = 0; i < fields.length; i++) {
 					if(fields[i] == null) {
 						continue;
@@ -183,7 +184,7 @@ public class GenericParser {
 
 				objs.add(obj);
 				if(batchSize > 0 && objs.size() >= batchSize) {
-					logger.info("Batch parse " + objs.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+					// logger.info("Batch parse " + objs.size() + " in " + (System.currentTimeMillis() - start) + "ms");
 					start = System.currentTimeMillis();
 					writer.write(cfg, objs);
 					objs.clear();
@@ -194,16 +195,22 @@ public class GenericParser {
 				totalSize++;
 			}
 			if(batchSize > 0 && objs.size() > 0) {
-				logger.info("Batch parse " + objs.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+				// logger.info("Batch parse " + objs.size() + " in " + (System.currentTimeMillis() - start) + "ms");
 				writer.write(cfg, objs);
 			}
 
+		}
+		catch(UncheckedIOException e1) {
+			logger.error(e1);
+			logger.error("Check the parser configuration.  Some datasets that use double apostrophes for quotes can trip up the settings or cause other records to be skipped");
+			error = true;
 		}
 		catch(IndexOutOfBoundsException | NumberFormatException | IOException | FactoryException | ValueException  e){
 			logger.error(e.getMessage());
 			if(lastRecord != null) {
 				logger.error(lastRecord.toString());
 			}
+			
 			e.printStackTrace();
 			error = true;
 

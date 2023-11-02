@@ -152,42 +152,42 @@ public class WordParser {
 
 	public static int loadSurnames(BaseRecord user, String groupPath, String basePath, boolean reset) {
 		
-		logger.info("Load word information into " + groupPath);
+		// logger.info("Load word information into " + groupPath);
 		int count = countCleanupWords(user, ModelNames.MODEL_CENSUS_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newSurnameParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
 		}
 		return count;
 	}
 	
 	public static int loadNames(BaseRecord user, String groupPath, String basePath, boolean reset) {
 		
-		logger.info("Load word information into " + groupPath);
+		// logger.info("Load word information into " + groupPath);
 		int count = countCleanupWords(user, ModelNames.MODEL_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newNamesParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
 		}
 		return count;
 	}
 	
 	public static int loadOccupations(BaseRecord user, String groupPath, String basePath, boolean reset) {
 		
-		logger.info("Load word information into " + groupPath);
+		// logger.info("Load word information into " + groupPath);
 		int count = countCleanupWords(user, ModelNames.MODEL_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newOccupationsParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
 		}
 		else {
-			logger.info(count + " records have already been loaded.");
+			// logger.info(count + " records have already been loaded.");
 		}
 		return count;
 	}
