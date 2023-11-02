@@ -34,9 +34,18 @@ public class WordParser {
 		
 		List<ParseMap> map = new ArrayList<>();
 		map.add(new ParseMap("name", 0, new CaseInterceptor()));
+		map.add(new ParseMap("rank", 1));
+		map.add(new ParseMap("count", 2));
+		map.add(new ParseMap("proportion", 4));
+		map.add(new ParseMap("pctwhite", 5));
+		map.add(new ParseMap("pctblack", 6));
+		map.add(new ParseMap("pctapi", 7));
+		map.add(new ParseMap("pctaian", 8));
+		map.add(new ParseMap("pct2prace", 9));
+		map.add(new ParseMap("pcthispanic", 10));
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_WORD);
+		cfg.setModel(ModelNames.MODEL_CENSUS_WORD);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(false).setQuote(null).setTrim(true).build());
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath);
@@ -45,6 +54,7 @@ public class WordParser {
 		cfg.setOwner(user);
 		ParseMap filter = new ParseMap(null, 0);
 		filter.setMatchValue("name");
+		filter.setExcludeMatch(true);
 		cfg.setFilters(new ParseMap[] {filter});
 		cfg.setInterceptor(new DataInterceptor());
 		return cfg;
@@ -92,18 +102,18 @@ public class WordParser {
 		return cfg;
 	}
 	
-	public static Query getQuery(BaseRecord user, String groupPath) {
+	public static Query getQuery(BaseRecord user, String model, String groupPath) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		return getQuery((long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return getQuery(model, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
-	public static Query getQuery(long groupId, long organizationId) {
-		Query lq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, groupId);
+	public static Query getQuery(String model, long groupId, long organizationId) {
+		Query lq = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
 		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 		return lq;
 	}
 	
-	public static int cleanupWords(long groupId, long organizationId) {
-		Query lq = getQuery(groupId, organizationId);
+	public static int cleanupWords(String model, long groupId, long organizationId) {
+		Query lq = getQuery(model, groupId, organizationId);
 		int deleted = 0;
 		try {
 			deleted = IOSystem.getActiveContext().getWriter().delete(lq);
@@ -114,14 +124,14 @@ public class WordParser {
 		return deleted;
 	}
 	
-	public static int countCleanupWords(BaseRecord user, String groupPath, boolean resetCountryInfo) {
+	public static int countCleanupWords(BaseRecord user, String model, String groupPath, boolean resetCountryInfo) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query lq = getQuery((long)dir.get(FieldNames.FIELD_ID), (long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		Query lq = getQuery(model, (long)dir.get(FieldNames.FIELD_ID), (long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		
 		int count = IOSystem.getActiveContext().getAccessPoint().count(user, lq);
 		if(count > 0 && resetCountryInfo) {
 			logger.info("Cleaning up " + count + " records in " + groupPath);
-			cleanupWords(dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			cleanupWords(model, dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			count = 0;
 		}
 		return count;
@@ -132,15 +142,18 @@ public class WordParser {
 		long start = System.currentTimeMillis();
 		List<BaseRecord> recs = GenericParser.parseFile(cfg, new DataParseWriter());
 		long stop = System.currentTimeMillis();
-		logger.info("Parsed " + recs.size() + " from " + cfg.getFilePath() + " in " + (stop - start) + "ms");
-		
+		/*
+		if(recs.size() > 0) {
+			logger.info(recs.get(0).toFullString());
+		}
+		*/
 		return recs.size();
 	}
 
 	public static int loadSurnames(BaseRecord user, String groupPath, String basePath, boolean reset) {
 		
 		logger.info("Load word information into " + groupPath);
-		int count = countCleanupWords(user, groupPath, reset);
+		int count = countCleanupWords(user, ModelNames.MODEL_CENSUS_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newSurnameParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
@@ -154,7 +167,7 @@ public class WordParser {
 	public static int loadNames(BaseRecord user, String groupPath, String basePath, boolean reset) {
 		
 		logger.info("Load word information into " + groupPath);
-		int count = countCleanupWords(user, groupPath, reset);
+		int count = countCleanupWords(user, ModelNames.MODEL_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newNamesParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
@@ -168,7 +181,7 @@ public class WordParser {
 	public static int loadOccupations(BaseRecord user, String groupPath, String basePath, boolean reset) {
 		
 		logger.info("Load word information into " + groupPath);
-		int count = countCleanupWords(user, groupPath, reset);
+		int count = countCleanupWords(user, ModelNames.MODEL_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newOccupationsParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
