@@ -1,0 +1,54 @@
+{
+	"name": "data.cenWord",
+	"inherits": [
+		"data.word"
+	],
+	"group": "Words",
+	"icon": "category",
+	"label": "Census Word",
+	"query": [
+		"groupId"
+	],
+	"fields": [
+		{
+			"name": "rank",
+			"type": "int",
+			"description": "Word rank"
+		},
+		{
+			"name": "proportion",
+			"type": "double",
+			"description": "Proportion of the word"
+		},
+		{
+			"name": "pctwhite",
+			"type": "double",
+			"description": "Percent non-Hispanic White"
+		},
+		{
+			"name": "pcthispanic",
+			"type": "double",
+			"description": "Percent Hispanic or Latino"
+		},
+		{
+			"name": "pctblack",
+			"type": "double",
+			"description": "Percent non-Hispanic black or African American"
+		},
+		{
+			"name": "pctapi",
+			"type": "double",
+			"description": "Percent non-Hispanic Asian, Native Hawaiian, or other Pacific Islander"
+		},
+		{
+			"name": "pctaian",
+			"type": "double",
+			"description": "Percent non-Hispanic American Indian or Alaska Native"
+		},
+		{
+			"name": "pct2prace",
+			"type": "double",
+			"description": "Percent non-Hispanic two or more races"
+		}
+	]
+}

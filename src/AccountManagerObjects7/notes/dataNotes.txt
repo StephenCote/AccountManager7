@@ -3,6 +3,7 @@ Names:
     	https://www.ssa.gov/oact/babynames/limits.html
 	SurNames:
 		https://www.census.gov/topics/population/genealogy/data/2010_surnames.html
-
+	Occupations:
+		https://www.statcan.gc.ca/en/subjects/standard/noc/2021/indexV1
 Prompt Engineering Refs:
 	https://www.promptingguide.ai/

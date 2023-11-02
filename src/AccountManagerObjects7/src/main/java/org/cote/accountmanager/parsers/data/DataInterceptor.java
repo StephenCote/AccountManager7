@@ -22,15 +22,22 @@ public class DataInterceptor implements IParseInterceptor {
 			filter = true;
 			for(ParseMap map : cfg.getFilters()) {
 				String mval = map.getMatchValue();
-				if(mval == null) mval = "";
+				if(mval == null) {
+					mval = "";
+				}
 				boolean match = record.get(map.getColumnIndex()).equals(mval);
-				if(map.isExcludeMatch()) {
+				if(!map.isExcludeMatch()) {
 					match = !match;
 				}
-				if(match) {
-					filter = false;
+				filter = match;
+				// logger.info(mval + " == " + record.get(map.getColumnIndex()) + " != " + map.isExcludeMatch() + " = " + filter);
+				if(!filter) {
 					break;
 				}
+				//if(match) {
+				//	filter = false;
+				//	break;
+				//}
 			}
 		}
 		return filter;

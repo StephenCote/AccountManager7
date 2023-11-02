@@ -1,0 +1,68 @@
+{
+"name": "data.world",
+"inherits": ["data.directory", "common.description"],
+"factory": "org.cote.accountmanager.factory.WorldFactory",
+"group": "Worlds",
+"icon": "note",
+"label": "World",
+"fields": [
+	{
+		"name": "population",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "locations",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "features",
+		"type": "list",
+		"baseType": "string"
+	},
+	{
+		"name": "events",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "words",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "names",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "surnames",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "occupations",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "dictionary",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "traits",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	}
+]}

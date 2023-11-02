@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -35,7 +36,8 @@ import org.cote.accountmanager.schema.ModelSchema;
 public class GenericParser {
 	public static final Logger logger = LogManager.getLogger(GenericParser.class);
 	
-	
+	public static final Pattern numberPattern = Pattern.compile("^[\\d+\\-]+$");
+	public static final Pattern floatPattern = Pattern.compile("^[\\d\\.\\-]+$");
 	public static List<BaseRecord> parseFile(BaseRecord owner, String model, String[] fields, String groupPath, String path){
 		return parseFile(owner, model, fields, groupPath, path, 0);
 	}
@@ -140,12 +142,12 @@ public class GenericParser {
 								ft.setValue(rval);
 								break;
 							case INT:
-								if(rval.length() > 0) {
+								if(rval.length() > 0 && numberPattern.matcher(rval).find()) {
 									ft.setValue(Integer.parseInt(rval));
 								}
 								break;
 							case LONG:
-								if(rval.length() > 0) {
+								if(rval.length() > 0 && numberPattern.matcher(rval).find()) {
 									ft.setValue(Long.parseLong(rval));
 								}
 								break;
@@ -155,7 +157,7 @@ public class GenericParser {
 								}
 								break;
 							case DOUBLE:
-								if(rval.length() > 0) {
+								if(rval.length() > 0 && floatPattern.matcher(rval).find()) {
 									ft.setValue(Double.parseDouble(rval));
 								}
 								break;

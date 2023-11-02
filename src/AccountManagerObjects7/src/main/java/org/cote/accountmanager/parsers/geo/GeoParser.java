@@ -34,9 +34,11 @@ public class GeoParser {
 
 	public static final Logger logger = LogManager.getLogger(GeoParser.class);
 	
-	private static Query getQuery(String geoType, String isoCode, long groupId, long organizationId) {
+	public static Query getQuery(String geoType, String isoCode, long groupId, long organizationId) {
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, groupId);
-		lq.field("geoType", geoType);
+		if(geoType != null) {
+			lq.field("geoType", geoType);
+		}
 		if(isoCode != null) {
 			lq.field("iso", isoCode);
 		}

@@ -21,30 +21,146 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.parsers.data.DataInterceptor;
+import org.cote.accountmanager.parsers.data.DataParseWriter;
+import org.cote.accountmanager.parsers.geo.GeoParseWriter;
+import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 
 public class WordNetParser {
 	public static final Logger logger = LogManager.getLogger(WordNetParser.class);
 	
-	public static List<BaseRecord> parseWNDataFile(BaseRecord owner, String groupPath, String path){
-		return parseWNDataFile(owner, groupPath, path, 0);
+	
+	public static ParseConfiguration newWordNetParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
+		logger.info("New WordNet Parse Configuration");
+		
+		ParseConfiguration cfg = new ParseConfiguration();
+		cfg.setModel(ModelNames.MODEL_WORD_NET);
+		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(' ').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build());
+		cfg.setFields(new ParseMap[0]);
+		cfg.setFilePath(basePath);
+		cfg.setGroupPath(groupPath);
+		cfg.setMaxCount(maxLines);
+		cfg.setOwner(user);
+
+		return cfg;
 	}
 	
-	public static List<BaseRecord> parseWNDataFile(BaseRecord owner, String groupPath, String path, int maxCount){
+	
+	public static Query getQuery(BaseRecord user, String type, String groupPath) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return getQuery(type, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
+	}
+	public static Query getQuery(String type, long groupId, long organizationId) {
+		Query lq = QueryUtil.createQuery(ModelNames.MODEL_WORD_NET, FieldNames.FIELD_GROUP_ID, groupId);
+		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		if(type != null) {
+			lq.field(FieldNames.FIELD_TYPE, type);	
+		}
+		return lq;
+	}
+	
+	public static int cleanupWords(String type, long groupId, long organizationId) {
+		Query lq = getQuery(type, groupId, organizationId);
+		int deleted = 0;
+		try {
+			deleted = IOSystem.getActiveContext().getWriter().delete(lq);
+		} catch (WriterException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return deleted;
+	}
+	
+	public static int countCleanupWords(BaseRecord user, String groupPath, String type, boolean reset) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		Query lq = getQuery(type, (long)dir.get(FieldNames.FIELD_ID), (long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		
+		int count = IOSystem.getActiveContext().getAccessPoint().count(user, lq);
+		if(count > 0 && reset) {
+			logger.info("Cleaning up " + count + " records in " + groupPath);
+			cleanupWords(type, dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			count = 0;
+		}
+		return count;
+	}
+	
+	public static int importFile(ParseConfiguration cfg) {
+		
+		long start = System.currentTimeMillis();
+		List<BaseRecord> recs = parseWNDataFile(cfg, new DataParseWriter());
+		long stop = System.currentTimeMillis();
+		logger.info("Parsed " + recs.size() + " from " + cfg.getFilePath() + " in " + (stop - start) + "ms");
+		
+		return recs.size();
+	}
+	
+	private static String verbWordType = "v";
+	private static String nounWordType = "n";
+	private static String adverbWordType = "r";
+	private static String adjectiveWordType = "s";
+
+	private static int loadWords(BaseRecord user, String groupPath, String basePath, String ext, String type, int maxLines, boolean reset) {
+		logger.info("Load words to " + groupPath);
+		int count = countCleanupWords(user, groupPath, type, reset);
+		if(count == 0) {
+			ParseConfiguration cfg = newWordNetParseConfiguration(user, groupPath, basePath + "/data." + ext, maxLines);
+			count = importFile(cfg);
+		}
+		else {
+			logger.info(count + " records have already been loaded.");
+		}
+		return count;
+	}
+	
+	public static int loadVerbs(BaseRecord user, String groupPath, String basePath, int maxLines,boolean reset) {
+		return loadWords(user, groupPath, basePath, "verb", verbWordType, maxLines, reset);
+	}
+
+	
+	public static int loadNouns(BaseRecord user, String groupPath, String basePath, int maxLines,boolean reset) {
+		return loadWords(user, groupPath, basePath, "noun", nounWordType, maxLines, reset);
+	}
+
+	
+	public static int loadAdjectives(BaseRecord user, String groupPath, String basePath, int maxLines,boolean reset) {
+		return loadWords(user, groupPath, basePath, "adj", adjectiveWordType, maxLines, reset);
+	}
+	
+	
+	public static int loadAdverbs(BaseRecord user, String groupPath, String basePath, int maxLines,boolean reset) {
+		return loadWords(user, groupPath, basePath, "adv", adverbWordType, maxLines, reset);
+	}
+	
+	public static List<BaseRecord> parseWNDataFile(ParseConfiguration cfg, IParseWriter writer){
 		List<BaseRecord> words = new ArrayList<>();
 
-		CSVFormat csvFormat = CSVFormat.Builder.create().setDelimiter(' ').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build();
+		CSVFormat csvFormat = cfg.getCsvFormat();
+		if(csvFormat == null) {
+			csvFormat = CSVFormat.Builder.create().setDelimiter(' ').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build();
+		}
 		CSVParser  csvFileParser = null;
 		BufferedReader bir = null;
 		CSVRecord lastRecord = null;
 
 		boolean error = false;
 		try{
-			bir = new BufferedReader(new InputStreamReader(new FileInputStream(path),StandardCharsets.UTF_8));
+			long start = System.currentTimeMillis();
+			int batchSize = 0;
+			int totalSize = 0;
+			if(writer != null) {
+				batchSize = writer.getBatchSize();
+			}
+			
+			bir = new BufferedReader(new InputStreamReader(new FileInputStream(cfg.getFilePath()),StandardCharsets.UTF_8));
 			csvFileParser = new CSVParser(bir, csvFormat);
 
 			for(CSVRecord record : csvFileParser){
@@ -63,9 +179,9 @@ public class WordNetParser {
 					
 					int lexId = Integer.parseInt("0" + record.get(5), 16);
 					int offset = 6;
-					ParameterList plist = ParameterList.newParameterList("path", groupPath);
+					ParameterList plist = ParameterList.newParameterList("path", cfg.getGroupPath());
 					plist.parameter("name", name);
-					BaseRecord word = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_WORD_NET, owner, null, plist);
+					BaseRecord word = IOSystem.getActiveContext().getFactory().newInstance(cfg.getModel(), cfg.getOwner(), null, plist);
 					List<BaseRecord> alts = word.get("alternatives");
 					
 					
@@ -152,10 +268,21 @@ public class WordNetParser {
 					word.set(FieldNames.FIELD_TYPE, type);
 					words.add(word);
 					
-					if(maxCount > 0 && words.size() >= maxCount) {
+					if(batchSize > 0 && words.size() >= batchSize) {
+						logger.info("Batch parse " + words.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+						start = System.currentTimeMillis();
+						writer.write(cfg, words);
+						words.clear();
+					}
+					if(cfg.getMaxCount() > 0 && words.size() >= cfg.getMaxCount()) {
 						break;
 					}
+					totalSize++;
 				}
+			}
+			if(batchSize > 0 && words.size() > 0) {
+				logger.info("Batch parse " + words.size() + " in " + (System.currentTimeMillis() - start) + "ms");
+				writer.write(cfg, words);
 			}
 		}
 		catch(StringIndexOutOfBoundsException | IOException | FactoryException | FieldException | ValueException | ModelNotFoundException  e){
