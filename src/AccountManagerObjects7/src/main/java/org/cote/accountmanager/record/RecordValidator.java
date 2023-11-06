@@ -73,52 +73,81 @@ public class RecordValidator {
 
 					String val = f.getValue();
 					if(fs.getMaxLength() > 0 && val != null && val.length() > fs.getMaxLength()) {
-						logger.error("Value '" + val + "' exceeds maximum length " + fs.getMaxLength());
+						logger.error(fs.getName() + " value '" + val + "' exceeds maximum length " + fs.getMaxLength());
 						errors++;
 						break;
 					}
 					if(fs.getMinLength() > 0 && (val == null || val.length() < fs.getMinLength())){
-						logger.error("Value '" + val + "' does not meet the minimum length " + fs.getMinLength());
+						logger.error(fs.getName() + " value '" + val + "' does not meet the minimum length " + fs.getMinLength());
+						errors++;
+						break;
+					}
+					break;
+				case LONG:
+					long lval = f.getValue();
+					if(fs.isValidateRange() && (lval < fs.getMinValue() || lval > fs.getMaxValue())) {
+						logger.error(fs.getName() + " value " + lval + " is outside value range " + fs.getMinValue() + " - " + fs.getMaxValue());
+						errors++;
+						break;
+					}
+					break;
+				case INT:
+					int ival = f.getValue();
+					if(fs.isValidateRange() && (ival < fs.getMinValue() || ival > fs.getMaxValue())) {
+						logger.error(fs.getName() + " value " + ival + " is outside value range " + fs.getMinValue() + " - " + fs.getMaxValue());
+						errors++;
+						break;
+					}
+					break;
+
+				case DOUBLE:
+					long dval = f.getValue();
+					if(fs.isValidateRange() && (dval < fs.getMinValue() || dval > fs.getMaxValue())) {
+						logger.error(fs.getName() + " value " + dval + " is outside value range " + fs.getMinValue() + " - " + fs.getMaxValue());
 						errors++;
 						break;
 					}
 
-				default:
-					for(String r : fs.getRules()) {
-						BaseRecord rule = ValidationUtil.getRule(r);
-						ruleCount++;
-						if(rule == null) {
-							logger.error("Failed to load rule: " + r);
-							errors++;
-						}
-						else {
-							if(ValidationUtil.validateFieldWithRule(record, f, rule)) {
-								successCount++;
-							}
-						}
-					}
-					if(schemavs.size() > 0) {
-						List<ModelRule> srules = schemavs.stream().flatMap(r -> r.getRules().stream()).filter(o -> {
-							return o.getFields().contains(f.getName());
-
-						}).collect(Collectors.toList());
-						for(ModelRule mr : srules) {
-							for(String r: mr.getRules()) {
-								BaseRecord rule = ValidationUtil.getRule(r);
-								ruleCount++;
-								if(rule == null) {
-									logger.error("Failed to load rule: " + r);
-									errors++;
-								}
-								else {
-									if(ValidationUtil.validateFieldWithRule(record, f, rule)) {
-										successCount++;
-									}
-								}
-							}
-						}
-					}
 					break;
+				default:
+
+					break;
+			}
+			if(errors == 0) {
+				for(String r : fs.getRules()) {
+					BaseRecord rule = ValidationUtil.getRule(r);
+					ruleCount++;
+					if(rule == null) {
+						logger.error("Failed to load rule: " + r);
+						errors++;
+					}
+					else {
+						if(ValidationUtil.validateFieldWithRule(record, f, rule)) {
+							successCount++;
+						}
+					}
+				}
+				if(schemavs.size() > 0) {
+					List<ModelRule> srules = schemavs.stream().flatMap(r -> r.getRules().stream()).filter(o -> {
+						return o.getFields().contains(f.getName());
+	
+					}).collect(Collectors.toList());
+					for(ModelRule mr : srules) {
+						for(String r: mr.getRules()) {
+							BaseRecord rule = ValidationUtil.getRule(r);
+							ruleCount++;
+							if(rule == null) {
+								logger.error("Failed to load rule: " + r);
+								errors++;
+							}
+							else {
+								if(ValidationUtil.validateFieldWithRule(record, f, rule)) {
+									successCount++;
+								}
+							}
+						}
+					}
+				}
 			}
 		}
 		logger.debug("Rule Count: " + ruleCount);
