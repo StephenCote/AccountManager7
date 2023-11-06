@@ -22,6 +22,7 @@ import org.apache.commons.dbcp.cpdsadapter.DriverAdapterCPDS;
 import org.apache.commons.dbcp.datasources.SharedPoolDataSource;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.model.field.FieldEnumType;
@@ -271,6 +272,23 @@ public class DBUtil {
 			useName = schema.getName().replace('.', '_') + "_" + useName;
 		}
 		return dataPrefix + "_" + useName + "_" + ver;
+	}
+	public boolean dropSchema(ModelSchema schema) {
+		String dropSql = generateDropSchema(schema);
+		execute(dropSql);
+		CacheUtil.clearCache();
+		return true;
+	}
+	public String generateDropSchema(ModelSchema schema) {
+		StringBuilder buff = new StringBuilder();
+		String tableName = getTableName(schema.getName());
+		buff.append("DROP TABLE IF EXISTS " + tableName + " CASCADE;\n");
+		if(schema.isDedicatedParticipation()) {
+			String ptableName = getTableName(schema, ModelNames.MODEL_PARTICIPATION);
+			buff.append("DROP TABLE IF EXISTS " + ptableName + " CASCADE;\n");
+		}
+		buff.append("DELETE FROM " + getTableName(ModelNames.MODEL_MODEL_SCHEMA) + " WHERE name = '" + schema.getName() + "';\n");
+		return buff.toString();
 	}
 	
 	public String generateNewSchemaOnly(ModelSchema schema) {
