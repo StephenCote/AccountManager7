@@ -1,5 +1,5 @@
 {
-	"name": "data.charPerson",
+	"name": "olio.charPerson",
 	"inherits": [
 		"identity.person",
 		"common.alignment"

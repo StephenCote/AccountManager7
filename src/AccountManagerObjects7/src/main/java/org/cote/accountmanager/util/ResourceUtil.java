@@ -15,7 +15,11 @@ public class ResourceUtil {
 	
 	private static Map<String, String> cache = new ConcurrentHashMap<>();
 	public static String RESOURCE_PREFIX = "";
-
+	
+	public static void clearCache() {
+		cache.clear();
+	}
+	
 	public static String getCategoryResource(String name) {
 		return getResource(RESOURCE_PREFIX + "categories/" + name + "Category.json");
 	}

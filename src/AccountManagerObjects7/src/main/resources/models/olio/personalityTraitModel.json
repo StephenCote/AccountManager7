@@ -1,0 +1,16 @@
+{
+	"name": "olio.personalityTrait",
+	"inherits": [
+		"data.directory",
+		"common.description",
+		"common.alignment",
+		"policy.score"
+	],
+	"constraints": ["name, groupId, organizationId"],
+	"group": "PersonalityTraits",
+	"icon": "category",
+	"label": "Personality Trait",
+	"fields": [
+
+	]
+}

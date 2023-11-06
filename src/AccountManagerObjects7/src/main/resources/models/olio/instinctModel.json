@@ -1,0 +1,101 @@
+{
+	"name": "olio.instinct",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Instincts",
+	"icon": "category",
+	"label": "Instinct",
+	"fields": [
+		{
+			"name": "fight",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "flight",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "feed",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "mate",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "herd",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "hygiene",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "cooperate",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "resist",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "adapt",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "laugh",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "cry",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "protect",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		}
+	]
+}

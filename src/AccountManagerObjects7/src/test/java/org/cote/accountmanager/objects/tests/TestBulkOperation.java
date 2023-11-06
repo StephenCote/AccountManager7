@@ -55,6 +55,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.AlignmentEnumType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
@@ -284,7 +285,23 @@ public class TestBulkOperation extends BaseTest {
 		logger.info("Count: " + count);
 	}
 	*/
-	
+	@Test
+	public void TestOnio() {
+		
+		logger.info("Toss the existing schema");
+		RecordFactory.releaseCustomSchema("data.charPerson");
+		ModelSchema schema = null;
+		try {
+			schema = RecordFactory.getCustomSchemaFromResource(ModelNames.MODEL_CHAR_PERSON, ModelNames.MODEL_CHAR_PERSON);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		assertNotNull("Schema is null", schema);
+		
+	}
+	/*
 	@Test
 	public void TestWorld() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -332,7 +349,7 @@ public class TestBulkOperation extends BaseTest {
 			logger.info(per1.toFullString());
 		}
 	}
-	
+	*/
 	/*
 	@Test
 	public void TestWorldModel() {
