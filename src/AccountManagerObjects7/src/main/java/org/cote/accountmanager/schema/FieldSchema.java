@@ -48,6 +48,9 @@ public class FieldSchema {
 	private boolean allowNull = true;
 	private int minLength = 0;
 	private int maxLength = 0;
+	private boolean validateRange = false;
+	private double minValue = 0;
+	private double maxValue = 0;
 	private String valueType = null;
 	private boolean referenced = false;
 	private boolean followReference = true;
@@ -73,6 +76,30 @@ public class FieldSchema {
 	
 	public FieldSchema() {
 		
+	}
+
+	public boolean isValidateRange() {
+		return validateRange;
+	}
+
+	public void setValidateRange(boolean validateRange) {
+		this.validateRange = validateRange;
+	}
+
+	public double getMinValue() {
+		return minValue;
+	}
+
+	public void setMinValue(double minValue) {
+		this.minValue = minValue;
+	}
+
+	public double getMaxValue() {
+		return maxValue;
+	}
+
+	public void setMaxValue(double maxValue) {
+		this.maxValue = maxValue;
 	}
 
 	public boolean isDynamicPolicy() {
