@@ -1,16 +1,23 @@
 package org.cote.accountmanager.parsers.data;
 
+import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.parsers.GenericParser;
@@ -22,8 +29,11 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.AlignmentEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.TraitEnumType;
+import org.cote.accountmanager.util.JSONUtil;
 
 public class WordParser {
 
@@ -104,16 +114,11 @@ public class WordParser {
 	
 	public static Query getQuery(BaseRecord user, String model, String groupPath) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		return getQuery(model, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
-	}
-	public static Query getQuery(String model, long groupId, long organizationId) {
-		Query lq = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
-		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-		return lq;
+		return QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
 	
 	public static int cleanupWords(String model, long groupId, long organizationId) {
-		Query lq = getQuery(model, groupId, organizationId);
+		Query lq = QueryUtil.getGroupQuery(model, null, groupId, organizationId);
 		int deleted = 0;
 		try {
 			deleted = IOSystem.getActiveContext().getWriter().delete(lq);
@@ -126,7 +131,7 @@ public class WordParser {
 	
 	public static int countCleanupWords(BaseRecord user, String model, String groupPath, boolean resetCountryInfo) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query lq = getQuery(model, (long)dir.get(FieldNames.FIELD_ID), (long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		Query lq = QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		
 		int count = IOSystem.getActiveContext().getAccessPoint().count(user, lq);
 		if(count > 0 && resetCountryInfo) {
@@ -191,5 +196,72 @@ public class WordParser {
 		}
 		return count;
 	}
+	
+	public static int loadTraits(BaseRecord user, String groupPath, String basePath, boolean reset) {
+		
+		int count = countCleanupWords(user, ModelNames.MODEL_TRAIT, groupPath, reset);
+		if(count == 0) {
+			count = IOSystem.getActiveContext().getAccessPoint().create(user, getBulkTraits(user, groupPath, basePath).toArray(new BaseRecord[0]));
+		}
+		else {
+			// logger.info(count + " records have already been loaded.");
+		}
+		return count;
+	}
+	
+	private static List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath, String basePath){
+		String traitsPath = basePath + "/traits.json";
+		File f = new File(traitsPath);
+		if(!f.exists()) {
+			logger.error(traitsPath + " doesn't exist");
+			return new ArrayList<>();
+		}
+		Map<String, String[]> traits = JSONUtil.getMap(traitsPath, String.class,String[].class);
+		
+		List<BaseRecord> traitrecs = new ArrayList<>();
+		Set<String> traitset = new HashSet<>();
+		traits.forEach((k, v) -> {
+			if(!k.equals("alignment")) {
+				final AlignmentEnumType align;
+				if(k.equals("positive")) {
+					align = AlignmentEnumType.LAWFULGOOD;
+				}
+				else if(k.equals("negative")) {
+					align = AlignmentEnumType.CHAOTICEVIL;
+				}
+				else {
+					align = AlignmentEnumType.NEUTRAL;
+				}
+
+				Arrays.asList(v).forEach(s -> {
+					if(s != null && !traitset.contains(s)) {
+						traitset.add(s);
+						traitrecs.add(newTrait(owner, groupPath, s, TraitEnumType.PERSON, align));
+					}
+					else {
+						logger.warn("Invalid or dupe: " + s);
+					}
+				});
+			}
+		});
+		
+		return traitrecs;
+
+	}
+	private static BaseRecord newTrait(BaseRecord owner, String path, String name, TraitEnumType type, AlignmentEnumType alignment) {
+		ParameterList plist = ParameterList.newParameterList("path", path);
+		plist.parameter("name", name);
+		BaseRecord data = null;
+		try {
+			data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TRAIT, owner, null, plist);
+			data.set(FieldNames.FIELD_TYPE, type);
+			data.set(FieldNames.FIELD_ALIGNMENT, alignment);
+		}
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return data;
+	}
+
 		
 }
