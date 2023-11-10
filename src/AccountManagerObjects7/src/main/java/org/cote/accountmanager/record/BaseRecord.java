@@ -2,6 +2,7 @@ package org.cote.accountmanager.record;
 
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
@@ -38,7 +39,6 @@ public abstract class BaseRecord {
 	private boolean internal = false;
 	
 	private Map<String, FieldType> fieldMap = new ConcurrentHashMap<>();
-	//private List<FieldType> fields = new ArrayList<>();
 	private List<FieldType> fields = new CopyOnWriteArrayList<>();
 	
 	public BaseRecord(String name, FieldType[] inFields) {
@@ -86,7 +86,14 @@ public abstract class BaseRecord {
 		T obj = (T)RecordFactory.toConcrete(this, cls);
 		return obj;
 	}
-	
+	public BaseRecord copyDeidentifiedRecord() {
+		List<String> fields = RecordFactory.getSchema(model).getFields().stream()
+			.filter(f -> (!f.isIdentity() && !f.isVirtual() && !f.isEphemeral()))
+			.map(f -> f.getName())
+			.collect(Collectors.toList())
+		;
+		return copyRecord(fields.toArray(new String[0]));
+	}
 	public BaseRecord copyRecord() {
 		return copyRecord(new String[0]);
 	}
@@ -102,14 +109,11 @@ public abstract class BaseRecord {
 	}
 	public BaseRecord copyIntoRecord(BaseRecord copy, String[] outFieldNames) {
 
-		// List<String> fieldNames = new ArrayList<>();
 		List<FieldType> lflds = getFields();
 		Set<String> fset = new HashSet<>(Arrays.asList(outFieldNames));
-		
 		List<FieldType> ofields = new CopyOnWriteArrayList<>();
 		lflds.forEach(f -> {
 			if(outFieldNames.length == 0 ||  fset.contains(f.getName())) {
-				// fieldNames.add(f.getName());
 				ofields.add(RecordFactory.newFieldInstance(f));
 			}
 		});
@@ -188,7 +192,6 @@ public abstract class BaseRecord {
 			logger.error("Schema is null for " + embedded[0]);
 			return null;
 		}
-		// !fs.isForeign() || 
 		if(fs.getBaseModel() == null) {
 			logger.error("Field " + embedded[0] + " is not a foreign model");
 			return null;
@@ -262,7 +265,6 @@ public abstract class BaseRecord {
 		if(fs == null) {
 			throw new FieldException("Schema is null for " + embedded[0] + " in " + model);
 		}
-		// !fs.isForeign() || 
 		if(fs.getBaseModel() == null) {
 			throw new ValueException("Field " + embedded[0] + " is not a foreign model");
 		}
@@ -467,7 +469,6 @@ public abstract class BaseRecord {
 		return fields;
 	}
 	public void setFields(List<FieldType> inFields){
-		// fields = inFields;
 		fields = new CopyOnWriteArrayList<FieldType>(inFields);
 		fieldMap.clear();
 		for(FieldType f : inFields) {
