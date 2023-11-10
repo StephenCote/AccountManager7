@@ -75,7 +75,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 
 			checkCache();
 			
-			if(cache.containsKey(hash)) {
+			if(query.isCache() && cache.containsKey(hash)) {
 				final QueryResult qr = cache.get(hash);
 				if(ENABLE_STATISTICS) {
 					if(!CACHE_STATISTICS.containsKey(query.key())) {
@@ -110,7 +110,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			if(ENABLE_STATISTICS) {
 				CACHE_STATISTICS.put(query.key(), 1);
 			}
-			if(res != null && res.getCount() > 0) {
+			if(query.isCache() && res != null && res.getCount() > 0) {
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = res.get(FieldNames.FIELD_TYPE);
 				if(!qt.equals(qrt)) {
