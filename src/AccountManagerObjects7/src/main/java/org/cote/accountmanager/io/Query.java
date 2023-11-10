@@ -93,7 +93,16 @@ public class Query extends LooseRecord{
 		}
 		setRequestRange(startRecord, recordCount);
 	}
-
+	public void setCache(boolean cache) {
+		try {
+			set(FieldNames.FIELD_CACHE, cache);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	public boolean isCache() {
+		return get(FieldNames.FIELD_CACHE);
+	}
 	public String getType() {
 		return get(FieldNames.FIELD_TYPE);
 	}

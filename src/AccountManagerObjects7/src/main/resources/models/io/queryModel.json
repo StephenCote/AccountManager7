@@ -27,7 +27,11 @@
 		"ephemeral": true,
 		"private": true
 	},
-
+	{
+		"name": "cache",
+		"type": "boolean",
+		"default": true
+	},
 	{
 		"name": "executed",
 		"type": "boolean",

@@ -275,7 +275,7 @@ public class FieldNames {
 		public static final String FIELD_FUNCTION = "function";
 		
 		public static final String FIELD_CLASS = "class";
-		
+		public static final String FIELD_CACHE = "cache";
 		/// Access Approval
 		public static final String FIELD_ENTITLEMENT = "entitlement";
 		public static final String FIELD_ENTITLEMENT_TYPE = "entitlementType";
@@ -292,4 +292,10 @@ public class FieldNames {
 		public static final String FIELD_POST = "postalCode";
 		public static final String FIELD_STREET = "street";
 		public static final String FIELD_STREET2 = "street2";
+		
+		public static final String FIELD_CONTACT_INFORMATION = "contactInformation";
+		
+		// Olio
+		public static final String FIELD_LOCATION = "location";
+		public static final String FIELD_GROUPS = "groups";
 }
