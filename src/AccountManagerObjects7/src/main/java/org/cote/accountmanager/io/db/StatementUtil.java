@@ -64,11 +64,30 @@ public class StatementUtil {
 			if(fs.isEphemeral() || fs.isVirtual() || fs.isReferenced()) {
 				continue;
 			}
-			if(fs.isForeign() && f.getValueType() == FieldEnumType.LIST) {
-				List<BaseRecord> frecs = record.get(f.getName());
+			
+			
+			if(fs.isForeign()) {
+				List<BaseRecord> frecs = new ArrayList<>();
+				if(f.getValueType() == FieldEnumType.LIST) {
+					frecs = record.get(f.getName());	
+				}
+				else {
+					continue;
+				}
+				/*
+				else if(f.getValueType() == FieldEnumType.MODEL && record.get(f.getName()) != null) {
+					frecs.add((BaseRecord)record.get(f.getName()));	
+				}
+				else {
+					// logger.error("Unhandled foreign type: " + f.getValueType().toString());
+					continue;
+				}
+				*/
+				
 				for(BaseRecord rec : frecs) {
 					if(!RecordUtil.isIdentityRecord(rec)) {
 						logger.error("Record does not have an identity therefore a reference cannot be made");
+						// logger.error(rec.toFullString());
 						continue;
 					}
 					BaseRecord owner = null;
@@ -76,13 +95,17 @@ public class StatementUtil {
 						owner = rec;
 					}
 					else {
-						owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, rec.get(FieldNames.FIELD_OWNER_ID));
+						IOSystem.getActiveContext().getReader().populate(rec, new String[] {FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_OBJECT_ID});
+						long oid = rec.get(FieldNames.FIELD_OWNER_ID);
+						if(oid > 0L) {
+							owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, oid);
+						}
 					}
 					if(owner == null) {
-						logger.error("Record does not have an owner, therefore a reference cannot be made");
+						logger.error("Record " + rec.getModel() + " does not have an owner, therefore a reference cannot be made");
 						continue;
 					}
-					parts.add(ParticipationFactory.newParticipation(owner, record, fs.getParticipantModel(), rec));
+					parts.add(ParticipationFactory.newParticipation(owner, record, fs.getName(), rec));
 				}
 			}
 		}
@@ -691,6 +714,10 @@ public class StatementUtil {
 		*/
 		return "";
 	}
+	
+	private static List<String> allowedSortFields = Arrays.asList(new String[] {
+		"random()"
+	});
 	public static String getPaginationSuffix(Query query)
 	{
 		long startRecord = query.get(FieldNames.FIELD_START_RECORD);
@@ -704,15 +731,20 @@ public class StatementUtil {
 		}
 		String alias = getAlias(query);
 		String sort = query.get(FieldNames.FIELD_SORT_FIELD);
-		if(sort != null && !RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE)).hasField(sort)) {
-			logger.error("Sort field is not defined on model - " + sort);
-			sort = null;
+		if(sort != null && !allowedSortFields.contains(sort)) {
+
+			if(RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE)).hasField(sort)) {
+				sort = alias + "." + sort;
+			}
+			else {
+				logger.error("Sort field is not defined on model - " + sort);
+				sort = null;
+			}
 		}
-		String orderClause = (query != null && order != null && sort != null ? " ORDER BY " + alias + "." + sort + " " + order : "");
+		String orderClause = (query != null && order != null && sort != null ? " ORDER BY " + sort + " " + order : "");
 		if (!isInstructionReadyForPagination(query)) {
 			return orderClause;
 		}
-		
 		return orderClause + " LIMIT " + recordCount + " OFFSET " + startRecord;
 	}
 	
