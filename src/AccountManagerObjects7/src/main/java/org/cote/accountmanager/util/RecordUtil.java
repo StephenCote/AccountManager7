@@ -97,7 +97,7 @@ public class RecordUtil {
 		BaseRecord crec = rec.copyRecord(fieldNames.toArray(new String[0]));
 		String hash = null;
 		try{
-			hash = CryptoUtil.getDigestAsString(toJSONString(crec));
+			hash = CryptoUtil.getDigestAsString(toFullJSONString(crec));
 		}
 		catch(Exception e) {
 			logger.error(e);
@@ -454,7 +454,25 @@ public class RecordUtil {
 		
 		Set<String> mlist = Arrays.asList(models).stream().map(m -> m.getModel()).collect(Collectors.toSet());
 		BaseRecord firstModel = models[0];
-		List<BaseRecord> rlist = Arrays.asList(models).stream().filter(m -> m.getFields().size() != firstModel.getFields().size()).collect(Collectors.toList());
+		final long id;
+		if(firstModel.hasField(FieldNames.FIELD_ID)) {
+			id = firstModel.get(FieldNames.FIELD_ID);
+		}
+		else {
+			id = 0L;
+		}
+		List<BaseRecord> rlist = Arrays.asList(models).stream().filter(
+				m -> {
+					boolean size = (m.getFields().size() != firstModel.getFields().size());
+					long rid = 0L;
+					if(m.hasField(FieldNames.FIELD_ID)) {
+						rid = m.get(FieldNames.FIELD_ID);
+					}
+					boolean ids = ((rid == 0L && id != 0L) || (rid > 0L && id == 0L));
+					// logger.warn(firstModel.getModel() + " " + size + " " +  m.getFields().size() + " <> " + firstModel.getFields().size() + " " + ids + " " + rid + " <> " + id);
+					return (size || ids);
+				} 
+		).collect(Collectors.toList());
 		/*
 		if(mlist.size() != 1 || rlist.size() > 0) {
 			logger.info("Is Similar: " + mlist.size() + " / " + rlist.size());
@@ -482,7 +500,7 @@ public class RecordUtil {
 			return 0;
 		}
 		if(!isSimilar(recs)) {
-			logger.error("Models are not similar enough to be processed concurrently");
+			logger.error("Models (" + recs[0].getModel() + ") are not similar enough to be processed concurrently");
 			return 0;
 		}
 		ModelSchema ms = RecordFactory.getSchema(recs[0].getModel());
@@ -533,7 +551,9 @@ public class RecordUtil {
 	}
 
 	public void applyNameGroupOwnership(BaseRecord user, BaseRecord rec, String name, String ipath, long organizationId) throws FieldException, ValueException, ModelNotFoundException {
-		rec.set(FieldNames.FIELD_NAME, name);
+		if(rec.inherits("common.name")) {
+			rec.set(FieldNames.FIELD_NAME, name);
+		}
 		String path = resolveUserPath(user, ipath);
 		
 		BaseRecord dir = pathUtil.makePath(user, ModelNames.MODEL_GROUP, path, "DATA", organizationId);
