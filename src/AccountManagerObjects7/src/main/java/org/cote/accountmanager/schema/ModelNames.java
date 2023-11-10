@@ -130,7 +130,7 @@ public class ModelNames {
 	public static final String MODEL_TRAIT = "data.trait";
 	public static final String MODEL_LOCATION = "data.location";
 	public static final String MODEL_GEO_LOCATION = "data.geoLocation";
-	public static final String MODEL_WORLD = "data.world";
+	public static final String MODEL_WORLD = "olio.world";
 	public static final String MODEL_ALIGNMENT = "common.alignment";
 	
 	
@@ -140,6 +140,13 @@ public class ModelNames {
 	public static final String MODEL_INSTINCT = "olio.instinct";
 	public static final String MODEL_PERSONALITY = "olio.personalityTrait";
 	public static final String MODEL_SOCIAL_BEHAVIOR = "olio.socialBehavior";
+	public static final String MODEL_SOCIAL_GROUP = "olio.socialGroup";
+	public static final String MODEL_BEHAVIOR = "olio.behavior";
+	public static final String MODEL_QUALITY = "olio.quality";
+	public static final String MODEL_ITEM = "olio.item";
+	public static final String MODEL_APPAREL = "olio.apparel";
+	public static final String MODEL_WEARABLE = "olio.wearable";
+	public static final String MODEL_EVENT = "olio.event";
 	
 	public static List<String> MODELS = Arrays.asList(
 		MODEL_ORGANIZATION, MODEL_SIMPLE_BYTE_STORE, MODEL_USER, MODEL_ACCOUNT, MODEL_PERSON, MODEL_GROUP, MODEL_ATTRIBUTE, MODEL_ROLE,
@@ -149,7 +156,8 @@ public class ModelNames {
 		MODEL_INDEX2, MODEL_INDEX_ENTRY2, MODEL_INDEX_ENTRY_VALUE2, MODEL_INDEX_STORE, MODEL_KEY_STORE, MODEL_VAULT, MODEL_AUTHENTICATION_REQUEST, MODEL_AUTHENTICATION_RESPONSE,
 		MODEL_AUDIT, MODEL_CONTACT_INFORMATION, MODEL_ACCESS_REQUEST, MODEL_MODEL_SCHEMA, MODEL_STREAM, MODEL_STREAM_SEGMENT, MODEL_THUMBNAIL, MODEL_VALIDATION_RULE, MODEL_APPLICATION_PROFILE,
 		MODEL_FUNCTION, MODEL_TAG, MODEL_MODEL_CATEGORY, MODEL_NOTE, MODEL_SOCKET_MESSAGE, MODEL_FIELD_LOCK, MODEL_TRAIT, MODEL_WORD, MODEL_WORD_NET, MODEL_CENSUS_WORD, MODEL_WORD_NET_POINTER, MODEL_WORD_NET_ALT,
-		MODEL_LOCATION, MODEL_GEO_LOCATION, MODEL_WORLD, MODEL_CHAR_PERSON, MODEL_INSTINCT, MODEL_PERSONALITY, MODEL_SOCIAL_BEHAVIOR
+		MODEL_LOCATION, MODEL_GEO_LOCATION, MODEL_WORLD, MODEL_CHAR_PERSON, MODEL_INSTINCT, MODEL_PERSONALITY, MODEL_SOCIAL_BEHAVIOR,
+		MODEL_SOCIAL_GROUP, MODEL_BEHAVIOR, MODEL_QUALITY, MODEL_ITEM, MODEL_APPAREL, MODEL_EVENT
 	);
 	
 	private static List<String> customModelNames = null;
