@@ -2,6 +2,7 @@
 	"name": "olio.instinct",
 	"likeInherits": ["data.directory"],
 	"inherits": [
+		"common.name",
 		"common.groupExt",
 		"common.ownerId",
 		"common.objectId",

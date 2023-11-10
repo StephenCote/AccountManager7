@@ -1,33 +1,36 @@
 {
-"name": "identity.contactInformation",
-"inherits": ["common.nameId"],
-"fields": [
-	{
-	"name": "contacts",
-	"baseModel": "identity.contact",
-	"baseType": "model",
-	"foreign": true,
-	"type": "list"
-	}
-	,{
-	"name": "addresses",
-	"baseModel": "identity.address",
-	"baseType": "model",
-	"foreign": true,
-	"type": "list"
-	}
-	,{
-	"name": "contactInformationType",
-	"baseClass": "org.cote.accountmanager.schema.type.ContactInformationEnumType",
-	"type": "enum",
-	"maxLength": 16
-	}
-	,{
-	"name": "description",
-	"type": "string"
-	}
-	,{
-	"name": "referenceId",
-	"type": "long"
-	}
-]}
+	"name": "identity.contactInformation",
+	"inherits": [
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.reference",
+		"common.urn"
+	],
+	"followReference": false,
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "contacts",
+			"baseModel": "identity.contact",
+			"baseType": "model",
+			"foreign": true,
+			"type": "list"
+		},
+		{
+			"name": "addresses",
+			"baseModel": "identity.address",
+			"baseType": "model",
+			"foreign": true,
+			"type": "list"
+		},
+		{
+			"name": "contactInformationType",
+			"baseClass": "org.cote.accountmanager.schema.type.ContactInformationEnumType",
+			"type": "enum",
+			"maxLength": 16
+		}
+	]
+}

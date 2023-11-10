@@ -71,7 +71,39 @@ import org.junit.Test;
 public class TestBulkOperation extends BaseTest {
 	private int bulkLoadSize = 10;
 	
-	private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
+
+	
+	private boolean resetCountryInfo = false;
+	
+	private String worldName = "Demo World";
+	private String subWorldName = "Sub World";
+	private String worldPath = "~/Worlds";
+	
+	@Test
+	public void TestOlio2() {
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS"});
+		assertNotNull("World is null", world);
+		WorldUtil.populateWorld(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
+		
+		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
+		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		// logger.info(subWorld.toFullString());
+		//AuditUtil.setLogToConsole(true);
+		try {
+			BaseRecord event = WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+	}
+	/*
+	 
+	 private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		plist.parameter("name", name);
 		BaseRecord data = null;
@@ -86,62 +118,6 @@ public class TestBulkOperation extends BaseTest {
 		return data;
 	}
 	
-	private BaseRecord newTrait(BaseRecord owner, String path, String name, TraitEnumType type, AlignmentEnumType alignment) {
-		ParameterList plist = ParameterList.newParameterList("path", path);
-		plist.parameter("name", name);
-		BaseRecord data = null;
-		try {
-			data = ioContext.getFactory().newInstance(ModelNames.MODEL_TRAIT, owner, null, plist);
-			data.set(FieldNames.FIELD_TYPE, type);
-			data.set(FieldNames.FIELD_ALIGNMENT, alignment);
-		}
-		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		return data;
-	}
-	
-	private List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath){
-		String traitsPath = testProperties.getProperty("test.datagen.path") + "/traits.json";
-		File f = new File(traitsPath);
-		assertTrue("Data file does not exist", f.exists());
-		
-		Map<String, String[]> traits = JSONUtil.getMap(traitsPath, String.class,String[].class);
-		assertTrue("Expected to load some data", traits.size() > 0);
-		
-		List<BaseRecord> traitrecs = new ArrayList<>();
-		Set<String> traitset = new HashSet<>();
-		traits.forEach((k, v) -> {
-			if(!k.equals("alignment")) {
-				final AlignmentEnumType align;
-				if(k.equals("positive")) {
-					align = AlignmentEnumType.LAWFULGOOD;
-				}
-				else if(k.equals("negative")) {
-					align = AlignmentEnumType.CHAOTICEVIL;
-				}
-				else {
-					align = AlignmentEnumType.NEUTRAL;
-				}
-
-				Arrays.asList(v).forEach(s -> {
-					if(s != null && !traitset.contains(s)) {
-						traitset.add(s);
-						traitrecs.add(newTrait(owner, groupPath, s, TraitEnumType.PERSON, align));
-					}
-					else {
-						logger.warn("Invalid or dupe: " + s);
-					}
-				});
-			}
-		});
-		assertTrue("Expected traits to be queued", traitrecs.size() > 0);
-		
-		return traitrecs;
-
-	}
-	
-	/*
 	@Test
 	public void TestLocationParent() {
 		logger.info("Test location parent");
@@ -172,26 +148,9 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	*/
-	private int cleanupTrait(long groupId, long organizationId) {
-		Query lq = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, groupId);
-		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-		int deleted = 0;
-		try {
-			deleted = ioContext.getWriter().delete(lq);
-		} catch (WriterException e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		return deleted;
-	}
 	
 
-	private boolean resetCountryInfo = false;
-	
-	
-	private String worldName = "Demo World";
-	private String worldPath = "~/Worlds";
-	
+	/*
 	private BaseRecord getWorld(BaseRecord user, String[] features) {
 		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, worldPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		BaseRecord rec = ioContext.getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
@@ -259,7 +218,17 @@ public class TestBulkOperation extends BaseTest {
 
 		WordParser.loadNames(user, groupPath, basePath, resetCountryInfo);
 		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, groupPath));
+	}
 
+	private int loadTraits(BaseRecord user, BaseRecord world, String basePath) {
+		ioContext.getReader().populate(world);
+		BaseRecord traitsDir = world.get("traits");
+		ioContext.getReader().populate(traitsDir);
+		
+		String groupPath = traitsDir.get(FieldNames.FIELD_PATH);
+
+		WordParser.loadTraits(user, groupPath, basePath, resetCountryInfo);
+		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
 	}
 	private int loadSurnames(BaseRecord user, BaseRecord world, String basePath) {
 		ioContext.getReader().populate(world);
@@ -269,6 +238,7 @@ public class TestBulkOperation extends BaseTest {
 		WordParser.loadSurnames(user, groupPath, basePath,resetCountryInfo);
 		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
+	*/
 	/*
 	@Test
 	public void TestAltNames() {
@@ -285,23 +255,111 @@ public class TestBulkOperation extends BaseTest {
 		logger.info("Count: " + count);
 	}
 	*/
+	/*
 	@Test
-	public void TestOnio() {
+	public void TestOlio2() {
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
 		
-		logger.info("Toss the existing schema");
-		RecordFactory.releaseCustomSchema("data.charPerson");
-		ModelSchema schema = null;
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"US"});
+		assertNotNull("World is null", world);
+		logger.info(world.toFullString());
+		WorldUtil.populateWorld(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
+		List<BaseRecord> pers = new ArrayList<>();
+		BaseRecord location = WorldUtil.randomLocation(testUser1, world);
+		/ *
+		for(int i = 0; i < 100; i++) {
+			BaseRecord per1 = WorldUtil.randomPerson(testUser1, world);
+			//BaseRecord[] recs = WorldUtil.addressPerson(testUser1, world, per1, null);
+			WorldUtil.addressPerson(testUser1, world, per1, location);
+			pers.add(per1);
+			
+		}
+		* /
+		//assertTrue("Expected records", recs.length > 0);
+		//int created = ioContext.getAccessPoint().create(testUser1, pers.toArray(new BaseRecord[0]));
+		//logger.info("Created: " + created);
+		BaseRecord per1 = WorldUtil.randomPerson(testUser1, world);
+		WorldUtil.addressPerson(testUser1, world, per1, null);
+		ioContext.getAccessPoint().create(testUser1, new BaseRecord[] {per1});
+		//assertNotNull("Person create object is null", pper1);
+		//logger.info(per1.toFullString());
+		BaseRecord rper1 = null;
 		try {
-			schema = RecordFactory.getCustomSchemaFromResource(ModelNames.MODEL_CHAR_PERSON, ModelNames.MODEL_CHAR_PERSON);
+			rper1 = ioContext.getAccessPoint().findByNameInGroup(testUser1, ModelNames.MODEL_CHAR_PERSON, (long)per1.get(FieldNames.FIELD_GROUP_ID), per1.get(FieldNames.FIELD_NAME));
+			assertNotNull("Failed to find record", rper1);
+			ioContext.getReader().populate(rper1,3);
+			logger.info(rper1.toFullString());
 		}
 		catch(Exception e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
-		assertNotNull("Schema is null", schema);
+		logger.info("Complete test");
+		/ *
+		for(BaseRecord rec: recs) {
+			int chk = ioContext.getAccessPoint().create(testUser1, new BaseRecord[] {rec});
+			assertTrue("Expected record to be created", chk == 1);
+		}
+		* /
+		//logger.info(per1.toFullString());
+		/ *
+		BaseRecord pper1 = ioContext.getAccessPoint().create(testUser1, per1);
+		assertNotNull("Person create object is null", pper1);
+		logger.info(per1.toFullString());
+		* /
+		/ *
+		for(AlignmentEnumType align : AlignmentEnumType.class.getEnumConstants()) {
+			String title = WorldUtil.generateEpochTitle(testUser1, world, align);
+			logger.info(title);
+		}
+		* /
+	}
+	*/
+	/*
+	@Test
+	public void TestOlio() {
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Olio");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String olioPath = "~/Olio";
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, olioPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList("path", olioPath);
+		plist.parameter("name", UUID.randomUUID().toString());
+		BaseRecord irec = null;
+
+		
+		int traitCount = WordParser.loadTraits(testUser1, olioPath, testProperties.getProperty("test.datagen.path"), false);
+
+		
+		logger.info("Received: " + traitCount);
+
+		try {
+			BaseRecord instinct = ioContext.getFactory().newInstance(ModelNames.MODEL_INSTINCT, testUser1, null, plist);
+			assertNotNull("Record was null", instinct);
+			
+			irec = ioContext.getAccessPoint().create(testUser1, instinct);
+			
+			// world = ioContext.getFactory().newInstance(ModelNames.MODEL_WORLD);
+			//logger.info(world.inherits(ModelNames.MODEL_DIRECTORY));
+		}
+		catch(ClassCastException | FactoryException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		assertNotNull("Instinct is null", irec);
+		logger.info(irec.toFullString());
+		
+
+		//logger.info(JSONUtil.exportObject(schema));
 		
 	}
-	/*
+*/
+	
+/*
 	@Test
 	public void TestWorld() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -324,6 +382,11 @@ public class TestBulkOperation extends BaseTest {
 		logger.info("Names: " + names);
 		int surnames = loadSurnames(testUser1, world, testProperties.getProperty("test.datagen.path") + "/surnames/Names_2010Census.csv");
 		logger.info("Surnames: " + surnames);
+		int traits = loadTraits(testUser1, world, testProperties.getProperty("test.datagen.path"));
+		logger.info("Traits: " + traits);
+
+
+		
 		BaseRecord dir = world.get("locations");
 		ioContext.getReader().populate(dir);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
@@ -349,7 +412,7 @@ public class TestBulkOperation extends BaseTest {
 			logger.info(per1.toFullString());
 		}
 	}
-	*/
+*/
 	/*
 	@Test
 	public void TestWorldModel() {
@@ -951,4 +1014,74 @@ public class TestBulkOperation extends BaseTest {
 		assertFalse("Encountered an error", error);
 	}
 	*/
+	
+	/*
+	private BaseRecord newTrait(BaseRecord owner, String path, String name, TraitEnumType type, AlignmentEnumType alignment) {
+			ParameterList plist = ParameterList.newParameterList("path", path);
+			plist.parameter("name", name);
+			BaseRecord data = null;
+			try {
+				data = ioContext.getFactory().newInstance(ModelNames.MODEL_TRAIT, owner, null, plist);
+				data.set(FieldNames.FIELD_TYPE, type);
+				data.set(FieldNames.FIELD_ALIGNMENT, alignment);
+			}
+			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+			return data;
+		}
+		
+		private List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath){
+			String traitsPath = testProperties.getProperty("test.datagen.path") + "/traits.json";
+			File f = new File(traitsPath);
+			assertTrue("Data file does not exist", f.exists());
+			
+			Map<String, String[]> traits = JSONUtil.getMap(traitsPath, String.class,String[].class);
+			assertTrue("Expected to load some data", traits.size() > 0);
+			
+			List<BaseRecord> traitrecs = new ArrayList<>();
+			Set<String> traitset = new HashSet<>();
+			traits.forEach((k, v) -> {
+				if(!k.equals("alignment")) {
+					final AlignmentEnumType align;
+					if(k.equals("positive")) {
+						align = AlignmentEnumType.LAWFULGOOD;
+					}
+					else if(k.equals("negative")) {
+						align = AlignmentEnumType.CHAOTICEVIL;
+					}
+					else {
+						align = AlignmentEnumType.NEUTRAL;
+					}
+
+					Arrays.asList(v).forEach(s -> {
+						if(s != null && !traitset.contains(s)) {
+							traitset.add(s);
+							traitrecs.add(newTrait(owner, groupPath, s, TraitEnumType.PERSON, align));
+						}
+						else {
+							logger.warn("Invalid or dupe: " + s);
+						}
+					});
+				}
+			});
+			assertTrue("Expected traits to be queued", traitrecs.size() > 0);
+			
+			return traitrecs;
+
+		}
+		private int cleanupTrait(long groupId, long organizationId) {
+			Query lq = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, groupId);
+			lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+			int deleted = 0;
+			try {
+				deleted = ioContext.getWriter().delete(lq);
+			} catch (WriterException e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
+			return deleted;
+		}
+		*/
+
 }

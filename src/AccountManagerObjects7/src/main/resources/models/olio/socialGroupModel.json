@@ -1,28 +1,21 @@
 {
-	"name": "olio.socialBehavior",
+	"name": "olio.socialGroup",
 	"inherits": [
 		"data.directory",
 		"common.description",
 		"common.alignment",
 		"policy.score"
 	],
-	"group": "SocialBehaviors",
+	"group": "SocialGroups",
 	"icon": "category",
-	"label": "Social Behavior",
+	"label": "Social Group",
 	"dedicatedParticipation": true,
 	"fields": [
 		{
 			"name": "positive",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "olio.personalityTrait",
-			"foreign": true
-		},
-		{
-			"name": "negative",
-			"type": "list",
-			"baseType": "model",
-			"baseModel": "olio.personalityTrait",
+			"baseModel": "olio.socialBehavior",
 			"foreign": true
 		}
 	]

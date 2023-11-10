@@ -1,0 +1,48 @@
+{
+	"name": "olio.item",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.name",
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Items",
+	"icon": "category",
+	"label": "Item",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "type",
+			"type": "string",
+			"maxLength": 24
+		},
+		{
+			"name": "quality",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "age",
+			"type": "int"
+		},
+		{
+			"name": "inuse",
+			"type": "boolean"
+		},
+		{
+			"name": "qualities",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.quality",
+			"foreign": true
+		}
+
+
+	]
+}

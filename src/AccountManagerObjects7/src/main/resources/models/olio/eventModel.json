@@ -1,0 +1,120 @@
+{
+	"name": "olio.event",
+	"inherits": [
+		"data.directory",
+		"common.parent",
+		"common.alignment"
+	],
+	"group": "Olio Events",
+	"icon": "category",
+	"label": "Olio Event",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.EventEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "entryTraits",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"foreign": true,
+			"participantModel": "event.entryTrait"
+		},
+		{
+			"name": "exitTraits",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"foreign": true,
+			"participantModel": "event.exitTrait"
+		},
+		{
+			"name": "actors",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"participantModel": "event.actor"
+		},
+		{
+			"name": "participants",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"participantModel": "event.participant"
+		},
+		{
+			"name": "observers",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"participantModel": "event.observer"
+		},
+		{
+			"name": "influencers",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"participantModel": "event.influencer"
+		},
+		{
+			"name": "location",
+			"type": "model",
+			"baseModel": "data.location",
+			"foreign": true
+		},
+		{
+			"name": "eventStart",
+			"type": "timestamp"
+		},
+		{
+			"name": "eventEnd",
+			"type": "timestamp"
+		},
+		{
+			"name": "precedingEvents",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.event",
+			"foreign": true,
+			"participantModel": "event.preceding"
+		},
+		{
+			"name": "subsequentEvents",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.event",
+			"foreign": true,
+			"participantModel": "event.subsequent"
+		},
+		{
+			"name": "instinct",
+			"type": "model",
+			"baseModel": "olio.instinct",
+			"foreign": true
+		},
+		{
+			"name": "behavior",
+			"type": "model",
+			"baseModel": "olio.behavior",
+			"foreign": true
+		},
+		{
+			"name": "groups",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "auth.group",
+			"foreign": true,
+			"participantModel": "event.group"
+		}
+
+	]
+}
+

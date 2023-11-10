@@ -1,0 +1,90 @@
+{
+	"name": "olio.quality",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.name",
+		"common.groupExt",
+		"common.description",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Instincts",
+	"icon": "category",
+	"label": "Instinct",
+	"fields": [
+		{
+			"name": "unit",
+			"type": "string",
+			"maxLength": 6,
+			"default": "us",
+			"description": "Default for US: dimensions in inches, weight in pounds"
+		},
+		{
+			"name": "color",
+			"type": "string",
+			"maxLength": 24
+		},	
+		{
+			"name": "width",
+			"type": "double"
+		},		
+		{
+			"name": "height",
+			"type": "double"
+		},
+		{
+			"name": "weight",
+			"type": "double"
+		},
+		{
+			"name": "length",
+			"type": "double"
+		},
+		{
+			"name": "opacity",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "elasticity",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "glossiness",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "viscocity",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "sliminess",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "smoothness",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		}
+		
+	]
+}

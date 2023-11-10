@@ -1,5 +1,5 @@
 {
-"name": "data.world",
+"name": "olio.world",
 "inherits": ["data.directory", "common.description"],
 "factory": "org.cote.accountmanager.factory.WorldFactory",
 "group": "Worlds",
@@ -74,6 +74,12 @@
 	{
 		"name": "traits",
 		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "basis",
+		"baseModel": "olio.world",
 		"type": "model",
 		"foreign": true
 	}

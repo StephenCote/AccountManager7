@@ -27,7 +27,7 @@ public class TestLooseField {
 	public void TestLooseImport() {
 		logger.info("Test Loose Imports.");
 		logger.warn("Clearing catalog");
-		Catalog.clearCatalog();
+
 		logger.info("Attempt to create invalid/unloaded model");
 
 		BaseRecord invmod = null;
@@ -86,7 +86,7 @@ public class TestLooseField {
 	@Test
 	public void TestErrorHandling() {
 		logger.info("Test error handling");
-		Catalog.clearCatalog();
+
 		BaseRecord genObj = null;
 		
 		String impMod = """

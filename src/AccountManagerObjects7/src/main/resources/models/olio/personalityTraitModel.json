@@ -6,7 +6,6 @@
 		"common.alignment",
 		"policy.score"
 	],
-	"constraints": ["name, groupId, organizationId"],
 	"group": "PersonalityTraits",
 	"icon": "category",
 	"label": "Personality Trait",

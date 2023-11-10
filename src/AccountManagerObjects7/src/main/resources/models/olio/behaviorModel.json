@@ -1,0 +1,46 @@
+{
+	"name": "olio.behavior",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.name",
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Behaviors",
+	"icon": "category",
+	"label": "Behavior",
+	"fields": [
+		{
+			"name": "rearing",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "education",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "indoctrination",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "herd",
+			"type": "list",
+			"baseType": "string"
+		},
+
+		{
+			"name": "socialGroups",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.socialGroup",
+			"foreign": true
+		}
+	]
+}

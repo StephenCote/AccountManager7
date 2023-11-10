@@ -1,0 +1,48 @@
+{
+	"name": "olio.wearable",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"olio.item"
+	],
+	"group": "Olocations",
+	"icon": "category",
+	"label": "Location",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "gender",
+			"type": "string",
+			"maxLength": 6,
+			"description": "Male, female, unisex"
+		},
+		{
+			"name": "fabric",
+			"type": "string",
+			"maxLength": 24
+		},
+		{
+			"name": "pattern",
+			"type": "string",
+			"maxLength": 24
+		},
+		{
+			"name": "attachment",
+			"type": "string",
+			"maxLength": 16,
+			"description": "Worn, carried, etc"
+		},
+		{
+			"name": "size",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "location",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.itemLocation",
+			"foreign": true
+		}
+
+	]
+}
