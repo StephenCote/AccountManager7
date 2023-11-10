@@ -48,6 +48,7 @@ public class WorldFactory extends FactoryBase {
 					newRecord.set("locations", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Locations", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("events", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Events", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("words", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Words", GroupEnumType.DATA.toString(), orgId));
+					newRecord.set("traits", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Traits", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("names", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Names", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("surnames", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Surnames", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("occupations", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Occupations", GroupEnumType.DATA.toString(), orgId));
