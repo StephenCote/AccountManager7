@@ -96,6 +96,7 @@ public class DBWriter extends MemoryWriter {
 			st.close();
 		} catch (SQLException | DatabaseException e) {
 			logger.error(e);
+			e.printStackTrace();
 	    }
 		
 
@@ -105,7 +106,121 @@ public class DBWriter extends MemoryWriter {
 	
 	private int maxBatchSize = 2000;
 	
-	private void updateAutoCreate(RecordOperation op, ModelSchema schema, BaseRecord model, Map<String, List<BaseRecord>> autoCreate) throws FieldException, ValueException, ModelNotFoundException {
+	public synchronized int write(BaseRecord[] models) throws WriterException {
+		int writeCount = 0;
+		int batch = 0;
+		if(models.length == 0) {
+			return 0;
+		}
+		
+		if(!IOSystem.getActiveContext().getRecordUtil().isSimilar(models)) {
+			logger.error("Model list must be consistent and with the same model name");
+		}
+		
+		RecordOperation op = RecordOperation.CREATE;
+		BaseRecord firstModel = models[0];
+		ModelSchema schema = RecordFactory.getSchema(firstModel.getModel());
+		String objectId = (firstModel.hasField(FieldNames.FIELD_OBJECT_ID) ? firstModel.get(FieldNames.FIELD_OBJECT_ID) : null);
+		long id = (firstModel.hasField(FieldNames.FIELD_ID) ? firstModel.get(FieldNames.FIELD_ID) : 0L);
+		if(id > 0L || objectId != null) {
+			op = RecordOperation.UPDATE;
+		}
+
+		Map<String, List<BaseRecord>> autoCreate = new HashMap<>();
+		if(autoCreate.size() > 0) {
+			logger.error("TODO: Re-implement auto creation of foreign references");
+		}
+		
+		for(BaseRecord rec : models) {
+			if(op == RecordOperation.UPDATE) {
+				CacheUtil.clearCache(rec);
+			}
+			super.write(rec);
+		}
+		
+		if(!RecordUtil.isIdentityRecord(firstModel) && (op != RecordOperation.CREATE || !RecordUtil.isIdentityModel(schema))) { 
+			throw new WriterException("Model " + firstModel.getModel() + " does not define an identity field");
+		}
+		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
+
+		/*
+		if(models[0].getModel().equals(ModelNames.MODEL_EVENT)) {
+			logger.warn("***** Events: " + models.length);
+		}
+		*/
+		DBStatementMeta meta = null;
+	    try (Connection con = dataSource.getConnection()){
+	    	List<Long> ids = new ArrayList<>();
+	    	if(op == RecordOperation.CREATE) {
+				ids = dbUtil.getNextIds(firstModel.getModel(), models.length);
+				if(ids.size() != models.length) {
+					throw new WriterException("Failed to obtain next identifier");
+				}
+		    }
+			boolean lastCommit = con.getAutoCommit();
+			con.setAutoCommit(false);
+	    	
+	    	meta = null;
+	    	if(op == RecordOperation.CREATE) {
+	    		meta = StatementUtil.getInsertTemplate(firstModel);
+	    	}
+	    	else {
+	    		meta = StatementUtil.getUpdateTemplate(firstModel);
+	    	}
+	    	
+	    	for(int i = 0; i < models.length; i++) {
+	    		BaseRecord model = models[i];
+	    		if(op == RecordOperation.CREATE) {
+	    			applyAutoCreateList(model, op, autoCreate);
+	    		}
+	    	}
+	    	processAutoCreate(autoCreate);
+	    	
+	    	PreparedStatement st = con.prepareStatement(meta.getSql());
+	    	for(int i = 0; i < models.length; i++) {
+	    		BaseRecord model = models[i];
+	    		
+	    		if(op == RecordOperation.CREATE) {
+	    			long rid = ids.get(i);
+	    			model.set(FieldNames.FIELD_ID, rid);
+	    			// applyAutoCreateList(model, op, autoCreate);
+	    			updateAutoCreateReference(op, schema, model, autoCreate);
+	    		}
+	    		
+		    	StatementUtil.applyPreparedStatement(model, meta, st);
+				st.addBatch();
+				batch++;
+				if(batch >= maxBatchSize || (batch > 0 && i == (models.length - 1))){
+					processAutoCreate(autoCreate);
+					st.executeBatch();
+					st.clearBatch();
+					writeCount += batch;
+					// logger.info("Batch write: " + batch + "/" + writeCount +" of " + models.length);
+					batch=0;
+				}
+	    	}
+			st.close();
+			con.commit();
+			con.setAutoCommit(lastCommit);
+
+		}
+	    catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			if(meta != null) {
+				logger.error(meta.getSql());
+			}
+	    }
+	    
+		if(models[0].getModel().equals(ModelNames.MODEL_EVENT)) {
+			logger.warn("***** " + op.toString() + " Events: " + models.length + " -> " + writeCount);
+
+		}
+		
+
+		return writeCount;
+	}
+	
+	private void updateAutoCreateReference(RecordOperation op, ModelSchema schema, BaseRecord model, Map<String, List<BaseRecord>> autoCreate) throws FieldException, ValueException, ModelNotFoundException {
 		List<BaseRecord> parts = StatementUtil.getForeignParticipations(model);
 		if(!autoCreate.containsKey(ModelNames.MODEL_PARTICIPATION)) {
 			autoCreate.put(ModelNames.MODEL_PARTICIPATION, new ArrayList<>());
@@ -114,10 +229,11 @@ public class DBWriter extends MemoryWriter {
 
 		List<FieldType> refList = model.getFields().stream().filter(o -> {
 			FieldSchema fs = schema.getFieldSchema(o.getName());
-			return fs.isReferenced();
+			return (fs.isReferenced());
 
 		}).collect(Collectors.toList());
 		long rid = model.get(FieldNames.FIELD_ID);
+		
 		if(refList.size() > 0) {
 			for(FieldType f : refList) {
 				if(f.getValueType() == FieldEnumType.LIST) {
@@ -154,101 +270,23 @@ public class DBWriter extends MemoryWriter {
     	}
 	}
 	
-	public synchronized int write(BaseRecord[] models) throws WriterException {
-		int writeCount = 0;
-		int batch = 0;
-		if(models.length == 0) {
-			return 0;
-		}
-		
-		if(!IOSystem.getActiveContext().getRecordUtil().isSimilar(models)) {
-			logger.error("Model list must be consistent and with the same model name");
-		}
-		
-		RecordOperation op = RecordOperation.CREATE;
-		BaseRecord firstModel = models[0];
-		ModelSchema schema = RecordFactory.getSchema(firstModel.getModel());
-		String objectId = (firstModel.hasField(FieldNames.FIELD_OBJECT_ID) ? firstModel.get(FieldNames.FIELD_OBJECT_ID) : null);
-		long id = (firstModel.hasField(FieldNames.FIELD_ID) ? firstModel.get(FieldNames.FIELD_ID) : 0L);
-		if(id > 0L || objectId != null) {
-			op = RecordOperation.UPDATE;
-		}
-		
-		Map<String, List<BaseRecord>> autoCreate = new HashMap<>();
-		if(autoCreate.size() > 0) {
-			logger.error("TODO: Re-implement auto creation of foreign references");
-		}
-		
-		for(BaseRecord rec : models) {
-			if(op == RecordOperation.UPDATE) {
-				CacheUtil.clearCache(rec);
-			}
-			super.write(rec);
-		}
-		
-		if(!RecordUtil.isIdentityRecord(firstModel) && (op != RecordOperation.CREATE || !RecordUtil.isIdentityModel(schema))) { 
-			throw new WriterException("Model " + firstModel.getModel() + " does not define an identity field");
-		}
-		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
-
-	    try (Connection con = dataSource.getConnection()){
-	    	List<Long> ids = new ArrayList<>();
-	    	if(op == RecordOperation.CREATE) {
-				ids = dbUtil.getNextIds(firstModel.getModel(), models.length);
-				if(ids.size() != models.length) {
-					throw new WriterException("Failed to obtain next identifier");
-				}
-		    }
-			boolean lastCommit = con.getAutoCommit();
-			con.setAutoCommit(false);
-	    	
-	    	DBStatementMeta meta = null;
-	    	if(op == RecordOperation.CREATE) {
-	    		meta = StatementUtil.getInsertTemplate(firstModel);
-	    	}
-	    	else {
-	    		meta = StatementUtil.getUpdateTemplate(firstModel);
-	    	}
-	    	PreparedStatement st = con.prepareStatement(meta.getSql());
-	    	for(int i = 0; i < models.length; i++) {
-	    		BaseRecord model = models[i];
-	    		if(op == RecordOperation.CREATE) {
-	    			long rid = ids.get(i);
-	    			model.set(FieldNames.FIELD_ID, rid);
-	    			updateAutoCreate(op, schema, model, autoCreate);
-	    		}
-		    	StatementUtil.applyPreparedStatement(model, meta, st);
-				st.addBatch();
-				batch++;
-				if(batch >= maxBatchSize || (batch > 0 && i == (models.length - 1))){
-					st.executeBatch();
-					st.clearBatch();
-					writeCount += batch;
-					// logger.info("Batch write: " + batch + "/" + writeCount +" of " + models.length);
-					batch=0;
-				}
-	    	}
-			st.close();
-			con.commit();
-			con.setAutoCommit(lastCommit);
-
-		}
-	    catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-	    }
-
+	private void processAutoCreate(Map<String, List<BaseRecord>> autoCreate) {
 	    autoCreate.forEach((k ,v) -> {
 	    	if(v.size() > 0) {
-	    		logger.info("Auto create: " + k + " " + v.size());
+	    		// logger.info("Auto create: " + k + " " + v.size());
 	    		IOSystem.getActiveContext().getRecordUtil().createRecords(v.toArray(new BaseRecord[0]));
 	    	}
 	    });
-		return writeCount;
+	    autoCreate.clear();
 	}
 	
 	protected Map<String, List<BaseRecord>> getAutoCreateList(BaseRecord model, RecordOperation op){
 		//List<BaseRecord> autoCreate = new ArrayList<>();
 		Map<String, List<BaseRecord>> autoCreate = new HashMap<>();
+		applyAutoCreateList(model, op ,autoCreate);
+		return autoCreate;
+	}
+	protected void applyAutoCreateList(BaseRecord model, RecordOperation op, Map<String, List<BaseRecord>> autoCreate){
 		ModelSchema schema = RecordFactory.getSchema(model.getModel());
 		if(schema.isAutoCreateForeignReference()) {
 			for(FieldType f : model.getFields()) {
@@ -265,7 +303,7 @@ public class DBWriter extends MemoryWriter {
 						if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
 							/// logger.error("**** TODO: REMOVE THIS: Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
 							if(op == RecordOperation.CREATE) {
-								logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
+								// logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
 								try {
 									bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
 									bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -287,7 +325,6 @@ public class DBWriter extends MemoryWriter {
 				
 			}
 		}
-		return autoCreate;
 	}
 	
 	public synchronized boolean write(BaseRecord model) throws WriterException {
