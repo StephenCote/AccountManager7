@@ -252,6 +252,22 @@ public class QueryUtil {
 		}
 	}
 	
+	public static Query getGroupQuery(String model, String groupType, long groupId, long organizationId) {
+		String fieldName = FieldNames.FIELD_GROUP_ID;
+		if(model.equals(ModelNames.MODEL_GROUP) || model.equals(ModelNames.MODEL_PERMISSION) || model.equals(ModelNames.MODEL_ROLE)) {
+			fieldName = FieldNames.FIELD_PARENT_ID;
+		}
+		Query lq = QueryUtil.createQuery(model, fieldName, groupId);
+		if(organizationId > 0L) {
+			lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
+		}
+		if(groupType != null && groupType.length() > 0 && !groupType.equalsIgnoreCase("unknown")) {
+			lq.field(FieldNames.FIELD_TYPE, groupType);
+		}
+		
+		return lq;
+	}
+	
 	public static <T> Query createQuery(String modelName, String fieldName, T val) {
 		return createQuery(modelName, fieldName, val, 0L);
 	}
