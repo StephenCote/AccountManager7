@@ -428,7 +428,7 @@ public class PolicyUtil {
 					}
 				}
 				else {
-					logger.warn("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
+					logger.debug("Skip " + fs.getName() + " because it does not have an identity value and therefore cannot be checked for system level read access.");
 				}
 			}
 

@@ -403,6 +403,9 @@ public class FieldUtil {
 	
 	public static <T> boolean isNullOrEmpty(String model, FieldType f) {
 		boolean outBool = false;
+		if(f == null) {
+			return true;
+		}
 		ModelSchema ms = RecordFactory.getSchema(model);
 		FieldSchema fs = ms.getFieldSchema(f.getName());
 		T val = f.getValue();

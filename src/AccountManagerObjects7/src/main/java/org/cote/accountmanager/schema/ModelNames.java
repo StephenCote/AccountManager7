@@ -27,6 +27,7 @@ public class ModelNames {
 	public static final String MODEL_ACCOUNT = "identity.account";
 	public static final String MODEL_ADDRESS = "identity.address";
 	public static final String MODEL_ATTRIBUTE = "common.attribute";
+	public static final String MODEL_NAME = "common.name";
 	public static final String MODEL_ATTRIBUTE_LIST = "common.attributeList";
 	public static final String MODEL_BASE = "common.base";
 	public static final String MODEL_CIPHER_KEY = "crypto.cipherKey";
@@ -137,6 +138,8 @@ public class ModelNames {
 	
 	// onio
 	public static final String MODEL_CHAR_PERSON = "olio.charPerson";
+	public static final String MODEL_CHAR_STATISTIC = "olio.charStatistic";
+	public static final String MODEL_CHAR_SKILL = "olio.charSkill";
 	public static final String MODEL_INSTINCT = "olio.instinct";
 	public static final String MODEL_PERSONALITY = "olio.personalityTrait";
 	public static final String MODEL_SOCIAL_BEHAVIOR = "olio.socialBehavior";
@@ -157,7 +160,7 @@ public class ModelNames {
 		MODEL_AUDIT, MODEL_CONTACT_INFORMATION, MODEL_ACCESS_REQUEST, MODEL_MODEL_SCHEMA, MODEL_STREAM, MODEL_STREAM_SEGMENT, MODEL_THUMBNAIL, MODEL_VALIDATION_RULE, MODEL_APPLICATION_PROFILE,
 		MODEL_FUNCTION, MODEL_TAG, MODEL_MODEL_CATEGORY, MODEL_NOTE, MODEL_SOCKET_MESSAGE, MODEL_FIELD_LOCK, MODEL_TRAIT, MODEL_WORD, MODEL_WORD_NET, MODEL_CENSUS_WORD, MODEL_WORD_NET_POINTER, MODEL_WORD_NET_ALT,
 		MODEL_LOCATION, MODEL_GEO_LOCATION, MODEL_WORLD, MODEL_CHAR_PERSON, MODEL_INSTINCT, MODEL_PERSONALITY, MODEL_SOCIAL_BEHAVIOR,
-		MODEL_SOCIAL_GROUP, MODEL_BEHAVIOR, MODEL_QUALITY, MODEL_ITEM, MODEL_APPAREL, MODEL_EVENT
+		MODEL_SOCIAL_GROUP, MODEL_BEHAVIOR, MODEL_QUALITY, MODEL_ITEM, MODEL_WEARABLE, MODEL_APPAREL, MODEL_EVENT
 	);
 	
 	private static List<String> customModelNames = null;

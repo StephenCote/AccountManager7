@@ -65,7 +65,7 @@ import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
-import org.cote.accountmanager.util.WorldUtil;
+import org.cote.accountmanager.olio.WorldUtil;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {
@@ -78,6 +78,7 @@ public class TestBulkOperation extends BaseTest {
 	private String worldName = "Demo World";
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
+	
 	
 	@Test
 	public void TestOlio2() {
@@ -101,6 +102,7 @@ public class TestBulkOperation extends BaseTest {
 			e.printStackTrace();
 		}
 	}
+
 	/*
 	 
 	 private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
@@ -318,7 +320,7 @@ public class TestBulkOperation extends BaseTest {
 		* /
 	}
 	*/
-	/*
+
 	@Test
 	public void TestOlio() {
 		
@@ -328,15 +330,9 @@ public class TestBulkOperation extends BaseTest {
 		String olioPath = "~/Olio";
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, olioPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		ParameterList plist = ParameterList.newParameterList("path", olioPath);
-		plist.parameter("name", UUID.randomUUID().toString());
 		BaseRecord irec = null;
 
 		
-		int traitCount = WordParser.loadTraits(testUser1, olioPath, testProperties.getProperty("test.datagen.path"), false);
-
-		
-		logger.info("Received: " + traitCount);
-
 		try {
 			BaseRecord instinct = ioContext.getFactory().newInstance(ModelNames.MODEL_INSTINCT, testUser1, null, plist);
 			assertNotNull("Record was null", instinct);
@@ -353,11 +349,79 @@ public class TestBulkOperation extends BaseTest {
 		assertNotNull("Instinct is null", irec);
 		logger.info(irec.toFullString());
 		
+		BaseRecord q1 = newQuality(testUser1, olioPath);
+		assertNotNull("Quality is null", q1);
+		//logger.info(q1.toFullString());
 
+		//String sql = ioContext.getDbUtil().generateSchema(RecordFactory.getSchema(ModelNames.MODEL_WEARABLE));
+		//logger.info(sql);
+		
+		BaseRecord w1 = newWearable(testUser1, "hat", "head", olioPath);
+		assertNotNull("Wearable is null", w1);
+		
+		BaseRecord a1 = newApparel(testUser1, "Beach Outfit", "swim", olioPath, new BaseRecord[] {
+			newWearable(testUser1, "bikini top", "chest", olioPath),
+			newWearable(testUser1, "bikini bottom", "waist", olioPath),
+			newWearable(testUser1, "sandals", "feet", olioPath),
+			newWearable(testUser1, "sunglasses", "eyes", olioPath),
+			newWearable(testUser1, "sunhat", "head", olioPath)
+			// ioContext.getFactory().newInstance(ModelNames.MODEL_WEARABLE, testUser1, ioContext.getFactory().template(ModelNames.MODEL_WEARABLE, "{\"name\": \"earring\"}"), null)
+		});
+
+		assertNotNull("A1 is null", a1);
+		BaseRecord ia1 = ioContext.getAccessPoint().findById(testUser1, ModelNames.MODEL_APPAREL, a1.get(FieldNames.FIELD_ID));
+		ioContext.getReader().populate(ia1);
+		logger.info(ia1.toFullString());
+		//logger.info(Strings.join(Arrays.asList(RecordUtil.getCommonFields(ModelNames.MODEL_QUALITY)), ','));
+		//BaseRecord iw1 = ioContext.getAccessPoint().findById(testUser1, ModelNames.MODEL_WEARABLE, w1.get(FieldNames.FIELD_ID));
+		//ioContext.getReader().populate(iw1);
+		//logger.info(iw1.toFullString());
 		//logger.info(JSONUtil.exportObject(schema));
 		
 	}
-*/
+	
+	public BaseRecord outfit(BaseRecord user, String path, String apparelStr) {
+		BaseRecord temp1 = ioContext.getFactory().template(ModelNames.MODEL_APPAREL, apparelStr);
+		
+		return temp1;
+	}
+	private BaseRecord newApparel(BaseRecord user, String name, String type, String groupPath, BaseRecord[] wearables) {
+		BaseRecord temp1 = ioContext.getFactory().template(ModelNames.MODEL_APPAREL, "{\"name\": \"" + name + "\",\"type\":\"" + type + "\"}");
+		BaseRecord app = newGroupRecord(user, ModelNames.MODEL_APPAREL, groupPath, temp1);
+		logger.info(app.toFullString());
+		List<BaseRecord> wables = app.get("wearables");
+		wables.addAll(Arrays.asList(wearables));
+		return ioContext.getAccessPoint().create(user, app);
+	}
+	private BaseRecord newWearable(BaseRecord user, String name, String location, String groupPath) {
+		BaseRecord temp1 = ioContext.getFactory().template(ModelNames.MODEL_WEARABLE, "{\"name\": \"" + name + "\",\"location\":[\"" + location + "\"]}");
+		BaseRecord wear = newGroupRecord(user, ModelNames.MODEL_WEARABLE, groupPath, temp1);
+		List<BaseRecord> quals = wear.get("qualities");
+		quals.add(newGroupRecord(user, ModelNames.MODEL_QUALITY, groupPath, null));
+		return ioContext.getAccessPoint().create(user, wear);
+	}
+	private BaseRecord newQuality(BaseRecord user, String groupPath) {
+		BaseRecord qual = newGroupRecord(user, ModelNames.MODEL_QUALITY, groupPath, null);
+		return ioContext.getAccessPoint().create(user, qual);
+	}
+	private BaseRecord newGroupRecord(BaseRecord user, String model, String groupPath, BaseRecord template) {
+		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(dir == null) {
+			logger.error("Failed to find or create group " + groupPath);
+			return null;
+		}
+		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		BaseRecord irec = null;
+		try {
+			irec = ioContext.getFactory().newInstance(model, user, template, plist);
+		}
+		catch(ClassCastException | FactoryException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return irec;
+	}
+
 	
 /*
 	@Test

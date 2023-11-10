@@ -10,7 +10,9 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 
 public class DirectoryFactory extends FactoryBase {
@@ -32,17 +34,24 @@ public class DirectoryFactory extends FactoryBase {
 		if(parameterList != null) {
 			
 			String name = ParameterUtil.getParameter(parameterList, "name", String.class, null);
+			if(name == null && !FieldUtil.isNullOrEmpty(newRecord.getModel(), newRecord.getField(FieldNames.FIELD_NAME))) {
+				name = newRecord.get(FieldNames.FIELD_NAME);
+			}
 			String path = ParameterUtil.getParameter(parameterList, "path", String.class, null);
-			if(name == null) {
+			if(name == null && newRecord.inherits(ModelNames.MODEL_NAME)) {
 				name = UUID.randomUUID().toString();
 			}
-			if(name != null && path != null && contextUser != null) {
+			if(path != null && contextUser != null) {
 				try {
 					IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(contextUser, newRecord, name, path, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					throw new FactoryException(e);
 				}
 			
+			}
+			else {
+				logger.error(newRecord.getModel() + " factory error: Failed to initialize ownership");
+				logger.error(newRecord.toFullString());
 			}
 
 		}

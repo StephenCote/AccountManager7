@@ -1,7 +1,7 @@
 {
 "name": "olio.world",
 "inherits": ["data.directory", "common.description"],
-"factory": "org.cote.accountmanager.factory.WorldFactory",
+"factory": "org.cote.accountmanager.olio.WorldFactory",
 "group": "Worlds",
 "icon": "note",
 "label": "World",

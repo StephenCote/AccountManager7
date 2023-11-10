@@ -1,4 +1,4 @@
-package org.cote.accountmanager.util;
+package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
@@ -42,6 +42,7 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.LocationEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.util.AttributeUtil;
 
 public class WorldUtil {
 	public static final Logger logger = LogManager.getLogger(WorldUtil.class);

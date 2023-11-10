@@ -1,4 +1,4 @@
-package org.cote.accountmanager.factory;
+package org.cote.accountmanager.olio;
 
 import java.util.UUID;
 
@@ -6,6 +6,8 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.factory.FactoryBase;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.ParameterList;

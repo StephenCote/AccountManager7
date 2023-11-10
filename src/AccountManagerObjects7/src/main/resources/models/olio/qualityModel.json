@@ -2,7 +2,6 @@
 	"name": "olio.quality",
 	"likeInherits": ["data.directory"],
 	"inherits": [
-		"common.name",
 		"common.groupExt",
 		"common.description",
 		"common.ownerId",
@@ -11,9 +10,10 @@
 		"common.populate",
 		"system.primaryKey"
 	],
-	"group": "Instincts",
+	"group": "Qualities",
 	"icon": "category",
-	"label": "Instinct",
+	"label": "Quality",
+	"query": ["id", "groupId"],
 	"fields": [
 		{
 			"name": "unit",
@@ -84,7 +84,63 @@
 			"minValue": 0,
 			"maxValue": 1,
 			"validateRange": true
+		},
+		{
+			"name": "hardness",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "toughness",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "defensive",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "offensive",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "waterresistance",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "heatresistance",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "insulation",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "skill",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true,
+			"description": "Skillfulness needed for full quality application"
 		}
-		
 	]
 }

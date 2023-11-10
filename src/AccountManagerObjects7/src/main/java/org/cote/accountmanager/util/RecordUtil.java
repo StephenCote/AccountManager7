@@ -551,7 +551,7 @@ public class RecordUtil {
 	}
 
 	public void applyNameGroupOwnership(BaseRecord user, BaseRecord rec, String name, String ipath, long organizationId) throws FieldException, ValueException, ModelNotFoundException {
-		if(rec.inherits("common.name")) {
+		if(rec.inherits(ModelNames.MODEL_NAME)) {
 			rec.set(FieldNames.FIELD_NAME, name);
 		}
 		String path = resolveUserPath(user, ipath);

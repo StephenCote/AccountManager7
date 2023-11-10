@@ -8,11 +8,15 @@
 		"common.objectId",
 		"system.organizationExt",
 		"common.populate",
-		"system.primaryKey"
+		"system.primaryKey",
+		"common.description",
+		"olio.qualityExt",
+		"olio.priceExt"
 	],
 	"group": "Items",
 	"icon": "category",
 	"label": "Item",
+	"query": ["id", "groupId", "name"],
 	"dedicatedParticipation": true,
 	"fields": [
 		{
@@ -21,28 +25,12 @@
 			"maxLength": 24
 		},
 		{
-			"name": "quality",
-			"type": "int",
-			"minValue": 0,
-			"maxValue": 100,
-			"validateRange": true
-		},
-		{
 			"name": "age",
 			"type": "int"
 		},
 		{
 			"name": "inuse",
 			"type": "boolean"
-		},
-		{
-			"name": "qualities",
-			"type": "list",
-			"baseType": "model",
-			"baseModel": "olio.quality",
-			"foreign": true
 		}
-
-
 	]
 }

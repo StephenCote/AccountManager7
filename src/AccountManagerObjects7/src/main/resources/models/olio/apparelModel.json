@@ -11,9 +11,10 @@
 		"common.populate",
 		"system.primaryKey"
 	],
-	"group": "Items",
+	"group": "Apparel",
 	"icon": "category",
-	"label": "Item",
+	"label": "Apparel",
+	"query": ["id", "groupId", "name"],
 	"dedicatedParticipation": true,
 	"fields": [
 		{

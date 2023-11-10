@@ -378,7 +378,6 @@ public class Factory {
 		IFactory fact = getFactory(modelName);
 		BaseRecord rec = null;
 		if(fact != null) {
-			// logger.info("Create " + modelName + " with factory " + fact.getSchema().getName());
 			rec = fact.newInstance(contextUser, recordTemplate, parameterList, arguments); 
 		}
 		else {

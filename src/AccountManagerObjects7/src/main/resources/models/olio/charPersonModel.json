@@ -4,7 +4,6 @@
 		"identity.person",
 		"common.alignment"
 	],
-	"factory": "org.cote.accountmanager.factory.WorldFactory",
 	"group": "Persons",
 	"icon": "note",
 	"label": "Character Person",

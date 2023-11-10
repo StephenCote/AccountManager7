@@ -1,0 +1,24 @@
+{
+	"name": "olio.priceExt",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "retailValue",
+			"type": "double"
+		},
+		{
+			"name": "resaleAdjustment",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true,
+			"default": 0.5
+		},
+		{
+			"name": "value",
+			"type": "double",
+			"minValue": 0,
+			"validateRange": true
+		}
+	]
+}

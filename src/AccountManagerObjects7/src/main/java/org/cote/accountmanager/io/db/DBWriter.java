@@ -226,7 +226,6 @@ public class DBWriter extends MemoryWriter {
 			autoCreate.put(ModelNames.MODEL_PARTICIPATION, new ArrayList<>());
 		}
 		autoCreate.get(ModelNames.MODEL_PARTICIPATION).addAll(parts);
-
 		List<FieldType> refList = model.getFields().stream().filter(o -> {
 			FieldSchema fs = schema.getFieldSchema(o.getName());
 			return (fs.isReferenced());
@@ -273,8 +272,10 @@ public class DBWriter extends MemoryWriter {
 	private void processAutoCreate(Map<String, List<BaseRecord>> autoCreate) {
 	    autoCreate.forEach((k ,v) -> {
 	    	if(v.size() > 0) {
-	    		// logger.info("Auto create: " + k + " " + v.size());
-	    		IOSystem.getActiveContext().getRecordUtil().createRecords(v.toArray(new BaseRecord[0]));
+	    		int created = IOSystem.getActiveContext().getRecordUtil().createRecords(v.toArray(new BaseRecord[0]));
+	    		if(created != v.size()) {
+	    			logger.error("Failed to auto create: " + k + " " + v.size() + ". Only created: " + created);
+	    		}
 	    	}
 	    });
 	    autoCreate.clear();
@@ -328,151 +329,7 @@ public class DBWriter extends MemoryWriter {
 	}
 	
 	public synchronized boolean write(BaseRecord model) throws WriterException {
-		RecordOperation op = RecordOperation.CREATE;
-		ModelSchema schema = RecordFactory.getSchema(model.getModel());
-		String objectId = (model.hasField(FieldNames.FIELD_OBJECT_ID) ? model.get(FieldNames.FIELD_OBJECT_ID) : null);
-		long id = (model.hasField(FieldNames.FIELD_ID) ? model.get(FieldNames.FIELD_ID) : 0L);
-		if(id > 0L || objectId != null) {
-			op = RecordOperation.UPDATE;
-			CacheUtil.clearCache(model);
-		}
-
-		super.write(model);
-
-		if(!RecordUtil.isIdentityRecord(model) && (op != RecordOperation.CREATE || !RecordUtil.isIdentityModel(schema))) { 
-			throw new WriterException("Model " + model.getModel() + " does not define an identity field");
-		}
-		
-		if(schema.isAutoCreateForeignReference()) {
-			for(FieldType f : model.getFields()) {
-				FieldSchema fs = schema.getFieldSchema(f.getName());
-				List<BaseRecord> bfs = new ArrayList<>();
-				if(fs.isForeign()) {
-					if(f.getValueType() == FieldEnumType.MODEL) {
-						bfs.add(model.get(f.getName()));
-					}
-					else if(f.getValueType() == FieldEnumType.LIST) {
-						bfs = model.get(f.getName());
-					}
-					for(BaseRecord bf : bfs) {
-						if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
-							/// logger.error("**** TODO: REMOVE THIS: Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
-							if(op == RecordOperation.CREATE) {
-								logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
-								try {
-									bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
-									bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
-									IOSystem.getActiveContext().getRecordUtil().createRecord(bf);
-								}
-								catch(ValueException | FieldException | ModelNotFoundException e) {
-									logger.error(e);
-								}
-							}
-							else {
-								logger.error("Will not update " + model.getModel() + " foreign child " + f.getName() + " without an identity reference");
-							}
-						}
-					}
-				}
-				
-			}
-		}
-		
-		boolean success = false;
-		if(op == RecordOperation.CREATE) {
-			long rid = 0L;
-			try{
-				rid = IOSystem.getActiveContext().getDbUtil().getNextId(model.getModel());
-			}
-			catch(DatabaseException e) {
-				logger.error(e);
-			}
-			// logger.info("Obtain next id: " + rid);
-			if(rid == 0L) {
-				throw new WriterException("Failed to obtain next identifier");
-			}
-			
-			
-			// logger.info(meta.getSql());
-		    try (Connection con = dataSource.getConnection()){
-				model.set(FieldNames.FIELD_ID, rid);
-				DBStatementMeta meta = StatementUtil.getInsertTemplate(model);
-		    	PreparedStatement st = con.prepareStatement(meta.getSql());
-		    	StatementUtil.applyPreparedStatement(model, meta, st);
-		    	int update = st.executeUpdate();
-		    	// logger.info("Update: " + update);
-		    	if(update > 0) {
-		    		StatementUtil.updateForeignParticipations(model);
-		    		List<FieldType> refList = model.getFields().stream().filter(o -> {
-		    			FieldSchema fs = schema.getFieldSchema(o.getName());
-		    			return fs.isReferenced();
-
-		    		}).collect(Collectors.toList());
-		    		
-		    		if(refList.size() > 0) {
-		    			for(FieldType f : refList) {
-		    				if(f.getValueType() == FieldEnumType.LIST) {
-		    					FieldSchema fs = schema.getFieldSchema(f.getName());
-		    					
-		    					if(fs.getBaseType().equals(ModelNames.MODEL_MODEL)) {
-		    						List<BaseRecord> vals = model.get(f.getName());
-		    						for(BaseRecord erec : vals) {
-		    							if(!erec.inherits(ModelNames.MODEL_REFERENCE)) {
-		    								logger.error("Model " + erec.getModel() + " does not inherit from the reference model");
-		    								continue;
-		    							}
-		    							if(FieldUtil.isNullOrEmpty(erec.getModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
-		    								erec.set(FieldNames.FIELD_REFERENCE_ID, rid);
-		    								erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getModel());
-		    								if(erec.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {
-		    									erec.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
-		    								}
-		    								if(!IOSystem.getActiveContext().getRecordUtil().createRecord(erec)) {
-		    									logger.error("Failed to write: " + erec.toString());
-		    								}
-		    							}
-		    							
-		    						}
-		    					}
-		    					else {
-		    						logger.error("**** Handle Referenced Type That Is Not a Model");
-		    					}
-		    					
-		    					
-		    				}
-		    				else {
-		    					logger.error("**** Handle Referenced Type " + f.getValueType().toString());
-		    				}
-		    			}
-		    		}
-		    		
-		    		success = true;
-		    	}
-				st.close();
-			} catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-				logger.error(model.toString());
-		    }
-		}
-		else if(op == RecordOperation.UPDATE) {
-			DBStatementMeta meta = StatementUtil.getUpdateTemplate(model);
-			// logger.info(meta.getSql());
-		    try (Connection con = dataSource.getConnection()){
-		    	PreparedStatement st = con.prepareStatement(meta.getSql());
-		    	StatementUtil.applyPreparedStatement(model, meta, st);
-		    	int update = st.executeUpdate();
-		    	if(update > 0) {
-		    		success = true;
-		    	}
-				st.close();
-			} catch (SQLException | DatabaseException e) {
-				logger.error(e);
-		    }
-		}
-		
-		
-		
-		return success;
+		return (write(new BaseRecord[] {model}) == 1);
 	}
 	
 

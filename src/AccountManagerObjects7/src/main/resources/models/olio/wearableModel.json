@@ -4,9 +4,9 @@
 	"inherits": [
 		"olio.item"
 	],
-	"group": "Olocations",
+	"group": "Wearables",
 	"icon": "category",
-	"label": "Location",
+	"label": "Wearable",
 	"dedicatedParticipation": true,
 	"fields": [
 		{
@@ -39,9 +39,8 @@
 		{
 			"name": "location",
 			"type": "list",
-			"baseType": "model",
-			"baseModel": "olio.itemLocation",
-			"foreign": true
+			"baseType": "string",
+			"limit": ["head", "hair", "torso", "feet", "wrist", "hand", "neck", "shoulders", "bicep", "face", "nose", "ears", "eyes", "hip", "waist", "belly"]
 		}
 
 	]

@@ -55,7 +55,7 @@ public class FieldSchema {
 	private boolean referenced = false;
 	private boolean followReference = true;
 	private boolean dynamicPolicy = true;
-	
+
 	/// Restricted is used to avoid inclusion in operations such as field hashing
 	///
 	private boolean restricted = false;
