@@ -21,7 +21,7 @@ public class Catalog {
 	*/
 	public static void clearCatalog() {
 		models.clear();
-		RecordFactory.clearModels();
+		RecordFactory.clearCache();
 	}
 	public static void clearCatalog(String name) {
 		models.remove(name);

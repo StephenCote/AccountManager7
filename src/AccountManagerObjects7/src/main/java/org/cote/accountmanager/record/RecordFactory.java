@@ -129,8 +129,10 @@ public class RecordFactory {
 		classMap.put(name, cls);
 		return cls;
 	}
-	
-	public static void clearModels() {
+	public static void clearCache(String name) {
+		unloadSchema(name);
+	}
+	public static void clearCache() {
 		looseBaseModels.clear();
 		schemas.clear();
 		classMap.clear();
@@ -382,15 +384,17 @@ public class RecordFactory {
 		looseBaseModels.remove(name);
 		schemas.remove(name);
 		rawModels.remove(name);
+		
 		ResourceUtil.releaseModelResource(name);
 	}
 	
 	public static boolean releaseCustomSchema(String name) {
 		IOContext ctx = IOSystem.getActiveContext();
 		
+		
 		if(ModelNames.MODELS.contains(name)) {
-			logger.error("Unable to release system level models");
-			return false;
+			logger.warn("Releasing model " + name + " defined at the system level");
+			// return false;
 		}
 		
 		ModelSchema ms = RecordFactory.getSchema(name);
@@ -483,7 +487,7 @@ public class RecordFactory {
 			logger.warn("Failed to construct loose base model for " + name);
 			return null;
 		}
-		Catalog.register(name, lbm.getFields().toArray(new FieldType[0]));
+
 		looseBaseModels.put(name,  lbm);
 		return lbm;
 		
