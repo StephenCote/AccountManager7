@@ -232,7 +232,8 @@ public class AccessPoint {
 			}
 
 			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
-				records.add(obj.copyRecord());
+				// records.add(obj.copyRecord());
+				records.add(obj);
 				if(!hideClose) {
 					AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, null);
 				}
@@ -260,7 +261,8 @@ public class AccessPoint {
 	
 	public BaseRecord update(BaseRecord contextUser, BaseRecord object) {
 		BaseRecord outObj = null;
-		BaseRecord cobj = object.copyRecord();
+		// BaseRecord cobj = object.copyRecord();
+		BaseRecord cobj = object;
 		
 		ActionEnumType aet = ActionEnumType.ADD;
 		if(RecordUtil.isIdentityRecord(cobj)) {
