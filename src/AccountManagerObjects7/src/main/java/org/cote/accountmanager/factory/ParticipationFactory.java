@@ -29,8 +29,13 @@ public class ParticipationFactory {
 	}
 	public static String getParticipantModel(String model, String fieldName, String defaultModel) {
 		String partModel = defaultModel;
+		// logger.info("Get part model: " + model + "." + fieldName + " <> " + defaultModel);
 		if(fieldName != null) {
 			FieldSchema fs = RecordFactory.getSchema(model).getFieldSchema(fieldName);
+			if(fs == null) {
+				logger.error("Null field schema for " + fieldName);
+				return null;
+			}
 			if(fs.getParticipantModel() != null) {
 				partModel = fs.getParticipantModel();
 			}
