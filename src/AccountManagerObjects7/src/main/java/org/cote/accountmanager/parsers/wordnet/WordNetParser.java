@@ -41,6 +41,10 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 public class WordNetParser {
 	public static final Logger logger = LogManager.getLogger(WordNetParser.class);
 	
+	public static final String verbWordType = "v";
+	public static final String nounWordType = "n";
+	public static final String adverbWordType = "r";
+	public static final String adjectiveWordType = "s";
 	
 	public static ParseConfiguration newWordNetParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
 		logger.info("New WordNet Parse Configuration");
@@ -107,10 +111,7 @@ public class WordNetParser {
 		return recs.size();
 	}
 	
-	private static String verbWordType = "v";
-	private static String nounWordType = "n";
-	private static String adverbWordType = "r";
-	private static String adjectiveWordType = "s";
+
 
 	private static int loadWords(BaseRecord user, String groupPath, String basePath, String ext, String type, int maxLines, boolean reset) {
 		// logger.info("Load words to " + groupPath);
