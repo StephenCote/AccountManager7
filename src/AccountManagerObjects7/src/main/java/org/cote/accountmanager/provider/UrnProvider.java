@@ -35,14 +35,16 @@ public class UrnProvider implements IProvider {
 
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException {
 
+		/*
 		if(!model.inherits(ModelNames.MODEL_BASE)) {
 			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getModel(), ModelNames.MODEL_BASE));
 		}
+		*/
 		if(!RecordOperation.CREATE.equals(operation) && !RecordOperation.UPDATE.equals(operation)) {
 			return;
 		}
 		
-		String[] fields = RecordUtil.getPossibleFields(model.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID});
+		String[] fields = RecordUtil.getPossibleFields(model.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID});
 		IOSystem.getActiveContext().getReader().populate(model, fields);
 
 		StringBuilder buff = new StringBuilder();
