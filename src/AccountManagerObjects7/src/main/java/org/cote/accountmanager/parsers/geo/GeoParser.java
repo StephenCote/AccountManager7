@@ -38,14 +38,13 @@ public class GeoParser {
 	/// .Builder.create().setDelimiter('\t').setRecordSeparator("\r\n").setQuote('"').setIgnoreSurroundingSpaces(true).build()
 	private static CSVFormat defaultFormat = CSVFormat.TDF;
 	public static Query getQuery(String geoType, String isoCode, long groupId, long organizationId) {
-		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, groupId);
+		Query lq = QueryUtil.getGroupQuery(ModelNames.MODEL_GEO_LOCATION, null, groupId, organizationId);
 		if(geoType != null) {
 			lq.field("geoType", geoType);
 		}
 		if(isoCode != null) {
 			lq.field("iso", isoCode);
 		}
-		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 		return lq;
 	}
 	public static int cleanupLocation(String geoType, String isoCode, long groupId, long organizationId) {
