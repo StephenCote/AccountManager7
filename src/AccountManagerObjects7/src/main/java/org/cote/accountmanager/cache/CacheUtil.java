@@ -8,6 +8,8 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.util.ResourceUtil;
 
 public class CacheUtil {
 	public static final Logger logger = LogManager.getLogger(CacheUtil.class);
@@ -26,6 +28,8 @@ public class CacheUtil {
 			c.clearCache();
 		});
 		ProviderUtil.clearCache();
+		// RecordFactory.clearCache();
+		ResourceUtil.clearCache();
 	}
 	public static void clearCache(String key) {
 		// logger.info("Clear cache for key " + key);
