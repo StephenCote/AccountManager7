@@ -101,7 +101,7 @@ public class RecordValidator {
 					break;
 
 				case DOUBLE:
-					long dval = f.getValue();
+					double dval = f.getValue();
 					if(fs.isValidateRange() && (dval < fs.getMinValue() || dval > fs.getMaxValue())) {
 						logger.error(fs.getName() + " value " + dval + " is outside value range " + fs.getMinValue() + " - " + fs.getMaxValue());
 						errors++;
