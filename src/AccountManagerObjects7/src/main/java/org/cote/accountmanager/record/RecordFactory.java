@@ -300,15 +300,20 @@ public class RecordFactory {
 	private static ModelSchema createIOSchema(String name, ModelSchema ims) {
 		
 		if(IOSystem.getActiveContext() == null || !IOSystem.getActiveContext().isInitialized()) {
+			logger.error("Active context is not available or initialized");
 			return null;
 		}
-		IOContext ioContext = IOSystem.getActiveContext();
-		OrganizationContext sysOrg = ioContext.getOrganizationContext("/System", null);
 		if(ims == null) {
 			logger.error("Null schema for: " + name);
 			return null;
 		}
-		
+
+		IOContext ioContext = IOSystem.getActiveContext();
+		OrganizationContext sysOrg = ioContext.getOrganizationContext("/System", null);
+		if(sysOrg == null || sysOrg.getOpsUser() == null) {
+			logger.error("System organization is not configured");
+			return null;
+		}
 		ModelSchema ms = null;
 		
 		try {
