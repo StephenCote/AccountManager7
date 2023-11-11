@@ -728,6 +728,11 @@ public class WorldUtil {
 			logger.error("A basis world is required");
 			return null;
 		}
+		int evtCnt = IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)eventsDir.get(FieldNames.FIELD_ID)));
+		if(evtCnt > 0) {
+			logger.warn("Region is already generated");
+			return null;
+		}
 		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
 		BaseRecord traitsDir = parWorld.get("traits");
 

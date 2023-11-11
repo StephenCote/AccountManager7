@@ -1,3 +1,9 @@
+Locations:
+    GeoNames:
+        https://download.geonames.org/export/dump/
+Words:
+    Princeton WordNet:
+        https://wordnet.princeton.edu/
 Names:
     Baby Names (by year):
     	https://www.ssa.gov/oact/babynames/limits.html

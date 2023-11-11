@@ -69,10 +69,15 @@ import org.cote.accountmanager.olio.WorldUtil;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {
-	private int bulkLoadSize = 10;
-	
 
+	/*
+	 * These unit tests depend on a variety of external data that must be downloaded separately and staged relative to the data path defined in the test resources file.
+	 * Data files include: Princeton wordnet dictionary data files, GeoNames file dumps, US baby names, CA surnames, and occuptations.
+	 * notes/dataNotes.txt contains the links to these data sources 
+	 */
 	
+	private int bulkLoadSize = 10;
+
 	private boolean resetCountryInfo = false;
 	
 	private String worldName = "Demo World";
@@ -92,7 +97,7 @@ public class TestBulkOperation extends BaseTest {
 		WorldUtil.populateWorld(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
 		// logger.info(subWorld.toFullString());
 		//AuditUtil.setLogToConsole(true);
 		try {
@@ -101,23 +106,6 @@ public class TestBulkOperation extends BaseTest {
 		catch(Exception e) {
 			e.printStackTrace();
 		}
-	}
-
-	/*
-	 
-	 private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
-		ParameterList plist = ParameterList.newParameterList("path", path);
-		plist.parameter("name", name);
-		BaseRecord data = null;
-		try {
-			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, owner, null, plist);
-			data.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
-			data.set(FieldNames.FIELD_BYTE_STORE, textData.getBytes());
-		}
-		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		return data;
 	}
 	
 	@Test
@@ -149,177 +137,8 @@ public class TestBulkOperation extends BaseTest {
 		assertNotNull("Unable to lookup location", lloc);
 
 	}
-	*/
 	
 
-	/*
-	private BaseRecord getWorld(BaseRecord user, String[] features) {
-		BaseRecord dir = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, worldPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		BaseRecord rec = ioContext.getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
-		if(rec == null) {
-			ParameterList plist = ParameterList.newParameterList("path", worldPath);
-			plist.parameter("name", worldName);
-			try {
-				BaseRecord world = ioContext.getFactory().newInstance(ModelNames.MODEL_WORLD, user, null, plist);
-				world.set("features", Arrays.asList(features));
-				ioContext.getAccessPoint().create(user, world);
-				rec = ioContext.getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
-			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-
-		}
-		
-		return rec;
-	}
-	
-	private int loadOccupations(BaseRecord user, BaseRecord world, String basePath) {
-		ioContext.getReader().populate(world);
-		BaseRecord occDir = world.get("occupations");
-		ioContext.getReader().populate(occDir);
-
-		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, resetCountryInfo);
-		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
-
-	}
-	
-	private int loadLocations(BaseRecord user, BaseRecord world, String basePath) {
-		List<String> feats = world.get("features");
-		String[] features = feats.toArray(new String[0]);
-		ioContext.getReader().populate(world);
-		BaseRecord locDir = world.get("locations");
-		ioContext.getReader().populate(locDir);
-
-		GeoParser.loadInfo(user, locDir.get(FieldNames.FIELD_PATH), testProperties.getProperty("test.datagen.path") + "/location", features, resetCountryInfo);
-		
-		return ioContext.getAccessPoint().count(user, GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID)));
-
-	}
-	private int loadDictionary(BaseRecord user, BaseRecord world, String basePath) {
-		AuditUtil.setLogToConsole(false);
-
-		ioContext.getReader().populate(world);
-		BaseRecord dictDir = world.get("dictionary");
-		ioContext.getReader().populate(dictDir);
-		
-		String groupPath = dictDir.get(FieldNames.FIELD_PATH);
-		String wnetPath = basePath;
-		
-		WordNetParser.loadAdverbs(user, groupPath, wnetPath, 0, false);
-		WordNetParser.loadAdjectives(user, groupPath, wnetPath, 0, false);
-		WordNetParser.loadNouns(user, groupPath, wnetPath, 0, false);
-		WordNetParser.loadVerbs(user, groupPath, wnetPath, 0, false);
-		return ioContext.getAccessPoint().count(user, WordNetParser.getQuery(user, null, groupPath));
-	}
-	private int loadNames(BaseRecord user, BaseRecord world, String basePath) {
-		ioContext.getReader().populate(world);
-		BaseRecord nameDir = world.get("names");
-		ioContext.getReader().populate(nameDir);
-		
-		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
-
-		WordParser.loadNames(user, groupPath, basePath, resetCountryInfo);
-		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, groupPath));
-	}
-
-	private int loadTraits(BaseRecord user, BaseRecord world, String basePath) {
-		ioContext.getReader().populate(world);
-		BaseRecord traitsDir = world.get("traits");
-		ioContext.getReader().populate(traitsDir);
-		
-		String groupPath = traitsDir.get(FieldNames.FIELD_PATH);
-
-		WordParser.loadTraits(user, groupPath, basePath, resetCountryInfo);
-		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
-	}
-	private int loadSurnames(BaseRecord user, BaseRecord world, String basePath) {
-		ioContext.getReader().populate(world);
-		BaseRecord nameDir = world.get("surnames");
-		ioContext.getReader().populate(nameDir);
-		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
-		WordParser.loadSurnames(user, groupPath, basePath,resetCountryInfo);
-		return ioContext.getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
-	}
-	*/
-	/*
-	@Test
-	public void TestAltNames() {
-		logger.info("Test load alternate geo names");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-
-		String groupPath = "~/CountryInfo";
-		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		GeoParser.loadAlternateNamesInfo(testUser1, groupPath, testProperties.getProperty("test.datagen.path") + "/location", 0, false);
-		int count = ioContext.getAccessPoint().count(testUser1, GeoParser.getQuery("alternateName", null, dir.get(FieldNames.FIELD_ID), testOrgContext.getOrganizationId()));
-		logger.info("Count: " + count);
-	}
-	*/
-	/*
-	@Test
-	public void TestOlio2() {
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
-		Factory mf = ioContext.getFactory();
-		
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"US"});
-		assertNotNull("World is null", world);
-		logger.info(world.toFullString());
-		WorldUtil.populateWorld(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
-		List<BaseRecord> pers = new ArrayList<>();
-		BaseRecord location = WorldUtil.randomLocation(testUser1, world);
-		/ *
-		for(int i = 0; i < 100; i++) {
-			BaseRecord per1 = WorldUtil.randomPerson(testUser1, world);
-			//BaseRecord[] recs = WorldUtil.addressPerson(testUser1, world, per1, null);
-			WorldUtil.addressPerson(testUser1, world, per1, location);
-			pers.add(per1);
-			
-		}
-		* /
-		//assertTrue("Expected records", recs.length > 0);
-		//int created = ioContext.getAccessPoint().create(testUser1, pers.toArray(new BaseRecord[0]));
-		//logger.info("Created: " + created);
-		BaseRecord per1 = WorldUtil.randomPerson(testUser1, world);
-		WorldUtil.addressPerson(testUser1, world, per1, null);
-		ioContext.getAccessPoint().create(testUser1, new BaseRecord[] {per1});
-		//assertNotNull("Person create object is null", pper1);
-		//logger.info(per1.toFullString());
-		BaseRecord rper1 = null;
-		try {
-			rper1 = ioContext.getAccessPoint().findByNameInGroup(testUser1, ModelNames.MODEL_CHAR_PERSON, (long)per1.get(FieldNames.FIELD_GROUP_ID), per1.get(FieldNames.FIELD_NAME));
-			assertNotNull("Failed to find record", rper1);
-			ioContext.getReader().populate(rper1,3);
-			logger.info(rper1.toFullString());
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		logger.info("Complete test");
-		/ *
-		for(BaseRecord rec: recs) {
-			int chk = ioContext.getAccessPoint().create(testUser1, new BaseRecord[] {rec});
-			assertTrue("Expected record to be created", chk == 1);
-		}
-		* /
-		//logger.info(per1.toFullString());
-		/ *
-		BaseRecord pper1 = ioContext.getAccessPoint().create(testUser1, per1);
-		assertNotNull("Person create object is null", pper1);
-		logger.info(per1.toFullString());
-		* /
-		/ *
-		for(AlignmentEnumType align : AlignmentEnumType.class.getEnumConstants()) {
-			String title = WorldUtil.generateEpochTitle(testUser1, world, align);
-			logger.info(title);
-		}
-		* /
-	}
-	*/
 
 	@Test
 	public void TestOlio() {
@@ -423,90 +242,9 @@ public class TestBulkOperation extends BaseTest {
 	}
 
 	
-/*
-	@Test
-	public void TestWorld() {
-		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord world = getWorld(testUser1, new String[] {"US"});
-		List<String> features = world.get("features");
-		if(!features.contains("US")) {
-			features.add("US");
-			ioContext.getAccessPoint().update(testUser1, world);
-		}
-		assertNotNull("World is null", world);
-		int dict = loadDictionary(testUser1, world, testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict");
-		logger.info("Dictionary words: " + dict);
-		int locs = loadLocations(testUser1, world, testProperties.getProperty("test.datagen.path") + "/location");
-		logger.info("Locations: " + locs);
-		int occs = loadOccupations(testUser1, world, testProperties.getProperty("test.datagen.path") + "/occupations/noc_2021_version_1.0_-_elements.csv");
-		logger.info("Occupations: " + occs);
-		int names = loadNames(testUser1, world, testProperties.getProperty("test.datagen.path") + "/names/yob2022.txt");
-		logger.info("Names: " + names);
-		int surnames = loadSurnames(testUser1, world, testProperties.getProperty("test.datagen.path") + "/surnames/Names_2010Census.csv");
-		logger.info("Surnames: " + surnames);
-		int traits = loadTraits(testUser1, world, testProperties.getProperty("test.datagen.path"));
-		logger.info("Traits: " + traits);
 
 
-		
-		BaseRecord dir = world.get("locations");
-		ioContext.getReader().populate(dir);
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field("geoType", "feature");
-		Query q2 = new Query(q.copyRecord());
-		int regCount = ioContext.getAccessPoint().count(testUser1, q);
-		logger.info(regCount + " from " + dir.get(FieldNames.FIELD_ID));
-		long randomIndex = (new Random()).nextLong(regCount);
-		logger.info(randomIndex);
-		q2.setRequestRange(randomIndex, 1);
-		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q2);
-		assertTrue("No locations", qr.getCount()  >0);
-		//logger.info(qr.toFullString());
-		AuditUtil.setLogToConsole(false);
-		BaseRecord addr1 = WorldUtil.randomAddress(testUser1, qr.getResults()[0], "~/Addresses");
-		assertNotNull("addr is null", addr1);
-		//logger.info(addr1.toFullString());
-		
-		for(int i = 0; i < 10; i++) {
-			BaseRecord per1 = WorldUtil.randomPerson(testUser1, world);
 
-			assertNotNull("per is null", per1);
-			logger.info(per1.toFullString());
-		}
-	}
-*/
-	/*
-	@Test
-	public void TestWorldModel() {
-		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		ParameterList plist = ParameterList.newParameterList("path", worldPath);
-		plist.parameter("name", worldName);
-		BaseRecord world = null;
-		
-		try {
-			String dataPath = "~/Demo Path";
-			//BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, dataPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-			String dataName = "Test Data - " + UUID.randomUUID().toString();
-			BaseRecord testData = newTestData(testUser1, "~/Demo Data", dataName, "Example data");
-			BaseRecord nrec = ioContext.getAccessPoint().create(testUser1, testData);
-			logger.info(nrec.toFullString());
-			world = ioContext.getFactory().newInstance(ModelNames.MODEL_WORLD, testUser1, null, plist);
-			// world = ioContext.getFactory().newInstance(ModelNames.MODEL_WORLD);
-			//logger.info(world.inherits(ModelNames.MODEL_DIRECTORY));
-		}
-		catch(FactoryException e) {
-			logger.error(e);
-		}
-		assertNotNull("World is null", world);
-		logger.info(world.toFullString());
-	}
-	*/
-
-	/*
 	@Test
 	public void TestWordNetParse() {
 		
@@ -527,68 +265,8 @@ public class TestBulkOperation extends BaseTest {
 		int count = ioContext.getAccessPoint().count(testUser1, WordNetParser.getQuery(testUser1, null, groupPath));
 		logger.info("Dictionary word count: " + count);
 	}
-	*/
-	/*
-	@Test
-	public void TestWordNetParse() {
-		
-		AuditUtil.setLogToConsole(false);
-		
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
-		String groupPath = "~/Bulk/Word - " + UUID.randomUUID().toString();
-
-		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		assertNotNull("Directory is null", dir);
-
-		String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
-
-		try {
-			int maxLines = 10000;
-			// "adj", "adv", "verb", 
-			String[] exts = new String[] {"noun"};
-			for(String ext: exts) {
-				long start = System.currentTimeMillis();
-				logger.info("Processing: " + ext);
-				
-				
-				List<BaseRecord> words = WordNetParser.parseWNDataFile(testUser1, groupPath, wnetPath + "/data." + ext, maxLines, new DataParseWriter());
-				long stop = System.currentTimeMillis();
-				logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
-				
-				// assertTrue("Expected records to match max size " + maxLines + " but instead received " + words.size(), ((maxLines == 0 && words.size() > 0 )|| (words.size() == maxLines)));
-
-				start = System.currentTimeMillis();
-				ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]), true);
-				stop = System.currentTimeMillis();
-				logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
-				
-			}
-			
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-	}
-	*/
 	
-	/*
-	@Test
-	public void TestLoadCountryInfo() {
-		logger.info("Test load geolocation data");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
-		String groupPath = "~/CountryInfo";
-
-		long records = GeoParser.loadInfo(testUser1, groupPath, testProperties.getProperty("test.datagen.path") + "/location", new String[] {"GB", "IE"}, resetCountryInfo);
-		logger.info("Total geolocation records in " + groupPath + ": " + records);
-	}
 	
 	@Test
 	public void TestNamesParse() {
@@ -652,320 +330,21 @@ public class TestBulkOperation extends BaseTest {
 		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, ModelNames.MODEL_WORD, groupPath));
 		logger.info("Total word records in " + groupPath + ": " + records);
 	}
-	*/
-	/*
-	@Test
-	public void TestLoadCountryInfoRandomBulk() {
-		logger.info("Test load geolocation data: countryInfo");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-
-		String groupPath = "~/Bulk/Geo - " + UUID.randomUUID().toString();
-
-		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-
-		List<ParseMap> map = new ArrayList<>();
-		map.add(new ParseMap("iso", 0));
-		map.add(new ParseMap("iso3", 1));
-		map.add(new ParseMap("name", 4));
-		map.add(new ParseMap("capital", 5));
-		map.add(new ParseMap("continent", 8));
-		map.add(new ParseMap("currencyCode", 10));
-		map.add(new ParseMap("currencyName", 11));
-		map.add(new ParseMap("languages", 15));
-		map.add(new ParseMap("geonameid", 16));
-		map.add(new ParseMap("neighbors", 17));
-		
-		String locPath = testProperties.getProperty("test.datagen.path") + "/location";
-		int maxLines = 0;
-		
-		CSVFormat csvFormat = CSVFormat.TDF;
-		BaseRecord template = null;
-		try {
-			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "country");
-			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
-		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
-		}
-		long start = System.currentTimeMillis();
-		List<BaseRecord> locs = GenericParser.parseFile(testUser1, ModelNames.MODEL_GEO_LOCATION, map.toArray(new ParseMap[0]), groupPath, locPath + "/countryInfo.txt", maxLines, template, csvFormat);
-		long stop = System.currentTimeMillis();
-		logger.info("Parsed: " + locs.size() + " in " + (stop - start) + "ms");
-		assertTrue("Expected records to match max size " + maxLines + " but instead received " + locs.size(), ((maxLines == 0 && locs.size() > 0 )|| (locs.size() == maxLines)));
-		start = System.currentTimeMillis();
-		ioContext.getAccessPoint().create(testUser1, locs.toArray(new BaseRecord[0]), true);
-		stop = System.currentTimeMillis();
-		logger.info("Imported: " + locs.size() + " in " + (stop - start) + "ms");
-		
-		/// Admin 1
-		logger.info("Load Admin 1 Codes");
-
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field("geoType", "country");
-		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
-		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q);
-
-		logger.info("Retrieved " + qr.getCount() + " country items");
-		
-		map = new ArrayList<>();
-		map.add(new ParseMap("code", 0));
-		map.add(new ParseMap("altName", 1));
-		map.add(new ParseMap("name", 2));
-		map.add(new ParseMap("geonameid", 3));
-		
-		template = null;
-		try {
-			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "admin1");
-			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
-		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
-		}
-		
-		start = System.currentTimeMillis();
-		locs = GenericParser.parseFile(testUser1, ModelNames.MODEL_GEO_LOCATION, map.toArray(new ParseMap[0]), groupPath, locPath + "/admin1CodesASCII.txt", maxLines, template, csvFormat);
-		stop = System.currentTimeMillis();
-		
-		logger.info("Mapping location parent");
-		List<BaseRecord> qra = Arrays.asList(qr.getResults());
-		for(BaseRecord loc : locs) {
-			String code = loc.get("code");
-			if(code != null) {
-				try {
-					String[] pair = code.split("\\.");
-					Optional<BaseRecord> orec = qra.stream().filter(p -> pair[0].equals(p.get("iso"))).findFirst();
-					if(orec.isPresent()) {
-						BaseRecord prec = orec.get();
-						loc.set(FieldNames.FIELD_PARENT_ID, prec.get(FieldNames.FIELD_ID));
-					}
-				} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
-					logger.error(e);
-					e.printStackTrace();
-					break;
-				}
-
-			}
-		}
-		
-		logger.info("Parsed: " + locs.size() + " in " + (stop - start) + "ms");
-		assertTrue("Expected records to match max size " + maxLines + " but instead received " + locs.size(), ((maxLines == 0 && locs.size() > 0 )|| (locs.size() == maxLines)));
-		start = System.currentTimeMillis();
-		logger.info(locs.get(0).toFullString());
-		try {
-			ioContext.getAccessPoint().create(testUser1, locs.toArray(new BaseRecord[0]), true);
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		stop = System.currentTimeMillis();
-		logger.info("Imported: " + locs.size() + " in " + (stop - start) + "ms");
-
-		/// Admin 2
-		logger.info("Load Admin 2 Codes");
-		map = new ArrayList<>();
-		map.add(new ParseMap("code", 0));
-		map.add(new ParseMap("name", 1));
-		map.add(new ParseMap("geonameid", 3));
-		
-		template = null;
-		try {
-			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "admin2");
-			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
-		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
-		}
-		
-		start = System.currentTimeMillis();
-		locs = GenericParser.parseFile(testUser1, ModelNames.MODEL_GEO_LOCATION, map.toArray(new ParseMap[0]), groupPath, locPath + "/admin2Codes.txt", maxLines, template, csvFormat);
-
-		stop = System.currentTimeMillis();
-		
-		logger.info("Parsed: " + locs.size() + " in " + (stop - start) + "ms");
-		assertTrue("Expected records to match max size " + maxLines + " but instead received " + locs.size(), ((maxLines == 0 && locs.size() > 0 )|| (locs.size() == maxLines)));
-		start = System.currentTimeMillis();
-		ioContext.getAccessPoint().create(testUser1, locs.toArray(new BaseRecord[0]), true);
-		stop = System.currentTimeMillis();
-		logger.info("Imported: " + locs.size() + " in " + (stop - start) + "ms");
-	}
-	*/
-
-	/*
 	
-	@Test
-	public void TestGenericParse() {
-		
-		logger.info("Test Generic Parser");
-		logger.info("Test depends on external US data for common baby names by year.  See ./notes/dataNotes.txt");
-		
-		AuditUtil.setLogToConsole(false);
-			
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
-		String groupPath = "~/Bulk/Names - " + UUID.randomUUID().toString();
-
-		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		assertNotNull("Directory is null", dir);
-
-		String wnetPath = testProperties.getProperty("test.datagen.path") + "/names";
-
+	 private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
+		ParameterList plist = ParameterList.newParameterList("path", path);
+		plist.parameter("name", name);
+		BaseRecord data = null;
 		try {
-			int maxLines = 5000;
-			String[] files = new String[] {"yob2022.txt"};
-			for(String file : files) {
-				long start = System.currentTimeMillis();
-				logger.info("Processing: " + file);
-				
-				List<BaseRecord> words = GenericParser.parseFile(testUser1, ModelNames.MODEL_WORD, new String[] {"name", "gender", "count"}, groupPath, wnetPath + "/" + file, maxLines);
-				long stop = System.currentTimeMillis();
-				logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
-				
-				start = System.currentTimeMillis();
-				ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]), true);
-				stop = System.currentTimeMillis();
-				logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
-			}
-			
+			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, owner, null, plist);
+			data.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
+			data.set(FieldNames.FIELD_BYTE_STORE, textData.getBytes());
 		}
-		catch(Exception e) {
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
+		return data;
 	}
-	
-	@Test
-	public void TestWordNetParse() {
-		
-		AuditUtil.setLogToConsole(false);
-		
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
-		String groupPath = "~/Bulk/Word - " + UUID.randomUUID().toString();
-
-		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		assertNotNull("Directory is null", dir);
-
-		String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
-
-		try {
-			int maxLines = 1000;
-			String[] exts = new String[] {"adj", "adv", "verb", "noun"};
-			for(String ext: exts) {
-				long start = System.currentTimeMillis();
-				logger.info("Processing: " + ext);
-				
-				
-				List<BaseRecord> words = WordNetParser.parseWNDataFile(testUser1, groupPath, wnetPath + "/data." + ext, maxLines);
-				long stop = System.currentTimeMillis();
-				logger.info("Parsed: " + words.size() + " in " + (stop - start) + "ms");
-				
-				assertTrue("Expected records to match max size " + maxLines + " but instead received " + words.size(), ((maxLines == 0 && words.size() > 0 )|| (words.size() == maxLines)));
-
-				start = System.currentTimeMillis();
-				ioContext.getAccessPoint().create(testUser1, words.toArray(new BaseRecord[0]), true);
-				stop = System.currentTimeMillis();
-				logger.info("Imported: " + words.size() + " in " + (stop - start) + "ms");
-				
-			}
-			
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-	}
-	
-	@Test
-	public void TestLoadTraits() {
-		logger.info("Test load bulk traits");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
-		String groupPath = "~/Bulk/Trait - " + UUID.randomUUID().toString();
-
-		
-		//logger.info("Received: " + traits.size());
-		List<BaseRecord> traitrecs = getBulkTraits(testUser1, groupPath);
-
-		logger.info("Single load: " + traitrecs.size() + " traits");
-		long start = System.currentTimeMillis();
-		for(BaseRecord rec : traitrecs) {
-			ioContext.getAccessPoint().create(testUser1, rec);
-		}
-		long stop = System.currentTimeMillis();
-		long diff1 = (stop - start);
-
-
-		groupPath = "~/Bulk/Trait - " + UUID.randomUUID().toString();
-		traitrecs = getBulkTraits(testUser1, groupPath);
-		
-		logger.info("Bulk load: " + traitrecs.size() + " traits");
-		start = System.currentTimeMillis();
-		ioContext.getAccessPoint().create(testUser1, traitrecs.toArray(new BaseRecord[0]), true);
-		stop = System.currentTimeMillis();
-		
-		logger.info("Time to insert individually: " + diff1 + "ms");
-		logger.info("Time to insert by batch: " + (stop - start) + "ms");
-
-	}
-
-	@Test
-	public void TestBulkInsertWithAttributes() {
-		logger.info("Test load bulk objects with attributes");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Batch Testing");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
-		String groupPath = "~/Bulk/Data - " + UUID.randomUUID().toString();
-		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		assertNotNull("Directory is null", dir);
-		
-		String bulkDataNamePrefix = "Bulk Data Test - ";
-		List<BaseRecord> bulkLoad = new ArrayList<>();
-		
-		logger.info("Generating dataset - size = " + bulkLoadSize);
-		for(int i = 0; i < bulkLoadSize; i++) {
-			BaseRecord data = newTestData(testUser1, groupPath, bulkDataNamePrefix + (i+1), "This is the example data");
-			try {
-				AttributeUtil.addAttribute(data, "Example Attribute 1", "Test String");
-				AttributeUtil.addAttribute(data, "Example Attribute 2", 123);
-			}
-			catch(ValueException | ModelException | FieldException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-			bulkLoad.add(data);
-		}
-		
-		long start = System.currentTimeMillis();
-		ioContext.getAccessPoint().create(testUser1, bulkLoad.toArray(new BaseRecord[0]), true);
-		long stop = System.currentTimeMillis();
-		logger.info("Time to insert by batch: " + (stop - start) + "ms");
-		
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE, bulkDataNamePrefix);
-		q.setRequest(new String[] {FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_ATTRIBUTES});
-		
-		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q);
-		assertTrue("Expected to retrieve the batch size", qr.getCount() == bulkLoadSize);
-		
-		logger.info(qr.getResults()[0].toFullString());
-		
-	}
-
 
 	@Test
 	public void TestSingleBatchInsertSameType() {
@@ -1077,75 +456,6 @@ public class TestBulkOperation extends BaseTest {
 		}
 		assertFalse("Encountered an error", error);
 	}
-	*/
-	
-	/*
-	private BaseRecord newTrait(BaseRecord owner, String path, String name, TraitEnumType type, AlignmentEnumType alignment) {
-			ParameterList plist = ParameterList.newParameterList("path", path);
-			plist.parameter("name", name);
-			BaseRecord data = null;
-			try {
-				data = ioContext.getFactory().newInstance(ModelNames.MODEL_TRAIT, owner, null, plist);
-				data.set(FieldNames.FIELD_TYPE, type);
-				data.set(FieldNames.FIELD_ALIGNMENT, alignment);
-			}
-			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-			return data;
-		}
-		
-		private List<BaseRecord> getBulkTraits(BaseRecord owner, String groupPath){
-			String traitsPath = testProperties.getProperty("test.datagen.path") + "/traits.json";
-			File f = new File(traitsPath);
-			assertTrue("Data file does not exist", f.exists());
-			
-			Map<String, String[]> traits = JSONUtil.getMap(traitsPath, String.class,String[].class);
-			assertTrue("Expected to load some data", traits.size() > 0);
-			
-			List<BaseRecord> traitrecs = new ArrayList<>();
-			Set<String> traitset = new HashSet<>();
-			traits.forEach((k, v) -> {
-				if(!k.equals("alignment")) {
-					final AlignmentEnumType align;
-					if(k.equals("positive")) {
-						align = AlignmentEnumType.LAWFULGOOD;
-					}
-					else if(k.equals("negative")) {
-						align = AlignmentEnumType.CHAOTICEVIL;
-					}
-					else {
-						align = AlignmentEnumType.NEUTRAL;
-					}
 
-					Arrays.asList(v).forEach(s -> {
-						if(s != null && !traitset.contains(s)) {
-							traitset.add(s);
-							traitrecs.add(newTrait(owner, groupPath, s, TraitEnumType.PERSON, align));
-						}
-						else {
-							logger.warn("Invalid or dupe: " + s);
-						}
-					});
-				}
-			});
-			assertTrue("Expected traits to be queued", traitrecs.size() > 0);
-			
-			return traitrecs;
-
-		}
-		private int cleanupTrait(long groupId, long organizationId) {
-			Query lq = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, groupId);
-			lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-			int deleted = 0;
-			try {
-				deleted = ioContext.getWriter().delete(lq);
-			} catch (WriterException e) {
-				logger.error(e);
-				e.printStackTrace();
-			}
-			return deleted;
-		}
-		*/
 
 }

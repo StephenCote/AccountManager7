@@ -358,13 +358,7 @@
 			<artifactId>sevenzipjbinding-all-platforms</artifactId>
 			<version>16.02-2.01</version>
 		</dependency>
-		<!--
-				<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt</artifactId>
-			<version>0.9.1</version>
-		</dependency>
-		-->
+
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-impl</artifactId>
@@ -418,7 +412,7 @@
 		<dependency>
 			<groupId>org.json</groupId>
 			<artifactId>json</artifactId>
-			<version>20230618</version>
+			<version>20231013</version>
 		</dependency>
 
 		<!--
