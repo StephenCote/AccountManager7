@@ -98,7 +98,7 @@ public class IOSystem {
 			}
 			dbUtil = DBUtil.getInstance(properties);
 			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset()) {
-				logger.info("Scanning model schema");
+				logger.info("Scanning model schemas");
 				checkPersistedSchema = true;
 				for(String m : ModelNames.MODELS) {
 					ModelSchema schema = RecordFactory.getSchema(m);
@@ -127,7 +127,7 @@ public class IOSystem {
 			writer = IOFactory.getWriter(ioType, dbUtil.getDataSource());
 			search = IOFactory.getSearch(reader);
 		}
-		
+		logger.info("Initialize context");
 		activeContext = new IOContext(ioType, reader, writer, search);
 		activeContext.setIndexManager(fim);
 		activeContext.setDbUtil(dbUtil);
@@ -155,13 +155,15 @@ public class IOSystem {
 					oc.createOrganization();
 				} catch (NullPointerException | SystemException e) {
 					logger.error(e);
+					e.printStackTrace();
 				}
 			}
 		}
-
+		
 		if(checkPersistedSchema && ioType == RecordIO.DATABASE) {
 			List<String> models = ModelNames.listCustomModels();
 			if(models.size() == 0) {
+				logger.info("Loading models");
 				for(String m : ModelNames.MODELS) {
 					ModelSchema schema = RecordFactory.getCustomSchemaFromResource(m, m);
 				}
