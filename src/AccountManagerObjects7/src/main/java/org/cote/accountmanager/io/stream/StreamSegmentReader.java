@@ -173,4 +173,10 @@ public class StreamSegmentReader implements IReader {
 		
 	}
 
+	@Override
+	public void repopulate(BaseRecord rec, int foreignDepth) {
+		// TODO Auto-generated method stub
+		
+	}
+
 }

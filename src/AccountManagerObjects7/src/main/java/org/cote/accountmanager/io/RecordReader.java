@@ -13,6 +13,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordIO;
@@ -69,6 +70,19 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 		return outBool;
 	}
 	
+	public void repopulate(BaseRecord rec, int foreignDepth) {
+		if(rec.inherits(ModelNames.MODEL_POPULATE)) {
+			try {
+				rec.set(FieldNames.FIELD_POPULATED, false);
+				List<String> popFields = rec.get(FieldNames.FIELD_POPULATED_FIELDS);
+				popFields.clear();
+				populate(rec, new String[0], foreignDepth);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+	}
+	
 	/// Note: URN is intentionally excluded from populate to allow for ephemeral instances to pass through without attempting to lookup
 	///
 	public void populate(BaseRecord rec) {
@@ -102,6 +116,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 			}
 			*/
 			if(!pop) {
+				ModelSchema ms = RecordFactory.getSchema(rec.getModel());
 				try {
 					/// Clear any cache when using FILE IO
 					/// It is currently using the record-based cache pattern vs. the query based cache pattern, so it won't open the source for any additional fields
@@ -158,11 +173,31 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 								else {
 									// logger.warn("Skip populate: " + f.getName());
 								}
+								/*
 								if(rec.getField(f.getName()).getValueType() == FieldEnumType.MODEL && foreignDepth > 0) {
 									populate(rec.get(f.getName()), foreignDepth - 1);
 								}
+								*/
+
+								if((f.getValueType() == FieldEnumType.MODEL || f.getValueType() == FieldEnumType.LIST) && foreignDepth > 0) {
+									FieldSchema fs = ms.getFieldSchema(f.getName());
+									
+									if(f.getValueType() == FieldEnumType.MODEL) {
+										populate(rec.get(f.getName()), foreignDepth - 1);
+									}
+									else if(f.getValueType() == FieldEnumType.LIST && fs.getBaseType().equals(ModelNames.MODEL_MODEL)) {
+										
+										List<BaseRecord> frecs = rec.get(f.getName());
+										for(BaseRecord f1 : frecs) {
+											populate(f1, foreignDepth - 1);
+										}
+										
+									}
+								}
+								
 							} catch (FieldException | ValueException | ModelNotFoundException e) {
 								logger.error(e);
+								e.printStackTrace();
 								
 							}
 						});
