@@ -3,7 +3,6 @@
 	"likeInherits": ["data.directory"],
 	"inherits": [
 		"common.groupExt",
-		"common.description",
 		"common.ownerId",
 		"common.objectId",
 		"system.organizationExt",
