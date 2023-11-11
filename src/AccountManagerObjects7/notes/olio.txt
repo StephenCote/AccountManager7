@@ -1,0 +1,64 @@
+olio (hodgepodge) contains a variety of data randomization and evolution models and utilities.
+
+The following raw notes were taken from a thirty-year-old table-top gaming system I developed and played out.  The logic will be used as an example set of population rules. 
+
+
+Attributes are measured in points, and cap at 20 (initial allotment 100).  Fae caps at 200.
+Skills are measured in percentages, and initially cannot be allocated above 50%.  Fae skills cost 4x. Skills decay from disuse over time (100 - skill%) = days before 1% decay.  Skills don't decay belowe 60%.
+
+Attributes: 
+Physical strength
+Physical endurance
+Agility
+Speed
+Mental strength
+Intelligence
+Wisdom
+Fae (Magic)
+Manual dexterity
+Charisma: Not personality - prejudicial attitudes towards character's relative looks, relative interaction with people
+
+
+
+Reaction = (Agility + Speed + Wisdom) / 3
+Fight:
+   - roll to hit (fight/weapon skill).
+   - roll to dodge (agility + speed) or parry (fight/weapon skill against equal or lesser class)
+   - if hit and not dodged or parried, go to ADS
+
+Parry:
+   - (skill % - attack) = ParryModifier (PM)
+   - (ParrySkill - PM) = Minimum percent to parry
+Armor Damaging System (ADS)
+   - (a) total armor hit points: total amount of armor protection
+   - (b) armor stress point: number needed to pierce/puncture/break through armor
+   - (c) armor absorption percentage: armor protection percentage
+   
+   - (d) effective attack skill (calculated): (fight/weapon skill - absorption(c))
+   - (e) damage calculation: 5% - (c) = target and armor damaged; (c) to (fight/weapon skill) = armor damaged; above (skill) miss
+   - Eg: Weapon skill 75%.  Absorbtion 35%.  Target and armor take damage below 40%, while only armor between 40 and 75, and above 75 is a miss
+
+Area Fubar Chart:
+1) Minor shockwave or small effect
+2) Stronger, noticeable effect. Low damage to those in short radius (10m)
+3) Definate effect noticed, all present aware the person did something, damage to 15m
+4) Strong effect noticed, all present in 20m take damage
+5) Concussion level shock wave, all in 40m take damage
+6) Dangerous level of activity, anyone in 60m take damage
+7) Anyone in 80m take damage
+8) Anyone in 120m take damage
+
+Magic/Skill types:
+1) innate capacity - everyday person, essentially doesn't really stand out
+2) some capacity - must train to low/mid level effect
+3) high capacity - high affinity and may be trained to maximum degree and effect
+
+Critical determination
+For critical states, an additional percent is rolled:
+0 - 50%: Regular outcome
+51 - 85%: Double outcome
+86 - 95%: Triple/messed-up outcome
+96 - 00%: Deadly/total outcome 
+
+Saving throws:
+Death, Sickness/Poison, Magic: ((strength, health, willpower)/3) x 5 = Save death Percent
