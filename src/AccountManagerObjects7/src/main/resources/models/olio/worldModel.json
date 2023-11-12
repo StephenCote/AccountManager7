@@ -78,6 +78,12 @@
 		"foreign": true
 	},
 	{
+		"name": "colors",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "basis",
 		"baseModel": "olio.world",
 		"type": "model",

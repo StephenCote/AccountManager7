@@ -1,0 +1,26 @@
+{
+	"name" : "glasses",
+	"location": [],
+	"fabric": "plastic",
+	"pattern": "none",
+	"color": "$random",
+	"qualities": [
+		{
+			"opacity": "$randomRange[0.15-1]",
+			"smoothness": 0.75,
+			"toughness": 0.1,
+			"hardness": 0.7,
+			"glossiness": 0.35,
+			"waterresistance": 0,
+			"heatresistance": 0,
+			"defensive": 0.05,
+			"offensive": 0,
+			"insulation": 0,
+			"viscocity": 0,
+			"sliminess": 0,
+			"weight": 0.02,
+			"elasticity": 0.05,
+			"skill": 0.01
+		}
+	]
+}

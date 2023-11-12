@@ -26,6 +26,11 @@
 			"maxLength": 24
 		},
 		{
+			"name": "color",
+			"type": "string",
+			"maxLength": 24
+		},	
+		{
 			"name": "attachment",
 			"type": "string",
 			"maxLength": 16,

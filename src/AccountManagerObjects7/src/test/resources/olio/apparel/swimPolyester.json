@@ -1,0 +1,13 @@
+{
+	"model": "olio.wearable",
+	"name": "polyester base for swimming",
+	"type":" swim",
+	"wearables" : [
+		"${wearable.swimPolyester[name=top, location=chest]}",
+		"${wearable.swimPolyester[name=bottom, location=hips]}",
+		"${wearable.generalLeather[name=sandals, location=feet]}",
+		"${wearable.glasses[name=glasses, location=eyes]}"
+		
+		
+  	]
+}

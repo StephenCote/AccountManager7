@@ -22,11 +22,6 @@
 			"description": "Default for US: dimensions in inches, weight in pounds"
 		},
 		{
-			"name": "color",
-			"type": "string",
-			"maxLength": 24
-		},	
-		{
 			"name": "width",
 			"type": "double"
 		},		

@@ -1,0 +1,26 @@
+{
+	"name" : "generalLeather",
+	"location": [],
+	"fabric": "leather",
+	"pattern": "none",
+	"color": "$random",
+	"qualities": [
+		{
+			"opacity": "1",
+			"smoothness": 0.75,
+			"toughness": 0.1,
+			"hardness": 0.1,
+			"glossiness": 0.35,
+			"waterresistance": "$randomRange[0.15-1]",
+			"heatresistance": "$randomRange[0.15-1]",
+			"defensive": 0.05,
+			"offensive": 0,
+			"insulation": 0.05,
+			"viscocity": 0,
+			"sliminess": 0,
+			"weight": 0.1,
+			"elasticity": 0.05,
+			"skill": 0.01
+		}
+	]
+}
