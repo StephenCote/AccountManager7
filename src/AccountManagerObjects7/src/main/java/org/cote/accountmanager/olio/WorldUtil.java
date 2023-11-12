@@ -667,7 +667,16 @@ public class WorldUtil {
 		WordParser.loadNames(user, groupPath, basePath, reset);
 		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, groupPath));
 	}
+	private static int loadColors(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
+		IOSystem.getActiveContext().getReader().populate(world);
+		BaseRecord colDir = world.get("colors");
+		IOSystem.getActiveContext().getReader().populate(colDir);
+		
+		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
+		WordParser.loadColors(user, groupPath, basePath, reset);
+		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
+	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
 		BaseRecord traitsDir = world.get("traits");
@@ -701,6 +710,8 @@ public class WorldUtil {
 		logger.info("Surnames: " + surnames);
 		int traits = loadTraits(user, world, basePath, reset);
 		logger.info("Traits: " + traits);
+		int colors = loadColors(user, world, basePath + "/colors.csv", reset);
+		logger.info("Colors: " + colors);
 	}
 	public static BaseRecord cloneIntoGroup(BaseRecord src, BaseRecord dir) {
 		IOSystem.getActiveContext().getReader().populate(src);
@@ -1026,6 +1037,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD_NET, (long)world.get("words.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get("names.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("occupations.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_COLOR, (long)world.get("colors.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return totalWrites;
 	}
 	

@@ -1,0 +1,50 @@
+{
+	"name": "data.color",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.name",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Colors",
+	"icon": "category",
+	"label": "Color",
+	"constraints": [
+		"name, groupId, organizationId"
+	],
+	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
+	"query": [
+		"name, hex, groupId"
+	],
+	"fields": [
+		{
+			"name": "hex",
+			"type": "string",
+			"maxLength": 7,
+			"description": "Hexadecimal color value"
+		},
+		{
+			"name": "code",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "red",
+			"type": "int"
+		},
+		{
+			"name": "green",
+			"type": "int"
+		},
+		{
+			"name": "blue",
+			"type": "int"
+		}
+
+
+	]
+}

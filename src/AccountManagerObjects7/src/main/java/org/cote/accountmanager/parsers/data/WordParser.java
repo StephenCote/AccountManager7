@@ -92,6 +92,28 @@ public class WordParser {
 		return cfg;
 	}
 	
+	public static ParseConfiguration newColorParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
+		logger.info("New Color Parse Configuration");
+		
+		List<ParseMap> map = new ArrayList<>();
+		map.add(new ParseMap("code", 0));
+		map.add(new ParseMap("name", 1));
+		map.add(new ParseMap("hex", 2));
+		map.add(new ParseMap("red", 3));
+		map.add(new ParseMap("green", 4));
+		map.add(new ParseMap("blue", 5));
+
+		ParseConfiguration cfg = new ParseConfiguration();
+		cfg.setModel(ModelNames.MODEL_COLOR);
+		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote('"').setTrim(true).build());
+		cfg.setFields(map.toArray(new ParseMap[0]));
+		cfg.setFilePath(basePath);
+		cfg.setGroupPath(groupPath);
+		cfg.setMaxCount(maxLines);
+		cfg.setOwner(user);
+		return cfg;
+	}
+	
 	public static ParseConfiguration newNamesParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
 		logger.info("New Names Parse Configuration");
 		
@@ -161,6 +183,19 @@ public class WordParser {
 		int count = countCleanupWords(user, ModelNames.MODEL_CENSUS_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newSurnameParseConfiguration(user, groupPath, basePath, 0);
+			count = importFile(cfg);
+		}
+		else {
+			// logger.info(count + " records have already been loaded.");
+		}
+		return count;
+	}
+
+	public static int loadColors(BaseRecord user, String groupPath, String basePath, boolean reset) {
+		
+		int count = countCleanupWords(user, ModelNames.MODEL_COLOR, groupPath, reset);
+		if(count == 0) {
+			ParseConfiguration cfg = newColorParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
 		}
 		else {
