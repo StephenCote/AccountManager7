@@ -1,13 +1,15 @@
 {
-	"model": "olio.wearable",
+	"model": "olio.apparel",
 	"name": "polyester base for swimming",
-	"type":" swim",
+	"type": "swim",
+	"gender": "female",
 	"wearables" : [
 		"${wearable.swimPolyester[name=top, location=chest]}",
 		"${wearable.swimPolyester[name=bottom, location=hips]}",
 		"${wearable.generalLeather[name=sandals, location=feet]}",
-		"${wearable.glasses[name=glasses, location=eyes]}"
-		
-		
+		"${wearable.glasses[name=glasses, fabric=plastic]}",
+		"${wearable.generalHat[name=sunhat, fabric=straw, qualities.insulation=$randomRange[0.15-1]]}",
+		"${wearable.random[type=clothing,$count=[0-3]]}",
+		"${wearable.random[type=jewelry,$count=[0-3]]}"
   	]
 }

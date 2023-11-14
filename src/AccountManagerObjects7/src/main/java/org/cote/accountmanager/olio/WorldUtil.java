@@ -254,67 +254,7 @@ public class WorldUtil {
 		return streetName + (streetType.length() > 0 ? " " + streetType : "");
 	}
 	
-	public static String randomSelectionName(BaseRecord user, Query query) {
-		String[] names = randomSelectionNames(user, query, 1);
-		if(names.length > 0) {
-			return names[0];
-		}
-		return null;
-	}
-	public static String[] randomSelectionNames(BaseRecord user, Query query, int count) {
-		return Arrays.asList(randomSelections(user, query, count)).stream().map(f -> f.get(FieldNames.FIELD_NAME)).collect(Collectors.toList()).toArray(new String[0]);
-	}
-	public static BaseRecord randomSelection(BaseRecord user, Query query) {
-		BaseRecord[] recs = randomSelections(user, query, 1);
-		BaseRecord rec = null;
-		if(recs.length > 0) {
-			rec = recs[0];
-		}
-		return rec;
-	}
-	public static BaseRecord[] randomSelections(BaseRecord user, Query query, int count) {
-		/*
-		Query q2 = new Query(query.copyRecord());
-		int regCount = IOSystem.getActiveContext().getSearch().count(query);
-		//int regCount = IOSystem.getActiveContext().getAccessPoint().count(user, query);
-		if(regCount == 0) {
-			return null;
-		}
-		long randomIndex = (new Random()).nextLong(regCount);
-		q2.setRequestRange(randomIndex, 1);
-		*/
-		
-		QueryResult qr = null;
-		try {
-			query.setRequestRange(0, count);
-			query.set(FieldNames.FIELD_CACHE, false);
-			query.set(FieldNames.FIELD_SORT_FIELD, "random()");
-			query.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
-			qr = IOSystem.getActiveContext().getSearch().find(query);
-		} catch (IndexException | ReaderException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		if(qr != null && qr.getCount() > 0) {
-			logger.info("Random: " + query.get(FieldNames.FIELD_TYPE)+ " " + qr.getCount());
-			// logger.info(qr.getResults()[0].toFullString());
-			return qr.getResults();
-		}
-		else {
-			// logger.warn("No results: ");
-			logger.warn(query.toFullString());
-		}
-		return new BaseRecord[0];
-	}
-	private static boolean recordExists(BaseRecord user, String modelName, String name, BaseRecord group) throws IndexException, ReaderException {
-		Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_NAME, name);
-		q.field(FieldNames.FIELD_GROUP_ID, (long)group.get(FieldNames.FIELD_ID));
-		q.setRequest(new String[] {FieldNames.FIELD_ID});
-		return (IOSystem.getActiveContext().getSearch().find(q).getCount() > 0);
-	}
-    private static <T extends Enum<?>> T randomEnum(Class<T> cls){
-        int x = (new Random()).nextInt(cls.getEnumConstants().length);
-        return cls.getEnumConstants()[x];
-    }
+
 	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world) {
 		return randomPerson(user, world, null, null, null, null, null);
 	}
@@ -359,17 +299,16 @@ public class WorldUtil {
 			if(gen.equals("female")) {
 				names = fnames;
 			}
-			String firstName = (names != null ? names[rand.nextInt(names.length)] : randomSelectionName(user, fnq));
-			String middleName = (names != null ? names[rand.nextInt(names.length)] : randomSelectionName(user, fnq));
-			String lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));
-			
+			String firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+			String middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+			String lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));			
 			String name = firstName + " " + middleName + " " + lastName;
 	
-			while(recordExists(user, ModelNames.MODEL_CHAR_PERSON, name, popDir)){
+			while(OlioUtil.recordExists(user, ModelNames.MODEL_CHAR_PERSON, name, popDir)){
 				logger.info("Name " + name + " exists .... trying again");
-				firstName = (names != null ? names[rand.nextInt(names.length)] : randomSelectionName(user, fnq));
-				middleName = (names != null ? names[rand.nextInt(names.length)] : randomSelectionName(user, fnq));
-				lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));
+				firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+				middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
+				lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));
 
 				name = firstName + " " + middleName + " " + lastName;
 			}
@@ -383,21 +322,21 @@ public class WorldUtil {
 			trades.add((
 				tnames != null ? tnames[rand.nextInt(tnames.length)]
 				:
-				randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID)))
+					OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID)))
 			));
 			
 			if(Math.random() < .15) {
 				trades.add((
 					tnames != null ? tnames[rand.nextInt(tnames.length)]
 					:
-					randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID)))
+						OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID)))
 				));			
 			}
 	
 			
-			AlignmentEnumType alignment = randomEnum(AlignmentEnumType.class);
+			AlignmentEnumType alignment = OlioUtil.randomEnum(AlignmentEnumType.class);
 			while(alignment == AlignmentEnumType.UNKNOWN || alignment == AlignmentEnumType.NEUTRAL) {
-				alignment = randomEnum(AlignmentEnumType.class);
+				alignment = OlioUtil.randomEnum(AlignmentEnumType.class);
 			}
 			person.set("alignment", alignment);
 		}
@@ -411,7 +350,7 @@ public class WorldUtil {
 		BaseRecord dir = world.get("locations");
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 		q.field("geoType", "feature");
-		return randomSelection(user, q);
+		return OlioUtil.randomSelection(user, q);
 	}
 
 	/// Returns an array of objects related to the address
@@ -534,19 +473,19 @@ public class WorldUtil {
 		Query bq = QueryUtil.createQuery(ModelNames.MODEL_WORD_NET, FieldNames.FIELD_GROUP_ID, groupId);
 		Query advQ = new Query(bq.copyRecord());
 		advQ.field("type", WordNetParser.adverbWordType);
-		String advWord = randomSelectionName(user, advQ);
+		String advWord = OlioUtil.randomSelectionName(user, advQ);
 
 		Query verQ = new Query(bq.copyRecord());
 		verQ.field("type", WordNetParser.verbWordType);
-		String verWord = randomSelectionName(user, verQ);
+		String verWord = OlioUtil.randomSelectionName(user, verQ);
 
 		Query adjQ = new Query(bq.copyRecord());
 		adjQ.field("type", WordNetParser.adjectiveWordType);
-		String adjWord = randomSelectionName(user, adjQ);
+		String adjWord = OlioUtil.randomSelectionName(user, adjQ);
 
 		Query nounQ = new Query(bq.copyRecord());
 		nounQ.field("type", WordNetParser.nounWordType);
-		String nouWord = randomSelectionName(user, nounQ);
+		String nouWord = OlioUtil.randomSelectionName(user, nounQ);
 		
 		// logger.info(nounQ.toFullString());
 		
@@ -675,7 +614,7 @@ public class WorldUtil {
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadColors(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
+		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
 	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -806,7 +745,7 @@ public class WorldUtil {
 					Set<Long> tset = new HashSet<>();
 					for(int b = 0; b < 2; b++) {
 						List<BaseRecord> traits = event.get((b == 0 ? "entryTraits" : "exitTraits"));
-						BaseRecord[] trecs = randomSelections(user, QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, traitsDir.get(FieldNames.FIELD_ID)), 3);
+						BaseRecord[] trecs = OlioUtil.randomSelections(user, QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, traitsDir.get(FieldNames.FIELD_ID)), 3);
 						// for(int e = 0; e < 3; e++) {
 							//BaseRecord trait = randomSelection(user, QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, traitsDir.get(FieldNames.FIELD_ID)));
 						for(BaseRecord trait : trecs) {
@@ -903,18 +842,18 @@ public class WorldUtil {
 				Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
 				mnq.field("gender", "M");
 				mnq.set("cache", false);
-				String[] mnames = randomSelectionNames(user, mnq, popCount * 3);
+				String[] mnames = OlioUtil.randomSelectionNames(user, mnq, popCount * 3);
 				Query fnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
 				fnq.field("gender", "F");
 				fnq.set("cache", false);
-				String[] fnames = randomSelectionNames(user, fnq, popCount * 3);
+				String[] fnames = OlioUtil.randomSelectionNames(user, fnq, popCount * 3);
 
 				Query snq = QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID));
 				snq.set("cache", false);
-				String[] snames = randomSelectionNames(user, snq, popCount * 2);
+				String[] snames = OlioUtil.randomSelectionNames(user, snq, popCount * 2);
 				Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID));
 				tnq.set("cache", false);
-				String[] tnames = randomSelectionNames(user, tnq, popCount * 2);
+				String[] tnames = OlioUtil.randomSelectionNames(user, tnq, popCount * 2);
 				if(mnames.length == 0 || fnames.length == 0 || snames.length == 0 || tnames.length == 0) {
 					logger.error("Empty names");
 				}

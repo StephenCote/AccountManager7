@@ -25,12 +25,31 @@
 			"maxLength": 24
 		},
 		{
+			"name": "category",
+			"type": "string",
+			"maxLength": 24
+		},
+		{
+			"name": "quantity",
+			"type": "int"
+		},
+		{
 			"name": "age",
 			"type": "int"
 		},
 		{
 			"name": "inuse",
 			"type": "boolean"
+		},
+		{
+			"name": "materials",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "features",
+			"type": "list",
+			"baseType": "string"
 		}
 	]
 }

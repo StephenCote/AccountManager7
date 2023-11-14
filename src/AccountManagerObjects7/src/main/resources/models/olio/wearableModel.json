@@ -29,7 +29,12 @@
 			"name": "color",
 			"type": "string",
 			"maxLength": 24
-		},	
+		},
+		{
+			"name": "complementColor",
+			"type": "string",
+			"maxLength": 24
+		},
 		{
 			"name": "attachment",
 			"type": "string",
@@ -45,7 +50,7 @@
 			"name": "location",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["head", "hair", "torso", "feet", "wrist", "hand", "neck", "shoulders", "bicep", "face", "nose", "ears", "eyes", "hip", "waist", "belly"]
+			"limit": ["head", "brow", "hair", "torso", "chest", "breast", "foot", "toe", "ankle", "thigh", "leg", "wrist", "hand", "finger", "arm", "neck", "groin", "shoulder", "bicep", "tricep", "face", "nose", "ear", "eye", "hip", "waist", "belly"]
 		}
 
 	]

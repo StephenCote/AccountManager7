@@ -11,5 +11,13 @@ Names:
 		https://www.census.gov/topics/population/genealogy/data/2010_surnames.html
 	Occupations:
 		https://www.statcan.gc.ca/en/subjects/standard/noc/2021/indexV1
+Colors:
+	Color list:
+		https://github.com/codebrainz/color-names/blob/master/output/colors.csv
+	Also:
+		https://www.colorhexa.com/color-names
+Fabrics:
+	Fabrics:
+		https://copylists.com/fashion/list-fabrics/ 
 Prompt Engineering Refs:
 	https://www.promptingguide.ai/

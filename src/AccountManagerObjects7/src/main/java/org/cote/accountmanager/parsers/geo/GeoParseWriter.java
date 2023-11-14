@@ -28,16 +28,12 @@ public class GeoParseWriter implements IParseWriter {
 
 	@Override
 	public int write(ParseConfiguration cfg, List<BaseRecord> records) {
-		long start = System.currentTimeMillis();
-		
 		if(cfg.getParentQuery() != null) {
 			QueryResult qr = cfg.getParentQueryResult();
 			if(qr == null) {
-				logger.info("Parent query: " + cfg.getParentQuery().toFullString());
 				qr = IOSystem.getActiveContext().getAccessPoint().list(cfg.getOwner(), cfg.getParentQuery());
 				cfg.setParentQueryResult(qr);
 			}
-			//logger.info("Mapping " + qr.getCount() + " possible parent items");
 			List<BaseRecord> qra = Arrays.asList(qr.getResults());
 			for(BaseRecord rec : records) {
 				if(cfg.getInterceptor() != null) {
@@ -63,10 +59,7 @@ public class GeoParseWriter implements IParseWriter {
 			}
 		}
 		
-		int created = IOSystem.getActiveContext().getAccessPoint().create(cfg.getOwner(), records.toArray(new BaseRecord[0]), true);
-		long stop = System.currentTimeMillis();
-		// logger.info("Wrote: " + created + " in " + (stop - start) + "ms");
-		return created;
+		return IOSystem.getActiveContext().getAccessPoint().create(cfg.getOwner(), records.toArray(new BaseRecord[0]), true);
 	}
 
 }

@@ -84,6 +84,24 @@
 		"foreign": true
 	},
 	{
+		"name": "apparel",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "wearables",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "qualities",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "basis",
 		"baseModel": "olio.world",
 		"type": "model",

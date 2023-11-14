@@ -56,6 +56,9 @@ public class WorldFactory extends FactoryBase {
 					newRecord.set("surnames", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Surnames", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("occupations", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Occupations", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("dictionary", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Dictionary", GroupEnumType.DATA.toString(), orgId));
+					newRecord.set("apparel", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Apparel", GroupEnumType.DATA.toString(), orgId));
+					newRecord.set("wearables", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Wearables", GroupEnumType.DATA.toString(), orgId));
+					newRecord.set("qualities", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Qualities", GroupEnumType.DATA.toString(), orgId));
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
 				}

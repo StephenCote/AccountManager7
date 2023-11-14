@@ -23,6 +23,23 @@
 			"description": "The type this apparel is supposed to represent, such as a suit, casual outfit, etc"
 		},
 		{
+			"name": "gender",
+			"type": "string",
+			"maxLength": 6,
+			"description": "Male, female, unisex"
+		},
+		{
+			"name": "designer",
+			"type": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true
+		},
+		{
+			"name": "manufacturer",
+			"type": "string",
+			"maxLength": 127
+		},
+		{
 			"name": "wearables",
 			"type": "list",
 			"baseType": "model",
