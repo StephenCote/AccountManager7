@@ -9,6 +9,6 @@ import org.cote.accountmanager.schema.FieldSchema;
 
 public interface IParseInterceptor {
 	public boolean filterRow(ParseConfiguration cfg, CSVRecord record);
-	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, FieldSchema fieldSchema, FieldType fieldType, String baseVal);
+	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, BaseRecord rec, FieldSchema fieldSchema, FieldType fieldType, String baseVal);
 	public void filterParent(ParseConfiguration cfg, List<BaseRecord> parents, BaseRecord rec);
 }

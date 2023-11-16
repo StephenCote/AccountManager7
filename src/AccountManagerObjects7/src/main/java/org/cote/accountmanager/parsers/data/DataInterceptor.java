@@ -44,7 +44,7 @@ public class DataInterceptor implements IParseInterceptor {
 	}
 
 	@Override
-	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, FieldSchema fieldSchema, FieldType fieldType, String baseVal) {
+	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, BaseRecord rec, FieldSchema fieldSchema, FieldType fieldType, String baseVal) {
 
 		return baseVal;
 	}

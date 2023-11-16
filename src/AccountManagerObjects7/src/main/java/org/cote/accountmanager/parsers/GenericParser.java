@@ -131,14 +131,17 @@ public class GenericParser {
 					}
 					
 					if(cfg.getInterceptor() != null) {
-						rval = cfg.getInterceptor().filterField(cfg, record, field, fs, ft, rval);
+						rval = cfg.getInterceptor().filterField(cfg, record, field, obj, fs, ft, rval);
 					}
 					if(field.getInterceptor() != null) {
-						rval = field.getInterceptor().filterField(cfg, record, field, fs, ft, rval);
+						rval = field.getInterceptor().filterField(cfg, record, field, obj, fs, ft, rval);
 					}
 					
 					if(rval != null) {
 						switch(ft.getValueType()) {
+							case BLOB:
+								/// Let blob be handled by any interceptor
+								break;
 							case STRING:
 								ft.setValue(rval);
 								break;

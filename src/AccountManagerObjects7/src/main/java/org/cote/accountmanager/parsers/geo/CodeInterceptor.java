@@ -21,7 +21,7 @@ public class CodeInterceptor implements IParseInterceptor {
 	}
 
 	@Override
-	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, FieldSchema fieldSchema, FieldType fieldType, String baseVal) {
+	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, BaseRecord rec, FieldSchema fieldSchema, FieldType fieldType, String baseVal) {
 		String outVal = baseVal;
 		if(fieldSchema.getName().equals("iso")) {
 			if(outVal != null && outVal.indexOf(".") > -1) {

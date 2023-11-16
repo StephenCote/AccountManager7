@@ -21,7 +21,7 @@ public class CaseInterceptor implements IParseInterceptor {
 	}
 
 	@Override
-	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, FieldSchema fieldSchema, FieldType fieldType, String baseVal) {
+	public String filterField(ParseConfiguration cfg, CSVRecord record, ParseMap map, BaseRecord rec, FieldSchema fieldSchema, FieldType fieldType, String baseVal) {
 		String outVal = baseVal;
 		if(outVal != null && outVal.length() > 1) {
 			outVal = outVal.substring(0, 1) + outVal.substring(1).toLowerCase();
