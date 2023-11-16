@@ -16,8 +16,12 @@ Colors:
 		https://github.com/codebrainz/color-names/blob/master/output/colors.csv
 	Also:
 		https://www.colorhexa.com/color-names
-Fabrics:
+Clothing:
 	Fabrics:
-		https://copylists.com/fashion/list-fabrics/ 
+		https://copylists.com/fashion/list-fabrics/
+	Patterns:
+		https://ivyandpearlboutique.com/blogs/fashion-howto/fabric-and-textile-pattern-encyclopedia-complete-pattern-dictionary-illustrating-the-various-types-of-patterns-used-in-fabric-textile-and-clothing-design		
+		
+		 
 Prompt Engineering Refs:
 	https://www.promptingguide.ai/
