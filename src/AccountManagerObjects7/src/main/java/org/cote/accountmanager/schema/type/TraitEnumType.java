@@ -36,6 +36,8 @@ import javax.xml.bind.annotation.XmlType;
 public enum TraitEnumType {
 
     UNKNOWN,
+    FEATURE,
+    PERK,
     LOCATION,
     TRANSPORT,
     PROTOCOL,
