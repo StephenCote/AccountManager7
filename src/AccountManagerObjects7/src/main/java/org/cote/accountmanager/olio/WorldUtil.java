@@ -616,6 +616,16 @@ public class WorldUtil {
 		WordParser.loadColors(user, groupPath, basePath, reset);
 		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
 	}
+	private static int loadPatterns(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
+		IOSystem.getActiveContext().getReader().populate(world);
+		BaseRecord colDir = world.get("patterns");
+		IOSystem.getActiveContext().getReader().populate(colDir);
+		
+		String groupPath = colDir.get(FieldNames.FIELD_PATH);
+
+		WordParser.loadPatterns(user, groupPath, basePath, reset);
+		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_DATA, groupPath));
+	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
 		BaseRecord traitsDir = world.get("traits");
@@ -651,6 +661,8 @@ public class WorldUtil {
 		logger.info("Traits: " + traits);
 		int colors = loadColors(user, world, basePath + "/colors.csv", reset);
 		logger.info("Colors: " + colors);
+		int patterns = loadPatterns(user, world, basePath + "/patterns/patterns.csv", reset);
+		logger.info("Patterns: " + patterns);
 	}
 	public static BaseRecord cloneIntoGroup(BaseRecord src, BaseRecord dir) {
 		IOSystem.getActiveContext().getReader().populate(src);
@@ -862,8 +874,12 @@ public class WorldUtil {
 					addressPerson(user, world, person, location);
 					int alignment = getAlignmentScore(person);
 					long years = Math.abs(now.getTime() - ((Date)person.get("birthDate")).getTime()) / YEAR;
+					person.set("age", (int)years);
 					totalAge += years;
 					totalAbsoluteAlignment += (alignment + 4);
+					
+					List<BaseRecord> appl = person.get("apparel");
+					appl.add(ApparelUtil.randomApparel(user, world, person));
 					
 					actors.add(person);
 					
@@ -977,6 +993,9 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get("names.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("occupations.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_COLOR, (long)world.get("colors.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_QUALITY, (long)world.get("qualities.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_WEARABLE, (long)world.get("wearables.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_APPAREL, (long)world.get("apparel.id"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return totalWrites;
 	}
 	

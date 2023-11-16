@@ -114,6 +114,25 @@ public class WordParser {
 		return cfg;
 	}
 	
+	public static ParseConfiguration newPatternParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
+		logger.info("New Color Parse Configuration");
+		
+		List<ParseMap> map = new ArrayList<>();
+		map.add(new ParseMap("name", 0));
+		map.add(new ParseMap(FieldNames.FIELD_BYTE_STORE, 1, new PatternInterceptor()));
+		map.add(new ParseMap("description", 2));
+
+		ParseConfiguration cfg = new ParseConfiguration();
+		cfg.setModel(ModelNames.MODEL_DATA);
+		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter('|').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build());
+		cfg.setFields(map.toArray(new ParseMap[0]));
+		cfg.setFilePath(basePath);
+		cfg.setGroupPath(groupPath);
+		cfg.setMaxCount(maxLines);
+		cfg.setOwner(user);
+		return cfg;
+	}
+	
 	public static ParseConfiguration newNamesParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
 		logger.info("New Names Parse Configuration");
 		
@@ -196,6 +215,16 @@ public class WordParser {
 		int count = countCleanupWords(user, ModelNames.MODEL_COLOR, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newColorParseConfiguration(user, groupPath, basePath, 0);
+			count = importFile(cfg);
+		}
+		return count;
+	}
+
+	public static int loadPatterns(BaseRecord user, String groupPath, String basePath, boolean reset) {
+		
+		int count = countCleanupWords(user, ModelNames.MODEL_DATA, groupPath, reset);
+		if(count == 0) {
+			ParseConfiguration cfg = newPatternParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
 		}
 		else {
