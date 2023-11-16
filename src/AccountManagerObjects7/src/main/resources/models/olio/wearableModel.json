@@ -22,18 +22,19 @@
 		},
 		{
 			"name": "pattern",
-			"type": "string",
-			"maxLength": 24
+			"baseModel": "data.data",
+			"type": "model",
+			"foreign": true
 		},
 		{
 			"name": "color",
 			"type": "string",
-			"maxLength": 24
+			"maxLength": 64
 		},
 		{
 			"name": "complementColor",
 			"type": "string",
-			"maxLength": 24
+			"maxLength": 64
 		},
 		{
 			"name": "attachment",
@@ -45,6 +46,13 @@
 			"name": "size",
 			"type": "list",
 			"baseType": "string"
+		},
+		{
+			"name": "level",
+			"baseClass": "org.cote.accountmanager.olio.WearLevelEnumType",
+			"type": "enum",
+			"maxLength": 16,
+			"default": "NONE"
 		},
 		{
 			"name": "location",

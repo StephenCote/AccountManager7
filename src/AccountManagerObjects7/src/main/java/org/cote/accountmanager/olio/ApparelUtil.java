@@ -10,11 +10,14 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -24,6 +27,8 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
@@ -40,7 +45,120 @@ public class ApparelUtil {
 		private static Pattern randomCountPattern = Pattern.compile("[\"]*\\$count\\s*=\\s*\\[([\\d]+)\\-([\\d]+)\\][\"]*");
 		private static Pattern randomRangePattern = Pattern.compile("[\"]*\\$randomRange\\[([\\d\\.]+)\\-([\\d\\.]+)\\][\"]*");
 		private static Pattern parameterTokenPattern = Pattern.compile("\"\\$\\{([A-Za-z]+)\\.([A-Za-z]+)([A-Za-z\\[\\]=,\\s\\d\\.\\$\\-]*)\\}\"");
+		
+		private static String[] clothingTypes = new String[0];
+		private static String[] jewelryTypes = new String[0];
+		private static String[] fabricTypes = new String[0];
+		static {
+			clothingTypes = JSONUtil.importObject(ResourceUtil.getResource("./olio/clothing.json"), String[].class);
+			jewelryTypes = JSONUtil.importObject(ResourceUtil.getResource("./olio/jewelry.json"), String[].class);
+			fabricTypes = JSONUtil.importObject(ResourceUtil.getResource("./olio/fabrics.json"), String[].class);
+		}
+		private static String[] jewelryColors = {"Black", "Gold (Metallic)", "Old Gold", "Pale Gold", "Pale Silver", "Silver", "Platinum", "Rose Gold", "Titanium"};
+		private static String[] jewels = {"diamond", "ruby", "emerald", "sapphire", "pearl"};
+		
 		private static SecureRandom rand = new SecureRandom();
+		
+		public static String randomWearable(int level, String location, String gender) {
+			return randomWearable(clothingTypes, level, location, gender);
+		}
+		public static String randomWearable(String[] list, int level, String location, String gender) {
+			String wear = null;
+			List<String> wearl = filterWearables(list, level, location, gender);
+			if(wearl.size() > 0) {
+				wear = wearl.get(rand.nextInt(wearl.size()));
+			}
+			return wear;
+		}
+		
+		private static List<String> filterWearables(String[] list, int level, String location, String gender) {
+			final String gcode;
+			if(gender != null) {
+				gcode = gender.substring(0, 1);
+			}
+			else {
+				 gcode = "u";
+			}
+			return Arrays.asList(list).stream().filter(f -> {
+				String[] tmat = f.split(":");
+				if(tmat.length > 3) {
+					int lvl = Integer.parseInt(tmat[1]);
+					String gc = tmat[2];
+					if(lvl == level && (gc.equals("u") || gc.equals(gcode))) {
+						String[] lcs = location.split("\\|");
+						for(String lc : lcs) {
+							if(tmat[3].contains(lc)) {
+								return true;
+							}
+						}
+					}
+				}
+				return false;
+			}).collect(Collectors.toList());
+		}
+		public static String[] randomOutfit(WearLevelEnumType minLevel, WearLevelEnumType maxLevel, String gender, double probableMid) {
+			String genTag = "u";
+			if(gender != null) {
+				genTag = gender.substring(0, 1);
+			}
+			
+			List<String> rol = new ArrayList<>();
+			int low = WearLevelEnumType.valueOf(minLevel);
+			int high = WearLevelEnumType.valueOf(maxLevel);
+			int base = WearLevelEnumType.valueOf(WearLevelEnumType.BASE);
+			int garn = WearLevelEnumType.valueOf(WearLevelEnumType.GARNITURE);
+			int suit = WearLevelEnumType.valueOf(WearLevelEnumType.SUIT);
+
+			for(int i = low; i <= high; i++) {
+				//boolean req = (i == low || i == high);
+				boolean req = (i == base || i == suit);
+				if(i == garn) {
+					int cnt = rand.nextInt(4);
+					for(int c = 0; c < cnt; c++) {
+						if(probableMid >= rand.nextDouble()) {
+							String wear = randomWearable(clothingTypes, i, "head|brow|hair|chest|breast|toe|ankle|wrist|hand|finger|neck|groin|bicep|tricep|face|nose|ear|eye|waist|belly", gender);
+							if(wear != null && !rol.contains(wear)) {
+								rol.add("clothing:" + wear);
+							}
+						}
+						if(probableMid >= rand.nextDouble()) {
+							String wear = randomWearable(jewelryTypes, i, "brow|hair|chest|breast|toe|ankle|wrist|neck|groin|tricep|nose|ear|eye|waist|belly", gender);
+							/// logger.warn("*** Jewelry: " + wear + " out of " + jewelryTypes.length + " for " + gender);
+							if(wear != null && !rol.contains(wear)) {
+								rol.add("jewelry:" + wear);
+							}
+						}
+
+					}
+				}
+				else {
+					if(req || probableMid >= rand.nextDouble()) {
+						String wear = randomWearable(i, "torso|breast|chest|shoulder|hand|head|neck", gender);
+						if(wear != null && !rol.contains(wear)) {
+							rol.add("clothing:" + wear);
+						}
+						if(!req) {
+							wear = randomWearable(i, "shoulder|hand|head|neck", gender);
+							if(wear != null && !rol.contains(wear)) {
+								rol.add("clothing:" + wear);
+							}
+						}
+					}
+					if(req || probableMid >= rand.nextDouble()) {
+						String wear = randomWearable(i, "belly|waist|hip|leg|waist|groin", gender);
+						if(wear != null && !rol.contains(wear)) {
+							rol.add("clothing:" + wear);
+						}
+						wear = randomWearable(i, "foot|ankle", gender);
+						if(wear != null && !rol.contains(wear)) {
+							rol.add("clothing:" + wear);
+						}
+					}
+				}
+			}
+			return rol.toArray(new String[0]);
+		}
+		
 		
 		private static String replaceTokens(final String text) {
 			
@@ -68,7 +186,7 @@ public class ApparelUtil {
 			}
 			return rep.toString();
 		}
-		public static String getRandomType(BaseRecord user, BaseRecord world, String type, String gender, String parms) {
+		private static String getRandomType(BaseRecord user, BaseRecord world, String type, String gender, String parms) {
 			String ranType = "null";
 			logger.info("Randomize type: " + type);
 			List<BaseRecord> objs = new ArrayList<>();
@@ -84,7 +202,7 @@ public class ApparelUtil {
 				}
 			}
 			StringBuilder buff = new StringBuilder();
-			logger.info("Generating " + count + " random " + type);
+			// logger.info("Generating " + count + " random " + type);
 			for(int i = 0; i < count; i++) {
 				BaseRecord rec = null;
 				if(i > 0){
@@ -123,7 +241,7 @@ public class ApparelUtil {
 			/// A random offset between 0 and 10 is given to add a little variety
 			///
 			String sql = "SELECT C1.name as color, sqrt((power(C1.red - C2.red,2) *1.1) + (power(C1.green - C2.green,2) *1.1) "
-				+ "+ (power(C1.blue - C2.blue,2) *1.1)) as dist, C2.name as compliment FROM "
+				+ "+ (power(C1.blue - C2.blue,2) *1.1)) as dist, C2.name as complement FROM "
 				+ tableName + " C1 "
 				+ "CROSS JOIN " + tableName + " C2 "
 				+ "WHERE C1.name = ? "
@@ -140,7 +258,7 @@ public class ApparelUtil {
 				
 				ResultSet rset = statement.executeQuery();
 				if(rset.next()) {
-					outColor = rset.getString("compliment");
+					outColor = rset.getString("complement");
 				}
 				rset.close();
 				
@@ -155,27 +273,76 @@ public class ApparelUtil {
 			}
 			return outColor;
 		}
+		private static void alignPatternAndColors(List<BaseRecord> wears, double complementRatio, double patternRatio) {
+			BaseRecord primPatt = null;
+			String primCol = null;
+			String secCol = null;
+			String fabric = null;
+			try {
+				for(BaseRecord rec : wears) {
+					List<String> locs = rec.get("location");
+					if(!locs.contains("feet") && !locs.contains("ankle")) {
+						/// First article sets the color, complement, and pattern
+						if(primCol == null) {
+							primCol = rec.get("color");
+							secCol = rec.get("complementColor");
+							primPatt = rec.get("pattern");
+							fabric = rec.get("fabric");
+						}
+						else {
+							/// Change next article to the complementary color
+							if(rand.nextDouble() <= complementRatio) {
+								rec.set("color", secCol);
+							}
+							/// Match color
+							else {
+								rec.set("color", primCol);
+							}
+							if(rand.nextDouble() > patternRatio) {
+								rec.set("pattern", primPatt);
+								rec.set("fabric", fabric);
+							}
+						}
+						
+					}
+				}
+			}
+			catch(ModelNotFoundException | FieldException | ValueException e) {
+				logger.error(e);
+			}
+		}
+		public static void designApparel(BaseRecord apparel) {
+			List<BaseRecord> wears = apparel.get("wearables");
+			List<BaseRecord> base = wears.stream().filter(w -> "clothing".equals(w.get("category")) && WearLevelEnumType.BASE.toString().equals((String)w.get("level"))).collect(Collectors.toList());
+			List<BaseRecord> suit = wears.stream().filter(w -> "clothing".equals(w.get("category")) && WearLevelEnumType.SUIT.toString().equals((String)w.get("level"))).collect(Collectors.toList());
+			alignPatternAndColors(base, 0.2, 0.2);
+			alignPatternAndColors(suit, 0.6, 0.7);
+		}
 		
-		private static String[] clothingTypes = {"jewelry", "belt:u:waist", "bikini top:f:breast", "bikini bottom:f:hip", "blouse:f:torso", "boots:u:foot", "boxer shorts:m:waist", "bra:f:breast", "cap:u:head", "cardigan:u:torso", "cargo pants:u:hip+leg", "coat:u:torso", "dress:f:torso+thigh", "evening gown:f:torso+leg", "g-string:f:hip", "thong:f:hip", "gloves:u:hand", "hat:u:head", "hoodie:u:head+torso", "jacket:u:torso", "jeans:u:hip+leg", "leggings:f:hip+leg", "mittens:u:hand", "overalls:u:torso+hip+leg", "pajama top:u:torso", "pajama bottom:u:hip+leg", "panties:f:hip", "pants:u:hip+leg", "pantyhose:f:hip+leg", "polo shirt:u:torso", "pullover:u:torso", "raincoat:u:torso+hip", "scarf:u:neck", "shawl:f:neck+shoulder", "shirt:u:torso+arm", "shoes:u:foot", "shorts:u:hip", "skirt:f:hip+thigh", "slacks:u:hip+leg", "socks:u:foot+ankle", "suit jacket:u:torso+arm", "suit pants:u:hip+leg", "sweater:u:torso+arm", "sweatpants:u:hip+leg", "sweatshirt:u:hip+leg", "swim trunks:m:hip", "swimsuit:f:torso+hip", "t-shirt:u:torso", "tank top:u:shoulder+chest", "tie:m:neck", "tracksuit:u:torso+hip+leg", "trench coat:u:torso+hip+thigh", "tuxedo jacket:m:torso+arm", "tuxedo pants:m:hip+leg", "underwear:u:hip", "undershirt:u:torso", "vest:u:torso", "wedding dress:f:torso+hip+leg", "windbreaker:u:torso"};
-		private static String[] jewelryTypes = {"armlet:u:tricep", "bangle:u:wrist", "bracelet:u:wrist", "cuff links:m:wrist,chest", "ring:u:finger,toe", "slave bracelet:f:wrist", "belly chain:f:belly", "body piercing:u:brow,nose,lip,navel,groin,breast", "earring:u:ear", "chatelain:f:waist", "brooch:f:chest", "anklet:f:ankle", "amulet:u:neck", "pledge pin:u:chest", "dog tags:u:neck", "prayer beads:u:neck", "prayer rope:u:wrist", "signet ring:u:finger", "watch:u:wrist"};
-		private static String[] jewelryColors = {"Black", "Gold (Metallic)", "Old Gold", "Pale Gold", "Pale Silver", "Silver", "Platinum", "Rose Gold", "Titanium"};
-		private static String[] jewels = {"diamond", "ruby", "emerald", "sapphire", "pearl"};
-		
+		public static BaseRecord randomApparel(BaseRecord user, BaseRecord world, BaseRecord person) {
+			return randomApparel(user, world, (String)person.get("gender"));
+		}
 		public static BaseRecord randomApparel(BaseRecord user, BaseRecord world, String gender) {
 			IOSystem.getActiveContext().getReader().populate(world, 2);
 			BaseRecord parWorld = world.get("basis");
 			IOSystem.getActiveContext().getReader().populate(parWorld, 2);
 			BaseRecord app = OlioUtil.newGroupRecord(user, ModelNames.MODEL_APPAREL, world.get("apparel.path"), null);
-			
-			String[] wrand = {"head","eye","wrist","hand"};
-			String[] male = {"+torso","+hip,leg","+foot","underwear"};
-			String[] female = {"+torso","+hip,leg","+foot","bra","+underwear,g-string,thong"};
-			String[] use = (gender != null && gender.equals("female") ? female: male);
-			int irand = rand.nextInt(100);
-			List<String> wears = new ArrayList<>();
-			if(irand > 50) {
-
+			try {
+				app.set("gender", gender);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
 			}
+			String [] wears = randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, gender, .35);
+			List<BaseRecord> wearList = app.get("wearables");
+			
+			for(String emb : wears) {
+				BaseRecord wearRec = OlioUtil.newGroupRecord(user, ModelNames.MODEL_WEARABLE, world.get("wearables.path"), null);
+				List<BaseRecord> quals = wearRec.get("qualities");
+				quals.add(OlioUtil.newGroupRecord(user, ModelNames.MODEL_QUALITY, world.get("qualities.path"), null));
+				wearList.add(wearRec);
+				applyEmbeddedWearable(user, world, wearRec, emb);
+			}
+			designApparel(app);
 			return app;
 			
 		}
@@ -215,9 +382,36 @@ public class ApparelUtil {
 			applyEmbeddedWearable(user, world, rec, randType);
 		}
 		
+		/// name - level - gender - opacity - elastic - glossy - smooth - def - water - heat - insul
+		protected static String randomFabric(int level, String gender) {
+			final String gcode;
+			if(gender != null) gcode = gender.substring(0, 1);
+			else gcode = "u";
+			String lstr = Integer.toString(level);
+			List<String> fabs = Arrays.asList(fabricTypes).stream().filter(f -> {
+				String[] tmat = f.split(":");
+				if(tmat.length > 3) {
+					String gc = tmat[2];
+					return (tmat[1].contains(lstr) && (gc.equals("u") || gc.equals(gcode)));
+				}
+				else {
+					logger.error("Invalid fabric: " + f + ":" + tmat.length);
+					return false;
+				}
+			}
+				//((pat == null && pat2 == null) || pat.matcher(f).find() || (pat2 != null && pat2.matcher(f).find()))
+			).collect(Collectors.toList());
+			
+			String outFab = null;
+			if(fabs.size() > 0) {
+				outFab = fabs.get(rand.nextInt(fabs.size()));
+			}
+			return outFab;
+		}
 		protected static void applyEmbeddedWearable(BaseRecord user, BaseRecord world, BaseRecord rec, String embType) {
 			BaseRecord parWorld = world.get("basis");
 			IOSystem.getActiveContext().getReader().populate(parWorld, 2);
+			long patternDir = parWorld.get("patterns.id");
 			String gender = rec.get("gender");
 			if(gender != null) gender = gender.substring(0,1).toLowerCase();
 			else gender = "u";
@@ -225,9 +419,11 @@ public class ApparelUtil {
 			String[] tmeta = embType.split(":");
 			try {
 				String ttype = tmeta[0];
+				
 				rec.set("category", ttype);
 				String randomColor = null;
 				List<String> nfeats = new ArrayList<>();
+				BaseRecord pattern = null;
 				if(ttype.equals("jewelry")) {
 					randomColor = jewelryColors[rand.nextInt(jewelryColors.length)];
 					int randJ = rand.nextInt(100);
@@ -243,16 +439,26 @@ public class ApparelUtil {
 				}
 				else {
 					randomColor = OlioUtil.getRandomOlioValue(user, parWorld, "color");
+					Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
+					q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
+					pattern = OlioUtil.randomSelection(user, q);
 				}
 				String compColor = findComplementaryColor(parWorld, randomColor);
-				// logger.info("color - " + randomColor + " <- " + compColor);
 				rec.set("color", randomColor);
 				rec.set("complementColor", compColor);
+				rec.set("pattern", pattern);
 				rec.set(FieldNames.FIELD_TYPE, tmeta[1]);
-				if(tmeta[2].equals("u")){
+				rec.set(FieldNames.FIELD_NAME, tmeta[1]);
+				int lvl = Integer.parseInt(tmeta[2]);
+				WearLevelEnumType wlvl = WearLevelEnumType.valueOf(lvl);
+				if(ttype.equals("clothing")) {
+					applyEmbeddedFabric(rec, randomFabric(lvl, gender));
+				}
+				rec.set("level", wlvl);
+				if(tmeta[3].equals("u")){
 					gender = "unisex";
 				}
-				else if(tmeta[2].equals("f")){
+				else if(tmeta[3].equals("f")){
 					gender = "female";
 				}
 				else{
@@ -260,7 +466,7 @@ public class ApparelUtil {
 				}
 				rec.set("gender", gender);
 				List<String> locs = rec.get("location");
-				String[] plocs = tmeta[3].split(",");
+				String[] plocs = tmeta[4].split(",");
 				String ploc = plocs[rand.nextInt(plocs.length)];
 				String[] iplocs = ploc.split("\\+");
 				locs.addAll(Arrays.asList(iplocs));
@@ -269,7 +475,32 @@ public class ApparelUtil {
 				logger.error(e);
 			}
 		}
-		
+		// name - level - gender - opacity - elastic - glossy - smooth - def - water - heat - insul
+		private static void applyEmbeddedFabric(BaseRecord wearable, String emb) {
+			if(emb == null) {
+				return;
+			}
+			List<BaseRecord> quals = wearable.get("qualities");
+			if(quals.size() == 0) {
+				return;
+			}
+			BaseRecord qual = quals.get(0);
+			String[] tmat = emb.split(":");
+			try {
+				wearable.set("fabric", tmat[0]);
+				qual.set("opacity", Double.parseDouble(tmat[3]));
+				qual.set("elasticity", Double.parseDouble(tmat[4]));
+				qual.set("glossiness", Double.parseDouble(tmat[5]));
+				qual.set("smoothness", Double.parseDouble(tmat[6]));
+				qual.set("defensive", Double.parseDouble(tmat[7]));
+				qual.set("waterresistance", Double.parseDouble(tmat[8]));
+				qual.set("heatresistance", Double.parseDouble(tmat[9]));
+				qual.set("insulation", Double.parseDouble(tmat[10]));
+			} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+				logger.error(emb);
+			}
+		}
 		private static void applyParameters(BaseRecord user, BaseRecord world, BaseRecord rec, String parms) {
 			if(parms != null) {
 				String[] pairs = parms.substring(1, parms.length() - 1).split(",");
@@ -369,11 +600,7 @@ public class ApparelUtil {
 			return rep.toString();
 		}
 		
-		public BaseRecord outfit(BaseRecord user, String path, String apparelStr) {
-			BaseRecord temp1 = IOSystem.getActiveContext().getFactory().template(ModelNames.MODEL_APPAREL, apparelStr);
-			
-			return temp1;
-		}
+
 		
 		/*
 		public BaseRecord newApparel(BaseRecord user, String name, String type, String groupPath, BaseRecord[] wearables) {

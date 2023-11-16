@@ -1,0 +1,23 @@
+[
+	"armlet:7:u:tricep",
+	"bangle:7:u:wrist",
+	"bangle:7:f:clip",
+	"bracelet:7:u:wrist",
+	"cuff links:7:m:wrist,chest",
+	"ring:7:u:finger,toe",
+	"slave bracelet:7:f:wrist",
+	"belly chain:7:f:belly",
+	"body piercing:7:u:brow,nose,lip,navel,groin,breast",
+	"earring:7:u:ear",
+	"chatelain:7:f:waist",
+	"brooch:7:f:chest",
+	"anklet:7:f:ankle",
+	"amulet:7:u:neck",
+	"pledge pin:7:u:chest",
+	"eye glasses:7:u:eye",
+	"dog tags:7:u:neck",
+	"prayer beads:7:u:neck",
+	"prayer rope:7:u:wrist",
+	"signet ring:7:u:finger",
+	"watch:7:u:wrist"
+]

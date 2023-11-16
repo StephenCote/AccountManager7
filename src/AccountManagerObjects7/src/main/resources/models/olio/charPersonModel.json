@@ -10,9 +10,29 @@
 	"dedicatedParticipation": true,
 	"fields": [
 		{
+			"name": "age",
+			"type": "int"
+		},
+		{
 			"name": "trades",
 			"type": "list",
 			"baseType": "string"
+		},
+		{
+			"name": "apparel",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.apparel",
+			"foreign": true,
+			"participantModel": "person.apparel"
+		},
+		{
+			"name": "inventory",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.item",
+			"foreign": true,
+			"participantModel": "person.item"
 		}
 	]
 }

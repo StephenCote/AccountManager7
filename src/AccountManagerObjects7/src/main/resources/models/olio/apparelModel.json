@@ -45,6 +45,10 @@
 			"baseType": "model",
 			"baseModel": "olio.wearable",
 			"foreign": true
+		},
+		{
+			"name": "inuse",
+			"type": "boolean"
 		}
 	]
 }

@@ -84,6 +84,12 @@
 		"foreign": true
 	},
 	{
+		"name": "patterns",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "apparel",
 		"baseModel": "auth.group",
 		"type": "model",

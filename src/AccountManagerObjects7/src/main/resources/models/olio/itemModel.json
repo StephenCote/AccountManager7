@@ -47,9 +47,20 @@
 			"baseType": "string"
 		},
 		{
+			"name": "perks",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"participantModel": "trait.perk",
+			"foreign": true
+		},
+		{
 			"name": "features",
 			"type": "list",
-			"baseType": "string"
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"participantModel": "trait.feature",
+			"foreign": true
 		}
 	]
 }

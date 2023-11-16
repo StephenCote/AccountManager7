@@ -75,6 +75,7 @@ import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
+import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.WorldUtil;
 import org.junit.Test;
 
@@ -95,6 +96,12 @@ public class TestBulkOperation extends BaseTest {
 	private String worldPath = "~/Worlds";
 	
 	@Test
+	public void TestOlio3() {
+		String[] outfit = ApparelUtil.randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, "male", .35);
+		logger.info(String.join(", ", outfit));
+	}
+
+	@Test
 	public void TestOlio2() {
 		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -106,13 +113,30 @@ public class TestBulkOperation extends BaseTest {
 		WorldUtil.populateWorld(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
 		// logger.info(subWorld.toFullString());
 		//AuditUtil.setLogToConsole(true);
 		try {
 			BaseRecord event = WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
-			String app1 = ApparelUtil.getOlioResource(testUser1, subWorld, "./olio/apparel/swimPolyester.json", "female");
-			logger.info(app1);
+			//String app1 = ApparelUtil.getOlioResource(testUser1, subWorld, "./olio/apparel/swimPolyester.json", "female");
+			//logger.info(app1);
+			BaseRecord person = OlioUtil.randomSelection(testUser1, QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id")));
+			assertNotNull("Person is null");
+			logger.info(person.toFullString());
+			
+			/*
+			BaseRecord app = ApparelUtil.randomApparel(testUser1, subWorld, "female");
+			*/
+			for(int i = 0; i < 5; i++) {
+				BaseRecord app = ApparelUtil.randomApparel(testUser1, subWorld, person);
+				assertNotNull("Apparel is null", app);
+				//logger.info(app.toFullString());
+				((List<BaseRecord>)app.get("wearables")).forEach(r -> {
+					logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
+				});
+			}
+			// BaseRecord capp = ioContext.getAccessPoint().create(testUser1, app);
+			//assertNotNull("Failed to create apparell", capp);
 
 		}
 		catch(Exception e) {
@@ -120,6 +144,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 
 	}
+	
 	/*
 	@Test
 	public void TestLocationParent() {
