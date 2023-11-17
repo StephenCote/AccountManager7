@@ -118,11 +118,18 @@ public class WorldUtil {
 	protected static final String[] CARDINAL_DIRECTION = new String[]{"N","W","S","E",""};
 	protected static final String[] QUADRANT_DIRECTION = new String[]{"NW","NE","SW","SE",""};
 	protected static final String[] STREET_TYPE_BASE = new String[]{"","","","Avenue","Street","Drive","Circle","Court","Place","Terrace","Highway","Pike","Boulevard","Alley","Bend","Gardens","Gate","Grove","Heights","Lane","Trail","Vale","Way","Cove","Park","Plaza","Ridge","Hill","Canyon","Loop","Circle","Road","View"};
+	
+	
+	private static Map<String, String[]> altNamesCache = new HashMap<>();
 	private static String[] getAlternateNames(BaseRecord user, BaseRecord location, String altType) {
 		return getAlternateNames(user, null, location, altType);
 	}
 	private static String[] getAlternateNames(BaseRecord user, BaseRecord world, BaseRecord location, String altType) {
-			
+		String key = location.get(FieldNames.FIELD_GROUP_ID) + "-" + altType;
+		if(altNamesCache.containsKey(key)) {
+			return altNamesCache.get(key);
+		}
+		
 		IOSystem.getActiveContext().getReader().populate(location, new String[] {"geonameid", FieldNames.FIELD_GROUP_ID});
 		long groupId = location.get(FieldNames.FIELD_GROUP_ID);
 		if(world != null) {
@@ -146,7 +153,9 @@ public class WorldUtil {
 		} catch (IndexException | ReaderException e) {
 			logger.error(e);
 		}
-		
+		if(names.size() > 0) {
+			altNamesCache.put(key, names.toArray(new String[0]));
+		}
 		return names.toArray(new String[0]);
 	}
 	
@@ -259,7 +268,30 @@ public class WorldUtil {
 		return randomPerson(user, world, null, null, null, null, null);
 	}
 	
+	private static Map<String, List<String>> dirNameCache = new HashMap<>();
 	
+	private static void populateDirNameCache(BaseRecord user, String model, long groupId) throws IndexException, ReaderException {
+		String key = model + "-" + groupId;
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
+		q.setRequest(new String[] {FieldNames.FIELD_NAME});
+		QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+		List<String> names = Arrays.asList(qr.getResults()).stream().map(r -> (String)r.get(FieldNames.FIELD_NAME)).collect(Collectors.toList());
+		dirNameCache.put(key, names);
+	}
+	
+	private static boolean nameInDirExists(BaseRecord user, String model, long groupId, String name) throws IndexException, ReaderException {
+		String key = model + "-" + groupId;
+		if(!dirNameCache.containsKey(key) || dirNameCache.get(key).size() == 0) {
+			populateDirNameCache(user, model, groupId);
+		}
+		List<String> names = dirNameCache.get(key);
+		if(names.contains(name)) {
+			return true;
+		}
+		names.add(name);
+		return false;
+		//OlioUtil.recordExists(user, model, name, groupId);
+	}
 	
 	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world, String preferredLastName) {
 		return randomPerson(user, world, preferredLastName, null, null, null, null);
@@ -304,7 +336,8 @@ public class WorldUtil {
 			String lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));			
 			String name = firstName + " " + middleName + " " + lastName;
 	
-			while(OlioUtil.recordExists(user, ModelNames.MODEL_CHAR_PERSON, name, popDir)){
+			//while(OlioUtil.recordExists(user, ModelNames.MODEL_CHAR_PERSON, name, popDir)){
+			while(nameInDirExists(user, ModelNames.MODEL_CHAR_PERSON, (long)popDir.get(FieldNames.FIELD_ID), name)) {
 				logger.info("Name " + name + " exists .... trying again");
 				firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
 				middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
@@ -645,7 +678,7 @@ public class WorldUtil {
 		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
 
-	public static void populateWorld(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
+	public static void loadWorldData(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		logger.info("Checking world data ...");
 		int dict = loadDictionary(user, world, basePath + "/wn3.1.dict/dict", reset);
 		logger.info("Dictionary words: " + dict);
@@ -682,7 +715,6 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		List<BaseRecord> events = new ArrayList<>(); 
 		BaseRecord root = null;
-		BaseRecord rootLoc = null;
 		BaseRecord parWorld = world.get("basis");
 		BaseRecord locDir = world.get("locations");
 		BaseRecord eventsDir = world.get("events");
@@ -696,7 +728,6 @@ public class WorldUtil {
 			return null;
 		}
 		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
-		BaseRecord traitsDir = parWorld.get("traits");
 
 		List<BaseRecord> locations = new ArrayList<>();
 		Set<String> locSet = new HashSet<>();
@@ -726,7 +757,6 @@ public class WorldUtil {
 
 				String locName = loc.get(FieldNames.FIELD_NAME);
 				loc.set(FieldNames.FIELD_DESCRIPTION, null);
-				//logger.info(loc.toFullString());
 				BaseRecord event = null;
 
 				if(root == null) {
@@ -754,43 +784,49 @@ public class WorldUtil {
 					event.set(FieldNames.FIELD_NAME, "Construct " + locName);
 					event.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					
-					Set<Long> tset = new HashSet<>();
 					for(int b = 0; b < 2; b++) {
 						List<BaseRecord> traits = event.get((b == 0 ? "entryTraits" : "exitTraits"));
-						BaseRecord[] trecs = OlioUtil.randomSelections(user, QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, traitsDir.get(FieldNames.FIELD_ID)), 3);
-						// for(int e = 0; e < 3; e++) {
-							//BaseRecord trait = randomSelection(user, QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, traitsDir.get(FieldNames.FIELD_ID)));
-						for(BaseRecord trait : trecs) {
-							
-							/*
-							if(trait == null) {
-								logger.error("Null trait");
-								continue;
-							}
-							*/
-							String name = trait.get(FieldNames.FIELD_NAME);
-							if(tset.contains(name)) {
-								continue;
-							}
-							traits.add(trait);
-						}
+						traits.addAll(Arrays.asList(getRandomTraits(user, parWorld, 3)));
 					}
 					event.set(FieldNames.FIELD_LOCATION, loc);
 					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 					events.add(event);
 				}
-
-				// logger.info(event.toFullString());
 			}
-			//logger.info("Events: " + events.size());
-			// IOSystem.getActiveContext().getAccessPoint().create(user, events.toArray(new BaseRecord[0]), true);
 
-		} catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
-			
+		}
+		catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
 			logger.error(e);
 		}
 		return root;
 	}
+	
+	private static int traitDeckSize = 100;
+	private static BaseRecord[] traitDeck = new BaseRecord[0];
+	protected static void shuffleTraitDeck(BaseRecord user, BaseRecord world) {
+		long traitDir = world.get("traits.id");
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, traitDir);
+		q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID});
+		traitDeck = OlioUtil.randomSelections(user, q, traitDeckSize);
+	}
+	
+	public static BaseRecord[] getRandomTraits(BaseRecord user, BaseRecord world, int count) {
+		List<BaseRecord> traits = new ArrayList<>();
+		if(traitDeck.length == 0) {
+			shuffleTraitDeck(user, world);
+		}
+		
+		if(traitDeck.length > 0) {
+			for(int i = 0; i < count; i++) {
+				BaseRecord trait = traitDeck[rand.nextInt(traitDeck.length)];
+				if(!traits.contains(trait)) {
+					traits.add(trait);
+				}
+			}
+		}
+		return traits.toArray(new BaseRecord[0]);
+	}
+
 	
 	private static String[] leaderPopulation = new String[]{"Political","Religious","Military","Business","Social","Trade"};
 	
@@ -802,11 +838,62 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, grp, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return grp;
 	}
+	
+	private static String[] maleNamesDeck = new String[0];
+	private static String[] femaleNamesDeck = new String[0];
+	private static String[] surnameNamesDeck = new String[0];
+	private static String[] occupationsDeck = new String[0];
+	private static int namesDeckCount = 500;
+	
+	
+
+	private static void shuffleOccupationsDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
+		Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get("occupations.id"));
+		tnq.set("cache", false);
+		occupationsDeck = OlioUtil.randomSelectionNames(user, tnq, count);
+	}
+	
+	private static void shuffleMaleNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
+		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get("names.id"));
+		mnq.field("gender", "M");
+		mnq.set("cache", false);
+		maleNamesDeck = OlioUtil.randomSelectionNames(user, mnq, count);
+	}
+	
+	private static void shuffleFemaleNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
+		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get("names.id"));
+		mnq.field("gender", "F");
+		mnq.set("cache", false);
+		femaleNamesDeck = OlioUtil.randomSelectionNames(user, mnq, count);
+	}
+	
+	private static void shuffleSurnameNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
+		Query snq = QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, world.get("surnames.id"));
+		snq.set("cache", false);
+		surnameNamesDeck = OlioUtil.randomSelectionNames(user, snq, count);
+	}
+	
+	protected static void shuffleDecks(BaseRecord user, BaseRecord world) {
+		try {
+			logger.info("Shuffling decks ...");
+			shuffleMaleNamesDeck(user, world, namesDeckCount);
+			shuffleFemaleNamesDeck(user, world, namesDeckCount);
+			shuffleSurnameNamesDeck(user, world, namesDeckCount);
+			shuffleOccupationsDeck(user, world, namesDeckCount);
+			ApparelUtil.shuffleDecks(user, world);
+			dirNameCache.clear();
+			logger.info("... Shuffled");
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	
+	
 	public static BaseRecord populateRegion(BaseRecord user, BaseRecord world, BaseRecord location, int popCount){
 
 		String locName = location.get(FieldNames.FIELD_NAME);
 		logger.info("Populating " + locName + " with " + popCount + " people");
-
+		long totalAge = 0L;
 		long start = System.currentTimeMillis();
 		BaseRecord event = null;
 		BaseRecord parWorld = world.get("basis");
@@ -818,9 +905,9 @@ public class WorldUtil {
 		try {
 			BaseRecord popDir = world.get("population");
 			BaseRecord evtDir = world.get("events");
-			BaseRecord namesDir = parWorld.get("names");
-			BaseRecord surDir = parWorld.get("surnames");
-			BaseRecord occDir = parWorld.get("occupations");
+			// BaseRecord namesDir = parWorld.get("names");
+			// BaseRecord surDir = parWorld.get("surnames");
+			// BaseRecord occDir = parWorld.get("occupations");
 			
 			ParameterList plist = ParameterList.newParameterList("path", evtDir.get(FieldNames.FIELD_PATH));
 			event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
@@ -832,13 +919,11 @@ public class WorldUtil {
 			grps.add(popGrp);
 			grps.add(newRegionGroup(user, popDir, locName + " Cemetary"));
 			
-			/// IOSystem.getActiveContext().getQueue().enqueue
 			for(String name : leaderPopulation){
 				grps.add(newRegionGroup(user, popDir, locName + " " + name + " Leaders"));				
 			}
 			
 			IOSystem.getActiveContext().getRecordUtil().updateRecords(grps.toArray(new BaseRecord[0]));
-			// IOSystem.getActiveContext().getAccessPoint().create(user, grps.toArray(new BaseRecord[0]));
 			
 			event.set(FieldNames.FIELD_GROUPS, grps);
 			List<BaseRecord> actors = event.get("actors");
@@ -847,10 +932,9 @@ public class WorldUtil {
 				event.set(FieldNames.FIELD_DESCRIPTION, "Decimated");
 			}
 			else {
-				long totalAge = 0;
 				int totalAbsoluteAlignment = 0;
-				// logger.info("Populating '" + popCount + '"');
 				Date now = new Date();
+				/*
 				Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
 				mnq.field("gender", "M");
 				mnq.set("cache", false);
@@ -866,11 +950,16 @@ public class WorldUtil {
 				Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID));
 				tnq.set("cache", false);
 				String[] tnames = OlioUtil.randomSelectionNames(user, tnq, popCount * 2);
-				if(mnames.length == 0 || fnames.length == 0 || snames.length == 0 || tnames.length == 0) {
+
+				*/
+				shuffleDecks(user, parWorld);
+
+				if(maleNamesDeck.length == 0 || femaleNamesDeck.length == 0 || surnameNamesDeck.length == 0 || occupationsDeck.length == 0) {
 					logger.error("Empty names");
 				}
+
 				for(int i = 0; i < popCount; i++){
-					BaseRecord person = randomPerson(user, world, null, mnames, fnames, snames, tnames);
+					BaseRecord person = randomPerson(user, world, null, maleNamesDeck, femaleNamesDeck, surnameNamesDeck, occupationsDeck);
 					addressPerson(user, world, person, location);
 					int alignment = getAlignmentScore(person);
 					long years = Math.abs(now.getTime() - ((Date)person.get("birthDate")).getTime()) / YEAR;
@@ -903,77 +992,11 @@ public class WorldUtil {
 					generatePersonOrganization(event.getActors().toArray(new PersonType[0]));
 				}
 				*/
-				/*
-				long avgAge = (totalAge > 0 ? (totalAge / len) : 0);
-				int eventAlignment = (totalAbsoluteAlignment / len) - 4;
-				AlignmentEnumType aType = DataGeneratorData.getAlignmentFromScore(eventAlignment);
-				AttributeType attr = new AttributeType();
-				attr.setName("alignment");
-				attr.setDataType(SqlDataEnumType.VARCHAR);
-				attr.getValues().add(aType.toString());
-				event.getAttributes().add(attr);
-				
-				AttributeType attr2 = new AttributeType();
-				attr2.setName("averageAge");
-				attr2.setDataType(SqlDataEnumType.VARCHAR);
-				attr2.getValues().add(Long.toString(avgAge));
-				event.getAttributes().add(attr2);
-				*/
 			}
 			
 			IOSystem.getActiveContext().getRecordUtil().updateRecord(event);
 
-			/*
-			
-			int len = popCount;
-			if(randomizeSeedPopulation){
-
-				len = rand.nextInt(popCount);
-			}
-			if(len == 0){
-				logger.error("Empty population");
-				event.setDescription("Decimated");
-			}
-			else{
-				long totalAge = 0;
-				int totalAbsoluteAlignment = 0;
-				logger.info("Populating '" + popCount + '"');
-				for(int i = 0; i < len; i++){
-					PersonType person = randomPerson(user, personsDir);
-					/// person.setContactInformation(null);
-					int alignment = DataGeneratorData.getAlignmentScore(person);
-					long years = Math.abs(CalendarUtil.getTimeSpanFromNow(person.getBirthDate())) / YEAR;
-					totalAge += years;
-					totalAbsoluteAlignment += (alignment + 4);
-					BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.PERSON, person);
-					event.getActors().add(person);
-					BaseParticipantType bpt = ((GroupParticipationFactory)Factories.getBulkFactory(FactoryEnumType.GROUPPARTICIPATION)).newPersonGroupParticipation(populationGroup, person);
-					BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.GROUPPARTICIPATION, bpt);
-					addressPerson(person,location, sessionId);
-				}
-				if(organizePersonManagement){
-					generatePersonOrganization(event.getActors().toArray(new PersonType[0]));
-				}
-				long avgAge = (totalAge > 0 ? (totalAge / len) : 0);
-				int eventAlignment = (totalAbsoluteAlignment / len) - 4;
-				AlignmentEnumType aType = DataGeneratorData.getAlignmentFromScore(eventAlignment);
-				AttributeType attr = new AttributeType();
-				attr.setName("alignment");
-				attr.setDataType(SqlDataEnumType.VARCHAR);
-				attr.getValues().add(aType.toString());
-				event.getAttributes().add(attr);
-				
-				AttributeType attr2 = new AttributeType();
-				attr2.setName("averageAge");
-				attr2.setDataType(SqlDataEnumType.VARCHAR);
-				attr2.getValues().add(Long.toString(avgAge));
-				event.getAttributes().add(attr2);
-			}
-			BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.EVENT, event);
-			
-			*/
 		} catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
-			
 			logger.error(e);
 		}
 		logger.info("Finished populating " + locName + " in " + (System.currentTimeMillis() - start) + "ms");
