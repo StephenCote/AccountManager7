@@ -56,8 +56,18 @@ public class ApparelUtil {
 	}
 	private static String[] jewelryColors = {"Black", "Gold (Metallic)", "Old Gold", "Pale Gold", "Pale Silver", "Silver", "Platinum", "Rose Gold", "Titanium"};
 	private static String[] jewels = {"diamond", "ruby", "emerald", "sapphire", "pearl"};
+	private static String jewrlLoc = "brow|hair|chest|breast|toe|ankle|wrist|neck|groin|tricep|nose|ear|eye|waist|belly";
+	private static String garnLoc = "head|brow|hair|chest|breast|toe|ankle|wrist|hand|finger|neck|groin|bicep|tricep|face|nose|ear|eye|waist|belly";
+	private static String cpref = "clothing:";
+	private static String jpref = "jewelry:";
 	
 	private static SecureRandom rand = new SecureRandom();
+	
+	private static int patternDeckSize = 100;
+	private static BaseRecord[] patternDeck = new BaseRecord[0];
+	private static int colorDeckSize = 100;
+	private static String[] colorDeck = new String[0];
+	private static Map<String, String> colorComplements = new HashMap<>();
 	
 	public static String randomWearable(int level, String location, String gender) {
 		return randomWearable(clothingTypes, level, location, gender);
@@ -96,11 +106,6 @@ public class ApparelUtil {
 			return false;
 		}).collect(Collectors.toList());
 	}
-	
-	private static String jewrlLoc = "brow|hair|chest|breast|toe|ankle|wrist|neck|groin|tricep|nose|ear|eye|waist|belly";
-	private static String garnLoc = "head|brow|hair|chest|breast|toe|ankle|wrist|hand|finger|neck|groin|bicep|tricep|face|nose|ear|eye|waist|belly";
-	private static String cpref = "clothing:";
-	private static String jpref = "jewelry:";
 	
 	public static String[] randomOutfit(WearLevelEnumType minLevel, WearLevelEnumType maxLevel, String gender, double probableMid) {
 		List<String> rol = new ArrayList<>();
@@ -219,7 +224,7 @@ public class ApparelUtil {
 
 		return ranType;
 	}
-	private static Map<String, String> colorComplements = new HashMap<>();
+	
 	public static String findComplementaryColor(BaseRecord world, String colorName) {
 		if(colorComplements.containsKey(colorName)) {
 			return colorComplements.get(colorName);
@@ -399,6 +404,44 @@ public class ApparelUtil {
 		}
 		return outFab;
 	}
+	
+	public static void shuffleDecks(BaseRecord user, BaseRecord world) {
+		shufflePatternDeck(user, world);
+		shuffleColorDeck(user, world);
+	}
+	
+	private static void shufflePatternDeck(BaseRecord user, BaseRecord world) {
+		long patternDir = world.get("patterns.id");
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
+		q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
+		patternDeck = OlioUtil.randomSelections(user, q, patternDeckSize);
+	}
+	
+	public static BaseRecord getRandomPattern(BaseRecord user, BaseRecord world) {
+		if(patternDeck.length == 0) {
+			shufflePatternDeck(user, world);
+		}
+		BaseRecord pattern = null;
+		if(patternDeck.length > 0) {
+			pattern = patternDeck[rand.nextInt(patternDeck.length)];
+		}
+		return pattern;
+	}
+
+	private static void shuffleColorDeck(BaseRecord user, BaseRecord world) {
+		colorDeck = OlioUtil.getRandomOlioValues(user, world, "color", colorDeckSize);
+	}
+	public static String getRandomColor(BaseRecord user, BaseRecord world) {
+		if(colorDeck.length == 0) {
+			shuffleColorDeck(user, world);
+		}
+		String color = null;
+		if(colorDeck.length > 0) {
+			color = colorDeck[rand.nextInt(colorDeck.length)];
+		}
+		return color;
+	}
+	
 	protected static void applyEmbeddedWearable(BaseRecord user, BaseRecord world, BaseRecord rec, String embType) {
 		BaseRecord parWorld = world.get("basis");
 		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
@@ -428,10 +471,12 @@ public class ApparelUtil {
 				mats.addAll(nfeats);
 			}
 			else {
-				randomColor = OlioUtil.getRandomOlioValue(user, parWorld, "color");
-				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
-				q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
-				pattern = OlioUtil.randomSelection(user, q);
+				randomColor = getRandomColor(user, parWorld);
+				//randomColor = OlioUtil.getRandomOlioValue(user, parWorld, "color");
+				// Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
+				// q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
+				// pattern = OlioUtil.randomSelection(user, q);
+				pattern = getRandomPattern(user, parWorld);
 			}
 			String compColor = findComplementaryColor(parWorld, randomColor);
 			rec.set("color", randomColor);
