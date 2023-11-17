@@ -110,16 +110,17 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS"});
 		assertNotNull("World is null", world);
-		WorldUtil.populateWorld(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
+		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
 		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
-		// logger.info(subWorld.toFullString());
 		//AuditUtil.setLogToConsole(true);
 		try {
 			BaseRecord event = WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
+
 			//String app1 = ApparelUtil.getOlioResource(testUser1, subWorld, "./olio/apparel/swimPolyester.json", "female");
 			//logger.info(app1);
+			
 			BaseRecord person = OlioUtil.randomSelection(testUser1, QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id")));
 			assertNotNull("Person is null");
 			logger.info(person.toFullString());
@@ -127,15 +128,26 @@ public class TestBulkOperation extends BaseTest {
 			/*
 			BaseRecord app = ApparelUtil.randomApparel(testUser1, subWorld, "female");
 			*/
-			for(int i = 0; i < 5; i++) {
+			long start = System.currentTimeMillis();
+			List<BaseRecord> appl = new ArrayList<>();
+			int appCount = 250;
+			for(int i = 0; i < appCount; i++) {
 				BaseRecord app = ApparelUtil.randomApparel(testUser1, subWorld, person);
 				assertNotNull("Apparel is null", app);
-				//logger.info(app.toFullString());
+				appl.add(app);
+				/*
 				((List<BaseRecord>)app.get("wearables")).forEach(r -> {
 					logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
 				});
+				*/
 			}
-			// BaseRecord capp = ioContext.getAccessPoint().create(testUser1, app);
+			long stop = System.currentTimeMillis();
+			logger.info("Time to gen " + appCount + " = " + (stop - start) + "ms");
+			start = stop;
+			
+			int created = ioContext.getAccessPoint().create(testUser1, appl.toArray(new BaseRecord[0]));
+			stop = System.currentTimeMillis();
+			logger.info("Created: " + created + " of " + appCount + " in " + (stop - start) + "ms");
 			//assertNotNull("Failed to create apparell", capp);
 
 		}
