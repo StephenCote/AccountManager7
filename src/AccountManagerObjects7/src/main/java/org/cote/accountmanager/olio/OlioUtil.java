@@ -75,8 +75,11 @@ public class OlioUtil {
 		return new BaseRecord[0];
 	}
 	public static boolean recordExists(BaseRecord user, String modelName, String name, BaseRecord group) throws IndexException, ReaderException {
+		return recordExists(user, modelName, name, (long)group.get(FieldNames.FIELD_ID));
+	}
+	public static boolean recordExists(BaseRecord user, String modelName, String name, long groupId) throws IndexException, ReaderException {
 		Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_NAME, name);
-		q.field(FieldNames.FIELD_GROUP_ID, (long)group.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_GROUP_ID, groupId);
 		q.setRequest(new String[] {FieldNames.FIELD_ID});
 		return (IOSystem.getActiveContext().getSearch().find(q).getCount() > 0);
 	}
@@ -85,9 +88,16 @@ public class OlioUtil {
         return cls.getEnumConstants()[x];
     }
     
- 
 	protected static String getRandomOlioValue(BaseRecord user, BaseRecord world, String fieldName) {
-		String outVal = null;
+		String[] outVal = getRandomOlioValues(user, world, fieldName, 1);
+		if(outVal.length > 0) {
+			return outVal[0];
+		}
+
+		return null;
+	} 
+	protected static String[] getRandomOlioValues(BaseRecord user, BaseRecord world, String fieldName, int count) {
+		String[] outVal = new String[0];
 		long groupId = world.get("colors.id");
 		if(groupId <= 0L) {
 			logger.warn("Invalid group id: " + groupId);
@@ -95,7 +105,7 @@ public class OlioUtil {
 		}
 		switch(fieldName) {
 			case "color":
-				outVal = OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, groupId));
+				outVal = OlioUtil.randomSelectionNames(user, QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, groupId), count);
 				break;
 			default:
 				logger.warn("Unhandled type: " + fieldName);
