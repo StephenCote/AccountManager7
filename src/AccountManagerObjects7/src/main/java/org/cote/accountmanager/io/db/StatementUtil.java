@@ -96,7 +96,7 @@ public class StatementUtil {
 						owner = rec;
 					}
 					else {
-						IOSystem.getActiveContext().getReader().populate(rec, new String[] {FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_OBJECT_ID});
+						IOSystem.getActiveContext().getReader().conditionalPopulate(rec, new String[] {FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_OBJECT_ID});
 						long oid = rec.get(FieldNames.FIELD_OWNER_ID);
 						if(oid > 0L) {
 							owner = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, oid);

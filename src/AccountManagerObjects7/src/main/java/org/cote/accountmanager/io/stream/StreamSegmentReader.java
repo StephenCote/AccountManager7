@@ -179,4 +179,10 @@ public class StreamSegmentReader implements IReader {
 		
 	}
 
+	@Override
+	public void conditionalPopulate(BaseRecord rec, String[] requestFields) {
+		// TODO Auto-generated method stub
+		
+	}
+
 }

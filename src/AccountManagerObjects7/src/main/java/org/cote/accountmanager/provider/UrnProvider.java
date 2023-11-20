@@ -45,7 +45,7 @@ public class UrnProvider implements IProvider {
 		}
 		
 		String[] fields = RecordUtil.getPossibleFields(model.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID});
-		IOSystem.getActiveContext().getReader().populate(model, fields);
+		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);
 
 		StringBuilder buff = new StringBuilder();
 		boolean skipName = false;

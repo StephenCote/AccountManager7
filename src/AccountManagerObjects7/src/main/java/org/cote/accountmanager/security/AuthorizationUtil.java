@@ -116,7 +116,7 @@ public class AuthorizationUtil {
 				.orElse(null)
 		;
 		
-		reader.populate(resource, RecordUtil.getPossibleFields(resource.getModel(), new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
+		reader.conditionalPopulate(resource, RecordUtil.getPossibleFields(resource.getModel(), new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID}));
 		
 		if(bind != null) {
 			PolicyResponseType oprr = new PolicyResponseType();

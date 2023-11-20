@@ -1,5 +1,7 @@
 package org.cote.accountmanager.io;
 
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -83,6 +85,29 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 		}
 	}
 	
+	public void conditionalPopulate(BaseRecord rec, String[] requestFields) {
+		if(rec == null || !RecordUtil.isIdentityRecord(rec)) {
+			return;
+		}
+		if(rec.inherits(ModelNames.MODEL_POPULATE)) {
+			List<String> crf = new ArrayList<>();
+			for(String f : requestFields) {
+				if(
+					!rec.hasField(f)
+					||
+					rec.getField(f).isNullOrEmpty(rec.getModel())
+					||
+					(rec.getField(f).getValueType() == FieldEnumType.ENUM && "UNKNOWN".equals(rec.get(f)))
+				){
+					crf.add(f);
+				}
+			}
+			if(crf.size() > 0) {
+				populate(rec, crf.toArray(new String[0]));
+			}
+		}
+	
+	}
 	/// Note: URN is intentionally excluded from populate to allow for ephemeral instances to pass through without attempting to lookup
 	///
 	public void populate(BaseRecord rec) {
@@ -94,6 +119,10 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 	public void populate(BaseRecord rec, int foreignDepth) {
 		populate(rec, new String[0], foreignDepth);
 	}
+	
+	/// NOTE: Requesting a field will cause that field to be re-read, which will be an IO hit on large datasets
+	/// Use conditionalPopulate to perform an pre-check
+	
 	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth) {
 		if(rec == null || !RecordUtil.isIdentityRecord(rec)) {
 			return;

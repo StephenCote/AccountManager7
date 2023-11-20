@@ -68,7 +68,7 @@ public class Factory {
 			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
 			
 			String[] fields = RecordUtil.getPossibleFields(homeDir.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_PARENT_ID});
-			context.getRecordUtil().populate(homeDir, fields);
+			context.getRecordUtil().conditionalPopulate(homeDir, fields);
 			
 			String homePath = homeDir.get(FieldNames.FIELD_PATH);
 			if(homePath == null || homePath.length() == 0) {

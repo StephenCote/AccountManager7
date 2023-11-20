@@ -393,7 +393,10 @@ public class RecordUtil {
 		}
 		return qr;
 	}
-	
+
+	public void conditionalPopulate(BaseRecord rec, String[] requestFields) {
+		reader.conditionalPopulate(rec, requestFields);
+	}
 	public void populate(BaseRecord rec) {
 		reader.populate(rec);
 	}
