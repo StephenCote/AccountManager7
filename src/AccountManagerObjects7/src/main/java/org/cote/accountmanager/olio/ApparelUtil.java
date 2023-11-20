@@ -472,10 +472,6 @@ public class ApparelUtil {
 			}
 			else {
 				randomColor = getRandomColor(user, parWorld);
-				//randomColor = OlioUtil.getRandomOlioValue(user, parWorld, "color");
-				// Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
-				// q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
-				// pattern = OlioUtil.randomSelection(user, q);
 				pattern = getRandomPattern(user, parWorld);
 			}
 			String compColor = findComplementaryColor(parWorld, randomColor);

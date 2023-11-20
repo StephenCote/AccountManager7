@@ -64,8 +64,6 @@ public class OlioUtil {
 			logger.error(e);
 		}
 		if(qr != null && qr.getCount() > 0) {
-			//logger.info("Random: " + query.get(FieldNames.FIELD_TYPE)+ " " + qr.getCount());
-			// logger.info(qr.getResults()[0].toFullString());
 			return qr.getResults();
 		}
 		else {
@@ -131,10 +129,12 @@ public class OlioUtil {
 	}
 	
 
+	/*
 	public static BaseRecord newQuality(BaseRecord user, String groupPath) {
 		BaseRecord qual = newGroupRecord(user, ModelNames.MODEL_QUALITY, groupPath, null);
 		return IOSystem.getActiveContext().getAccessPoint().create(user, qual);
 	}
+	*/
 	public static BaseRecord newGroupRecord(BaseRecord user, String model, String groupPath, BaseRecord template) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(dir == null) {

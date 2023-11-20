@@ -29,6 +29,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.cache.CacheDBSearch;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
@@ -142,9 +143,6 @@ public class WorldUtil {
 			q.field("alttype", altType);
 		}
 		q.setRequestRange(0, 10);
-		//logger.info(q.toFullString());
-		
-		//QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
 		QueryResult qr = null;
 		List<String> names = new ArrayList<>();
 		try {
@@ -790,6 +788,10 @@ public class WorldUtil {
 					}
 					event.set(FieldNames.FIELD_LOCATION, loc);
 					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
+					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(event)) {
+						logger.error("Failed to create region event");
+						return null;
+					}
 					events.add(event);
 				}
 			}
@@ -797,6 +799,10 @@ public class WorldUtil {
 		}
 		catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
 			logger.error(e);
+		}
+		if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(root)) {
+			logger.error("Failed to update root event");
+			return null;
 		}
 		return root;
 	}
@@ -875,14 +881,13 @@ public class WorldUtil {
 	
 	protected static void shuffleDecks(BaseRecord user, BaseRecord world) {
 		try {
-			logger.info("Shuffling decks ...");
+			logger.info("Shuffling decks");
 			shuffleMaleNamesDeck(user, world, namesDeckCount);
 			shuffleFemaleNamesDeck(user, world, namesDeckCount);
 			shuffleSurnameNamesDeck(user, world, namesDeckCount);
 			shuffleOccupationsDeck(user, world, namesDeckCount);
 			ApparelUtil.shuffleDecks(user, world);
 			dirNameCache.clear();
-			logger.info("... Shuffled");
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -957,7 +962,8 @@ public class WorldUtil {
 				if(maleNamesDeck.length == 0 || femaleNamesDeck.length == 0 || surnameNamesDeck.length == 0 || occupationsDeck.length == 0) {
 					logger.error("Empty names");
 				}
-
+				logger.info("Creating population of " + popCount);
+				IOSystem.getActiveContext().getSearch().enableStatistics(true);
 				for(int i = 0; i < popCount; i++){
 					BaseRecord person = randomPerson(user, world, null, maleNamesDeck, femaleNamesDeck, surnameNamesDeck, occupationsDeck);
 					addressPerson(user, world, person, location);
@@ -975,11 +981,20 @@ public class WorldUtil {
 					// BaseParticipantType bpt = ((GroupParticipationFactory)Factories.getBulkFactory(FactoryEnumType.GROUPPARTICIPATION)).newPersonGroupParticipation(populationGroup, person);
 					// BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.GROUPPARTICIPATION, bpt);
 				}
-				//int created = IOSystem.getActiveContext().getAccessPoint().create(user, actors.toArray(new BaseRecord[0]));
+				
+				IOSystem.getActiveContext().getSearch().getStatistics().print();
+				IOSystem.getActiveContext().getSearch().getStatistics().cachePrint();
+				IOSystem.getActiveContext().getSearch().enableStatistics(false);
+				
+				logger.info("Bulk loading population");
+				//IOSystem.getActiveContext().getSearch().enableStatistics(true);
 				int created = IOSystem.getActiveContext().getRecordUtil().updateRecords(actors.toArray(new BaseRecord[0]));
+				//IOSystem.getActiveContext().getSearch().getStatistics().print();
+				//IOSystem.getActiveContext().getSearch().enableStatistics(false);
 				if(created != actors.size()) {
 					logger.error("Created " + created + " but expected " + actors.size() + " records");
 				}
+				logger.info("Creating event memberships");
 				List<BaseRecord> parts = new ArrayList<>();
 				for(BaseRecord rec : actors) {
 					parts.add(ParticipationFactory.newParticipation(user, popGrp, null, rec));
@@ -993,7 +1008,7 @@ public class WorldUtil {
 				}
 				*/
 			}
-			
+			logger.info("Update event");
 			IOSystem.getActiveContext().getRecordUtil().updateRecord(event);
 
 		} catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
