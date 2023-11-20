@@ -37,12 +37,17 @@ public class BatchQueue extends Threaded {
 	}
 
 	private void processQueue(String queueType, Map<String, List<BaseRecord>> useMap) {
-		useMap.forEach((k, v) -> {
-			if(v.size() > 0) {
-				// logger.info("Processing " + queueType + " " + k + " " + v.size() + " record(s)");
-				IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
-			}
-		});
+		if(IOSystem.getActiveContext() == null) {
+			logger.error("Active context has shut down.  TODO - cache pending items");
+		}
+		else {
+			useMap.forEach((k, v) -> {
+				if(v.size() > 0) {
+					// logger.info("Processing " + queueType + " " + k + " " + v.size() + " record(s)");
+					IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
+				}
+			});
+		}
 	}
 	
 	@Override
