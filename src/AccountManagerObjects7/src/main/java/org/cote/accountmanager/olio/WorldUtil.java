@@ -131,17 +131,19 @@ public class WorldUtil {
 			return altNamesCache.get(key);
 		}
 		
-		IOSystem.getActiveContext().getReader().populate(location, new String[] {"geonameid", FieldNames.FIELD_GROUP_ID});
+		IOSystem.getActiveContext().getReader().conditionalPopulate(location, new String[] {"geonameid", FieldNames.FIELD_GROUP_ID});
 		long groupId = location.get(FieldNames.FIELD_GROUP_ID);
 		if(world != null) {
 			groupId = world.get("locations.id");
 		}
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, "altgeonameid", location.get("geonameid"));
-		q.field("geotype", "alternateName");
+		q.field("geoType", "alternateName");
 		q.field(FieldNames.FIELD_GROUP_ID, groupId);
+		logger.info("Alt Type: " + altType);
 		if(altType != null) {
-			q.field("alttype", altType);
+			q.field("altType", altType);
 		}
+
 		q.setRequestRange(0, 10);
 		QueryResult qr = null;
 		List<String> names = new ArrayList<>();
@@ -151,9 +153,10 @@ public class WorldUtil {
 		} catch (IndexException | ReaderException e) {
 			logger.error(e);
 		}
-		if(names.size() > 0) {
-			altNamesCache.put(key, names.toArray(new String[0]));
-		}
+		// if(names.size() > 0) {
+		altNamesCache.put(key, names.toArray(new String[0]));
+		//}
+
 		return names.toArray(new String[0]);
 	}
 	
@@ -161,6 +164,7 @@ public class WorldUtil {
 		
 		boolean checkParent = false;
 		IOSystem.getActiveContext().getReader().populate(location);
+		//IOSystem.getActiveContext().getReader().conditionalPopulate(location, new String[] {"geoType", FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_NAME});
 		String geoType = location.get("geoType");
 		
 		if(geoType != null) {
@@ -896,9 +900,9 @@ public class WorldUtil {
 	
 	public static BaseRecord populateRegion(BaseRecord user, BaseRecord world, BaseRecord location, int popCount){
 
+		long totalAge = 0L;
 		String locName = location.get(FieldNames.FIELD_NAME);
 		logger.info("Populating " + locName + " with " + popCount + " people");
-		long totalAge = 0L;
 		long start = System.currentTimeMillis();
 		BaseRecord event = null;
 		BaseRecord parWorld = world.get("basis");
@@ -910,9 +914,6 @@ public class WorldUtil {
 		try {
 			BaseRecord popDir = world.get("population");
 			BaseRecord evtDir = world.get("events");
-			// BaseRecord namesDir = parWorld.get("names");
-			// BaseRecord surDir = parWorld.get("surnames");
-			// BaseRecord occDir = parWorld.get("occupations");
 			
 			ParameterList plist = ParameterList.newParameterList("path", evtDir.get(FieldNames.FIELD_PATH));
 			event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
@@ -939,31 +940,14 @@ public class WorldUtil {
 			else {
 				int totalAbsoluteAlignment = 0;
 				Date now = new Date();
-				/*
-				Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
-				mnq.field("gender", "M");
-				mnq.set("cache", false);
-				String[] mnames = OlioUtil.randomSelectionNames(user, mnq, popCount * 3);
-				Query fnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
-				fnq.field("gender", "F");
-				fnq.set("cache", false);
-				String[] fnames = OlioUtil.randomSelectionNames(user, fnq, popCount * 3);
 
-				Query snq = QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID));
-				snq.set("cache", false);
-				String[] snames = OlioUtil.randomSelectionNames(user, snq, popCount * 2);
-				Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID));
-				tnq.set("cache", false);
-				String[] tnames = OlioUtil.randomSelectionNames(user, tnq, popCount * 2);
-
-				*/
 				shuffleDecks(user, parWorld);
-
 				if(maleNamesDeck.length == 0 || femaleNamesDeck.length == 0 || surnameNamesDeck.length == 0 || occupationsDeck.length == 0) {
 					logger.error("Empty names");
 				}
+
 				logger.info("Creating population of " + popCount);
-				IOSystem.getActiveContext().getSearch().enableStatistics(true);
+
 				for(int i = 0; i < popCount; i++){
 					BaseRecord person = randomPerson(user, world, null, maleNamesDeck, femaleNamesDeck, surnameNamesDeck, occupationsDeck);
 					addressPerson(user, world, person, location);
@@ -977,20 +961,10 @@ public class WorldUtil {
 					appl.add(ApparelUtil.randomApparel(user, world, person));
 					
 					actors.add(person);
-					
-					// BaseParticipantType bpt = ((GroupParticipationFactory)Factories.getBulkFactory(FactoryEnumType.GROUPPARTICIPATION)).newPersonGroupParticipation(populationGroup, person);
-					// BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.GROUPPARTICIPATION, bpt);
 				}
 				
-				IOSystem.getActiveContext().getSearch().getStatistics().print();
-				IOSystem.getActiveContext().getSearch().getStatistics().cachePrint();
-				IOSystem.getActiveContext().getSearch().enableStatistics(false);
-				
 				logger.info("Bulk loading population");
-				//IOSystem.getActiveContext().getSearch().enableStatistics(true);
 				int created = IOSystem.getActiveContext().getRecordUtil().updateRecords(actors.toArray(new BaseRecord[0]));
-				//IOSystem.getActiveContext().getSearch().getStatistics().print();
-				//IOSystem.getActiveContext().getSearch().enableStatistics(false);
 				if(created != actors.size()) {
 					logger.error("Created " + created + " but expected " + actors.size() + " records");
 				}
