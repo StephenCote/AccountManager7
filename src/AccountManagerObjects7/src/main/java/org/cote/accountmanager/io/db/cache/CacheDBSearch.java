@@ -14,6 +14,7 @@ import org.cote.accountmanager.io.db.DBSearch;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class CacheDBSearch extends DBSearch implements ICache {
@@ -73,7 +74,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			
 			if(query.isCache() && cache.containsKey(hash)) {
 				final QueryResult qr = cache.get(hash);
-				stats.add(query);
+				stats.addCache(query);
 
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = qr.get(FieldNames.FIELD_TYPE);
@@ -85,19 +86,13 @@ public class CacheDBSearch extends DBSearch implements ICache {
 					logger.error("****** Invalidating cache entries for both");
 					cache.remove(query.hash());
 					cache.remove(qr.get(FieldNames.FIELD_QUERY_HASH));
-					/// throw new ReaderException("Mismatched result type: Cached query for " + qt + " contains " + qrt);
 				}
 				else {
 					return qr;
 				}
-				//return cache.get(hash);
 			}
-			
-			// logger.info("Query: " + query.key());
 
 			final QueryResult res = super.find(query);
-			
-			// stats.add(query);
 			
 			if(query.isCache() && res != null && res.getCount() > 0) {
 				String qt = query.get(FieldNames.FIELD_TYPE);
