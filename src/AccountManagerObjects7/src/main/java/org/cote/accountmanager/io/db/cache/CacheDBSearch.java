@@ -27,10 +27,6 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	private int maximumCacheAgeMS = 360000;
 	private long cacheRefreshed = 0L;
 
-	public static boolean ENABLE_STATISTICS = false;
-	public static Map<String, Integer> CACHE_STATISTICS = new ConcurrentHashMap<>();
-	// Collections.synchronizedMap(new HashMap<>());
-
 	public CacheDBSearch(DBReader reader) {
 		super(reader);
 		CacheUtil.addProvider(this);
@@ -77,15 +73,8 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			
 			if(query.isCache() && cache.containsKey(hash)) {
 				final QueryResult qr = cache.get(hash);
-				if(ENABLE_STATISTICS) {
-					if(!CACHE_STATISTICS.containsKey(query.key())) {
-						CACHE_STATISTICS.put(query.key(), 1);
-					}
-					else {
-						CACHE_STATISTICS.put(query.key(), CACHE_STATISTICS.get(query.key()) + 1);
-					}
-				}
-				// logger.info("Cache hit: " + query.key());
+				stats.add(query);
+
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = qr.get(FieldNames.FIELD_TYPE);
 				if(!qt.equals(qrt)) {
@@ -107,9 +96,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			// logger.info("Query: " + query.key());
 
 			final QueryResult res = super.find(query);
-			if(ENABLE_STATISTICS) {
-				CACHE_STATISTICS.put(query.key(), 1);
-			}
+			
+			// stats.add(query);
+			
 			if(query.isCache() && res != null && res.getCount() > 0) {
 				String qt = query.get(FieldNames.FIELD_TYPE);
 				String qrt = res.get(FieldNames.FIELD_TYPE);

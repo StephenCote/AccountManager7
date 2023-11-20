@@ -17,11 +17,11 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOStatistics;
 import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.SearchBase;
-import org.cote.accountmanager.io.db.cache.CacheDBSearch;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -30,15 +30,6 @@ import org.cote.accountmanager.util.JSONUtil;
 
 public class DBSearch extends SearchBase {
 	public static final Logger logger = LogManager.getLogger(DBSearch.class);
-	public static boolean ENABLE_STATISTICS = false;
-	public static List<String> STATISTICS = new CopyOnWriteArrayList<>();
-
-	public static void enableStatistics(boolean enabled) {
-		ENABLE_STATISTICS = enabled;
-		CacheDBSearch.ENABLE_STATISTICS = enabled;
-		STATISTICS.clear();
-		CacheDBSearch.STATISTICS.clear();
-	}
 
 	private final DBReader reader;
 
@@ -59,9 +50,7 @@ public class DBSearch extends SearchBase {
 		
 		try (Connection con = reader.getDataSource().getConnection()){
 			query.set(FieldNames.FIELD_SORT_FIELD, null);
-			if(ENABLE_STATISTICS) {
-				STATISTICS.add(query.key());
-			}
+			stats.add(query);
 			
 			sql = StatementUtil.getCountTemplate(query);
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
@@ -86,8 +75,6 @@ public class DBSearch extends SearchBase {
 	
 	public QueryResult find(final Query query) throws IndexException, ReaderException {
 		
-		// logger.info(query.toFullString());
-		
 		if(useAlternateIO(query)) {
 			return findAlternate(query);
 		}
@@ -103,10 +90,9 @@ public class DBSearch extends SearchBase {
 				logger.warn("Searching with only an Organization filter for " + type);
 			}
 		}
-		if(ENABLE_STATISTICS) {
-			STATISTICS.add(query.key());
-		}
 		
+		stats.add(query);
+
 		try (Connection con = reader.getDataSource().getConnection()){
 			sql = StatementUtil.getSelectTemplate(query);
 			
@@ -149,7 +135,6 @@ public class DBSearch extends SearchBase {
 		
 		final QueryResult res = new QueryResult(query, recs.toArray(new BaseRecord[0]));
 		
-		/// Only compute the total count if a pagination limit was provided
 		int recordCount = query.get(FieldNames.FIELD_RECORD_COUNT);
 		if(recordCount > 0) {
 			res.setTotalCount(count(query));

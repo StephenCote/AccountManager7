@@ -1,10 +1,14 @@
 package org.cote.accountmanager.io.db;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import javax.sql.DataSource;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.io.IOStatistics;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.JsonReader;
 import org.cote.accountmanager.io.QueryUtil;
@@ -15,6 +19,7 @@ import org.cote.accountmanager.schema.FieldNames;
 public class DBReader extends JsonReader {
 	public static final Logger logger = LogManager.getLogger(DBReader.class);
 	private DataSource dataSource = null;
+	
 	public DBReader(DataSource dsource) {
 		super();
 		this.recordIo = RecordIO.DATABASE;

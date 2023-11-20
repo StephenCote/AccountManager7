@@ -7,6 +7,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.io.IOStatistics;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
@@ -186,6 +187,18 @@ public class StreamSegmentSearch implements ISearch {
 			throws IndexException, ReaderException {
 		// TODO Auto-generated method stub
 		return null;
+	}
+	
+	@Override
+	public IOStatistics getStatistics() {
+		// TODO Auto-generated method stub
+		return null;
+	}
+	
+	@Override
+	public void enableStatistics(boolean enabled) {
+		// TODO Auto-generated method stub
+		
 	}
 
 }

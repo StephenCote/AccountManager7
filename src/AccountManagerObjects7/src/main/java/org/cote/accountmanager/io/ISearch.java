@@ -23,5 +23,7 @@ public interface ISearch {
 	public BaseRecord[] findByNameInParent(String model, long parentId, String name, String type, long organizationId) throws IndexException, ReaderException;
 	public BaseRecord[] findByNameInGroup(String model, long groupId, String name) throws IndexException, ReaderException;
 	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, long organizationId) throws IndexException, ReaderException;
+	public IOStatistics getStatistics();
+	public void enableStatistics(boolean enabled);
 
 }

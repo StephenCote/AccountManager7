@@ -12,7 +12,14 @@ import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public abstract class SearchBase implements ISearch {
 	public static final Logger logger = LogManager.getLogger(SearchBase.class);
-	
+	protected IOStatistics stats = new IOStatistics();
+
+	public IOStatistics getStatistics() {
+		return stats;
+	}
+	public void enableStatistics(boolean enabled) {
+		stats.setEnabled(enabled);
+	}
 	public void close() throws ReaderException {
 	
 	}

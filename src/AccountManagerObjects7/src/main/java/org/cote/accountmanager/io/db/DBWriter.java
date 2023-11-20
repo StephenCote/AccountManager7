@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import javax.sql.DataSource;
@@ -40,18 +41,21 @@ public class DBWriter extends MemoryWriter {
 	public static final Logger logger = LogManager.getLogger(DBWriter.class);
 
 	private DataSource dataSource = null;
+	private int maxBatchSize = 2000;
+	
+	public static boolean ENABLE_STATISTICS = false;
+	public static Map<String, Integer> CACHE_STATISTICS = new ConcurrentHashMap<>();
+	
 	public DBWriter(DataSource dsource) {
 		super();
 		this.recordIo = RecordIO.DATABASE;
 		this.dataSource = dsource;
 	}
-	
 
 	@Override
 	public void flush() {
 
 	}
-	
 
 	@Override
 	public synchronized int delete(Query query) throws WriterException {
@@ -102,10 +106,7 @@ public class DBWriter extends MemoryWriter {
 
 		return success;
 	}
-	
-	
-	private int maxBatchSize = 2000;
-	
+
 	public synchronized int write(BaseRecord[] models) throws WriterException {
 		int writeCount = 0;
 		int batch = 0;
@@ -143,11 +144,6 @@ public class DBWriter extends MemoryWriter {
 		}
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
 
-		/*
-		if(models[0].getModel().equals(ModelNames.MODEL_EVENT)) {
-			logger.warn("***** Events: " + models.length);
-		}
-		*/
 		DBStatementMeta meta = null;
 	    try (Connection con = dataSource.getConnection()){
 	    	List<Long> ids = new ArrayList<>();
@@ -183,7 +179,6 @@ public class DBWriter extends MemoryWriter {
 	    		if(op == RecordOperation.CREATE) {
 	    			long rid = ids.get(i);
 	    			model.set(FieldNames.FIELD_ID, rid);
-	    			// applyAutoCreateList(model, op, autoCreate);
 	    			updateAutoCreateReference(op, schema, model, autoCreate);
 	    		}
 	    		
@@ -195,7 +190,6 @@ public class DBWriter extends MemoryWriter {
 					st.executeBatch();
 					st.clearBatch();
 					writeCount += batch;
-					// logger.info("Batch write: " + batch + "/" + writeCount +" of " + models.length);
 					batch=0;
 				}
 	    	}
@@ -210,14 +204,8 @@ public class DBWriter extends MemoryWriter {
 				logger.error(meta.getSql());
 			}
 	    }
-	    
-		if(models[0].getModel().equals(ModelNames.MODEL_EVENT)) {
-			logger.warn("***** " + op.toString() + " Events: " + models.length + " -> " + writeCount);
 
-		}
-		
-
-		return writeCount;
+	    return writeCount;
 	}
 	
 	private void updateAutoCreateReference(RecordOperation op, ModelSchema schema, BaseRecord model, Map<String, List<BaseRecord>> autoCreate) throws FieldException, ValueException, ModelNotFoundException {
@@ -282,11 +270,11 @@ public class DBWriter extends MemoryWriter {
 	}
 	
 	protected Map<String, List<BaseRecord>> getAutoCreateList(BaseRecord model, RecordOperation op){
-		//List<BaseRecord> autoCreate = new ArrayList<>();
 		Map<String, List<BaseRecord>> autoCreate = new HashMap<>();
 		applyAutoCreateList(model, op ,autoCreate);
 		return autoCreate;
 	}
+	
 	protected void applyAutoCreateList(BaseRecord model, RecordOperation op, Map<String, List<BaseRecord>> autoCreate){
 		ModelSchema schema = RecordFactory.getSchema(model.getModel());
 		if(schema.isAutoCreateForeignReference()) {
@@ -302,9 +290,7 @@ public class DBWriter extends MemoryWriter {
 					}
 					for(BaseRecord bf : bfs) {
 						if(bf != null && !RecordUtil.isIdentityRecord(bf)) {
-							/// logger.error("**** TODO: REMOVE THIS: Attempt to auto-write " + model.getModel() + "." + f.getName() + "? " +  RecordUtil.isIdentityRecord(bf));
 							if(op == RecordOperation.CREATE) {
-								// logger.info("*** Auto-creating foreign child: " + model.getModel() + "." + f.getName());
 								try {
 									bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
 									bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));

@@ -12,9 +12,9 @@ public class TestDBPerformance extends BaseTest {
 	@Test
 	public void TestStatistics() {
 		logger.info("Warm up");
-		DBSearch.enableStatistics(true);
-		int warmUp = CacheDBSearch.CACHE_STATISTICS.size();
-		int queryUp = DBSearch.STATISTICS.size();
+		ioContext.getSearch().enableStatistics(true);
+		int warmUp = ioContext.getSearch().getStatistics().cacheSize();
+		int queryUp = ioContext.getSearch().getStatistics().size();
 		logger.info("Statistics: " + queryUp);
 		logger.info("Cache Statistics: " + warmUp);
 		
@@ -25,20 +25,13 @@ public class TestDBPerformance extends BaseTest {
 
 		
 		logger.info("Cool down");
-		int coolDown = CacheDBSearch.CACHE_STATISTICS.size();
-		int queryDown = DBSearch.STATISTICS.size();
+		int coolDown = ioContext.getSearch().getStatistics().cacheSize();
+		int queryDown = ioContext.getSearch().getStatistics().size();
 		logger.info("Statistics: " + queryDown);
 		logger.info("Cache Statistics: " + coolDown);
 		
-		DBSearch.STATISTICS.forEach(f -> {
-			logger.info(f);
-		});
-		CacheDBSearch.CACHE_STATISTICS.forEach((k, v) ->{
-			if(v > 1) {
-				logger.info(v + " <-- " + k);
-			}
-		});
-		DBSearch.enableStatistics(false);
+
+		ioContext.getSearch().enableStatistics(false);
 
 	}
 	
