@@ -32,8 +32,10 @@ import org.apache.logging.log4j.util.Strings;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
@@ -99,7 +101,13 @@ public class TestBulkOperation extends BaseTest {
 	public void TestOlio3() {
 		String[] outfit = ApparelUtil.randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, "male", .35);
 		logger.info(String.join(", ", outfit));
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
 	}
+
 
 	@Test
 	public void TestOlio2() {
@@ -125,30 +133,22 @@ public class TestBulkOperation extends BaseTest {
 			assertNotNull("Person is null");
 			logger.info(person.toFullString());
 			
-			/*
-			BaseRecord app = ApparelUtil.randomApparel(testUser1, subWorld, "female");
-			*/
 			long start = System.currentTimeMillis();
 			List<BaseRecord> appl = new ArrayList<>();
-			int appCount = 250;
+			int appCount = 25;
 			for(int i = 0; i < appCount; i++) {
 				BaseRecord app = ApparelUtil.randomApparel(testUser1, subWorld, person);
 				assertNotNull("Apparel is null", app);
 				appl.add(app);
-				/*
-				((List<BaseRecord>)app.get("wearables")).forEach(r -> {
-					logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
-				});
-				*/
+
 			}
 			long stop = System.currentTimeMillis();
 			logger.info("Time to gen " + appCount + " = " + (stop - start) + "ms");
 			start = stop;
 			
-			int created = ioContext.getAccessPoint().create(testUser1, appl.toArray(new BaseRecord[0]));
+			int created = ioContext.getAccessPoint().create(testUser1, appl.toArray(new BaseRecord[0]), true);
 			stop = System.currentTimeMillis();
 			logger.info("Created: " + created + " of " + appCount + " in " + (stop - start) + "ms");
-			//assertNotNull("Failed to create apparell", capp);
 
 		}
 		catch(Exception e) {
@@ -156,6 +156,13 @@ public class TestBulkOperation extends BaseTest {
 		}
 
 	}
+
+	
+	/*
+	((List<BaseRecord>)app.get("wearables")).forEach(r -> {
+		logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
+	});
+	*/
 	
 	/*
 	@Test
