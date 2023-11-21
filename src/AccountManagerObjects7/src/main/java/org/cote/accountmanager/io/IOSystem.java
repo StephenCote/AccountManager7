@@ -9,6 +9,7 @@ import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.StoreException;
 import org.cote.accountmanager.exceptions.SystemException;
+import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.io.file.FileIndexManager;
 import org.cote.accountmanager.io.file.FileReader;
@@ -209,13 +210,15 @@ public class IOSystem {
 				if(context.getStore() != null) {
 					context.getStore().close();
 				}
-
 				else if(context.getIoType() == RecordIO.FILE) {
 					//FileIndexer.clearCache();
 				}
+				if(context.getWriter() != null) {
+					context.getWriter().close();
+				}
 
 			}
-			catch(ReaderException e) {
+			catch(ReaderException | WriterException e) {
 				logger.error(e);
 				
 			}
