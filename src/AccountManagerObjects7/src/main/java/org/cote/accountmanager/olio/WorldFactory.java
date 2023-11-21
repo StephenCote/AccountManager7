@@ -1,7 +1,5 @@
 package org.cote.accountmanager.olio;
 
-import java.util.UUID;
-
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -17,7 +15,6 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.ParameterUtil;
-import org.cote.accountmanager.util.PathUtil;
 
 public class WorldFactory extends FactoryBase {
 	public WorldFactory(Factory modelFactory, ModelSchema schema) {

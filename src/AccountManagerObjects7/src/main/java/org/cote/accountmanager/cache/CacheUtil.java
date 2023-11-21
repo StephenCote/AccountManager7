@@ -8,7 +8,6 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.util.ResourceUtil;
 
 public class CacheUtil {

@@ -1,20 +1,13 @@
 package org.cote.accountmanager.parsers.data;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.parsers.IParseWriter;
 import org.cote.accountmanager.parsers.ParseConfiguration;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.schema.FieldNames;
 
 public class DataParseWriter implements IParseWriter {
 	public static final Logger logger = LogManager.getLogger(DataParseWriter.class);
