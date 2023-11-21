@@ -25,3 +25,6 @@ Clothing:
 		 
 Prompt Engineering Refs:
 	https://www.promptingguide.ai/
+	
+Character Evolution:
+    https://blog.adw.org/2016/10/eight-stages-rise-fall-civilizations/
