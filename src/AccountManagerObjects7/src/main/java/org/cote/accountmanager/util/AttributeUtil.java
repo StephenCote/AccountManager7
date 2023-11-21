@@ -27,6 +27,9 @@ public class AttributeUtil {
 
 	
 	public static <T> T getAttributeValue(BaseRecord record, String name) throws ModelException {
+		return getAttributeValue(record, name, null);
+	}
+	public static <T> T getAttributeValue(BaseRecord record, String name, T defVal) throws ModelException {
 		if(!record.inherits(ModelNames.MODEL_ATTRIBUTE_LIST)) {
 			throw new ModelException("Model does not inherit from attribute");
 		}
@@ -35,7 +38,7 @@ public class AttributeUtil {
 			String attrName = o.get(FieldNames.FIELD_NAME);
 			return name.equals(attrName);
 		}).collect(Collectors.toList());
-		T outT = null;
+		T outT = defVal;
 		
 		if(mattrs.size() > 0) {
 			outT = mattrs.get(0).get(FieldNames.FIELD_VALUE);

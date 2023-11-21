@@ -4,7 +4,7 @@
 	"fields":[
 		{
 			"name": "alignment",
-			"baseClass": "org.cote.accountmanager.schema.type.AlignmentEnumType",
+			"baseClass": "org.cote.accountmanager.olio.AlignmentEnumType",
 			"type": "enum",
 			"maxLength": 32
 		}

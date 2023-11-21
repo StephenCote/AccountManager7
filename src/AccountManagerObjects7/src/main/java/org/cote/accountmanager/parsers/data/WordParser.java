@@ -29,7 +29,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.AlignmentEnumType;
+import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;

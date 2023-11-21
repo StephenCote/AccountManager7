@@ -64,7 +64,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.schema.type.AlignmentEnumType;
+import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
@@ -75,6 +75,7 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.EpochUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
 import org.cote.accountmanager.olio.WearLevelEnumType;
@@ -97,6 +98,7 @@ public class TestBulkOperation extends BaseTest {
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
+
 	@Test
 	public void TestOlio3() {
 		String[] outfit = ApparelUtil.randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, "male", .35);
@@ -107,7 +109,7 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
 	}
-
+	
 
 	@Test
 	public void TestOlio2() {
@@ -121,18 +123,27 @@ public class TestBulkOperation extends BaseTest {
 		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		
+		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		
 		//AuditUtil.setLogToConsole(true);
 		try {
-			BaseRecord event = WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
-
+			WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
+			BaseRecord event = EpochUtil.generateEpoch(testUser1, subWorld, 1);
+			assertNotNull("Event is null", event);
+			logger.info(event.toFullString());
+			//BaseRecord event = WorldUtil.getRootEvent(testUser1, subWorld);
+			//assertNotNull("Event is null", event);
+			//logger.info(event.toFullString());
 			//String app1 = ApparelUtil.getOlioResource(testUser1, subWorld, "./olio/apparel/swimPolyester.json", "female");
 			//logger.info(app1);
+
 			
+			/*
 			BaseRecord person = OlioUtil.randomSelection(testUser1, QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id")));
 			assertNotNull("Person is null");
 			logger.info(person.toFullString());
-			
+
 			long start = System.currentTimeMillis();
 			List<BaseRecord> appl = new ArrayList<>();
 			int appCount = 25;
@@ -149,6 +160,7 @@ public class TestBulkOperation extends BaseTest {
 			int created = ioContext.getAccessPoint().create(testUser1, appl.toArray(new BaseRecord[0]), true);
 			stop = System.currentTimeMillis();
 			logger.info("Created: " + created + " of " + appCount + " in " + (stop - start) + "ms");
+			*/
 
 		}
 		catch(Exception e) {

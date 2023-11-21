@@ -3,7 +3,9 @@ package org.cote.accountmanager.olio;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -33,6 +35,44 @@ import org.cote.accountmanager.util.ResourceUtil;
 
 public class OlioUtil {
 	public static final Logger logger = LogManager.getLogger(OlioUtil.class);
+	protected static final long SECOND = 1000;
+    protected static final long MINUTE = 60 * SECOND;
+    protected static final long HOUR = 60 * MINUTE;
+    protected static final long DAY = 24 * HOUR;
+    protected static final long YEAR = 365 * DAY;
+    
+	protected static Map<String, List<String>> dirNameCache = new HashMap<>();
+	
+	protected static void populateDirNameCache(BaseRecord user, String model, long groupId) throws IndexException, ReaderException {
+		String key = model + "-" + groupId;
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
+		q.setRequest(new String[] {FieldNames.FIELD_NAME});
+		QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+		List<String> names = Arrays.asList(qr.getResults()).stream().map(r -> (String)r.get(FieldNames.FIELD_NAME)).collect(Collectors.toList());
+		dirNameCache.put(key, names);
+	}
+	
+	protected static boolean nameInDirExists(BaseRecord user, String model, long groupId, String name) throws IndexException, ReaderException {
+		String key = model + "-" + groupId;
+		if(!dirNameCache.containsKey(key) || dirNameCache.get(key).size() == 0) {
+			populateDirNameCache(user, model, groupId);
+		}
+		List<String> names = dirNameCache.get(key);
+		if(names.contains(name)) {
+			return true;
+		}
+		names.add(name);
+		return false;
+		//OlioUtil.recordExists(user, model, name, groupId);
+	}
+
+	public static AlignmentEnumType getRandomAlignment() {
+		AlignmentEnumType alignment = randomEnum(AlignmentEnumType.class);
+		while(alignment == AlignmentEnumType.UNKNOWN || alignment == AlignmentEnumType.NEUTRAL) {
+			alignment = randomEnum(AlignmentEnumType.class);
+		}
+		return alignment;
+	}
 	
 	public static String randomSelectionName(BaseRecord user, Query query) {
 		String[] names = randomSelectionNames(user, query, 1);

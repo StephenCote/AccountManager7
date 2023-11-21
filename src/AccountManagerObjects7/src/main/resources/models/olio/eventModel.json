@@ -67,7 +67,7 @@
 		{
 			"name": "location",
 			"type": "model",
-			"baseModel": "data.location",
+			"baseModel": "data.geoLocation",
 			"foreign": true
 		},
 		{
@@ -113,6 +113,10 @@
 			"baseModel": "auth.group",
 			"foreign": true,
 			"participantModel": "event.group"
+		},
+		{
+			"name": "epoch",
+			"type": "boolean"
 		}
 
 	]
