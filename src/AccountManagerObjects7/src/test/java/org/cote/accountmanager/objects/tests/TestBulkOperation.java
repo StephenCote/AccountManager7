@@ -29,7 +29,7 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.apache.logging.log4j.util.Strings;
-
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
@@ -75,8 +75,10 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.EpochUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.WorldUtil;
@@ -98,7 +100,7 @@ public class TestBulkOperation extends BaseTest {
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
-
+	/*
 	@Test
 	public void TestOlio3() {
 		String[] outfit = ApparelUtil.randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, "male", .35);
@@ -109,7 +111,7 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
 	}
-	
+	*/
 
 	@Test
 	public void TestOlio2() {
@@ -131,13 +133,19 @@ public class TestBulkOperation extends BaseTest {
 			WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
 			BaseRecord event = EpochUtil.generateEpoch(testUser1, subWorld, 1);
 			assertNotNull("Event is null", event);
-			logger.info(event.toFullString());
+			// logger.info(event.toFullString());
 			//BaseRecord event = WorldUtil.getRootEvent(testUser1, subWorld);
 			//assertNotNull("Event is null", event);
 			//logger.info(event.toFullString());
 			//String app1 = ApparelUtil.getOlioResource(testUser1, subWorld, "./olio/apparel/swimPolyester.json", "female");
 			//logger.info(app1);
 
+			BaseRecord person = OlioUtil.randomSelection(testUser1, QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id")));
+			assertNotNull("Person is null", person);
+			logger.info("Current age: " + CharacterUtil.getCurrentAge(testUser1, subWorld, person));
+			ioContext.getReader().populate(person.get("statistics"));
+			logger.info(person.toFullString());
+			
 			
 			/*
 			BaseRecord person = OlioUtil.randomSelection(testUser1, QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id")));
