@@ -303,9 +303,6 @@ public class WorldUtil {
 		return grp;
 	}
 	
-
-	
-	private static String[] leaderPopulation = new String[]{"Political","Religious","Military","Business","Social","Trade"};
 	public static BaseRecord populateRegion(BaseRecord user, BaseRecord world, BaseRecord location, BaseRecord rootEvent, int popCount){
 
 		long totalAge = 0L;
@@ -338,9 +335,11 @@ public class WorldUtil {
 			grps.add(popGrp);
 			grps.add(newRegionGroup(user, popDir, locName + " Cemetary"));
 			
+			/*
 			for(String name : leaderPopulation){
 				grps.add(newRegionGroup(user, popDir, locName + " " + name + " Leaders"));				
 			}
+			*/
 			
 			IOSystem.getActiveContext().getRecordUtil().updateRecords(grps.toArray(new BaseRecord[0]));
 			
@@ -367,6 +366,7 @@ public class WorldUtil {
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.getTime() - ((Date)person.get("birthDate")).getTime()) / OlioUtil.YEAR;
 					person.set("age", (int)years);
+					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);
 					totalAge += years;
 					totalAbsoluteAlignment += (alignment + 4);
 					
@@ -439,6 +439,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_QUALITY, (long)world.get("qualities.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_WEARABLE, (long)world.get("wearables.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_APPAREL, (long)world.get("apparel.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATISTICS, (long)world.get("statistics.id"), orgId);
 		return totalWrites;
 	}
 	

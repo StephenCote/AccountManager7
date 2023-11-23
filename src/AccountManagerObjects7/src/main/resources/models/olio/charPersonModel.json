@@ -33,6 +33,12 @@
 			"baseModel": "olio.item",
 			"foreign": true,
 			"participantModel": "person.item"
+		},
+		{
+			"name": "statistics",
+			"type": "model",
+			"baseModel": "olio.charStatistics",
+			"foreign": true
 		}
 	]
 }

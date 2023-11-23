@@ -1,0 +1,149 @@
+{
+	"name": "olio.charStatistics",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Statistics",
+	"icon": "category",
+	"label": "Character Statistics",
+	"query": ["id", "groupId"],
+	"fields": [
+		{
+			"name": "physicalStrength",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "physicalEndurance",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "manualDexterity",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "agility",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "speed",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "mentalStrength",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "mentalEndurance",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "intelligence",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "wisdom",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "charisma",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "fae",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
+			"name": "willpower",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
+			"priority": 0
+		},
+		{
+			"name": "reaction",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
+			"minValue": 0,
+			"maxValue": 100,
+			"validateRange": true,
+			"priority": 0
+		},
+		{
+			"name": "save",
+			"type": "double",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true,
+			"priority": 20
+		},
+		{
+			"name": "health",
+			"type": "int",
+			"minValue": -1,
+			"maxValue": 20,
+			"default": -1,
+			"validateRange": true
+		},
+		{
+			"name": "potential",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 150,
+			"description": "Available attribute points",
+			"validateRange": true
+		},
+		{
+			"name": "maximumHealth",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
+			"minValue": 0,
+			"maxValue": 100,
+			"validateRange": true,
+			"priority": 10
+		}
+	]
+}
+

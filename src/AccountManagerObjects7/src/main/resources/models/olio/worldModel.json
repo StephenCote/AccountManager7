@@ -108,6 +108,12 @@
 		"foreign": true
 	},
 	{
+		"name": "statistics",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "basis",
 		"baseModel": "olio.world",
 		"type": "model",
