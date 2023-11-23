@@ -409,12 +409,13 @@ public class FieldUtil {
 		ModelSchema ms = RecordFactory.getSchema(model);
 		FieldSchema fs = ms.getFieldSchema(f.getName());
 		T val = f.getValue();
+		
 		switch(f.getValueType()) {
 			case INT:
-				outBool = val == null || (int)val == 0;
+				outBool = val == null || ((fs.getDefaultValue() != null && (int)fs.getDefaultValue() == (int)val) || (fs.getDefaultValue() == null && (int)val == 0));
 				break;
 			case DOUBLE:
-				outBool = val == null || (double)val == 0.0;
+				outBool = val == null || ((fs.getDefaultValue() != null && (double)fs.getDefaultValue() == (double)val) || (fs.getDefaultValue() == null && (double)val == 0.0));
 				break;
 			case LONG:
 				outBool = val == null || (long)val == 0L;
