@@ -96,21 +96,7 @@ public class EpochUtil {
 
 		return title;
 	}
-	public static BaseRecord getLastEpoch(BaseRecord user, BaseRecord world) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
-		q.field("epoch", true);
-		BaseRecord epoch = null;
-		try {
-			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
-			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
-			q.setRequestRange(0L, 1);
-			epoch = IOSystem.getActiveContext().getSearch().findRecord(q);
-		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
-		}
-		return epoch;
-	}
+
 	public static BaseRecord generateEpoch(BaseRecord user, BaseRecord world, int evolutions){
 		return generateEpoch(user, world, evolutions, 1);
 	}
@@ -124,7 +110,7 @@ public class EpochUtil {
 			return null;
 		}
 		BaseRecord rootEvt = EventUtil.getRootEvent(user, world);
-		BaseRecord lastEpoch = getLastEpoch(user, world);
+		BaseRecord lastEpoch = EventUtil.getLastEpochEvent(user, world);
 		if(lastEpoch == null) {
 			lastEpoch = rootEvt;
 		}
@@ -159,7 +145,7 @@ public class EpochUtil {
 			epoch.set("eventStart", new Date(startTimeMS));
 			epoch.set("eventEnd", new Date(startTimeMS + (OlioUtil.YEAR * increment)));
 			
-			logger.info(title + " takes place between " + CalendarUtil.exportDateAsString(epoch.get("eventStart"), "yyyy/MM/dd") + " and " + CalendarUtil.exportDateAsString(epoch.get("eventEnd"), "yyyy/MM/dd"));
+			logger.info("Epoch: " + alignment.toString() + " " + title + " takes place between " + CalendarUtil.exportDateAsString(epoch.get("eventStart"), "yyyy/MM/dd") + " and " + CalendarUtil.exportDateAsString(epoch.get("eventEnd"), "yyyy/MM/dd"));
 			
 			IOSystem.getActiveContext().getRecordUtil().updateRecord(epoch);
 			List<BaseRecord> grps = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
