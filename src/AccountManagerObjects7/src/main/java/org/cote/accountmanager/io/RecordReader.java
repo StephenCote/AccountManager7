@@ -137,11 +137,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 			else {
 				pop = rec.get(FieldNames.FIELD_POPULATED);
 			}
-			/*
-			if(rec.hasField(FieldNames.FIELD_POPULATED)) {
-				pop = rec.get(FieldNames.FIELD_POPULATED);
-			}
-			*/
+
 			if(!pop) {
 				ModelSchema ms = RecordFactory.getSchema(rec.getModel());
 				try {
@@ -151,38 +147,12 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					if(IOSystem.getActiveContext().getIoType() == RecordIO.FILE) {
 						CacheUtil.clearCache(rec);
 					}
-					// logger.info(rec.getModel() + " / " + String.join(", ", requestFields));
-					/// TODO: Still need to delineate between the requested fields and the query fields, the following call will fail at present
 					final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields);
-					/*
-					final BaseRecord frec;
-					if(rec.hasField(FieldNames.FIELD_ID)) {
-						long id = rec.get(FieldNames.FIELD_ID);
-						if(id > 0L) {
-							frec = this.read(rec.getModel(), (long)rec.get(FieldNames.FIELD_ID));
-						}
-						else {
-							frec = null;
-						}
-					}
-					else if(rec.hasField(FieldNames.FIELD_OBJECT_ID)) {
-						String objectId = rec.get(FieldNames.FIELD_OBJECT_ID);
-						if(objectId != null) {
-							frec = this.read(rec.getModel(), objectId);
-						}
-						else {
-							frec = null;
-						}
-					}
-					else {
-						frec = null;
-					}
-					*/
+
 					if(frec != null) {
 						//logger.info("Populate: " + frec.getModel() + " " + frec.getFields().size());
 						frec.getFields().forEach(f -> {
 							try {
-								///  && !frec.getField(f.getName()).isNullOrEmpty()
 								if(
 									
 									!rec.hasField(f.getName())
@@ -200,11 +170,6 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 								else {
 									// logger.warn("Skip populate: " + f.getName());
 								}
-								/*
-								if(rec.getField(f.getName()).getValueType() == FieldEnumType.MODEL && foreignDepth > 0) {
-									populate(rec.get(f.getName()), foreignDepth - 1);
-								}
-								*/
 
 								if((f.getValueType() == FieldEnumType.MODEL || f.getValueType() == FieldEnumType.LIST) && foreignDepth > 0) {
 									FieldSchema fs = ms.getFieldSchema(f.getName());
