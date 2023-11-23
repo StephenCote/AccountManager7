@@ -26,6 +26,14 @@ public class CharacterUtil {
 	public static final Logger logger = LogManager.getLogger(CharacterUtil.class);
 	private static SecureRandom rand = new SecureRandom();
 
+	public static int getCurrentAge(BaseRecord user, BaseRecord world, BaseRecord person) {
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
+		BaseRecord evt = EventUtil.getLastEpochEvent(user, world);
+		Date bday = person.get("birthDate");
+		Date cday = evt.get("eventStart");
+		return (int)(Math.abs(cday.getTime() - bday.getTime()) / OlioUtil.YEAR);
+	}
+	
 	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world) {
 		return randomPerson(user, world, null, null, null, null, null, null);
 	}
@@ -44,13 +52,17 @@ public class CharacterUtil {
 		BaseRecord surDir = parWorld.get("surnames");
 		BaseRecord occDir = parWorld.get("occupations");
 		BaseRecord popDir = world.get("population");
+		BaseRecord statDir = world.get("statistics");
 		IOSystem.getActiveContext().getReader().populate(popDir);
 		
 		ParameterList plist = ParameterList.newParameterList("path", popDir.get(FieldNames.FIELD_PATH));
+		ParameterList plist2 = ParameterList.newParameterList("path", statDir.get(FieldNames.FIELD_PATH));
 		BaseRecord person = null;
 		
 		try {
+			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, user, null, plist2);
 			person = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, user, null, plist);
+			person.set("statistics", stats);
 
 			boolean isMale = (Math.random() < 0.5);
 			
