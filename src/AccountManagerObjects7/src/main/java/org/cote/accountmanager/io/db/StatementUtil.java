@@ -265,17 +265,17 @@ public class StatementUtil {
 	}
 	
 	public static String getInnerReferenceSelectTemplate(Query query, FieldSchema schema) throws FieldException {
-		return getInnerSelectTemplate(query, schema, true);
+		return getInnerSelectTemplate(query, schema, true, false);
 	}
 	public static String getParticipationSelectTemplate(Query query, FieldSchema schema) throws FieldException {
-		return getInnerSelectTemplate(query, schema, true);
+		return getInnerSelectTemplate(query, schema, true, false);
 	}
 	
 	/// Different instances of the same model may use different properties by specifying a 'participantModel' on the field.
 	/// For example: 'person.dependent' and 'person.partner'
 	///
 	
-	private static String getInnerSelectTemplate(Query query, FieldSchema schema, boolean followRef) throws FieldException {
+	private static String getInnerSelectTemplate(Query query, FieldSchema schema, boolean followRef, boolean embedded) throws FieldException {
 		if(
 			!schema.isReferenced()
 			&& !schema.isForeign()
@@ -300,9 +300,10 @@ public class StatementUtil {
 		}
 		
 		// logger.info(subModel + " --> " + participantModel);
-		
+		boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
 		Query subQuery = new Query(subModel);
 		try {
+			subQuery.set(FieldNames.FIELD_LIMIT_FIELDS, limit);
 			subQuery.set(FieldNames.FIELD_COUNT, query.get(FieldNames.FIELD_COUNT));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			throw new FieldException(e);
@@ -320,9 +321,17 @@ public class StatementUtil {
 		/// Skip restricting to common fields for modelSchema and until the persistence layer is in the 'open' state
 		/// This is to stop recursive queries when first starting
 		///
-		if(IOSystem.isOpen() && !model.equals(ModelNames.MODEL_MODEL_SCHEMA)) {
-			List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
-			msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
+		
+		if(IOSystem.isOpen()) {
+			if(limit && !model.equals(ModelNames.MODEL_MODEL_SCHEMA)) {
+				List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
+				msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
+			}
+			else if(!limit) {
+				/// Filter blob out of the no-limit, no-depth query
+				///
+				msfields = msschema.getFields().stream().filter(f -> !msschema.getFieldSchema(f.getName()).getType().toUpperCase().equals(FieldEnumType.BLOB.toString())).collect(Collectors.toList());
+			}
 		}
 		//List<FieldSchema> msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
 		//logger.info("Field size: " + msfields.size());
@@ -338,8 +347,42 @@ public class StatementUtil {
 					cols.add(getInnerReferenceSelectTemplate(subQuery, fs));
 					fields.add(fs.getName());
 				}
+				else if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
+					cols.add(getInnerSelectTemplate(subQuery, fs, true, true));
+					fields.add(fs.getName());
+				}
+				else if(fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
+					if(util.getConnectionType() == ConnectionEnumType.H2) {
+						//cols.add("JSON_OBJECT('" + fs.getName() + "': " + salias + "." + util.getColumnName(fs.getName()) + ")");
+						cols.add(salias + "." + util.getColumnName(fs.getName()) + " format json");
+					}
+					else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+
+						cols.add(salias + "." + util.getColumnName(fs.getName()) + "::json");
+					}
+					else {
+						logger.error("Itsa gonna break ...");
+					}
+					fields.add(fs.getName());
+				}
+				
+				else if(fs.getType().toUpperCase().equals(FieldEnumType.MODEL.toString())){
+					// logger.warn("Handle Model: " + fs.getName());
+					cols.add(getInnerSelectTemplate(subQuery, fs, true, true));
+					fields.add(fs.getName());
+				}
+				
 				else {
+					
 					String colName = salias + "." + util.getColumnName(fs.getName());
+					if(fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())) {
+						if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+							colName = "encode(" + colName + ",'base64')";
+						}
+						else if(util.getConnectionType() == ConnectionEnumType.H2) {
+							logger.warn("TODO: Add bytea encode as needed");
+						}
+					}
 					cols.add(colName);
 					fields.add(fs.getName());
 				}
@@ -348,13 +391,28 @@ public class StatementUtil {
 				// logger.warn("Missed " + fs.getName());
 			}
 		}
-			
+
 		if(util.getConnectionType() == ConnectionEnumType.H2) {
 			if(schema.isReferenced()) {
-				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 			}
 			else if(schema.isForeign()) {
-				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				/// select json_object
+				if(schema.getType().equals("list")) {
+					buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				}
+				else {
+					StringBuilder ajoin = new StringBuilder();
+					for(int i = 0; i < cols.size(); i++) {
+						String s = cols.get(i);
+						String f = fields.get(i);
+						if(ajoin.length() > 0) {
+							ajoin.append(", ");
+						}
+						ajoin.append("'" + f + "': " + s);
+					}
+					buff.append("(SELECT JSON_OBJECT(" + ajoin.toString() + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + salias + ".id = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				}
 			}
 		}
 		else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
@@ -368,10 +426,18 @@ public class StatementUtil {
 				ajoin.append("'" + f + "', " + s);
 			}
 			if(schema.isReferenced()) {
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 			}
 			else if(schema.isForeign()) {
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id) as " + util.getColumnName(schema.getName()));
+				String pref = "";
+				String suff = "";
+				if(schema.getType().equals("list")) {
+					buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				}
+				else {
+					buff.append("(SELECT JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + salias + ".id = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				}
+				
 			}
 		}
 
@@ -999,7 +1065,9 @@ public class StatementUtil {
 			if(f == null) {
 				throw new FieldException("Field " + record.getModel() + "." + col + " not found");
 			}
-			
+			if(fs.getName().equals("pattern")) {
+				logger.warn("***** Pattern mark");
+			}
 			switch(f.getValueType()) {
 				case ENUM:
 				case STRING:
@@ -1042,8 +1110,14 @@ public class StatementUtil {
 							//String json = rset.getString(colName);
 							String ser = rset.getString(colName);
 							if(ser != null) {
+								// logger.info(ser);
 								List<?> lst = JSONUtil.getList(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-								record.set(col, lst);
+								if(lst != null) {
+									record.set(col, lst);
+								}
+								else {
+									logger.error("Null list for " + col);
+								}
 							}
 							// logger.info("***** JSON " + ser);
 							subCount++;
@@ -1069,10 +1143,12 @@ public class StatementUtil {
 					break;
 				case MODEL:
 					// logger.warn("TODO: Implement foreign key resolution");
+					//logger.warn(record.getModel() + "." + fs.getName());
 					if(fs.getBaseModel() != null) {
 						modelCols.put(col, f);
 						break;
 					}
+
 				case FLEX:
 					if(fs.getValueType() != null) {
 						flexCols.put(col, f);
@@ -1093,7 +1169,7 @@ public class StatementUtil {
 			}
 			if(modelName == null || ModelNames.MODEL_FLEX.equals(modelName) || ModelNames.MODEL_UNKNOWN.equals(modelName)) {
 				/// This isn't necessarily an error because empty flex foreign models won't have a valid type for optional fields 
-				/// logger.error("Unhandled model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType() + " / " + fs.isForeign() + " / " + record.get(fs.getForeignType()));
+				//logger.error("Unhandled model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType() + " / " + fs.isForeign() + " / " + record.get(fs.getForeignType()));
 				continue;
 			}
 
