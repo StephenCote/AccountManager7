@@ -83,6 +83,11 @@
 		"foreign": true
 	},
 	{
+		"name": "limitFields",
+		"type": "boolean",
+		"default": true
+	},
+	{
 		"name": "fields",
 		"type": "list",
 		"baseType": "model",

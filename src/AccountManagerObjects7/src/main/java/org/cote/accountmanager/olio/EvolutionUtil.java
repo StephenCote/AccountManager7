@@ -1,60 +1,116 @@
 package org.cote.accountmanager.olio;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.CalendarUtil;
 
 
 public class EvolutionUtil {
 	public static final Logger logger = LogManager.getLogger(EvolutionUtil.class);
 	
-	private void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int iterations){
-
-		List<BaseRecord> personPopulation = new ArrayList<>();
+	private static String[] demographicLabels = new String[]{"Alive","Child","Young Adult","Adult","Available","Senior","Mother","Coupled","Deceased"};
+	private static Map<String,List<BaseRecord>> newDemographicMap(){
+		Map<String,List<BaseRecord>> map = new HashMap<>();
+		for(String label : demographicLabels){
+			map.put(label, new ArrayList<>());
+		}
+		return map;
 	}
-		/*
-		if(populationCache.containsKey(population.getId())) personPopulation = populationCache.get(population.getId());
-		else{
-			try {
-				personPopulation = ((GroupParticipationFactory)Factories.getFactory(FactoryEnumType.GROUPPARTICIPATION)).getPersonsInGroup(population);
-				for(PersonType person : personPopulation){
-					((PersonFactory)Factories.getFactory(FactoryEnumType.PERSON)).populate(person);
-					Factories.getAttributeFactory().populateAttributes(person);
-				}
-				populationCache.put(population.getId(), personPopulation);
-			} catch (FactoryException | ArgumentException e) {
-				
-				logger.error(FactoryException.LOGICAL_EXCEPTION,e);
-			}
-		}
-		if(personPopulation.isEmpty()){
-			logger.warn("Population is decimated");
-			return;
-		}
-		
-		for(int i = 0; i < iterations; i++){
-			evolvePopulation(sessionId, parentEvent, eventAlignment, population, personPopulation);
-		}
-		
+	
+	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int evolutions){
 		try {
-			for(PersonType person : personPopulation){
-				if(Factories.getAttributeFactory().getAttributeValueByName(person, "alignment") == null){
-					logger.error("Null alignment when " + (person.getId() > 0L ? "updating" : "adding") + " " + person.getName() + (person.getId() > 0L ? " " + person.getUrn() : ""));
-				}
-				if(person.getId() > 0L){
 
-					BulkFactories.getBulkFactory().modifyBulkEntry(sessionId, FactoryEnumType.PERSON, person);
-				}
+			//List<BaseRecord> pop = IOSystem.getActiveContext().getMemberUtil().findMembers(population, null, ModelNames.MODEL_CHAR_PERSON, 0L);
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+			q.filterParticipation(population, null, ModelNames.MODEL_CHAR_PERSON, null);
+
+			/// Currently an issue with embedded json structures being escaped, so unfortunately that means needing to populate each record until resolved
+			///
+			/// q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			List<BaseRecord> pop = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q));
+			/*
+			Query q = QueryUtil.createParticipationQuery(null, population, null, null, null);
+			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, ModelNames.MODEL_CHAR_PERSON);
+			*/
+			if(pop.isEmpty()){
+				logger.warn("Population is decimated");
+				return;
 			}
-
-		} catch (ArgumentException | FactoryException e) {
 			
-			logger.error(FactoryException.LOGICAL_EXCEPTION,e);
+			Map<String,List<BaseRecord>> demographicMap = newDemographicMap();
+			/*
+			logger.info("Populating ...");
+			for(BaseRecord p : pop) {
+				IOSystem.getActiveContext().getReader().populate(p);
+				IOSystem.getActiveContext().getReader().populate(p.get("statistics"));
+				// IOSystem.getActiveContext().getReader().populate(p.get("apparel"));
+				setDemographicMap(demographicMap, parentEvent, p);
+			}
+			*/
+			logger.info(pop.get(0).toFullString());
+			logger.info("Evolving ...");
+			for(int i = 0; i < evolutions; i++){
+				evolvePopulation(user, world, parentEvent, eventAlignment, population, pop, demographicMap);
+			}
+		}
+		catch(Exception e) {
+			logger.error(e);
+		}
+
+	}
+	
+	private static void setDemographicMap(Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) throws ModelException {
+		Date birthDate = person.get("birthDate");
+		Date endDate = parentEvent.get("eventEnd");
+		int age = (int)((endDate.getTime() - birthDate.getTime()) / OlioUtil.YEAR);
+		if(CharacterUtil.isDeceased(person)){
+			map.get("Deceased").add(person);
+		}
+		else{
+			map.get("Alive").add(person);
+
+			if(age <= Rules.MAXIMUM_CHILD_AGE){
+				map.get("Child").add(person);
+			}
+			else if(age >= Rules.SENIOR_AGE){
+				map.get("Senior").add(person);
+			}
+			else{
+				if(age < Rules.MINIMUM_ADULT_AGE) map.get("Young Adult").add(person);
+				else map.get("Adult").add(person);
+				List<BaseRecord> partners = person.get("partners");
+				if(age >= Rules.MINIMUM_MARRY_AGE && age <= Rules.MAXIMUM_MARRY_AGE && partners.isEmpty()) map.get("Available").add(person);
+				else if(!partners.isEmpty()) map.get("Coupled").add(person);
+				if("female".equals(person.get("gender")) && age >= Rules.MINIMUM_MARRY_AGE && age <= Rules.MAXIMUM_FERTILITY_AGE_FEMALE) map.get("Mother").add(person);
+			}
 		}
 	}
+
+	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, List<BaseRecord> pop, Map<String,List<BaseRecord>> map){
+		
+	}
+	
+	/*
 	private void evolvePopulation(String sessionId, EventType parentEvent, AlignmentEnumType eventAlignment, PersonGroupType population, List<PersonType> personPopulation){
 		try {
 			Map<String,List<PersonType>> demographicMap = newDemographicMap();

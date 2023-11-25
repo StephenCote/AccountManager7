@@ -37,6 +37,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationContext;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
@@ -99,6 +100,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 		return model;
 	}
 	
+	@SuppressWarnings("unchecked")
 	@Override
     public T deserialize(JsonParser jsonParser, DeserializationContext context) throws IOException, JsonProcessingException
     {
@@ -247,7 +249,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         RecordUtil.sortFields(type);
         return (T)type;
         
-       }
+      }
 	
 	private FieldType setFieldValue(JsonParser jsonParser, FieldType ifld, FieldType fld, FieldSchema lft, boolean possibleForeign, JsonNode value) throws ValueException, IOException {
 		return setFieldValue(jsonParser, ifld, fld, lft, null, possibleForeign, value);
@@ -338,10 +340,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 	    				else {
 	    					tr = new TypeReference<List<?>>() {};
 	    				}
-	    				ObjectReader reader = mapper.readerFor(tr);
-	    				
-	    				List<?> list = reader.readValue(value);
-	    				fld.setValue(list);
+	    				//mapper.enable(DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY);
+	    				if(!value.isNull()) {
+	    					ObjectReader reader = mapper.readerFor(tr);
+    						List<?> list = reader.readValue(value);
+    						fld.setValue(list);
+	    				}
     				}
     				break;
     			case MODEL:

@@ -137,10 +137,10 @@ public class FieldUtil {
 			   fet = FieldEnumType.TIMESTAMP;
 		   }
 		   else if(value instanceof ZonedDateTime) {
-			   fet =FieldEnumType.ZONETIME;
+			   fet = FieldEnumType.ZONETIME;
 		   }
 		   else if(value instanceof Boolean) {
-			   fet =FieldEnumType.BOOLEAN;
+			   fet = FieldEnumType.BOOLEAN;
 		   }
 		   else if(value instanceof Double) {
 			   fet =FieldEnumType.DOUBLE;
@@ -418,7 +418,25 @@ public class FieldUtil {
 				outBool = val == null || ((fs.getDefaultValue() != null && (double)fs.getDefaultValue() == (double)val) || (fs.getDefaultValue() == null && (double)val == 0.0));
 				break;
 			case LONG:
-				outBool = val == null || (long)val == 0L;
+				long lval = 0L;
+				long dval = 0L;
+				if(val != null) {
+					if(val instanceof Integer) {
+						lval  = ((Integer)val).longValue();
+					}
+					else {
+						lval = (long)val;
+					}
+				}
+				if(fs.getDefaultValue() != null) {
+					if(fs.getDefaultValue() instanceof Integer) {
+						dval = ((Integer)fs.getDefaultValue()).longValue();
+					}
+					else {
+						dval = (long)fs.getDefaultValue();
+					}
+				}
+				outBool = val == null || ((fs.getDefaultValue() != null && dval == lval) || (fs.getDefaultValue() == null && lval == 0L));
 				break;
 			case BOOLEAN:
 			case MODEL:

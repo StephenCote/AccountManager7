@@ -169,10 +169,13 @@ public class EpochUtil {
 					childEpoch.set(FieldNames.FIELD_NAME, locName + " experienced a " + useAlignment.toString() + " event: " + childTitle);
 					childEpoch.set(FieldNames.FIELD_ALIGNMENT, useAlignment);
 					childEpoch.set(FieldNames.FIELD_PARENT_ID, epoch.get(FieldNames.FIELD_ID));
+					childEpoch.set("eventStart", epoch.get("eventStart"));
+					childEpoch.set("eventEnd", epoch.get("eventEnd"));
 					List<BaseRecord> lgrps = childEpoch.get("groups");
 					lgrps.add(popGrp);
 					logger.info((String)childEpoch.get(FieldNames.FIELD_NAME));
-					IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);	
+					IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
+					EvolutionUtil.evolvePopulation(user, world, childEpoch, useAlignment, popGrp, evolutions);
 				}
 
 			}

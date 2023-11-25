@@ -22,9 +22,14 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AttributeUtil;
 
+
 public class CharacterUtil {
 	public static final Logger logger = LogManager.getLogger(CharacterUtil.class);
 	private static SecureRandom rand = new SecureRandom();
+	
+	public static boolean isDeceased(BaseRecord person) throws ModelException{
+		return AttributeUtil.getAttributeValue(person, "deceased", false);
+	}
 
 	public static int getCurrentAge(BaseRecord user, BaseRecord world, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
