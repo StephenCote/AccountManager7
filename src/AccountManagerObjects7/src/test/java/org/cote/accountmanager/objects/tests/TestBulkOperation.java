@@ -60,7 +60,10 @@ import org.cote.accountmanager.parsers.data.DataParseWriter;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -112,10 +115,50 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	*/
+	@Test
+	public void TestDeepSingleModelQuery() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		List<BaseRecord> aal = new ArrayList<>();
+		String path = "~/Demo - " + UUID.randomUUID().toString();
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList("path", path);
+		String name = "Dooter - " + UUID.randomUUID().toString();
+		plist.parameter("name", name);
+		try {
+			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_APPAREL, testUser1, null, plist);
+			aal.add(a1);
+			List<BaseRecord> wl = a1.get("wearables");
+			BaseRecord w1 = ioContext.getFactory().newInstance(ModelNames.MODEL_WEARABLE, testUser1, null, plist);
+			wl.add(w1);
+			List<BaseRecord> ql = w1.get("qualities");
+			BaseRecord q1 = ioContext.getFactory().newInstance(ModelNames.MODEL_QUALITY, testUser1, null, plist);
+			ql.add(q1);
+			BaseRecord d1 = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
+			w1.set("pattern", d1);
+			d1.set("dataBytesStore", "This is some example text".getBytes());
+			ioContext.getAccessPoint().create(testUser1, a1);
+			//logger.info(a1.toFullString());
+			
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, a1.get(FieldNames.FIELD_ID));
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
+			// logger.info(meta.getSql());
+			BaseRecord a2 = ioContext.getSearch().findRecord(q);
+			assertNotNull("It's null", a2);
+		}
+		catch(ModelNotFoundException | FactoryException | FieldException | ValueException | ModelException e) {
+			logger.error(e);
+		}
+		
 
+	}
 	@Test
 	public void TestOlio2() {
+
 		AuditUtil.setLogToConsole(false);
+
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		
@@ -126,49 +169,20 @@ public class TestBulkOperation extends BaseTest {
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
 		
-		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
-		
-		//AuditUtil.setLogToConsole(true);
+
 		try {
+
 			WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
 			BaseRecord event = EpochUtil.generateEpoch(testUser1, subWorld, 1);
 			assertNotNull("Event is null", event);
-			// logger.info(event.toFullString());
-			//BaseRecord event = WorldUtil.getRootEvent(testUser1, subWorld);
-			//assertNotNull("Event is null", event);
-			//logger.info(event.toFullString());
-			//String app1 = ApparelUtil.getOlioResource(testUser1, subWorld, "./olio/apparel/swimPolyester.json", "female");
-			//logger.info(app1);
 
-			BaseRecord person = OlioUtil.randomSelection(testUser1, QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id")));
+			Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id"));
+			qp1.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
 			assertNotNull("Person is null", person);
 			logger.info("Current age: " + CharacterUtil.getCurrentAge(testUser1, subWorld, person));
 			ioContext.getReader().populate(person.get("statistics"));
 			logger.info(person.toFullString());
-			
-			
-			/*
-			BaseRecord person = OlioUtil.randomSelection(testUser1, QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id")));
-			assertNotNull("Person is null");
-			logger.info(person.toFullString());
-
-			long start = System.currentTimeMillis();
-			List<BaseRecord> appl = new ArrayList<>();
-			int appCount = 25;
-			for(int i = 0; i < appCount; i++) {
-				BaseRecord app = ApparelUtil.randomApparel(testUser1, subWorld, person);
-				assertNotNull("Apparel is null", app);
-				appl.add(app);
-
-			}
-			long stop = System.currentTimeMillis();
-			logger.info("Time to gen " + appCount + " = " + (stop - start) + "ms");
-			start = stop;
-			
-			int created = ioContext.getAccessPoint().create(testUser1, appl.toArray(new BaseRecord[0]), true);
-			stop = System.currentTimeMillis();
-			logger.info("Created: " + created + " of " + appCount + " in " + (stop - start) + "ms");
-			*/
 
 		}
 		catch(Exception e) {
