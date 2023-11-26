@@ -6,7 +6,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
 import java.sql.Types;
-import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -45,12 +44,9 @@ import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.SqlDataEnumType;
-import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
-import org.json.JSONArray;
-import org.json.JSONException;
 
 public class StatementUtil {
 	
@@ -190,7 +186,6 @@ public class StatementUtil {
 		buff.append("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getModel()));
 		List<String> names = new ArrayList<>();
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
-		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		FieldType ident = null;
 		for(int i = 0; i < record.getFields().size(); i++) {
 			FieldType f = record.getFields().get(i);
@@ -393,24 +388,23 @@ public class StatementUtil {
 		}
 
 		if(util.getConnectionType() == ConnectionEnumType.H2) {
+			StringBuilder ajoin = new StringBuilder();
+			for(int i = 0; i < cols.size(); i++) {
+				String s = cols.get(i);
+				String f = fields.get(i);
+				if(ajoin.length() > 0) {
+					ajoin.append(", ");
+				}
+				ajoin.append("'" + f + "': " + s);
+			}
 			if(schema.isReferenced()) {
-				buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString() + ", 'model': '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 			}
 			else if(schema.isForeign()) {
-				/// select json_object
 				if(schema.getType().equals("list")) {
-					buff.append("JSON_ARRAY(SELECT JSON_ARRAY(" + cols.stream().collect(Collectors.joining(", ")) + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString()  + ", 'model': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 				else {
-					StringBuilder ajoin = new StringBuilder();
-					for(int i = 0; i < cols.size(); i++) {
-						String s = cols.get(i);
-						String f = fields.get(i);
-						if(ajoin.length() > 0) {
-							ajoin.append(", ");
-						}
-						ajoin.append("'" + f + "': " + s);
-					}
 					buff.append("(SELECT JSON_OBJECT(" + ajoin.toString() + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + salias + ".id = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 			}
@@ -429,8 +423,6 @@ public class StatementUtil {
 				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 			}
 			else if(schema.isForeign()) {
-				String pref = "";
-				String suff = "";
 				if(schema.getType().equals("list")) {
 					buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
@@ -642,7 +634,7 @@ public class StatementUtil {
 		String queryClause = getQueryClause(query, meta);
 		String groupClause = query.get(FieldNames.FIELD_GROUP_CLAUSE);
 		String havingClause = query.get(FieldNames.FIELD_HAVING_CLAUSE);
-		int topCount = query.get(FieldNames.FIELD_TOP_COUNT);
+		/// int topCount = query.get(FieldNames.FIELD_TOP_COUNT);
 		long organizationId = query.get(FieldNames.FIELD_ORGANIZATION_ID);
 		String alias = getAlias(query);
 		if(havingClause != null || groupClause != null) {
@@ -1050,11 +1042,8 @@ public class StatementUtil {
 	}
 
 	protected static void populateRecord(DBStatementMeta meta, ResultSet rset, BaseRecord record) throws FieldException, ValueException, ModelNotFoundException, SQLException {
-		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		int subCount = 0;
-		//List<FieldType> flexCols = new ArrayList<>();
-		//List<String> flexCol
 		Map<String, FieldType> flexCols = new HashMap<>();
 		Map<String, FieldType> modelCols = new HashMap<>();
 		
@@ -1102,30 +1091,17 @@ public class StatementUtil {
 							throw new FieldException("Expected a sub query at index " + subCount);
 						}
 
-						if(util.getConnectionType() == ConnectionEnumType.H2) {
-							applyH2JSONArrayToList(new Query(queries.get(subCount)), rset.getArray(colName), record, fs, f);
-							subCount++;
-						}
-						else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-							//String json = rset.getString(colName);
-							String ser = rset.getString(colName);
-							if(ser != null) {
-								// logger.info(ser);
-								List<?> lst = JSONUtil.getList(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-								if(lst != null) {
-									record.set(col, lst);
-								}
-								else {
-									logger.error("Null list for " + col);
-								}
+						String ser = rset.getString(colName);
+						if(ser != null) {
+							List<?> lst = JSONUtil.getList(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+							if(lst != null) {
+								record.set(col, lst);
 							}
-							// logger.info("***** JSON " + ser);
-							subCount++;
+							else {
+								logger.error("Null list for " + col);
+							}
 						}
-						else {
-							throw new FieldException("Unhandled connection type: " + util.getConnectionType().toString());	
-						}
-						// logger.info("Handle: " + col);
+						subCount++;
 					}
 					else if(!fs.isForeign()) {
 						List<?> lst = new ArrayList<>();
@@ -1142,8 +1118,6 @@ public class StatementUtil {
 					}
 					break;
 				case MODEL:
-					// logger.warn("TODO: Implement foreign key resolution");
-					//logger.warn(record.getModel() + "." + fs.getName());
 					if(fs.getBaseModel() != null) {
 						modelCols.put(col, f);
 						break;
@@ -1169,13 +1143,11 @@ public class StatementUtil {
 			}
 			if(modelName == null || ModelNames.MODEL_FLEX.equals(modelName) || ModelNames.MODEL_UNKNOWN.equals(modelName)) {
 				/// This isn't necessarily an error because empty flex foreign models won't have a valid type for optional fields 
-				//logger.error("Unhandled model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType() + " / " + fs.isForeign() + " / " + record.get(fs.getForeignType()));
 				continue;
 			}
 
 			BaseRecord crec = RecordFactory.newInstance(modelName);
 			ModelSchema cms = RecordFactory.getSchema(modelName);
-			// logger.info("Handling model type for " + col + " -> " + fs.getBaseModel() + " -> " + fs.getForeignType() + " -> " + modelName);
 			boolean haveId = false;
 			if(fs.isForeign()) {
 				FieldSchema fcs = cms.getFieldSchema(FieldNames.FIELD_ID);
@@ -1258,117 +1230,6 @@ public class StatementUtil {
 		}
 		
 	}
-	private static <T> void setValueByJSONArray(BaseRecord record, JSONArray jsarr, int index, FieldSchema fs, FieldEnumType fet, String name) throws JSONException, ValueException, ModelException, FieldException, ModelNotFoundException {
-		switch(fet) {
-			case ENUM:
-			case STRING:
-				record.set(name, jsarr.getString(index));
-				break;
-			case ZONETIME:
-				record.set(name, ZonedDateTime.ofInstant(Instant.ofEpochMilli(jsarr.getLong(index)), ZoneOffset.UTC));
-				break;
-			case TIMESTAMP:
-				record.set(name, new Date(jsarr.getLong(index)));
-				break;
-			case LONG:
-				record.set(name, jsarr.getLong(index));
-				break;
-			case INT:
-				record.set(name, jsarr.getInt(index));
-				break;
-			case DOUBLE:
-				record.set(name, jsarr.getDouble(index));
-				break;
-			case BLOB:
-				record.set(name, BinaryUtil.fromBase64Str(jsarr.getString(index)));
-				break;
-			case BOOLEAN:
-				record.set(name, jsarr.getBoolean(index));
-				break;
-			case LIST:
-			case FLEX:
-			case MODEL:
-			default:
-				logger.error("Unhandled type in setValueByJSONArray: " + fet.toString() + " " + name);
-				break;
-		}
-	}
 
-	private static <T> void applyH2JSONArrayToList(Query query, Array ar, BaseRecord record, FieldSchema fs, FieldType f) throws SQLException {
-		ResultSet arset = ar.getResultSet();
-		//String model = query.get(FieldNames.FIELD_TYPE);
-		ModelSchema schema = RecordFactory.getSchema(fs.getBaseModel());
-		try {
-			while(arset.next()) {
-				String jsonArray = arset.getString(2);
-				JSONArray jsarr = new JSONArray(jsonArray);
-				for(int i = 0; i < jsarr.length(); i++) {
-					JSONArray jsarr2 = jsarr.getJSONArray(i);
-					if(fs.getBaseType().equals(ModelNames.MODEL_MODEL)) {
-						List<BaseRecord> recs = record.get(f.getName());
-						BaseRecord newRec = RecordFactory.newInstance(fs.getBaseModel());
-						List<String> reqFields = query.get(FieldNames.FIELD_REQUEST);
-						Map<String, String> flexFields = new HashMap<>();
-						//Set<String> flexFields = new HashSet<>();
-						//for(String fn : reqFields) {
-						for(int i2 = 0; i2 < reqFields.size(); i2++) {
-							String fn = reqFields.get(i2);
-							FieldSchema afs = schema.getFieldSchema(fn);
-							FieldEnumType fet = FieldEnumType.valueOf(afs.getType().toUpperCase());
-							if(fet == FieldEnumType.FLEX) {
-								if(afs.getValueType() == null) {
-									/// field will be read in and treated as a string
-									logger.warn("Flex value type not provided, so it will be treated as a string");
-									fet = FieldEnumType.STRING;
-								}
-								else {
-									/// mark the field to apply the correct type
-									flexFields.put(fn, jsarr2.getString(i2));
-									continue;
-								}
-							}
-							else if(fet == FieldEnumType.MODEL || fet == FieldEnumType.LIST) {
-								logger.error("***** TODO: Handled embedded list/model");
-								continue;
-							}
-							setValueByJSONArray(newRec, jsarr2, i2, afs, fet, fn);
-							//logger.info("Digest: " + fs.getBaseModel() + "." + fn + " " + afs.getType());
-						}
-						flexFields.forEach((k, v) -> {
-							FieldSchema afs = schema.getFieldSchema(k);
-							String valType = newRec.get(afs.getValueType());
-							if(valType != null) {
-								FieldEnumType fet = FieldEnumType.valueOf(valType.toUpperCase());
-								try {
-									logger.info("Apply flexFromString: " + k);
-									FieldUtil.setFlexFromString(newRec, fet, k, v);
-								} catch (NumberFormatException | ValueException | ModelException | FieldException
-										| ModelNotFoundException e) {
-									logger.error(e);
-								}
-							}
-							else {
-								logger.error("Failed to find valueType: " + afs.getValueType());
-							}
-						});
-						recs.add(newRec);
-					}
-					else {
-						logger.error("**** Unhandled list type: " + fs.getBaseType());
-					}
-					/*
-					long id = jsarr2.getLong(0);
-					String name2 = jsarr2.getString(1);
-					String value = jsarr2.getString(2);
-					logger.info("#" + id + " " + name2 + " = " + value);
-					*/
-				}
-			}
-		}
-		catch(ModelNotFoundException | FieldException | JSONException | ValueException | ModelException e) {
-			logger.error(e);
-		}
-		arset.close();
-	}
 	
 }
