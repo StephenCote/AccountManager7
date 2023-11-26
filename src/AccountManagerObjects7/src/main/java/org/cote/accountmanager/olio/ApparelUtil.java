@@ -237,7 +237,7 @@ public class ApparelUtil {
 			+ "WHERE C1.name = ? "
 			+ "AND NOT C2.name = 'Black' "
 			+ " AND NOT C2.name = 'White' "
-			+ " AND C1.groupId = ? AND C2.groupId = ? OFFSET ? LIMIT 1"
+			+ " AND C1.groupId = ? AND C2.groupId = ? LIMIT 1 OFFSET ?"
 		;
 		try (Connection con = dbUtil.getDataSource().getConnection(); PreparedStatement statement = con.prepareStatement(sql)){
 
