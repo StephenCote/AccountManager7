@@ -1,5 +1,13 @@
 olio (hodgepodge) contains a variety of data randomization and evolution models and utilities.
 
+NEW METRICS
++ Creativity (std attribute)
++ Spirituality (std attribute)
++ Magic ~ Fae = avg(creativity, spirituality, willpower, wisdom) (Reclassify magic/fae potential from its own discrete value to an average of other values)
++ Science = avg(intelligence, creativity, wisdom) 
+
+Magic
+ORIGINAL RAW NOTES
 The following raw notes were taken from a thirty-year-old table-top gaming system I developed and played out.  The logic will be used as an example set of population rules. 
 
 

@@ -32,6 +32,12 @@ public class StatisticsProvider  implements IProvider {
 		if(lfield.getName().equals("willpower")) {
 			computeAverage(model, lfield, new String[] {"mentalEndurance", "mentalStrength"});
 		}
+		else if(lfield.getName().equals("magic")) {
+			computeAverage(model, lfield, new String[] {"willpower", "wisdom", "creativity", "spirituality"});
+		}
+		else if(lfield.getName().equals("science")) {
+			computeAverage(model, lfield, new String[] {"intelligence", "wisdom", "creativity"});
+		}
 		else if(lfield.getName().equals("reaction")) {
 			computeAverage(model, lfield, new String[] {"agility", "speed", "wisdom"});
 		}
@@ -48,7 +54,7 @@ public class StatisticsProvider  implements IProvider {
 			double val = (avg * 5)/100;
 			DecimalFormat df = new DecimalFormat("#.#");
 			df.setRoundingMode(RoundingMode.HALF_EVEN);
-			// logger.info("Save: " + avg + " / " + val);
+			// logger.info("Save: " + avg + " ~= " + val);
 			model.set(lfield.getName(), Double.parseDouble(df.format(val)));
 		}
 	}

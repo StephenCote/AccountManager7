@@ -78,6 +78,22 @@
 			"validateRange": true
 		},
 		{
+			"name": "creativity",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "spirituality",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
+			"description": "Potential for both worldy and otherworldly empathy and awareness"
+			
+		},
+		{
 			"name": "charisma",
 			"type": "int",
 			"minValue": 0,
@@ -85,11 +101,21 @@
 			"validateRange": true
 		},
 		{
-			"name": "fae",
+			"name": "magic",
 			"type": "int",
-			"minValue": 0,
-			"maxValue": 100,
-			"validateRange": true
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
+			"description": "Potential for otherworldly perceptions and manipulations",
+			"priority": 30
+			
+		},
+		{
+			"name": "science",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
+			"description": "Propensity to innovate/discover/understand fundamental natural elements",
+			"priority": 30
 		},
 		{
 			"name": "willpower",
