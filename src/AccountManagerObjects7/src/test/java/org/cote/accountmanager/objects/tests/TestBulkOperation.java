@@ -147,6 +147,7 @@ public class TestBulkOperation extends BaseTest {
 			// logger.info(meta.getSql());
 			BaseRecord a2 = ioContext.getSearch().findRecord(q);
 			assertNotNull("It's null", a2);
+			logger.info(a2.toFullString());
 		}
 		catch(ModelNotFoundException | FactoryException | FieldException | ValueException | ModelException e) {
 			logger.error(e);
@@ -168,7 +169,7 @@ public class TestBulkOperation extends BaseTest {
 		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		
+		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
 
 		try {
 
