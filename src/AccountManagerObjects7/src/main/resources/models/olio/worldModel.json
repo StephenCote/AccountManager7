@@ -114,6 +114,18 @@
 		"foreign": true
 	},
 	{
+		"name": "instincts",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "behaviors",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "basis",
 		"baseModel": "olio.world",
 		"type": "model",

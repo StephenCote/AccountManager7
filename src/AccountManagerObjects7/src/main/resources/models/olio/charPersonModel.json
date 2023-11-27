@@ -39,6 +39,18 @@
 			"type": "model",
 			"baseModel": "olio.charStatistics",
 			"foreign": true
+		},
+		{
+			"name": "instinct",
+			"type": "model",
+			"baseModel": "olio.instinct",
+			"foreign": true
+		},
+		{
+			"name": "behavior",
+			"type": "model",
+			"baseModel": "olio.behavior",
+			"foreign": true
 		}
 	]
 }

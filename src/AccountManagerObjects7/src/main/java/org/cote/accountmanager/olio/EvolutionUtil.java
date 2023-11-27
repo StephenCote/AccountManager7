@@ -46,7 +46,7 @@ public class EvolutionUtil {
 
 			/// Currently an issue with embedded json structures being escaped, so unfortunately that means needing to populate each record until resolved
 			///
-			/// q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			List<BaseRecord> pop = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q));
 			/*
 			Query q = QueryUtil.createParticipationQuery(null, population, null, null, null);

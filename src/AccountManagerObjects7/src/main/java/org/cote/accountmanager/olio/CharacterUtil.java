@@ -58,16 +58,24 @@ public class CharacterUtil {
 		BaseRecord occDir = parWorld.get("occupations");
 		BaseRecord popDir = world.get("population");
 		BaseRecord statDir = world.get("statistics");
+		BaseRecord instDir = world.get("instincts");
+		BaseRecord behDir = world.get("behaviors");
 		IOSystem.getActiveContext().getReader().populate(popDir);
 		
 		ParameterList plist = ParameterList.newParameterList("path", popDir.get(FieldNames.FIELD_PATH));
 		ParameterList plist2 = ParameterList.newParameterList("path", statDir.get(FieldNames.FIELD_PATH));
+		ParameterList plist3 = ParameterList.newParameterList("path", instDir.get(FieldNames.FIELD_PATH));
+		ParameterList plist4 = ParameterList.newParameterList("path", behDir.get(FieldNames.FIELD_PATH));
 		BaseRecord person = null;
 		
 		try {
 			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, user, null, plist2);
+			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INSTINCT, user, null, plist2);
+			BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, user, null, plist2);
 			person = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, user, null, plist);
 			person.set("statistics", stats);
+			person.set("instinct", inst);
+			person.set("behavior", beh);
 
 			boolean isMale = (Math.random() < 0.5);
 			

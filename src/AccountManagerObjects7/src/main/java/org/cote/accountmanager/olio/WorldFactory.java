@@ -58,6 +58,8 @@ public class WorldFactory extends FactoryBase {
 					newRecord.set("qualities", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Qualities", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("patterns", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Patterns", GroupEnumType.DATA.toString(), orgId));
 					newRecord.set("statistics", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Statistics", GroupEnumType.DATA.toString(), orgId));
+					newRecord.set("instincts", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Instincts", GroupEnumType.DATA.toString(), orgId));
+					newRecord.set("behaviors", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Behaviors", GroupEnumType.DATA.toString(), orgId));
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
 				}
