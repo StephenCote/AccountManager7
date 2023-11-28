@@ -24,6 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -47,6 +48,7 @@ import org.cote.accountmanager.io.QueryField;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.DBWriter;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
@@ -65,6 +67,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.olio.AlignmentEnumType;
@@ -115,6 +118,7 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	*/
+	
 	@Test
 	public void TestDeepSingleModelQuery() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -139,15 +143,28 @@ public class TestBulkOperation extends BaseTest {
 			w1.set("pattern", d1);
 			d1.set("dataBytesStore", "This is some example text".getBytes());
 			ioContext.getAccessPoint().create(testUser1, a1);
-			//logger.info(a1.toFullString());
-			
+
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, a1.get(FieldNames.FIELD_ID));
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
-			// logger.info(meta.getSql());
+
 			BaseRecord a2 = ioContext.getSearch().findRecord(q);
 			assertNotNull("It's null", a2);
-			logger.info(a2.toFullString());
+			
+			/// Deleting the objects will leave any participations in place
+			// logger.info(getForeignDeleteTemplate(a1));
+			//logger.info(getForeignDeleteTemplate(w1));
+			// logger.info(StatementUtil.getForeignDeleteTemplate(new BaseRecord[] {a1, w1, q1, d1}));
+			// logger.info(getForeignDeleteTemplate(q1));
+
+			((DBWriter)ioContext.getWriter()).setDeleteForeignReferences(true);
+			ioContext.getAccessPoint().delete(testUser1, a1);
+			ioContext.getAccessPoint().delete(testUser1, w1);
+			ioContext.getAccessPoint().delete(testUser1, q1);
+			ioContext.getAccessPoint().delete(testUser1, d1);
+			((DBWriter)ioContext.getWriter()).setDeleteForeignReferences(false);
+			
+
 		}
 		catch(ModelNotFoundException | FactoryException | FieldException | ValueException | ModelException e) {
 			logger.error(e);
@@ -155,11 +172,27 @@ public class TestBulkOperation extends BaseTest {
 		
 
 	}
+	
+
+	
+	private String getOrphanUpdateDelete(Query q) {
+		StringBuilder sql = new StringBuilder();
+		
+		/*
+		delete from a7_olio_apparel_system_participation_0_1 where id in(
+				select P1.id from a7_olio_apparel_system_participation_0_1 P1
+				left join a7_olio_apparel_0_1 A1 on A1.id = P1.participationid
+				where P1.participationmodel = 'olio.apparel' and A1.id IS NULL
+				)
+		*/
+		return sql.toString();
+	}
+	
+	
 	@Test
 	public void TestOlio2() {
 
 		AuditUtil.setLogToConsole(false);
-
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		
@@ -169,7 +202,7 @@ public class TestBulkOperation extends BaseTest {
 		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
 
 		try {
 

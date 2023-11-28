@@ -1,10 +1,10 @@
 {
 	"name": "reference",
 	"abstract": true,
-	"hints": ["referenceType, referenceId"],
+	"hints": ["referenceModel, referenceId"],
 	"fields": [
 		{
-			"name": "referenceType",
+			"name": "referenceModel",
 			"type": "string",
 			"maxLength": 64
 		},

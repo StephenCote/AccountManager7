@@ -4,6 +4,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -16,6 +17,7 @@ import org.apache.commons.lang3.EnumUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -24,6 +26,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldFactory;
 import org.cote.accountmanager.model.field.FieldType;
@@ -393,6 +396,27 @@ public class RecordFactory {
 		ResourceUtil.releaseModelResource(name);
 	}
 	
+	public static void cleanupOrphans(String model) {
+		if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
+			String sql = StatementUtil.getDeleteOrphanTemplate(model);
+			if(sql != null && sql.length() > 0) {
+				long start = System.currentTimeMillis();
+
+				try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); Statement st = con.createStatement();){
+					st.executeUpdate(sql);
+					CacheUtil.clearCache();
+				}
+				catch (SQLException e) {
+					logger.error(e);
+			    }
+				long stop = System.currentTimeMillis();
+				logger.info("Cleaned up orphans in " + (stop - start) + "ms");
+			}
+		}
+		else {
+			logger.info("Orphan cleanup not supported on " + IOSystem.getActiveContext().getIoType().toString());
+		}
+	}
 	public static boolean releaseCustomSchema(String name) {
 		IOContext ctx = IOSystem.getActiveContext();
 		

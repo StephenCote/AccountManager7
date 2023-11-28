@@ -3,6 +3,7 @@ package org.cote.accountmanager.io.db;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +43,7 @@ public class DBWriter extends MemoryWriter {
 
 	private DataSource dataSource = null;
 	private int maxBatchSize = 2000;
+	private boolean deleteForeignReferences = false;
 	
 	public static boolean ENABLE_STATISTICS = false;
 	public static Map<String, Integer> CACHE_STATISTICS = new ConcurrentHashMap<>();
@@ -51,6 +53,20 @@ public class DBWriter extends MemoryWriter {
 		this.recordIo = RecordIO.DATABASE;
 		this.dataSource = dsource;
 	}
+	
+	
+
+	public boolean isDeleteForeignReferences() {
+		return deleteForeignReferences;
+	}
+
+
+
+	public void setDeleteForeignReferences(boolean deleteForeignReferences) {
+		this.deleteForeignReferences = deleteForeignReferences;
+	}
+
+
 
 	@Override
 	public void flush() {
@@ -90,7 +106,12 @@ public class DBWriter extends MemoryWriter {
 		if(meta == null) {
 			return false;
 		}
+    	String fsql = null;
+    	if(deleteForeignReferences) {
+    		fsql = StatementUtil.getForeignDeleteTemplate(model);
+    	}
 	    try (Connection con = dataSource.getConnection()){
+
 	    	PreparedStatement st = con.prepareStatement(meta.getSql());
 	    	StatementUtil.applyPreparedStatement(model, meta, st);
 	    	int update = st.executeUpdate();
@@ -98,9 +119,15 @@ public class DBWriter extends MemoryWriter {
 	    		success = true;
 	    	}
 			st.close();
+			
+			if(deleteForeignReferences && fsql != null && fsql.length() > 0) {
+				Statement fst = con.createStatement();
+				fst.executeUpdate(fsql);
+				fst.close();
+			}
+			
 		} catch (SQLException | DatabaseException e) {
 			logger.error(e);
-			e.printStackTrace();
 	    }
 		
 

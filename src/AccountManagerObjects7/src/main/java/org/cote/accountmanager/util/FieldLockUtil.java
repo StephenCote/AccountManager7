@@ -40,7 +40,7 @@ public class FieldLockUtil {
 		}
 
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
-		String sql = "DELETE FROM " + dbUtil.getTableName(ModelNames.MODEL_FIELD_LOCK) + " WHERE referenceType = ? " + (recordId > 0L ? " AND recordId = ? ": "") + (fieldName != null ? " AND fieldName = ?" : "");
+		String sql = "DELETE FROM " + dbUtil.getTableName(ModelNames.MODEL_FIELD_LOCK) + " WHERE referenceModel = ? " + (recordId > 0L ? " AND recordId = ? ": "") + (fieldName != null ? " AND fieldName = ?" : "");
 		try (Connection con = dbUtil.getDataSource().getConnection(); PreparedStatement st = con.prepareStatement(sql);){
 	    	int col = 1;
 	    	st.setString(col++, modelName);

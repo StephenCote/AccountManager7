@@ -52,6 +52,135 @@ public class StatementUtil {
 	
 	public static final Logger logger = LogManager.getLogger(StatementUtil.class);
 
+	public static String getForeignDeleteTemplate(BaseRecord[] recs) {
+		List<String> sqls = new ArrayList<>();
+		for(BaseRecord rec : recs) {
+			sqls.add(getForeignDeleteTemplate(rec));
+		}
+		return sqls.stream().collect(Collectors.joining("\n"));
+	}
+	public static String getForeignDeleteTemplate(BaseRecord rec) {
+		if(!rec.hasField(FieldNames.FIELD_ID)) {
+			return null;
+		}
+		IOSystem.getActiveContext().getReader().populate(rec, new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID});
+		long id = rec.get(FieldNames.FIELD_ID);
+		if(id <= 0L) {
+			return null;
+		}
+		return getForeignDeleteTemplate(rec.getModel(), rec.get(FieldNames.FIELD_ID), rec.get(FieldNames.FIELD_ORGANIZATION_ID));
+	}
+	public static String getForeignDeleteTemplate(String rmodel, long id, long organizationId) {
+		List<String> names = ModelNames.getCustomModelNames();
+		List<String> sqls = new ArrayList<>();
+
+		for(String model : names) {
+			ModelSchema ms = RecordFactory.getSchema(model);
+			for(FieldSchema fs : ms.getFields()) {
+				if(fs.isForeign() && fs.getBaseModel() != null) {
+					/// Direct foreign key - this value would be deleted along with the record
+					if(model.equals(rmodel) && fs.getType().toUpperCase().equals(FieldEnumType.MODEL.toString())) {
+						// Note: there's the possibility that orphans would be left
+					}
+					/// Foreign key references from other record models
+					///
+					else if(rmodel.equals(fs.getBaseModel()) && fs.getType().toUpperCase().equals(FieldEnumType.MODEL.toString())) {
+						sqls.add("UPDATE " + IOSystem.getActiveContext().getDbUtil().getTableName(model) + " SET " + fs.getName() + " = 0 WHERE " + fs.getName() + " = " + id + " AND organizationId = " + organizationId + ";");
+					}
+					/// Foreign key references to this record model
+					///
+					else if(fs.getBaseModel().equals(rmodel) && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
+						String partModel = rmodel;
+						if(fs.getParticipantModel() != null) {
+							partModel = fs.getParticipantModel();
+						}
+						sqls.add("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(ms, ModelNames.MODEL_PARTICIPATION) + " WHERE participantmodel = '" + partModel + "' AND participantid = " + id + " AND organizationId = " + organizationId + ";");
+					}
+					else {
+						// Not applicable
+					}
+				}
+				/// Foreign non-dynamic variable model reference from other record models
+				///
+				else if(model.equals(rmodel) && fs.isReferenced() && fs.getBaseModel() != null) {
+					sqls.add("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableName(fs.getBaseModel()) + " WHERE referenceModel = '" + model + "' AND referenceId = " + id + " AND organizationId = " + organizationId + ";");					
+				}
+			}
+		}
+		return sqls.stream().collect(Collectors.joining("\n"));
+	}
+	
+	public static String getDeleteOrphanTemplate(String model) {
+		List<String> sqls = new ArrayList<>();
+		List<String> names = ModelNames.getCustomModelNames();
+		for(String smodel : names) {
+			if(smodel.equals(ModelNames.MODEL_MODEL) || smodel.equals(ModelNames.MODEL_PARTICIPATION)) {
+				continue;
+			}
+			if(model == null || smodel.equals(model)) {
+				ModelSchema ms = RecordFactory.getSchema(smodel);
+				if(ms.isEphemeral() || IOSystem.getActiveContext().getDbUtil().isConstrained(ms) ) {
+					continue;
+				}
+				if(!ms.hasField(FieldNames.FIELD_ID)) {
+					continue;
+				}
+				String table = IOSystem.getActiveContext().getDbUtil().getTableName(smodel);
+				String partTable = IOSystem.getActiveContext().getDbUtil().getTableName(ms, ModelNames.MODEL_PARTICIPATION);
+				StringBuilder sql = new StringBuilder();
+				sql.append("DELETE FROM " + partTable + " WHERE id IN (SELECT P1.id FROM " + partTable + " P1 ");
+				sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participationid ");
+				sql.append("WHERE P1.participationmodel = '" + smodel + "' AND A1 IS NULL);");
+				sqls.add(sql.toString());
+				
+				if(RecordUtil.inherits(ms, ModelNames.MODEL_PARENT)) {
+					sql = new StringBuilder();
+					sql.append("DELETE FROM " + table + " WHERE id IN (SELECT P1.id FROM " + table + " P1 ");
+					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.parentId ");
+					sql.append("WHERE P1.parentId > 0 AND A1 IS NULL);");
+					sqls.add(sql.toString());
+				}
+				
+				if(RecordUtil.inherits(ms, ModelNames.MODEL_DIRECTORY)) {
+					sql = new StringBuilder();
+					sql.append("DELETE FROM " + table + " WHERE id IN (SELECT P1.id FROM " + table + " P1 ");
+					sql.append("LEFT JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_GROUP) + " A1 ON A1.id = P1.groupId ");
+					sql.append("WHERE P1.groupId > 0 AND A1 IS NULL);");
+					sqls.add(sql.toString());
+				}
+				
+				if(RecordUtil.inherits(ms, ModelNames.MODEL_USER) || RecordUtil.inherits(ms, ModelNames.MODEL_ACCOUNT) || RecordUtil.inherits(ms, ModelNames.MODEL_PERSON)) {
+					String groupPartTable = IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_GROUP), ModelNames.MODEL_PARTICIPATION);
+					sql = new StringBuilder();
+					sql.append("DELETE FROM " + groupPartTable + " WHERE id IN (SELECT P1.id FROM " + groupPartTable + " P1 ");
+					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participationid ");
+					sql.append("WHERE P1.participantmodel = '" + smodel + "' AND A1 IS NULL);");
+					sqls.add(sql.toString());
+
+					String rolePartTable = IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_ROLE), ModelNames.MODEL_PARTICIPATION);
+					sql = new StringBuilder();
+					sql.append("DELETE FROM " + rolePartTable + " WHERE id IN (SELECT P1.id FROM " + rolePartTable + " P1 ");
+					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participationid ");
+					sql.append("WHERE P1.participantmodel = '" + smodel + "' AND A1 IS NULL);");
+					sqls.add(sql.toString());
+					
+				}
+
+				for(FieldSchema fs : ms.getFields()) {
+					if(fs.isReferenced() && fs.getBaseModel() != null) {
+						String refTable = IOSystem.getActiveContext().getDbUtil().getTableName(fs.getBaseModel());
+						sql = new StringBuilder();
+						sql.append("DELETE FROM " + refTable + " WHERE id IN (SELECT P1.id FROM " + refTable + " P1 ");
+						sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.referenceId ");
+						sql.append("WHERE P1.referencemodel = '" + smodel + "' AND A1 IS NULL);");
+						sqls.add(sql.toString());
+					}
+				}
+			}
+		}
+		return sqls.stream().collect(Collectors.joining("\n"));
+	}
+	
 	public static List<BaseRecord> getForeignParticipations(BaseRecord record) {
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		List<BaseRecord> parts = new ArrayList<>();
@@ -70,20 +199,9 @@ public class StatementUtil {
 				else {
 					continue;
 				}
-				/*
-				else if(f.getValueType() == FieldEnumType.MODEL && record.get(f.getName()) != null) {
-					frecs.add((BaseRecord)record.get(f.getName()));	
-				}
-				else {
-					// logger.error("Unhandled foreign type: " + f.getValueType().toString());
-					continue;
-				}
-				*/
-				
 				for(BaseRecord rec : frecs) {
 					if(!RecordUtil.isIdentityRecord(rec)) {
 						logger.error("Record does not have an identity therefore a reference cannot be made");
-						// logger.error(rec.toFullString());
 						continue;
 					}
 					BaseRecord owner = null;
@@ -398,7 +516,7 @@ public class StatementUtil {
 				ajoin.append("'" + f + "': " + s);
 			}
 			if(schema.isReferenced()) {
-				buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString() + ", 'model': '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString() + ", 'model': '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceModel = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 			}
 			else if(schema.isForeign()) {
 				if(schema.getType().equals("list")) {
@@ -420,7 +538,7 @@ public class StatementUtil {
 				ajoin.append("'" + f + "', " + s);
 			}
 			if(schema.isReferenced()) {
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceType = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceModel = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 			}
 			else if(schema.isForeign()) {
 				if(schema.getType().equals("list")) {

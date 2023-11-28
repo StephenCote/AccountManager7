@@ -17,7 +17,7 @@
 			"maxLength": 60
 		},
 		{
-			"name": "referenceType",
+			"name": "referenceModel",
 			"type": "string",
 			"maxLength": 32,
 			"default": "data"

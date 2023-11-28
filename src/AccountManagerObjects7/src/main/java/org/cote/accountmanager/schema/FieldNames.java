@@ -195,7 +195,7 @@ public class FieldNames {
 		public static final String FIELD_CHECK_CREDENTIAL = "checkCredential";
 		public static final String FIELD_CREDENTIAL_TYPE = "credentialType";
 		public static final String FIELD_CHECK_CREDENTIAL_TYPE = "checkCredentialType";
-		public static final String FIELD_REFERENCE_TYPE = "referenceType";
+		public static final String FIELD_REFERENCE_TYPE = "referenceModel";
 		public static final String FIELD_REFERENCE_ID = "referenceId";
 		
 		/// Index

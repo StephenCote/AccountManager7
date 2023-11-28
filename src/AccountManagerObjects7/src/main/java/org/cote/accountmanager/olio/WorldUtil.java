@@ -421,25 +421,40 @@ public class WorldUtil {
 	}
 	*/
 
-	
+	/*
+	public static int cleanupModel(Query q) {
+		
+	}
+	*/
 	public static int cleanupWorld(BaseRecord user, BaseRecord world) {
 		int totalWrites = 0;
 		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
 		IOSystem.getActiveContext().getReader().populate(world, 2);
+		long start = System.currentTimeMillis();
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_GEO_LOCATION, (long)world.get("locations.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_EVENT, (long)world.get("events.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_PERSON, (long)world.get("population.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_GROUP, (long)world.get("population.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ADDRESS, (long)world.get("addresses.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CONTACT, (long)world.get("contacts.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD_NET, (long)world.get("words.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get("names.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD_NET, (long)world.get("dictionary.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("words.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_TRAIT, (long)world.get("traits.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("names.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get("surnames.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("occupations.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_COLOR, (long)world.get("colors.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_QUALITY, (long)world.get("qualities.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_WEARABLE, (long)world.get("wearables.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_APPAREL, (long)world.get("apparel.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_DATA, (long)world.get("patterns.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATISTICS, (long)world.get("statistics.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_INSTINCT, (long)world.get("instincts.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_BEHAVIOR, (long)world.get("behaviors.id"), orgId);
+		long stop = System.currentTimeMillis();
+		logger.info("Cleaned up world in " + (stop - start) + "ms");
+		RecordFactory.cleanupOrphans(null);
+		
 		return totalWrites;
 	}
 	
