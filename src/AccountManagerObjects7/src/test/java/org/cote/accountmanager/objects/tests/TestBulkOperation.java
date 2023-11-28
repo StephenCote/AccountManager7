@@ -202,7 +202,7 @@ public class TestBulkOperation extends BaseTest {
 		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
 
 		try {
 
@@ -215,8 +215,12 @@ public class TestBulkOperation extends BaseTest {
 			BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
 			assertNotNull("Person is null", person);
 			logger.info("Current age: " + CharacterUtil.getCurrentAge(testUser1, subWorld, person));
-			ioContext.getReader().populate(person.get("statistics"));
-			logger.info(person.toFullString());
+			BaseRecord app = ((List<BaseRecord>)person.get("apparel")).get(0);
+			((List<BaseRecord>)app.get("wearables")).forEach(r -> {
+				logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
+			});
+			//logger.info(person.toFullString());
+			
 
 		}
 		catch(Exception e) {

@@ -40,34 +40,23 @@ public class EvolutionUtil {
 	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int evolutions){
 		try {
 
-			//List<BaseRecord> pop = IOSystem.getActiveContext().getMemberUtil().findMembers(population, null, ModelNames.MODEL_CHAR_PERSON, 0L);
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(population, null, ModelNames.MODEL_CHAR_PERSON, null);
-
-			/// Currently an issue with embedded json structures being escaped, so unfortunately that means needing to populate each record until resolved
-			///
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+
 			List<BaseRecord> pop = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q));
-			/*
-			Query q = QueryUtil.createParticipationQuery(null, population, null, null, null);
-			q.field(FieldNames.FIELD_PARTICIPANT_MODEL, ModelNames.MODEL_CHAR_PERSON);
-			*/
 			if(pop.isEmpty()){
 				logger.warn("Population is decimated");
 				return;
 			}
 			
 			Map<String,List<BaseRecord>> demographicMap = newDemographicMap();
-			/*
-			logger.info("Populating ...");
+
+			logger.info("Mapping ...");
 			for(BaseRecord p : pop) {
-				IOSystem.getActiveContext().getReader().populate(p);
-				IOSystem.getActiveContext().getReader().populate(p.get("statistics"));
-				// IOSystem.getActiveContext().getReader().populate(p.get("apparel"));
 				setDemographicMap(demographicMap, parentEvent, p);
 			}
-			*/
-			logger.info(pop.get(0).toFullString());
+
 			logger.info("Evolving ...");
 			for(int i = 0; i < evolutions; i++){
 				evolvePopulation(user, world, parentEvent, eventAlignment, population, pop, demographicMap);
