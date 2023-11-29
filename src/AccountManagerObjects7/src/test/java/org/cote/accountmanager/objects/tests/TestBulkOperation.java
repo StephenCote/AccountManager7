@@ -106,19 +106,6 @@ public class TestBulkOperation extends BaseTest {
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
-	/*
-	@Test
-	public void TestOlio3() {
-		String[] outfit = ApparelUtil.randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, "male", .35);
-		logger.info(String.join(", ", outfit));
-		
-		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-
-	}
-	*/
-	
 	@Test
 	public void TestDeepSingleModelQuery() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -144,18 +131,14 @@ public class TestBulkOperation extends BaseTest {
 			d1.set("dataBytesStore", "This is some example text".getBytes());
 			ioContext.getAccessPoint().create(testUser1, a1);
 
+			
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, a1.get(FieldNames.FIELD_ID));
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
 
+			// DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
+			//logger.info(meta.getSql());
 			BaseRecord a2 = ioContext.getSearch().findRecord(q);
 			assertNotNull("It's null", a2);
-			
-			/// Deleting the objects will leave any participations in place
-			// logger.info(getForeignDeleteTemplate(a1));
-			//logger.info(getForeignDeleteTemplate(w1));
-			// logger.info(StatementUtil.getForeignDeleteTemplate(new BaseRecord[] {a1, w1, q1, d1}));
-			// logger.info(getForeignDeleteTemplate(q1));
 
 			((DBWriter)ioContext.getWriter()).setDeleteForeignReferences(true);
 			ioContext.getAccessPoint().delete(testUser1, a1);
@@ -163,31 +146,13 @@ public class TestBulkOperation extends BaseTest {
 			ioContext.getAccessPoint().delete(testUser1, q1);
 			ioContext.getAccessPoint().delete(testUser1, d1);
 			((DBWriter)ioContext.getWriter()).setDeleteForeignReferences(false);
-			
-
 		}
-		catch(ModelNotFoundException | FactoryException | FieldException | ValueException | ModelException e) {
+		catch(ModelNotFoundException | FactoryException | FieldException | ValueException e) {
 			logger.error(e);
 		}
 		
 
 	}
-	
-
-	
-	private String getOrphanUpdateDelete(Query q) {
-		StringBuilder sql = new StringBuilder();
-		
-		/*
-		delete from a7_olio_apparel_system_participation_0_1 where id in(
-				select P1.id from a7_olio_apparel_system_participation_0_1 P1
-				left join a7_olio_apparel_0_1 A1 on A1.id = P1.participationid
-				where P1.participationmodel = 'olio.apparel' and A1.id IS NULL
-				)
-		*/
-		return sql.toString();
-	}
-	
 	
 	@Test
 	public void TestOlio2() {
@@ -230,13 +195,6 @@ public class TestBulkOperation extends BaseTest {
 	}
 
 	
-	/*
-	((List<BaseRecord>)app.get("wearables")).forEach(r -> {
-		logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
-	});
-	*/
-	
-	/*
 	@Test
 	public void TestLocationParent() {
 		logger.info("Test location parent");
@@ -266,100 +224,8 @@ public class TestBulkOperation extends BaseTest {
 		assertNotNull("Unable to lookup location", lloc);
 
 	}
-	*/
 
 
-
-	
-
-
-/*
-	@Test
-	public void TestWordNetParse() {
-		
-		AuditUtil.setLogToConsole(false);
-		
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Parse Testing");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
-		String groupPath = "~/Dictionary";
-		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		String wnetPath = testProperties.getProperty("test.datagen.path") + "/wn3.1.dict/dict";
-		
-		WordNetParser.loadAdverbs(testUser1, groupPath, wnetPath, 0, false);
-		WordNetParser.loadAdjectives(testUser1, groupPath, wnetPath, 0, false);
-		WordNetParser.loadNouns(testUser1, groupPath, wnetPath, 0, false);
-		WordNetParser.loadVerbs(testUser1, groupPath, wnetPath, 0, false);
-		int count = ioContext.getAccessPoint().count(testUser1, WordNetParser.getQuery(testUser1, null, groupPath));
-		logger.info("Dictionary word count: " + count);
-	}
-	
-
-	
-	@Test
-	public void TestNamesParse() {
-		logger.info("Test load names data");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-
-		String groupPath = "~/Words/Names";
-		String wnetPath = testProperties.getProperty("test.datagen.path") + "/names/yob2022.txt";
-		try {
-			WordParser.loadNames(testUser1, groupPath, wnetPath, false);
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, ModelNames.MODEL_WORD, groupPath));
-		logger.info("Total word records in " + groupPath + ": " + records);
-	}
-	
-	@Test
-	public void TestSurNamesParse() {
-		logger.info("Test load surnames data");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-
-		String groupPath = "~/Words/SurNames";
-		String wnetPath = testProperties.getProperty("test.datagen.path") + "/surnames/Names_2010Census.csv";
-		try {
-			WordParser.loadSurnames(testUser1, groupPath, wnetPath, false);
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, ModelNames.MODEL_CENSUS_WORD, groupPath));
-		logger.info("Total word records in " + groupPath + ": " + records);
-	}
-	
-	@Test
-	public void TestOccupationsParse() {
-		logger.info("Test load occupation data");
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Geolocation");
-		Factory mf = ioContext.getFactory();
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-
-		String groupPath = "~/Words/Occupations";
-		String occPath = testProperties.getProperty("test.datagen.path") + "/occupations/noc_2021_version_1.0_-_elements.csv";
-		try {
-			WordParser.loadOccupations(testUser1, groupPath, occPath, false);
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		int records =ioContext.getAccessPoint().count(testUser1, WordParser.getQuery(testUser1, ModelNames.MODEL_WORD, groupPath));
-		logger.info("Total word records in " + groupPath + ": " + records);
-	}
-	
 	 private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		plist.parameter("name", name);
@@ -485,6 +351,6 @@ public class TestBulkOperation extends BaseTest {
 		}
 		assertFalse("Encountered an error", error);
 	}
-	*/
+
 
 }
