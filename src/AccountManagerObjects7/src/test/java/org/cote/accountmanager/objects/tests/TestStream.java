@@ -34,6 +34,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.security.TokenService;
+import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ContentTypeUtil;
 import org.cote.accountmanager.util.DirectoryUtil;
 import org.cote.accountmanager.util.StreamUtil;
@@ -55,6 +56,26 @@ public class TestStream extends BaseTest {
 			logger.error(e);
 		}
 		return seg;
+	}
+
+	@Test
+	public void TestEntitlements() {
+		// RecordFactory.deleteOrganization(11);
+		try {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		ioContext.getPolicyUtil().setTrace(true);
+		ioContext.getPathUtil().setTrace(true);
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Data/StreamList", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		ioContext.getPolicyUtil().setTrace(false);
+		ioContext.getPathUtil().setTrace(false);
+		assertNotNull("Group is null", group);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
 	}
 
 	@Test
@@ -107,6 +128,7 @@ public class TestStream extends BaseTest {
 	@Test
 	public void TestListLargeData() {
 		logger.info("**** TEST LIST LARGE DATA");
+		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -224,7 +246,7 @@ public class TestStream extends BaseTest {
 	@Test
 	public void TestCreateStream() {
 		logger.info("Test Streaming");
-
+		//RecordFactory.deleteOrganization(47);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
@@ -344,7 +366,7 @@ public class TestStream extends BaseTest {
 			ssUtil.updateStreamSize(data);
 			// logger.info(data.toFullString());
 			odata = ioContext.getAccessPoint().create(testUser1, data);
-			
+			assertNotNull("Failed to create data", odata);
 			logger.info(odata.toFullString());
 			assertNotNull("Failed to create stream " + dataName, odata);
 
@@ -356,10 +378,8 @@ public class TestStream extends BaseTest {
 		}
 	}
 
-	
 	@Test
 	public void TestStreamInPlaceUtility() {
-		
 		logger.info("Test stream file in place");
 		
 		IOFactory.addPermittedPath("./media");
@@ -373,18 +393,19 @@ public class TestStream extends BaseTest {
 		String name = Paths.get(filePath).getFileName().toString();
 
 		String groupPath = "~/Data/StreamInPlace";
+		logger.info(testUser2.toFullString());
 		BaseRecord group = ioContext.getPathUtil().makePath(testUser2, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		
 		assertTrue("Failed to cleanup stream", cleanupInGroup(testUser2, ModelNames.MODEL_STREAM, name, group.get(FieldNames.FIELD_ID)));
 		assertTrue("Failed to cleanup data", cleanupInGroup(testUser2, ModelNames.MODEL_DATA, name, group.get(FieldNames.FIELD_ID)));
 		
 		boolean streamed = StreamUtil.streamInPlaceToData(testUser2, filePath, groupPath);
 		assertTrue("Failed to stream in place", streamed);
 	}
-
 	@Test
 	public void TestStreamDirectoryInPlace() {
 		String path = "c:/tmp/xpic";
+		AuditUtil.setLogToConsole(false);
+
 		IOFactory.addPermittedPath(path);
 		DirectoryUtil du = new DirectoryUtil(path);
 		
@@ -419,7 +440,7 @@ public class TestStream extends BaseTest {
 		BaseRecord data = ioContext.getAccessPoint().find(user, q);
 		boolean outBool = true;
 		if(data != null) {
-			logger.info("Cleanup " + model + " " + name + " in group #" + groupId);
+			// logger.info("Cleanup " + model + " " + name + " in group #" + groupId);
 			outBool = ioContext.getAccessPoint().delete(user, data);
 		}
 		else {
@@ -427,4 +448,5 @@ public class TestStream extends BaseTest {
 		}
 		return outBool;
 	}
+	
 }
