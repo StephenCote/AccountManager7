@@ -172,7 +172,6 @@ public class FactUtil {
 			String furn = fact.get(FieldNames.FIELD_SOURCE_URN);
 			BaseRecord factData = null;
 			if(furn != null) {
-				logger.info("**** URN = "+ furn);
 				BaseRecord[] factDatas = search.findByUrn(matchFact.get(FieldNames.FIELD_MODEL_TYPE), furn);
 				if(factDatas.length > 0) {
 					factData = factDatas[0];
