@@ -7,7 +7,7 @@
 			"type": "string",
 			"readOnly": true,
 			"provider": "org.cote.accountmanager.provider.UrnProvider",
-			"priority": 2,
+			"priority": 3,
 			"identity": true,
 			"maxLength": 255
 		}

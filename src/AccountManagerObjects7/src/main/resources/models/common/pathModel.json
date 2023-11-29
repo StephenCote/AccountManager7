@@ -7,7 +7,7 @@
 			"type": "string",
 			"virtual": true,
 			"provider": "org.cote.accountmanager.provider.PathProvider",
-			"priority": 0
+			"priority": 2
 		}
 	]
 }
