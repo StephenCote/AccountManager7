@@ -27,7 +27,7 @@ public class TestLooseField {
 	public void TestLooseImport() {
 		logger.info("Test Loose Imports.");
 		logger.warn("Clearing catalog");
-
+		RecordFactory.clearCache();
 		logger.info("Attempt to create invalid/unloaded model");
 
 		BaseRecord invmod = null;
