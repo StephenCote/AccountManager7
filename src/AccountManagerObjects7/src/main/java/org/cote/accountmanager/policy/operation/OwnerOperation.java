@@ -6,6 +6,7 @@ import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.Query;
@@ -98,11 +99,16 @@ import org.cote.accountmanager.util.RecordUtil;
 
 			}
 			if(srec != null) {
+				if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+					logger.info(srec.toFullString());
+				}
 				ownerId = srec.get(FieldNames.FIELD_ID);
 			}
 			
 			
-			
+			if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+				logger.info(murn);
+			}
 			if(murn != null && murn.length() > 0) {
 				try {
 					String[] flds = RecordUtil.getCommonFields(mtype);
@@ -114,11 +120,19 @@ import org.cote.accountmanager.util.RecordUtil;
 					Query q = QueryUtil.createQuery(mtype, (bId ? FieldNames.FIELD_ID : FieldNames.FIELD_URN), (bId ? Long.parseLong(murn) : murn));
 					q.setRequest(flds);
 					q.set(FieldNames.FIELD_INSPECT, true);
+					
+					if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+						logger.info(q.toFullString());
+					}
+					
 					BaseRecord[] recs = search.find(q).getResults();
 					if(recs.length > 0) {
 						mrec = recs[0];
 						if(reader.getRecordIo().equals(RecordIO.FILE) && ((boolean)mrec.get(FieldNames.FIELD_POPULATED)) == false) {
 							reader.populate(mrec);
+						}
+						if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+							logger.info(mrec.toFullString());
 						}
 					}
 					else {
@@ -137,7 +151,9 @@ import org.cote.accountmanager.util.RecordUtil;
 			else {
 				// logger.error("Record could not be found");
 			}
-
+			if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+				logger.info(ownerId + " == " + contextId + " = " + (ownerId == contextId));
+			}
 			if(ownerId > 0L && contextId > 0L) {
 				if(ownerId == contextId) {
 					ort = OperationResponseEnumType.SUCCEEDED;
