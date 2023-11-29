@@ -371,6 +371,9 @@ public class RecordFactory {
 	}
 	
 	public static ModelSchema getSchema(String name) {
+		if(name == null) {
+			return null;
+		}
 		if(schemas.containsKey(name)) {
 			return schemas.get(name);
 		}
@@ -394,6 +397,27 @@ public class RecordFactory {
 		rawModels.remove(name);
 		
 		ResourceUtil.releaseModelResource(name);
+	}
+	
+	public static void deleteOrganization(long orgId) {
+		if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
+			String sql = StatementUtil.getDeleteOrganizationTemplate(orgId);
+			if(sql != null && sql.length() > 0) {
+				long start = System.currentTimeMillis();
+				try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); Statement st = con.createStatement();){
+					st.executeUpdate(sql);
+					CacheUtil.clearCache();
+				}
+				catch (SQLException e) {
+					logger.error(e);
+			    }
+				long stop = System.currentTimeMillis();
+				logger.info("Cleaned up organization in " + (stop - start) + "ms");
+			}
+		}
+		else {
+			logger.info("Organization cleanup not supported on " + IOSystem.getActiveContext().getIoType().toString());
+		}
 	}
 	
 	public static void cleanupOrphans(String model) {
