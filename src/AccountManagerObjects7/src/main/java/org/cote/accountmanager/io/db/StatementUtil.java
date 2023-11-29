@@ -12,8 +12,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -180,6 +182,38 @@ public class StatementUtil {
 		}
 		return sqls.stream().collect(Collectors.joining("\n"));
 	}
+	
+	public static String getDeleteOrganizationTemplate(long organizationId) {
+		List<String> sqls = new ArrayList<>();
+		List<String> names = ModelNames.getCustomModelNames();
+
+		for(String smodel : names) {
+			if(smodel.equals(ModelNames.MODEL_MODEL)) {
+				continue;
+			}
+			ModelSchema ms = RecordFactory.getSchema(smodel);
+			if(ms.isEphemeral() || IOSystem.getActiveContext().getDbUtil().isConstrained(ms) ) {
+				continue;
+			}
+			if(!ms.hasField(FieldNames.FIELD_ID) || !ms.hasField(FieldNames.FIELD_ORGANIZATION_ID)) {
+				continue;
+			}
+			String table = IOSystem.getActiveContext().getDbUtil().getTableName(smodel);
+			String matchId = "organizationId";
+			if(smodel.equals(ModelNames.MODEL_ORGANIZATION)) {
+				matchId = "id";
+			}
+			sqls.add("DELETE FROM " + table + " WHERE " + matchId + " = " + organizationId + ";");
+			if(!smodel.equals(ModelNames.MODEL_PARTICIPATION) && ms.isDedicatedParticipation()) {
+				String partTable = IOSystem.getActiveContext().getDbUtil().getTableName(ms, ModelNames.MODEL_PARTICIPATION);
+				sqls.add("DELETE FROM " + partTable + " WHERE " + matchId + " = " + organizationId + ";");
+			}
+			
+
+		}
+		return sqls.stream().collect(Collectors.joining("\n"));
+	}
+	
 	
 	public static List<BaseRecord> getForeignParticipations(BaseRecord record) {
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
@@ -523,7 +557,7 @@ public class StatementUtil {
 					buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString()  + ", 'model': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 				else {
-					buff.append("(SELECT JSON_OBJECT(" + ajoin.toString() + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + salias + ".id = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					buff.append("(SELECT JSON_OBJECT(" + ajoin.toString() + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + alias + "." + util.getColumnName(schema.getName()) + " = " + salias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 			}
 		}
@@ -545,7 +579,7 @@ public class StatementUtil {
 					buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 				else {
-					buff.append("(SELECT JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + salias + ".id = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					buff.append("(SELECT JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + alias + "." + util.getColumnName(schema.getName()) + " = " + salias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 				
 			}
