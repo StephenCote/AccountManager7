@@ -10,12 +10,14 @@ import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -619,12 +621,12 @@ public class StatementUtil {
 		}
 		String alias = query.get(FieldNames.FIELD_ALIAS);
 		if(alias == null) {
-			// alias = RandomStringUtils.randomAlphabetic(3).toUpperCase();
 			try {
 				int count = query.get(FieldNames.FIELD_COUNT);
 				count++;
 				query.set(FieldNames.FIELD_COUNT, count);
-				alias = model.substring(0, 1).toUpperCase() + Integer.toString(count);
+				String aliasP = Arrays.asList(model.split("\\.")).stream().map(f -> f.substring(0,1) + f.substring(f.length()-1)).collect(Collectors.joining(""));
+				alias = aliasP + Integer.toString(count);
 				query.set(FieldNames.FIELD_ALIAS, alias);
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
