@@ -44,9 +44,11 @@ public class UrnProvider implements IProvider {
 			return;
 		}
 		
-		String[] fields = RecordUtil.getPossibleFields(model.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID});
+		String[] fields = RecordUtil.getPossibleFields(model.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_PATH, FieldNames.FIELD_GROUP_PATH});
 		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);
-
+		if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
+			logger.info(model.toFullString());
+		}
 		StringBuilder buff = new StringBuilder();
 		boolean skipName = false;
 		buff.append(urnPrefix + urnSeparator + model.getModel());
@@ -73,10 +75,13 @@ public class UrnProvider implements IProvider {
 				buff.append(urnSeparator + getDotPath(org, FieldNames.FIELD_PATH));
 			}
 		}
-		if(!model.inherits(ModelNames.MODEL_ORGANIZATION) && model.inherits(FieldNames.FIELD_PATH)) {
+		if(!model.inherits(ModelNames.MODEL_ORGANIZATION) && model.inherits(ModelNames.MODEL_PATH)) {
 			if(model.get(FieldNames.FIELD_PATH) == null) {
 				logger.warn("Skipping urn update on incomplete " + model.getModel() + " model - missing path");
 				return;
+			}
+			if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
+				logger.info(model.get(FieldNames.FIELD_PATH) + " --> " +  getDotPath(model, FieldNames.FIELD_PATH));
 			}
 			buff.append(urnSeparator + getDotPath(model, FieldNames.FIELD_PATH));
 			skipName = true;
@@ -87,6 +92,11 @@ public class UrnProvider implements IProvider {
 				logger.warn(model.toString());
 				return;
 			}
+			/*
+			if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
+				logger.info(model.get(FieldNames.FIELD_GROUP_PATH) + " --> " +  getDotPath(model, FieldNames.FIELD_GROUP_PATH));
+			}
+			*/
 			buff.append(urnSeparator + getDotPath(model, FieldNames.FIELD_GROUP_PATH));
 		}
 		if(!skipName) {
