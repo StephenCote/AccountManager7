@@ -68,22 +68,22 @@
 						<!--
 						
 						<exclude>**/TestBulkOperation.java</exclude>
-						
 						-->
+						
+
 						<exclude>**/TestModelLayout.java</exclude>
 						<exclude>**/TestJournal.java</exclude>
 						
-						<exclude>**/TestAccessApproval.java</exclude>
-						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestVaultFields.java</exclude>
+						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestVault.java</exclude>
-						<exclude>**/TestValidationRules.java</exclude>	
-						
+						<exclude>**/TestValidationRules.java</exclude>							
 						<exclude>**/TestFieldLock.java</exclude>
 						<exclude>**/TestDBPerformance.java</exclude>
 						<exclude>**/TestFieldRevisions.java</exclude>
 						<exclude>**/TestMembership.java</exclude>
+						
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestStartup.java</exclude>
 						<exclude>**/TestToken.java</exclude>
@@ -97,15 +97,16 @@
 						<exclude>**/TestAM6Model.java</exclude>
 						<exclude>**/TestValueType.java</exclude>
 						<exclude>**/TestLooseField.java</exclude>
-						<exclude>**/TestQuery.java</exclude>
+						
 						<exclude>**/TestFlexValueType.java</exclude>
 						<exclude>**/TestCryptography.java</exclude>
-
+						<exclude>**/TestQuery.java</exclude>
+						
 						<!-- Repeatable Set -->
 						
 						
 						<!-- Tests with unresolved errors -->
-						
+						<exclude>**/TestAccessApproval.java</exclude>
 						
 
 						<!-- Situational Tests -->
