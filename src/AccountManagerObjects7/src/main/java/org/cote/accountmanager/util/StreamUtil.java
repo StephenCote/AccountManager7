@@ -146,7 +146,7 @@ public class StreamUtil {
 				logger.error("Failed to obtain stream size");
 				return outBool;
 			}
-			logger.info("Create stream object - " + name);
+			// logger.info("Create stream object - " + name);
 			BaseRecord nstream = IOSystem.getActiveContext().getAccessPoint().create(user, stream);
 			if(nstream == null) {
 				logger.error("Failed to create stream object");
@@ -158,7 +158,7 @@ public class StreamUtil {
 			data.set(FieldNames.FIELD_CONTENT_TYPE, ContentTypeUtil.getTypeFromExtension(name));
 			data.set(FieldNames.FIELD_STREAM, nstream);
 			data.set(FieldNames.FIELD_SIZE, size);
-			logger.info("Create data object - " + name);
+			// logger.info("Create data object - " + name);
 			BaseRecord ndata = IOSystem.getActiveContext().getAccessPoint().create(user, data);
 			if(ndata == null) {
 				logger.error("Failed to create data object");

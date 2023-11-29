@@ -144,7 +144,6 @@ public class RecordUtil {
 	}
 	public static String[] getCommonFields(String model) {
 		// List<String> flds = new ArrayList<>();
-
 		Set<String> flds = ConcurrentHashMap.newKeySet();
 		ModelSchema ms = RecordFactory.getSchema(model);
 		if(ms.getQuery() != null) {

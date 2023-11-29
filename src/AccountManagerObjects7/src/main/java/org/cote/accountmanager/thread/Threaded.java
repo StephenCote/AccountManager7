@@ -24,14 +24,14 @@ public abstract class Threaded implements Runnable {
 	}
 
 	public void requestStop(){
-		stopRequested=true;
-		svcThread.interrupt();
 		try{
 			execute();
 		}
 		catch(Exception e){
-			logger.error(e);
+			/// logger.error(e);
 		}
+		stopRequested = true;
+		svcThread.interrupt();
 	}
 	
 	public void execute(){
