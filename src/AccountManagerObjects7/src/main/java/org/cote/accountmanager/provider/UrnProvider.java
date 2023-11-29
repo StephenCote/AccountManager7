@@ -27,7 +27,8 @@ public class UrnProvider implements IProvider {
 	private static final String urnSeparator = ":";
 	private static final String urnSubSeparator = ".";
 	private static final Pattern factoryPattern = Pattern.compile("^am:(\\S[^:]+):(\\S[^:]+)");
-	
+	private static final String[] provideFields = new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_PATH, FieldNames.FIELD_GROUP_PATH};
+
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model) throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException {
 		/// Nothing to do
 	}
@@ -44,7 +45,7 @@ public class UrnProvider implements IProvider {
 			return;
 		}
 		
-		String[] fields = RecordUtil.getPossibleFields(model.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_PATH, FieldNames.FIELD_GROUP_PATH});
+		String[] fields = RecordUtil.getPossibleFields(model.getModel(), provideFields);
 		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);
 		if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
 			logger.info(model.toFullString());

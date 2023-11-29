@@ -20,9 +20,11 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.security.VaultService;
+import org.cote.accountmanager.util.RecordUtil;
 
 public class EncryptFieldProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(EncryptFieldProvider.class);
+	private static final String[] provideFields = new String[] {FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID };
 	
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model) throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException {
 		/// Nothing to do
@@ -37,11 +39,14 @@ public class EncryptFieldProvider implements IProvider {
 		if(!RecordOperation.CREATE.equals(operation) && !RecordOperation.UPDATE.equals(operation) && !RecordOperation.READ.equals(operation)) {
 			return;
 		}
-		
+
+		String[] fields = RecordUtil.getPossibleFields(model.getModel(), provideFields);
+		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);
+
 		OrganizationContext org = IOSystem.getActiveContext().findOrganizationContext(model);
 		if(org == null) {
 			logger.error(model.toFullString());
-			throw new ValueException("Failed to retrieve organization context");
+			throw new ValueException("Failed to retrieve organization context for model");
 		}
 		VaultBean vault = org.getVault();
 		if(vault == null) {
