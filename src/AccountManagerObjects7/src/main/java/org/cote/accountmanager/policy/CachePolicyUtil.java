@@ -78,7 +78,7 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 		if(resource.hasField(FieldNames.FIELD_URN)) {
 			recId = resource.get(FieldNames.FIELD_URN);
 		}
-		else {
+		if(recId == null) {
 			recId = resource.hash();
 		}
 		String key = name + "-" + actor.get(FieldNames.FIELD_URN)+ "-" + token + "-" + recId;
