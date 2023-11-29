@@ -29,6 +29,7 @@ public abstract class PathUtil implements IPath {
 	private final IReader reader;
 	private final IWriter writer;
 	private final ISearch search;
+	private boolean trace = false;
 	
 	public PathUtil(IReader reader, ISearch search) {
 		this(reader, null, search);
@@ -39,6 +40,14 @@ public abstract class PathUtil implements IPath {
 		this.search = search;
 	}
 	
+	
+	
+	public boolean isTrace() {
+		return trace;
+	}
+	public void setTrace(boolean trace) {
+		this.trace = trace;
+	}
 	public BaseRecord findPath(BaseRecord owner, String model, String path, String type, long organizationId) {
 		return makePath(owner, model, path, type, organizationId, false);
 	}
@@ -63,6 +72,9 @@ public abstract class PathUtil implements IPath {
 					homePath = "/home/" + owner.get(FieldNames.FIELD_NAME);
 				}
 				path = homePath + path.substring(1);
+				if(trace) {
+					logger.info("Path: " + path);
+				}
 			}
 			else {
 				logger.error("Cannot resolve a relative user path without a user reference");
@@ -94,8 +106,13 @@ public abstract class PathUtil implements IPath {
 				}
 				
 				BaseRecord[] nodes = search.findByNameInParent(model, parentId, e, utype, organizationId);
-	
+				if(trace) {
+					logger.info("Found " + nodes.length + " " + model + " named " + e + " in #" + parentId);
+				}
 				if(nodes.length == 0) {
+					if(trace) {
+						logger.info("Create in parent #" + parentId);
+					}
 					if(!doCreate) {
 						logger.warn("Failed to find '" + e + "' " + (type != null ? "of type (" + type + ") " : "") + "in parent " + parentId + " in path " + path + ", create = false");
 						node = null;
