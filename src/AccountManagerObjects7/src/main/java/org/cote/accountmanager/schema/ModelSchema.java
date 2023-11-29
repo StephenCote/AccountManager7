@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -274,6 +275,12 @@ public class ModelSchema {
 	public void setFields(List<FieldSchema> fields) {
 		this.fields = fields;
 	}
+	
+	@JsonIgnore
+	public boolean inherits(String name){
+		return RecordUtil.inherits(this, name);
+	}
+	
 	public List<String> getInherits() {
 		return inherits;
 	}
