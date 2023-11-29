@@ -103,7 +103,7 @@ public class TestAccessApproval extends BaseTest {
 	
 	@Test
 	public void TestCountRequests() {
-		
+		logger.warn("TODO: Currently unresolved issue with role authorization on creating a request to a system entitlement for an object");
 		if(ioContext.getIoType() == RecordIO.FILE) {
 			logger.error("****** TODO: The file system support for flexible foreign keyed fields depends updating the deserializer to defer that object until the foreignType value is known from the adjacent property");
 			return;
@@ -123,15 +123,26 @@ public class TestAccessApproval extends BaseTest {
 		
 		BaseRecord testUser2 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser2", testOrgContext.getOrganizationId());
 		BaseRecord testRequestReader =  mf.getCreateUser(testOrgContext.getAdminUser(), "testRequestReader", testOrgContext.getOrganizationId());
+		BaseRecord requesterRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUESTERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 		BaseRecord requestReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 		BaseRecord requestUpdaterRole = AccessSchema.getSystemRole(AccessSchema.ROLE_REQUEST_UPDATERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 		BaseRecord accountReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 		BaseRecord roleReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ROLE_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
+		BaseRecord permReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_PERMISSION_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 		if(!ioContext.getMemberUtil().isMember(testUser1, accountReaderRole, null)) {
 			logger.info("Assigning test users to role in order to be authorized to see foreign user references");
 			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), accountReaderRole, testUser1, null, true);
 			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), accountReaderRole, testRequestReader, null, true);
 		}
+		if(!ioContext.getMemberUtil().isMember(testUser1, requesterRole, null)) {
+			logger.info("Assigning test request role in order to be authorized to create system roles");
+			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), requesterRole, testUser1, null, true);
+		}
+		if(!ioContext.getMemberUtil().isMember(testUser1, permReaderRole, null)) {
+			logger.info("Assigning test request role in order to be authorized to read system permissions");
+			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), permReaderRole, testUser1, null, true);
+		}
+
 		if(!ioContext.getMemberUtil().isMember(testRequestReader, requestReaderRole, null)) {
 			logger.info("Assigning test request reader/updater to roles in order to be authorized to read system roles, read requests, and update request status");
 			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), requestReaderRole, testRequestReader, null, true);

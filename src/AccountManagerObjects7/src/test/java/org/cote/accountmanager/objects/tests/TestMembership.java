@@ -6,7 +6,9 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
@@ -14,6 +16,8 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.AccessSchema;
@@ -60,7 +64,6 @@ public class TestMembership extends BaseTest {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_USER);
 		q.filterParticipation(crole1, null, ModelNames.MODEL_USER, null);
 		logger.info(q.key());
-		
 		QueryResult qr = ioContext.getAccessPoint().list(testUser1, q);
 		assertNotNull("Result was null", qr);
 		logger.info("Test direct list of query - result count: " + qr.getResults().length);

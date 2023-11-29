@@ -242,7 +242,7 @@ public class TestQuery extends BaseTest {
 				logger.error("TODO: Fix deserialization parity issue");
 			}
 			///assertTrue("Expected serial outputs to match", ser3.equals(ser4));
-			logger.info(q3.key());
+			// logger.info(q3.key());
 		
 		}
 		catch(Exception e) {
