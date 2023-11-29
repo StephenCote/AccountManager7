@@ -19,10 +19,12 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldFactory;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.FieldUtil;
@@ -174,10 +176,18 @@ public abstract class BaseRecord {
 	
 	@JsonIgnore
 	public boolean inherits(String name) {
-		boolean outBool = false;
 		ModelSchema mod = RecordFactory.getSchema(model);
+		boolean outBool = false;
+		if(name.equals(model)) {
+			return true;
+		}
 		if(mod != null) {
-			outBool = mod.getImplements().contains(name);
+			if(IOSystem.isOpen() && !this.model.equals(ModelNames.MODEL_MODEL)) {
+				outBool = RecordUtil.inherits(mod, name);
+			}
+			else {
+				outBool = mod.getImplements().contains(name);
+			}
 		}
 		return outBool;
 	}
