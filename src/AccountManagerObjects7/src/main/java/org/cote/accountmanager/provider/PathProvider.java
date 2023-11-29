@@ -166,7 +166,9 @@ public class PathProvider implements IProvider {
 			//logger.warn("Empty path value");
 			logger.debug(model.toString());
 		}
-		// logger.info("Apply path to " + model.getModel() + " " + lfield.getName() + " == " + path);
+		if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
+			logger.info("Apply path to " + model.getModel() + " " + lfield.getName() + " == " + path);
+		}
 		model.set(lfield.getName(), path);
 	}
 	
