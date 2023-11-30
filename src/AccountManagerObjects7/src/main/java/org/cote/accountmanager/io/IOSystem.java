@@ -42,7 +42,7 @@ public class IOSystem {
 
 
 
-	public static IOContext open(RecordIO ioType) {
+	public static IOContext open(RecordIO ioType) throws SystemException {
 		return open(ioType, null);
 	}
 
@@ -61,7 +61,7 @@ public class IOSystem {
 		}		
 	}
 
-	public static IOContext open(RecordIO ioType, IOProperties properties) {
+	public static IOContext open(RecordIO ioType, IOProperties properties) throws SystemException {
 		
 		open = false;
 		
@@ -80,6 +80,7 @@ public class IOSystem {
 		ModelNames.loadModels();
 		
 		if(properties.isReset()) {
+			cleanupDirectory("/.queue/");
 			cleanupDirectory("/.jks/");
 			cleanupDirectory("/.streams/");
 			cleanupDirectory("/.vault/");
@@ -98,6 +99,9 @@ public class IOSystem {
 				return null;
 			}
 			dbUtil = DBUtil.getInstance(properties);
+			if(!dbUtil.testConnection()) {
+				throw new SystemException("Failed to establish database connection");
+			}
 			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset()) {
 				logger.info("Scanning model schemas");
 				checkPersistedSchema = true;

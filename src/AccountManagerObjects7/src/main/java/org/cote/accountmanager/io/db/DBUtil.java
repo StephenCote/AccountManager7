@@ -676,6 +676,17 @@ public class DBUtil {
 		
 	}
 	
+	public boolean testConnection() {
+		boolean tested = false;
+		try (Connection con = dataSource.getConnection();){
+			tested = true;
+		}
+		catch (SQLException e) {
+			logger.error(e);
+		}
+		return tested;
+	}
+	
 	public boolean haveTable(String modelName) {
 		return haveTable(null, modelName);
 	}
