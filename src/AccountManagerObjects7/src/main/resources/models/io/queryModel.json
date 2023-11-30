@@ -91,7 +91,7 @@
 		"name": "fields",
 		"type": "list",
 		"baseType": "model",
-		"baseModel": "queryField"
+		"baseModel": "io.queryField"
 	},
 	{
 		"name": "queries",
