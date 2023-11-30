@@ -1,6 +1,7 @@
 package org.cote.accountmanager.io;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -150,8 +151,8 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields);
 
 					if(frec != null) {
-						//logger.info("Populate: " + frec.getModel() + " " + frec.getFields().size());
 						frec.getFields().forEach(f -> {
+							FieldSchema fs = ms.getFieldSchema(f.getName());
 							try {
 								if(
 									
@@ -162,7 +163,12 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 									(f.getValueType() == FieldEnumType.ENUM && "UNKNOWN".equals(rec.get(f.getName())))
 									
 								){
-									rec.set(f.getName(), frec.get(f.getName()));
+									if(fs.getType().toUpperCase().equals(FieldEnumType.FLEX.toString())) {
+										rec.setFlex(f.getName(), frec.get(f.getName()));
+									}
+									else {
+										rec.set(f.getName(), frec.get(f.getName()));
+									}
 									if(!populatedFields.contains(f.getName())) {
 										populatedFields.add(f.getName());
 									}
@@ -172,7 +178,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 								}
 
 								if((f.getValueType() == FieldEnumType.MODEL || f.getValueType() == FieldEnumType.LIST) && foreignDepth > 0) {
-									FieldSchema fs = ms.getFieldSchema(f.getName());
+									
 									
 									if(f.getValueType() == FieldEnumType.MODEL) {
 										populate(rec.get(f.getName()), foreignDepth - 1);
