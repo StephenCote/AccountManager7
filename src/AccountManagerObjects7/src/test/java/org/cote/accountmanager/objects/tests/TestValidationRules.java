@@ -45,6 +45,7 @@ public class TestValidationRules extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Validation Rules");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
 		try {
 			BaseRecord parentDir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Parent", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 			BaseRecord childDir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Parent/Child", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
@@ -55,9 +56,12 @@ public class TestValidationRules extends BaseTest {
 			//ModelSchema schema = RecordFactory.getSchema(ModelNames.MODEL_GROUP);
 			// logger.info(Strings.join(schema.getImplements(), ','));
 
+			logger.info("Update grand dir");
 			ioContext.getAccessPoint().update(testUser1, grandDir);
 			
 			parentDir.set(FieldNames.FIELD_PARENT_ID, grandDir.get(FieldNames.FIELD_ID));
+			
+			logger.info("Validate hierarchy");
 			logger.info("In parent: " + HierarchyValidator.checkHierarchy(parentDir, FieldNames.FIELD_PARENT_ID));
 			
 		}
@@ -67,7 +71,6 @@ public class TestValidationRules extends BaseTest {
 		
 	}
 
-	
 	@Test
 	public void TestFieldValidation() {
 		logger.info("Testing field validation.  Validation errors in the log are expected in this test.");
@@ -112,7 +115,7 @@ public class TestValidationRules extends BaseTest {
 		BaseRecord admin = testOrgContext.getAdminUser();
 		BaseRecord dir = ioContext.getPathUtil().makePath(admin, ModelNames.MODEL_GROUP, "/Validation Rules", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		assertNotNull("Directory is null", dir);
-		
+
 		if(ioContext.getAuthorizationUtil().canRead(admin, ops, dir).getType() != PolicyResponseEnumType.PERMIT) {
 			BaseRecord usersRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 			BaseRecord rperm1 = pu.findPath(admin, ModelNames.MODEL_PERMISSION, "/Read", "DATA", testOrgContext.getOrganizationId());
@@ -182,9 +185,11 @@ public class TestValidationRules extends BaseTest {
 	
 	private void applyGroupOwnership(BaseRecord owner, BaseRecord dir, BaseRecord obj) {
 		try {
+			// ioContext.getRecordUtil().applyNameGroupOwnership(owner, obj, testDataPath, organizationPath, 0);
 			ioContext.getRecordUtil().applyOwnership(owner, obj, owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 			obj.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			obj.set(FieldNames.FIELD_GROUP_PATH, dir.get(FieldNames.FIELD_PATH));
+			logger.info("Path: " + dir.get(FieldNames.FIELD_PATH));
 			ModelSchema schema = RecordFactory.getSchema(obj.getModel());
 			for(FieldType f : obj.getFields()) {
 				FieldSchema fs = schema.getFieldSchema(f.getName());

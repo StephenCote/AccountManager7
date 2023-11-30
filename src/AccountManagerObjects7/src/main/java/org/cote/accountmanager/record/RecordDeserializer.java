@@ -37,7 +37,6 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
@@ -188,7 +187,6 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 					logger.error("Loose field " + fname + " could not be found");
 				}
 				else if(value != null) {
-
 
             		try {
             			if(possibleForeign && lft.getType().equals(ModelNames.MODEL_MODEL) && lft.getBaseModel() != null && lft.getBaseModel().equals(ModelNames.MODEL_FLEX) && lft.getForeignType() != null) {

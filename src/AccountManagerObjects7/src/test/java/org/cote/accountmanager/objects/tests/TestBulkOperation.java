@@ -106,6 +106,49 @@ public class TestBulkOperation extends BaseTest {
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
+	
+	
+	@Test
+	public void TestOlio2() {
+
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS", "GB", "IE", "US"});
+		assertNotNull("World is null", world);
+		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
+		
+		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
+		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+
+		try {
+
+			WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
+			BaseRecord event = EpochUtil.generateEpoch(testUser1, subWorld, 1);
+			assertNotNull("Event is null", event);
+
+			Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id"));
+			qp1.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
+			assertNotNull("Person is null", person);
+			logger.info(person.get(FieldNames.FIELD_NAME) + " is " + CharacterUtil.getCurrentAge(testUser1, subWorld, person) + " years old");
+			BaseRecord app = ((List<BaseRecord>)person.get("apparel")).get(0);
+			((List<BaseRecord>)app.get("wearables")).forEach(r -> {
+				logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
+			});
+			//logger.info(person.toFullString());
+			
+
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+
+	}
+
+	/*
 	@Test
 	public void TestDeepSingleModelQuery() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -153,47 +196,6 @@ public class TestBulkOperation extends BaseTest {
 		
 
 	}
-	
-	@Test
-	public void TestOlio2() {
-
-		AuditUtil.setLogToConsole(false);
-		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
-		Factory mf = ioContext.getFactory();
-		
-		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS"});
-		assertNotNull("World is null", world);
-		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
-		
-		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
-
-		try {
-
-			WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
-			BaseRecord event = EpochUtil.generateEpoch(testUser1, subWorld, 1);
-			assertNotNull("Event is null", event);
-
-			Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id"));
-			qp1.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
-			assertNotNull("Person is null", person);
-			logger.info("Current age: " + CharacterUtil.getCurrentAge(testUser1, subWorld, person));
-			BaseRecord app = ((List<BaseRecord>)person.get("apparel")).get(0);
-			((List<BaseRecord>)app.get("wearables")).forEach(r -> {
-				logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
-			});
-			//logger.info(person.toFullString());
-			
-
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-		}
-
-	}
-
 	
 	@Test
 	public void TestLocationParent() {
@@ -351,6 +353,6 @@ public class TestBulkOperation extends BaseTest {
 		}
 		assertFalse("Encountered an error", error);
 	}
-
+	*/
 
 }

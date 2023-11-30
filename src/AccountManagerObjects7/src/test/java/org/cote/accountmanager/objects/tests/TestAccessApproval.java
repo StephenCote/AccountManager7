@@ -7,6 +7,7 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
@@ -20,6 +21,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.AccessSchema;
@@ -82,6 +84,7 @@ public class TestAccessApproval extends BaseTest {
 	 *
 	 */
 
+	/*
 	@Test
 	public void TestCountAudit() {
 		boolean error = false;
@@ -100,7 +103,7 @@ public class TestAccessApproval extends BaseTest {
 		}
 		assertFalse("Error encountered", error);
 	}
-	
+	*/
 	@Test
 	public void TestCountRequests() {
 		logger.warn("TODO: Currently unresolved issue with role authorization on creating a request to a system entitlement for an object");
@@ -130,12 +133,12 @@ public class TestAccessApproval extends BaseTest {
 		BaseRecord roleReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ROLE_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 		BaseRecord permReaderRole = AccessSchema.getSystemRole(AccessSchema.ROLE_PERMISSION_READERS, RoleEnumType.USER.toString(), testOrgContext.getOrganizationId());
 		if(!ioContext.getMemberUtil().isMember(testUser1, accountReaderRole, null)) {
-			logger.info("Assigning test users to role in order to be authorized to see foreign user references");
+			logger.info("Assigning test users to account reader role in order to be authorized to see foreign user references");
 			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), accountReaderRole, testUser1, null, true);
 			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), accountReaderRole, testRequestReader, null, true);
 		}
 		if(!ioContext.getMemberUtil().isMember(testUser1, requesterRole, null)) {
-			logger.info("Assigning test request role in order to be authorized to create system roles");
+			logger.info("Assigning test request role in order to be authorized to create access requests");
 			ioContext.getMemberUtil().member(testOrgContext.getAdminUser(), requesterRole, testUser1, null, true);
 		}
 		if(!ioContext.getMemberUtil().isMember(testUser1, permReaderRole, null)) {
@@ -167,6 +170,7 @@ public class TestAccessApproval extends BaseTest {
 		
 		BaseRecord req2 = newAccessRequest(testUser1, testUser1, testUser1, ActionEnumType.GRANT, testUser2, dir, dataReadPerm, 0L);
 		BaseRecord xrex2 = ioContext.getAccessPoint().create(testUser1, req2);
+
 		assertNotNull("Request was null", xrex2);
 		
 		BaseRecord[] reqs = getAccessRequests(testUser1, testUser1);

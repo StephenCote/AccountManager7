@@ -224,12 +224,7 @@ public class TestQuery extends BaseTest {
 			plex.field(FieldNames.FIELD_GROUP_ID, ComparatorEnumType.EQUALS, data1.get(FieldNames.FIELD_GROUP_ID), plexf1);
 			plex.field(FieldNames.FIELD_OBJECT_ID, ComparatorEnumType.EQUALS, data1.get(FieldNames.FIELD_OBJECT_ID), plexf2);
 			
-			List<BaseRecord> fields = plex.get(FieldNames.FIELD_FIELDS);
-			List<BaseRecord> fields2 = fields.get(0).get(FieldNames.FIELD_FIELDS);
-			
 			String ser3 = JSONUtil.exportObject(plex, RecordSerializerConfig.getUnfilteredModule());
-			logger.info("Serial 3: " + ser3);
-			
 			BaseRecord q30 = JSONUtil.importObject(ser3,  LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 			Query q3 = new Query(q30);
 			assertNotNull("Imported query was null", q3);
@@ -237,11 +232,7 @@ public class TestQuery extends BaseTest {
 			List<BaseRecord> queries2 = q3.get(FieldNames.FIELD_FIELDS);
 			logger.info("Query size: " + queries20.size() + "::" + queries2.size());
 			String ser4 = JSONUtil.exportObject(q3, RecordSerializerConfig.getUnfilteredModule());
-			logger.info("Serial 4: " + ser4);
-			if(!ser3.equals(ser4)) {
-				logger.error("TODO: Fix deserialization parity issue");
-			}
-			///assertTrue("Expected serial outputs to match", ser3.equals(ser4));
+			assertTrue("Expected serial outputs to match", ser3.equals(ser4));
 			// logger.info(q3.key());
 		
 		}
@@ -264,9 +255,6 @@ public class TestQuery extends BaseTest {
 		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SIZE, FieldNames.FIELD_CONTENT_TYPE});
 		q.field(FieldNames.FIELD_NAME, ComparatorEnumType.EQUALS, testDataName);
 		q.field(FieldNames.FIELD_GROUP_ID, ComparatorEnumType.EQUALS, data1.get(FieldNames.FIELD_GROUP_ID));
-		
-		//logger.info(JSONUtil.exportObject(q, RecordSerializerConfig.getUnfilteredModule()));
-		//logger.info("Is query: " + q.inherits(ModelNames.MODEL_QUERY));
 
 		QueryResult res = null;
 		try {
@@ -303,10 +291,8 @@ public class TestQuery extends BaseTest {
 		try {
 			res = ioContext.getSearch().find(q);
 			assertNotNull("Expected a valid response object", res);
-			// logger.info(res.toFullString());
 			assertTrue("Expected success", res.getResponse() == OperationResponseEnumType.SUCCEEDED);
 			assertTrue("Expected ten results, not " + res.getCount(), res.getCount() == 10);
-			// logger.info(JSONUtil.exportObject(res, RecordSerializerConfig.getUnfilteredModule()));
 		} catch (Exception e) {
 			logger.error(e);
 			
@@ -324,7 +310,6 @@ public class TestQuery extends BaseTest {
 		BaseRecord data1 = this.getCreateData(testUser1, testDataName, "text/plain", "Demo text 1".getBytes(), testPath,  orgContext.getOrganizationId());
 		BaseRecord group1 = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, testPath, "DATA", orgContext.getOrganizationId());
 		BaseRecord readDataPer = ioContext.getPathUtil().findPath(orgContext.getAdminUser(), ModelNames.MODEL_PERMISSION, "/Read", "DATA", orgContext.getOrganizationId());
-		//logger.info("Permission: " +  readDataPer);
 		
 		ioContext.getMemberUtil().member(testUser1, data1, testUser2, readDataPer, false);
 		boolean setMember = ioContext.getMemberUtil().member(testUser1, data1, testUser2, readDataPer, true);
@@ -337,11 +322,9 @@ public class TestQuery extends BaseTest {
 		boolean error = false;
 		try {
 			PolicyRequestType preq = mf.newInstance(ModelNames.MODEL_POLICY_REQUEST, testUser1, null, null, rec, group1).toConcrete(); 
-					//getPolicyRequest(rec, testUser1, group1);
 			prr = pe.evaluatePolicyRequest(preq, rec).toConcrete();
 			assertTrue("Expected the owner to be permitted", prr.getType() == PolicyResponseEnumType.PERMIT);
 			PolicyRequestType preq2 = mf.newInstance(ModelNames.MODEL_POLICY_REQUEST, testUser2, null, null, rec, group1).toConcrete(); 
-					//getPolicyRequest(rec, testUser2, group1);
 			prr2 = pe.evaluatePolicyRequest(preq2, rec).toConcrete();
 			assertTrue("Expected someone other than the owner to be denied (lacking any other authorization check)", prr2.getType() == PolicyResponseEnumType.DENY);
 		} catch (FactoryException | FieldException | ModelNotFoundException | ValueException | ScriptException | IndexException | ReaderException | ModelException e) {
@@ -350,8 +333,6 @@ public class TestQuery extends BaseTest {
 			
 		}
 		assertFalse("Error encountered", error);
-		logger.info(JSONUtil.exportObject(prr, RecordSerializerConfig.getUnfilteredModule()));
-		logger.info(JSONUtil.exportObject(prr2, RecordSerializerConfig.getUnfilteredModule()));
 		assertTrue("Expected a permit response", prr.getType() == PolicyResponseEnumType.PERMIT);
 
 	}

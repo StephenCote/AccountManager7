@@ -106,7 +106,7 @@ public class GeoParser {
 			count += mcount;
 			
 			for(String iso : isoCodes) {
-				mcount = loadFeatureInfo(user, groupPath, basePath, iso, 0, false);
+				mcount = loadFeatureInfo(user, groupPath, basePath, iso, 0, resetCountryInfo);
 				if(mcount == 0) {
 					logger.error("Failed to load feature info for " + iso);
 					return 0;

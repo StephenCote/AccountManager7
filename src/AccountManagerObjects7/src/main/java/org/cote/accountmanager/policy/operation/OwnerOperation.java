@@ -1,7 +1,6 @@
+package org.cote.accountmanager.policy.operation;
 
-	package org.cote.accountmanager.policy.operation;
-
-	import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
@@ -40,13 +39,6 @@ import org.cote.accountmanager.util.RecordUtil;
 			String surn = sourceFact.get(FieldNames.FIELD_SOURCE_URN);
 			String stype = sourceFact.get(FieldNames.FIELD_MODEL_TYPE);
 			String sdat = sourceFact.get(FieldNames.FIELD_FACT_DATA);
-			
-			/*
-			if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
-				logger.info(sourceFact.toFullString());
-				logger.info(referenceFact.toFullString());
-			}
-			*/
 			
 			if(stype == null || !ModelNames.MODEL_USER.equals(stype)) {
 				logger.error("Source type must refer to a user model: " + stype + " != " + ModelNames.MODEL_USER);
@@ -99,9 +91,6 @@ import org.cote.accountmanager.util.RecordUtil;
 
 			}
 			if(srec != null) {
-				if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
-					logger.info(srec.toFullString());
-				}
 				ownerId = srec.get(FieldNames.FIELD_ID);
 			}
 			
@@ -121,18 +110,11 @@ import org.cote.accountmanager.util.RecordUtil;
 					q.setRequest(flds);
 					q.set(FieldNames.FIELD_INSPECT, true);
 					
-					if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
-						logger.info(q.toFullString());
-					}
-					
 					BaseRecord[] recs = search.find(q).getResults();
 					if(recs.length > 0) {
 						mrec = recs[0];
 						if(reader.getRecordIo().equals(RecordIO.FILE) && ((boolean)mrec.get(FieldNames.FIELD_POPULATED)) == false) {
 							reader.populate(mrec);
-						}
-						if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
-							logger.info(mrec.toFullString());
 						}
 					}
 					else {

@@ -149,8 +149,6 @@ public class TokenService {
 				tokenType.set(FieldNames.FIELD_NAME, referenceName);
 				tokenType.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 				tokenType.set(FieldNames.FIELD_DATA, CryptoFactory.getInstance().serialize(bean, false, false, true, true, true).getBytes());
-
-				
 				
 				if(!writer.write(tokenType)){
 					logger.error("Failed to persist tokens");
