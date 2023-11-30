@@ -84,7 +84,11 @@ public class BaseTest {
 	protected void resetIO(RecordIO ioType, IOProperties properties) {
 		logger.info("Reset IO");
 		clearIO();
-		ioContext = IOSystem.open(ioType, properties);
+		try {
+			ioContext = IOSystem.open(ioType, properties);
+		} catch (SystemException e) {
+			logger.error(e);
+		}
 		// ioContext = IOSystem.open(RecordIO.FILE, storeName, null);
 		OrganizationContext octx = ioContext.getOrganizationContext(organizationPath, OrganizationEnumType.DEVELOPMENT);
 		assertNotNull("Context was null", octx);

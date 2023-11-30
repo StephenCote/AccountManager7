@@ -37,6 +37,7 @@ import javax.ws.rs.core.Context;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
@@ -151,74 +152,78 @@ public class RestServiceConfig extends ResourceConfig{
 			IOProperties props = getDBProperties(null, null, null, dsName);
 			props.setSchemaCheck(chkSchema);
 			//IOContext ioContext = IOSystem.open(RecordIO.FILE, null, null);
-			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
-			
-			for(String org : DEFAULT_ORGANIZATIONS) {
-				OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
-				if(!octx.isInitialized()) {
-					logger.error("**** Organizations are not configured.  Run /rest/setup");
-					break;
-					/*
-					logger.info("Creating organization " + org);
-					try {
-						octx.createOrganization();
-					} catch (NullPointerException | SystemException e) {
-						logger.error(e);
-						e.printStackTrace();
-					}
-					*/
-				}
-				else {
-					logger.info("Working with existing organization " + org);
-				}
-			}
-			
-			int jobPeriod = 10000;
-			String jobPeriodStr = context.getInitParameter("maintenance.interval");
-			if(jobPeriodStr != null) jobPeriod = Integer.parseInt(jobPeriodStr);
-			if(threads != null){
-				String[] jobs = threads.split(",");
-				for(int i = 0; i < jobs.length;i++){
-					try {
-						logger.info("Starting " + jobs[i]);
-						Class<?> cls = Class.forName(jobs[i]);
-						Threaded f = (Threaded)cls.getDeclaredConstructor().newInstance();
-						f.setThreadDelay(jobPeriod);
-						maintenanceThreads.add(f);
-					} catch (InvocationTargetException | ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | NoSuchMethodException | SecurityException  e) {
-						logger.error( e);
-					}
-					
-				}
-			}
-
-			String roleAuth = context.getInitParameter("amauthrole");
-			if(roleAuth != null && roleAuth.length() > 0){
-				AM7LoginModule.setAuthenticatedRole(roleAuth);
-			}
-			
-			String roleMapPath = context.getInitParameter("amrolemap");
-			InputStream resourceContent = null;
-			Map<String,String> roleMap = new HashMap<>();
 			try {
-				resourceContent = context.getResourceAsStream(roleMapPath);
-				roleMap = JSONUtil.getMap(StreamUtil.getStreamBytes(resourceContent), String.class, String.class);
-			} catch (IOException e) {
+				IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 				
-				logger.error(e);
-				e.printStackTrace();
-			}
-			finally{
-				if(resourceContent != null)
-					try {
-						resourceContent.close();
-					} catch (IOException e) {
-						
-						logger.error(e);
+				for(String org : DEFAULT_ORGANIZATIONS) {
+					OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
+					if(!octx.isInitialized()) {
+						logger.error("**** Organizations are not configured.  Run /rest/setup");
+						break;
+						/*
+						logger.info("Creating organization " + org);
+						try {
+							octx.createOrganization();
+						} catch (NullPointerException | SystemException e) {
+							logger.error(e);
+							e.printStackTrace();
+						}
+						*/
 					}
+					else {
+						logger.info("Working with existing organization " + org);
+					}
+				}
+				
+				int jobPeriod = 10000;
+				String jobPeriodStr = context.getInitParameter("maintenance.interval");
+				if(jobPeriodStr != null) jobPeriod = Integer.parseInt(jobPeriodStr);
+				if(threads != null){
+					String[] jobs = threads.split(",");
+					for(int i = 0; i < jobs.length;i++){
+						try {
+							logger.info("Starting " + jobs[i]);
+							Class<?> cls = Class.forName(jobs[i]);
+							Threaded f = (Threaded)cls.getDeclaredConstructor().newInstance();
+							f.setThreadDelay(jobPeriod);
+							maintenanceThreads.add(f);
+						} catch (InvocationTargetException | ClassNotFoundException | InstantiationException | IllegalAccessException | IllegalArgumentException | NoSuchMethodException | SecurityException  e) {
+							logger.error( e);
+						}
+						
+					}
+				}
+	
+				String roleAuth = context.getInitParameter("amauthrole");
+				if(roleAuth != null && roleAuth.length() > 0){
+					AM7LoginModule.setAuthenticatedRole(roleAuth);
+				}
+				
+				String roleMapPath = context.getInitParameter("amrolemap");
+				InputStream resourceContent = null;
+				Map<String,String> roleMap = new HashMap<>();
+				try {
+					resourceContent = context.getResourceAsStream(roleMapPath);
+					roleMap = JSONUtil.getMap(StreamUtil.getStreamBytes(resourceContent), String.class, String.class);
+				} catch (IOException e) {
+					
+					logger.error(e);
+					e.printStackTrace();
+				}
+				finally{
+					if(resourceContent != null)
+						try {
+							resourceContent.close();
+						} catch (IOException e) {
+							
+							logger.error(e);
+						}
+				}
+				AM7LoginModule.setRoleMap(roleMap);
 			}
-			AM7LoginModule.setRoleMap(roleMap);
-
+			catch(SystemException e) {
+				logger.error(e);
+			}
 		}
     }
 }
