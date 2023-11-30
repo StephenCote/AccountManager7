@@ -15,6 +15,7 @@
 		"foreignType": "entitlementType",
 		"access": {
 			"roles": {
+				"create": ["AccountUsersReaders", "RequestReaders", "RoleReaders", "PermissionReaders"],
 				"read": ["AccountUsersReaders", "RequestReaders", "RoleReaders", "PermissionReaders"]
 			}
 		}

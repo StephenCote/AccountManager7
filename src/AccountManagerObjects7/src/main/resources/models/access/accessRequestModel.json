@@ -28,7 +28,7 @@
 		"maxLength": 32,
 		"access": {
 			"roles": {
-				"update": ["/Approvers", "RequestUpdaters"]
+				"update": ["Approvers", "RequestUpdaters"]
 			}
 		}
 	}
