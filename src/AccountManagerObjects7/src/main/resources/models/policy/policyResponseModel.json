@@ -8,6 +8,11 @@
 			"maxLength": 255
 		},
 		{
+			"name": "ruleChain",
+			"baseType": "string",
+			"type": "list"
+		},
+		{
 			"name": "patternChain",
 			"baseType": "string",
 			"type": "list"

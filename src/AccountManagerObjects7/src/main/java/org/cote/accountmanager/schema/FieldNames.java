@@ -82,6 +82,7 @@ public class FieldNames {
 		// public static final String FIELD_OPERATION_CLASS = "operationClass";
 		public static final String FIELD_OPERATION = "operation";
 		public static final String FIELD_PATTERN_CHAIN = "patternChain";
+		public static final String FIELD_RULE_CHAIN = "ruleChain";
 		
 		public static final String FIELD_SUBJECT = "subject";
 		public static final String FIELD_SUBJECT_TYPE = "subjectType";
