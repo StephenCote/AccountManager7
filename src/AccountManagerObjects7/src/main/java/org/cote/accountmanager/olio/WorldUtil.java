@@ -64,6 +64,18 @@ public class WorldUtil {
 				logger.error(e);
 			}
 		}
+		else {
+			List<String> feats = rec.get("features");
+			if(feats.size() != features.length) {
+				try {
+					rec.set("features", Arrays.asList(features));
+					IOSystem.getActiveContext().getAccessPoint().update(user, rec);
+					
+				} catch (FieldException | ValueException | ModelNotFoundException e) {
+					logger.error(e);
+				}
+			}
+		}
 		
 		return rec;
 	}
