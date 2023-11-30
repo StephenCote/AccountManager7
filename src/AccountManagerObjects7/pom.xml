@@ -66,27 +66,23 @@
 					</includes>
 					<excludes>
 						<!--
-						
 						<exclude>**/TestBulkOperation.java</exclude>
 						-->
-						
+						<!-- Repeatable Set -->
 
 						<exclude>**/TestModelLayout.java</exclude>
 						<exclude>**/TestJournal.java</exclude>
-						
 						<exclude>**/TestVaultFields.java</exclude>
 						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestVault.java</exclude>
-						<exclude>**/TestValidationRules.java</exclude>							
 						<exclude>**/TestFieldLock.java</exclude>
 						<exclude>**/TestDBPerformance.java</exclude>
 						<exclude>**/TestFieldRevisions.java</exclude>
 						<exclude>**/TestMembership.java</exclude>
-						
+						<exclude>**/TestToken.java</exclude>
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestStartup.java</exclude>
-						<exclude>**/TestToken.java</exclude>
 						<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
 						<exclude>**/TestProfile.java</exclude>
 						<exclude>**/TestObjectPolicy.java</exclude>
@@ -97,16 +93,14 @@
 						<exclude>**/TestAM6Model.java</exclude>
 						<exclude>**/TestValueType.java</exclude>
 						<exclude>**/TestLooseField.java</exclude>
-						
 						<exclude>**/TestFlexValueType.java</exclude>
 						<exclude>**/TestCryptography.java</exclude>
+						<exclude>**/TestAccessApproval.java</exclude>
 						<exclude>**/TestQuery.java</exclude>
-						
-						<!-- Repeatable Set -->
-						
+						<exclude>**/TestValidationRules.java</exclude>
 						
 						<!-- Tests with unresolved errors -->
-						<exclude>**/TestAccessApproval.java</exclude>
+						
 						
 
 						<!-- Situational Tests -->
