@@ -165,17 +165,29 @@ public class PolicyEvaluator {
 		List<BaseRecord> rules = pol.get(FieldNames.FIELD_RULES);
 		int pass = 0;
 		int size = rules.size();
-		logger.debug("Evaluating Policy " + pol.get(FieldNames.FIELD_URN) + " " + pol.get(FieldNames.FIELD_CONDITION));
+		if(trace) {
+			logger.info("***** Evaluating Policy " + pol.get(FieldNames.FIELD_URN) + " " + pol.get(FieldNames.FIELD_CONDITION));
+			// logger.info(IOSystem.getActiveContext().getPolicyUtil().printPolicy(pol.toConcrete()));
+		}
 		ConditionEnumType cond = ConditionEnumType.valueOf(pol.get(FieldNames.FIELD_CONDITION));
 		for(BaseRecord rule : rules) {
 			reader.populate(rule);
 			if(evaluateRule(rule, facts,prt, prr)){
 				pass++;
 				if(cond == ConditionEnumType.ANY){
-					logger.debug("Breaking on Policy Condition " + cond);
+					if(trace) {
+						logger.info("***** Breaking on Policy Condition " + cond);
+					}
 					break;
 				}
 			}
+			else if(cond == ConditionEnumType.ALL) {
+				if(trace) {
+					logger.info("***** Policy ruled failed evaluation");
+				}
+				break;
+			}
+			
 		}
 		boolean success = (
 			(cond == ConditionEnumType.ANY && pass > 0)
@@ -184,6 +196,10 @@ public class PolicyEvaluator {
 			||
 			(cond == ConditionEnumType.NONE && pass == 0)
 		);
+		
+		if(trace) {
+			logger.info("**** Evaluation Results for " + pol.get(FieldNames.FIELD_URN) + ": " + cond.toString() + " Pass = " + pass + " Size = " + size + " = " + success);
+		}
 		
 		if(success){
 			int sumScore = (int)prr.get(FieldNames.FIELD_SCORE) + (int)pol.get(FieldNames.FIELD_SCORE);
@@ -197,7 +213,9 @@ public class PolicyEvaluator {
 	private boolean evaluateRule(BaseRecord rule, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws FieldException, ValueException, ModelNotFoundException, ScriptException, IndexException, ReaderException, ModelException{
 		ConditionEnumType rcond = ConditionEnumType.valueOf(rule.get(FieldNames.FIELD_CONDITION));
 		RuleEnumType rtype = RuleEnumType.valueOf(rule.get(FieldNames.FIELD_TYPE));
-		logger.debug("Evaluating Rule " + rule.get(FieldNames.FIELD_URN) + " " + rtype + " " + rcond.toString());
+		if(trace) {
+			logger.info("***** Evaluating Rule " + rule.get(FieldNames.FIELD_URN) + " " + rtype + " " + rcond.toString());
+		}
 		int pass = 0;
 
 		List<BaseRecord> patterns = rule.get(FieldNames.FIELD_PATTERNS);
@@ -210,12 +228,16 @@ public class PolicyEvaluator {
 			if(bRule){
 				pass++;
 				if(rcond == ConditionEnumType.ANY){
-					logger.debug("Breaking on " + crule.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond.toString());
+					if(trace) {
+						logger.info("***** Breaking on " + crule.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond.toString());
+					}
 					break;
 				}
 			}
 			else if(rcond == ConditionEnumType.ALL && !bRule){
-				logger.debug("Breaking on " + crule.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond.toString() + " failure");
+				if(trace) {
+					logger.info("***** Breaking on " + crule.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond.toString() + " failure");
+				}
 				break;
 				
 			
@@ -223,24 +245,30 @@ public class PolicyEvaluator {
 		}
 		for(BaseRecord pat : patterns) {
 			reader.populate(pat);
-			boolean bPat = evaluatePattern(pat, facts, prt, prr);
+			boolean bPat = evaluatePattern(rule, pat, facts, prt, prr);
 			
 			if(
 				bPat
 			){
 				pass++;
 				if(rcond == ConditionEnumType.ANY){
-					logger.debug("Breaking on " + pat.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond);
+					if(trace) {
+						logger.info("***** Breaking on " + pat.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond);
+					}
 					break;
 				}
 			}
 			else if(rcond == ConditionEnumType.ALL && !bPat){
-				logger.debug("Breaking on " + pat.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond + " failure");
+				if(trace) {
+					logger.info("***** Breaking on " + pat.get(FieldNames.FIELD_URN) + " with rule " + rtype + " " + rcond + " failure");
+				}
 				break;
 				
 			}
 		}
-		logger.debug("Rule Result: " + rcond.toString() + " " + pass + ":" + size);
+		if(trace) {
+			logger.info("***** Rule Result: " + rcond.toString() + " " + pass + ":" + size);
+		}
 		boolean success = (
 			(rcond == ConditionEnumType.ANY && pass > 0)
 			||
@@ -250,22 +278,38 @@ public class PolicyEvaluator {
 		);
 		
 		if(rtype == RuleEnumType.DENY){
-			logger.debug("Inverting rule success for DENY condition");
+			if(trace) {
+				logger.info("***** Inverting rule success for DENY condition");
+			}				
 			success = (!success);
 		}
-
+		
 		if(success){
 			int rscore = (int)prr.get(FieldNames.FIELD_SCORE) + (int)rule.get(FieldNames.FIELD_SCORE);
 			prr.set(FieldNames.FIELD_SCORE, rscore);
 		}
+
+		List<String> chain = prr.get(FieldNames.FIELD_RULE_CHAIN);
+		String rurn = rule.get(FieldNames.FIELD_URN);
+		if(rurn == null) {
+			rurn = rule.get(FieldNames.FIELD_NAME);
+		}
+		if(trace) {
+			logger.info("***** Evaluated Rule " + rule.get(FieldNames.FIELD_URN) + " " + rtype.toString() + " = " + success);
+			chain.add(rurn + " (" + success + ")");
+		}
+		else {
+			chain.add(rurn);
+		}
+		
 		return success;
 	}
 		
-	private boolean evaluatePattern(BaseRecord pattern, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws ValueException, ScriptException, IndexException, ReaderException, FieldException, ModelNotFoundException, ModelException{
+	private boolean evaluatePattern(BaseRecord rule, BaseRecord pattern, List<BaseRecord> facts, BaseRecord prt, BaseRecord prr) throws ValueException, ScriptException, IndexException, ReaderException, FieldException, ModelNotFoundException, ModelException{
 		PatternEnumType ptype = PatternEnumType.valueOf(pattern.get(FieldNames.FIELD_TYPE));
 		
 		if(trace) {
-			logger.info("Evaluating Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString());
+			logger.info("***** Evaluating Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString());
 		}
 		
 		BaseRecord fact = pattern.get(FieldNames.FIELD_FACT);
@@ -287,13 +331,6 @@ public class PolicyEvaluator {
 		FactEnumType mtype = FactEnumType.valueOf(mfact.get(FieldNames.FIELD_TYPE));
 		pfact = getFactParameter(pfact, facts);
 		reader.populate(pfact, RecordUtil.getPossibleFields(pfact.getModel(), FIELD_POPULATION));
-		
-		List<String> chain = prr.get(FieldNames.FIELD_PATTERN_CHAIN);
-		String purn = pattern.get(FieldNames.FIELD_URN);
-		if(purn == null) {
-			purn = pattern.get(FieldNames.FIELD_NAME);
-		}
-		chain.add(purn);
 		
 		if(ptype == PatternEnumType.PARAMETER){
 			opr = OperationResponseEnumType.SUCCEEDED;
@@ -332,6 +369,24 @@ public class PolicyEvaluator {
 		if(opr == OperationResponseEnumType.SUCCEEDED){
 			outBool = true;
 			prr.set(FieldNames.FIELD_SCORE, (int)prr.get(FieldNames.FIELD_SCORE) + (int)pattern.get(FieldNames.FIELD_SCORE));
+		}
+		
+		List<String> chain = prr.get(FieldNames.FIELD_PATTERN_CHAIN);
+		String rurn = rule.get(FieldNames.FIELD_URN);
+		if(rurn == null) {
+			rurn = rule.get(FieldNames.FIELD_NAME);
+		}
+		String purn = pattern.get(FieldNames.FIELD_URN);
+		if(purn == null) {
+			purn = pattern.get(FieldNames.FIELD_NAME);
+		}
+		
+		if(trace) {
+			logger.info("***** Evaluated Pattern " + pattern.get(FieldNames.FIELD_URN) + " " + ptype.toString() + " = " + outBool);
+			chain.add(rurn + "/" + purn + " (" + outBool + ")");
+		}
+		else {
+			chain.add(purn);
 		}
 
 		return outBool;
@@ -421,6 +476,9 @@ public class PolicyEvaluator {
 			BaseRecord perm = null;
 			String fdata = matchFact.get(FieldNames.FIELD_FACT_DATA);
 			if(fdata == null && mtype.equals(ModelNames.MODEL_PERMISSION)) {
+				if(trace) {
+					logger.warn("**** Overide permission");
+				}
 				perm = g;
 			}
 			else if(fdata != null) {
@@ -464,6 +522,12 @@ public class PolicyEvaluator {
 				return OperationResponseEnumType.ERROR;
 			}
 			outResponse = evaluatePermissionAuthorization(prt, prr, pattern, p, g, perm);
+			if(outResponse != OperationResponseEnumType.SUCCEEDED) {
+				if(trace) {
+					logger.error(fact.toFullString());
+					logger.error(matchFact.toFullString());
+				}
+			}
 		}
 		else if(matype == FactEnumType.ROLE && mtype.equals(ModelNames.MODEL_ROLE)){
 			outResponse = evaluateRoleAuthorization(prt, prr, pattern, p, g, g);
@@ -489,7 +553,7 @@ public class PolicyEvaluator {
 			// logger.info(src.toFullString());
 			// logger.info(permission.toFullString());
 			// logger.info(targ.toFullString());
-			logger.info("Evaluate permission authorization: Does  " +  src.get(FieldNames.FIELD_URN) + " have " + permission.get(FieldNames.FIELD_URN) + " = " + authZ);
+			logger.info("Evaluate permission authorization: Does  " +  src.get(FieldNames.FIELD_URN) + " have permission " + permission.get(FieldNames.FIELD_URN) + " for " + targ.get(FieldNames.FIELD_URN) + " = " + authZ);
 		}
 
 		if(authZ){
