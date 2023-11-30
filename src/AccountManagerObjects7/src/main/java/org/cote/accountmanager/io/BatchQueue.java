@@ -2,13 +2,17 @@ package org.cote.accountmanager.io;
 
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.thread.Threaded;
+import org.cote.accountmanager.util.FileUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class BatchQueue extends Threaded {
@@ -37,21 +41,34 @@ public class BatchQueue extends Threaded {
 	}
 
 	private void processQueue(String queueType, Map<String, List<BaseRecord>> useMap) {
-		if(IOSystem.getActiveContext() == null) {
-			logger.error("Active context has shut down.  TODO - cache pending items");
+		if(IOSystem.getActiveContext() == null && useMap.size() > 0) {
+			logger.warn("Context is not active.  Queued items will be cached.");
 		}
-		else {
-			useMap.forEach((k, v) -> {
-				if(v.size() > 0) {
-					// logger.info("Processing " + queueType + " " + k + " " + v.size() + " record(s)");
+		useMap.forEach((k, v) -> {
+			if(v.size() > 0) {
+				if(IOSystem.getActiveContext() == null) {
+					logger.error("Context is not active.  Caching " + v.size() + " " + k + " entrie(s)");
+					FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + "/.queue/" + k + "/" + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
+				}
+				else {
 					IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
 				}
-			});
-		}
+				
+				
+			}
+		});
+		
+	}
+	
+	private void scanQueue() {
+		/// TODO: Scan the queue for pending entries
 	}
 	
 	@Override
 	public void execute(){
+		
+		scanQueue();
+		
 		Map<String, List<BaseRecord>> useMap = new ConcurrentHashMap<>(createQueue);
 		createQueue.clear();
 		processQueue("create", useMap);
