@@ -14,17 +14,28 @@ import org.cote.accountmanager.schema.ModelNames;
 
 public class AttributeUtil {
 
-	public static <T> void addAttribute(BaseRecord record, String name, T val) throws ModelException, FieldException, ModelNotFoundException, ValueException {
+	public static <T> BaseRecord addAttribute(BaseRecord record, String name, T val) throws ModelException, FieldException, ModelNotFoundException, ValueException {
 		if(!record.inherits(ModelNames.MODEL_ATTRIBUTE_LIST)) {
 			throw new ModelException("Model does not inherit from attribute");
 		}
 		List<BaseRecord> attrs = record.get(FieldNames.FIELD_ATTRIBUTES);
+		BaseRecord attr = newAttribute(record, name, val);
+		attrs.add(attr);
+		return attr;
+	}
+	public static <T> BaseRecord newAttribute(BaseRecord record, String name, T val) throws ModelException, FieldException, ModelNotFoundException, ValueException {
+		if(!record.inherits(ModelNames.MODEL_ATTRIBUTE_LIST)) {
+			throw new ModelException("Model does not inherit from attribute");
+		}
 		BaseRecord attr = RecordFactory.newInstance(ModelNames.MODEL_ATTRIBUTE);
 		attr.set(FieldNames.FIELD_NAME, name);
 		attr.setFlex(FieldNames.FIELD_VALUE, val);
-		attrs.add(attr);
+		if(record.hasField(FieldNames.FIELD_ID)) {
+			attr.set(FieldNames.FIELD_REFERENCE_ID, record.get(FieldNames.FIELD_ID));
+		}
+		attr.set(FieldNames.FIELD_REFERENCE_TYPE, record.getModel());
+		return attr;
 	}
-
 	
 	public static <T> T getAttributeValue(BaseRecord record, String name) throws ModelException {
 		return getAttributeValue(record, name, null);

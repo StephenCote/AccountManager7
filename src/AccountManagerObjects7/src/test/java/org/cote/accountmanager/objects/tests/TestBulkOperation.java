@@ -40,6 +40,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
@@ -106,8 +107,54 @@ public class TestBulkOperation extends BaseTest {
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
-	
-	
+	@Test
+	public void TestLikelyBrokenParticipations() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String path = "~/Dooter Peeps - " + UUID.randomUUID().toString();
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList("path", path);
+		String name = "Person 1";
+		plist.parameter("name", name);
+		try {
+			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			BaseRecord a2 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			a2.set(FieldNames.FIELD_NAME, "Person 2");
+			
+			/// TODO: Bug when trying to cross-add relationships with auto-created participations, because the participation for the second entry refers to the first which hasn't been created yet
+			/*
+			List<BaseRecord> partners1 = a1.get("partners");
+			List<BaseRecord> partners2 = a2.get("partners");
+			partners1.add(a2);
+			partners2.add(a1);
+			*/
+			ioContext.getRecordUtil().createRecords(new BaseRecord[] {a1, a2});
+			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, null, a2);
+			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, null, a1);
+			logger.info(p1.toFullString());
+
+			ioContext.getRecordUtil().createRecords(new BaseRecord[] {p1, p2});
+			
+			
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_NAME, "Person 1");
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			//logger.info(a1.toFullString());
+			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
+			// logger.info(meta.getSql());
+			
+			BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
+			assertNotNull("Record is null", rec);
+			logger.info(rec.toFullString());
+		}
+		catch(StackOverflowError | FieldException | ValueException | ModelNotFoundException | FactoryException | ModelException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+	}
+	/*
 	@Test
 	public void TestOlio2() {
 
@@ -147,7 +194,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 
 	}
-
+	*/
 	/*
 	@Test
 	public void TestDeepSingleModelQuery() {

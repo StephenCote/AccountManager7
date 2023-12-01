@@ -5,6 +5,8 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Date;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -20,6 +22,8 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
+
+import io.jsonwebtoken.lang.Collections;
 
 public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	public static final Logger logger = LogManager.getLogger(RecordSerializer.class);
@@ -224,7 +228,19 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        			}
 		        			jgen.writeArrayFieldStart(f.getName());
 		        			for(Object o: list) {
-		        				jgen.writeObject(o);
+		        				/// TODO: Add smarter limits on preventing recursion
+		        				/// PLAN: Add an instance level tracker to only allow an object to appear once with all foreign references, and subsequently without
+		        				///
+		        				if(lft.getBaseModel() != null && (lft.getBaseModel().equals(value.getModel()) || value.inherits(lft.getBaseModel()))) {
+		        					BaseRecord o2 = (BaseRecord)o;
+		        					Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
+		        					List<String> ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
+		        					
+		        					jgen.writeObject(o2.copyRecord(ol.toArray(new String[0])));
+		        				}
+		        				else {
+		        					jgen.writeObject(o);
+		        				}
 		        			}
 		        			jgen.writeEndArray();
 		        		}
@@ -271,7 +287,18 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        				condenseDeclarations = false;
 		        				stopCondensing = true;
 		        			}
-        					jgen.writeObjectField(f.getName(), mval);
+	        				/// TODO: Add smarter limits on preventing recursion
+	        				/// PLAN: Add an instance level tracker to only allow an object to appear once with all foreign references, and subsequently without
+	        				///
+	        				if(lft.getBaseModel() != null && lft.getBaseModel().equals(value.getModel()) || value.inherits(lft.getBaseModel())) {
+	        					BaseRecord o2 = (BaseRecord)mval;
+	        					Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
+	        					List<String> ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
+	        					jgen.writeObject(o2.copyRecord(ol.toArray(new String[0])));
+	        				}
+	        				else {
+	        					jgen.writeObjectField(f.getName(), mval);
+	        				}
 	        			}
 	        		}
 	        		break;
