@@ -77,7 +77,7 @@
 		{
 			"name": "partners",
 			"baseType": "model",
-			"baseModel": "identity.person",
+			"baseModel": "$self",
 			"type": "list",
 			"foreign": true,
 			"followReference": false,
@@ -86,7 +86,7 @@
 		{
 			"name": "dependents",
 			"baseType": "model",
-			"baseModel": "identity.person",
+			"baseModel": "$self",
 			"type": "list",
 			"foreign": true,
 			"followReference": false,
