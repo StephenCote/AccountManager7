@@ -93,7 +93,7 @@ public class DBSearch extends SearchBase {
 
 		try (Connection con = reader.getDataSource().getConnection()){
 			sql = StatementUtil.getSelectTemplate(query);
-			
+
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
 			

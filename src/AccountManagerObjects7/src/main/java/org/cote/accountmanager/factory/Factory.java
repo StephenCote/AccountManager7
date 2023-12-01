@@ -304,9 +304,6 @@ public class Factory {
 		context.getMemberUtil().member(admin, admin3, admin, null, true);
 	}
 	
-	
-
-	
 	public void clearCache() {
 		factories.clear();
 		factoryInst.clear();
@@ -322,59 +319,27 @@ public class Factory {
 		}
 		return rec;
 	}
-	/*
-	public BaseRecord newInstance(String modelName, BaseRecord... arguments) throws FactoryException {
-		IFactory fact = getFactory(modelName);
-		BaseRecord rec = null;
-		if(fact != null) {
-			rec = fact.newInstance(arguments); 
-		}
-		else {
-			rec = defaultFactoryInstance(modelName);
-		}
-		List<IFactory> facts = getFactories(modelName);
-		for(int i = 1; i < facts.size(); i++) {
-			IFactory ifact = facts.get(i);
-			if(ifact != null) {
-				ifact.implement(rec, arguments);
-			}
-		}
-		
-		/// Call implementation factory implement last to allow to override inherited values (eg: expiration date adjustment defaults)
-		if(facts.size() > 0) {
-			// logger.info("Invoke primary implement");
-			if(facts.get(0) != null) {
-				facts.get(0).implement(rec,  arguments);
-			}
-		}
-		return rec;
-	}
-	
-	
-	public BaseRecord newInstance(String modelName) throws FactoryException {
-		return newInstance(modelName, null);
-	}
-	*/
+
 	public BaseRecord newInstance(String modelName) throws FactoryException {
 		return newInstance(modelName, null, (BaseRecord)null, null);
 	}
 	public BaseRecord newInstance(String modelName, BaseRecord contextUser) throws FactoryException {
 		return newInstance(modelName, contextUser, (BaseRecord)null, null);
 	}
+
 	public BaseRecord newTemplateInstance(String modelName, BaseRecord contextUser, String recordTemplate, ParameterList parameterList) throws FactoryException {
-		// logger.info("New template instance - no args");
 		return newInstance(modelName, contextUser, (recordTemplate != null ? template(modelName, recordTemplate) : null), parameterList, (BaseRecord)null);
 	}
+
 	public BaseRecord newTemplateInstance(String modelName, BaseRecord contextUser, String recordTemplate, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
-		// logger.info("New template instance - with args");
 		return newInstance(modelName, contextUser, (recordTemplate != null ? template(modelName, recordTemplate) : null), parameterList, arguments);
 	}
+	
 	public BaseRecord newInstance(String modelName, BaseRecord contextUser, BaseRecord recordTemplate, ParameterList parameterList) throws FactoryException {
-		// logger.info("New instance - no args");
 		return newInstance(modelName, contextUser, recordTemplate, parameterList, (BaseRecord)null);
 	}
+
 	public BaseRecord newInstance(String modelName, BaseRecord contextUser, BaseRecord recordTemplate, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
-		// logger.info("New Instance: " + arguments.length);
 		IFactory fact = getFactory(modelName);
 		BaseRecord rec = null;
 		if(fact != null) {
@@ -394,7 +359,6 @@ public class Factory {
 		
 		/// Call implementation factory implement last to allow to override inherited values (eg: expiration date adjustment defaults)
 		if(facts.size() > 0) {
-			//logger.info("Invoke primary implement");
 			if(facts.get(0) != null) {
 				facts.get(0).implement(contextUser, rec, parameterList, arguments);
 			}
@@ -413,15 +377,6 @@ public class Factory {
 				}
 			}
 		}
-		/*
-		try {
-			(new MemoryReader()).read(rec);
-		}
-		catch(ReaderException e) {
-			logger.error(e);
-		}
-		*/
-		
 		return rec;
 	}
 	
@@ -434,7 +389,6 @@ public class Factory {
 		return verify(contextUser, rec, parameterList, (BaseRecord)null);
 	}
 	public VerificationEnumType verify(BaseRecord contextUser, BaseRecord rec, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
-		// logger.info("New Instance: " + arguments.length);
 		IFactory fact = getFactory(rec.getModel());
 		VerificationEnumType vet = VerificationEnumType.NOT_VERIFIED;
 		if(fact != null) {
@@ -445,16 +399,10 @@ public class Factory {
 	
 	
 	public IFactory getFactory(String modelName) throws FactoryException{
-		List<IFactory> factories = new ArrayList<>();
 		ModelSchema schema = RecordFactory.getSchema(modelName);
 		if(schema == null) {
 			throw new FactoryException(String.format("Null model for %s", modelName));
 		}
-		/*
-		if(modelName.equals(ModelNames.MODEL_AUDIT)) {
-			logger.info("CHECK: " + modelName + " " + schema.getName());
-		}
-		*/
 		return getFactory(schema, "org.cote.accountmanager.factory.GenericFactory");
 	}
 	
@@ -469,7 +417,6 @@ public class Factory {
 			throw new FactoryException(String.format("Null model for %s", modelName));
 		}
 		
-		//IFactory fact = getFactory(schema);
 		factSet.add(modelName);
 		factories.add(getFactory(schema));
 		for(String s : schema.getImplements()){
@@ -480,12 +427,6 @@ public class Factory {
 			}
 		};
 		
-		//logger.info("*** " + modelName);
-		/*
-		factories.forEach(f -> {
-			logger.info("Factory: " + (f != null ? f.getSchema().getName() : "null"));
-		});
-		*/
 		factoriesMap.put(modelName, factories);
 		return factories;
 	}
@@ -499,9 +440,7 @@ public class Factory {
 				factCls = defFactCls;
 			}
 			else {
-				// 	logger.warn("Model does not define a factory");
 				return null;
-				// factCls = "org.cote.accountmanager.factory.GenericFactory";
 			}
 		}
 		
@@ -512,11 +451,6 @@ public class Factory {
 		if(!fact.getSchema().getName().equals(schema.getName())) {
 			throw new FactoryException("Incorrect factory (" + fact.getSchema().getName() + ") for " + schema.getName());
 		}
-		/*
-		schema.getImplements().forEach(l -> {
-			logger.info(l);
-		});
-		*/
 		return fact;
 
 	}
@@ -541,7 +475,6 @@ public class Factory {
 	}
 	
 	private Class<?> getFactoryClass(String className){
-		// logger.info("Pull " + className);
 		if(factories.containsKey(className)) return factories.get(className);
 		Class<?> cls = null;
 		try {
