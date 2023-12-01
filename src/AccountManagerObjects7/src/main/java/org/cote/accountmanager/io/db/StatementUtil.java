@@ -444,7 +444,6 @@ public class StatementUtil {
 			participantModel = schema.getParticipantModel();
 		}
 		
-		// logger.info(subModel + " --> " + participantModel);
 		boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
 		Query subQuery = new Query(subModel);
 		try {
@@ -459,6 +458,7 @@ public class StatementUtil {
 		String salias = getAlias(subQuery);
 		String palias = "P" + salias;
 		
+
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 
 		List<FieldSchema> msfields = msschema.getFields();
@@ -468,19 +468,40 @@ public class StatementUtil {
 		///
 		
 		if(IOSystem.isOpen()) {
-			if(limit && !model.equals(ModelNames.MODEL_MODEL_SCHEMA)) {
+			
+			if(!model.equals(ModelNames.MODEL_MODEL_SCHEMA)){
 				List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
-				msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
+				if(limit) {
+					msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
+				}
+				else if(!limit) {
+					/// Filter blobs and foreign references to models with the same base query out of the otherwise no-limit, no-depth query
+					///
+					List<String> rfields = query.get(FieldNames.FIELD_REQUEST);
+					msfields = msschema.getFields().stream().filter(f -> {
+						FieldSchema fs = msschema.getFieldSchema(f.getName());
+						return (
+							(rfields.size() == 0 || rfields.contains(f.getName()))
+							&&
+							(!fs.isForeign() || !model.equals(fs.getBaseModel()))
+							&&
+							!fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())
+							
+						);
+					}
+					).collect(Collectors.toList());
+				}
 			}
-			else if(!limit) {
-				/// Filter blob out of the no-limit, no-depth query
-				///
-				msfields = msschema.getFields().stream().filter(f -> !msschema.getFieldSchema(f.getName()).getType().toUpperCase().equals(FieldEnumType.BLOB.toString())).collect(Collectors.toList());
+			else {
+				// logger.warn("Query for " + model + " is open ended and may cause recursion");
 			}
 		}
-		//List<FieldSchema> msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
-		//logger.info("Field size: " + msfields.size());
-		//for(FieldSchema fs : msschema.getFields() ) {
+		/*
+		if(model.equals(ModelNames.MODEL_CHAR_PERSON)) {
+			logger.info(model + " -> " + subModel + " -> " + participantModel + " -> " + msfields.stream().map(f -> f.getName()).collect(Collectors.joining(", ")));
+		}
+		*/
+
 		for(FieldSchema fs : msfields ) {
 			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef) || (fs.isForeign() && !followRef)) {
 				continue;
@@ -498,11 +519,9 @@ public class StatementUtil {
 				}
 				else if(fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
 					if(util.getConnectionType() == ConnectionEnumType.H2) {
-						//cols.add("JSON_OBJECT('" + fs.getName() + "': " + salias + "." + util.getColumnName(fs.getName()) + ")");
 						cols.add(salias + "." + util.getColumnName(fs.getName()) + " format json");
 					}
 					else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-
 						cols.add(salias + "." + util.getColumnName(fs.getName()) + "::json");
 					}
 					else {
@@ -646,12 +665,11 @@ public class StatementUtil {
 		List<String> cols = new ArrayList<>();
 		
 		if(requestFields.size() == 0) {
-			for(FieldSchema fs : schema.getFields()) {
-				if(fs.isSequence() || fs.isIdentity()) {
-					requestFields.add(fs.getName());
-					break;
-				}
-			}
+			requestFields = schema.getFields().stream()
+				.filter(f -> f.isSequence() || f.isIdentity())
+				.map(f -> f.getName())
+				.collect(Collectors.toList())
+			;
 		}
 		if(requestFields.size() == 0) {
 			throw new FieldException("Could not find an identity column to count");
@@ -1196,16 +1214,13 @@ public class StatementUtil {
 		int subCount = 0;
 		Map<String, FieldType> flexCols = new HashMap<>();
 		Map<String, FieldType> modelCols = new HashMap<>();
-		
+
 		for(String col : meta.getColumns()) {
 			String colName = col;
 			FieldType f = record.getField(col);
 			FieldSchema fs = ms.getFieldSchema(col);
 			if(f == null) {
 				throw new FieldException("Field " + record.getModel() + "." + col + " not found");
-			}
-			if(fs.getName().equals("pattern")) {
-				logger.warn("***** Pattern mark");
 			}
 			switch(f.getValueType()) {
 				case ENUM:
@@ -1243,6 +1258,7 @@ public class StatementUtil {
 
 						String ser = rset.getString(colName);
 						if(ser != null) {
+
 							List<?> lst = JSONUtil.getList(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 							if(lst != null) {
 								record.set(col, lst);
@@ -1251,6 +1267,7 @@ public class StatementUtil {
 								logger.error("Null list for " + col);
 							}
 						}
+
 						subCount++;
 					}
 					else if(!fs.isForeign()) {

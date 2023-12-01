@@ -119,10 +119,16 @@ public class TestBulkOperation extends BaseTest {
 		plist.parameter("name", name);
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			a1.set("gender", "male");
 			BaseRecord a2 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a2.set(FieldNames.FIELD_NAME, "Person 2");
-			
-			/// TODO: Bug when trying to cross-add relationships with auto-created participations, because the participation for the second entry refers to the first which hasn't been created yet
+			a2.set("gender", "female");
+
+			/// BUG: When adding cross-relationships such as partnerships, the auto-created participation for one half will wind up missing the other half's identifier (in io.db) because of the auto-participation adds are currently coded within the scope of a single record.
+			/// To fix this, participations for all records would need to be pulled out separately, have the record identifiers assigned first, and then bulk add the participations
+			/// In the previous version, most model level participations were handled like this.
+			/// In the current version, the preference is to keep the participation disconnected from the model factory to avoid having to perform bulk read, update, and deletes to determine what changed on every update
+			/// In other words, don't do this except to be able to make an in-scope reference:
 			/*
 			List<BaseRecord> partners1 = a1.get("partners");
 			List<BaseRecord> partners2 = a2.get("partners");
@@ -130,22 +136,28 @@ public class TestBulkOperation extends BaseTest {
 			partners2.add(a1);
 			*/
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {a1, a2});
-			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, null, a2);
-			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, null, a1);
-			logger.info(p1.toFullString());
-
+			/// Do this after the records are created
+			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, "partners", a2);
+			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, "partners", a1);
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {p1, p2});
-			
 			
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, "Person 1");
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			//logger.info(a1.toFullString());
+			q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, "partners", "gender"});
 			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
-			// logger.info(meta.getSql());
-			
+			// logger.info("Outside io.db: " + meta.getColumns().stream().collect(Collectors.joining(", ")));
+
+			/// Access point will force request fields to a finite set if not otherwise defined
+			/// When wanting to test foreign recursion of same types, it's necessary to specify the field when using access point, even
+			/// when the limit is disabled.  This is intentional since access point is the entry for API calls and conducts policy enforcement
+			///
+			///
 			BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
+			// BaseRecord rec = ioContext.getSearch().findRecord(q);
 			assertNotNull("Record is null", rec);
+			List<BaseRecord> parts = rec.get("partners");
+			logger.info("Partners: " + parts.size());
 			logger.info(rec.toFullString());
 		}
 		catch(StackOverflowError | FieldException | ValueException | ModelNotFoundException | FactoryException | ModelException e) {
@@ -154,7 +166,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 
 	}
-	/*
+	
 	@Test
 	public void TestOlio2() {
 
@@ -194,7 +206,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 
 	}
-	*/
+	
 	/*
 	@Test
 	public void TestDeepSingleModelQuery() {

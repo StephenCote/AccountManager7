@@ -23,8 +23,6 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
 
-import io.jsonwebtoken.lang.Collections;
-
 public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	public static final Logger logger = LogManager.getLogger(RecordSerializer.class);
 	private static final String FK_SUFFIX = "_FK";
@@ -235,7 +233,6 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        					BaseRecord o2 = (BaseRecord)o;
 		        					Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
 		        					List<String> ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
-		        					
 		        					jgen.writeObject(o2.copyRecord(ol.toArray(new String[0])));
 		        				}
 		        				else {
