@@ -120,9 +120,11 @@ public class TestBulkOperation extends BaseTest {
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set("gender", "male");
+			AttributeUtil.addAttribute(a1, "test", true);
 			BaseRecord a2 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a2.set(FieldNames.FIELD_NAME, "Person 2");
 			a2.set("gender", "female");
+			AttributeUtil.addAttribute(a2, "test", false);
 
 			/// BUG: When adding cross-relationships such as partnerships, the auto-created participation for one half will wind up missing the other half's identifier (in io.db) because of the auto-participation adds are currently coded within the scope of a single record.
 			/// To fix this, participations for all records would need to be pulled out separately, have the record identifiers assigned first, and then bulk add the participations
@@ -144,20 +146,31 @@ public class TestBulkOperation extends BaseTest {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, "Person 1");
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, "partners", "gender"});
+			//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES, "partners", "gender"});
 			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
+			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_APPAREL);
+			q2.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			DBStatementMeta meta2 = StatementUtil.getSelectTemplate(q2);
 			// logger.info("Outside io.db: " + meta.getColumns().stream().collect(Collectors.joining(", ")));
-
+			//logger.info(meta2.getSql());
 			/// Access point will force request fields to a finite set if not otherwise defined
 			/// When wanting to test foreign recursion of same types, it's necessary to specify the field when using access point, even
 			/// when the limit is disabled.  This is intentional since access point is the entry for API calls and conducts policy enforcement
 			///
 			///
-			BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
-			// BaseRecord rec = ioContext.getSearch().findRecord(q);
+			//BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
+			BaseRecord rec = ioContext.getSearch().findRecord(q);
 			assertNotNull("Record is null", rec);
 			List<BaseRecord> parts = rec.get("partners");
-			logger.info("Partners: " + parts.size());
+			assertTrue("Expected partners to be populated", parts.size() == 1);
+			
+			BaseRecord attr = AttributeUtil.getAttribute(rec, "test");
+			assertNotNull("Expected to find the attribute", attr);
+			FieldType ft = attr.getField(FieldNames.FIELD_VALUE);
+			logger.info(ft.getName() + " -> " + ft.getValueType().toString());
+			boolean attrVal = AttributeUtil.getAttributeValue(rec, "test", false);
+			logger.info("Test: " + attrVal);
+			
 			logger.info(rec.toFullString());
 		}
 		catch(StackOverflowError | FieldException | ValueException | ModelNotFoundException | FactoryException | ModelException e) {
@@ -166,7 +179,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 
 	}
-	
+
 	@Test
 	public void TestOlio2() {
 
@@ -175,12 +188,13 @@ public class TestBulkOperation extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS", "GB", "IE", "US"});
+		// , "GB", "IE", "US"
+		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS"});
 		assertNotNull("World is null", world);
 		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
 
 		try {
 
