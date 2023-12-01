@@ -158,6 +158,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         NodeLink lastNode = currentNode;
         
         Map<String, JsonNode> foreignFlex = new HashMap<>();
+        Map<String, JsonNode> fieldFlex = new HashMap<>();
         
         while(pairs.hasNext()) {
         	Map.Entry<String, JsonNode> entry = pairs.next();
@@ -192,6 +193,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
             			if(possibleForeign && lft.getType().equals(ModelNames.MODEL_MODEL) && lft.getBaseModel() != null && lft.getBaseModel().equals(ModelNames.MODEL_FLEX) && lft.getForeignType() != null) {
             				foreignFlex.put(fname, value);
             			}
+            			else if(ifld.getValueType().equals(FieldEnumType.FLEX)) {
+            				fieldFlex.put(fname,  value);
+            			}
             			else {
         					currentNode = new NodeLink(null);
         					currentNode.setFieldName(fname);
@@ -212,6 +216,34 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 					fields.add(fld);
 				}
         	}
+        }
+        for(String k : fieldFlex.keySet()) {
+        	FieldType ifld = type.getField(k);
+        	FieldSchema lft = ltype.getFieldSchema(k);
+        	FieldEnumType valType = null;
+			Optional<FieldType> ofld = fields.stream().filter(f -> f.getName().equals(lft.getValueType())).findFirst();
+			if(ofld.isPresent()) {
+				valType = FieldEnumType.valueOf(ofld.get().getValue());
+			}
+			else {
+				valType = ifld.getValueType();
+			}
+			try {
+				FieldType fld = FieldFactory.fieldByType(valType, k, ifld.getValue());
+				if(k.equals("value")) {
+					logger.info("Val Check: " + fieldFlex.get(k).booleanValue() + " / '" + fieldFlex.get(k).textValue() + "'");
+				}
+				fld = setFieldValue(jsonParser, fld, fld, lft, null, false, fieldFlex.get(k));
+				if(fld == null) {
+					logger.error("Null field for " + k);
+				}
+				else {
+					fields.add(fld);
+				}
+			}
+			catch (ValueException | IOException e) {
+				logger.error(e);
+			}
         }
         for(String k : foreignFlex.keySet()) {
         	FieldType ifld = type.getField(k);
@@ -265,7 +297,8 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				fld.setValue(value.longValue());
     				break;
     			case BOOLEAN:
-    				fld.setValue(value.booleanValue());
+    				/// .booleanValue is not reliable
+    				fld.setValue(Boolean.parseBoolean(value.asText()));
     				break;
 
     			case FLEX:
