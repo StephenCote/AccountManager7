@@ -1,25 +1,36 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.AttributeUtil;
 
 
 public class EvolutionUtil {
 	public static final Logger logger = LogManager.getLogger(EvolutionUtil.class);
+	private static SecureRandom rand = new SecureRandom();
 	
 	private static String[] demographicLabels = new String[]{"Alive","Child","Young Adult","Adult","Available","Senior","Mother","Coupled","Deceased"};
 	private static Map<String,List<BaseRecord>> newDemographicMap(){
@@ -30,7 +41,8 @@ public class EvolutionUtil {
 		return map;
 	}
 	
-	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int evolutions){
+	/// The default config - 1 epoch/increment = 1 year.  Evolve will run through 12 months, and within each month branch out into smaller clusters of events
+	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int increment){
 		try {
 
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
@@ -44,19 +56,32 @@ public class EvolutionUtil {
 			}
 			
 			Map<String,List<BaseRecord>> demographicMap = newDemographicMap();
-
+			Map<String, List<BaseRecord>> queue = new HashMap<>();
 			logger.info("Mapping ...");
 			for(BaseRecord p : pop) {
 				setDemographicMap(demographicMap, parentEvent, p);
 			}
 
 			logger.info("Evolving ...");
-			for(int i = 0; i < evolutions; i++){
-				evolvePopulation(user, world, parentEvent, eventAlignment, population, pop, demographicMap);
+			for(int i = 0; i < (increment * 12); i++){
+				evolvePopulation(user, world, parentEvent, eventAlignment, population, pop, demographicMap, queue, i);
 			}
+			
+			for(BaseRecord p: pop) {
+				int age =  CharacterUtil.getCurrentAge(user, world, p);
+				p.set("age",age);
+				queueUpdate(queue, p, new String[] {"age"});
+			}
+			
+			logger.info("Updating population ...");
+			queue.forEach((k, v) -> {
+				IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
+			});
+			
 		}
 		catch(Exception e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 
 	}
@@ -83,14 +108,148 @@ public class EvolutionUtil {
 				List<BaseRecord> partners = person.get("partners");
 				if(age >= Rules.MINIMUM_MARRY_AGE && age <= Rules.MAXIMUM_MARRY_AGE && partners.isEmpty()) map.get("Available").add(person);
 				else if(!partners.isEmpty()) map.get("Coupled").add(person);
-				if("female".equals(person.get("gender")) && age >= Rules.MINIMUM_MARRY_AGE && age <= Rules.MAXIMUM_FERTILITY_AGE_FEMALE) map.get("Mother").add(person);
+				if("female".equals(person.get("gender")) && age >= Rules.MINIMUM_ADULT_AGE && age <= Rules.MAXIMUM_FERTILITY_AGE_FEMALE) map.get("Mother").add(person);
 			}
 		}
 	}
-
-	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, List<BaseRecord> pop, Map<String,List<BaseRecord>> map){
-		
+	
+	private static void queueAttribute(Map<String, List<BaseRecord>> queue, BaseRecord record) {
+		String key = record.getModel();
+		if(!queue.containsKey(key)) {
+			queue.put(key, new ArrayList<>());
+		}
+		queue.get(key).add(record);
 	}
+	private static void queueUpdate(Map<String, List<BaseRecord>> queue, BaseRecord record, String[] fields) {
+		List<String> fnlist =new ArrayList<>(Arrays.asList(fields));
+		if(fnlist.size() == 0) {
+			return;
+		}
+		fnlist.add(FieldNames.FIELD_ID);
+		fnlist.add(FieldNames.FIELD_OWNER_ID);
+		fnlist.sort((f1, f2) -> f1.compareTo(f2));
+		Set<String> fieldSet = fnlist.stream().collect(Collectors.toSet());
+		String key = record.getModel() + "-" + fieldSet.stream().collect(Collectors.joining("-"));
+		if(!queue.containsKey(key)) {
+			queue.put(key, new ArrayList<>());
+		}
+		queue.get(key).add(record.copyRecord(fieldSet.toArray(new String[0])));
+	}
+	
+	protected static void couple(BaseRecord user, BaseRecord person1, BaseRecord person2, boolean enabled) {
+
+		/// The properties are being manually updated here so as not to reread from the database
+		List<BaseRecord> partners1 = person1.get("partners");
+		List<BaseRecord> partners2 = person2.get("partners");
+		if(!enabled) {
+			partners1.clear();
+			partners2.clear();
+		}
+		else {
+			partners1.add(person2);
+			partners2.add(person1);
+		}
+		IOSystem.getActiveContext().getMemberUtil().member(user, person1, person2, null, enabled);
+		IOSystem.getActiveContext().getMemberUtil().member(user, person2, person1, null, enabled);
+
+	}
+	private static <T> void addAttribute(Map<String, List<BaseRecord>> queue, BaseRecord obj, String attrName, T val) throws ModelException, FieldException, ModelNotFoundException, ValueException {
+		BaseRecord attr = AttributeUtil.addAttribute(obj, attrName, val);
+		queueAttribute(queue, attr);
+	}
+	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, List<BaseRecord> pop, Map<String,List<BaseRecord>> map, Map<String, List<BaseRecord>> queue, int iteration){
+		try {
+			
+			for(BaseRecord per : pop) {
+				if(CharacterUtil.isDeceased(per)) {
+					continue;
+				}
+
+				int currentAge = (int)((((Date)parentEvent.get("eventStart")).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration))/OlioUtil.YEAR);
+
+				if(rulePersonDeath(eventAlignment, population, per, currentAge)){
+					//BaseRecord attr = AttributeUtil.
+					addAttribute(queue, per, "deceased", true);
+					
+					/*
+					if(person.getPartners().isEmpty() == false){
+						person.getPartners().get(0).getPartners().clear();
+						person.getPartners().clear();
+					}
+					
+					EventType death = ((EventFactory)Factories.getFactory(FactoryEnumType.EVENT)).newEvent(user, parentEvent);
+					death.setName("Death of " + person.getName() + " at the age of " + age);
+					death.setEventType(EventEnumType.EGRESS);
+					death.getActors().add(person);
+					death.setLocation(parentEvent.getLocation());
+					BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.EVENT, death);
+					*/
+				}
+			
+			}
+
+		}
+		catch(ModelException | FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+	}
+
+	/*
+	 	private Map<String,List<PersonType>> getPotentialPartnerMap(Map<String,List<PersonType>>map){
+		Map<String,List<PersonType>> potentials = new HashMap<>();
+		potentials.put("male", new ArrayList<>());
+		potentials.put("female", new ArrayList<>());
+		for(PersonType person : map.get("Available")){
+			if(person.getPartners().isEmpty() == false){
+				logger.warn(person.getName() + " is not a viable partner");
+				continue;
+			}
+			if("male".equalsIgnoreCase(person.getGender())){
+				potentials.get("male").add(person);
+			}
+			else{
+				potentials.get("female").add(person);
+			}
+		}
+		return potentials;
+	}
+
+	private boolean rulePersonBirth(AlignmentEnumType eventAlignmentType, PersonGroupType populationGroup, PersonType mother, int age) throws FactoryException, ArgumentException{
+		boolean outBool = false;
+		if("female".equalsIgnoreCase(mother.getGender()) == false || age < minMarryAge || age > maxFertilityAge) return outBool;
+		double odds = 0.001 + (mother.getPartners().isEmpty() ? 0.001 : 0.025 - (mother.getDependents().size() * 0.001));
+		double rand = Math.random();
+		if(rand < odds){
+			outBool = true;
+		}
+		
+		return outBool;
+	}
+	
+	
+
+	 */
+
+	private static boolean rulePersonDeath(AlignmentEnumType eventAlignmentType, BaseRecord populationGroup, BaseRecord person, int age) {
+		boolean outBool = false;
+		boolean personIsLeader = false;
+		
+		double odds = 
+			Rules.ODDS_DEATH_BASE + (age < Rules.MAXIMUM_CHILD_AGE ? Rules.ODDS_DEATH_MOD_CHILD : 0.0)
+			+ (age > Rules.INITIAL_AVERAGE_DEATH_AGE
+				? (age - Rules.INITIAL_AVERAGE_DEATH_AGE) * (personIsLeader ? Rules.ODDS_DEATH_MOD_LEADER : Rules.ODDS_DEATH_MOD_GENERAL) 
+				: 0.0
+			  )
+			+ (age >= Rules.MAXIMUM_AGE ? 1.0 : 0.0)
+		;
+		double r = rand.nextDouble();
+		if(r < odds){
+			outBool = true;
+		}
+		return outBool;
+	}
+	
 	
 	/*
 	private void evolvePopulation(String sessionId, EventType parentEvent, AlignmentEnumType eventAlignment, PersonGroupType population, List<PersonType> personPopulation){

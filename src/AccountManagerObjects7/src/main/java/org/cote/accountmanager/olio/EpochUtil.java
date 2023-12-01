@@ -174,7 +174,7 @@ public class EpochUtil {
 					lgrps.add(popGrp);
 					logger.info((String)childEpoch.get(FieldNames.FIELD_NAME));
 					IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
-					EvolutionUtil.evolvePopulation(user, world, childEpoch, useAlignment, popGrp, evolutions);
+					EvolutionUtil.evolvePopulation(user, world, childEpoch, useAlignment, popGrp, increment);
 				}
 
 			}

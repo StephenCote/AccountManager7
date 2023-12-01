@@ -34,8 +34,11 @@ public class CharacterUtil {
 	public static int getCurrentAge(BaseRecord user, BaseRecord world, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
 		BaseRecord evt = EventUtil.getLastEpochEvent(user, world);
+		return getAgeAtEpoch(user, evt, person);
+	}
+	public static int getAgeAtEpoch(BaseRecord user, BaseRecord epoch, BaseRecord person) {
 		Date bday = person.get("birthDate");
-		Date cday = evt.get("eventStart");
+		Date cday = epoch.get("eventEnd");
 		return (int)(Math.abs(cday.getTime() - bday.getTime()) / OlioUtil.YEAR);
 	}
 	
