@@ -188,13 +188,13 @@ public class TestBulkOperation extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		// , "GB", "IE", "US"
-		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS"});
+		// 
+		BaseRecord world = WorldUtil.getCreateWorld(testUser1, worldPath, worldName, new String[] {"AS", "GB", "IE", "US"});
 		assertNotNull("World is null", world);
 		WorldUtil.loadWorldData(testUser1, world, testProperties.getProperty("test.datagen.path"), false);
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
-		logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
+		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
 
 		try {
 

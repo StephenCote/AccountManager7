@@ -210,7 +210,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
             		}
             	}
 				if(fld == null) {
-					logger.error("Null field for " + fname);
+					if(ifld.getValueType().equals(FieldEnumType.FLEX)) {
+						fieldFlex.put(fname,  value);
+					}
+					else {
+						logger.error("Null field for " + fname);
+					}
 				}
 				else {
 					fields.add(fld);
@@ -230,12 +235,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 			}
 			try {
 				FieldType fld = FieldFactory.fieldByType(valType, k, ifld.getValue());
-				if(k.equals("value")) {
-					logger.info("Val Check: " + fieldFlex.get(k).booleanValue() + " / '" + fieldFlex.get(k).textValue() + "'");
-				}
 				fld = setFieldValue(jsonParser, fld, fld, lft, null, false, fieldFlex.get(k));
 				if(fld == null) {
-					logger.error("Null field for " + k);
+					logger.error("Null field for " + k + " as " + valType);
 				}
 				else {
 					fields.add(fld);

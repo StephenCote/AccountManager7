@@ -12,16 +12,19 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 
 
@@ -132,8 +135,26 @@ public class EvolutionUtil {
 		}
 		queue.get(key).add(record.copyRecord(fieldSet.toArray(new String[0])));
 	}
+	private static void queueAdd(Map<String, List<BaseRecord>> queue, BaseRecord record) {
+		record.getFields().sort((f1, f2) -> f1.getName().compareTo(f2.getName()));
+		String key = record.getModel() + "-" + record.getFields().stream().map(f -> f.getName()).collect(Collectors.joining("-"));
+		if(!queue.containsKey(key)) {
+			queue.put(key, new ArrayList<>());
+		}
+		queue.get(key).add(record);
+	}
 	
-	protected static void couple(BaseRecord user, BaseRecord person1, BaseRecord person2, boolean enabled) {
+	protected static void decouple(BaseRecord user, BaseRecord person) {
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {"partners"});
+		List<BaseRecord> partners = person.get("partners");
+		if(partners.size() > 0) {
+			couple(user, person, partners.get(0), false);
+		}
+	}
+	protected static void couple(BaseRecord user, BaseRecord person1, BaseRecord person2) {
+		couple(user, person1, person2, true);
+	}
+	private static void couple(BaseRecord user, BaseRecord person1, BaseRecord person2, boolean enabled) {
 
 		/// The properties are being manually updated here so as not to reread from the database
 		List<BaseRecord> partners1 = person1.get("partners");
@@ -155,18 +176,35 @@ public class EvolutionUtil {
 		queueAttribute(queue, attr);
 	}
 	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, List<BaseRecord> pop, Map<String,List<BaseRecord>> map, Map<String, List<BaseRecord>> queue, int iteration){
+		
 		try {
-			
+			ParameterList elist = ParameterList.newParameterList("path", world.get("events.path"));
 			for(BaseRecord per : pop) {
 				if(CharacterUtil.isDeceased(per)) {
 					continue;
 				}
-
-				int currentAge = (int)((((Date)parentEvent.get("eventStart")).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration))/OlioUtil.YEAR);
+				long now = ((Date)parentEvent.get("eventStart")).getTime() + (OlioUtil.DAY * iteration);
+				long lage = now - ((Date)per.get("birthDate")).getTime();
+				//long now = (((Date)parentEvent.get("eventStart")).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration));
+				int currentAge = (int)(lage/OlioUtil.YEAR);
 
 				if(rulePersonDeath(eventAlignment, population, per, currentAge)){
 					//BaseRecord attr = AttributeUtil.
 					addAttribute(queue, per, "deceased", true);
+					decouple(user, per);
+					
+					BaseRecord evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
+					/// TODO: Need a way to bulk-add hierarchies
+					/// The previous version used a complex method of identifier assignment and rewrite with negative values
+					evt.set(FieldNames.FIELD_NAME, "Death of " + per.get(FieldNames.FIELD_NAME) + " at the age of " + currentAge);
+					evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
+					List<BaseRecord> acts = evt.get("actors");
+					acts.add(per);
+					evt.set(FieldNames.FIELD_TYPE, EventEnumType.EGRESS);
+					evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
+					evt.set("eventStart", new Date(now));
+					evt.set("eventEnd", new Date(now));
+					queueAdd(queue, evt);
 					
 					/*
 					if(person.getPartners().isEmpty() == false){
@@ -186,7 +224,7 @@ public class EvolutionUtil {
 			}
 
 		}
-		catch(ModelException | FieldException | ModelNotFoundException | ValueException e) {
+		catch(ModelException | FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
