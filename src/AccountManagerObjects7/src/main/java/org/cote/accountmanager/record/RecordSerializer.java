@@ -291,7 +291,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        					BaseRecord o2 = (BaseRecord)mval;
 	        					Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
 	        					List<String> ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
-	        					jgen.writeObject(o2.copyRecord(ol.toArray(new String[0])));
+	        					jgen.writeObjectField(f.getName(), o2.copyRecord(ol.toArray(new String[0])));
 	        				}
 	        				else {
 	        					jgen.writeObjectField(f.getName(), mval);
