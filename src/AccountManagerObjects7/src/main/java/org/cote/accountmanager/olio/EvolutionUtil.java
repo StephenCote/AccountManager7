@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -17,6 +18,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -48,8 +50,9 @@ public class EvolutionUtil {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(population, null, ModelNames.MODEL_CHAR_PERSON, null);
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-
-			List<BaseRecord> pop = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q));
+			q.setCache(false);
+			
+			List<BaseRecord> pop = new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 			if(pop.isEmpty()){
 				logger.warn("Population is decimated");
 				return;
@@ -62,7 +65,7 @@ public class EvolutionUtil {
 				setDemographicMap(demographicMap, parentEvent, p);
 			}
 
-			logger.info("Evolving ...");
+			logger.info("Evolving " + parentEvent.get("location.name") + " with " + pop.size() + " people ...");
 			for(int i = 0; i < (increment * 12); i++){
 				evolvePopulation(user, world, parentEvent, eventAlignment, population, pop, demographicMap, queue, i);
 			}
@@ -178,6 +181,7 @@ public class EvolutionUtil {
 	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, List<BaseRecord> pop, Map<String,List<BaseRecord>> map, Map<String, List<BaseRecord>> queue, int iteration){
 		
 		try {
+			List<BaseRecord> additions = new ArrayList<>();
 			ParameterList elist = ParameterList.newParameterList("path", world.get("events.path"));
 			for(BaseRecord per : pop) {
 				if(CharacterUtil.isDeceased(per)) {
@@ -187,12 +191,52 @@ public class EvolutionUtil {
 				long lage = now - ((Date)per.get("birthDate")).getTime();
 				//long now = (((Date)parentEvent.get("eventStart")).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration));
 				int currentAge = (int)(lage/OlioUtil.YEAR);
+				String gender = per.get("gender");
+				/// If a female is ruled to be a mother, generate the baby
+				///
+				if("female".equalsIgnoreCase(gender) && rulePersonBirth(eventAlignment, population, per, currentAge)){
+					List<BaseRecord> partners = per.get("partners");
+					List<BaseRecord> dep1 = per.get("dependents");
+					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
+					BaseRecord baby = CharacterUtil.randomPerson(user, world, (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get("lastName"));
+					baby.set("birthDate", new Date(now));
+					// queueAdd(queue, baby);
+					AddressUtil.addressPerson(user, world, baby, parentEvent.get("location"));
+					IOSystem.getActiveContext().getRecordUtil().updateRecord(baby);
+					dep1.add(baby);
+					queueAdd(queue, ParticipationFactory.newParticipation(user, population, null, baby));
+					queueAdd(queue, ParticipationFactory.newParticipation(user, per, "dependents", baby));
+					if(partner != null){
+						List<BaseRecord> dep2 = partner.get("dependents");
+						dep2.add(baby);
+						queueAdd(queue, ParticipationFactory.newParticipation(user, partner, "dependents", baby));
+					}
+					
+					additions.add(baby);
 
+					BaseRecord evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
+					evt.set(FieldNames.FIELD_NAME, "Birth of " + baby.get(FieldNames.FIELD_NAME));
+					evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
+					List<BaseRecord> acts = evt.get("actors");
+					List<BaseRecord> orch = evt.get("participants");
+					List<BaseRecord> infl = evt.get("influencers");
+					acts.add(baby);
+					orch.add(per);
+					if(partner  != null) {
+						infl.add(partner);
+					}
+					evt.set(FieldNames.FIELD_TYPE, EventEnumType.INGRESS);
+					evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
+					evt.set("eventStart", new Date(now));
+					evt.set("eventEnd", new Date(now));
+					queueAdd(queue, evt);
+				}
+				
 				if(rulePersonDeath(eventAlignment, population, per, currentAge)){
 					//BaseRecord attr = AttributeUtil.
 					addAttribute(queue, per, "deceased", true);
 					decouple(user, per);
-					
+					IOSystem.getActiveContext().getMemberUtil().member(user, population, per, null, false);
 					BaseRecord evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
 					/// TODO: Need a way to bulk-add hierarchies
 					/// The previous version used a complex method of identifier assignment and rewrite with negative values
@@ -205,24 +249,14 @@ public class EvolutionUtil {
 					evt.set("eventStart", new Date(now));
 					evt.set("eventEnd", new Date(now));
 					queueAdd(queue, evt);
-					
-					/*
-					if(person.getPartners().isEmpty() == false){
-						person.getPartners().get(0).getPartners().clear();
-						person.getPartners().clear();
-					}
-					
-					EventType death = ((EventFactory)Factories.getFactory(FactoryEnumType.EVENT)).newEvent(user, parentEvent);
-					death.setName("Death of " + person.getName() + " at the age of " + age);
-					death.setEventType(EventEnumType.EGRESS);
-					death.getActors().add(person);
-					death.setLocation(parentEvent.getLocation());
-					BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.EVENT, death);
-					*/
 				}
-			
 			}
-
+			pop.addAll(additions);
+			for(BaseRecord per : additions){
+				setDemographicMap(map, parentEvent, per);
+			}
+			
+			ruleCouples(user, world, parentEvent, map, queue);
 		}
 		catch(ModelException | FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error(e);
@@ -231,29 +265,20 @@ public class EvolutionUtil {
 	}
 
 	/*
-	 	private Map<String,List<PersonType>> getPotentialPartnerMap(Map<String,List<PersonType>>map){
-		Map<String,List<PersonType>> potentials = new HashMap<>();
-		potentials.put("male", new ArrayList<>());
-		potentials.put("female", new ArrayList<>());
-		for(PersonType person : map.get("Available")){
-			if(person.getPartners().isEmpty() == false){
-				logger.warn(person.getName() + " is not a viable partner");
-				continue;
-			}
-			if("male".equalsIgnoreCase(person.getGender())){
-				potentials.get("male").add(person);
-			}
-			else{
-				potentials.get("female").add(person);
-			}
-		}
-		return potentials;
-	}
 
-	private boolean rulePersonBirth(AlignmentEnumType eventAlignmentType, PersonGroupType populationGroup, PersonType mother, int age) throws FactoryException, ArgumentException{
+	*/
+
+	private static boolean rulePersonBirth(AlignmentEnumType eventAlignmentType, BaseRecord populationGroup, BaseRecord mother, int age) {
 		boolean outBool = false;
-		if("female".equalsIgnoreCase(mother.getGender()) == false || age < minMarryAge || age > maxFertilityAge) return outBool;
-		double odds = 0.001 + (mother.getPartners().isEmpty() ? 0.001 : 0.025 - (mother.getDependents().size() * 0.001));
+		String gender = mother.get("gender");
+		if(!gender.equals("female") || age < Rules.MINIMUM_MARRY_AGE || age > Rules.MAXIMUM_FERTILITY_AGE_FEMALE) {
+			return false;
+		}
+		
+		List<BaseRecord> partners = mother.get("partners");
+		List<BaseRecord> dependents = mother.get("dependents");
+		
+		double odds = Rules.ODDS_BIRTH_BASE + (partners.isEmpty() ? Rules.ODDS_BIRTH_SINGLE : Rules.ODDS_BIRTH_MARRIED - (dependents.size() * Rules.ODDS_BIRTH_FAMILY_SIZE));
 		double rand = Math.random();
 		if(rand < odds){
 			outBool = true;
@@ -261,10 +286,7 @@ public class EvolutionUtil {
 		
 		return outBool;
 	}
-	
-	
 
-	 */
 
 	private static boolean rulePersonDeath(AlignmentEnumType eventAlignmentType, BaseRecord populationGroup, BaseRecord person, int age) {
 		boolean outBool = false;
@@ -431,33 +453,89 @@ public class EvolutionUtil {
 		}
 
 	}
-	private void ruleCouples(String sessionId, EventType parentEvent, Map<String,List<PersonType>> demographicMap) throws ArgumentException, FactoryException{
-		Map<String,List<PersonType>> potentials = getPotentialPartnerMap(demographicMap);
-		if(potentials.get("male").size() > 0 && potentials.get("female").size() > 0){
-			for(int i = 0; i < potentials.get("female").size(); i++){
-				PersonType fem = potentials.get("female").get(i);
-				if(fem.getPartners().isEmpty() == false) continue;
-				//boolean partnered = false;
-				for(int m = 0; m < potentials.get("male").size(); m++){
-					PersonType mal = potentials.get("male").get(m);
-					if(mal.getPartners().isEmpty() == false) continue;
-					double rand = Math.random();
-					if(rand < marriageRate){
-						fem.getPartners().add(mal);
-						mal.getPartners().add(fem);
-						EventType marriage = ((EventFactory)Factories.getFactory(FactoryEnumType.EVENT)).newEvent(user, parentEvent);
-						marriage.setName("Marriage of " + fem.getName() + " to " + mal.getName() + " (" + UUID.randomUUID().toString() + ")");
-						marriage.setEventType(EventEnumType.STABLIZE);
-						marriage.getActors().add(mal);
-						marriage.getActors().add(fem);
-						marriage.setLocation(parentEvent.getLocation());
-						BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.EVENT, marriage);
-						break;
+	*/
+ 	private static Map<String,List<BaseRecord>> getPotentialPartnerMap(Map<String, List<BaseRecord>> map){
+		Map<String,List<BaseRecord>> potentials = new HashMap<>();
+		potentials.put("male", new ArrayList<>());
+		potentials.put("female", new ArrayList<>());
+		for(BaseRecord person : map.get("Available")){
+			List<BaseRecord> partners = person.get("partners");
+			String gender = person.get("gender");
+			if(!partners.isEmpty()){
+				continue;
+			}
+			potentials.get(gender).add(person);
+		}
+		return potentials;
+	}
+	private static void ruleCouples(BaseRecord user, BaseRecord world, BaseRecord parentEvent, Map<String, List<BaseRecord>> map, Map<String, List<BaseRecord>> queue) {
+		ParameterList elist = ParameterList.newParameterList("path", world.get("events.path"));
+		Map<String,List<BaseRecord>> pots = getPotentialPartnerMap(map);
+		try {
+			Set<BaseRecord> eval = new HashSet<>();
+			for(BaseRecord per : map.get("Coupled")) {
+				List<BaseRecord> parts1 = per.get("partners");
+				if(parts1.size() == 0) {
+					continue;
+				}
+				BaseRecord partner = parts1.get(0);
+				long pid = partner.get(FieldNames.FIELD_ID);
+				partner = map.get("Coupled").stream().filter(f -> ((long)f.get(FieldNames.FIELD_ID) == pid)).findFirst().get();
+
+				eval.add(per);
+				eval.add(partner);
+				if(rand.nextDouble() <= Rules.INITIAL_DIVORCE_RATE) {
+					long time = ((Date)parentEvent.get("eventStart")).getTime() + (rand.nextInt(364) * OlioUtil.DAY);
+					BaseRecord evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
+					evt.set(FieldNames.FIELD_NAME, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME));
+					evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
+					List<BaseRecord> acts = evt.get("actors");
+					acts.add(per);
+					acts.add(partner);
+					evt.set(FieldNames.FIELD_TYPE, EventEnumType.DESTABILIZE);
+					evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
+					evt.set("eventStart", new Date(time));
+					evt.set("eventEnd", new Date(time));
+					queueAdd(queue, evt);
+					decouple(user, per);
+				}
+			}
+			if(pots.get("male").size() > 0 && pots.get("female").size() > 0) {
+				for(BaseRecord man : pots.get("male")) {
+					BaseRecord woman = pots.get("female").get(rand.nextInt(pots.get("female").size()));
+					List<BaseRecord> parts1 = man.get("partners");
+					List<BaseRecord> parts2 = woman.get("partners");
+					if(!parts1.isEmpty() || !parts2.isEmpty() || eval.contains(man) || eval.contains(woman)) {
+						continue;
+					}
+					if(rand.nextDouble() <= Rules.INITIAL_MARRIAGE_RATE) {
+						long time = ((Date)parentEvent.get("eventStart")).getTime() + (rand.nextInt(364) * OlioUtil.DAY);
+						
+						couple(user, man, woman);
+						
+						BaseRecord evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
+						evt.set(FieldNames.FIELD_NAME, "Marriage of " + man.get(FieldNames.FIELD_NAME) + " to " + woman.get(FieldNames.FIELD_NAME));
+						evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
+						List<BaseRecord> acts = evt.get("actors");
+						acts.add(man);
+						acts.add(woman);
+						evt.set(FieldNames.FIELD_TYPE, EventEnumType.STABLIZE);
+						evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
+						evt.set("eventStart", new Date(time));
+						evt.set("eventEnd", new Date(time));
+						queueAdd(queue, evt);
+						
+						eval.add(man);
+						eval.add(woman);
 					}
 				}
 			}
-		}
 
+		}
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		/*
 		Set<PersonType> evaluated = new HashSet<PersonType>();
 		for(PersonType person : demographicMap.get("Coupled")){
 			if(person.getPartners().isEmpty()){
@@ -480,7 +558,7 @@ public class EvolutionUtil {
 				BulkFactories.getBulkFactory().createBulkEntry(sessionId, FactoryEnumType.EVENT, divorce);
 			}
 		}
-	
+		*/
 	}
-	*/
+
 }

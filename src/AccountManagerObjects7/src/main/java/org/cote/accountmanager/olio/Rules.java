@@ -14,13 +14,18 @@ public class Rules {
 	public static final int MAXIMUM_FERTILITY_AGE_FEMALE = 50;
 	public static final int MAXIMUM_FERTILITY_AGE_MALE = 70;
 	
-	public static double ODDS_DEATH_BASE = 0.0001;
-	public static double ODDS_DEATH_MOD_LEADER = 0.0001;
-	public static double ODDS_DEATH_MOD_GENERAL = 0.0002;
-	public static double ODDS_DEATH_MOD_CHILD = 0.0025;
+	public static final double ODDS_DEATH_BASE = 0.0001;
+	public static final double ODDS_DEATH_MOD_LEADER = 0.0001;
+	public static final double ODDS_DEATH_MOD_GENERAL = 0.0002;
+	public static final double ODDS_DEATH_MOD_CHILD = 0.0025;
+	
+	public static final double ODDS_BIRTH_BASE = 0.001;
+	public static final double ODDS_BIRTH_SINGLE = 0.001;
+	public static final double ODDS_BIRTH_MARRIED = 0.025;
+	public static final double ODDS_BIRTH_FAMILY_SIZE = 0.001;
 	
 	public static final int INITIAL_AVERAGE_DEATH_AGE = 75;
-	public static final double INITIAL_MARRIAGE_RATE = 0.15;
+	public static final double INITIAL_MARRIAGE_RATE = 0.05;
 	public static final double INITIAL_DIVORCE_RATE = 0.01;
 	public static final boolean IS_PATRIARCHAL = true;
 	
