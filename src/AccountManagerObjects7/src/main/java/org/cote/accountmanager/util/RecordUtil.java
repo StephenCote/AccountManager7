@@ -463,6 +463,15 @@ public class RecordUtil {
 		else {
 			id = 0L;
 		}
+		
+		final String partModel;
+		if(firstModel.getModel().equals(ModelNames.MODEL_PARTICIPATION)) {
+			partModel = firstModel.get(FieldNames.FIELD_PARTICIPATION_MODEL);
+		}
+		else {
+			partModel = null;
+		}
+		
 		List<BaseRecord> rlist = Arrays.asList(models).stream().filter(
 				m -> {
 					boolean size = (m.getFields().size() != firstModel.getFields().size());
@@ -471,8 +480,13 @@ public class RecordUtil {
 						rid = m.get(FieldNames.FIELD_ID);
 					}
 					boolean ids = ((rid == 0L && id != 0L) || (rid > 0L && id == 0L));
+					String check = null;
+					if(m.hasField(FieldNames.FIELD_PARTICIPATION_MODEL)) {
+						check = m.get(FieldNames.FIELD_PARTICIPATION_MODEL);
+					}
+					boolean partCheck = ((partModel == null && check != null) || (partModel != null && !partModel.equals(check)));
 					// logger.warn(firstModel.getModel() + " " + size + " " +  m.getFields().size() + " <> " + firstModel.getFields().size() + " " + ids + " " + rid + " <> " + id);
-					return (size || ids);
+					return (size || ids || partCheck);
 				} 
 		).collect(Collectors.toList());
 		/*
