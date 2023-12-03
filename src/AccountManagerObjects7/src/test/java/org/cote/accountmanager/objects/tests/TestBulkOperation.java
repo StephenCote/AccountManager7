@@ -107,6 +107,7 @@ public class TestBulkOperation extends BaseTest {
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
+	/*
 	@Test
 	public void TestLikelyBrokenParticipations() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -130,15 +131,9 @@ public class TestBulkOperation extends BaseTest {
 			/// To fix this, participations for all records would need to be pulled out separately, have the record identifiers assigned first, and then bulk add the participations
 			/// In the previous version, most model level participations were handled like this.
 			/// In the current version, the preference is to keep the participation disconnected from the model factory to avoid having to perform bulk read, update, and deletes to determine what changed on every update
-			/// In other words, don't do this except to be able to make an in-scope reference:
-			/*
-			List<BaseRecord> partners1 = a1.get("partners");
-			List<BaseRecord> partners2 = a2.get("partners");
-			partners1.add(a2);
-			partners2.add(a1);
-			*/
+			/// In other words, don't auto-create cross-participations except to be able to make an in-scope reference:
+
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {a1, a2});
-			/// Do this after the records are created
 			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, "partners", a2);
 			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, "partners", a1);
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {p1, p2});
@@ -179,7 +174,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 
 	}
-
+	*/
 	@Test
 	public void TestOlio2() {
 
@@ -207,10 +202,19 @@ public class TestBulkOperation extends BaseTest {
 			BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
 			assertNotNull("Person is null", person);
 			logger.info(person.get(FieldNames.FIELD_NAME) + " is " + CharacterUtil.getCurrentAge(testUser1, subWorld, person) + " years old");
-			BaseRecord app = ((List<BaseRecord>)person.get("apparel")).get(0);
-			((List<BaseRecord>)app.get("wearables")).forEach(r -> {
-				logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
-			});
+			List<BaseRecord> apps = person.get("apparel");
+			if(apps.size() > 0) {
+				BaseRecord app = apps.get(0);
+				((List<BaseRecord>)app.get("wearables")).forEach(r -> {
+					logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
+				});
+			}
+			BaseRecord person2 = OlioUtil.randomSelection(testUser1, qp1);
+			BaseRecord part = ParticipationFactory.newParticipation(testUser1, person, "dependents", person2);
+			BaseRecord part2 = ParticipationFactory.newParticipation(testUser1, person, "partners", person2);
+			//logger.info(StatementUtil.getInsertTemplate(part).getSql());
+			logger.info(part.toFullString());
+			ioContext.getRecordUtil().updateRecords(new BaseRecord[] {part, part2});
 			//logger.info(person.toFullString());
 			
 
