@@ -1,14 +1,26 @@
 {
 	"name": "olio.event",
+	"likeInherits": ["data.directory"],
 	"inherits": [
-		"data.directory",
+		"common.groupExt",
 		"common.parent",
+		"common.description",
+		"common.name",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.attributeList",
 		"common.alignment"
 	],
+	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"group": "Olio Events",
 	"icon": "category",
 	"label": "Olio Event",
 	"dedicatedParticipation": true,
+	"constraints": ["name, parentId, groupId, organizationId"],
+	"query": ["name", "id", "objectId", "ownerId", "parentId", "type"],
 	"fields": [
 		{
 			"name": "type",
