@@ -244,7 +244,8 @@ public class MemberUtil implements IMember {
 		boolean outBool = false;
 		
 		Query q = QueryUtil.createParticipationQuery(user, object, fieldName, actor, effect);
-		CacheUtil.clearCache(q.hash());
+		q.setCache(false);
+		//CacheUtil.clearCache(q.hash());
 		
 		QueryResult res = null;
 		try {
