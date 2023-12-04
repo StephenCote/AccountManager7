@@ -36,6 +36,27 @@ public class EventUtil {
 		}
 		return evts;
 	}
+	public static BaseRecord getLastEvent(BaseRecord user, BaseRecord world, BaseRecord location) {
+		BaseRecord lastEpoch = getLastEpochEvent(user, world);
+		if(lastEpoch == null) {
+			return null;
+		}
+		
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		q.field(FieldNames.FIELD_PARENT_ID, lastEpoch.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		BaseRecord lastEvt = null;
+		try {
+			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
+			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
+			q.setRequestRange(0L, 1);
+			lastEvt = IOSystem.getActiveContext().getSearch().findRecord(q);
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		return lastEvt;
+	}
 	public static BaseRecord getLastEpochEvent(BaseRecord user, BaseRecord world) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 		q.field("epoch", true);
