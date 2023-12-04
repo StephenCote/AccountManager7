@@ -36,7 +36,7 @@ public class EvolutionUtil {
 	private static SecureRandom rand = new SecureRandom();
 	
 	private static String[] demographicLabels = new String[]{"Alive","Child","Young Adult","Adult","Available","Senior","Mother","Coupled","Deceased"};
-	private static Map<String,List<BaseRecord>> newDemographicMap(){
+	protected static Map<String,List<BaseRecord>> newDemographicMap(){
 		Map<String,List<BaseRecord>> map = new HashMap<>();
 		for(String label : demographicLabels){
 			map.put(label, new ArrayList<>());
@@ -97,7 +97,7 @@ public class EvolutionUtil {
 
 	}
 	
-	private static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
+	protected static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
 		try {
 			Date birthDate = person.get("birthDate");
 			Date endDate = parentEvent.get("eventEnd");
@@ -109,7 +109,7 @@ public class EvolutionUtil {
 				List<BaseRecord> partners = person.get("partners");
 				if(partners.size() > 0) {
 					logger.warn("Deceased " + person.get(FieldNames.FIELD_NAME) + " should have been decoupled and wasn't");
-					decouple(user, person);
+					// decouple(user, person);
 				}
 			}
 			else{
@@ -185,13 +185,15 @@ public class EvolutionUtil {
 		queue.get(key).add(record);
 	}
 	
-	protected static void decouple(BaseRecord user, BaseRecord person) {
+	/*
+	protected static void  (BaseRecord user, BaseRecord person) {
 		// IOSystem.getActiveContext().getReader().populate(person, new String[] {"partners"});
 		List<BaseRecord> partners = person.get("partners");
 		if(partners.size() > 0) {
 			couple(user, person, partners.get(0), false);
 		}
 	}
+	*/
 	protected static void couple(BaseRecord user, BaseRecord person1, BaseRecord person2) {
 		couple(user, person1, person2, true);
 	}
@@ -470,6 +472,7 @@ public class EvolutionUtil {
 			}
 			List<BaseRecord> parts1 = per.get("partners");
 			if(parts1.size() == 0) {
+				logger.error("Uncoupled partner detected");
 				continue;
 			}
 			BaseRecord partner = parts1.get(0);
@@ -488,15 +491,17 @@ public class EvolutionUtil {
 			eval.add(per);
 			eval.add(partner);
 			if(cleanup) {
-				logger.warn("Cleaning up relationship for " + partner.get(FieldNames.FIELD_NAME));
-				decouple(user, per);
-				remap.add(per);
+				logger.warn("Clean up relationship for " + partner.get(FieldNames.FIELD_NAME));
+				// decouple(user, per);
+				// remap.add(per);
+				continue;
 			}
 			else if(rand.nextDouble() <= Rules.INITIAL_DIVORCE_RATE) {
 				long time = ((Date)parentEvent.get("eventStart")).getTime() + (rand.nextInt(364) * OlioUtil.DAY);
 				
 				addEvent(user, world, parentEvent, EventEnumType.DESTABILIZE, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME), time, new BaseRecord[] {per, partner}, null, null, queue);
-				decouple(user, per);
+				// decouple(user, per);
+				couple(user, per, partner, false);
 				remap.add(per);
 				remap.add(partner);
 			}

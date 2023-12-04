@@ -84,6 +84,7 @@ import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.EpochUtil;
+import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
@@ -190,11 +191,15 @@ public class TestBulkOperation extends BaseTest {
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
 		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
-
+		
 		try {
 
 			WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
-			BaseRecord event = EpochUtil.generateEpoch(testUser1, subWorld, 1);
+			// for(int i = 0; i < 25; i++) {
+				EpochUtil.generateEpoch(testUser1, subWorld, 1);
+			// }
+			/*
+			
 			assertNotNull("Event is null", event);
 
 			Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id"));
@@ -209,19 +214,32 @@ public class TestBulkOperation extends BaseTest {
 					logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
 				});
 			}
-			BaseRecord person2 = OlioUtil.randomSelection(testUser1, qp1);
-			BaseRecord part = ParticipationFactory.newParticipation(testUser1, person, "dependents", person2);
-			BaseRecord part2 = ParticipationFactory.newParticipation(testUser1, person, "partners", person2);
-			//logger.info(StatementUtil.getInsertTemplate(part).getSql());
-			logger.info(part.toFullString());
-			ioContext.getRecordUtil().updateRecords(new BaseRecord[] {part, part2});
-			//logger.info(person.toFullString());
-			
-
+			*/
 		}
 		catch(Exception e) {
 			e.printStackTrace();
 		}
+		
+		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, subWorld);
+		assertTrue("Expected one or more locations", locs.length > 0);
+		long start = System.currentTimeMillis();
+		List<BaseRecord> pop = WorldUtil.getPopulation(testUser1, subWorld, locs[0]);
+		long stop = System.currentTimeMillis();
+		
+		assertTrue("Expected a population", pop.size() > 0);
+		logger.info("Time to select population: " + (stop - start) + "ms");
+		Map<String,List<BaseRecord>> map = WorldUtil.getDemographicMap(testUser1, subWorld, locs[0]);
+		map.forEach((k, v) -> {
+			logger.info(k + " -- " + v.size());
+		});
+		map.get("Coupled").forEach(p -> {
+			long pid = p.get(FieldNames.FIELD_ID);
+			Optional<BaseRecord> popt = map.get("Coupled").stream().filter(f -> ((long)f.get(FieldNames.FIELD_ID) == pid)).findFirst();
+			if(popt.isEmpty()) {
+				logger.error("Uncoupled warning: " + p.get(FieldNames.FIELD_NAME));
+			}
+		});
+		//assertTrue("Expected a populated map", map.size() > 0);
 
 	}
 	

@@ -6,6 +6,8 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
@@ -486,6 +488,62 @@ public class WorldUtil {
 		}
 		logger.info("Cleaned up " + deleted + " " + model + " in #" + groupId + " (#" + organizationId + ")");
 		return deleted;
+	}
+	
+	public static Map<String,List<BaseRecord>> getDemographicMap(BaseRecord user, BaseRecord world, BaseRecord location){
+
+		Map<String,List<BaseRecord>> map = EvolutionUtil.newDemographicMap();
+		BaseRecord lastEvt = EventUtil.getLastEvent(user, world, location);
+		if(lastEvt == null) {
+			logger.error("No events found");
+			return map;
+		}
+		logger.info("Constructing demographics map for " + location.get(FieldNames.FIELD_NAME) + " following " + lastEvt.get(FieldNames.FIELD_NAME));
+		List<BaseRecord> pop = getPopulation(user, world, location);
+		if(pop.size() == 0) {
+			logger.error("Expected a population");
+			return map;
+		}
+
+		for(BaseRecord p : pop) {
+			EvolutionUtil.setDemographicMap(user, map, lastEvt, p);
+		}
+		return map;
+	}
+	
+	public static List<BaseRecord> getPopulation(BaseRecord user, BaseRecord world, BaseRecord location){
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+		BaseRecord popGrp = getLocationGroup(user, world, location, "Population");
+		if(popGrp == null) {
+			logger.error("Failed to find population group");
+			return new ArrayList<>();
+		}
+		q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
+		try {
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		q.setCache(false);
+		
+		return new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
+	}
+
+	public static BaseRecord getLocationGroup(BaseRecord user, BaseRecord world, BaseRecord location, String name) {
+		List<BaseRecord> grps = getWorldGroups(user, world);
+		BaseRecord ogrp = null;
+		IOSystem.getActiveContext().getReader().populate(location, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID});
+		String locName = location.get(FieldNames.FIELD_NAME) + " " + name;
+		Optional<BaseRecord> grp = grps.stream().filter(f -> locName.equals((String)f.get(FieldNames.FIELD_NAME))).findFirst();
+		if(grp.isPresent()) {
+			ogrp = grp.get();
+		}
+		return ogrp;
+
+	}
+	public static List<BaseRecord> getWorldGroups(BaseRecord user, BaseRecord world){
+		IOSystem.getActiveContext().getReader().populate(world, new String[] {"population"});
+		return Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
 	}
      
 }
