@@ -674,9 +674,10 @@ public class StatementUtil {
 		if(requestFields.size() == 0) {
 			throw new FieldException("Could not find an identity column to count");
 		}
-		cols.add("count(" + requestFields.get(0) + ") as A7Count");
-
 		String alias = getAlias(query);
+		cols.add("count(" + alias + "." + requestFields.get(0) + ") as A7Count");
+
+
 		
 		String joinClause = getJoinStatement(meta, query);
 		
