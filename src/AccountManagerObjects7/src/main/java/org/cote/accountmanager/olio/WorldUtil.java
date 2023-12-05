@@ -71,8 +71,8 @@ public class WorldUtil {
 				world.set("features", Arrays.asList(features));
 				world.set("basis", basis);
 				IOSystem.getActiveContext().getAccessPoint().create(user, world);
-				rec = getWorld(user, groupPath, worldName);
-				//rec = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
+				// rec = getWorld(user, groupPath, worldName);
+				rec = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}

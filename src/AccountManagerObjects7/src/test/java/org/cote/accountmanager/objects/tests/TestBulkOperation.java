@@ -88,6 +88,7 @@ import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.PersonalityUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
@@ -210,7 +211,8 @@ public class TestBulkOperation extends BaseTest {
 		}
 		BaseRecord per = octx.readRandomPerson();
 		assertNotNull("Person is null", per);
-		PersonalityUtil.analyzePersonality(octx, per);
+		PersonalityProfile prof = PersonalityUtil.analyzePersonality(octx, per);
+		logger.info(JSONUtil.exportObject(prof));
 		
 	}
 	/*

@@ -210,6 +210,8 @@ public class QueryUtil {
 		}
 	}
 	
+	/// TODO: Need similar convience method for searching by participants
+	///
 	public static void filterParticipation(Query query, BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
 		Query part = createParticipationQuery(null, object, fieldName, null, effect);
 		actorType = ParticipationFactory.getParticipantModel(object.getModel(), fieldName, actorType);
