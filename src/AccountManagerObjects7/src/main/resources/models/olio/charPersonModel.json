@@ -51,6 +51,12 @@
 			"type": "model",
 			"baseModel": "olio.behavior",
 			"foreign": true
+		},
+		{
+			"name": "personality",
+			"type": "model",
+			"baseModel": "olio.personality",
+			"foreign": true
 		}
 	]
 }

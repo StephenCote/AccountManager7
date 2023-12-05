@@ -85,7 +85,10 @@ import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.EpochUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.PersonalityUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
 import org.cote.accountmanager.olio.WearLevelEnumType;
@@ -102,8 +105,8 @@ public class TestBulkOperation extends BaseTest {
 	
 	private int bulkLoadSize = 10;
 
-	private boolean resetCountryInfo = false;
-	
+	private boolean resetUniverse = false;
+	private boolean resetWorld = true;
 	private String worldName = "Demo World";
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
@@ -177,8 +180,43 @@ public class TestBulkOperation extends BaseTest {
 	}
 	*/
 	@Test
-	public void TestOlio2() {
+	public void TestOlio4() {
 
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		OlioContext octx = new OlioContext(
+			new OlioContextConfiguration(
+				testUser1,
+				testProperties.getProperty("test.datagen.path"),
+				worldPath,
+				worldName,
+				subWorldName,
+				// , "GB", "IE", "US"
+				new String[] {"AS"},
+				2,
+				250,
+				false,
+				resetUniverse
+			)
+		);
+		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
+		octx.initialize();
+		assertTrue("Expected olio context to be initialized", octx.isInitialized());
+		if(octx.getCurrentEpoch() == null) {
+			octx.generateEpoch();
+		}
+		BaseRecord per = octx.readRandomPerson();
+		assertNotNull("Person is null", per);
+		PersonalityUtil.analyzePersonality(octx, per);
+		
+	}
+	/*
+	@Test
+	public void TestOlio2() {
+		logger.info("Test Olio World Data Loading");
 		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
@@ -191,58 +229,58 @@ public class TestBulkOperation extends BaseTest {
 		
 		BaseRecord subWorld = WorldUtil.getCreateWorld(testUser1, world, worldPath, subWorldName, new String[0]);
 		// logger.info("Cleanup world: " + WorldUtil.cleanupWorld(testUser1, subWorld));
-		
+		BaseRecord epoch = null;
 		try {
 
 			WorldUtil.generateRegion(testUser1, subWorld, 2, 250);
-			// for(int i = 0; i < 25; i++) {
-				EpochUtil.generateEpoch(testUser1, subWorld, 1);
-			// }
-			/*
-			
-			assertNotNull("Event is null", event);
+			epoch = EpochUtil.generateEpoch(testUser1, subWorld, 1);
 
-			Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id"));
-			qp1.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
-			assertNotNull("Person is null", person);
-			logger.info(person.get(FieldNames.FIELD_NAME) + " is " + CharacterUtil.getCurrentAge(testUser1, subWorld, person) + " years old");
-			List<BaseRecord> apps = person.get("apparel");
-			if(apps.size() > 0) {
-				BaseRecord app = apps.get(0);
-				((List<BaseRecord>)app.get("wearables")).forEach(r -> {
-					logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
-				});
-			}
-			*/
 		}
 		catch(Exception e) {
 			e.printStackTrace();
 		}
-		
-		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, subWorld);
-		assertTrue("Expected one or more locations", locs.length > 0);
-		long start = System.currentTimeMillis();
-		List<BaseRecord> pop = WorldUtil.getPopulation(testUser1, subWorld, locs[0]);
-		long stop = System.currentTimeMillis();
-		
-		assertTrue("Expected a population", pop.size() > 0);
-		logger.info("Time to select population: " + (stop - start) + "ms");
-		Map<String,List<BaseRecord>> map = WorldUtil.getDemographicMap(testUser1, subWorld, locs[0]);
-		map.forEach((k, v) -> {
-			logger.info(k + " -- " + v.size());
-		});
-		map.get("Coupled").forEach(p -> {
-			long pid = p.get(FieldNames.FIELD_ID);
-			Optional<BaseRecord> popt = map.get("Coupled").stream().filter(f -> ((long)f.get(FieldNames.FIELD_ID) == pid)).findFirst();
-			if(popt.isEmpty()) {
-				logger.error("Uncoupled warning: " + p.get(FieldNames.FIELD_NAME));
-			}
-		});
-		//assertTrue("Expected a populated map", map.size() > 0);
-
+		assertNotNull("Expected epoch to be created", epoch);
 	}
+	*/
 	
+	/*
+	
+	assertNotNull("Event is null", event);
+
+	Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id"));
+	qp1.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+	BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
+	assertNotNull("Person is null", person);
+	logger.info(person.get(FieldNames.FIELD_NAME) + " is " + CharacterUtil.getCurrentAge(testUser1, subWorld, person) + " years old");
+	List<BaseRecord> apps = person.get("apparel");
+	if(apps.size() > 0) {
+		BaseRecord app = apps.get(0);
+		((List<BaseRecord>)app.get("wearables")).forEach(r -> {
+			logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
+		});
+	}
+	*/
+	/*
+	BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, subWorld);
+	assertTrue("Expected one or more locations", locs.length > 0);
+	long start = System.currentTimeMillis();
+	List<BaseRecord> pop = WorldUtil.getPopulation(testUser1, subWorld, locs[0]);
+	long stop = System.currentTimeMillis();
+	
+	assertTrue("Expected a population", pop.size() > 0);
+	logger.info("Time to select population: " + (stop - start) + "ms");
+	Map<String,List<BaseRecord>> map = WorldUtil.getDemographicMap(testUser1, subWorld, locs[0]);
+	map.forEach((k, v) -> {
+		logger.info(k + " -- " + v.size());
+	});
+	map.get("Coupled").forEach(p -> {
+		long pid = p.get(FieldNames.FIELD_ID);
+		Optional<BaseRecord> popt = map.get("Coupled").stream().filter(f -> ((long)f.get(FieldNames.FIELD_ID) == pid)).findFirst();
+		if(popt.isEmpty()) {
+			logger.error("Uncoupled warning: " + p.get(FieldNames.FIELD_NAME));
+		}
+	});
+	*/
 	/*
 	@Test
 	public void TestDeepSingleModelQuery() {

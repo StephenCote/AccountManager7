@@ -126,6 +126,12 @@
 		"foreign": true
 	},
 	{
+		"name": "personalities",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "basis",
 		"baseModel": "olio.world",
 		"type": "model",

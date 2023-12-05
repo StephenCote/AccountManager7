@@ -123,66 +123,72 @@ public class EpochUtil {
 			logger.error("Failed to find child locations");
 		}
 		
-		AlignmentEnumType alignment = OlioUtil.getRandomAlignment();
-		int alignmentScore = AlignmentEnumType.getValue(alignment);
-		AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
+		for(int i = 0; i < evolutions; i++) {
 		
-		String title = EpochUtil.generateEpochTitle(user, parWorld, alignment);
-		
-		ParameterList plist = ParameterList.newParameterList("path", world.get("events.path"));
-		try {
-			epoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
-			/// TODO: Need a way to bulk-add hierarchies
-			/// The previous version used a complex method of identifier assignment and rewrite with negative values
-			epoch.set(FieldNames.FIELD_NAME, "Epoch: " + title);
-			epoch.set(FieldNames.FIELD_LOCATION, rootLoc);
-			epoch.set(FieldNames.FIELD_TYPE, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE));
-			epoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
-			epoch.set(FieldNames.FIELD_PARENT_ID, rootEvt.get(FieldNames.FIELD_ID));
-			epoch.set("epoch", true);
-			long startTimeMS = ((Date)lastEpoch.get("eventEnd")).getTime();
-			epoch.set("eventStart", new Date(startTimeMS));
-			epoch.set("eventEnd", new Date(startTimeMS + (OlioUtil.YEAR * increment)));
+			AlignmentEnumType alignment = OlioUtil.getRandomAlignment();
+			int alignmentScore = AlignmentEnumType.getValue(alignment);
+			AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
 			
-			logger.info("Epoch: " + alignment.toString() + " " + title + " takes place between " + CalendarUtil.exportDateAsString(epoch.get("eventStart"), "yyyy/MM/dd") + " and " + CalendarUtil.exportDateAsString(epoch.get("eventEnd"), "yyyy/MM/dd"));
+			String title = EpochUtil.generateEpochTitle(user, parWorld, alignment);
 			
-			IOSystem.getActiveContext().getRecordUtil().updateRecord(epoch);
-			List<BaseRecord> grps = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
-			for(BaseRecord loc : locs) {
-				IOSystem.getActiveContext().getReader().populate(loc, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID});
-				String locName = loc.get(FieldNames.FIELD_NAME) + " Population";
-				BaseRecord popGrp = grps.stream().filter(f -> locName.equals((String)f.get(FieldNames.FIELD_NAME))).findFirst().get();
-				List<BaseRecord> pop = IOSystem.getActiveContext().getMemberUtil().findMembers(popGrp, null, ModelNames.MODEL_CHAR_PERSON, 0L);
-				if(pop.isEmpty()){
-					logger.warn("Location " + locName + " is decimated");
-					if(!AttributeUtil.getAttributeValue(loc, "decimated", false)) {
-						AttributeUtil.addAttribute(loc, "decimated", true);
-						IOSystem.getActiveContext().getRecordUtil().updateRecord(loc.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_ORGANIZATION_ID}));
+			ParameterList plist = ParameterList.newParameterList("path", world.get("events.path"));
+			try {
+				epoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
+				/// TODO: Need a way to bulk-add hierarchies
+				/// The previous version used a complex method of identifier assignment and rewrite with negative values
+				epoch.set(FieldNames.FIELD_NAME, "Epoch: " + title);
+				epoch.set(FieldNames.FIELD_LOCATION, rootLoc);
+				epoch.set(FieldNames.FIELD_TYPE, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE));
+				epoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
+				epoch.set(FieldNames.FIELD_PARENT_ID, rootEvt.get(FieldNames.FIELD_ID));
+				epoch.set("epoch", true);
+				long startTimeMS = ((Date)lastEpoch.get("eventEnd")).getTime();
+				epoch.set("eventStart", new Date(startTimeMS));
+				epoch.set("eventEnd", new Date(startTimeMS + (OlioUtil.YEAR * increment)));
+				
+				logger.info("Epoch: " + alignment.toString() + " " + title + " takes place between " + CalendarUtil.exportDateAsString(epoch.get("eventStart"), "yyyy/MM/dd") + " and " + CalendarUtil.exportDateAsString(epoch.get("eventEnd"), "yyyy/MM/dd"));
+				
+				IOSystem.getActiveContext().getRecordUtil().updateRecord(epoch);
+				List<BaseRecord> grps = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
+				for(BaseRecord loc : locs) {
+					IOSystem.getActiveContext().getReader().populate(loc, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID});
+					String locName = loc.get(FieldNames.FIELD_NAME) + " Population";
+					BaseRecord popGrp = grps.stream().filter(f -> locName.equals((String)f.get(FieldNames.FIELD_NAME))).findFirst().get();
+					
+					Query pq = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+					pq.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
+					int count = IOSystem.getActiveContext().getSearch().count(pq);
+					if(count == 0){
+						logger.warn("Location " + locName + " is decimated");
+						if(!AttributeUtil.getAttributeValue(loc, "decimated", false)) {
+							AttributeUtil.addAttribute(loc, "decimated", true);
+							IOSystem.getActiveContext().getRecordUtil().updateRecord(loc.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_ORGANIZATION_ID}));
+						}
 					}
+					else {
+						AlignmentEnumType useAlignment = (rand.nextDouble() < .35 ? invertedAlignment : alignment);
+						String childTitle = EpochUtil.generateEpochTitle(user, parWorld, useAlignment);
+						BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
+						childEpoch.set(FieldNames.FIELD_LOCATION, loc);
+						childEpoch.set(FieldNames.FIELD_NAME, locName + " experienced a " + useAlignment.toString() + " event: " + childTitle);
+						childEpoch.set(FieldNames.FIELD_ALIGNMENT, useAlignment);
+						childEpoch.set(FieldNames.FIELD_PARENT_ID, epoch.get(FieldNames.FIELD_ID));
+						childEpoch.set("eventStart", epoch.get("eventStart"));
+						childEpoch.set("eventEnd", epoch.get("eventEnd"));
+						List<BaseRecord> lgrps = childEpoch.get("groups");
+						lgrps.add(popGrp);
+						logger.info((String)childEpoch.get(FieldNames.FIELD_NAME));
+						IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
+						EvolutionUtil.evolvePopulation(user, world, childEpoch, useAlignment, popGrp, increment);
+					}
+	
 				}
-				else {
-					AlignmentEnumType useAlignment = (rand.nextDouble() < .35 ? invertedAlignment : alignment);
-					String childTitle = EpochUtil.generateEpochTitle(user, parWorld, useAlignment);
-					BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
-					childEpoch.set(FieldNames.FIELD_LOCATION, loc);
-					childEpoch.set(FieldNames.FIELD_NAME, locName + " experienced a " + useAlignment.toString() + " event: " + childTitle);
-					childEpoch.set(FieldNames.FIELD_ALIGNMENT, useAlignment);
-					childEpoch.set(FieldNames.FIELD_PARENT_ID, epoch.get(FieldNames.FIELD_ID));
-					childEpoch.set("eventStart", epoch.get("eventStart"));
-					childEpoch.set("eventEnd", epoch.get("eventEnd"));
-					List<BaseRecord> lgrps = childEpoch.get("groups");
-					lgrps.add(popGrp);
-					logger.info((String)childEpoch.get(FieldNames.FIELD_NAME));
-					IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
-					EvolutionUtil.evolvePopulation(user, world, childEpoch, useAlignment, popGrp, increment);
-				}
-
+				lastEpoch = epoch;
+			}
+			catch(ModelNotFoundException | FactoryException | FieldException | ValueException | ModelException e) {
+				logger.error(e);
 			}
 		}
-		catch(ModelNotFoundException | FactoryException | FieldException | ValueException | IndexException | ReaderException | ModelException e) {
-			logger.error(e);
-		}
-
 		return epoch;
 	}
 }

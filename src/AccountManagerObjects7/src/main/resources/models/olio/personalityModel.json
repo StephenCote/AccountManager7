@@ -1,0 +1,55 @@
+{
+	"name": "olio.personality",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Personalities",
+	"icon": "category",
+	"label": "Personality",
+	"query": ["id", "groupId"],
+	"fields": [
+		{
+			"name": "openness",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "conscientiousness",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "extraversion",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "agreeableness",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "neuroticism",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		}
+		
+	]
+}
+

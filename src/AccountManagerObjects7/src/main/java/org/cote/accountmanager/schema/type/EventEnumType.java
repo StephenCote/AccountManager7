@@ -58,6 +58,10 @@ public enum EventEnumType {
     TRANSFER,
     EGRESS,
     IMMIGRATE,
+    BIRTH,
+    DEATH,
+    MARRIAGE,
+    DIVORCE,
     EMIGRATE;
 
     public String value() {
