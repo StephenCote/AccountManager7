@@ -41,25 +41,28 @@ public class WorldFactory extends FactoryBase {
 				IPath pu = IOSystem.getActiveContext().getPathUtil();
 				try {
 					long orgId = contextUser.get(FieldNames.FIELD_ORGANIZATION_ID);
-					newRecord.set("addresses", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Addresses", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("contacts", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Contacts", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("population", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Population", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("locations", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Locations", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("events", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Events", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("words", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Words", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("traits", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Traits", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("colors", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Colors", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("names", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Names", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("surnames", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Surnames", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("occupations", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Occupations", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("dictionary", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Dictionary", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("apparel", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Apparel", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("wearables", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Wearables", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("qualities", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Qualities", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("patterns", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Patterns", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("statistics", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Statistics", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("instincts", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Instincts", GroupEnumType.DATA.toString(), orgId));
-					newRecord.set("behaviors", pu.makePath(contextUser, ModelNames.MODEL_GROUP, path + "/" + name + "/Behaviors", GroupEnumType.DATA.toString(), orgId));
+					String gtype = GroupEnumType.DATA.toString();
+					String mtype = ModelNames.MODEL_GROUP;
+					newRecord.set("addresses", pu.makePath(contextUser, mtype, path + "/" + name + "/Addresses", gtype, orgId));
+					newRecord.set("contacts", pu.makePath(contextUser, mtype, path + "/" + name + "/Contacts", gtype, orgId));
+					newRecord.set("population", pu.makePath(contextUser, mtype, path + "/" + name + "/Population", gtype, orgId));
+					newRecord.set("locations", pu.makePath(contextUser, mtype, path + "/" + name + "/Locations", gtype, orgId));
+					newRecord.set("events", pu.makePath(contextUser, mtype, path + "/" + name + "/Events", gtype, orgId));
+					newRecord.set("words", pu.makePath(contextUser, mtype, path + "/" + name + "/Words", gtype, orgId));
+					newRecord.set("traits", pu.makePath(contextUser, mtype, path + "/" + name + "/Traits", gtype, orgId));
+					newRecord.set("colors", pu.makePath(contextUser, mtype, path + "/" + name + "/Colors", gtype, orgId));
+					newRecord.set("names", pu.makePath(contextUser, mtype, path + "/" + name + "/Names", gtype, orgId));
+					newRecord.set("surnames", pu.makePath(contextUser, mtype, path + "/" + name + "/Surnames", gtype, orgId));
+					newRecord.set("occupations", pu.makePath(contextUser, mtype, path + "/" + name + "/Occupations", gtype, orgId));
+					newRecord.set("dictionary", pu.makePath(contextUser, mtype, path + "/" + name + "/Dictionary", gtype, orgId));
+					newRecord.set("apparel", pu.makePath(contextUser, mtype, path + "/" + name + "/Apparel", gtype, orgId));
+					newRecord.set("wearables", pu.makePath(contextUser, mtype, path + "/" + name + "/Wearables", gtype, orgId));
+					newRecord.set("qualities", pu.makePath(contextUser, mtype, path + "/" + name + "/Qualities", gtype, orgId));
+					newRecord.set("patterns", pu.makePath(contextUser, mtype, path + "/" + name + "/Patterns", gtype, orgId));
+					newRecord.set("statistics", pu.makePath(contextUser, mtype, path + "/" + name + "/Statistics", gtype, orgId));
+					newRecord.set("instincts", pu.makePath(contextUser, mtype, path + "/" + name + "/Instincts", gtype, orgId));
+					newRecord.set("behaviors", pu.makePath(contextUser, mtype, path + "/" + name + "/Behaviors", gtype, orgId));
+					newRecord.set("personalities", pu.makePath(contextUser, mtype, path + "/" + name + "/Personalities", gtype, orgId));
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
 				}
@@ -68,4 +71,5 @@ public class WorldFactory extends FactoryBase {
 		}
 		return newRecord;
 	}
+
 }

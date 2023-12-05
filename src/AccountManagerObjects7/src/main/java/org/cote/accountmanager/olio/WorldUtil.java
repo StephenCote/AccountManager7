@@ -36,14 +36,24 @@ public class WorldUtil {
 	public static final Logger logger = LogManager.getLogger(WorldUtil.class);
 	
     private static SecureRandom rand = new SecureRandom();
-
+    
+    
+    protected static boolean rapidDataTest = false;
 
 	
 
 	
 	public static BaseRecord getWorld(BaseRecord user, String groupPath, String worldName) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		return IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, worldName);
+		try {
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		//return IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
 		
 	}
 	public static BaseRecord getCreateWorld(BaseRecord user, String groupPath, String worldName, String[] features) {
@@ -61,7 +71,8 @@ public class WorldUtil {
 				world.set("features", Arrays.asList(features));
 				world.set("basis", basis);
 				IOSystem.getActiveContext().getAccessPoint().create(user, world);
-				rec = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
+				rec = getWorld(user, groupPath, worldName);
+				//rec = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
@@ -71,7 +82,7 @@ public class WorldUtil {
 			if(feats.size() != features.length) {
 				try {
 					rec.set("features", Arrays.asList(features));
-					IOSystem.getActiveContext().getAccessPoint().update(user, rec);
+					IOSystem.getActiveContext().getAccessPoint().update(user, rec.copyRecord(new String[] {FieldNames.FIELD_ID, "features"}));
 					
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
@@ -170,10 +181,10 @@ public class WorldUtil {
 
 	public static void loadWorldData(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		logger.info("Checking world data ...");
-		int dict = loadDictionary(user, world, basePath + "/wn3.1.dict/dict", reset);
-		logger.info("Dictionary words: " + dict);
 		int locs = loadLocations(user, world, basePath + "/location", reset);
 		logger.info("Locations: " + locs);
+		int dict = loadDictionary(user, world, basePath + "/wn3.1.dict/dict", reset);
+		logger.info("Dictionary words: " + dict);
 		int occs = loadOccupations(user, world, basePath + "/occupations/noc_2021_version_1.0_-_elements.csv", reset);
 		logger.info("Occupations: " + occs);
 		int names = loadNames(user, world, basePath + "/names/yob2022.txt", reset);
@@ -205,10 +216,9 @@ public class WorldUtil {
 	}
 	public static BaseRecord generateRegion(BaseRecord user, BaseRecord world, Date inceptionDate, int locCount, int popSeed){
 		
-		logger.info("Generate region ...");
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		List<BaseRecord> events = new ArrayList<>(); 
-		BaseRecord root = null;
+
 		BaseRecord parWorld = world.get("basis");
 		BaseRecord locDir = world.get("locations");
 		BaseRecord eventsDir = world.get("events");
@@ -216,17 +226,23 @@ public class WorldUtil {
 			logger.error("A basis world is required");
 			return null;
 		}
-		if(EventUtil.getRootEvent(user, world) != null) {
-			logger.warn("Region is already generated");
-			return null;
+		BaseRecord root = EventUtil.getRootEvent(user, world);
+		if(root != null) {
+			logger.info("Region is already generated");
+			return root;
 		}
-
+		
+		logger.info("Generate region ...");
 		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
 
 		List<BaseRecord> locations = new ArrayList<>();
 		Set<String> locSet = new HashSet<>();
 		for(int i = 0; i < (locCount + 1); i++) {
 			BaseRecord loc = GeoLocationUtil.randomLocation(user, parWorld);
+			if(loc == null) {
+				logger.error("Failed to find a random location!");
+				return null;
+			}
 			while(loc != null && locSet.contains(loc.get(FieldNames.FIELD_NAME))) {
 				loc = GeoLocationUtil.randomLocation(user, parWorld);
 			}
@@ -257,8 +273,6 @@ public class WorldUtil {
 					logger.info("Construct region: " + locName);
 					ParameterList plist = ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH));
 					root = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
-					/// TODO: Need a way to bulk-add hierarchies
-					/// The previous version used a complex method of identifier assignment and rewrite with negative values
 					root.set(FieldNames.FIELD_NAME, "Construct Region " + locName);
 					root.set(FieldNames.FIELD_LOCATION, loc);
 					root.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
@@ -275,7 +289,6 @@ public class WorldUtil {
 					BaseRecord popEvent = populateRegion(user, world, loc, root, popSeed);
 					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					events.add(popEvent);
-					// logger.info(popEvent.toFullString());
 					event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
 					event.set(FieldNames.FIELD_NAME, "Construct " + locName);
 					event.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
@@ -380,6 +393,7 @@ public class WorldUtil {
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.getTime() - ((Date)person.get("birthDate")).getTime()) / OlioUtil.YEAR;
 					person.set("age", (int)years);
+					PersonalityUtil.rollPersonality(person.get("personality"));
 					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);
 					totalAge += years;
 					totalAbsoluteAlignment += (alignment + 4);
@@ -465,6 +479,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATISTICS, (long)world.get("statistics.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INSTINCT, (long)world.get("instincts.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_BEHAVIOR, (long)world.get("behaviors.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_PERSONALITY, (long)world.get("personalities.id"), orgId);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");
 		RecordFactory.cleanupOrphans(null);

@@ -1,10 +1,12 @@
 package org.cote.accountmanager.olio;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -12,6 +14,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -26,6 +29,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.util.AttributeUtil;
 
 public class OlioUtil {
 	public static final Logger logger = LogManager.getLogger(OlioUtil.class);
@@ -185,6 +189,49 @@ public class OlioUtil {
 			e.printStackTrace();
 		}
 		return irec;
+	}
+	public static <T> void addAttribute(Map<String, List<BaseRecord>> queue, BaseRecord obj, String attrName, T val) throws ModelException, FieldException, ModelNotFoundException, ValueException {
+		BaseRecord attr = AttributeUtil.addAttribute(obj, attrName, val);
+		queueAttribute(queue, attr);
+	}
+	public static void queueAttribute(Map<String, List<BaseRecord>> queue, BaseRecord record) {
+		String key = record.getModel();
+		if(!queue.containsKey(key)) {
+			queue.put(key, new ArrayList<>());
+		}
+		queue.get(key).add(record);
+	}
+	
+	public static void queueUpdate(Map<String, List<BaseRecord>> queue, BaseRecord record, String[] fields) {
+		List<String> fnlist =new ArrayList<>(Arrays.asList(fields));
+		if(fnlist.size() == 0) {
+			return;
+		}
+		fnlist.add(FieldNames.FIELD_ID);
+		fnlist.add(FieldNames.FIELD_OWNER_ID);
+		fnlist.sort((f1, f2) -> f1.compareTo(f2));
+		Set<String> fieldSet = fnlist.stream().collect(Collectors.toSet());
+		String key = "UP-" + record.getModel() + "-" + fieldSet.stream().collect(Collectors.joining("-"));
+		if(!queue.containsKey(key)) {
+			queue.put(key, new ArrayList<>());
+		}
+		queue.get(key).add(record.copyRecord(fieldSet.toArray(new String[0])));
+	}
+	
+	public static void queueAdd(Map<String, List<BaseRecord>> queue, BaseRecord record) {
+		record.getFields().sort((f1, f2) -> f1.getName().compareTo(f2.getName()));
+		String pref = "";
+		/// Split up the adds because participations can wind up going into different tables and the bulk add
+		/// will reject the dataset as being too disimilar
+		///
+		if(record.getModel().equals(ModelNames.MODEL_PARTICIPATION)) {
+			pref = record.get(FieldNames.FIELD_PARTICIPATION_MODEL) + "-";
+		}
+		String key = "ADD-" + pref + record.getModel() + "-" + record.getFields().stream().map(f -> f.getName()).collect(Collectors.joining("-"));
+		if(!queue.containsKey(key)) {
+			queue.put(key, new ArrayList<>());
+		}
+		queue.get(key).add(record);
 	}
 	
 }
