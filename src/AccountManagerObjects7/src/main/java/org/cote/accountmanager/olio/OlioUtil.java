@@ -2,11 +2,15 @@ package org.cote.accountmanager.olio;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -40,6 +44,68 @@ public class OlioUtil {
     protected static final long YEAR = 365 * DAY;
     
 	protected static Map<String, List<String>> dirNameCache = new HashMap<>();
+	
+	private static String[] demographicLabels = new String[]{"Alive","Child","Young Adult","Adult","Available","Senior","Mother","Coupled","Deceased"};
+	protected static Map<String,List<BaseRecord>> getDemographicMap(OlioContext ctx, BaseRecord location){
+		long id = location.get(FieldNames.FIELD_ID);
+		if(!ctx.getDemographicMap().containsKey(id)) {
+			Map<String,List<BaseRecord>> map = new ConcurrentHashMap<>();
+			for(String label : demographicLabels){
+				map.put(label, new CopyOnWriteArrayList<>());
+			}
+			ctx.getDemographicMap().put(id, map);
+		}
+		return ctx.getDemographicMap().get(id);
+	}
+	
+	protected static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
+		try {
+			Date birthDate = person.get("birthDate");
+			Date endDate = parentEvent.get("eventEnd");
+			int age = (int)((endDate.getTime() - birthDate.getTime()) / OlioUtil.YEAR);
+			map.values().stream().forEach(l -> l.removeIf(f -> ((long)person.get(FieldNames.FIELD_ID)) == ((long)f.get(FieldNames.FIELD_ID))));
+			
+			if(CharacterUtil.isDeceased(person)){
+				map.get("Deceased").add(person);
+				List<BaseRecord> partners = person.get("partners");
+				if(partners.size() > 0) {
+					logger.error("***** Deceased " + person.get(FieldNames.FIELD_NAME) + " should have been decoupled and wasn't");
+					// decouple(user, person);
+				}
+			}
+			else{
+				map.get("Alive").add(person);
+	
+				if(age <= Rules.MAXIMUM_CHILD_AGE){
+					map.get("Child").add(person);
+				}
+				else if(age >= Rules.SENIOR_AGE){
+					map.get("Senior").add(person);
+				}
+				else if(age < Rules.MINIMUM_ADULT_AGE) {
+					map.get("Young Adult").add(person);
+				}
+				else{
+					map.get("Adult").add(person);
+				}
+
+				List<BaseRecord> partners = person.get("partners");
+				if(!partners.isEmpty()) {
+					map.get("Coupled").add(person);
+				}
+				else if(age >= Rules.MINIMUM_MARRY_AGE && age <= Rules.MAXIMUM_MARRY_AGE && partners.isEmpty()) {
+					map.get("Available").add(person);
+				}
+				if("female".equals(person.get("gender")) && age >= Rules.MINIMUM_ADULT_AGE && age <= Rules.MAXIMUM_FERTILITY_AGE_FEMALE) {
+					map.get("Mother").add(person);
+				}
+
+			}
+		}
+		catch(ModelException e) {
+			logger.error(e);
+		}
+	}
 	
 	protected static void populateDirNameCache(BaseRecord user, String model, long groupId) throws IndexException, ReaderException {
 		String key = model + "-" + groupId;
@@ -232,6 +298,39 @@ public class OlioUtil {
 			queue.put(key, new ArrayList<>());
 		}
 		queue.get(key).add(record);
+	}
+	public static BaseRecord getPopulationGroup(OlioContext ctx, BaseRecord location, String name) {
+		IOSystem.getActiveContext().getReader().populate(location, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID});
+		String locName = location.get(FieldNames.FIELD_NAME) + " " + name;
+		Optional<BaseRecord> grp = ctx.getPopulationGroups().stream().filter(f -> locName.equals((String)f.get(FieldNames.FIELD_NAME))).findFirst();
+		BaseRecord ogrp = null;
+		if(grp.isPresent()) {
+			ogrp = grp.get();
+		}
+		return ogrp;
+	}
+	protected static int countPeople(BaseRecord group) {
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+		pq.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
+		return IOSystem.getActiveContext().getSearch().count(pq);
+	}
+	protected static List<BaseRecord> getPopulation(OlioContext ctx, BaseRecord location){
+		long id = location.get(FieldNames.FIELD_ID);
+		if(!ctx.getPopulationMap().containsKey(id)) {
+			BaseRecord popGrp = getPopulationGroup(ctx, location, "Population");
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
+			try {
+				q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+			q.setCache(false);
+			
+			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
+			ctx.getPopulationMap().put(id, pop);
+		}
+		return ctx.getPopulationMap().get(id);
 	}
 	
 }

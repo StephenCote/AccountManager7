@@ -50,38 +50,40 @@ public class EventUtil {
 			BaseRecord[] actors, BaseRecord[] participants, BaseRecord[] influencers,
 			Map<String, List<BaseRecord>> queue
 		) {
-			BaseRecord evt = null;
-			ParameterList elist = ParameterList.newParameterList("path", world.get("events.path"));
-			try {
-				evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
-				/// TODO: Need a way to bulk-add hierarchies
-				/// The previous version used a complex method of identifier assignment and rewrite with negative values
-				evt.set(FieldNames.FIELD_NAME, name);
-				evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
-				if(actors != null && actors.length > 0) {
-					List<BaseRecord> acts = evt.get("actors");
-					acts.addAll(Arrays.asList(actors));
-				}
-				if(participants != null && participants.length > 0) {
-					List<BaseRecord> parts = evt.get("participants");
-					parts.addAll(Arrays.asList(participants));
-				}
-				if(influencers != null && influencers.length > 0) {
-					List<BaseRecord> inf = evt.get("influencers");
-					inf.addAll(Arrays.asList(influencers));
-				}
-				evt.set(FieldNames.FIELD_TYPE, type);
-				evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
-				evt.set("eventStart", new Date(time));
-				evt.set("eventEnd", new Date(time));
-				OlioUtil.queueAdd(queue, evt);
+		BaseRecord evt = null;
+		ParameterList elist = ParameterList.newParameterList("path", world.get("events.path"));
+		try {
+			evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
+			/// TODO: Need a way to bulk-add hierarchies
+			/// The previous version used a complex method of identifier assignment and rewrite with negative values
+			evt.set(FieldNames.FIELD_NAME, name);
+			evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
+			if(actors != null && actors.length > 0) {
+				List<BaseRecord> acts = evt.get("actors");
+				acts.addAll(Arrays.asList(actors));
 			}
-			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
+			if(participants != null && participants.length > 0) {
+				List<BaseRecord> parts = evt.get("participants");
+				parts.addAll(Arrays.asList(participants));
 			}
-			return evt;
+			if(influencers != null && influencers.length > 0) {
+				List<BaseRecord> inf = evt.get("influencers");
+				inf.addAll(Arrays.asList(influencers));
+			}
+			evt.set(FieldNames.FIELD_TYPE, type);
+			evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
+			evt.set("eventStart", new Date(time));
+			evt.set("eventEnd", new Date(time));
+			OlioUtil.queueAdd(queue, evt);
 		}
-	
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return evt;
+	}
+	public static BaseRecord getRootEvent(OlioContext ctx) {
+		return getRootEvent(ctx.getUser(), ctx.getWorld());
+	}
 	public static BaseRecord getRootEvent(BaseRecord user, BaseRecord world) {
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)world.get("events.id"));
@@ -121,6 +123,9 @@ public class EventUtil {
 			logger.error(e);
 		}
 		return lastEvt;
+	}
+	public static BaseRecord getLastEpochEvent(OlioContext ctx) {
+		return getLastEpochEvent(ctx.getUser(), ctx.getWorld());
 	}
 	public static BaseRecord getLastEpochEvent(BaseRecord user, BaseRecord world) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));

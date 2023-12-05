@@ -94,30 +94,35 @@ public class EpochUtil {
 		return title;
 	}
 
+	/*
 	public static BaseRecord generateEpoch(BaseRecord user, BaseRecord world, int evolutions){
 		return generateEpoch(user, world, evolutions, 1);
 	}
 	private static BaseRecord generateEpoch(BaseRecord user, BaseRecord world, int evolutions, int increment){
-
+	*/
+	public static BaseRecord generateEpoch(OlioContext ctx, int evolutions) {
 		BaseRecord epoch = null;
+		int increment = 1;
+		BaseRecord world = ctx.getWorld();
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		BaseRecord parWorld = world.get("basis");
 		if(parWorld == null) {
 			logger.error("A basis world is required");
 			return null;
 		}
-		BaseRecord rootEvt = EventUtil.getRootEvent(user, world);
-		BaseRecord lastEpoch = EventUtil.getLastEpochEvent(user, world);
+		BaseRecord rootEvt = EventUtil.getRootEvent(ctx);
+		BaseRecord lastEpoch = EventUtil.getLastEpochEvent(ctx);
 		if(lastEpoch == null) {
 			lastEpoch = rootEvt;
 		}
-		BaseRecord rootLoc = GeoLocationUtil.getRootLocation(user, world);
+		BaseRecord rootLoc = GeoLocationUtil.getRootLocation(ctx);
 		if(rootLoc == null){
 			logger.error("Failed to find root location");
 			return null;
 		}
-		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(user, world);
-		if(locs.length == 0) {
+		
+		// BaseRecord[] locs = GeoLocationUtil.getRegionLocations(ctx);
+		if(ctx.getLocations().length == 0) {
 			logger.error("Failed to find child locations");
 		}
 		
@@ -127,11 +132,11 @@ public class EpochUtil {
 			int alignmentScore = AlignmentEnumType.getValue(alignment);
 			AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
 			
-			String title = EpochUtil.generateEpochTitle(user, parWorld, alignment);
+			String title = EpochUtil.generateEpochTitle(ctx.getUser(), parWorld, alignment);
 			
 			ParameterList plist = ParameterList.newParameterList("path", world.get("events.path"));
 			try {
-				epoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
+				epoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
 				/// TODO: Need a way to bulk-add hierarchies
 				/// The previous version used a complex method of identifier assignment and rewrite with negative values
 				epoch.set(FieldNames.FIELD_NAME, "Epoch: " + title);
@@ -147,15 +152,22 @@ public class EpochUtil {
 				logger.info("Epoch: " + alignment.toString() + " " + title + " takes place between " + CalendarUtil.exportDateAsString(epoch.get("eventStart"), "yyyy/MM/dd") + " and " + CalendarUtil.exportDateAsString(epoch.get("eventEnd"), "yyyy/MM/dd"));
 				
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(epoch);
-				List<BaseRecord> grps = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
-				for(BaseRecord loc : locs) {
+				
+				ctx.setCurrentEpoch(epoch);
+				
+				// List<BaseRecord> grps = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
+				for(BaseRecord loc : ctx.getLocations()) {
 					IOSystem.getActiveContext().getReader().populate(loc, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID});
-					String locName = loc.get(FieldNames.FIELD_NAME) + " Population";
-					BaseRecord popGrp = grps.stream().filter(f -> locName.equals((String)f.get(FieldNames.FIELD_NAME))).findFirst().get();
 					
+					String locName = loc.get(FieldNames.FIELD_NAME) + " Population";
+					//BaseRecord popGrp = grps.stream().filter(f -> locName.equals((String)f.get(FieldNames.FIELD_NAME))).findFirst().get();
+					BaseRecord popGrp = ctx.getPopulationGroup(loc, "Population");
+					/*
 					Query pq = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 					pq.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
 					int count = IOSystem.getActiveContext().getSearch().count(pq);
+					*/
+					int count = OlioUtil.countPeople(popGrp);
 					if(count == 0){
 						logger.warn("Location " + locName + " is decimated");
 						if(!AttributeUtil.getAttributeValue(loc, "decimated", false)) {
@@ -165,8 +177,8 @@ public class EpochUtil {
 					}
 					else {
 						AlignmentEnumType useAlignment = (rand.nextDouble() < .35 ? invertedAlignment : alignment);
-						String childTitle = EpochUtil.generateEpochTitle(user, parWorld, useAlignment);
-						BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
+						String childTitle = EpochUtil.generateEpochTitle(ctx.getUser(), parWorld, useAlignment);
+						BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
 						childEpoch.set(FieldNames.FIELD_LOCATION, loc);
 						childEpoch.set(FieldNames.FIELD_NAME, locName + " experienced a " + useAlignment.toString() + " event: " + childTitle);
 						childEpoch.set(FieldNames.FIELD_ALIGNMENT, useAlignment);
@@ -177,7 +189,10 @@ public class EpochUtil {
 						lgrps.add(popGrp);
 						logger.info((String)childEpoch.get(FieldNames.FIELD_NAME));
 						IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
-						EvolutionUtil.evolvePopulation(user, world, childEpoch, useAlignment, popGrp, increment);
+						ctx.setCurrentEvent(childEpoch);
+						ctx.setCurrentLocation(loc);
+						//EvolutionUtil.evolvePopulation(ctx.getUser(), world, childEpoch, useAlignment, popGrp, increment);
+						EvolutionUtil.evolvePopulation(ctx);
 					}
 	
 				}

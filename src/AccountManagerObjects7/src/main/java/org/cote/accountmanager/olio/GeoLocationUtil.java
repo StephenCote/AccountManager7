@@ -1,5 +1,10 @@
 package org.cote.accountmanager.olio;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -9,12 +14,14 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -23,6 +30,32 @@ public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
 	private static Map<String, String[]> altNamesCache = new HashMap<>();
 	
+	
+	public static float calculateDistance(BaseRecord location1, BaseRecord location2) {
+		StringBuilder buff = new StringBuilder();
+		buff.append("SELECT SQRT(POW(69.1 * (G1.latitude -  G2.latitude), 2) + POW(69.1 * (G2.longitude - G1.longitude) * COS(G1.latitude / 57.3), 2))");
+		String tableName = IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_GEO_LOCATION);
+		buff.append(" FROM " + tableName + " G1 CROSS JOIN " + tableName + " G2");
+		buff.append(" WHERE G1.id = ? AND G2.id = ?");
+		float distance = 0F;
+	    try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); PreparedStatement st = con.prepareStatement(buff.toString())){
+	    	st.setLong(1, location1.get(FieldNames.FIELD_ID));
+	    	st.setLong(2, location2.get(FieldNames.FIELD_ID));
+	    	ResultSet rset = st.executeQuery();
+	    	if(rset.next()) {
+	    		distance = rset.getFloat(1);
+	    	}
+	    	rset.close();
+			st.close();
+			
+		} catch (SQLException e) {
+			logger.error(e);
+	    }
+	    return distance;
+	}
+	public static BaseRecord getRootLocation(OlioContext ctx) {
+		return getRootLocation(ctx.getUser(), ctx.getWorld());
+	}
 	public static BaseRecord getRootLocation(BaseRecord user, BaseRecord world) {
 		BaseRecord loc = null;
 		BaseRecord evt = EventUtil.getRootEvent(user, world);
@@ -31,7 +64,9 @@ public class GeoLocationUtil {
 		}
 		return loc;
 	}
-
+	public static BaseRecord[] getRegionLocations(OlioContext ctx) {
+		return getRegionLocations(ctx.getUser(), ctx.getWorld());
+	}
 	public static BaseRecord[] getRegionLocations(BaseRecord user, BaseRecord world) {
 		List<BaseRecord> locs = new ArrayList<>();
 		BaseRecord[] evts = EventUtil.getBaseRegionEvents(user, world);

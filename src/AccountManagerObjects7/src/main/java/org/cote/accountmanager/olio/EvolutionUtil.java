@@ -34,105 +34,55 @@ public class EvolutionUtil {
 	public static final Logger logger = LogManager.getLogger(EvolutionUtil.class);
 	private static SecureRandom rand = new SecureRandom();
 	
-	private static String[] demographicLabels = new String[]{"Alive","Child","Young Adult","Adult","Available","Senior","Mother","Coupled","Deceased"};
-	protected static Map<String,List<BaseRecord>> newDemographicMap(){
-		Map<String,List<BaseRecord>> map = new ConcurrentHashMap<>();
-		for(String label : demographicLabels){
-			map.put(label, new CopyOnWriteArrayList<>());
-		}
-		return map;
-	}
-	
-	protected static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
-		try {
-			Date birthDate = person.get("birthDate");
-			Date endDate = parentEvent.get("eventEnd");
-			int age = (int)((endDate.getTime() - birthDate.getTime()) / OlioUtil.YEAR);
-			map.values().stream().forEach(l -> l.removeIf(f -> ((long)person.get(FieldNames.FIELD_ID)) == ((long)f.get(FieldNames.FIELD_ID))));
-			
-			if(CharacterUtil.isDeceased(person)){
-				map.get("Deceased").add(person);
-				List<BaseRecord> partners = person.get("partners");
-				if(partners.size() > 0) {
-					logger.error("***** Deceased " + person.get(FieldNames.FIELD_NAME) + " should have been decoupled and wasn't");
-					// decouple(user, person);
-				}
-			}
-			else{
-				map.get("Alive").add(person);
-	
-				if(age <= Rules.MAXIMUM_CHILD_AGE){
-					map.get("Child").add(person);
-				}
-				else if(age >= Rules.SENIOR_AGE){
-					map.get("Senior").add(person);
-				}
-				else if(age < Rules.MINIMUM_ADULT_AGE) {
-					map.get("Young Adult").add(person);
-				}
-				else{
-					map.get("Adult").add(person);
-				}
-
-				List<BaseRecord> partners = person.get("partners");
-				if(!partners.isEmpty()) {
-					map.get("Coupled").add(person);
-				}
-				else if(age >= Rules.MINIMUM_MARRY_AGE && age <= Rules.MAXIMUM_MARRY_AGE && partners.isEmpty()) {
-					map.get("Available").add(person);
-				}
-				if("female".equals(person.get("gender")) && age >= Rules.MINIMUM_ADULT_AGE && age <= Rules.MAXIMUM_FERTILITY_AGE_FEMALE) {
-					map.get("Mother").add(person);
-				}
-
-			}
-		}
-		catch(ModelException e) {
-			logger.error(e);
-		}
-	}
-	
-
-
-
-	
 	/// The default config - 1 epoch/increment = 1 year.  Evolve will run through 12 months, and within each month branch out into smaller clusters of events
-	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int increment){
+	// protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int increment){
+	protected static void evolvePopulation(OlioContext ctx){
 		try {
-
+			/*
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(population, null, ModelNames.MODEL_CHAR_PERSON, null);
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			q.setCache(false);
 			
 			List<BaseRecord> pop = new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
+			*/
+			int increment = 1;
+			if(ctx.getCurrentEvent() == null || ctx.getCurrentLocation() == null) {
+				logger.error("Context is not ready for evolution");
+				return;
+			}
+			List<BaseRecord> pop = OlioUtil.getPopulation(ctx, ctx.getCurrentLocation());
 			if(pop.isEmpty()){
 				logger.warn("Population is decimated");
 				return;
 			}
 			
-			Map<String,List<BaseRecord>> demographicMap = newDemographicMap();
-			Map<String, List<BaseRecord>> queue = new HashMap<>();
+			Map<String,List<BaseRecord>> demographicMap = ctx.getDemographicMap(ctx.getCurrentLocation());
+			// Map<String, List<BaseRecord>> queue = new HashMap<>();
+			
 			logger.info("Mapping ...");
+			// demographicMap.clear();
 			for(BaseRecord p : pop) {
-				setDemographicMap(user, demographicMap, parentEvent, p);
+				OlioUtil.setDemographicMap(ctx.getUser(), demographicMap, ctx.getCurrentEvent(), p);
 			}
-
-			logger.info("Evolving " + parentEvent.get("location.name") + " with " + pop.size() + " people ...");
+			
+			logger.info("Evolving " + ctx.getCurrentEvent().get("location.name") + " with " + pop.size() + " people ...");
 			for(int i = 0; i < (increment * 12); i++){
-				evolvePopulation(user, world, parentEvent, eventAlignment, population, pop, demographicMap, queue, i);
+				evolvePopulationByMonth(ctx, i);
+				// evolvePopulation(user, world, parentEvent, eventAlignment, population, pop, demographicMap, queue, i);
 			}
 			
 			for(BaseRecord p: pop) {
-				int age =  CharacterUtil.getCurrentAge(user, world, p);
+				int age =  CharacterUtil.getCurrentAge(ctx, p);
 				p.set("age",age);
-				OlioUtil.queueUpdate(queue, p, new String[] {"age"});
+				OlioUtil.queueUpdate(ctx.getQueue(), p, new String[] {"age"});
 			}
 			
 			logger.info("Updating population ...");
-			queue.forEach((k, v) -> {
+			ctx.getQueue().forEach((k, v) -> {
 				IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
 			});
+			ctx.getQueue().clear();
 			
 		}
 		catch(Exception e) {
@@ -141,80 +91,90 @@ public class EvolutionUtil {
 		}
 	}
 	
-	protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, List<BaseRecord> pop, Map<String,List<BaseRecord>> map, Map<String, List<BaseRecord>> queue, int iteration){
-		
+	/// protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, List<BaseRecord> pop, Map<String,List<BaseRecord>> map, Map<String, List<BaseRecord>> queue, int iteration){
+	protected static void evolvePopulationByMonth(OlioContext ctx, int month){
 		try {
 			List<BaseRecord> additions = new ArrayList<>();
 			List<BaseRecord> deaths = new ArrayList<>();
-			ParameterList elist = ParameterList.newParameterList("path", world.get("events.path"));
+			ParameterList elist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
+			List<BaseRecord> pop = ctx.getPopulation(ctx.getCurrentLocation());
+			BaseRecord popGrp = ctx.getPopulationGroup(ctx.getCurrentLocation(), "Population");
+			BaseRecord cemGrp = ctx.getPopulationGroup(ctx.getCurrentLocation(), "Cemetary");
+			AlignmentEnumType eventAlignment = AlignmentEnumType.valueOf(ctx.getCurrentEvent().get("alignment"));
+			Map<String,List<BaseRecord>> map = ctx.getDemographicMap(ctx.getCurrentLocation());
+			
 			for(BaseRecord per : pop) {
 				if(CharacterUtil.isDeceased(per)) {
 					continue;
 				}
-				long now = ((Date)parentEvent.get("eventStart")).getTime() + (OlioUtil.DAY * iteration);
+				long now = ((Date)ctx.getCurrentEvent().get("eventStart")).getTime() + (OlioUtil.DAY * month);
+				ctx.setCurrentMonth(now);
 				long lage = now - ((Date)per.get("birthDate")).getTime();
 				//long now = (((Date)parentEvent.get("eventStart")).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration));
 				int currentAge = (int)(lage/OlioUtil.YEAR);
 				String gender = per.get("gender");
 				/// If a female is ruled to be a mother, generate the baby
 				///
-				if("female".equalsIgnoreCase(gender) && rulePersonBirth(eventAlignment, population, per, currentAge)){
+				if("female".equalsIgnoreCase(gender) && rulePersonBirth(eventAlignment, popGrp, per, currentAge)){
 					List<BaseRecord> partners = per.get("partners");
 					List<BaseRecord> dep1 = per.get("dependents");
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
-					BaseRecord baby = CharacterUtil.randomPerson(user, world, (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get("lastName"));
+					BaseRecord baby = CharacterUtil.randomPerson(ctx.getUser(), ctx.getWorld(), (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get("lastName"));
 					StatisticsUtil.rollStatistics(baby.get("statistics"), 0);
 					baby.set("birthDate", new Date(now));
 					// queueAdd(queue, baby);
-					AddressUtil.addressPerson(user, world, baby, parentEvent.get("location"));
+					AddressUtil.addressPerson(ctx.getUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get("location"));
 					List<BaseRecord> appl = baby.get("apparel");
-					appl.add(ApparelUtil.randomApparel(user, world, baby));
+					appl.add(ApparelUtil.randomApparel(ctx.getUser(), ctx.getWorld(), baby));
 					
 					IOSystem.getActiveContext().getRecordUtil().updateRecord(baby);
 					dep1.add(baby);
-					OlioUtil.queueAdd(queue, ParticipationFactory.newParticipation(user, population, null, baby));
-					OlioUtil.queueAdd(queue, ParticipationFactory.newParticipation(user, per, "dependents", baby));
+					ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), popGrp, null, baby));
+					ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), per, "dependents", baby));
 					if(partner != null){
 						BaseRecord partp = pop.stream().filter(p -> ((long)p.get(FieldNames.FIELD_ID)) == ((long)partner.get(FieldNames.FIELD_ID))).findFirst().get();
 						List<BaseRecord> dep2 = partp.get("dependents");
 						dep2.add(baby);
-						OlioUtil.queueAdd(queue, ParticipationFactory.newParticipation(user, partp, "dependents", baby));
+						ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), partp, "dependents", baby));
 					}
 					
 					additions.add(baby);
 
-					EventUtil.addEvent(user, world, parentEvent, EventEnumType.BIRTH, "Birth of " + baby.get(FieldNames.FIELD_NAME), now, new BaseRecord[] {per}, new BaseRecord[] {baby}, (partner != null ? new BaseRecord[] {partner} : null), queue);
+					EventUtil.addEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.BIRTH, "Birth of " + baby.get(FieldNames.FIELD_NAME), now, new BaseRecord[] {per}, new BaseRecord[] {baby}, (partner != null ? new BaseRecord[] {partner} : null), ctx.getQueue());
 				}
 				
-				if(rulePersonDeath(eventAlignment, population, per, currentAge)){
-					//BaseRecord attr = AttributeUtil.
-					OlioUtil.addAttribute(queue, per, "deceased", true);
+				if(rulePersonDeath(eventAlignment, popGrp, per, currentAge)){
+					OlioUtil.addAttribute(ctx.getQueue(), per, "deceased", true);
 					List<BaseRecord> partners = per.get("partners");
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
 					if(partner != null) {
 						/// Use the population copy of the partner since the partners list may be consulted later in the same evolution cycle
 						///
 						BaseRecord partp = pop.stream().filter(p -> ((long)p.get(FieldNames.FIELD_ID)) == ((long)partner.get(FieldNames.FIELD_ID))).findFirst().get();
-						CharacterUtil.couple(user, per, partp, false);
+						CharacterUtil.couple(ctx.getUser(), per, partp, false);
 						// decouple(user, per);
 					}
-					IOSystem.getActiveContext().getMemberUtil().member(user, population, per, null, false);
-					/// TODO: Add user to Cemetery group
-					EventUtil.addEvent(user, world, parentEvent, EventEnumType.DEATH, "Death of " + per.get(FieldNames.FIELD_NAME) + " at the age of " + currentAge, now, new BaseRecord[] {per}, null, null, queue);
+					IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), popGrp, per, null, false);
+					IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), cemGrp, per, null, true);
+					EventUtil.addEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.DEATH, "Death of " + per.get(FieldNames.FIELD_NAME) + " at the age of " + currentAge, now, new BaseRecord[] {per}, null, null, ctx.getQueue());
 					deaths.add(per);
 				}
 			}
 			pop.addAll(additions);
+			pop.removeAll(deaths);
+			/*
 			for(BaseRecord per : additions){
-				setDemographicMap(user, map, parentEvent, per);
+				OlioUtil.setDemographicMap(ctx.getUser(), map, ctx.getCurrentEvent(), per);
 			}
+			*/
 			for(BaseRecord per : deaths){
-				setDemographicMap(user, map, parentEvent, per);
+				OlioUtil.setDemographicMap(ctx.getUser(), map, ctx.getCurrentEvent(), per);
 			}			
-			ruleCouples(user, world, parentEvent, map, queue);
+			// ruleCouples(user, world, parentEvent, map, queue);
+			ruleCouples(ctx);
 			
 			for(BaseRecord p : pop) {
-				setDemographicMap(user, map, parentEvent, p);
+				OlioUtil.setDemographicMap(ctx.getUser(), map, ctx.getCurrentEvent(), p);
 			}
 		}
 		catch(ModelException | FieldException | ModelNotFoundException | ValueException e) {
@@ -352,8 +312,9 @@ public class EvolutionUtil {
 		}
 		return potentials;
 	}
-	private static void ruleCouples(BaseRecord user, BaseRecord world, BaseRecord parentEvent, Map<String, List<BaseRecord>> map, Map<String, List<BaseRecord>> queue) {
-
+ 	private static void ruleCouples(OlioContext ctx) {
+	// private static void ruleCouples(BaseRecord user, BaseRecord world, BaseRecord parentEvent, Map<String, List<BaseRecord>> map, Map<String, List<BaseRecord>> queue) {
+ 		Map<String,List<BaseRecord>> map = ctx.getDemographicMap(ctx.getCurrentLocation());
 		Map<String,List<BaseRecord>> pots = getPotentialPartnerMap(map);
 
 		Set<BaseRecord> eval = new HashSet<>();
@@ -385,9 +346,10 @@ public class EvolutionUtil {
 					partner = popt.get();
 				}
 
-				long time = ((Date)parentEvent.get("eventStart")).getTime() + (rand.nextInt(364) * OlioUtil.DAY);
-				EventUtil.addEvent(user, world, parentEvent, EventEnumType.DIVORCE, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME), time, new BaseRecord[] {per, partner}, null, null, queue);
-				CharacterUtil.couple(user, per, partner, false);
+				// .getTime() + (rand.nextInt(364) * OlioUtil.DAY);;
+				long time = ctx.getCurrentMonth();
+				EventUtil.addEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.DIVORCE, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME), time, new BaseRecord[] {per, partner}, null, null, ctx.getQueue());
+				CharacterUtil.couple(ctx.getUser(), per, partner, false);
 				remap.add(per);
 				remap.add(partner);
 				eval.add(partner);
@@ -407,11 +369,12 @@ public class EvolutionUtil {
 				eval.add(woman);
 				
 				if(rand.nextDouble() <= Rules.INITIAL_MARRIAGE_RATE) {
-					long time = ((Date)parentEvent.get("eventStart")).getTime() + (rand.nextInt(364) * OlioUtil.DAY);
+					/// ((Date)parentEvent.get("eventStart")).getTime() + (rand.nextInt(364) * OlioUtil.DAY);
+					long time = ctx.getCurrentMonth();
 					
-					CharacterUtil.couple(user, man, woman);
+					CharacterUtil.couple(ctx.getUser(), man, woman);
 					
-					EventUtil.addEvent(user, world, parentEvent, EventEnumType.MARRIAGE, "Marriage of " + man.get(FieldNames.FIELD_NAME) + " to " + woman.get(FieldNames.FIELD_NAME), time, new BaseRecord[] {man, woman}, null, null, queue);
+					EventUtil.addEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.MARRIAGE, "Marriage of " + man.get(FieldNames.FIELD_NAME) + " to " + woman.get(FieldNames.FIELD_NAME), time, new BaseRecord[] {man, woman}, null, null, ctx.getQueue());
 					
 					remap.add(man);
 					remap.add(woman);
@@ -419,10 +382,11 @@ public class EvolutionUtil {
 				}
 			}
 		}
-		
+		/*
 		for(BaseRecord per : remap) {
-			setDemographicMap(user, map, parentEvent, per);
+			OlioUtil.setDemographicMap(ctx.getUser(), map, ctx.getCurrentEvent(), per);
 		}
+		*/
 	}
 
 }

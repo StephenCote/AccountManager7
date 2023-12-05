@@ -124,6 +124,27 @@ public class PersonalityUtil {
 		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
 		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
 
+		BaseRecord stats = person.get("statistics");
+		double d1 = 100.0;
+		prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get("physicalStrength")*5)/d1));
+		prof.setPhysicalEndurance(HighEnumType.valueOf(((int)stats.get("physicalEndurance")*5)/d1));
+		prof.setManualDexterity(HighEnumType.valueOf(((int)stats.get("manualDexterity")*5)/d1));
+		prof.setAgility(HighEnumType.valueOf(((int)stats.get("agility")*5)/d1));
+		prof.setSpeed(HighEnumType.valueOf(((int)stats.get("speed")*5)/d1));
+		prof.setMentalStrength(HighEnumType.valueOf(((int)stats.get("mentalStrength")*5)/d1));
+		prof.setMentalEndurance(HighEnumType.valueOf(((int)stats.get("mentalEndurance")*5)/d1));
+		prof.setIntelligence(HighEnumType.valueOf(((int)stats.get("intelligence")*5)/d1));
+		prof.setCharisma(HighEnumType.valueOf(((int)stats.get("charisma")*5)/d1));
+		prof.setCreativity(HighEnumType.valueOf(((int)stats.get("creativity")*5)/d1));
+		prof.setSpirituality(HighEnumType.valueOf(((int)stats.get("spirituality")*5)/d1));
+		prof.setWisdom(HighEnumType.valueOf(((int)stats.get("wisdom")*5)/d1));
+		prof.setHealth(HighEnumType.valueOf(((int)stats.get("health")*5)/d1));
+		prof.setMaximumHealth(HighEnumType.valueOf(((int)stats.get("maximumHealth")*5)/d1));
+		prof.setSave(HighEnumType.valueOf((double)stats.get("save")));
+		prof.setReaction(HighEnumType.valueOf(((int)stats.get("reaction")*5)/d1));
+		prof.setScience(HighEnumType.valueOf(((int)stats.get("science")*5)/d1));
+		prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
+
 		return prof;
 	}
 	

@@ -104,9 +104,10 @@ public class WorldUtil {
 	}
 	
 	private static int loadLocations(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
+		IOSystem.getActiveContext().getReader().populate(world);
+
 		List<String> feats = world.get("features");
 		String[] features = feats.toArray(new String[0]);
-		IOSystem.getActiveContext().getReader().populate(world);
 		BaseRecord locDir = world.get("locations");
 		IOSystem.getActiveContext().getReader().populate(locDir);
 
@@ -210,15 +211,16 @@ public class WorldUtil {
 		}
 		return targ;
 	}
-	
+	/*
 	public static BaseRecord generateRegion(BaseRecord user, BaseRecord world, int locCount, int popSeed){
 		return generateRegion(user, world, new Date(), locCount, popSeed);
 	}
 	public static BaseRecord generateRegion(BaseRecord user, BaseRecord world, Date inceptionDate, int locCount, int popSeed){
+	*/
+	protected static BaseRecord generateRegion(OlioContext ctx) {
 		
-		IOSystem.getActiveContext().getReader().populate(world, 2);
 		List<BaseRecord> events = new ArrayList<>(); 
-
+		BaseRecord world = ctx.getWorld();
 		BaseRecord parWorld = world.get("basis");
 		BaseRecord locDir = world.get("locations");
 		BaseRecord eventsDir = world.get("events");
@@ -226,7 +228,7 @@ public class WorldUtil {
 			logger.error("A basis world is required");
 			return null;
 		}
-		BaseRecord root = EventUtil.getRootEvent(user, world);
+		BaseRecord root = EventUtil.getRootEvent(ctx);
 		if(root != null) {
 			logger.info("Region is already generated");
 			return root;
@@ -237,14 +239,14 @@ public class WorldUtil {
 
 		List<BaseRecord> locations = new ArrayList<>();
 		Set<String> locSet = new HashSet<>();
-		for(int i = 0; i < (locCount + 1); i++) {
-			BaseRecord loc = GeoLocationUtil.randomLocation(user, parWorld);
+		for(int i = 0; i < (ctx.getConfig().getBaseLocationCount() + 1); i++) {
+			BaseRecord loc = GeoLocationUtil.randomLocation(ctx.getUser(), parWorld);
 			if(loc == null) {
 				logger.error("Failed to find a random location!");
 				return null;
 			}
 			while(loc != null && locSet.contains(loc.get(FieldNames.FIELD_NAME))) {
-				loc = GeoLocationUtil.randomLocation(user, parWorld);
+				loc = GeoLocationUtil.randomLocation(ctx.getUser(), parWorld);
 			}
 			locSet.add(loc.get(FieldNames.FIELD_NAME));
 			
@@ -272,12 +274,12 @@ public class WorldUtil {
 				if(root == null) {
 					logger.info("Construct region: " + locName);
 					ParameterList plist = ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH));
-					root = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
+					root = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
 					root.set(FieldNames.FIELD_NAME, "Construct Region " + locName);
 					root.set(FieldNames.FIELD_LOCATION, loc);
 					root.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-					root.set("eventStart", inceptionDate);
-					root.set("eventEnd", inceptionDate);
+					root.set("eventStart", ctx.getConfig().getBaseInceptionDate());
+					root.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(root)) {
 						logger.error("Failed to create root event");
 						return null;
@@ -286,21 +288,21 @@ public class WorldUtil {
 				}
 				else {
 					logger.info("Construct region: " + locName);
-					BaseRecord popEvent = populateRegion(user, world, loc, root, popSeed);
+					BaseRecord popEvent = populateRegion(ctx.getUser(), world, loc, root, ctx.getConfig().getBasePopulationCount());
 					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					events.add(popEvent);
-					event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
+					event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
 					event.set(FieldNames.FIELD_NAME, "Construct " + locName);
 					event.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					
 					for(int b = 0; b < 2; b++) {
 						List<BaseRecord> traits = event.get((b == 0 ? "entryTraits" : "exitTraits"));
-						traits.addAll(Arrays.asList(Decks.getRandomTraits(user, parWorld, 3)));
+						traits.addAll(Arrays.asList(Decks.getRandomTraits(ctx.getUser(), parWorld, 3)));
 					}
 					event.set(FieldNames.FIELD_LOCATION, loc);
 					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-					root.set("eventStart", inceptionDate);
-					root.set("eventEnd", inceptionDate);
+					root.set("eventStart", ctx.getConfig().getBaseInceptionDate());
+					root.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
 
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(event)) {
 						logger.error("Failed to create region event");
@@ -505,27 +507,7 @@ public class WorldUtil {
 		return deleted;
 	}
 	
-	public static Map<String,List<BaseRecord>> getDemographicMap(BaseRecord user, BaseRecord world, BaseRecord location){
 
-		Map<String,List<BaseRecord>> map = EvolutionUtil.newDemographicMap();
-		BaseRecord lastEvt = EventUtil.getLastEvent(user, world, location);
-		if(lastEvt == null) {
-			logger.error("No events found");
-			return map;
-		}
-		logger.info("Constructing demographics map for " + location.get(FieldNames.FIELD_NAME) + " following " + lastEvt.get(FieldNames.FIELD_NAME));
-		List<BaseRecord> pop = getPopulation(user, world, location);
-		if(pop.size() == 0) {
-			logger.error("Expected a population");
-			return map;
-		}
-
-		for(BaseRecord p : pop) {
-			EvolutionUtil.setDemographicMap(user, map, lastEvt, p);
-		}
-		return map;
-	}
-	
 	public static List<BaseRecord> getPopulation(BaseRecord user, BaseRecord world, BaseRecord location){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 		BaseRecord popGrp = getLocationGroup(user, world, location, "Population");
@@ -543,7 +525,7 @@ public class WorldUtil {
 		
 		return new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
-
+	
 	public static BaseRecord getLocationGroup(BaseRecord user, BaseRecord world, BaseRecord location, String name) {
 		List<BaseRecord> grps = getWorldGroups(user, world);
 		BaseRecord ogrp = null;
@@ -554,11 +536,11 @@ public class WorldUtil {
 			ogrp = grp.get();
 		}
 		return ogrp;
-
 	}
 	public static List<BaseRecord> getWorldGroups(BaseRecord user, BaseRecord world){
 		IOSystem.getActiveContext().getReader().populate(world, new String[] {"population"});
 		return Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
 	}
-     
+	
+    
 }

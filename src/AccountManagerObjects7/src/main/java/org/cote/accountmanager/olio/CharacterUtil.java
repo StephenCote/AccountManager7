@@ -30,7 +30,10 @@ public class CharacterUtil {
 	public static boolean isDeceased(BaseRecord person) throws ModelException{
 		return AttributeUtil.getAttributeValue(person, "deceased", false);
 	}
-
+	public static int getCurrentAge(OlioContext ctx, BaseRecord person) {
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
+		return getAgeAtEpoch(ctx.getUser(), ctx.getCurrentEpoch(), person);
+	}
 	public static int getCurrentAge(BaseRecord user, BaseRecord world, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
 		BaseRecord evt = EventUtil.getLastEpochEvent(user, world);
