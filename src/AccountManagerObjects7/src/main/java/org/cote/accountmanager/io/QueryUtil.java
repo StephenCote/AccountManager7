@@ -210,8 +210,35 @@ public class QueryUtil {
 		}
 	}
 	
-	/// TODO: Need similar convience method for searching by participants
-	///
+	public static void filterParticipant(Query query, String model, String fieldName, BaseRecord actor, BaseRecord effect) {
+		filterParticipant(query, model, new String[] {fieldName}, actor, effect);
+	}
+	public static void filterParticipant(Query query, String model, String[] fieldNames, BaseRecord actor, BaseRecord effect) {
+		Query part = new Query(ModelNames.MODEL_PARTICIPATION);
+
+		QueryField or = part.field(null, ComparatorEnumType.GROUP_OR, null);
+		for(String f : fieldNames) {
+			String actorType = ParticipationFactory.getParticipantModel(model, f, actor.getModel());
+			part.field(FieldNames.FIELD_PARTICIPANT_MODEL, ComparatorEnumType.EQUALS, actorType, or);
+		}
+		/*
+ 			String actorType = ParticipationFactory.getParticipantModel(model, fieldName, actor.getModel());
+			part.field(FieldNames.FIELD_PARTICIPANT_MODEL, actorType);
+		 */
+		part.field(FieldNames.FIELD_PARTICIPATION_MODEL, ComparatorEnumType.EQUALS, model);
+		
+		part.field(FieldNames.FIELD_PARTICIPANT_ID, ComparatorEnumType.EQUALS, actor.get(FieldNames.FIELD_ID));
+		try {
+			part.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPATION_ID);
+			query.field(FieldNames.FIELD_ORGANIZATION_ID, actor.get(FieldNames.FIELD_ORGANIZATION_ID));
+			query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		List<BaseRecord> joins = query.get(FieldNames.FIELD_JOINS);
+		joins.add(part);
+	}
+	
 	public static void filterParticipation(Query query, BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
 		Query part = createParticipationQuery(null, object, fieldName, null, effect);
 		actorType = ParticipationFactory.getParticipantModel(object.getModel(), fieldName, actorType);
