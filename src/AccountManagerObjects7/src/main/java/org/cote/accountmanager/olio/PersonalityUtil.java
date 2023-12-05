@@ -3,7 +3,10 @@ package org.cote.accountmanager.olio;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.text.DecimalFormat;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -111,16 +114,13 @@ public class PersonalityUtil {
 		} catch (ModelException e) {
 			logger.error(e);
 		}
-		/*
-		long eventId = world.get("events.id");
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, eventId);
-		q.field(FieldNames.FIELD_TYPE, EventEnumType.DIVORCE);
-		q.filterParticipation(person, "actors", ModelNames.MODEL_CHAR_PERSON, null);
-		q.setRequestRange(0L, 1);
-		if(IOSystem.getActiveContext().getSearch().findRecord(q) != null) {
+
+		prof.setEvents(Arrays.asList(EventUtil.getEvents(world, person, new String[]{"actors", "participants", "observers", "influencers"}, EventEnumType.UNKNOWN)));
+		Optional<BaseRecord> dopt = prof.getEvents().stream().filter(e -> EventEnumType.DIVORCE.toString().equals(((String)e.get(FieldNames.FIELD_TYPE)).toUpperCase())).findFirst();
+		if(dopt.isPresent()) {
 			prof.setDivorced(true);
 		}
-		*/
+
 		BaseRecord per = person.get("personality");
 		prof.setOpen(VeryEnumType.valueOf((double)per.get("openness")));
 		prof.setConscientious(VeryEnumType.valueOf((double)per.get("conscientiousness")));

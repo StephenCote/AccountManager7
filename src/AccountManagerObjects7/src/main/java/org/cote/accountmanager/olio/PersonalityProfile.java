@@ -1,9 +1,13 @@
 package org.cote.accountmanager.olio;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.cote.accountmanager.record.BaseRecord;
 
 public class PersonalityProfile {
 	private BaseRecord record = null;
+	private List<BaseRecord> events = new ArrayList<>();
 	private String name = null;
 	private long id = 0L;
 	private int age = 0;
@@ -21,6 +25,14 @@ public class PersonalityProfile {
 		
 	}
 	
+	public List<BaseRecord> getEvents() {
+		return events;
+	}
+
+	public void setEvents(List<BaseRecord> events) {
+		this.events = events;
+	}
+
 	public BaseRecord getRecord() {
 		return record;
 	}
