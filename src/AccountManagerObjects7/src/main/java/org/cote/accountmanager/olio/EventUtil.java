@@ -9,12 +9,15 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -23,6 +26,27 @@ import org.cote.accountmanager.schema.type.OrderEnumType;
 
 public class EventUtil {
 	public static final Logger logger = LogManager.getLogger(EventUtil.class);
+	
+	public static BaseRecord[] getEvents(BaseRecord world, BaseRecord person, String[] fieldNames, EventEnumType eventType) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		if(eventType != EventEnumType.UNKNOWN) {
+			q.field(FieldNames.FIELD_TYPE, eventType);
+		}
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
+		QueryUtil.filterParticipant(q, ModelNames.MODEL_EVENT, fieldNames, person, null);
+		q.setRequestRange(0L, 100);
+		q.setCache(false);
+
+		try {
+			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
+			q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
+
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+
+		return IOSystem.getActiveContext().getSearch().findRecords(q);
+	}
 	
 	public static BaseRecord addEvent(
 			BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, long time,
