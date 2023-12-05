@@ -1,8 +1,13 @@
 package org.cote.accountmanager.olio;
 
+import org.cote.accountmanager.record.BaseRecord;
+
 public class PersonalityProfile {
+	private BaseRecord record = null;
 	private String name = null;
 	private long id = 0L;
+	private int age = 0;
+	private String gender = null;
 	private boolean married = false;
 	private boolean alive = false;
 	private boolean children = false;
@@ -16,6 +21,30 @@ public class PersonalityProfile {
 		
 	}
 	
+	public BaseRecord getRecord() {
+		return record;
+	}
+
+	public void setRecord(BaseRecord record) {
+		this.record = record;
+	}
+
+	public String getGender() {
+		return gender;
+	}
+
+	public void setGender(String gender) {
+		this.gender = gender;
+	}
+
+	public int getAge() {
+		return age;
+	}
+
+	public void setAge(int age) {
+		this.age = age;
+	}
+
 	public String getName() {
 		return name;
 	}

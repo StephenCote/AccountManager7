@@ -85,12 +85,12 @@ public class PersonalityUtil {
 	}
 	
 	public static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
-		PersonalityProfile prof = createProfile(octx.getWorld(), person);
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"personality", "statistics"});
 		BaseRecord per = person.get("personality");
 		BaseRecord stats = person.get("statistics");
 		IOSystem.getActiveContext().getReader().populate(per);
 		IOSystem.getActiveContext().getReader().populate(stats);
+		PersonalityProfile prof = createProfile(octx.getWorld(), person);
 		logger.info("Analyzing " + person.get(FieldNames.FIELD_NAME));
 		return prof;
 	}
@@ -98,6 +98,10 @@ public class PersonalityUtil {
 	public static PersonalityProfile createProfile(BaseRecord world, BaseRecord person) {
 		PersonalityProfile prof = new PersonalityProfile();
 		prof.setId(person.get(FieldNames.FIELD_ID));
+		prof.setName(person.get(FieldNames.FIELD_NAME));
+		prof.setRecord(person);
+		prof.setGender(person.get("gender"));
+		prof.setAge(person.get("age"));
 		List<BaseRecord> parts = person.get("partners");
 		List<BaseRecord> deps = person.get("dependents");
 		prof.setMarried(parts.size() > 0);
