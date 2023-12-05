@@ -73,6 +73,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
@@ -195,8 +196,7 @@ public class TestBulkOperation extends BaseTest {
 				worldPath,
 				worldName,
 				subWorldName,
-				// , "GB", "IE", "US"
-				new String[] {"AS"},
+				new String[] {"AS", "GB", "IE", "US"},
 				2,
 				250,
 				false,
@@ -211,8 +211,18 @@ public class TestBulkOperation extends BaseTest {
 		}
 		BaseRecord per = octx.readRandomPerson();
 		assertNotNull("Person is null", per);
+		
+		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, octx.getWorld());
+		assertTrue("Expected two or more locations", locs.length > 0);
+		// float dist = GeoLocationUtil.calculateDistance(locs[0], locs[1]);
+		// logger.info("Distance between " + locs[0].get(FieldNames.FIELD_NAME) + " and " + locs[1].get(FieldNames.FIELD_NAME) + " is " + dist);
+		
 		PersonalityProfile prof = PersonalityUtil.analyzePersonality(octx, per);
 		logger.info(JSONUtil.exportObject(prof));
+		
+		for(BaseRecord e : prof.getEvents()) {
+			logger.info((String)e.get(FieldNames.FIELD_NAME));
+		}
 		
 	}
 	/*
