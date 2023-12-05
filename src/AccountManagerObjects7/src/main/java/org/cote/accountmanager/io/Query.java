@@ -183,6 +183,10 @@ public class Query extends LooseRecord{
 		return vals.size() > 0;
 	}
 	
+	public void filterParticipant(String model, String fieldName, BaseRecord actor, BaseRecord effect) {
+		QueryUtil.filterParticipant(this, model, fieldName, actor, effect);
+	}
+	
 	public void filterParticipation(BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
 		QueryUtil.filterParticipation(this, object, fieldName, actorType, effect);
 	}
@@ -198,7 +202,7 @@ public class Query extends LooseRecord{
 	}
 	public <T> QueryField field(String fieldName, ComparatorEnumType comparator, T value, BaseRecord parent) {
 		if(hasQueryField(fieldName)) {
-			logger.info("Query field '" + fieldName + "' defined more than once.  This is expected for compound queries");
+			logger.debug("Query field '" + fieldName + "' defined more than once.  This is expected for compound queries");
 		}
 		QueryField qfield = null;
 		FieldType itype = getIRecord().getField(fieldName);
