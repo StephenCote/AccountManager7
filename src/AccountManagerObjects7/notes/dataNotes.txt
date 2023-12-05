@@ -4,6 +4,8 @@ Locations:
 Words:
     Princeton WordNet:
         https://wordnet.princeton.edu/
+    NCR Word Emotions:
+    	https://www.saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm
 Names:
     Baby Names (by year):
     	https://www.ssa.gov/oact/babynames/limits.html
@@ -22,7 +24,13 @@ Clothing:
 	Patterns:
 		https://ivyandpearlboutique.com/blogs/fashion-howto/fabric-and-textile-pattern-encyclopedia-complete-pattern-dictionary-illustrating-the-various-types-of-patterns-used-in-fabric-textile-and-clothing-design		
 		
-		 
+Personality Traits
+	Traits List:
+		https://www.goodgoodgood.co/articles/personality-traits
+	The Big 5
+		https://www.verywellmind.com/the-big-five-personality-dimensions-2795422
+		https://www.cmu.edu/common-cold-project/measures-by-study/psychological-and-social-constructs/personality-measures/big-five-personality-factors.html
+		
 Prompt Engineering Refs:
 	https://www.promptingguide.ai/
 	

@@ -1,6 +1,16 @@
 olio (hodgepodge) contains a variety of data randomization and evolution models and utilities.
 
 NEW METRICS
+
+Personality Traits
+Primary (Big 5 - OCEAN):
+	Openness - [inventive/curiosity to consistent/cautious]
+	Conscientiousness - [organized/efficient to extravagant/careless]
+	Extraversion - [outgoing/energetic to solitary/reserved]
+	Agreeableness - [friendly/compassionate to critical/rational/detached]
+	Neuroticism - [resilient/confident to sensitive/nervous]
+
+
 + Creativity (std attribute)
 + Spirituality (std attribute)
 + Magic ~ Fae = avg(creativity, spirituality, willpower, wisdom) (Reclassify magic/fae potential from its own discrete value to an average of other values)
