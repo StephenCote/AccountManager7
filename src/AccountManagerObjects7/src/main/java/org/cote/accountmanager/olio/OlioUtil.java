@@ -317,6 +317,7 @@ public class OlioUtil {
 	protected static List<BaseRecord> getPopulation(OlioContext ctx, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
 		if(!ctx.getPopulationMap().containsKey(id)) {
+			long start = System.currentTimeMillis();
 			BaseRecord popGrp = getPopulationGroup(ctx, location, "Population");
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
@@ -329,6 +330,8 @@ public class OlioUtil {
 			
 			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 			ctx.getPopulationMap().put(id, pop);
+			long stop = System.currentTimeMillis();
+			logger.info("Time to stage population: " + (stop - start));
 		}
 		return ctx.getPopulationMap().get(id);
 	}
