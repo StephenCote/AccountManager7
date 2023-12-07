@@ -1,0 +1,64 @@
+{
+	"name": "olio.state",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "States",
+	"icon": "category",
+	"label": "State",
+	"fields": [
+		{
+			"name": "currentLocation",
+			"type": "model",
+			"baseModel": "data.geoLocation",
+			"foreign": true
+		},
+		{
+			"name": "currentAction",
+			"type": "model",
+			"baseModel": "olio.actionResult",
+			"foreign": true
+		},
+		{
+			"name": "alive",
+			"type": "boolean",
+			"default": true
+		},
+		{
+			"name": "incapacitated",
+			"type": "boolean"
+		},
+		{
+			"name": "disabled",
+			"type": "boolean"
+		},
+		{
+			"name": "health",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"description": "Percentage of health remaining",
+			"validateRange": true
+		},
+		{
+			"name": "energy",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"description": "Percentage of energy remaining",
+			"validateRange": true
+		},
+		{
+			"name": "schedules",
+			"type": "model",
+			"baseModel": "olio.schedule",
+			"foreign": true
+		}
+	]
+}

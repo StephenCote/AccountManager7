@@ -126,6 +126,12 @@
 		"foreign": true
 	},
 	{
+		"name": "states",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "personalities",
 		"baseModel": "auth.group",
 		"type": "model",
@@ -133,6 +139,24 @@
 	},
 	{
 		"name": "basis",
+		"baseModel": "olio.world",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "schedules",
+		"baseModel": "olio.world",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "actions",
+		"baseModel": "olio.world",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "actionResults",
 		"baseModel": "olio.world",
 		"type": "model",
 		"foreign": true

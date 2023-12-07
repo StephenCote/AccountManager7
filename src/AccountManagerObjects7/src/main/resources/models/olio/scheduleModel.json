@@ -1,0 +1,86 @@
+{
+	"name": "olio.schedule",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.reference"
+	],
+	"group": "Schedules",
+	"icon": "category",
+	"label": "Schedule",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "beginDate",
+			"type": "timestamp"
+		},
+		{
+			"name": "endDate",
+			"type": "timestamp"
+		},
+		{
+			"name": "completedDate",
+			"type": "timestamp",
+			"description": "Time when the schedule was last completed"
+		},
+		{
+			"name": "reoccurs",
+			"type": "boolean"
+		},
+		{
+			"name": "reoccurence",
+			"baseClass": "org.cote.accountmanager.schema.type.TimeEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "reoccurenceInterval",
+			"type": "int",
+			"maxLength": 32
+		},
+		{
+			"name": "dayOfWeek",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 7,
+			"description": "For reoccuring - Day of the week the schedule applies",
+			"validateRange": true
+		},
+		{
+			"name": "secondOfDay",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 86400,
+			"description": "For reoccuring - Second of the day the schedule applies",
+			"validateRange": true
+		},
+		{
+			"name": "duration",
+			"type": "int",
+			"minValue": -1,
+			"description": "For reoccuring - number of seconds the schedule lasts",
+			"validateRange": true
+		},
+		{
+			"name": "schedules",
+			"baseType": "model",
+			"baseModel": "$self",
+			"type": "list",
+			"foreign": true,
+			"followReference": false,
+			"participantModel": "schedule.child"
+		},
+		{
+			"name": "actions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.action",
+			"foreign": true
+		}
+	]
+}

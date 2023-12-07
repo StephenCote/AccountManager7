@@ -62,6 +62,10 @@ public class WorldFactory extends FactoryBase {
 					newRecord.set("statistics", pu.makePath(contextUser, mtype, path + "/" + name + "/Statistics", gtype, orgId));
 					newRecord.set("instincts", pu.makePath(contextUser, mtype, path + "/" + name + "/Instincts", gtype, orgId));
 					newRecord.set("behaviors", pu.makePath(contextUser, mtype, path + "/" + name + "/Behaviors", gtype, orgId));
+					newRecord.set("states", pu.makePath(contextUser, mtype, path + "/" + name + "/States", gtype, orgId));
+					newRecord.set("actions", pu.makePath(contextUser, mtype, path + "/" + name + "/Actions", gtype, orgId));
+					newRecord.set("actionResults", pu.makePath(contextUser, mtype, path + "/" + name + "/ActionResults", gtype, orgId));
+					newRecord.set("schedules", pu.makePath(contextUser, mtype, path + "/" + name + "/Schedules", gtype, orgId));
 					newRecord.set("personalities", pu.makePath(contextUser, mtype, path + "/" + name + "/Personalities", gtype, orgId));
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);

@@ -1,0 +1,76 @@
+{
+	"name": "olio.actionResult",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.alignment"
+	],
+	"group": "Action Results",
+	"icon": "category",
+	"label": "Action Result",
+	"query": ["id", "groupId"],
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "action",
+			"type": "model",
+			"baseModel": "olio.action",
+			"foreign": true
+		},
+		{
+			"name": "counterAction",
+			"type": "model",
+			"baseModel": "olio.action",
+			"foreign": true
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.ActionResultEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "startDate",
+			"type": "timestamp"
+		},
+		{
+			"name": "completedDate",
+			"type": "timestamp"
+		},
+		{
+			"name": "statistics",
+			"type": "model",
+			"baseModel": "olio.charStatistics",
+			"description": "Statistics modifiers from this action",
+			"foreign": true
+		},
+		{
+			"name": "state",
+			"type": "model",
+			"baseModel": "olio.state",
+			"description": "State modifiers from this action",
+			"foreign": true
+		},
+
+		{
+			"name": "instinct",
+			"type": "model",
+			"baseModel": "olio.instinct",
+			"description": "Instinct modifiers from this action",
+			"foreign": true
+		},
+		{
+			"name": "personality",
+			"type": "model",
+			"baseModel": "olio.personality",
+			"description": "Personality modifiers from this action",
+			"foreign": true
+		}
+	]
+}
+

@@ -107,12 +107,6 @@
 			"participantModel": "event.subsequent"
 		},
 		{
-			"name": "instinct",
-			"type": "model",
-			"baseModel": "olio.instinct",
-			"foreign": true
-		},
-		{
 			"name": "behavior",
 			"type": "model",
 			"baseModel": "olio.behavior",
@@ -125,6 +119,14 @@
 			"baseModel": "auth.group",
 			"foreign": true,
 			"participantModel": "event.group"
+		},
+		{
+			"name": "actions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.actionResult",
+			"foreign": true,
+			"participantModel": "action.result"
 		},
 		{
 			"name": "epoch",

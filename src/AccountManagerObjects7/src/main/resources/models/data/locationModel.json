@@ -21,7 +21,7 @@
 		{
 			"name": "boundaries",
 			"baseType": "model",
-			"baseModel": "data.location",
+			"baseModel": "$self",
 			"type": "list",
 			"foreign": true,
 			"followReference": false,
@@ -30,7 +30,7 @@
 		{
 			"name": "borders",
 			"baseType": "model",
-			"baseModel": "data.location",
+			"baseModel": "$self",
 			"type": "list",
 			"foreign": true,
 			"followReference": false,
@@ -39,7 +39,7 @@
 		{
 			"name": "childLocations",
 			"baseType": "model",
-			"baseModel": "data.location",
+			"baseModel": "$self",
 			"type": "list",
 			"foreign": true,
 			"followReference": false,

@@ -93,6 +93,25 @@
 			"participantModel": "person.dependent"
 		},
 		{
+			"name": "siblings",
+			"baseType": "model",
+			"baseModel": "$self",
+			"type": "list",
+			"foreign": true,
+			"followReference": false,
+			"participantModel": "person.dependent"
+		},
+		{
+			"name": "socialRing",
+			"baseType": "model",
+			"baseModel": "auth.role",
+			"type": "list",
+			"foreign": true,
+			"followReference": false,
+			"description": "The social ring is a hierarchy of peer groups by importance, and optionally by circumstance",
+			"participantModel": "person.ring"
+		},
+		{
 			"name": "notes",
 			"baseType": "model",
 			"baseModel": "data.note",

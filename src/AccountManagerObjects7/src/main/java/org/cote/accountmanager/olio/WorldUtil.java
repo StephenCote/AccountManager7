@@ -481,6 +481,10 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATISTICS, (long)world.get("statistics.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INSTINCT, (long)world.get("instincts.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_BEHAVIOR, (long)world.get("behaviors.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATE, (long)world.get("states.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_ACTION, (long)world.get("actions.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_ACTION_RESULT, (long)world.get("actionResults.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_SCHEDULE, (long)world.get("schedules.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_PERSONALITY, (long)world.get("personalities.id"), orgId);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");

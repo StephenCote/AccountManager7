@@ -1,0 +1,89 @@
+{
+	"name": "olio.action",
+	"inherits": ["data.directory", "common.description", "common.alignment"],
+	"group": "Actions",
+	"icon": "category",
+	"label": "Action",
+	"fields": [
+		{
+			"name": "difficulty",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "minimumTime",
+			"type": "int",
+			"minValue": -1,
+			"description": "Minimum amount of seconds required to perform the action",
+			"validateRange": true
+		},
+		{
+			"name": "maximumTime",
+			"type": "int",
+			"minValue": -1,
+			"description": "Maximum amount of seconds to perform the action before becoming counter-productive or futile",
+			"validateRange": true
+		},
+		{
+			"name": "minimumEnergyCost",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"description": "Minimum amount of energy required to perform the action, expressed as a percentage of maximum available energy",
+			"validateRange": true
+		},
+		{
+			"name": "positiveStatistics",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed", "mentalStrength", "mentalEndurance", "intelligence", "wisdom", "charisma", "creativity", "spirituality", "science", "reaction", "save", "magic", "maximumHealth"]
+		},
+		{
+			"name": "negativeStatistics",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed", "mentalStrength", "mentalEndurance", "intelligence", "wisdom", "charisma", "creativity", "spirituality", "science", "reaction", "save", "magic", "maximumHealth"]
+		},
+		{
+			"name": "positivePersonality",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["open", "conscientious", "extraverted", "agreeable", "neurotic"]
+		},
+		{
+			"name": "negativePersonality",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["open", "conscientious", "extraverted", "agreeable", "neurotic"]
+		},
+		{
+			"name": "positiveStates",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["health", "energy"]
+		},
+		{
+			"name": "negativeStates",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["health", "energy"]
+		},
+		{
+			"name": "positiveInstincts",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["fight", "flight", "feed", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
+		},
+		{
+			"name": "negativeInstincts",
+			"type": "list",
+			"baseType": "string",
+			"limit": ["fight", "flight", "feed", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
+		}
+	]
+}
+
+
+

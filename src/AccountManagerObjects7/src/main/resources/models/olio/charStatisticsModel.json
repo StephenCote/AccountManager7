@@ -145,19 +145,20 @@
 			"priority": 20
 		},
 		{
-			"name": "health",
-			"type": "int",
-			"minValue": -1,
-			"maxValue": 20,
-			"default": -1,
-			"validateRange": true
-		},
-		{
 			"name": "potential",
 			"type": "int",
 			"minValue": 0,
 			"maxValue": 150,
 			"description": "Available attribute points",
+			"validateRange": true
+		},
+		{
+			"name": "health",
+			"type": "int",
+			"minValue": -1,
+			"maxValue": 20,
+			"default": -1,
+			"description": "Note: This is currently duplicated with state.health because it's directly tied to the save calculation",
 			"validateRange": true
 		},
 		{
