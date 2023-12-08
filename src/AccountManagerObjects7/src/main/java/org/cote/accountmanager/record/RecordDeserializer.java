@@ -438,7 +438,8 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				break;
     			case BLOB:
     				if(value.textValue() != null) {
-    					fld.setValue(Base64.getDecoder().decode(value.textValue()));
+    					String tmp = value.textValue().replaceAll("[\\r\\n]", "");
+    					fld.setValue(Base64.getDecoder().decode(tmp));
     				}
     				break;
     			default:
