@@ -11,20 +11,23 @@
 	],
 	"followReference": false,
 	"dedicatedParticipation": true,
+	"query": ["referenceId","referenceType","id"],
 	"fields": [
 		{
 			"name": "contacts",
 			"baseModel": "identity.contact",
 			"baseType": "model",
 			"foreign": true,
-			"type": "list"
+			"type": "list",
+			"participantModel": "ci.contact"
 		},
 		{
 			"name": "addresses",
 			"baseModel": "identity.address",
 			"baseType": "model",
 			"foreign": true,
-			"type": "list"
+			"type": "list",
+			"participantModel": "ci.address"
 		},
 		{
 			"name": "contactInformationType",
