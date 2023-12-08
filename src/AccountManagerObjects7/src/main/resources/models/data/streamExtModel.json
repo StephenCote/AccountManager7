@@ -6,6 +6,7 @@
 		"name": "stream",
 		"baseModel": "data.stream",
 		"type": "model",
-		"foreign": true
+		"foreign": true,
+		"followReference": false
 	}
 ]}
