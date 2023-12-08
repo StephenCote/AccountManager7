@@ -79,6 +79,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -110,6 +111,7 @@ public class TestBulkOperation extends BaseTest {
 	private boolean resetUniverse = false;
 	private boolean resetWorld = true;
 	private String worldName = "Demo World";
+	private String miniName = "Mini World";
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
@@ -181,6 +183,29 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	*/
+	private BaseRecord createLocation(OlioContext ctx, BaseRecord parent, String name) {
+		BaseRecord rec = null;
+		if(ctx.getWorld() == null) {
+			return rec;
+		}
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("locations.path"));
+		try {
+			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getUser(), null, plist);
+			if(parent != null) {
+				rec.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
+				rec.set("geoType", "feature");
+			}
+			else {
+				rec.set("geoType", "country");
+			}
+			ioContext.getRecordUtil().createRecord(rec);
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+
+		return rec;
+		
+	}
 	@Test
 	public void TestOlio4() {
 
@@ -188,7 +213,63 @@ public class TestBulkOperation extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		/*
+		CacheUtil.clearCache();
+		logger.info("Testing bytea deserialization issue from within embedded json construct");
+		Query q2 = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_ID, 1L);
+		q2.setCache(false);
+		StatementUtil.modelMode = true;
+		try {
+			q2.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			DBStatementMeta meta = StatementUtil.getSelectTemplate(q2);
+			logger.info(meta.getSql());
+		} catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
+			logger.error(e);
+		}
+		
+		BaseRecord key = null;
+		try {
+			key = ioContext.getSearch().findRecord(q2);
+			assertNotNull("Key is null", key);
+			logger.info("Before populate");
+			logger.info(key.toFullString());
+			
+			ioContext.getReader().populate(key, 2);
+			logger.info("After populate");
+			logger.info(key.toFullString());
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+		*/
 
+		/// To use only custom locations, send in zero features.  It will be necessary to define a couple locations in a parent location in order to generate the populations
+		///
+		
+		OlioContext octx = new OlioContext(
+				new OlioContextConfiguration(
+					testUser1,
+					testProperties.getProperty("test.datagen.path"),
+					worldPath,
+					miniName,
+					subWorldName,
+					new String[] {},
+					2,
+					250,
+					true,
+					resetUniverse
+				)
+			);
+		
+		BaseRecord root = createLocation(octx, null, "Root");
+		BaseRecord sub1 = createLocation(octx, root, "Sub 1");
+		BaseRecord sub2 = createLocation(octx, root, "Sub 2");
+		
+		
+		//// Using full country load
+		////
+		/*
 		OlioContext octx = new OlioContext(
 			new OlioContextConfiguration(
 				testUser1,
@@ -203,26 +284,45 @@ public class TestBulkOperation extends BaseTest {
 				resetUniverse
 			)
 		);
+		*/
 		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
 		octx.initialize();
 		assertTrue("Expected olio context to be initialized", octx.isInitialized());
-		if(octx.getCurrentEpoch() == null) {
+		//if(octx.getCurrentEpoch() == null) {
 			octx.generateEpoch();
-		}
-		BaseRecord per = octx.readRandomPerson();
-		assertNotNull("Person is null", per);
+		//}
 		
+
+
+		
+		// BaseRecord per = octx.readRandomPerson();
+		// assertNotNull("Person is null", per);
+		//logger.info(per.toFullString());
+		/*
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_ID, per.get(FieldNames.FIELD_ID));
+		try {
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
+			// logger.info(meta.getSql());
+		} catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
+			logger.error(e);
+		}
+		*/
 		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, octx.getWorld());
 		assertTrue("Expected two or more locations", locs.length > 0);
 		// float dist = GeoLocationUtil.calculateDistance(locs[0], locs[1]);
 		// logger.info("Distance between " + locs[0].get(FieldNames.FIELD_NAME) + " and " + locs[1].get(FieldNames.FIELD_NAME) + " is " + dist);
-		
+		List<BaseRecord> lpop = octx.getPopulation(locs[0]);
+		//FileUtil.emitFile("./tmp.txt", JSONUtil.exportObject(lpop, RecordSerializerConfig.getForeignUnfilteredModule()));
+		BaseRecord per = lpop.get((new Random()).nextInt(lpop.size()));
 		PersonalityProfile prof = PersonalityUtil.analyzePersonality(octx, per);
 		logger.info(JSONUtil.exportObject(prof));
 		
 		for(BaseRecord e : prof.getEvents()) {
 			logger.info((String)e.get(FieldNames.FIELD_NAME));
 		}
+		
+		octx.clearCache();
 		
 	}
 	/*
