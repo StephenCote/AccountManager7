@@ -54,9 +54,18 @@ public class StatementUtil {
 	
 	/// When dereferencing foreign keys, populate all or common fields of the foreign model reference
 	/// otherwise, only the reference id will be included
+	/// TODO: Currently have an issue with H2 when enabled
 	///
-	public static boolean modelMode = true;
+	private static boolean modelMode = false;
 	
+	
+	
+	public static boolean isModelMode() {
+		return modelMode;
+	}
+	public static void setModelMode(boolean modelMode) {
+		StatementUtil.modelMode = modelMode;
+	}
 	/// TODO: The top-level single model reference is failing deserialization when sent through the same inner json structure as lists and child models
 	///
 	public static String getForeignDeleteTemplate(BaseRecord[] recs) {
@@ -1267,6 +1276,7 @@ public class StatementUtil {
 					if(ser == null || ser.length() == 0) {
 						continue;
 					}
+					//if(fs.isReferenced() || fs.isForeign()) {
 					if(!modelMode && (fs.isReferenced() || fs.isForeign())) {
 
 						List<BaseRecord> queries = meta.getQuery().get(FieldNames.FIELD_QUERIES);
@@ -1286,7 +1296,7 @@ public class StatementUtil {
 
 						subCount++;
 					}
-					else if(!fs.isForeign()) {
+					else if(!fs.isForeign() || modelMode) {
 						List<?> lst = new ArrayList<>();
 
 						if(ModelNames.MODEL_MODEL.equals(fs.getBaseType())) {

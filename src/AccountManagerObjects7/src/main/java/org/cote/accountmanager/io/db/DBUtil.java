@@ -91,15 +91,16 @@ public class DBUtil {
 	}
 
 	protected void applyDataSource() {
+		StatementUtil.setModelMode(false);
 		if(dataSourceUrl != null) {
 			if(dataSourceUrl.startsWith("jdbc:h2:")) {
 				dataSource = getH2DataSource();
 				connectionType = ConnectionEnumType.H2;
 			}
 			else if(dataSourceUrl.startsWith("jdbc:postgresql:")) {
-				
 				dataSource = getPGDataSource();
 				connectionType = ConnectionEnumType.POSTGRE;
+				StatementUtil.setModelMode(true);
 			}
 		}
 		else if(jndiName != null) {
@@ -107,6 +108,7 @@ public class DBUtil {
 			if(jndiName.endsWith("postgresDS")) {
 				driver = pgDriver;
 				connectionType = ConnectionEnumType.POSTGRE;
+				StatementUtil.setModelMode(true);
 			}
 			else if(jndiName.endsWith("h2DS")) {
 				driver = h2Driver;
