@@ -145,19 +145,19 @@
 	},
 	{
 		"name": "schedules",
-		"baseModel": "olio.world",
+		"baseModel": "auth.group",
 		"type": "model",
 		"foreign": true
 	},
 	{
 		"name": "actions",
-		"baseModel": "olio.world",
+		"baseModel": "auth.group",
 		"type": "model",
 		"foreign": true
 	},
 	{
 		"name": "actionResults",
-		"baseModel": "olio.world",
+		"baseModel": "auth.group",
 		"type": "model",
 		"foreign": true
 	}
