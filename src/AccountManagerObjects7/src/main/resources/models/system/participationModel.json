@@ -2,6 +2,7 @@
 "name": "system.participation",
 "inherits": ["system.organizationExt", "system.primaryKey"],
 "provider": "org.cote.accountmanager.provider.ParticipationProvider",
+"hints": ["participationId, participationModel", "participantId, participantModel"],
 "fields": [
 	{
 		"name": "ownerId",
@@ -38,7 +39,6 @@
 	},
 	{
 		"name": "effectType",
-		"type": "string",
 		"baseClass": "org.cote.accountmanager.schema.type.EffectEnumType",
 		"type": "enum",
 		"maxLength": 16
