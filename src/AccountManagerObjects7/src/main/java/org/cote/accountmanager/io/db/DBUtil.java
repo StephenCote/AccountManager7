@@ -151,7 +151,6 @@ public class DBUtil {
 			driver.setUrl(dataSourceUrl);
 			driver.setUser(dataSourceUser);
 			driver.setPassword(dataSourcePassword);
-
 			SharedPoolDataSource sharedPoolDS = new SharedPoolDataSource();
 			sharedPoolDS.setConnectionPoolDataSource(driver);
 			sharedPoolDS.setMaxIdle(3);
@@ -408,11 +407,12 @@ public class DBUtil {
 		return generateIndex(null, schema, cols, unique);
 	}
 	*/
-	private String generateIndex(ModelSchema baseSchema, ModelSchema schema, String cols, boolean unique) {
+	private String generateIndex(ModelSchema baseSchema, ModelSchema schema, String cols, boolean unique, int idxCounter) {
 		String tableName = getTableName(baseSchema, schema.getName());
 		
 		List<String> coll = Arrays.asList(cols.replaceAll(" ",  "").split(","));
 		List<String> col2 = new ArrayList<>();
+		List<String> col3 = new ArrayList<>();
 		boolean notIndexable = false;
 		for(String s : coll) {
 			FieldSchema fs = schema.getFieldSchema(s);
@@ -442,13 +442,14 @@ public class DBUtil {
 				break;
 			}
 			col2.add(getColumnName(fs.getName()));
-			
+			col3.add(fs.getName().substring(0,1) + fs.getName().substring(fs.getName().length()-1));
 		}
 		if(notIndexable) {
 			return null;
 		}
 
-		String cname = col2.stream().collect(Collectors.joining("_"));
+		// String cname = col2.stream().collect(Collectors.joining("_"));
+		String cname = col3.stream().collect(Collectors.joining("_")) + "_" + idxCounter;
 		String cols2 = col2.stream().collect(Collectors.joining(","));
 		String ver = schema.getVersion().replace(".", "_");
 		String schemaPref = "";
@@ -467,6 +468,7 @@ public class DBUtil {
 		
 		StringBuilder buff = new StringBuilder();
 		Set<String> idxSet = new HashSet<>();
+		int idxCounter = 1;
 		/// Note: The original reason of marking certain fields to be indexed was primarily for the initial file-based index system
 		/// However, for a database, it makes more sense to use the hints and constraints
 		if(useFieldIndexGuidance) {
@@ -478,7 +480,7 @@ public class DBUtil {
 					logger.warn(schema.getName() + " indexible field duplication: (" + f.getName() + ")");
 					continue;
 				}
-				String idx = generateIndex(baseSchema, schema, f.getName(), f.isIdentity());
+				String idx = generateIndex(baseSchema, schema, f.getName(), f.isIdentity(), idxCounter++);
 				if(idx != null) {
 					idxSet.add(f.getName());
 					buff.append(idx + "\n");
@@ -492,7 +494,7 @@ public class DBUtil {
 				logger.error(schema.getName() + " Index collision: (" + ic + ")");
 				continue;
 			}
-			String idx = generateIndex(baseSchema, schema, ic, true);
+			String idx = generateIndex(baseSchema, schema, ic, true, idxCounter++);
 			if(idx != null) {
 				idxSet.add(ic);
 				buff.append(idx + "\n");
@@ -505,7 +507,7 @@ public class DBUtil {
 				logger.error("Index collision: (" + ic + ")");
 				continue;
 			}
-			String idx = generateIndex(baseSchema, schema, ic, false);
+			String idx = generateIndex(baseSchema, schema, ic, false, idxCounter++);
 			if(idx != null) {
 				idxSet.add(ic);
 				buff.append(idx + "\n");
