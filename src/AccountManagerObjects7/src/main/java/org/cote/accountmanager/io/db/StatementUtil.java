@@ -51,7 +51,14 @@ import org.cote.accountmanager.util.RecordUtil;
 public class StatementUtil {
 	
 	public static final Logger logger = LogManager.getLogger(StatementUtil.class);
-
+	
+	/// When dereferencing foreign keys, populate all or common fields of the foreign model reference
+	/// otherwise, only the reference id will be included
+	///
+	public static boolean modelMode = true;
+	
+	/// TODO: The top-level single model reference is failing deserialization when sent through the same inner json structure as lists and child models
+	///
 	public static String getForeignDeleteTemplate(BaseRecord[] recs) {
 		List<String> sqls = new ArrayList<>();
 		for(BaseRecord rec : recs) {
@@ -483,7 +490,7 @@ public class StatementUtil {
 						return (
 							(rfields.size() == 0 || rfields.contains(f.getName()))
 							&&
-							(!fs.isForeign() || !model.equals(fs.getBaseModel()))
+							(!fs.isForeign() || (!model.equals(fs.getBaseModel()) && !ModelNames.MODEL_SELF.equals(fs.getBaseModel())))
 							&&
 							!fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())
 							
@@ -496,12 +503,10 @@ public class StatementUtil {
 				// logger.warn("Query for " + model + " is open ended and may cause recursion");
 			}
 		}
-		/*
-		if(model.equals(ModelNames.MODEL_CHAR_PERSON)) {
-			logger.info(model + " -> " + subModel + " -> " + participantModel + " -> " + msfields.stream().map(f -> f.getName()).collect(Collectors.joining(", ")));
+		
+		if(msfields.size() == 0) {
+			throw new FieldException("No fields identified for " + model + " -> " + subModel);
 		}
-		*/
-
 		for(FieldSchema fs : msfields ) {
 			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef) || (fs.isForeign() && !followRef)) {
 				continue;
@@ -514,7 +519,7 @@ public class StatementUtil {
 					fields.add(fs.getName());
 				}
 				else if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
-					cols.add(getInnerSelectTemplate(subQuery, fs, true, true));
+					cols.add(getInnerSelectTemplate(subQuery, fs, schema.isFollowReference(), true));
 					fields.add(fs.getName());
 				}
 				else if(fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
@@ -541,6 +546,7 @@ public class StatementUtil {
 					String colName = salias + "." + util.getColumnName(fs.getName());
 					if(fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())) {
 						if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+							// logger.info("Encode: " + model + "." + colName);
 							colName = "encode(" + colName + ",'base64')";
 						}
 						else if(util.getConnectionType() == ConnectionEnumType.H2) {
@@ -736,7 +742,14 @@ public class StatementUtil {
 						logger.error(e);
 					}
 				}
-				else if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
+				else if(fs.isForeign()
+						&&
+						(
+							fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())
+							||
+							(modelMode && fs.getType().toUpperCase().equals(FieldEnumType.MODEL.toString()))
+						)
+				) {
 					try {
 						cols.add(getParticipationSelectTemplate(query, fs));
 					} catch (FieldException e) {
@@ -1250,14 +1263,16 @@ public class StatementUtil {
 					record.set(col, rset.getBytes(colName));
 					break;
 				case LIST:
-					if(fs.isReferenced() || fs.isForeign()) {
+					String ser = rset.getString(colName);
+					if(ser == null || ser.length() == 0) {
+						continue;
+					}
+					if(!modelMode && (fs.isReferenced() || fs.isForeign())) {
 
 						List<BaseRecord> queries = meta.getQuery().get(FieldNames.FIELD_QUERIES);
 						if(queries.size() <= subCount) {
 							throw new FieldException("Expected a sub query at index " + subCount);
 						}
-
-						String ser = rset.getString(colName);
 						if(ser != null) {
 
 							List<?> lst = JSONUtil.getList(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
@@ -1273,11 +1288,12 @@ public class StatementUtil {
 					}
 					else if(!fs.isForeign()) {
 						List<?> lst = new ArrayList<>();
+
 						if(ModelNames.MODEL_MODEL.equals(fs.getBaseType())) {
-							lst = JSONUtil.getList(rset.getString(colName), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+							lst = JSONUtil.getList(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 						}
 						else {
-							lst = JSONUtil.importObject(rset.getString(colName), ArrayList.class);
+							lst = JSONUtil.importObject(ser, ArrayList.class);
 						}
 						record.set(col, lst);
 					}
@@ -1317,7 +1333,8 @@ public class StatementUtil {
 			BaseRecord crec = RecordFactory.newInstance(modelName);
 			ModelSchema cms = RecordFactory.getSchema(modelName);
 			boolean haveId = false;
-			if(fs.isForeign()) {
+			
+			if(!modelMode && fs.isForeign()) {
 				FieldSchema fcs = cms.getFieldSchema(FieldNames.FIELD_ID);
 
 				if(fs.getForeignField() != null) {
@@ -1343,6 +1360,7 @@ public class StatementUtil {
 				}
 			}
 			else {
+			
 				String colStr = rset.getString(col);
 				if(colStr != null) { 
 					crec = JSONUtil.importObject(colStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
