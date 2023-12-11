@@ -2,6 +2,7 @@ package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.BufferedReader;
@@ -96,6 +97,7 @@ import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.WorldUtil;
+import org.cote.accountmanager.olio.rules.CustomLocationInitializationRule;
 import org.junit.Test;
 
 public class TestBulkOperation extends BaseTest {
@@ -112,6 +114,7 @@ public class TestBulkOperation extends BaseTest {
 	private boolean resetWorld = true;
 	private String worldName = "Demo World";
 	private String miniName = "Mini World";
+	private String miniSub = "Mini Sub";
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
@@ -183,29 +186,7 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	*/
-	private BaseRecord createLocation(OlioContext ctx, BaseRecord parent, String name) {
-		BaseRecord rec = null;
-		if(ctx.getWorld() == null) {
-			return rec;
-		}
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("locations.path"));
-		try {
-			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getUser(), null, plist);
-			if(parent != null) {
-				rec.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
-				rec.set("geoType", "feature");
-			}
-			else {
-				rec.set("geoType", "country");
-			}
-			ioContext.getRecordUtil().createRecord(rec);
-		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
 
-		return rec;
-		
-	}
 	@Test
 	public void TestOlio4() {
 
@@ -214,59 +195,26 @@ public class TestBulkOperation extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
-		/*
-		CacheUtil.clearCache();
-		logger.info("Testing bytea deserialization issue from within embedded json construct");
-		Query q2 = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_ID, 1L);
-		q2.setCache(false);
-		StatementUtil.modelMode = true;
-		try {
-			q2.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			DBStatementMeta meta = StatementUtil.getSelectTemplate(q2);
-			logger.info(meta.getSql());
-		} catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
-			logger.error(e);
-		}
+		/// Note: Worlds are not currently keyed to a parent, and should be
 		
-		BaseRecord key = null;
-		try {
-			key = ioContext.getSearch().findRecord(q2);
-			assertNotNull("Key is null", key);
-			logger.info("Before populate");
-			logger.info(key.toFullString());
-			
-			ioContext.getReader().populate(key, 2);
-			logger.info("After populate");
-			logger.info(key.toFullString());
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-		}
-		*/
-
 		/// To use only custom locations, send in zero features.  It will be necessary to define a couple locations in a parent location in order to generate the populations
 		///
-		
-		OlioContext octx = new OlioContext(
-				new OlioContextConfiguration(
-					testUser1,
-					testProperties.getProperty("test.datagen.path"),
-					worldPath,
-					miniName,
-					subWorldName,
-					new String[] {},
-					2,
-					250,
-					true,
-					resetUniverse
-				)
-			);
-		
-		BaseRecord root = createLocation(octx, null, "Root");
-		BaseRecord sub1 = createLocation(octx, root, "Sub 1");
-		BaseRecord sub2 = createLocation(octx, root, "Sub 2");
-		
-		
+		OlioContextConfiguration cfg = new OlioContextConfiguration(
+			testUser1,
+			testProperties.getProperty("test.datagen.path"),
+			worldPath,
+			miniName,
+			miniSub,
+			new String[] {},
+			2,
+			50,
+			false,
+			resetUniverse
+		);
+		/// Location requirements: Location Count + 2 - you need the 'country', the 'parent', and then the count of locations, where the 'parent' is random
+		///
+		cfg.getContextRules().add(new CustomLocationInitializationRule("Root Sub", new String[] {"Sub 1", "Sub 2", "Sub 3", "Sub 4", "Sub 5"}));
+		OlioContext octx = new OlioContext(cfg);
 		//// Using full country load
 		////
 		/*
@@ -288,12 +236,23 @@ public class TestBulkOperation extends BaseTest {
 		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
 		octx.initialize();
 		assertTrue("Expected olio context to be initialized", octx.isInitialized());
-		//if(octx.getCurrentEpoch() == null) {
+		if(octx.getCurrentEpoch() == null) {
 			octx.generateEpoch();
-		//}
+		}
 		
+		logger.info("Test start a new epoch");
+		BaseRecord test = octx.startEpoch();
+		assertNotNull("Epoch is null", test);
+		BaseRecord[] locs2 = octx.getLocations();
+		BaseRecord testE = octx.startLocationEvent(locs2[0]);
+		/*
+		logger.info("Test start a new epoch while another epoch is open");
+		BaseRecord test2 = EpochUtil.startEpoch(octx);
+		assertNull("Epoch should be null", test2);
 
-
+		logger.info("Cleanup the open epoch");
+		octx.abandonEpoch();
+		*/
 		
 		// BaseRecord per = octx.readRandomPerson();
 		// assertNotNull("Person is null", per);
@@ -310,11 +269,19 @@ public class TestBulkOperation extends BaseTest {
 		*/
 		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, octx.getWorld());
 		assertTrue("Expected two or more locations", locs.length > 0);
+		assertNotNull("Location is null", locs[0]);
 		// float dist = GeoLocationUtil.calculateDistance(locs[0], locs[1]);
 		// logger.info("Distance between " + locs[0].get(FieldNames.FIELD_NAME) + " and " + locs[1].get(FieldNames.FIELD_NAME) + " is " + dist);
-		List<BaseRecord> lpop = octx.getPopulation(locs[0]);
-		//FileUtil.emitFile("./tmp.txt", JSONUtil.exportObject(lpop, RecordSerializerConfig.getForeignUnfilteredModule()));
-		BaseRecord per = lpop.get((new Random()).nextInt(lpop.size()));
+		BaseRecord per = null;
+		try {
+			List<BaseRecord> lpop = octx.getPopulation(locs[0]);
+			//FileUtil.emitFile("./tmp.txt", JSONUtil.exportObject(lpop, RecordSerializerConfig.getForeignUnfilteredModule()));
+			per = lpop.get((new Random()).nextInt(lpop.size()));
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+		assertNotNull("Person is null", per);
 		PersonalityProfile prof = PersonalityUtil.analyzePersonality(octx, per);
 		logger.info(JSONUtil.exportObject(prof));
 		

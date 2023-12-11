@@ -5,6 +5,8 @@ public enum ActionResultEnumType {
 	SUCCEEDED,
 	FAILED,
 	INCOMPLETE,
+	COMPLETE,
+	IN_PROGRESS,
 	PENDING
 	;
 	

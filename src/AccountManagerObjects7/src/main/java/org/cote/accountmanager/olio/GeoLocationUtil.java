@@ -15,9 +15,14 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.DatabaseException;
+import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -30,6 +35,31 @@ public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
 	private static Map<String, String[]> altNamesCache = new HashMap<>();
 	
+	public static BaseRecord createLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
+		BaseRecord rec = null;
+		if(ctx.getWorld() == null) {
+			return rec;
+		}
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+		plist.parameter("name", name);
+		try {
+			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getUser(), null, plist);
+			if(parent != null) {
+				rec.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
+				rec.set("geoType", "feature");
+				rec.set("geonameid", id);
+			}
+			else {
+				rec.set("geoType", "country");
+			}
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+
+		return rec;
+		
+	}
 	
 	public static float calculateDistance(BaseRecord location1, BaseRecord location2) {
 		StringBuilder buff = new StringBuilder();
@@ -78,6 +108,7 @@ public class GeoLocationUtil {
 	
 	public static BaseRecord randomLocation(BaseRecord user, BaseRecord world) {
 		BaseRecord dir = world.get("locations");
+		logger.info("Random location in " + dir.get(FieldNames.FIELD_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 		q.field("geoType", "feature");
 		return OlioUtil.randomSelection(user, q);

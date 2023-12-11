@@ -168,6 +168,7 @@ public class OlioUtil {
 			logger.error(e);
 		}
 		if(qr != null && qr.getCount() > 0) {
+			// logger.info("RLoc = " + qr.getResults()[0].get(FieldNames.FIELD_NAME));
 			return qr.getResults();
 		}
 		else {

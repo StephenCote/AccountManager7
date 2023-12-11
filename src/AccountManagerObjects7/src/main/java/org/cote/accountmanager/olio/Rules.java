@@ -24,6 +24,8 @@ public class Rules {
 	public static final double ODDS_BIRTH_MARRIED = 0.025;
 	public static final double ODDS_BIRTH_FAMILY_SIZE = 0.001;
 	
+	public static final double ODDS_INVERT_ALIGNMENT = 0.3;
+	
 	public static final int INITIAL_AVERAGE_DEATH_AGE = 75;
 	public static final double INITIAL_MARRIAGE_RATE = 0.05;
 	public static final double INITIAL_DIVORCE_RATE = 0.01;

@@ -29,6 +29,12 @@
 			"maxLength": 32
 		},
 		{
+			"name": "state",
+			"baseClass": "org.cote.accountmanager.schema.type.ActionResultEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
 			"name": "entryTraits",
 			"type": "list",
 			"baseType": "model",

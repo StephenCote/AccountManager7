@@ -18,6 +18,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 
@@ -44,8 +45,12 @@ public class EventUtil {
 
 		return IOSystem.getActiveContext().getSearch().findRecords(q);
 	}
-	
-	public static BaseRecord addEvent(
+	public static BaseRecord newEvent(
+		BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, long time
+	) {
+		return newEvent(user, world, parentEvent, type, name, time, null, null, null, null);
+	}
+	public static BaseRecord newEvent(
 			BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, long time,
 			BaseRecord[] actors, BaseRecord[] participants, BaseRecord[] influencers,
 			Map<String, List<BaseRecord>> queue
@@ -58,6 +63,7 @@ public class EventUtil {
 			/// The previous version used a complex method of identifier assignment and rewrite with negative values
 			evt.set(FieldNames.FIELD_NAME, name);
 			evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
+			evt.set(FieldNames.FIELD_STATE, ActionResultEnumType.PENDING);
 			if(actors != null && actors.length > 0) {
 				List<BaseRecord> acts = evt.get("actors");
 				acts.addAll(Arrays.asList(actors));
@@ -74,7 +80,9 @@ public class EventUtil {
 			evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
 			evt.set("eventStart", new Date(time));
 			evt.set("eventEnd", new Date(time));
-			OlioUtil.queueAdd(queue, evt);
+			if(queue != null) {
+				OlioUtil.queueAdd(queue, evt);
+			}
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);

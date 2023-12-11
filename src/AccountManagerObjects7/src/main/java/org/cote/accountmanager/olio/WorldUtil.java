@@ -110,9 +110,9 @@ public class WorldUtil {
 		String[] features = feats.toArray(new String[0]);
 		BaseRecord locDir = world.get("locations");
 		IOSystem.getActiveContext().getReader().populate(locDir);
-
-		GeoParser.loadInfo(user, locDir.get(FieldNames.FIELD_PATH), basePath, features, reset);
-		
+		if(features.length > 0) {
+			GeoParser.loadInfo(user, locDir.get(FieldNames.FIELD_PATH), basePath, features, reset);
+		}
 		return IOSystem.getActiveContext().getAccessPoint().count(user, GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID)));
 
 	}

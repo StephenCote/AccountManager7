@@ -1,7 +1,10 @@
 package org.cote.accountmanager.olio;
 
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 
+import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.record.BaseRecord;
 
 public class OlioContextConfiguration {
@@ -16,7 +19,7 @@ public class OlioContextConfiguration {
 	private int basePopulationCount = 0;
 	private boolean resetUniverse = false;
 	private boolean resetWorld = false;
-	
+	private List<IOlioContextRule> contextRules = new ArrayList<>();
 	public OlioContextConfiguration() {
 		
 	}
@@ -43,6 +46,14 @@ public class OlioContextConfiguration {
 		this.resetWorld = resetWorld;
 		this.baseLocationCount = locationCount;
 		this.basePopulationCount = populationCount;
+	}
+
+	public List<IOlioContextRule> getContextRules() {
+		return contextRules;
+	}
+
+	public void setContextRules(List<IOlioContextRule> contextRules) {
+		this.contextRules = contextRules;
 	}
 
 	public Date getBaseInceptionDate() {

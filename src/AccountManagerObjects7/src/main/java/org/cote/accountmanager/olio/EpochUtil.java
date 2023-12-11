@@ -20,6 +20,7 @@ import org.cote.accountmanager.parsers.wordnet.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.CalendarUtil;
@@ -93,13 +94,121 @@ public class EpochUtil {
 
 		return title;
 	}
-
-	/*
-	public static BaseRecord generateEpoch(BaseRecord user, BaseRecord world, int evolutions){
-		return generateEpoch(user, world, evolutions, 1);
+	
+	public static BaseRecord startEpoch(OlioContext ctx) {
+		return startEpoch(ctx, OlioUtil.getRandomAlignment(), null);
 	}
-	private static BaseRecord generateEpoch(BaseRecord user, BaseRecord world, int evolutions, int increment){
-	*/
+	public static BaseRecord startEpoch(OlioContext ctx, AlignmentEnumType alignment, String title) {
+		
+		BaseRecord epoch = null;
+		if(!ctx.validateContext()) {
+			return epoch;
+		}
+		
+		BaseRecord rootEvt = EventUtil.getRootEvent(ctx);
+		BaseRecord lastEpoch = EventUtil.getLastEpochEvent(ctx);
+		if(lastEpoch == null) {
+			lastEpoch = rootEvt;
+		}
+		BaseRecord rootLoc = GeoLocationUtil.getRootLocation(ctx);
+		if(rootLoc == null){
+			logger.error("Failed to find root location");
+			return null;
+		}
+		
+		if(ctx.getCurrentEpoch() != null) {
+			ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_STATE));
+			if(aet != ActionResultEnumType.COMPLETE) {
+				logger.error("The current epoch is not marked as being complete.  This will result in inconsistent and skewed time and metric evaluations");
+				return null;
+			}
+		}
+		
+
+		int alignmentScore = AlignmentEnumType.getValue(alignment);
+		//AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
+		if(title == null) {
+			title = EpochUtil.generateEpochTitle(ctx.getUser(), ctx.getUniverse(), alignment);
+		}
+		
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
+		long startTimeMS = ((Date)lastEpoch.get("eventEnd")).getTime();
+
+		epoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTimeMS);
+		try {
+			epoch.set("eventEnd", new Date(startTimeMS + (OlioUtil.YEAR)));
+			epoch.set("epoch", true);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		logger.info("Epoch " + title + " begins");
+		IOSystem.getActiveContext().getRecordUtil().createRecord(epoch);
+		ctx.setCurrentEpoch(epoch);
+		/// TODO: Each locations initial reactions (alignment) to the random epoch alignment
+		/// should be based on a weighted average of prior aligments
+		/// Differentiating entry and exit alignments should be handled through the entry/exit trait alignments in the event there are more than one of each
+		///
+		return epoch;
+		
+	}
+	
+	public static BaseRecord startLocationEvent(OlioContext ctx, BaseRecord location) {
+		BaseRecord evt = null;
+		if(!ctx.validateContext()) {
+			return evt;
+		}
+		if(ctx.getCurrentEpoch() == null) {
+			logger.error("Current epoch is null");
+			return evt;
+		}
+		ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_STATE));
+		if(aet != ActionResultEnumType.PENDING) {
+			logger.error("The current epoch is not in a pending state.  Therefore, no activities will take place");
+			return null;
+		}
+		
+		AlignmentEnumType alignment = AlignmentEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_ALIGNMENT));
+		int alignmentScore = AlignmentEnumType.getValue(alignment);
+		AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
+
+		BaseRecord popGrp = ctx.getPopulationGroup(location, "Population");
+		int count = OlioUtil.countPeople(popGrp);
+		try {
+			if(count == 0){
+				logger.warn("Location " + location.get(FieldNames.FIELD_NAME) + " is decimated");
+				if(!AttributeUtil.getAttributeValue(location, "decimated", false)) {
+					AttributeUtil.addAttribute(location, "decimated", true);
+					ctx.queue(location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_ORGANIZATION_ID}));
+				}
+			}
+			else {
+				AlignmentEnumType useAlignment = (rand.nextDouble() < Rules.ODDS_INVERT_ALIGNMENT ? invertedAlignment : alignment);
+				String childTitle = EpochUtil.generateEpochTitle(ctx.getUser(), ctx.getUniverse(), useAlignment);
+				
+				BaseRecord childEpoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ((Date)ctx.getCurrentEpoch().get("eventStart")).getTime());
+	
+					childEpoch.set("eventEnd", ctx.getCurrentEpoch().get("eventEnd"));
+				
+				
+				List<BaseRecord> lgrps = childEpoch.get("groups");
+				lgrps.add(popGrp);
+				logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " begins " + (String)childEpoch.get(FieldNames.FIELD_NAME));
+				IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
+				ctx.setCurrentEvent(childEpoch);
+				ctx.setCurrentLocation(location);
+			}
+		}
+		catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
+			logger.error(e);
+		}
+		
+		return evt;
+	}
+	
+	/// TODO: Split all of this up to better allow for intra cycle and asynchronous rule evaluation
+	/// GenerateEpoch = startEpoch, continueEpoch, evolutions (years), 12 month rule evaluation, daily evaluation, <...updateQueue>, stopEpoch  
+	/// The process steps can run as deep or as long as desired, and the queue will be updated automatically at the end of each month, and the epoch
+	/// Or, when running asynchronously, updated at the end of the next step.
 	public static BaseRecord generateEpoch(OlioContext ctx, int evolutions) {
 		BaseRecord epoch = null;
 		int increment = 1;
@@ -120,7 +229,7 @@ public class EpochUtil {
 			logger.error("Failed to find root location");
 			return null;
 		}
-		
+		logger.info("Root location: " + rootLoc.get("name"));
 		// BaseRecord[] locs = GeoLocationUtil.getRegionLocations(ctx);
 		if(ctx.getLocations().length == 0) {
 			logger.error("Failed to find child locations");
@@ -197,6 +306,8 @@ public class EpochUtil {
 	
 				}
 				lastEpoch = epoch;
+				epoch.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
+				IOSystem.getActiveContext().getRecordUtil().updateRecord(epoch.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
 			}
 			catch(ModelNotFoundException | FactoryException | FieldException | ValueException | ModelException e) {
 				logger.error(e);
