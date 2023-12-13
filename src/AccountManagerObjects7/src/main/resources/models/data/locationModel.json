@@ -17,7 +17,13 @@
 	"dedicatedParticipation": true,
 	"query": ["name", "id", "objectId", "ownerId"],
 	"fields": [
-		
+		{
+			"name": "traits",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"foreign": true
+		},
 		{
 			"name": "boundaries",
 			"baseType": "model",

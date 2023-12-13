@@ -12,25 +12,6 @@ import javax.xml.bind.annotation.XmlEnum;
 import javax.xml.bind.annotation.XmlType;
 
 
-/**
- * <p>Java class for TraitEnumType.
- * 
- * <p>The following schema fragment specifies the expected content contained within this class.
- * <p>
- * <pre>
- * &lt;simpleType name="TraitEnumType"&gt;
- *   &lt;restriction base="{http://www.w3.org/2001/XMLSchema}string"&gt;
- *     &lt;enumeration value="UNKNOWN"/&gt;
- *     &lt;enumeration value="LOCATION"/&gt;
- *     &lt;enumeration value="TRANSPORT"/&gt;
- *     &lt;enumeration value="PROTOCOL"/&gt;
- *     &lt;enumeration value="EVENT"/&gt;
- *     &lt;enumeration value="PERSON"/&gt;
- *   &lt;/restriction&gt;
- * &lt;/simpleType&gt;
- * </pre>
- * 
- */
 @XmlType(name = "TraitEnumType", namespace = "http://www.cote.org/propellant/objects/types")
 @XmlEnum
 public enum TraitEnumType {
@@ -38,6 +19,7 @@ public enum TraitEnumType {
     UNKNOWN,
     FEATURE,
     PERK,
+    RESOURCE,
     LOCATION,
     TRANSPORT,
     PROTOCOL,

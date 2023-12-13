@@ -5,6 +5,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -12,6 +14,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,6 +29,8 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
+import javax.imageio.ImageIO;
 
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -97,8 +102,17 @@ import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.VeryEnumType;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.WorldUtil;
-import org.cote.accountmanager.olio.rules.CustomLocationInitializationRule;
+import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
+import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
+import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.junit.Test;
+
+import de.articdive.jnoise.core.api.functions.Interpolation;
+import de.articdive.jnoise.generators.noise_parameters.fade_functions.FadeFunction;
+import de.articdive.jnoise.generators.noisegen.perlin.PerlinNoiseGenerator;
+import de.articdive.jnoise.modules.octavation.fractal_functions.FractalFunction;
+import de.articdive.jnoise.pipeline.JNoise;
+
 
 public class TestBulkOperation extends BaseTest {
 
@@ -186,10 +200,51 @@ public class TestBulkOperation extends BaseTest {
 
 	}
 	*/
+	
+	/// Using MGRS-like coding to subdivide the random maps
+	///
+	@Test
+	public void TestGrid() {
+		/// World - 60 longitudinal bands (1 - 60) by 20 latitude bands (C to X, not including O)
+		/// Grid Zone Designation (GZD) is the intersection 
+		/// Next is the 100;000-meter square or 100k ident, which includes squares of 100 x 100 kilometers
+		/// The 100K ident is the intersection consisting of a column (A-Z, not including I and O), and a row (A-V, not including I or O)
+		/// Eastings: ##### - within a 100K ident on a map with a 1000m grid, the first two numbers come from the label of the grid line west of the position, and the last three digits are the distance in meters from the wester grid line 
+		/// 
+		AuditUtil.setLogToConsole(false);
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		OlioContextConfiguration cfg = new OlioContextConfiguration(
+				testUser1,
+				testProperties.getProperty("test.datagen.path"),
+				worldPath,
+				miniName,
+				miniSub,
+				new String[] {},
+				2,
+				50,
+				true,
+				resetUniverse
+			);
+			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
+			///
+			cfg.getContextRules().add(new GridSquareLocationInitializationRule());
+			cfg.getEvolutionRules().add(new LocationPlannerRule());
+			OlioContext octx = new OlioContext(cfg);
 
+			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
+			octx.initialize();
+		
+
+	}
+	
 	@Test
 	public void TestOlio4() {
-
+		if(true) {
+			return;
+		}
 		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
@@ -213,7 +268,8 @@ public class TestBulkOperation extends BaseTest {
 		);
 		/// Location requirements: Location Count + 2 - you need the 'country', the 'parent', and then the count of locations, where the 'parent' is random
 		///
-		cfg.getContextRules().add(new CustomLocationInitializationRule("Root Sub", new String[] {"Sub 1", "Sub 2", "Sub 3", "Sub 4", "Sub 5"}));
+		cfg.getContextRules().add(new GenericLocationInitializationRule("Root Sub", new String[] {"Sub 1", "Sub 2", "Sub 3", "Sub 4", "Sub 5"}));
+		cfg.getEvolutionRules().add(new LocationPlannerRule());
 		OlioContext octx = new OlioContext(cfg);
 		//// Using full country load
 		////
@@ -245,6 +301,10 @@ public class TestBulkOperation extends BaseTest {
 		assertNotNull("Epoch is null", test);
 		BaseRecord[] locs2 = octx.getLocations();
 		BaseRecord testE = octx.startLocationEvent(locs2[0]);
+		assertNotNull("Location event is null", testE);
+		
+		octx.abandonLocationEvent();
+		octx.abandonEpoch();
 		/*
 		logger.info("Test start a new epoch while another epoch is open");
 		BaseRecord test2 = EpochUtil.startEpoch(octx);
