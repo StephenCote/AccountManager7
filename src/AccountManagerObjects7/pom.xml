@@ -22,7 +22,19 @@
 		<sonar.language>java</sonar.language>
 
 	</properties>
-
+	<repositories>
+	<repository>
+    <id>sonatypeSnapshots</id>
+    <name>Sonatype Snapshots</name>
+    <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+    <releases>
+        <enabled>false</enabled>
+    </releases>
+    <snapshots>
+        <enabled>true</enabled>
+    </snapshots>
+</repository>
+</repositories>
 	<build>
 		<pluginManagement>
 			<plugins>
@@ -409,6 +421,12 @@
 			<artifactId>json</artifactId>
 			<version>20230618</version>
 		</dependency>
+		<dependency>
+    <groupId>de.articdive</groupId>
+    <artifactId>jnoise-pipeline</artifactId>
+    <version>4.1.0</version>
+</dependency>
+
 
 		<!--
 <dependency>

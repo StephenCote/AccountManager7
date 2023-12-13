@@ -22,6 +22,9 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.rules.IOlioContextRule;
+import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.rules.RandomLocationInitializationRule;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
@@ -236,21 +239,19 @@ public class WorldUtil {
 		
 		logger.info("Generate region ...");
 		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
-
+		BaseRecord[] locs = new BaseRecord[0];
+		for(IOlioContextRule rule : ctx.getConfig().getContextRules()) {
+			locs = rule.selectLocations(ctx);
+			if(locs != null && locs.length > 0) {
+				break;
+			}
+		}
+		if(locs == null || locs.length == 0) {
+			locs = (new RandomLocationInitializationRule()).selectLocations(ctx);
+		}
 		List<BaseRecord> locations = new ArrayList<>();
-		Set<String> locSet = new HashSet<>();
-		for(int i = 0; i < (ctx.getConfig().getBaseLocationCount() + 1); i++) {
-			BaseRecord loc = GeoLocationUtil.randomLocation(ctx.getUser(), parWorld);
-			if(loc == null) {
-				logger.error("Failed to find a random location!");
-				return null;
-			}
-			while(loc != null && locSet.contains(loc.get(FieldNames.FIELD_NAME))) {
-				loc = GeoLocationUtil.randomLocation(ctx.getUser(), parWorld);
-			}
-			locSet.add(loc.get(FieldNames.FIELD_NAME));
-			
-			locations.add(cloneIntoGroup(loc, locDir));
+		for(BaseRecord l : locs) {
+			locations.add(cloneIntoGroup(l, locDir));
 		}
 		if(locations.isEmpty()){
 			logger.error("Expected a positive number of locations");
@@ -391,7 +392,7 @@ public class WorldUtil {
 
 				for(int i = 0; i < popCount; i++){
 					BaseRecord person = CharacterUtil.randomPerson(user, world, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
-					AddressUtil.addressPerson(user, world, person, location);
+					/// AddressUtil.addressPerson(user, world, person, location);
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.getTime() - ((Date)person.get("birthDate")).getTime()) / OlioUtil.YEAR;
 					person.set("age", (int)years);
@@ -400,9 +401,10 @@ public class WorldUtil {
 					totalAge += years;
 					totalAbsoluteAlignment += (alignment + 4);
 					
+					/*
 					List<BaseRecord> appl = person.get("apparel");
 					appl.add(ApparelUtil.randomApparel(user, world, person));
-					
+					*/
 					actors.add(person);
 				}
 				

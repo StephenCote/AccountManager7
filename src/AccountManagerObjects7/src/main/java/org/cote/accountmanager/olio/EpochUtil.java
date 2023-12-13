@@ -119,7 +119,7 @@ public class EpochUtil {
 		if(ctx.getCurrentEpoch() != null) {
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_STATE));
 			if(aet != ActionResultEnumType.COMPLETE) {
-				logger.error("The current epoch is not marked as being complete.  This will result in inconsistent and skewed time and metric evaluations");
+				logger.error("The current epoch " + ctx.getCurrentEpoch().get(FieldNames.FIELD_NAME) + " is not marked as being complete.  This will result in inconsistent and skewed time and metric evaluations");
 				return null;
 			}
 		}
@@ -155,6 +155,7 @@ public class EpochUtil {
 	public static BaseRecord startLocationEvent(OlioContext ctx, BaseRecord location) {
 		BaseRecord evt = null;
 		if(!ctx.validateContext()) {
+			logger.error("Context is not valid");
 			return evt;
 		}
 		if(ctx.getCurrentEpoch() == null) {
@@ -196,6 +197,7 @@ public class EpochUtil {
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
 				ctx.setCurrentEvent(childEpoch);
 				ctx.setCurrentLocation(location);
+				evt = childEpoch;
 			}
 		}
 		catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
@@ -294,6 +296,7 @@ public class EpochUtil {
 						childEpoch.set(FieldNames.FIELD_PARENT_ID, epoch.get(FieldNames.FIELD_ID));
 						childEpoch.set("eventStart", epoch.get("eventStart"));
 						childEpoch.set("eventEnd", epoch.get("eventEnd"));
+						childEpoch.set(FieldNames.FIELD_STATE, ActionResultEnumType.PENDING);
 						List<BaseRecord> lgrps = childEpoch.get("groups");
 						lgrps.add(popGrp);
 						logger.info((String)childEpoch.get(FieldNames.FIELD_NAME));
@@ -302,6 +305,8 @@ public class EpochUtil {
 						ctx.setCurrentLocation(loc);
 						//EvolutionUtil.evolvePopulation(ctx.getUser(), world, childEpoch, useAlignment, popGrp, increment);
 						EvolutionUtil.evolvePopulation(ctx);
+						childEpoch.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
+						IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
 					}
 	
 				}

@@ -64,6 +64,38 @@
 		{
 			"name": "latitude",
 			"type": "double"
+		},
+		{
+			"name": "area",
+			"type": "double",
+			"description": "Area in square meters"
+		},
+		{
+			"name": "elevation",
+			"type": "double",
+			"description": "Elevation in meters"
+		},
+		{
+			"name": "gridZone",
+			"type": "string",
+			"maxLength": 3,
+			"description": "Grid zone designation"
+		},
+		{
+			"name": "kident",
+			"type": "string",
+			"description": "100K Identity",
+			"maxLength": 3
+		},
+		{
+			"name": "eastings",
+			"type": "int",
+			"description": "Meters from the western grid line"
+		},
+		{
+			"name": "northings",
+			"type": "int",
+			"description": "Meters from the southrn grid line"
 		}
 	]
 }

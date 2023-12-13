@@ -17,10 +17,12 @@ import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
+import org.cote.accountmanager.schema.type.EventEnumType;
 
 public class OlioContext {
 	public static final Logger logger = LogManager.getLogger(OlioContext.class);
@@ -29,9 +31,14 @@ public class OlioContext {
 	protected BaseRecord world = null;
 	protected BaseRecord universe = null;
 	private boolean initialized = false;
+	/// Each epoch currently defaults to 1 year
+	///
 	private BaseRecord currentEpoch = null;
 	private BaseRecord[] locations = new BaseRecord[0];
 	private List<BaseRecord> populationGroups = new ArrayList<>();
+	/// Each location event defaults to 1 year
+	/// All events for a location within that period of time fall under the location event
+	///
 	private BaseRecord currentEvent = null;
 	private BaseRecord currentLocation = null;
 	private Map<Long, List<BaseRecord>> populationMap = new ConcurrentHashMap<>();
@@ -52,6 +59,9 @@ public class OlioContext {
 		if(queue.size() > 0) {
 			logger.error("Warning: request to clear pending queue");
 		}
+		clearQueue();
+	}
+	public void clearQueue() {
 		queue.clear();
 	}
 	public void setCurrentMonth(long m) {
@@ -122,6 +132,18 @@ public class OlioContext {
 			locations = GeoLocationUtil.getRegionLocations(this);
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
 			initialized = true;
+			//if(currentEpoch == null) {
+				Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
+				eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+				eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
+				BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
+				for(BaseRecord evt : evts) {
+					logger.info("Planning " + evt.get(FieldNames.FIELD_NAME));
+					for(IOlioEvolveRule rule : config.getEvolutionRules()) {
+						rule.generateRegion(this, rootEvent, evt);
+					}
+				}
+			//}
 			long stop = System.currentTimeMillis();
 			logger.info("... Olio Context Initialized in " + (stop - start) + "ms");
 		}

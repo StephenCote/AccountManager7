@@ -27,12 +27,50 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 
 
 public class EvolutionUtil {
 	public static final Logger logger = LogManager.getLogger(EvolutionUtil.class);
 	private static SecureRandom rand = new SecureRandom();
+	
+	protected static void beginEvolution(OlioContext ctx){
+		if(ctx.getCurrentEvent() == null || ctx.getCurrentLocation() == null) {
+			logger.error("Context is not ready for evolution");
+			return;
+		}
+
+		logger.info("Begin evolution of " + ctx.getCurrentLocation().get(FieldNames.FIELD_NAME));
+		
+		ActionResultEnumType art = ctx.getCurrentEvent().get(FieldNames.FIELD_STATE);
+		if(art != ActionResultEnumType.PENDING) {
+			logger.error("Current event is not in a pending state");
+			return;
+		}
+
+		List<BaseRecord> pop = OlioUtil.getPopulation(ctx, ctx.getCurrentLocation());
+		if(pop.isEmpty()){
+			logger.warn("Population is decimated");
+			return;
+		}
+		
+		Map<String,List<BaseRecord>> demographicMap = ctx.getDemographicMap(ctx.getCurrentLocation());
+		for(BaseRecord p : pop) {
+			OlioUtil.setDemographicMap(ctx.getUser(), demographicMap, ctx.getCurrentEvent(), p);
+		}
+
+		
+		try {
+			ctx.getCurrentEvent().set(FieldNames.FIELD_STATE, ActionResultEnumType.IN_PROGRESS);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		
+		ctx.queue(ctx.getCurrentEvent().copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+		
+
+	}
 	
 	/// The default config - 1 epoch/increment = 1 year.  Evolve will run through 12 months, and within each month branch out into smaller clusters of events
 	// protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int increment){

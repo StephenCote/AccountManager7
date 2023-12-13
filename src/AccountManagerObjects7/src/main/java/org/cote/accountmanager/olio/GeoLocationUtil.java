@@ -34,8 +34,8 @@ import org.cote.accountmanager.schema.ModelNames;
 public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
 	private static Map<String, String[]> altNamesCache = new HashMap<>();
-	
-	public static BaseRecord createLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
+
+	public static BaseRecord newLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
 		BaseRecord rec = null;
 		if(ctx.getWorld() == null) {
 			return rec;
@@ -52,13 +52,21 @@ public class GeoLocationUtil {
 			else {
 				rec.set("geoType", "country");
 			}
-			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 
 		return rec;
 		
+	}
+	
+	public static BaseRecord createLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
+		BaseRecord rec = newLocation(ctx, parent, name, id);
+		if(rec == null) {
+			return rec;
+		}
+		IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+		return rec;
 	}
 	
 	public static float calculateDistance(BaseRecord location1, BaseRecord location2) {

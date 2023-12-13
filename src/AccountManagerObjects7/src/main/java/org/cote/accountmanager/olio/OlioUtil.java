@@ -58,7 +58,7 @@ public class OlioUtil {
 		return ctx.getDemographicMap().get(id);
 	}
 	
-	protected static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
+	public static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
 		try {
 			Date birthDate = person.get("birthDate");
 			Date endDate = parentEvent.get("eventEnd");
@@ -320,6 +320,10 @@ public class OlioUtil {
 		if(!ctx.getPopulationMap().containsKey(id)) {
 			long start = System.currentTimeMillis();
 			BaseRecord popGrp = getPopulationGroup(ctx, location, "Population");
+			if(popGrp == null) {
+				logger.error("Failed to find population group");
+				return new ArrayList<>();
+			}
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
 			try {

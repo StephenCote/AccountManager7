@@ -30,7 +30,12 @@ Personality Traits
 	The Big 5
 		https://www.verywellmind.com/the-big-five-personality-dimensions-2795422
 		https://www.cmu.edu/common-cold-project/measures-by-study/psychological-and-social-constructs/personality-measures/big-five-personality-factors.html
-		
+Civilization
+	Key Components
+		https://education.nationalgeographic.org/resource/key-components-civilization/
+Hierarchy of Needs
+	Needs
+		https://en.wikipedia.org/wiki/Maslow%27s_hierarchy_of_needs
 Prompt Engineering Refs:
 	https://www.promptingguide.ai/
 	
