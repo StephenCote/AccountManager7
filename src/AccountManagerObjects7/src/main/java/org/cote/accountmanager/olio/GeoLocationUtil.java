@@ -30,6 +30,7 @@ import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GeographyEnumType;
 
 public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
@@ -44,6 +45,7 @@ public class GeoLocationUtil {
 		plist.parameter("name", name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getUser(), null, plist);
+			rec.set("geographyType", GeographyEnumType.PHYSICAL);
 			if(parent != null) {
 				rec.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
 				rec.set("geoType", "feature");

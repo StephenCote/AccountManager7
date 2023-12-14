@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio.rules;
 
 import java.security.SecureRandom;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -11,6 +12,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
@@ -28,6 +30,11 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	private int maxOpenSpace = 15;
 	private int mapWidth1km = 50;
 	private int mapHeight1km = 50;
+	private int mapCellWidthM = 10;
+	private int mapCellHeightM = 10;
+	private DecimalFormat df2 = new DecimalFormat("00");
+	private DecimalFormat df3 = new DecimalFormat("000");
+
 	private int maxConnectedRegions = 5;
     
     BaseRecord zone = null;
@@ -53,6 +60,42 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 		}
 		
 		prepGrid(context);
+	}
+	
+	protected void prepCells(OlioContext ctx, BaseRecord location) {
+		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+		IOSystem.getActiveContext().getReader().populate(location);
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
+		
+		cq.field("geoType", "cell");
+		int count = IOSystem.getActiveContext().getSearch().count(cq);
+		if(count > 0) {
+			logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
+			return;
+		}
+		logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");
+		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID)));
+		List<BaseRecord> cells = new ArrayList<>();
+		try {
+			for(int y = 0; y < mapCellHeightM; y++) {
+				for(int x = 0; x < mapCellWidthM; x++) {
+					int ie = x * 10;
+					int in = y * 10;
+	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
+	    			cell.set("area", (double)10);
+	    			cell.set("gridZone", GZD);
+	    			cell.set("kident", location.get("kident"));
+	    			cell.set("eastings", ie);
+	    			cell.set("northings", in);
+	    			cell.set("geoType", "cell");
+	    			cells.add(cell);
+				}
+			}
+			IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
 	}
 	
     private void prepGrid(OlioContext ctx) {
@@ -85,7 +128,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
     		blocks.clear();
 	    	for(int x = 0; x < mapWidth1km; x++) {
 	    		for(int y = 0; y < mapHeight1km; y++) {
-	    			grid[x][y] = GeoLocationUtil.newLocation(ctx, k100, GZD + " " + k100.get("kident") + " " + x + "" + y, iter++);
+	    			grid[x][y] = GeoLocationUtil.newLocation(ctx, k100, GZD + " " + k100.get("kident") + " " + df2.format(x) + "" + df2.format(y), iter++);
 	    			grid[x][y].set("area", (double)1000);
 	    			grid[x][y].set("gridZone", GZD);
 	    			grid[x][y].set("kident", k100.get("kident"));

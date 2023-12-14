@@ -48,6 +48,8 @@ public class LocationPlannerRule implements IOlioEvolveRule {
 			enc = standardHamlet;
 		}
 		
+		(new GridSquareLocationInitializationRule()).prepCells(context, location);
+		
 	}
 	private String campFire = "Field|Campfire";
 	private String standardVillage = "Village|Village Square|Hut";
