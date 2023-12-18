@@ -56,7 +56,15 @@
 			"name": "geographyType",
 			"baseClass": "org.cote.accountmanager.schema.type.GeographyEnumType",
 			"type": "enum",
-			"maxLength": 32
+			"maxLength": 32,
+			"default": "UNKNOWN"
+		},
+		{
+			"name": "terrainType",
+			"baseClass": "org.cote.accountmanager.schema.type.TerrainEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "UNKNOWN"
 		},
 		{
 			"name": "classification",

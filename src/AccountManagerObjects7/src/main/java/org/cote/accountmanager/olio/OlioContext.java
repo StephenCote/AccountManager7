@@ -277,7 +277,9 @@ public class OlioContext {
 		
 		return true;
 	}
-	
+	public BaseRecord getRootLocation() {
+		 return GeoLocationUtil.getRootLocation(this);
+	}
 	public BaseRecord generateEpoch() {
 		return generateEpoch(1);
 	}

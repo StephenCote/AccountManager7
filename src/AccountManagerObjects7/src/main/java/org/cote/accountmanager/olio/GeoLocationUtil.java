@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -31,10 +32,29 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
+import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
 	private static Map<String, String[]> altNamesCache = new HashMap<>();
+
+	private static SecureRandom rand = new SecureRandom();
+    
+    public static TerrainEnumType randomArable() {
+    	return TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size()));
+    }
+    public static TerrainEnumType randomInlandWater() {
+    	return TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size()));
+    }
+
+    public static double oddsToTransition(TerrainEnumType ter1, TerrainEnumType ter2) {
+    	double odds = 0.0;
+    	int v1 = TerrainEnumType.valueOf(ter1);
+    	int v2 = TerrainEnumType.valueOf(ter2);
+    	
+    	return odds;
+    }
+	
 
 	public static BaseRecord newLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
 		BaseRecord rec = null;

@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 import java.awt.Color;
+import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
 import java.io.BufferedReader;
 import java.io.File;
@@ -18,10 +19,12 @@ import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
@@ -108,10 +111,17 @@ import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.junit.Test;
 
 import de.articdive.jnoise.core.api.functions.Interpolation;
+import de.articdive.jnoise.core.util.vectors.Vector;
+import de.articdive.jnoise.core.util.vectors.Vector2D;
 import de.articdive.jnoise.generators.noise_parameters.fade_functions.FadeFunction;
+import de.articdive.jnoise.generators.noisegen.opensimplex.SuperSimplexNoiseGenerator;
 import de.articdive.jnoise.generators.noisegen.perlin.PerlinNoiseGenerator;
+import de.articdive.jnoise.generators.noisegen.worley.WorleyNoiseGenerator;
+import de.articdive.jnoise.generators.noisegen.worley.WorleyNoiseResult;
 import de.articdive.jnoise.modules.octavation.fractal_functions.FractalFunction;
 import de.articdive.jnoise.pipeline.JNoise;
+import de.articdive.jnoise.pipeline.JNoiseDetailed;
+import de.articdive.jnoise.transformers.domain_warp.DomainWarpTransformer;
 
 
 public class TestBulkOperation extends BaseTest {
@@ -201,10 +211,12 @@ public class TestBulkOperation extends BaseTest {
 	}
 	*/
 	
+	
 	/// Using MGRS-like coding to subdivide the random maps
 	///
 	@Test
 	public void TestGrid() {
+
 		/// World - 60 longitudinal bands (1 - 60) by 20 latitude bands (C to X, not including O)
 		/// Grid Zone Designation (GZD) is the intersection 
 		/// Next is the 100;000-meter square or 100k ident, which includes squares of 100 x 100 kilometers
@@ -225,7 +237,7 @@ public class TestBulkOperation extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				true,
+				false,
 				resetUniverse
 			);
 			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
@@ -236,8 +248,156 @@ public class TestBulkOperation extends BaseTest {
 
 			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
 			octx.initialize();
-		
+			assertNotNull("Root location is null", octx.getRootLocation());
+			printMapFromAdmin1(octx);
 
+	}
+	
+	private void printMapFromAdmin1(OlioContext ctx) {
+		/// Find the admin1 location of the first location and map that
+		///
+		BaseRecord[] locs = ctx.getLocations();
+		BaseRecord loc = locs[0];
+		ioContext.getReader().populate(loc);
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, loc.get(FieldNames.FIELD_PARENT_ID));
+		try {
+			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		printAdmin1Map(ctx, ioContext.getSearch().findRecord(pq));
+		printLocationMaps(ctx);
+		
+	}
+	private void printLocationMaps(OlioContext ctx) {
+		for(BaseRecord rec : ctx.getLocations()) {
+			printLocationMap(ctx, rec);
+		}
+	}
+	private void printLocationMap(OlioContext ctx, BaseRecord location) {
+		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME));
+		logger.info("NOTE: This currently expects a GridSquare layout");
+		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
+		ioContext.getReader().populate(location);
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
+		pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+		
+		try {
+			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		
+		// logger.info(location.toFullString());
+		// logger.info(pq.toFullString());
+		
+		/// Note: finding based only on parentId will span groups
+		/// 
+		BaseRecord[] cells = ioContext.getSearch().findRecords(pq);
+		logger.info("Cell count: " + cells.length);
+		int cellWidth = rule.getMapCellWidthM() * 25;
+		int cellHeight = rule.getMapCellWidthM() * 25;
+
+		BufferedImage image = new BufferedImage(cellWidth, cellHeight, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g2d = image.createGraphics();
+		for(BaseRecord cell : cells) {
+			String ctype = cell.get("geoType");
+			int east = cell.get("eastings");
+			int north = cell.get("northings");
+			int x = east * 25;
+			int y = north * 25;
+
+			logger.info(x + ", " + y);
+			/*
+			if(ctype.equals("cell")) {
+				g2d.setColor(Color.RED);
+			}
+			else {
+				g2d.setColor(Color.WHITE);
+			}
+			*/
+			g2d.setColor(Color.WHITE);
+			g2d.fillRect(x, y, 25, 25);
+			g2d.setColor(Color.DARK_GRAY);
+			g2d.drawRect(x, y, 25, 25);
+		}
+		g2d.dispose();
+		File outputfile = new File("./map - location - " + location.get(FieldNames.FIELD_NAME) + ".png");
+		try {
+			ImageIO.write(image, "png", outputfile);
+		} catch (IOException e) {
+			logger.error(e);
+		}
+		
+		// logger.info("PLocs = " + plocs.length);
+		// logger.info(location.toFullString());
+	}
+	
+	private void printAdmin1Map(OlioContext ctx, BaseRecord location) {
+		logger.info("Printing admin1 location " + location.get(FieldNames.FIELD_NAME));
+		logger.info("NOTE: This currently expects a GridSquare layout");
+		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
+		ioContext.getReader().populate(location);
+		List<BaseRecord> locs = new ArrayList<>(Arrays.asList(ctx.getLocations()));
+		/// This will look for the locations only in the universe, not the world
+		/// These are the templates, and the context locations will be substituted for these
+		///
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
+		pq.field(FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID));
+		try {
+			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		
+		/// Note: finding based only on parentId will span groups
+		/// 
+		BaseRecord[] plocs = ioContext.getSearch().findRecords(pq);
+
+		int cellWidth = rule.getMapCellWidthM();
+		int cellHeight = rule.getMapCellWidthM();
+
+		BufferedImage image = new BufferedImage(rule.getMapWidth1km() * cellWidth, rule.getMapHeight1km() * cellHeight, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g2d = image.createGraphics();
+		for(BaseRecord uloc : plocs) {
+			BaseRecord loc = uloc;
+			Optional<BaseRecord> oloc = locs.stream().filter(l -> l.get(FieldNames.FIELD_NAME).equals(uloc.get(FieldNames.FIELD_NAME))).findFirst();
+			boolean blot = false;
+			if(oloc.isPresent()) {
+				loc = oloc.get();
+				ioContext.getReader().populate(loc);
+				blot = true;
+			}
+			int east = loc.get("eastings");
+			int north = loc.get("northings");
+			int x = east * cellWidth;
+			int y = north * cellHeight;
+
+			g2d.setColor(Color.DARK_GRAY);
+			g2d.drawRect(x, y, cellWidth, cellHeight);
+			String type = loc.get("geoType");
+			if(blot) {
+				g2d.setColor(Color.RED);
+			}
+			else if(type != null && type.equals("feature")) {
+				g2d.setColor(Color.GREEN);
+			}
+			else {
+				g2d.setColor(Color.WHITE);
+			}
+			g2d.fillRect(x, y, cellWidth, cellHeight);
+
+		}
+		g2d.dispose();
+		File outputfile = new File("./map - admin1 - " + location.get(FieldNames.FIELD_NAME) + ".png");
+		try {
+			ImageIO.write(image, "png", outputfile);
+		} catch (IOException e) {
+			logger.error(e);
+		}
+		
+		// logger.info("PLocs = " + plocs.length);
+		// logger.info(location.toFullString());
 	}
 	
 	@Test

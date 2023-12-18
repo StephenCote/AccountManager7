@@ -81,7 +81,7 @@
 						<exclude>**/TestBulkOperation.java</exclude>
 						-->
 						<!-- Repeatable Set -->
-
+						<exclude>**/TestNoise.java</exclude>
 						<exclude>**/TestModelLayout.java</exclude>
 						<exclude>**/TestJournal.java</exclude>
 						<exclude>**/TestVaultFields.java</exclude>

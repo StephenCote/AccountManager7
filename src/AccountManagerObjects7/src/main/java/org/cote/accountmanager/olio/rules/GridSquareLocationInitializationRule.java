@@ -46,6 +46,22 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 
 	}
 	
+	public int getMapWidth1km() {
+		return mapWidth1km;
+	}
+
+	public int getMapHeight1km() {
+		return mapHeight1km;
+	}
+
+	public int getMapCellWidthM() {
+		return mapCellWidthM;
+	}
+
+	public int getMapCellHeightM() {
+		return mapCellHeightM;
+	}
+
 	@Override
 	public void pregenerate(OlioContext context) {
 		long id = context.getUniverse().get("locations.id");
@@ -74,6 +90,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 			return;
 		}
 		logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");
+		// logger.info(location.toFullString());
 		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID)));
 		List<BaseRecord> cells = new ArrayList<>();
 		try {
@@ -82,6 +99,9 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 					int ie = x * 10;
 					int in = y * 10;
 	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
+	    			/// Location util defaults to putting new locations into the universe.  change to the world group
+	    			///
+	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 	    			cell.set("area", (double)10);
 	    			cell.set("gridZone", GZD);
 	    			cell.set("kident", location.get("kident"));
@@ -113,7 +133,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
     				String sx = identH.substring(x,x+1);
     				String sy = identV.substring(y,y+1);
     				BaseRecord block = GeoLocationUtil.newLocation(ctx, zone, GZD + " " + sx + sy, iter++);
-    				block.set("area", (double)10000);
+    				block.set("area", (double)mapWidth1km * mapHeight1km);
     				block.set("gridZone", GZD);
     				block.set("kident", sx + sy);
     				blocks.add(block);
@@ -140,6 +160,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	    			blocks.add(grid[x][y]);
 	    		}
 	    	}
+	    	// logger.info("Staged " + blocks.size());
 	    	logger.info("Connecting regions");
 	    	connectRegions(grid);
 	    	logger.info("Creating " + blocks.size() + " square kilometers");
