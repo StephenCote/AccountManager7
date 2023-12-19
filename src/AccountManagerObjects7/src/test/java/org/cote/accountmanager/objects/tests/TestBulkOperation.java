@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -238,7 +239,7 @@ public class TestBulkOperation extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				true,
+				false,
 				resetUniverse
 			);
 			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
@@ -275,9 +276,45 @@ public class TestBulkOperation extends BaseTest {
 			printLocationMap(ctx, rec);
 		}
 	}
+	
+	/// For printing a description of locations based on feature
+	private void printDescriptionByFeature(OlioContext ctx, BaseRecord location, String feature) {
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_PARENT_ID));
+		/// DON'T search by group id because map squares may still be in the universal group
+		// pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+		pq.field("feature", feature);
+		try {
+			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		BaseRecord[] locations = ioContext.getSearch().findRecords(pq);
+		Map<TerrainEnumType, Integer> map = GeoLocationUtil.getTerrainTypes(Arrays.asList(locations));
+		/*
+		List<TerrainEnumType> sortTypes = map.entrySet().stream()
+        .sorted(Map.Entry<TerrainEnumType, Integer>.comparingByValue().reversed()) 
+        .collect(Collectors.toList());
+        */
+		List<TerrainEnumType> sortTypes = map.entrySet()
+			.stream()
+			.sorted(Comparator.comparing(Map.Entry::getValue))
+			.map(e -> e.getKey()).collect(Collectors.toList())
+		;
+		for(TerrainEnumType tet : sortTypes) {
+			logger.info(tet + " " + map.get(tet));
+		}
+		/*
+		for(TerrainEnumType tet : map.keySet()) {
+			logger.info(tet + " " + map.get(tet));
+		}
+		*/
+		
+	}
+	
 	private void printLocationMap(OlioContext ctx, BaseRecord location) {
 		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
 		logger.info("NOTE: This currently expects a GridSquare layout");
+		printDescriptionByFeature(ctx, location, (String)location.get("feature"));
 		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
 		ioContext.getReader().populate(location);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
@@ -295,6 +332,9 @@ public class TestBulkOperation extends BaseTest {
 		/// Note: finding based only on parentId will span groups
 		/// 
 		BaseRecord[] cells = ioContext.getSearch().findRecords(pq);
+		
+		
+		
 		int cellWidth = rule.getMapCellWidthM() * 50;
 		int cellHeight = rule.getMapCellWidthM() * 50;
 
