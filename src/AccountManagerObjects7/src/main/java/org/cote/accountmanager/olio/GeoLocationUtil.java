@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -40,6 +41,7 @@ public class GeoLocationUtil {
 
 	private static SecureRandom rand = new SecureRandom();
     
+	/*
     public static TerrainEnumType randomArable() {
     	return TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size()));
     }
@@ -54,7 +56,43 @@ public class GeoLocationUtil {
     	
     	return odds;
     }
-	
+	*/
+	public static Map<TerrainEnumType, Integer> getTerrainTypes(List<BaseRecord> locs){
+		Map<TerrainEnumType, Integer> types = new HashMap<>();
+		for(BaseRecord r : locs) {
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)r.get("terrainType"));
+			int count = 0;
+			if(types.containsKey(tet)) {
+				count = types.get(tet);
+			}
+			types.put(tet, count + 1);
+		}
+		return types;
+	}
+
+	public static List<BaseRecord> findLocationsRegionByGrid(List<BaseRecord> locs, int x, int y, int r) {
+		return locs.stream().filter(l -> {
+			int e = (int)l.get("eastings");
+			int n = (int)l.get("northings");
+			return(
+				e >= (x-r) && e <= (x+r)
+				&&
+				n >= (y-r) && n <= (y+r)
+			);
+		}).collect(Collectors.toList());
+	}
+	public static BaseRecord findLocationByGrid(List<BaseRecord> locs, int x, int y) {
+		BaseRecord rec = null;
+		Optional<BaseRecord> oloc = locs.stream().filter(r -> 
+			x == ((int)r.get("eastings"))
+			&&
+			y == ((int)r.get("northings"))
+		).findFirst();
+		if(oloc.isPresent()) {
+			rec = oloc.get();
+		}
+		return rec;
+	}
 
 	public static BaseRecord newLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
 		BaseRecord rec = null;
@@ -90,7 +128,15 @@ public class GeoLocationUtil {
 		IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 		return rec;
 	}
-	
+	public static double calculateGridDistance(BaseRecord location1, BaseRecord location2) {
+		double dist = 0.0;
+		int x1 = location1.get("eastings");
+		int y1 = location1.get("northings");
+		int x2 = location2.get("eastings");
+		int y2 = location2.get("northings");
+		// logger.info(x1 + ", " + y1 + " -> " + x2 + ", " + y2);
+		return Math.sqrt(Math.pow((double)x2 - x1,2) + Math.pow((double)y2 - y1, 2));
+	}
 	public static float calculateDistance(BaseRecord location1, BaseRecord location2) {
 		StringBuilder buff = new StringBuilder();
 		buff.append("SELECT SQRT(POW(69.1 * (G1.latitude -  G2.latitude), 2) + POW(69.1 * (G2.longitude - G1.longitude) * COS(G1.latitude / 57.3), 2))");

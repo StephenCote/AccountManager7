@@ -85,6 +85,7 @@ import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.AuditUtil;
@@ -237,7 +238,7 @@ public class TestBulkOperation extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				false,
+				true,
 				resetUniverse
 			);
 			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
@@ -275,7 +276,7 @@ public class TestBulkOperation extends BaseTest {
 		}
 	}
 	private void printLocationMap(OlioContext ctx, BaseRecord location) {
-		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME));
+		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
 		logger.info("NOTE: This currently expects a GridSquare layout");
 		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
 		ioContext.getReader().populate(location);
@@ -294,20 +295,20 @@ public class TestBulkOperation extends BaseTest {
 		/// Note: finding based only on parentId will span groups
 		/// 
 		BaseRecord[] cells = ioContext.getSearch().findRecords(pq);
-		logger.info("Cell count: " + cells.length);
-		int cellWidth = rule.getMapCellWidthM() * 25;
-		int cellHeight = rule.getMapCellWidthM() * 25;
+		int cellWidth = rule.getMapCellWidthM() * 50;
+		int cellHeight = rule.getMapCellWidthM() * 50;
 
 		BufferedImage image = new BufferedImage(cellWidth, cellHeight, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g2d = image.createGraphics();
+;
 		for(BaseRecord cell : cells) {
 			String ctype = cell.get("geoType");
 			int east = cell.get("eastings");
 			int north = cell.get("northings");
-			int x = east * 25;
-			int y = north * 25;
+			int x = east * 50;
+			int y = north * 50;
 
-			logger.info(x + ", " + y);
+			// logger.info(x + ", " + y);
 			/*
 			if(ctype.equals("cell")) {
 				g2d.setColor(Color.RED);
@@ -317,9 +318,9 @@ public class TestBulkOperation extends BaseTest {
 			}
 			*/
 			g2d.setColor(Color.WHITE);
-			g2d.fillRect(x, y, 25, 25);
+			g2d.fillRect(x, y, 50, 50);
 			g2d.setColor(Color.DARK_GRAY);
-			g2d.drawRect(x, y, 25, 25);
+			g2d.drawRect(x, y, 50, 50);
 		}
 		g2d.dispose();
 		File outputfile = new File("./map - location - " + location.get(FieldNames.FIELD_NAME) + ".png");
@@ -332,6 +333,24 @@ public class TestBulkOperation extends BaseTest {
 		// logger.info("PLocs = " + plocs.length);
 		// logger.info(location.toFullString());
 	}
+	
+
+	
+	private void terrainWalk(OlioContext ctx, List<BaseRecord> locs) {
+		List<BaseRecord> walks = new ArrayList<>();
+		for(BaseRecord loc : locs) {
+			terrainWalk(ctx, locs, loc, locs);
+		}
+	}
+	private void terrainWalk(OlioContext ctx, List<BaseRecord> locs, BaseRecord current, List<BaseRecord> walks) {
+		TerrainEnumType tet = OlioUtil.randomEnum(TerrainEnumType.class);
+		try {
+			current.set("terrainType", tet);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	
 	
 	private void printAdmin1Map(OlioContext ctx, BaseRecord location) {
 		logger.info("Printing admin1 location " + location.get(FieldNames.FIELD_NAME));
@@ -359,6 +378,9 @@ public class TestBulkOperation extends BaseTest {
 
 		BufferedImage image = new BufferedImage(rule.getMapWidth1km() * cellWidth, rule.getMapHeight1km() * cellHeight, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g2d = image.createGraphics();
+		//terrainWalk(ctx, Arrays.asList(plocs));
+		// rule.blastAndWalk(ctx, Arrays.asList(plocs));
+		//(new GridSquareLocationInitializationRule()).blastRegions(Arrays.asList(plocs));
 		for(BaseRecord uloc : plocs) {
 			BaseRecord loc = uloc;
 			Optional<BaseRecord> oloc = locs.stream().filter(l -> l.get(FieldNames.FIELD_NAME).equals(uloc.get(FieldNames.FIELD_NAME))).findFirst();
@@ -373,19 +395,25 @@ public class TestBulkOperation extends BaseTest {
 			int x = east * cellWidth;
 			int y = north * cellHeight;
 
-			g2d.setColor(Color.DARK_GRAY);
-			g2d.drawRect(x, y, cellWidth, cellHeight);
 			String type = loc.get("geoType");
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get("terrainType"));
 			if(blot) {
 				g2d.setColor(Color.RED);
 			}
+			/*
 			else if(type != null && type.equals("feature")) {
 				g2d.setColor(Color.GREEN);
 			}
+			*/
 			else {
-				g2d.setColor(Color.WHITE);
+				Color c = TerrainEnumType.getColor(tet);
+				g2d.setColor(c);
 			}
 			g2d.fillRect(x, y, cellWidth, cellHeight);
+			if(type != null && type.equals("feature")) {
+				g2d.setColor(Color.DARK_GRAY);
+				g2d.drawRect(x, y, cellWidth, cellHeight);
+			}
 
 		}
 		g2d.dispose();
