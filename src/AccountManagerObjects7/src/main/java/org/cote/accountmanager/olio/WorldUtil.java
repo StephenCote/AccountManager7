@@ -4,11 +4,8 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -23,7 +20,6 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
-import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.RandomLocationInitializationRule;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
@@ -488,6 +484,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ACTION_RESULT, (long)world.get("actionResults.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_SCHEDULE, (long)world.get("schedules.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_PERSONALITY, (long)world.get("personalities.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_STORE, (long)world.get("stores.id"), orgId);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");
 		RecordFactory.cleanupOrphans(null);

@@ -19,6 +19,14 @@
 			"baseType": "string"
 		},
 		{
+			"name": "traits",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"foreign": true,
+			"participantModel": "person.trait"
+		},
+		{
 			"name": "apparel",
 			"type": "list",
 			"baseType": "model",

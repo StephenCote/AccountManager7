@@ -59,7 +59,14 @@ public class PersonalityUtil {
 		Impulsiveness (moody)
 		Vulnerability (not self-confident) 
 	 */
-	
+	/*
+	 * Hierarchy of Needs
+	 * Self-actualization
+	 * Esteem (respect, self-esteem, status, recognition, strength, freedom)
+	 * Love and belonging (friendship, intimacy, family, sense of connection)
+	 * Saftey needs (personal security, employment, resources, health, property
+	 * Physiological needs (air, water, food, shelter, sleep, clothing, reproduction)
+	 */
 	private static final String[] personalityFields = new String[]{"openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"};
 	/*
 	Openness - [inventive/curiosity to consistent/cautious]

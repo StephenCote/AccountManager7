@@ -19,6 +19,7 @@ public enum TraitEnumType {
     UNKNOWN,
     FEATURE,
     PERK,
+    SKILL,
     RESOURCE,
     LOCATION,
     TRANSPORT,

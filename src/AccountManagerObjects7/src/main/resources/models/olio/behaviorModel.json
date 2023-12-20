@@ -12,6 +12,7 @@
 	"group": "Behaviors",
 	"icon": "category",
 	"label": "Behavior",
+	"dedicatedParticipation": true,
 	"fields": [
 		{
 			"name": "rearing",

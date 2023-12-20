@@ -160,5 +160,11 @@
 		"baseModel": "auth.group",
 		"type": "model",
 		"foreign": true
+	},
+	{
+		"name": "stores",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
 	}
 ]}

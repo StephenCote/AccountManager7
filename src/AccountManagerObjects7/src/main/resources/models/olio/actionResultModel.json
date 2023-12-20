@@ -35,6 +35,12 @@
 			"maxLength": 32
 		},
 		{
+			"name": "store",
+			"type": "model",
+			"baseModel": "olio.store",
+			"foreign": true
+		},
+		{
 			"name": "startDate",
 			"type": "timestamp"
 		},

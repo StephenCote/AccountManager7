@@ -7,13 +7,10 @@ import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 
 public class RandomLocationInitializationRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(RandomLocationInitializationRule.class);

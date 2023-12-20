@@ -81,6 +81,18 @@
 			"type": "list",
 			"baseType": "string",
 			"limit": ["fight", "flight", "feed", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
+		},
+		{
+			"name": "counterActions",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "requiredSkills",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"foreign": true
 		}
 	]
 }

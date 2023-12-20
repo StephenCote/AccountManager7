@@ -4,13 +4,7 @@ import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -18,26 +12,37 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
-import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.TerrainUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.TerrainEnumType;
 
+/// Construct maps in the data.geoLocation model using Military Grid Reference System (MGRS)
+/// (1) Grid Zone (GZD) - 6d-wide universal transverse mercator (UTM) zones, 1 - 60, Identified by northermost latitude band and latitude band letter  E.G.: 30K (in the middle of the south Atlantic, BTW)
+/// (2) 100Km square identification (kident).  Identified by column letter (A–Z, omitting I and O) and row letter (A–V, omitting I and O).  E.G.: AB
+/// (3) Numerical location composed of Eastings and Northings, which represent the number of meters from the western-most boundary and northern-most boundary respectively
+///
+/// For Random Olio GridSquare Maps, the following currently apply:
+///   - The GZD is hardcoded as 30K
+///   - The kident is randomly chosen when constructing a region
+///   - The kident area MAY NOT REPRESENT 100Km - it will be the product of mapWidth1km x mapHeight1km. Depending on the type of map being constructed, it may be desirable to cut this down, such as to 50.  However, note that the naming convention will still imply 100km square, while the area will correctly reflect the adjusted size.
+///   - The numerical locations are constructed only with 100m square blocks at the moment, with the intent that they may be subdivided as needed
+///
 public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(GridSquareLocationInitializationRule.class);
 	
 	private SecureRandom rand = new SecureRandom();
+
+	/// 30K is in the middle of the ocean
 	private String GZD = "30K";
 	private int minOpenSpace = 5;
 	private int maxOpenSpace = 15;
-	private int mapWidth1km = 50;
-	private int mapHeight1km = 50;
+	private int mapWidth1km = 100;
+	private int mapHeight1km = 100;
 	private int mapCellWidthM = 10;
 	private int mapCellHeightM = 10;
 	private DecimalFormat df2 = new DecimalFormat("00");
@@ -104,8 +109,8 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 		try {
 			for(int y = 0; y < mapCellHeightM; y++) {
 				for(int x = 0; x < mapCellWidthM; x++) {
-					int ie = x * 10;
-					int in = y * 10;
+					int ie = x; //  * 10
+					int in = y; //  * 10
 	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
 	    			/// Location util defaults to putting new locations into the universe.  change to the world group
 	    			///
@@ -119,6 +124,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	    			cells.add(cell);
 				}
 			}
+			TerrainUtil.blastCells(ctx, location, cells, mapCellWidthM, mapCellHeightM);
 			IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
@@ -126,238 +132,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 		}
 	}
 
-	public void blastAndWalk(OlioContext ctx, List<BaseRecord> locs) {
-		blastRegions(locs);
-		
-		
-		List<BaseRecord> glaciers = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.GLACIER).collect(Collectors.toList());
-		List<BaseRecord> lakes = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.LAKE).collect(Collectors.toList());
-		List<BaseRecord> rivers = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.RIVER).collect(Collectors.toList());
-		List<BaseRecord> oceans = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.OCEAN).collect(Collectors.toList());
-		List<BaseRecord> mountains = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.MOUNTAIN).collect(Collectors.toList());
-		
-		Set<BaseRecord> targSet = new HashSet<>();
-
-		logger.info("Compute walks");
-		longShortWalk(locs, targSet, mountains, rivers, TerrainEnumType.RIVER, true);
-		longShortWalk(locs, targSet, mountains, rivers, TerrainEnumType.RIVER, false);
-		longShortWalk(locs, targSet, rivers, oceans, TerrainEnumType.RIVER, true);
-		longShortWalk(locs, targSet, rivers, lakes, TerrainEnumType.RIVER, false);
-		longShortWalk(locs, targSet, lakes, oceans, TerrainEnumType.RIVER, true);
-		longShortWalk(locs, targSet, lakes, oceans, TerrainEnumType.RIVER, false);
-		longShortWalk(locs, targSet, glaciers, lakes, TerrainEnumType.RIVER, true);
-		longShortWalk(locs, targSet, glaciers, lakes, TerrainEnumType.RIVER, false);		
-	}
 	
-	public void longShortWalk(List<BaseRecord> locs, Set<BaseRecord> targSet, List<BaseRecord> srcs, List<BaseRecord> targs, TerrainEnumType walkType, boolean isShort) {
-		double currentDist = -1;
-		if(srcs.size() == 0 || targs.size() == 0) {
-			logger.warn("Invalid pairs");
-			return;
-		}
-
-		BaseRecord mark1 = null;
-		BaseRecord mark2 = null;
-		for(BaseRecord r1: srcs) {
-			for(BaseRecord r2: targs) {
-				if(targSet.contains(r2)) {
-					continue;
-				}
-				double dist = GeoLocationUtil.calculateGridDistance(r1, r2);
-				if(currentDist == -1 || dist > 0 && ((isShort && dist < currentDist) || (!isShort && dist > currentDist))){
-					currentDist = dist;
-					mark1 = r1;
-					mark2 = r2;
-				}
-			}
-		}
-		if(mark1 != null && mark2 != null) {
-			targSet.add(mark2);
-			logger.info((isShort ? "Short" : "Long") + " walk between " + mark1.get("terrainType") + " " + mark1.get(FieldNames.FIELD_NAME) + " to " + mark2.get("terrainType") + " " + mark2.get(FieldNames.FIELD_NAME) + " - " + currentDist + " sqs");
-			walk(locs, mark1, mark2, walkType, true);
-		}
-	}
-	protected void walk(List<BaseRecord> locs, BaseRecord loc, BaseRecord targ, TerrainEnumType type, boolean meander) {
-		SecureRandom rand = new SecureRandom();
-		int x1 = loc.get("eastings");
-		int y1 = loc.get("northings");
-		int x2 = targ.get("eastings");
-		int y2 = targ.get("northings");
-		double at2 = Math.atan2(y2 - y1, x2 - x1);
-	     if (at2 < 0) {
-	          at2 += Math.PI * 2;
-	     }
-	     if(meander && rand.nextDouble() > .5) {
-	    	 at2 += (rand.nextDouble() > .5 ? 1 : -1) * rand.nextDouble(1);
-	     }
-	     double deg = Math.toDegrees(at2);
-
-	     int x3 = x1;
-	     int y3 = y1;
-	     if(deg == 0) {
-	    	 y3--;
-	     }
-	     else if(deg == 180) {
-	    	 y3++;
-	     }
-	     else if(deg == 90) {
-	    	 x3++;
-	     }
-	     else if(deg == 270) {
-	    	 x3--;
-	     }
-	     else if(deg > 270) {
-	    	 x3--;
-	    	 y3--;
-	     }
-	     else if(deg > 180) {
-	    	 x3--;
-	    	 y3++;
-	     }
-	     else if(deg > 90) {
-	    	 x3++;
-	    	 y3++;
-	     }
-	     else {
-	    	 x3++;
-	    	 y3--;
-	     }
-	     if(x3 < 0) x3 = 0;
-	     if(y3 < 0) y3 = 0;
-
-	     if(y2 == y3 && x2 == x3) {
-	    	 logger.info("Calc end crash");
-	    	 return;
-	     }
-	     BaseRecord nloc = GeoLocationUtil.findLocationByGrid(locs, x3, y3);
-	     if(nloc == null) {
-	    	 logger.warn("Walked off map at " + x3 + ", " + y3);
-	    	 return;
-	     }
-	     else {
-	    	 TerrainEnumType wet = TerrainEnumType.valueOf((String)nloc.get("terrainType"));
-	    	 if(wet != type) {
-	    		 try {
-					nloc.set("terrainType", wet);
-				} catch (FieldException | ValueException | ModelNotFoundException e) {
-					logger.error(e);
-				}
-	    		walk(locs, nloc, targ, type, meander);
-	    	 }
-	     }
-	}
-	
-	public void blastRegions(List<BaseRecord> locs) {
-		blastRegions(locs, TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
-	}
-	public void blastRegions(List<BaseRecord> locs, TerrainEnumType defaultTerrain) {
-		try {
-			for(TerrainEnumType tet : TerrainEnumType.getArable()) {
-				blastRegions(locs, tet, 25);
-			}
-			
-			for(TerrainEnumType tet : TerrainEnumType.getRockyTerrain()) {
-				blastRegions(locs, tet, 25);
-			}
-			
-			/// plant some water for later connections
-			blastRegions(locs, TerrainEnumType.LAKE, 2);
-			//blastRegions(locs, TerrainEnumType, 2);
-			/*
-			for(TerrainEnumType tet : TerrainEnumType.getInlandWater()) {
-				blastRegions(locs, tet, 2);
-			}
-			*/
-			/// Blast oceans at the corners
-			if(rand.nextDouble() < .25) blastTerrain(locs, TerrainEnumType.OCEAN, mapWidth1km, mapHeight1km, 10, .75, 0, 0);
-			if(rand.nextDouble() < .25) blastTerrain(locs, TerrainEnumType.OCEAN, mapWidth1km, mapHeight1km, 10, .75, 0, mapHeight1km - 1);
-			if(rand.nextDouble() < .25) blastTerrain(locs, TerrainEnumType.OCEAN, mapWidth1km, mapHeight1km, 10, .75, mapWidth1km - 1, 0);
-			if(rand.nextDouble() < .25) blastTerrain(locs, TerrainEnumType.OCEAN, mapWidth1km, mapHeight1km, 10, .75, mapWidth1km - 1, mapHeight1km - 1);
-			
-			// fill remainder with random arable
-			for(BaseRecord l : locs) {
-				TerrainEnumType tet = TerrainEnumType.valueOf((String)l.get("terrainType"));
-				if(tet == TerrainEnumType.UNKNOWN) {
-					l.set("terrainType", defaultTerrain);
-				}
-			}
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-		}
-	}
-	public void blastRegions(List<BaseRecord> locs, TerrainEnumType tet, int iterations) {
-		for(int i = 0; i < iterations; i++) {
-			blastTerrain(locs, tet, mapWidth1km, mapHeight1km, 0, 0.0, -1, -1);
-		}
-	}
-	public void blastTerrain(List<BaseRecord> locs, TerrainEnumType tet, int gridWidth, int gridHeight, int radius, double impact, int x, int y) {
-		if(radius <= 0) {
-			radius = rand.nextInt(5);
-		}
-		if(impact <= 0) {
-			impact = rand.nextDouble();
-		}
-		if(x < 0 || x >= gridWidth) x = rand.nextInt(gridWidth);
-		if(y < 0 || y >= gridHeight) y = rand.nextInt(gridHeight);
-		
-		while(tet == TerrainEnumType.UNKNOWN || tet == TerrainEnumType.VOID || tet == TerrainEnumType.SHELTER || tet == TerrainEnumType.INDOORS || tet == TerrainEnumType.CAVE) {
-			tet = OlioUtil.randomEnum(TerrainEnumType.class);
-		}
-		
-		BaseRecord irec = GeoLocationUtil.findLocationByGrid(locs, x, y);
-		if(irec == null) {
-			logger.error("Failed to find location at " + x + ", " + y);
-			return;
-		}
-		
-		List<BaseRecord> irecs = GeoLocationUtil.findLocationsRegionByGrid(locs, x, y, radius);
-		if(irecs.size() == 0 || irecs.size() == locs.size()) {
-			logger.error("Invalid splash zone!");
-			return;
-		}
-		
-		// logger.info("Compute " + tet.toString() + " blast at " + x + ", " + y + " for " + radius + " at " + impact + " effect");
-		int tetVal = TerrainEnumType.valueOf(tet);
-
-		for(BaseRecord r : irecs) {
-			TerrainEnumType utet = tet;
-			TerrainEnumType itet = TerrainEnumType.valueOf((String)r.get("terrainType"));
-			int rx = r.get("eastings");
-			int ry = r.get("northings");
-			if(itet != TerrainEnumType.UNKNOWN && itet != tet) {
-				int itetVal = TerrainEnumType.valueOf(itet);
-				int diff = (int)Math.abs((tetVal - itetVal) * impact);
-				if(diff == 0) {
-					utet = itet;
-				}
-				else {
-					utet = TerrainEnumType.valueOf(diff);
-				}
-				if(utet == TerrainEnumType.UNKNOWN){
-					utet = TerrainEnumType.OCEAN;
-				}
-				else if(utet == TerrainEnumType.VOID || utet == TerrainEnumType.INDOORS || utet == TerrainEnumType.SHELTER) {
-					utet = TerrainEnumType.MOUNTAIN;
-				}
-				if(utet == TerrainEnumType.OCEAN && (
-					(rx > 10 && rx < (gridWidth - 10))
-					||
-					(ry > 10 && ry < (gridHeight - 10))
-				)){
-					// logger.info("Shore ocean at " + rx + ", " + ry + " because rx > 10 && rx < " + (gridWidth - 10) + " or ry > 10 && ry < " + (gridHeight - 10));
-					utet = TerrainEnumType.SHORELINE;
-				}
-			}
-			try {
-				r.set("terrainType", utet);
-			} catch (FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-		}
-
-		
-	}
 	
 
 	
@@ -380,7 +155,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
     				block.set("gridZone", GZD);
     				block.set("kident", sx + sy);
     				blocks.add(block);
-    				block.set("geoType", "admin1");
+    				block.set("geoType", "admin2");
     				// block.set("eastings", x * 100);
     				// block.set("northings", y * 100);
 	    		}
@@ -407,8 +182,8 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	    	logger.info("Connecting regions");
 	    	connectRegions(grid);
 	    	logger.info("Blasting regions");
-	    	blastAndWalk(ctx, blocks);
-	    	logger.info("Creating " + blocks.size() + " square kilometers");
+	    	TerrainUtil.blastAndWalk(ctx, blocks, mapWidth1km, mapHeight1km);
+	    	logger.info("Creating " + blocks.size() + " grid squares for " + k100.get(FieldNames.FIELD_NAME));
 	    	long start = System.currentTimeMillis();
 	    	IOSystem.getActiveContext().getRecordUtil().createRecords(blocks.toArray(new BaseRecord[0]));
 	    	long stop = System.currentTimeMillis();
@@ -498,6 +273,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
                     try {
 						grid[i][b].set("geoType", "feature");
 						grid[i][b].set("feature", regionName);
+						grid[i][b].set("classification", pos.getX() + "," + pos.getY() + "," + w + "," + h);
 					} catch (FieldException | ValueException | ModelNotFoundException e) {
 						logger.error(e);
 					}

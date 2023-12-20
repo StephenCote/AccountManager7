@@ -1,0 +1,48 @@
+{
+	"name": "olio.store",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"common.reference",
+		"system.primaryKey"
+	],
+	"group": "Stores",
+	"icon": "category",
+	"label": "Store",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "items",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.item",
+			"foreign": true,
+			"participantModel": "store.item"
+		},
+		{
+			"name": "apparel",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.apparel",
+			"foreign": true,
+			"participantModel": "store.apparel"
+		},
+		{
+			"name": "wearables",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.apparel",
+			"foreign": true,
+			"participantModel": "store.wearable"
+		}
+	]
+}

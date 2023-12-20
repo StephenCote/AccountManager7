@@ -64,6 +64,7 @@ public class WorldFactory extends FactoryBase {
 					newRecord.set("behaviors", pu.makePath(contextUser, mtype, path + "/" + name + "/Behaviors", gtype, orgId));
 					newRecord.set("states", pu.makePath(contextUser, mtype, path + "/" + name + "/States", gtype, orgId));
 					newRecord.set("actions", pu.makePath(contextUser, mtype, path + "/" + name + "/Actions", gtype, orgId));
+					newRecord.set("stores", pu.makePath(contextUser, mtype, path + "/" + name + "/Stores", gtype, orgId));
 					newRecord.set("actionResults", pu.makePath(contextUser, mtype, path + "/" + name + "/ActionResults", gtype, orgId));
 					newRecord.set("schedules", pu.makePath(contextUser, mtype, path + "/" + name + "/Schedules", gtype, orgId));
 					newRecord.set("personalities", pu.makePath(contextUser, mtype, path + "/" + name + "/Personalities", gtype, orgId));

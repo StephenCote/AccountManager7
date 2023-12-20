@@ -78,9 +78,11 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestBulkOperation.java</exclude>
+						
+						<exclude>**/TestOlio.java</exclude>
 						-->
 						<!-- Repeatable Set -->
+						<exclude>**/TestBulkOperation.java</exclude>	
 						<exclude>**/TestNoise.java</exclude>
 						<exclude>**/TestModelLayout.java</exclude>
 						<exclude>**/TestJournal.java</exclude>

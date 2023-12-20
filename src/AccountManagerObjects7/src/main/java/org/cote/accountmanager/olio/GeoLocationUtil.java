@@ -5,7 +5,6 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -16,7 +15,6 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
@@ -28,12 +26,10 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
-import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
@@ -57,17 +53,19 @@ public class GeoLocationUtil {
     	return odds;
     }
 	*/
-	public static Map<TerrainEnumType, Integer> getTerrainTypes(List<BaseRecord> locs){
-		Map<TerrainEnumType, Integer> types = new HashMap<>();
-		for(BaseRecord r : locs) {
-			TerrainEnumType tet = TerrainEnumType.valueOf((String)r.get("terrainType"));
-			int count = 0;
-			if(types.containsKey(tet)) {
-				count = types.get(tet);
-			}
-			types.put(tet, count + 1);
+	public static BaseRecord[] getLocationsByFeature(BaseRecord location, String feature, long groupId){
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_PARENT_ID));
+		/// DON'T search by group id because feature level grid squares may still be in the universe group
+		if(groupId > 0L) {
+			pq.field(FieldNames.FIELD_GROUP_ID, groupId);
 		}
-		return types;
+		pq.field("feature", feature);
+		try {
+			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return IOSystem.getActiveContext().getSearch().findRecords(pq);
 	}
 
 	public static List<BaseRecord> findLocationsRegionByGrid(List<BaseRecord> locs, int x, int y, int r) {
