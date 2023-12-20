@@ -10,7 +10,6 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.value.ValueType;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.Catalog;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;

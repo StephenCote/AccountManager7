@@ -1,5 +1,11 @@
 olio (hodgepodge) contains a variety of data randomization and evolution models and utilities.
 
+Locations and Mapping
+Locations can use global geolocation data with correct latitudes, longitudes, and names,
+or generated locations to use the Military Grid Reference System (MGRS)
+
+Terrain blasting and walking is used to create the semblance of a landscape
+
 NEW METRICS
 
 Personality Traits

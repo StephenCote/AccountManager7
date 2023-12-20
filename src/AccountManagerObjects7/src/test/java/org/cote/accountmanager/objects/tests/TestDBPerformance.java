@@ -2,8 +2,6 @@ package org.cote.accountmanager.objects.tests;
 
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.db.DBSearch;
-import org.cote.accountmanager.io.db.cache.CacheDBSearch;
 import org.cote.accountmanager.record.BaseRecord;
 import org.junit.Test;
 
