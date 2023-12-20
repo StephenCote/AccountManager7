@@ -74,10 +74,11 @@ public class TestOlio extends BaseTest {
 			OlioContext octx = new OlioContext(cfg);
 
 			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
-			octx.initialize();
-			assertNotNull("Root location is null", octx.getRootLocation());
-			logger.info("Computing maps");
 			try {
+				octx.initialize();
+				assertNotNull("Root location is null", octx.getRootLocation());
+				logger.info("Computing maps");
+
 				MapUtil.printMapFromAdmin2(octx);
 			}
 			catch(Exception e) {

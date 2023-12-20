@@ -21,6 +21,14 @@
 			"name": "code",
 			"type": "string",
 			"maxLength": 32
+		},
+		{
+			"name": "dependencies",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "$self",
+			"foreign": true,
+			"followReference": false
 		}
 	]
 }
