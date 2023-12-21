@@ -68,6 +68,7 @@ public class CharacterUtil {
 		BaseRecord behDir = world.get("behaviors");
 		BaseRecord pperDir = world.get("personalities");
 		BaseRecord stDir = world.get("states");
+		BaseRecord stoDir = world.get("stores");
 		IOSystem.getActiveContext().getReader().populate(popDir);
 		
 		ParameterList plist = ParameterList.newParameterList("path", popDir.get(FieldNames.FIELD_PATH));
@@ -76,6 +77,7 @@ public class CharacterUtil {
 		ParameterList plist4 = ParameterList.newParameterList("path", behDir.get(FieldNames.FIELD_PATH));
 		ParameterList plist5 = ParameterList.newParameterList("path", pperDir.get(FieldNames.FIELD_PATH));
 		ParameterList plist6 = ParameterList.newParameterList("path", stDir.get(FieldNames.FIELD_PATH));
+		ParameterList plist7 = ParameterList.newParameterList("path", stoDir.get(FieldNames.FIELD_PATH));
 		BaseRecord person = null;
 		
 		try {
@@ -84,6 +86,7 @@ public class CharacterUtil {
 			BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, user, null, plist4);
 			BaseRecord pper = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PERSONALITY, user, null, plist5);
 			BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, user, null, plist6);
+			BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, user, null, plist7);
 			
 			person = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, user, null, plist);
 			person.set("statistics", stats);
@@ -91,6 +94,7 @@ public class CharacterUtil {
 			person.set("behavior", beh);
 			person.set("personality", pper);
 			person.set("state", st);
+			person.set("store", sto);
 			boolean isMale = (Math.random() < 0.5);
 			
 			if(inceptionDate != null) {

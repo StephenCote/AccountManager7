@@ -1,0 +1,87 @@
+{
+	"name": "olio.builder",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.name",
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.description",
+		"olio.qualityExt",
+		"olio.priceExt"
+	],
+	"group": "Builders",
+	"icon": "category",
+	"label": "Builder",
+	"query": ["id", "groupId", "name"],
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "type",
+			"type": "string",
+			"maxLength": 24,
+			"description": "The type of item this builder produces",
+			"limit": ["item", "builder", "wearable", "apparel", "location"]
+		},
+		{
+			"name": "time",
+			"type": "int",
+			"description": "Time in hours to build this object with mean skill level"
+		},
+		{
+			"name": "schedule",
+			"type": "model",
+			"baseModel": "olio.schedule",
+			"foreign": true,
+			"participantModel": "buildable.schedule",
+			"description": "Schedule to use for reoccuring builders"
+		},
+		{
+			"name": "store",
+			"type": "model",
+			"baseModel": "olio.store",
+			"foreign": true,
+			"participantModel": "buildable.store",
+			"description": "Store where a produced item will be placed"
+		},
+		{
+			"name": "renewable",
+			"type": "boolean"
+		},
+		{
+			"name": "materials",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.item",
+			"participantModel": "builder.material",
+			"foreign": true
+		},
+		{
+			"name": "skills",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"participantModel": "builder.skill",
+			"foreign": true
+		},
+		{
+			"name": "perks",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"participantModel": "builder.perk",
+			"foreign": true
+		},
+		{
+			"name": "features",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"participantModel": "builder.feature",
+			"foreign": true
+		}
+	]
+}

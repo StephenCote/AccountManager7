@@ -42,10 +42,6 @@
 			"type": "boolean"
 		},
 		{
-			"name": "renewable",
-			"type": "boolean"
-		},
-		{
 			"name": "materials",
 			"type": "list",
 			"baseType": "string"

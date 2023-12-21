@@ -27,21 +27,13 @@
 			"participantModel": "person.trait"
 		},
 		{
-			"name": "apparel",
-			"type": "list",
-			"baseType": "model",
-			"baseModel": "olio.apparel",
+			"name": "store",
+			"type": "model",
+			"baseModel": "olio.store",
 			"foreign": true,
-			"participantModel": "person.apparel"
+			"participantModel": "person.store"
 		},
-		{
-			"name": "inventory",
-			"type": "list",
-			"baseType": "model",
-			"baseModel": "olio.item",
-			"foreign": true,
-			"participantModel": "person.item"
-		},
+
 		{
 			"name": "statistics",
 			"type": "model",

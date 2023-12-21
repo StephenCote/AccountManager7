@@ -1,0 +1,6 @@
+[
+	"rudimentary shelter::location:false::sticks:basic survival:4::waterresistance=.2,skill=0.1",
+	"igloo::location:false::snow:basic survival:8::defensive=.1,insulation=.5,skill=.2",
+	"grass hut::location:false::sticks,grass:basic survival:8::defensive=.05,insulation=.1,heatresistance=.1,waterresistance=.25,skill=.2",
+	"leather tent::location:false::sticks,leather:basic survival:8::defensive=.05,insulation=.25,heatresistance=.25,waterresistance=.35,skill=.2"
+]

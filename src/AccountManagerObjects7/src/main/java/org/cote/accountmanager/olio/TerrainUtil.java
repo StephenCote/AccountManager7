@@ -131,7 +131,15 @@ public class TerrainUtil {
 		}
 	}
 	protected static void walk(List<BaseRecord> locs, BaseRecord loc, BaseRecord targ, TerrainEnumType type, boolean meander) {
-
+		walk(new HashSet<>(), locs, loc, targ, type, meander);
+	}
+	protected static void walk(Set<String> track, List<BaseRecord> locs, BaseRecord loc, BaseRecord targ, TerrainEnumType type, boolean meander) {
+		String key = loc.get(FieldNames.FIELD_NAME) + "-" + targ.get(FieldNames.FIELD_NAME);
+		if(track.contains(key)) {
+			logger.warn("Stop walking in a circle: " + key);
+			return;
+		}
+		track.add(key);
 		int x1 = loc.get("eastings");
 		int y1 = loc.get("northings");
 		int x2 = targ.get("eastings");
@@ -195,7 +203,7 @@ public class TerrainUtil {
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
 				}
-	    		walk(locs, nloc, targ, type, meander);
+	    		walk(track, locs, nloc, targ, type, meander);
 	    	 }
 	     }
 	}

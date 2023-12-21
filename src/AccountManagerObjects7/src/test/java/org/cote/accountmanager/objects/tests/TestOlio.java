@@ -3,11 +3,21 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
+import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.OlioContext;
@@ -19,8 +29,11 @@ import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
 
 public class TestOlio extends BaseTest {
@@ -64,7 +77,7 @@ public class TestOlio extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				true,
+				false,
 				resetUniverse
 			);
 			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
@@ -81,20 +94,23 @@ public class TestOlio extends BaseTest {
 
 				MapUtil.printMapFromAdmin2(octx);
 			}
-			catch(Exception e) {
+			catch(StackOverflowError | Exception e) {
 				logger.error(e);
 				e.printStackTrace();
 			}
+			BuilderUtil.loadBuilders(octx);
+			BaseRecord[] builds = BuilderUtil.getBuilders(octx);
+			assertTrue("Expected some builds", builds.length > 0);
+			logger.info(builds[0].toFullString());
 
 	}
-
-
 	
+
+
+	/*
 	@Test
 	public void TestOlio4() {
-		if(true) {
-			return;
-		}
+
 		AuditUtil.setLogToConsole(false);
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
@@ -123,7 +139,7 @@ public class TestOlio extends BaseTest {
 		OlioContext octx = new OlioContext(cfg);
 		//// Using full country load
 		////
-		/*
+		/ *
 		OlioContext octx = new OlioContext(
 			new OlioContextConfiguration(
 				testUser1,
@@ -138,7 +154,7 @@ public class TestOlio extends BaseTest {
 				resetUniverse
 			)
 		);
-		*/
+		* /
 		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
 		octx.initialize();
 		assertTrue("Expected olio context to be initialized", octx.isInitialized());
@@ -155,19 +171,19 @@ public class TestOlio extends BaseTest {
 		
 		octx.abandonLocationEvent();
 		octx.abandonEpoch();
-		/*
+		/ *
 		logger.info("Test start a new epoch while another epoch is open");
 		BaseRecord test2 = EpochUtil.startEpoch(octx);
 		assertNull("Epoch should be null", test2);
 
 		logger.info("Cleanup the open epoch");
 		octx.abandonEpoch();
-		*/
+		* /
 		
 		// BaseRecord per = octx.readRandomPerson();
 		// assertNotNull("Person is null", per);
 		//logger.info(per.toFullString());
-		/*
+		/ *
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_ID, per.get(FieldNames.FIELD_ID));
 		try {
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
@@ -176,7 +192,7 @@ public class TestOlio extends BaseTest {
 		} catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
 			logger.error(e);
 		}
-		*/
+		* /
 		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, octx.getWorld());
 		assertTrue("Expected two or more locations", locs.length > 0);
 		assertNotNull("Location is null", locs[0]);
@@ -202,6 +218,7 @@ public class TestOlio extends BaseTest {
 		octx.clearCache();
 		
 	}
+	*/
 	/*
 	@Test
 	public void TestOlio2() {

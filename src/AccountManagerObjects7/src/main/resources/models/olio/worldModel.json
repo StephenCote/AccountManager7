@@ -162,7 +162,19 @@
 		"foreign": true
 	},
 	{
+		"name": "builders",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "stores",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "items",
 		"baseModel": "auth.group",
 		"type": "model",
 		"foreign": true

@@ -44,19 +44,25 @@ public class BatchQueue extends Threaded {
 		if(IOSystem.getActiveContext() == null && useMap.size() > 0) {
 			logger.warn("Context is not active.  Queued items will be cached.");
 		}
-		useMap.forEach((k, v) -> {
-			if(v.size() > 0) {
-				if(IOSystem.getActiveContext() == null) {
-					logger.error("Context is not active.  Caching " + v.size() + " " + k + " entrie(s)");
-					FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + "/.queue/" + k + "/" + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
+		try {
+			useMap.forEach((k, v) -> {
+				if(v.size() > 0) {
+					if(IOSystem.getActiveContext() == null) {
+						logger.error("Context is not active.  Caching " + v.size() + " " + k + " entrie(s)");
+						FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + "/.queue/" + k + "/" + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
+					}
+					else {
+						IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
+					}
+					
+					
 				}
-				else {
-					IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
-				}
-				
-				
-			}
-		});
+			});
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
 		
 	}
 	
