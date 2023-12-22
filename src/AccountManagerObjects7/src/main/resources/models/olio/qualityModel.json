@@ -73,6 +73,13 @@
 			"validateRange": true
 		},
 		{
+			"name": "range",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 100000,
+			"validateRange": true
+		},
+		{
 			"name": "smoothness",
 			"type": "double",
 			"minValue": 0,

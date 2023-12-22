@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -9,6 +10,7 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -25,60 +27,30 @@ import org.cote.accountmanager.util.ResourceUtil;
 public class BuilderUtil {
 	public static final Logger logger = LogManager.getLogger(BuilderUtil.class);
 	
+
+	
 	protected static BaseRecord getCreateRawMaterial(OlioContext ctx, String name) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("items.id"));
 		q.field(FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_TYPE, "template");
+		q.field("category", "raw material");
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(rec == null) {
-			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("items.path"));
-			plist.parameter(FieldNames.FIELD_NAME, name);
+			rec = ItemUtil.newItem(ctx, name);
 			try {
-				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM, ctx.getUser(), null, plist);
-				rec.set(FieldNames.FIELD_TYPE, "raw material");
-				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
-			}
-			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				rec.set(FieldNames.FIELD_TYPE, "template");
+				rec.set("category", "raw material");
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 		}
 		return rec;
 		
 	}
-	
-	protected static BaseRecord getCreateSkill(OlioContext ctx, String name) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("traits.id"));
-		q.field(FieldNames.FIELD_NAME, name);
-		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
-		if(rec == null) {
-			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("traits.path"));
-			plist.parameter(FieldNames.FIELD_NAME, name);
-			try {
-				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TRAIT, ctx.getUser(), null, plist);
-				rec.set(FieldNames.FIELD_TYPE, TraitEnumType.SKILL);
-				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
-			}
-			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-		}
-		return rec;
-		
-	}
-	
+
 	public static BaseRecord[] getBuilders(OlioContext ctx) {
-		Query q = WordParser.getQuery(ctx.getUser(), ModelNames.MODEL_BUILDER, ctx.getWorld().get("builders.path"));
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		BaseRecord[] recs = new BaseRecord[0];
-		QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(ctx.getUser(), q);
-		if(qr.getResults().length > 0) {
-			recs = qr.getResults();
-		}
-		return recs;
+		return OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders");
 	}
 	
 	public static void loadBuilders(OlioContext ctx) {
@@ -89,6 +61,7 @@ public class BuilderUtil {
 		}
 	}
 	protected static BaseRecord[] importBuilders(OlioContext ctx) {
+		logger.info("Import default builder configuration");
 		String[] builders = JSONUtil.importObject(ResourceUtil.getResource("./olio/builders.json"), String[].class);
 		List<BaseRecord> blds = new ArrayList<>();
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("builders.path"));
@@ -98,8 +71,8 @@ public class BuilderUtil {
 				BaseRecord ob = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BUILDER, ctx.getUser(), null, plist);
 				BaseRecord oq = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_QUALITY, ctx.getUser(), null, plist2);
 				String[] pairs = build.split(":");
-				if(pairs.length != 10) {
-					logger.error("Unexpected format - expected 10 pairs");
+				if(pairs.length != 12) {
+					logger.error("Unexpected format - expected 12 pairs");
 					logger.error(build);
 					continue;
 				}
@@ -123,22 +96,31 @@ public class BuilderUtil {
 						materials.add(rmat);
 					}
 				}
+				
+				/// 6 = item template name
 				if(pairs[6].length() > 0) {
-					String[] skilz = pairs[6].split(",");
+					BaseRecord it = ItemUtil.getItemTemplate(ctx, pairs[6]);
+					if(it != null) {
+						ob.set("item", it);
+					}
+				}
+				/// 7 = apparel template name
+				if(pairs[8].length() > 0) {
+					String[] skilz = pairs[8].split(",");
 					List<BaseRecord> skills = ob.get("skills");
 					for(String s: skilz) {
-						BaseRecord rmat = getCreateSkill(ctx, s);
+						BaseRecord rmat = OlioUtil.getCreateSkill(ctx, s);
 						skills.add(rmat);
 					}
 				}
-				if(pairs[7].length() > 0) {
-					ob.set("time", Integer.parseInt(pairs[7]));
+				if(pairs[9].length() > 0) {
+					ob.set("time", Integer.parseInt(pairs[9]));
 				}
-				if(pairs[8].length() > 0) {
+				if(pairs[10].length() > 0) {
 					logger.warn("Handle schedule");
 				}
-				if(pairs[9].length() > 0) {
-					String[] mats = pairs[9].split(",");
+				if(pairs[11].length() > 0) {
+					String[] mats = pairs[11].split(",");
 					for(String m: mats) {
 						String[] mpair = m.split("=");
 						if(mpair.length != 2) {
@@ -157,4 +139,8 @@ public class BuilderUtil {
 		}
 		return blds.toArray(new BaseRecord[0]);
 	}
+	
+	
+
+
 }

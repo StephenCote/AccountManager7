@@ -93,6 +93,14 @@
 			"type": "timestamp"
 		},
 		{
+			"name": "eventProgress",
+			"type": "timestamp"
+		},
+		{
+			"name": "inProgress",
+			"type": "boolean"
+		},
+		{
 			"name": "eventEnd",
 			"type": "timestamp"
 		},

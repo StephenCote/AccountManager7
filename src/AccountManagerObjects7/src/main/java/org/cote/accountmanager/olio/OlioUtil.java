@@ -28,11 +28,13 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 
 public class OlioUtil {
@@ -339,6 +341,58 @@ public class OlioUtil {
 			logger.info("Time to stage population: " + (stop - start));
 		}
 		return ctx.getPopulationMap().get(id);
+	}
+	
+	protected static BaseRecord getCreateTrait(OlioContext ctx, String name, TraitEnumType type) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("traits.id"));
+		q.field(FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_TYPE, type);
+		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if(rec == null) {
+			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("traits.path"));
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			try {
+				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TRAIT, ctx.getUser(), null, plist);
+				rec.set(FieldNames.FIELD_TYPE, type);
+				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+			}
+			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		return rec;
+		
+	}	
+	protected static BaseRecord getCreateSkill(OlioContext ctx, String name) {
+		return getCreateTrait(ctx, name, TraitEnumType.SKILL);
+	}
+	protected static BaseRecord getCreatePerk(OlioContext ctx, String name) {
+		return getCreateTrait(ctx, name, TraitEnumType.PERK);
+	}
+	protected static BaseRecord getCreateFeature(OlioContext ctx, String name) {
+		return getCreateTrait(ctx, name, TraitEnumType.FEATURE);
+	}
+	
+	protected static BaseRecord[] list(OlioContext ctx, String model, String groupName) {
+		return list(ctx, model, groupName, null, null);
+	}
+	protected static <T> BaseRecord[] list(OlioContext ctx, String model, String groupName, String fieldName, T val) {
+		Query q = WordParser.getQuery(ctx.getUser(), model, ctx.getWorld().get(groupName + ".path"));
+		try {
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			if(fieldName != null) {
+				q.set(fieldName, val);
+			}
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		BaseRecord[] recs = new BaseRecord[0];
+		QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(ctx.getUser(), q);
+		if(qr.getResults().length > 0) {
+			recs = qr.getResults();
+		}
+		return recs;
 	}
 	
 }

@@ -61,6 +61,12 @@
 			"baseModel": "data.trait",
 			"participantModel": "trait.feature",
 			"foreign": true
+		},
+		{
+			"name": "statistics",
+			"type": "model",
+			"baseModel": "olio.itemStatistics",
+			"foreign": true
 		}
 	]
 }

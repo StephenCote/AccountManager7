@@ -487,6 +487,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_STORE, (long)world.get("stores.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_BUILDER, (long)world.get("builders.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ITEM, (long)world.get("items.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_ITEM_STATISTICS, (long)world.get("statistics.id"), orgId);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");
 		RecordFactory.cleanupOrphans(null);

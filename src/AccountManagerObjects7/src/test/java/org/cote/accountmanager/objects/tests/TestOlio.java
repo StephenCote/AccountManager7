@@ -19,11 +19,13 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
+import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.PersonalityUtil;
+import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
@@ -77,31 +79,34 @@ public class TestOlio extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				false,
+				true,
 				resetUniverse
 			);
+		
 			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
 			///
 			cfg.getContextRules().add(new GridSquareLocationInitializationRule());
-			cfg.getEvolutionRules().add(new LocationPlannerRule());
+			cfg.getContextRules().add(new LocationPlannerRule());
+			cfg.getContextRules().add(new GenericItemDataLoadRule());
 			OlioContext octx = new OlioContext(cfg);
 
 			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
-			try {
-				octx.initialize();
-				assertNotNull("Root location is null", octx.getRootLocation());
-				logger.info("Computing maps");
 
-				MapUtil.printMapFromAdmin2(octx);
-			}
-			catch(StackOverflowError | Exception e) {
-				logger.error(e);
-				e.printStackTrace();
-			}
+			octx.initialize();
+			assertNotNull("Root location is null", octx.getRootLocation());
+			logger.info("Computing maps");
+
+			MapUtil.printMapFromAdmin2(octx);
+			
+			/*
+			ItemUtil.loadItems(octx);
+			BaseRecord[] items = ItemUtil.getItems(octx);
+			assertTrue("Expected some item templates", items.length > 0);
 			BuilderUtil.loadBuilders(octx);
 			BaseRecord[] builds = BuilderUtil.getBuilders(octx);
 			assertTrue("Expected some builds", builds.length > 0);
 			logger.info(builds[0].toFullString());
+			 */
 
 	}
 	

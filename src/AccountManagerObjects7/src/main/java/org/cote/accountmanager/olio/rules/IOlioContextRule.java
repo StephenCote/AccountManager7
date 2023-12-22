@@ -5,6 +5,8 @@ import org.cote.accountmanager.record.BaseRecord;
 
 public interface IOlioContextRule {
 	public void pregenerate(OlioContext context);
+	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event);
+	public void postgenerate(OlioContext context);
 	public BaseRecord[] selectLocations(OlioContext context);
 
 }

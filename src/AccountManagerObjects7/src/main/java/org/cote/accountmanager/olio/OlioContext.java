@@ -15,6 +15,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -117,15 +118,21 @@ public class OlioContext {
 				WorldUtil.cleanupWorld(config.getUser(), world);
 			}
 			IOSystem.getActiveContext().getReader().populate(world, 2);
+			
 			config.getContextRules().forEach(r -> {
 				r.pregenerate(this);
 			});
-			// BaseRecord rootEvent = WorldUtil.generateRegion(config.getUser(), world, config.getBaseLocationCount(), config.getBasePopulationCount());
+			
 			BaseRecord rootEvent = WorldUtil.generateRegion(this);
 			if(rootEvent == null) {
 				logger.error("Failed to find or create a new region");
 				return;
 			}
+			
+			config.getContextRules().forEach(r -> {
+				r.postgenerate(this);
+			});
+			
 			currentEpoch = EventUtil.getLastEpochEvent(this);
 			locations = GeoLocationUtil.getRegionLocations(this);
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
@@ -137,7 +144,7 @@ public class OlioContext {
 				BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
 				for(BaseRecord evt : evts) {
 					logger.info("Planning " + evt.get(FieldNames.FIELD_NAME));
-					for(IOlioEvolveRule rule : config.getEvolutionRules()) {
+					for(IOlioContextRule rule : config.getContextRules()) {
 						rule.generateRegion(this, rootEvent, evt);
 					}
 				}

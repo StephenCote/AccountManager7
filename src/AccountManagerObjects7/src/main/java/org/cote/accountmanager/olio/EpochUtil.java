@@ -135,6 +135,8 @@ public class EpochUtil {
 
 		epoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTimeMS);
 		try {
+			epoch.set("eventProgress", new Date(startTimeMS));
+			epoch.set("inProgress", true);
 			epoch.set("eventEnd", new Date(startTimeMS + (OlioUtil.YEAR)));
 			epoch.set("epoch", true);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -187,7 +189,9 @@ public class EpochUtil {
 				
 				BaseRecord childEpoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ((Date)ctx.getCurrentEpoch().get("eventStart")).getTime());
 	
-					childEpoch.set("eventEnd", ctx.getCurrentEpoch().get("eventEnd"));
+				childEpoch.set("eventProgress", ctx.getCurrentEpoch().get("eventProgress"));
+				childEpoch.set("inProgress", true);
+				childEpoch.set("eventEnd", ctx.getCurrentEpoch().get("eventEnd"));
 				
 				
 				List<BaseRecord> lgrps = childEpoch.get("groups");

@@ -1,6 +1,10 @@
 [
-	"rudimentary shelter::location:false::sticks:basic survival:4::waterresistance=.2,skill=0.1",
-	"igloo::location:false::snow:basic survival:8::defensive=.1,insulation=.5,skill=.2",
-	"grass hut::location:false::sticks,grass:basic survival:8::defensive=.05,insulation=.1,heatresistance=.1,waterresistance=.25,skill=.2",
-	"leather tent::location:false::sticks,leather:basic survival:8::defensive=.05,insulation=.25,heatresistance=.25,waterresistance=.35,skill=.2"
+	"rudimentary shelter::location:false::sticks:::basic survival:4::waterresistance=.2,skill=0.1",
+	"igloo::location:false::snow:::basic survival:8::defensive=.1,insulation=.5,skill=.2",
+	"grass hut::location:false::sticks,grass:::basic survival:8::defensive=.05,insulation=.1,heatresistance=.1,waterresistance=.25,skill=.2",
+	"leather tent::location:false::sticks,leather:::basic survival:8::defensive=.05,insulation=.25,heatresistance=.25,waterresistance=.35,skill=.2",
+	"bone knife::location:false::sticks,bone:knife::basic survival:8::offensive=0.01,skill=.1",
+	"crooked spear::location:false::sticks,bone:spear::basic survival:8::offensive=0.01,skill=.1",
+	"basic sling::location:false::leather:sling::basic survival:8::offensive=0.01,skill=.1",
+	"primitive atlatl::location:false::sticks,leather:atlatl::basic survival:8::offensive=0.01,skill=.3"
 ]

@@ -1,5 +1,32 @@
 olio (hodgepodge) contains a variety of data randomization and evolution models and utilities.
 
+Evolution
+The original evolution rules were pretty rudimentary - Run through a set of hard-coded random rules across locations twelve times a year (once a month) to simulate birth, death, marriage, divorce, immigration.  Also, there was no real way to interrupt the process in the middle of an evolution so it was in no way interactive.
+
+The following is the current thinking on the context and evolution cycle, and related data structures:
+
+Data:
+	- Data is split between the 'universe' and the 'world'.  Static and template data is loaded into the universe, which is technically in an adjacent set of groups
+	- Evolution data (or that data intended to change or track state) is copied as needed into the 'world', or generated directly in the world
+	- For example: World location data is loaded in the 'universe'.  Evolution specific location data is copied into the 'world'.  Or, when using generated maps, the initial map generation is placed in the 'universe' and the evolution data and cell level data in the 'world'
+
+Context
+	- The Olio Context primarily relates events and locations.
+		- There are no specific 'community', 'civilization', 'country' associations at the context level - it's up to the locations and rules to stipulate
+	- Events are organized in the following hierarchy:
+		- Construction - the root event for the world contains construct and incept events for introduced locations
+		
+
+Context Rules (IOlioContextRule):
+	- Rules evaluated during context initialization and setup.  This allows for creating custom locations or picking locations from any loaded world data.
+Evolution Rules (IOlioEvolutionRule):
+	- Rules evaluated during evolution cycles. This will allow for tailoring the progression over a particular event.
+
+
+	- There currently isn't the concept of civilizations or countries
+	- Rather, there are populations of people in locations, associated with an initial location. 
+ 
+	
 Locations and Mapping
 Locations can use global geolocation data with correct latitudes, longitudes, and names,
 or generated locations to use the Military Grid Reference System (MGRS)

@@ -12,12 +12,21 @@
 	"group": "States",
 	"icon": "category",
 	"label": "State",
+	"dedicatedParticipation": true,
 	"fields": [
+		{
+			"name": "currentEvent",
+			"type": "model",
+			"baseModel": "olio.event",
+			"foreign": true,
+			"followReference": false
+		},
 		{
 			"name": "currentLocation",
 			"type": "model",
 			"baseModel": "data.geoLocation",
-			"foreign": true
+			"foreign": true,
+			"followReference": false
 		},
 		{
 			"name": "currentAction",
@@ -56,8 +65,10 @@
 		},
 		{
 			"name": "schedules",
-			"type": "model",
+			"type": "list",
+			"baseType": "model",
 			"baseModel": "olio.schedule",
+			"participantModel": "state.schedule",
 			"foreign": true
 		}
 	]

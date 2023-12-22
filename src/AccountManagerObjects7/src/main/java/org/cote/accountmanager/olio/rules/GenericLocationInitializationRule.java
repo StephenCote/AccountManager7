@@ -66,5 +66,17 @@ public class GenericLocationInitializationRule implements IOlioContextRule {
 		return recs.toArray(new BaseRecord[0]);
 	}
 
+	@Override
+	public void postgenerate(OlioContext context) {
+		// TODO Auto-generated method stub
+		
+	}
+
+	@Override
+	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
+		// TODO Auto-generated method stub
+		
+	}
+
 	
 }

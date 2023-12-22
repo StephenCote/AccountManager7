@@ -1,0 +1,44 @@
+{
+	"name": "olio.itemStatistics",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Statistics",
+	"icon": "category",
+	"label": "Item Statistics",
+	"query": ["id", "groupId"],
+	"fields": [
+		{
+			"name": "damage",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "protection",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
+			"name": "range",
+			"type": "int",
+			"description": "Range in meters"
+		},
+		{
+			"name": "consumes",
+			"type": "string",
+			"maxLength": 16,
+			"description": "General indicator that the item passively or actively consumes some other item or resource.  It's up to the implementation rule to determine how."
+		}
+	]
+}
+

@@ -60,6 +60,20 @@
 			"foreign": true
 		},
 		{
+			"name": "apparel",
+			"type": "model",
+			"baseModel": "olio.apparel",
+			"description": "Templates to use when building out apparel/wearables",
+			"foreign": true
+		},
+		{
+			"name": "item",
+			"type": "model",
+			"baseModel": "olio.item",
+			"description": "Templates to use when building out items",
+			"foreign": true
+		},
+		{
 			"name": "skills",
 			"type": "list",
 			"baseType": "model",
