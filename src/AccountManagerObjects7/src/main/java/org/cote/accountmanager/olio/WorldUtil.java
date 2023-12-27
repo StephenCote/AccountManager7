@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -98,7 +99,7 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getReader().populate(occDir);
 
 		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
+		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
 
 	}
 	
@@ -138,7 +139,7 @@ public class WorldUtil {
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadNames(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_WORD, groupPath));
+		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_WORD, groupPath));
 	}
 	private static int loadColors(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -148,7 +149,7 @@ public class WorldUtil {
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadColors(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
+		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
 	}
 	private static int loadPatterns(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -158,7 +159,7 @@ public class WorldUtil {
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadPatterns(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_DATA, groupPath));
+		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_DATA, groupPath));
 	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -168,7 +169,7 @@ public class WorldUtil {
 		String groupPath = traitsDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadTraits(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
+		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
 	}
 	private static int loadSurnames(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -176,7 +177,7 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getReader().populate(nameDir);
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
 		WordParser.loadSurnames(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordParser.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
+		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
 
 	public static void loadWorldData(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -210,12 +211,7 @@ public class WorldUtil {
 		}
 		return targ;
 	}
-	/*
-	public static BaseRecord generateRegion(BaseRecord user, BaseRecord world, int locCount, int popSeed){
-		return generateRegion(user, world, new Date(), locCount, popSeed);
-	}
-	public static BaseRecord generateRegion(BaseRecord user, BaseRecord world, Date inceptionDate, int locCount, int popSeed){
-	*/
+
 	protected static BaseRecord generateRegion(OlioContext ctx) {
 		
 		List<BaseRecord> events = new ArrayList<>(); 
@@ -352,7 +348,7 @@ public class WorldUtil {
 			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
 			event.set(FieldNames.FIELD_NAME, "Populate " + locName);
 			event.set(FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
-			Date inceptionDate = rootEvent.get("eventStart");
+			ZonedDateTime inceptionDate = rootEvent.get("eventStart");
 			event.set("eventStart", inceptionDate);
 			event.set("eventEnd", rootEvent.get("eventEnd"));
 
@@ -377,7 +373,7 @@ public class WorldUtil {
 			}
 			else {
 				int totalAbsoluteAlignment = 0;
-				Date now = new Date();
+				ZonedDateTime now = ZonedDateTime.now();
 
 				Decks.shuffleDecks(user, parWorld);
 				if(Decks.maleNamesDeck.length == 0 || Decks.femaleNamesDeck.length == 0 || Decks.surnameNamesDeck.length == 0 || Decks.occupationsDeck.length == 0) {
@@ -390,7 +386,7 @@ public class WorldUtil {
 					BaseRecord person = CharacterUtil.randomPerson(user, world, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
 					/// AddressUtil.addressPerson(user, world, person, location);
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
-					long years = Math.abs(now.getTime() - ((Date)person.get("birthDate")).getTime()) / OlioUtil.YEAR;
+					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
 					person.set("age", (int)years);
 					PersonalityUtil.rollPersonality(person.get("personality"));
 					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);

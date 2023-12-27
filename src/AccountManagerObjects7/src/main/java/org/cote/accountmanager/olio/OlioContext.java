@@ -1,11 +1,13 @@
 package org.cote.accountmanager.olio;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -40,14 +42,16 @@ public class OlioContext {
 	///
 	private BaseRecord currentEvent = null;
 	private BaseRecord currentLocation = null;
+	private BaseRecord currentIncrement = null;
 	private Map<Long, List<BaseRecord>> populationMap = new ConcurrentHashMap<>();
 	private Map<Long, Map<String,List<BaseRecord>>> demographicMap = new ConcurrentHashMap<>();
 	private Map<String, List<BaseRecord>> queue = new HashMap<>();
 	
-	private long currentMonth = 0L;
-	private long currentDay = 0L;
-	private long currentHour = 0L;
-	private long currentTime = 0L;
+	private ZonedDateTime currentTime = ZonedDateTime.now();
+	private ZonedDateTime currentMonth = currentTime;
+	private ZonedDateTime currentDay = currentTime;
+	private ZonedDateTime currentHour = currentTime;
+	
 	
 	public OlioContext(OlioContextConfiguration cfg) {
 		this.config = cfg;
@@ -63,28 +67,28 @@ public class OlioContext {
 	public void clearQueue() {
 		queue.clear();
 	}
-	public void setCurrentMonth(long m) {
+	public void setCurrentMonth(ZonedDateTime m) {
 		currentMonth = currentDay = currentHour = currentTime = m;
 	}
-	public void setCurrentDay(long m) {
+	public void setCurrentDay(ZonedDateTime m) {
 		currentDay = currentHour = currentTime = m;
 	}
-	public void setCurrentHour(long m) {
+	public void setCurrentHour(ZonedDateTime m) {
 		currentHour = currentTime = m;
 	}
-	public long getCurrentTime() {
+	public ZonedDateTime getCurrentTime() {
 		return currentTime;
 	}
-	public void setCurrentTime(long currentTime) {
+	public void setCurrentTime(ZonedDateTime currentTime) {
 		this.currentTime = currentTime;
 	}
-	public long getCurrentMonth() {
+	public ZonedDateTime getCurrentMonth() {
 		return currentMonth;
 	}
-	public long getCurrentDay() {
+	public ZonedDateTime getCurrentDay() {
 		return currentDay;
 	}
-	public long getCurrentHour() {
+	public ZonedDateTime getCurrentHour() {
 		return currentHour;
 	}
 	public void initialize() {
@@ -158,6 +162,30 @@ public class OlioContext {
 		}
 	}
 	
+	public BaseRecord[] getChildEvents() {
+		if(currentEpoch != null) {
+			return getChildEvents(currentEpoch);
+		}
+		return new BaseRecord[0];
+	}
+	
+	public BaseRecord[] getChildEvents(BaseRecord event) {
+		return EventUtil.getChildEvents(world, event, EventEnumType.UNKNOWN);
+	}
+
+	public BaseRecord startOrContinueEpoch() {
+		if(currentEpoch != null) {
+			ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEpoch.get(FieldNames.FIELD_STATE));
+			if(aet == ActionResultEnumType.PENDING) {
+				for(IOlioEvolveRule r : config.getEvolutionRules()) {
+					r.continueEpoch(this, currentEpoch);
+				}
+				return currentEpoch;
+			}
+		}
+		return startEpoch();
+	}
+	
 	public BaseRecord startEpoch() {
 		return EpochUtil.startEpoch(this);
 	}
@@ -172,11 +200,78 @@ public class OlioContext {
 		}
 	}
 	
-	public BaseRecord startLocationEvent(BaseRecord location) {
-		return EpochUtil.startLocationEvent(this, location);
+	public BaseRecord startOrContinueLocationEpoch(BaseRecord location) {
+		if(currentEpoch == null) {
+			logger.error("Current epoch is null");
+			return null;
+		}
+		BaseRecord[] childEvts = EventUtil.getChildEvents(world, currentEpoch, location, EventEnumType.UNKNOWN);
+		if(childEvts.length > 0) {
+			if(childEvts.length > 1) {
+				logger.warn("Expected only 1 location epoch and found " + childEvts.length);
+			}
+			ActionResultEnumType aet = ActionResultEnumType.valueOf(childEvts[0].get(FieldNames.FIELD_STATE));
+			if(aet == ActionResultEnumType.PENDING) {
+				for(IOlioEvolveRule r : config.getEvolutionRules()) {
+					r.continueLocationEpoch(this, location, currentEpoch);
+				}
+				currentEvent = childEvts[0];
+				currentLocation = location;
+				return currentEpoch;
+			}
+			else {
+				logger.warn("Current location epoch is not in a pending state");
+				logger.warn(childEvts[0].toFullString());
+			}
+		}
+		return startLocationEpoch(location);
+
 	}
 	
-	public void abandonLocationEvent() {
+	public BaseRecord startLocationEpoch(BaseRecord location) {
+		return EpochUtil.startLocationEpoch(this, location);
+	}
+
+	public BaseRecord startOrContinueIncrement() {
+		return startOrContinueIncrement(currentEvent);
+	}
+	public BaseRecord startOrContinueIncrement(BaseRecord locationEpoch) {
+		if(locationEpoch == null) {
+			logger.error("Invalid location epoch");
+		}
+		BaseRecord[] childEvts = EventUtil.getChildEvents(world, locationEpoch, null, EventEnumType.UNKNOWN);
+		if(childEvts.length > 0) {
+			BaseRecord cur = childEvts[childEvts.length - 1];
+			ActionResultEnumType aet = ActionResultEnumType.valueOf(cur.get(FieldNames.FIELD_STATE));
+			if(aet == ActionResultEnumType.PENDING) {
+				for(IOlioEvolveRule r : config.getEvolutionRules()) {
+					r.continueIncrement(this, cur);
+				}
+				currentIncrement = cur;
+				return currentIncrement;
+			}
+			else {
+				logger.warn("Current increment is not in a pending state");
+				logger.warn(cur.toFullString());
+			}
+		}
+		return startIncrement(locationEpoch);
+	}
+	
+	public BaseRecord startIncrement() {
+		return startIncrement(currentEvent);
+	}
+	public BaseRecord startIncrement(BaseRecord locationEpoch) {
+		if(locationEpoch == null) {
+			logger.error("Invalid location epoch");
+			return null;
+		}
+		BaseRecord inc = null;
+		return inc;
+	}
+
+	
+	public void abandonLocationEpoch() {
 		if(currentEvent != null) {
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEvent.get(FieldNames.FIELD_STATE));
 			if(aet != ActionResultEnumType.COMPLETE) {
@@ -225,6 +320,12 @@ public class OlioContext {
 		return OlioUtil.getPopulationGroup(this, location, name);
 	}
 
+	public BaseRecord getCurrentIncrement() {
+		return currentIncrement;
+	}
+	public void setCurrentIncrement(BaseRecord currentIncrement) {
+		this.currentIncrement = currentIncrement;
+	}
 	public BaseRecord getCurrentEvent() {
 		return currentEvent;
 	}

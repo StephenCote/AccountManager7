@@ -3,9 +3,13 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.TimeUnit;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -17,6 +21,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.ActionUtil;
 import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.ItemUtil;
@@ -25,9 +30,11 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.PersonalityUtil;
+import org.cote.accountmanager.olio.rules.GenericEvolveRule;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
+import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -79,25 +86,57 @@ public class TestOlio extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				true,
+				false,
 				resetUniverse
 			);
 		
 			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
 			///
-			cfg.getContextRules().add(new GridSquareLocationInitializationRule());
-			cfg.getContextRules().add(new LocationPlannerRule());
-			cfg.getContextRules().add(new GenericItemDataLoadRule());
+			cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
+				new GridSquareLocationInitializationRule(),
+				new LocationPlannerRule(),
+				new GenericItemDataLoadRule()
+			}));
+			
+			cfg.getEvolutionRules().add(new GenericEvolveRule());
 			OlioContext octx = new OlioContext(cfg);
 
 			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
 
 			octx.initialize();
 			assertNotNull("Root location is null", octx.getRootLocation());
-			logger.info("Computing maps");
-
-			MapUtil.printMapFromAdmin2(octx);
 			
+			
+			/*
+			if(octx.getCurrentEpoch() == null) {
+				octx.startEpoch();
+			}
+			
+			logger.info(octx.getCurrentEpoch() == null);
+			*/
+			BaseRecord evt = octx.startOrContinueEpoch();
+			assertNotNull("Epoch is null", evt);
+			BaseRecord[] locs = octx.getLocations();
+			BaseRecord levt = octx.startOrContinueLocationEpoch(locs[0]);
+			assertNotNull("Location epoch is null", levt);
+			
+			ZonedDateTime start = levt.get("eventStart");
+			ZonedDateTime prog = levt.get("eventProgress");
+			ZonedDateTime end = levt.get("eventEnd");
+			
+			long tdiff = end.toInstant().toEpochMilli() - start.toInstant().toEpochMilli();
+			long pdiff = end.toInstant().toEpochMilli() - prog.toInstant().toEpochMilli();
+			
+			//long diffInHours = TimeUnit.MILLISECONDS.toHours(diff);
+			long totalDays = TimeUnit.MILLISECONDS.toDays(tdiff);
+			long progDays = TimeUnit.MILLISECONDS.toDays(pdiff);
+			logger.info("Total days: " + totalDays);
+			logger.info("Remaining days: " + progDays);
+			
+			//logger.info("Computing maps");
+
+			//MapUtil.printMapFromAdmin2(octx);
+
 			/*
 			ItemUtil.loadItems(octx);
 			BaseRecord[] items = ItemUtil.getItems(octx);

@@ -148,11 +148,7 @@ public class WordParser {
 		
 		return cfg;
 	}
-	
-	public static Query getQuery(BaseRecord user, String model, String groupPath) {
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		return QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
-	}
+
 	
 	public static int cleanupWords(String model, long groupId, long organizationId) {
 		Query lq = QueryUtil.getGroupQuery(model, null, groupId, organizationId);

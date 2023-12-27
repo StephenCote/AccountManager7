@@ -35,7 +35,7 @@
 		},
 		{
 			"name": "birthDate",
-			"type": "timestamp"
+			"type": "zonetime"
 		},
 		{
 			"name": "gender",

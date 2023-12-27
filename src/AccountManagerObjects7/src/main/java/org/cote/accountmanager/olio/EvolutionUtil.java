@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
@@ -139,9 +140,10 @@ public class EvolutionUtil {
 				if(CharacterUtil.isDeceased(per)) {
 					continue;
 				}
-				long now = ((Date)ctx.getCurrentEvent().get("eventStart")).getTime() + (OlioUtil.DAY * month);
+				ZonedDateTime estart = ctx.getCurrentEvent().get("eventStart");
+				ZonedDateTime now = estart.plusMonths(month);
 				ctx.setCurrentMonth(now);
-				long lage = now - ((Date)per.get("birthDate")).getTime();
+				long lage = now.toInstant().toEpochMilli() - ((ZonedDateTime)per.get("birthDate")).toInstant().toEpochMilli();
 				//long now = (((Date)parentEvent.get("eventStart")).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration));
 				int currentAge = (int)(lage/OlioUtil.YEAR);
 				String gender = per.get("gender");
@@ -153,7 +155,7 @@ public class EvolutionUtil {
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
 					BaseRecord baby = CharacterUtil.randomPerson(ctx.getUser(), ctx.getWorld(), (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get("lastName"));
 					StatisticsUtil.rollStatistics(baby.get("statistics"), 0);
-					baby.set("birthDate", new Date(now));
+					baby.set("birthDate", now);
 					// queueAdd(queue, baby);
 					AddressUtil.addressPerson(ctx.getUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get("location"));
 					List<BaseRecord> appl = baby.get("store.apparel");
@@ -378,9 +380,7 @@ public class EvolutionUtil {
 					partner = popt.get();
 				}
 
-				// .getTime() + (rand.nextInt(364) * OlioUtil.DAY);;
-				long time = ctx.getCurrentMonth();
-				EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.DIVORCE, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME), time, new BaseRecord[] {per, partner}, null, null, ctx.getQueue());
+				EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.DIVORCE, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME), ctx.getCurrentMonth(), new BaseRecord[] {per, partner}, null, null, ctx.getQueue());
 				CharacterUtil.couple(ctx.getUser(), per, partner, false);
 				remap.add(per);
 				remap.add(partner);
@@ -401,12 +401,8 @@ public class EvolutionUtil {
 				eval.add(woman);
 				
 				if(rand.nextDouble() <= Rules.INITIAL_MARRIAGE_RATE) {
-					/// ((Date)parentEvent.get("eventStart")).getTime() + (rand.nextInt(364) * OlioUtil.DAY);
-					long time = ctx.getCurrentMonth();
-					
 					CharacterUtil.couple(ctx.getUser(), man, woman);
-					
-					EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.MARRIAGE, "Marriage of " + man.get(FieldNames.FIELD_NAME) + " to " + woman.get(FieldNames.FIELD_NAME), time, new BaseRecord[] {man, woman}, null, null, ctx.getQueue());
+					EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.MARRIAGE, "Marriage of " + man.get(FieldNames.FIELD_NAME) + " to " + woman.get(FieldNames.FIELD_NAME), ctx.getCurrentMonth(), new BaseRecord[] {man, woman}, null, null, ctx.getQueue());
 					
 					remap.add(man);
 					remap.add(woman);

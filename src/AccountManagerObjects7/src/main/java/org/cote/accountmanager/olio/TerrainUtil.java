@@ -75,7 +75,7 @@ public class TerrainUtil {
 		}
 		/// Blast the cells with the most commonly found terrains based on the frequency of occurrence
 		for(TerrainEnumType ltet : map.keySet()) {
-			blastTerrain(cells, ltet, mapWidth, mapHeight, mapWidth / 5, map.get(ltet), 0, 0);
+			blastTerrain(cells, ltet, mapWidth, mapHeight, 2, map.get(ltet), -1, -1);
 		}
 	}
 	

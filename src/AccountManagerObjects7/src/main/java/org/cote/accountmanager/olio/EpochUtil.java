@@ -1,8 +1,11 @@
 package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
+import java.time.ZonedDateTime;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -15,12 +18,14 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
+import org.cote.accountmanager.schema.type.TimeEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.CalendarUtil;
 
@@ -131,20 +136,27 @@ public class EpochUtil {
 		}
 		
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
-		long startTimeMS = ((Date)lastEpoch.get("eventEnd")).getTime();
+		ZonedDateTime startTime = lastEpoch.get("eventEnd");
 
-		epoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTimeMS);
+		epoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTime);
 		try {
-			epoch.set("eventProgress", new Date(startTimeMS));
+			epoch.set("eventProgress", startTime);
 			epoch.set("inProgress", true);
-			epoch.set("eventEnd", new Date(startTimeMS + (OlioUtil.YEAR)));
+			epoch.set("eventEnd", startTime.plusYears(1));
 			epoch.set("epoch", true);
+			epoch.set("timeType", TimeEnumType.YEAR);
+			epoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
-		logger.info("Epoch " + title + " begins");
-		IOSystem.getActiveContext().getRecordUtil().createRecord(epoch);
+		/// logger.info("Epoch " + title + " begins");
 		ctx.setCurrentEpoch(epoch);
+		
+		for(IOlioEvolveRule r : ctx.getConfig().getEvolutionRules()) {
+			r.startEpoch(ctx, epoch);
+		}
+		IOSystem.getActiveContext().getRecordUtil().createRecord(epoch);
+		
 		/// TODO: Each locations initial reactions (alignment) to the random epoch alignment
 		/// should be based on a weighted average of prior aligments
 		/// Differentiating entry and exit alignments should be handled through the entry/exit trait alignments in the event there are more than one of each
@@ -153,7 +165,7 @@ public class EpochUtil {
 		
 	}
 	
-	public static BaseRecord startLocationEvent(OlioContext ctx, BaseRecord location) {
+	public static BaseRecord startLocationEpoch(OlioContext ctx, BaseRecord location) {
 		BaseRecord evt = null;
 		if(!ctx.validateContext()) {
 			logger.error("Context is not valid");
@@ -168,7 +180,13 @@ public class EpochUtil {
 			logger.error("The current epoch is not in a pending state.  Therefore, no activities will take place");
 			return null;
 		}
-		
+
+		long locId = location.get(FieldNames.FIELD_ID);
+		List<BaseRecord> curLocEpochs = Arrays.asList(ctx.getChildEvents()).stream().filter(l -> locId == (long)l.get("location.id")).collect(Collectors.toList());
+		if(curLocEpochs.size() > 0) {
+			logger.error("The current location already has an epoch event");
+			return evt;
+		}
 		AlignmentEnumType alignment = AlignmentEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_ALIGNMENT));
 		int alignmentScore = AlignmentEnumType.getValue(alignment);
 		AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
@@ -187,20 +205,24 @@ public class EpochUtil {
 				AlignmentEnumType useAlignment = (rand.nextDouble() < Rules.ODDS_INVERT_ALIGNMENT ? invertedAlignment : alignment);
 				String childTitle = EpochUtil.generateEpochTitle(ctx.getUser(), ctx.getUniverse(), useAlignment);
 				
-				BaseRecord childEpoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ((Date)ctx.getCurrentEpoch().get("eventStart")).getTime());
-	
+				BaseRecord childEpoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ctx.getCurrentEpoch().get("eventStart"));
+				childEpoch.set(FieldNames.FIELD_LOCATION, location);
 				childEpoch.set("eventProgress", ctx.getCurrentEpoch().get("eventProgress"));
 				childEpoch.set("inProgress", true);
 				childEpoch.set("eventEnd", ctx.getCurrentEpoch().get("eventEnd"));
-				
-				
+				childEpoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
+				childEpoch.set("timeType", TimeEnumType.YEAR);
 				List<BaseRecord> lgrps = childEpoch.get("groups");
 				lgrps.add(popGrp);
-				logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " begins " + (String)childEpoch.get(FieldNames.FIELD_NAME));
+				//logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " begins " + (String)childEpoch.get(FieldNames.FIELD_NAME));
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
 				ctx.setCurrentEvent(childEpoch);
 				ctx.setCurrentLocation(location);
 				evt = childEpoch;
+				
+				for(IOlioEvolveRule r : ctx.getConfig().getEvolutionRules()) {
+					r.startLocationEpoch(ctx, location, childEpoch);
+				}
 			}
 		}
 		catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
@@ -208,6 +230,15 @@ public class EpochUtil {
 		}
 		
 		return evt;
+	}
+	
+	/// The original implementation didn't discretely break up events into time-based increments
+	/// The intent is to let the rules determine the increment, or leave it at the locationEpoch level
+	
+	public static BaseRecord startIncrement(OlioContext ctx, BaseRecord locationEpoch) {
+		BaseRecord inc = null;
+		
+		return inc;
 	}
 	
 	/// TODO: Split all of this up to better allow for intra cycle and asynchronous rule evaluation

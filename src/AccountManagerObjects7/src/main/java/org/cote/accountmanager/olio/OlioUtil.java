@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -62,9 +63,9 @@ public class OlioUtil {
 	
 	public static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
 		try {
-			Date birthDate = person.get("birthDate");
-			Date endDate = parentEvent.get("eventEnd");
-			int age = (int)((endDate.getTime() - birthDate.getTime()) / OlioUtil.YEAR);
+			ZonedDateTime birthDate = person.get("birthDate");
+			ZonedDateTime endDate = parentEvent.get("eventEnd");
+			int age = (int)((endDate.toInstant().toEpochMilli() - birthDate.toInstant().toEpochMilli()) / OlioUtil.YEAR);
 			map.values().stream().forEach(l -> l.removeIf(f -> ((long)person.get(FieldNames.FIELD_ID)) == ((long)f.get(FieldNames.FIELD_ID))));
 			
 			if(CharacterUtil.isDeceased(person)){
@@ -377,7 +378,7 @@ public class OlioUtil {
 		return list(ctx, model, groupName, null, null);
 	}
 	protected static <T> BaseRecord[] list(OlioContext ctx, String model, String groupName, String fieldName, T val) {
-		Query q = WordParser.getQuery(ctx.getUser(), model, ctx.getWorld().get(groupName + ".path"));
+		Query q = getQuery(ctx.getUser(), model, ctx.getWorld().get(groupName + ".path"));
 		try {
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			if(fieldName != null) {
@@ -393,6 +394,12 @@ public class OlioUtil {
 			recs = qr.getResults();
 		}
 		return recs;
+	}
+	
+	
+	public static Query getQuery(BaseRecord user, String model, String groupPath) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
 	
 }

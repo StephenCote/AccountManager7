@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.rules;
 
+import org.cote.accountmanager.olio.ActionUtil;
 import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.OlioContext;
@@ -15,6 +16,7 @@ public class GenericItemDataLoadRule implements IOlioContextRule {
 
 	@Override
 	public void postgenerate(OlioContext context) {
+		ActionUtil.loadActions(context);
 		ItemUtil.loadItems(context);
 		BuilderUtil.loadBuilders(context);
 	}

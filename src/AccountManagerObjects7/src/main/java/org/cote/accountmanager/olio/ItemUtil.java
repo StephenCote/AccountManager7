@@ -42,7 +42,7 @@ public class ItemUtil {
 	}
 	
 	public static BaseRecord getItemTemplate(OlioContext ctx, String name) {
-		Query q = WordParser.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
+		Query q = OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
 		q.field("type", "template");
 		q.field(FieldNames.FIELD_NAME, name);
 		try {
@@ -54,23 +54,11 @@ public class ItemUtil {
 	}
 	
 	public static BaseRecord[] getItems(OlioContext ctx) {
-		Query q = WordParser.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
-		q.field("type", "template");
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		BaseRecord[] recs = new BaseRecord[0];
-		QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(ctx.getUser(), q);
-		if(qr.getResults().length > 0) {
-			recs = qr.getResults();
-		}
-		return recs;
+		return OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders", "type", "template");
 	}
 	
 	public static void loadItems(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), WordParser.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
+		int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
 		if(count == 0) {
 			BaseRecord[] items = importItems(ctx);
 			IOSystem.getActiveContext().getRecordUtil().createRecords(items);

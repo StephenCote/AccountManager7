@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -15,7 +16,7 @@ public class OlioContextConfiguration {
 	private String universeName = null;
 	private String worldName = null;
 	private String[] features = null;
-	private Date baseInceptionDate = new Date();
+	private ZonedDateTime baseInceptionDate = ZonedDateTime.now();
 	private int baseLocationCount = 0;
 	private int basePopulationCount = 0;
 	private boolean resetUniverse = false;
@@ -66,11 +67,11 @@ public class OlioContextConfiguration {
 		this.contextRules = contextRules;
 	}
 
-	public Date getBaseInceptionDate() {
+	public ZonedDateTime getBaseInceptionDate() {
 		return baseInceptionDate;
 	}
 
-	public void setBaseInceptionDate(Date baseInceptionDate) {
+	public void setBaseInceptionDate(ZonedDateTime baseInceptionDate) {
 		this.baseInceptionDate = baseInceptionDate;
 	}
 

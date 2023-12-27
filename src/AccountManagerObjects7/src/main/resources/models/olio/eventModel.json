@@ -29,6 +29,12 @@
 			"maxLength": 32
 		},
 		{
+			"name": "timeType",
+			"baseClass": "org.cote.accountmanager.schema.type.TimeEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
 			"name": "state",
 			"baseClass": "org.cote.accountmanager.schema.type.ActionResultEnumType",
 			"type": "enum",
@@ -90,11 +96,11 @@
 		},
 		{
 			"name": "eventStart",
-			"type": "timestamp"
+			"type": "zonetime"
 		},
 		{
 			"name": "eventProgress",
-			"type": "timestamp"
+			"type": "zonetime"
 		},
 		{
 			"name": "inProgress",
@@ -102,7 +108,7 @@
 		},
 		{
 			"name": "eventEnd",
-			"type": "timestamp"
+			"type": "zonetime"
 		},
 		{
 			"name": "precedingEvents",

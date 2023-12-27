@@ -1,8 +1,9 @@
 [
-	"hunt:wait,gather:openness,conscientiousness,extraversion:physicalStrength,physicalEndurance,agility,dexterity,speed,reaction:health,energy",
-	"gather:wait,hunt:openness,conscientiousness,extraversion:physicalEndurance,mentalStrength,dexterity,wisdom,science:health,energy",
-	"wait::agreeableness,neuroticism:mentalEndurance,intelligence:health,energy",
-	"shelter",
+	"hunt:wait,gather:3600::.1:openness,conscientiousness,extraversion::fight:cry:physicalStrength,physicalEndurance,agility,dexterity,speed,reaction::health,energy:",
+	"gather:wait,hunt:3600::.1:openness,conscientiousness,extraversion::herd,cooperate,adapt::physicalEndurance,mentalStrength,dexterity,wisdom,science::health,energy:",
+	"wait::60::0:agreeableness,neuroticism::cry,protect,resist,mate:flight:mentalEndurance,intelligence::health,energy:",
+	"prepare::3600::1:conscientiousness,extraversion,agreeableness,neuroticism::::mentalStrength,mentalEndurance,intelligence::health:energy",
+	"shelter::3600:::neuroticism,conscientiousness::mate,hygiene,protect:flight:::health:",
 	"build",
 	"fight:defend,flee",
 	"flee",
@@ -12,6 +13,6 @@
 	"wander",
 	"sleep::::health,energy",
 	"eat::::health,energy",
-	"drink::::health,energy",
-	"prepare::conscientiousness,extraversion,agreeableness,neuroticism:mentalStrength,mentalEndurance,intelligence:"
+	"drink::::health,energy"
+
 ]

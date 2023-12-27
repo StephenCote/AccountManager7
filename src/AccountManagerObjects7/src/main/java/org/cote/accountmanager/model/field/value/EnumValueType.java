@@ -12,6 +12,8 @@ public class EnumValueType extends ValueType {
 		this.value = value;
 	}
 
+	/// TODO: Return the value as an Enum when requested as an Enum vs. a string
+	///
 	@SuppressWarnings("unchecked")
 	public <T> T getValue() {
 		if(value == null) return (T)"UNKNOWN";

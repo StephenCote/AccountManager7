@@ -16,15 +16,13 @@
 			"name": "minimumTime",
 			"type": "int",
 			"minValue": -1,
-			"description": "Minimum amount of seconds required to perform the action",
-			"validateRange": true
+			"description": "Minimum amount of seconds required to perform the action"
 		},
 		{
 			"name": "maximumTime",
 			"type": "int",
 			"minValue": -1,
-			"description": "Maximum amount of seconds to perform the action before becoming counter-productive or futile",
-			"validateRange": true
+			"description": "Maximum amount of seconds to perform the action before becoming counter-productive or futile"
 		},
 		{
 			"name": "minimumEnergyCost",

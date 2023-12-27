@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
@@ -25,6 +26,33 @@ import org.cote.accountmanager.schema.type.OrderEnumType;
 public class EventUtil {
 	public static final Logger logger = LogManager.getLogger(EventUtil.class);
 	
+	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, EventEnumType eventType) {
+		return getChildEvents(world, parentEvent, null, eventType);
+	}
+	
+	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, BaseRecord location, EventEnumType eventType) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		if(eventType != EventEnumType.UNKNOWN) {
+			q.field(FieldNames.FIELD_TYPE, eventType);
+		}
+		if(location != null) {
+			q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		}
+		q.field(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE});
+		q.setRequestRange(0L, 100);
+		q.setCache(false);
+
+		try {
+			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
+			q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
+			// q.set(FieldNames.FIELD_LIMIT_FIELDS,false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return IOSystem.getActiveContext().getSearch().findRecords(q);
+	}
+
 	public static BaseRecord[] getEvents(BaseRecord world, BaseRecord person, String[] fieldNames, EventEnumType eventType) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 		if(eventType != EventEnumType.UNKNOWN) {
@@ -46,12 +74,12 @@ public class EventUtil {
 		return IOSystem.getActiveContext().getSearch().findRecords(q);
 	}
 	public static BaseRecord newEvent(
-		BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, long time
+		BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, ZonedDateTime startTime
 	) {
-		return newEvent(user, world, parentEvent, type, name, time, null, null, null, null);
+		return newEvent(user, world, parentEvent, type, name, startTime, null, null, null, null);
 	}
 	public static BaseRecord newEvent(
-			BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, long time,
+			BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, ZonedDateTime startTime,
 			BaseRecord[] actors, BaseRecord[] participants, BaseRecord[] influencers,
 			Map<String, List<BaseRecord>> queue
 		) {
@@ -78,8 +106,8 @@ public class EventUtil {
 			}
 			evt.set(FieldNames.FIELD_TYPE, type);
 			evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
-			evt.set("eventStart", new Date(time));
-			evt.set("eventEnd", new Date(time));
+			evt.set("eventStart", startTime);
+			evt.set("eventEnd", startTime);
 			if(queue != null) {
 				OlioUtil.queueAdd(queue, evt);
 			}

@@ -1,6 +1,8 @@
 package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.List;
 
@@ -49,9 +51,9 @@ public class CharacterUtil {
 		return randomPerson(user, world, null, null, null, null, null, null);
 	}
 	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world, String preferredLastName) {
-		return randomPerson(user, world, preferredLastName, new Date(), null, null, null, null);
+		return randomPerson(user, world, preferredLastName, ZonedDateTime.now(), null, null, null, null);
 	}
-	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world, String preferredLastName, Date inceptionDate, String[] mnames, String[] fnames, String[] snames, String[] tnames) {
+	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world, String preferredLastName, ZonedDateTime inceptionDate, String[] mnames, String[] fnames, String[] snames, String[] tnames) {
 
 		BaseRecord parWorld = world.get("basis");
 		if(parWorld == null) {
@@ -98,8 +100,7 @@ public class CharacterUtil {
 			boolean isMale = (Math.random() < 0.5);
 			
 			if(inceptionDate != null) {
-				long birthEpoch = inceptionDate.getTime() - (OlioUtil.YEAR * rand.nextInt(75));
-				Date birthDate = new Date(birthEpoch);
+				ZonedDateTime birthDate = inceptionDate.minus(rand.nextInt(75), ChronoUnit.YEARS);
 				person.set("birthDate", birthDate);
 			}
 			String gen = isMale ? "male":"female";
