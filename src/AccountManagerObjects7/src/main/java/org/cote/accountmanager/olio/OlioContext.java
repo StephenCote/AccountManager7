@@ -24,6 +24,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
+import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class OlioContext {
 	public static final Logger logger = LogManager.getLogger(OlioContext.class);
@@ -205,7 +206,7 @@ public class OlioContext {
 			logger.error("Current epoch is null");
 			return null;
 		}
-		BaseRecord[] childEvts = EventUtil.getChildEvents(world, currentEpoch, location, EventEnumType.UNKNOWN);
+		BaseRecord[] childEvts = EventUtil.getChildEvents(world, currentEpoch, location, null, TimeEnumType.UNKNOWN, EventEnumType.UNKNOWN);
 		if(childEvts.length > 0) {
 			if(childEvts.length > 1) {
 				logger.warn("Expected only 1 location epoch and found " + childEvts.length);
@@ -231,7 +232,12 @@ public class OlioContext {
 	public BaseRecord startLocationEpoch(BaseRecord location) {
 		return EpochUtil.startLocationEpoch(this, location);
 	}
-
+	public void endLocationEpoch(BaseRecord location) {
+		EpochUtil.endLocationEpoch(this, location);
+	}
+	public void endEpoch() {
+		EpochUtil.endEpoch(this);
+	}
 	public BaseRecord startOrContinueIncrement() {
 		return startOrContinueIncrement(currentEvent);
 	}
@@ -239,7 +245,7 @@ public class OlioContext {
 		if(locationEpoch == null) {
 			logger.error("Invalid location epoch");
 		}
-		BaseRecord[] childEvts = EventUtil.getChildEvents(world, locationEpoch, null, EventEnumType.UNKNOWN);
+		BaseRecord[] childEvts = EventUtil.getChildEvents(world, locationEpoch, null, null, TimeEnumType.UNKNOWN, EventEnumType.UNKNOWN);
 		if(childEvts.length > 0) {
 			BaseRecord cur = childEvts[childEvts.length - 1];
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(cur.get(FieldNames.FIELD_STATE));
@@ -266,10 +272,31 @@ public class OlioContext {
 			logger.error("Invalid location epoch");
 			return null;
 		}
-		BaseRecord inc = null;
+		BaseRecord inc = EpochUtil.startIncrement(this, locationEpoch);
 		return inc;
 	}
-
+	public BaseRecord endIncrement() {
+		return endIncrement(currentEvent);
+	}
+	public BaseRecord endIncrement(BaseRecord locationEpoch) {
+		if(locationEpoch == null) {
+			logger.error("Invalid location epoch");
+			return null;
+		}
+		BaseRecord inc = EpochUtil.endIncrement(this, locationEpoch);
+		return inc;
+	}
+	public BaseRecord continueIncrement() {
+		return continueIncrement(currentEvent);
+	}
+	public BaseRecord continueIncrement(BaseRecord locationEpoch) {
+		if(locationEpoch == null) {
+			logger.error("Invalid location epoch");
+			return null;
+		}
+		BaseRecord inc = EpochUtil.continueIncrement(this, locationEpoch);
+		return inc;
+	}
 	
 	public void abandonLocationEpoch() {
 		if(currentEvent != null) {

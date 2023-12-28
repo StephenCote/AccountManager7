@@ -22,18 +22,25 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class EventUtil {
 	public static final Logger logger = LogManager.getLogger(EventUtil.class);
 	
 	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, EventEnumType eventType) {
-		return getChildEvents(world, parentEvent, null, eventType);
+		return getChildEvents(world, parentEvent, null, null, TimeEnumType.UNKNOWN, eventType);
 	}
 	
-	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, BaseRecord location, EventEnumType eventType) {
+	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, BaseRecord location, String name, TimeEnumType timeType, EventEnumType eventType) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 		if(eventType != EventEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_TYPE, eventType);
+		}
+		if(timeType != TimeEnumType.UNKNOWN) {
+			q.field("timeType", timeType);
+		}
+		if(name != null) {
+			q.field(FieldNames.FIELD_NAME, name);
 		}
 		if(location != null) {
 			q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
@@ -73,6 +80,7 @@ public class EventUtil {
 
 		return IOSystem.getActiveContext().getSearch().findRecords(q);
 	}
+	
 	public static BaseRecord newEvent(
 		BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, ZonedDateTime startTime
 	) {
@@ -107,6 +115,7 @@ public class EventUtil {
 			evt.set(FieldNames.FIELD_TYPE, type);
 			evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
 			evt.set("eventStart", startTime);
+			evt.set("eventProgress", startTime);
 			evt.set("eventEnd", startTime);
 			if(queue != null) {
 				OlioUtil.queueAdd(queue, evt);
@@ -140,14 +149,27 @@ public class EventUtil {
 		return evts;
 	}
 	public static BaseRecord getLastEvent(BaseRecord user, BaseRecord world, BaseRecord location) {
+		return getLastEvent(user, world, location, TimeEnumType.UNKNOWN, ActionResultEnumType.UNKNOWN, true);
+	}
+	public static BaseRecord getLastEvent(BaseRecord user, BaseRecord world, BaseRecord location, TimeEnumType timeType, ActionResultEnumType state, boolean epochChild) {
 		BaseRecord lastEpoch = getLastEpochEvent(user, world);
-		if(lastEpoch == null) {
+		if(lastEpoch == null && epochChild) {
 			return null;
 		}
 		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
-		q.field(FieldNames.FIELD_PARENT_ID, lastEpoch.get(FieldNames.FIELD_ID));
-		q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		if(epochChild && lastEpoch != null) {
+			q.field(FieldNames.FIELD_PARENT_ID, lastEpoch.get(FieldNames.FIELD_ID));
+		}
+		if(location != null) {
+			q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		}
+		if(timeType != TimeEnumType.UNKNOWN) {
+			q.field("timeType", timeType);
+		}
+		if(state != ActionResultEnumType.UNKNOWN) {
+			q.field(FieldNames.FIELD_STATE, state);
+		}
 		BaseRecord lastEvt = null;
 		try {
 			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");

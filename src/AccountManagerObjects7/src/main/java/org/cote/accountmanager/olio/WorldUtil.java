@@ -294,8 +294,8 @@ public class WorldUtil {
 					}
 					event.set(FieldNames.FIELD_LOCATION, loc);
 					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-					root.set("eventStart", ctx.getConfig().getBaseInceptionDate());
-					root.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
+					event.set("eventStart", ctx.getConfig().getBaseInceptionDate());
+					event.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
 
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(event)) {
 						logger.error("Failed to create region event");

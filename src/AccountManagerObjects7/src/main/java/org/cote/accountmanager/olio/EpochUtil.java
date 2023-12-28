@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
+import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.Date;
@@ -114,6 +115,7 @@ public class EpochUtil {
 		if(lastEpoch == null) {
 			lastEpoch = rootEvt;
 		}
+
 		BaseRecord rootLoc = GeoLocationUtil.getRootLocation(ctx);
 		if(rootLoc == null){
 			logger.error("Failed to find root location");
@@ -127,17 +129,15 @@ public class EpochUtil {
 				return null;
 			}
 		}
-		
 
 		int alignmentScore = AlignmentEnumType.getValue(alignment);
 		//AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
 		if(title == null) {
 			title = EpochUtil.generateEpochTitle(ctx.getUser(), ctx.getUniverse(), alignment);
 		}
-		
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
-		ZonedDateTime startTime = lastEpoch.get("eventEnd");
-
+		ZonedDateTime startTime = ((ZonedDateTime)lastEpoch.get("eventEnd")).plusDays(1).with(LocalTime.of(0,0,0));
+		logger.info("Start time: " + startTime);
 		epoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTime);
 		try {
 			epoch.set("eventProgress", startTime);
@@ -163,6 +163,56 @@ public class EpochUtil {
 		///
 		return epoch;
 		
+	}
+
+	public static void endEpoch(OlioContext ctx) {
+
+		if(!ctx.validateContext()) {
+			logger.error("Context is not valid");
+			return;
+		}
+		if(ctx.getCurrentEpoch() == null) {
+			logger.error("Current epoch is null");
+			return;
+		}
+		ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_STATE));
+		if(aet != ActionResultEnumType.PENDING) {
+			logger.error("The current location epoch is not in a pending state.  Therefore, no activities will take place");
+			return;
+		}
+		try {
+			ctx.getCurrentEpoch().set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
+			ctx.queue(ctx.getCurrentEpoch().copyRecord(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+			ctx.processQueue();
+			ctx.setCurrentEvent(null);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	
+	public static void endLocationEpoch(OlioContext ctx, BaseRecord location) {
+
+		if(!ctx.validateContext()) {
+			logger.error("Context is not valid");
+			return;
+		}
+		if(ctx.getCurrentEvent() == null) {
+			logger.error("Current location epoch is null");
+			return;
+		}
+		ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEvent().get(FieldNames.FIELD_STATE));
+		if(aet != ActionResultEnumType.PENDING) {
+			logger.error("The current location epoch is not in a pending state.  Therefore, no activities will take place");
+			return;
+		}
+		try {
+			ctx.getCurrentEvent().set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
+			ctx.queue(ctx.getCurrentEvent().copyRecord(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+			ctx.processQueue();
+			ctx.setCurrentEvent(null);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
 	}
 	
 	public static BaseRecord startLocationEpoch(OlioContext ctx, BaseRecord location) {
@@ -238,8 +288,39 @@ public class EpochUtil {
 	public static BaseRecord startIncrement(OlioContext ctx, BaseRecord locationEpoch) {
 		BaseRecord inc = null;
 		
+		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
+			inc = rule.startIncrement(ctx, locationEpoch);
+			if(inc != null) {
+				break;
+			}
+		}
+		ctx.processQueue();
 		return inc;
 	}
+	
+	public static BaseRecord continueIncrement(OlioContext ctx, BaseRecord locationEpoch) {
+		BaseRecord inc = null;
+		
+		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
+			inc = rule.continueIncrement(ctx, locationEpoch);
+			if(inc != null) {
+				break;
+			}
+		}
+		ctx.processQueue();
+		return inc;
+	}
+
+	
+	public static BaseRecord endIncrement(OlioContext ctx, BaseRecord locationEpoch) {
+		BaseRecord inc = null;
+		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
+			rule.endIncrement(ctx, locationEpoch);
+		}
+		ctx.processQueue();
+		return inc;
+	}
+
 	
 	/// TODO: Split all of this up to better allow for intra cycle and asynchronous rule evaluation
 	/// GenerateEpoch = startEpoch, continueEpoch, evolutions (years), 12 month rule evaluation, daily evaluation, <...updateQueue>, stopEpoch  
