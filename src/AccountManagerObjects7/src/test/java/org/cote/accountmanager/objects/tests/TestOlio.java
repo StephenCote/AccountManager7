@@ -119,7 +119,41 @@ public class TestOlio extends BaseTest {
 			BaseRecord[] locs = octx.getLocations();
 			BaseRecord levt = octx.startOrContinueLocationEpoch(locs[0]);
 			assertNotNull("Location epoch is null", levt);
+			BaseRecord cevt = octx.continueIncrement();
+			if(cevt != null) {
+				octx.endIncrement();
+			}
+			try {
+
+				BaseRecord ievt = octx.startIncrement();
+				assertNotNull("Increment is null", ievt);
+				
+				cevt = octx.continueIncrement();
+				assertNotNull("Continued increment is null", cevt);
+
+				long id1 = cevt.get(FieldNames.FIELD_ID);
+				long id2 = cevt.get(FieldNames.FIELD_ID);
+				assertTrue("Expected events to be the same", id1 == id2);
+				
+				octx.endIncrement();
+				
+				for(int i = 0; i < 750; i++) {
+					BaseRecord inc = octx.startIncrement();
+					
+					octx.endIncrement();
+				}
+				
+				octx.endLocationEpoch(ievt);
+				octx.endEpoch();
+				//octx.processQueue();
+				// logger.info(ievt.toFullString());
+				
+			}
+			catch(StackOverflowError | Exception e) {
+				e.printStackTrace();
+			}
 			
+			/*
 			ZonedDateTime start = levt.get("eventStart");
 			ZonedDateTime prog = levt.get("eventProgress");
 			ZonedDateTime end = levt.get("eventEnd");
@@ -132,7 +166,7 @@ public class TestOlio extends BaseTest {
 			long progDays = TimeUnit.MILLISECONDS.toDays(pdiff);
 			logger.info("Total days: " + totalDays);
 			logger.info("Remaining days: " + progDays);
-			
+			*/
 			//logger.info("Computing maps");
 
 			//MapUtil.printMapFromAdmin2(octx);
