@@ -21,7 +21,7 @@ public class StatisticsUtil {
 	private static SecureRandom rand = new SecureRandom();
 	private static final StatisticRule[] statistics = new StatisticRule[]{
 		new StatisticRule("physicalStrength"), new StatisticRule("physicalEndurance"), new StatisticRule("manualDexterity"), new StatisticRule("agility"), new StatisticRule("speed"), new StatisticRule("mentalStrength"),
-		new StatisticRule("mentalEndurance"), new StatisticRule("intelligence"), new StatisticRule("wisdom"), new StatisticRule("charisma"), new StatisticRule("creativity"), new StatisticRule("spirituality")
+		new StatisticRule("mentalEndurance"), new StatisticRule("intelligence"), new StatisticRule("wisdom"), new StatisticRule("charisma"), new StatisticRule("creativity"), new StatisticRule("spirituality"), new StatisticRule("luck")
 	};
 	
 	public static void rollStatistics(BaseRecord rec) {
