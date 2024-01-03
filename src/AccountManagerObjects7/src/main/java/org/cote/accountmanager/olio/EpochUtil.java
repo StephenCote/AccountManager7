@@ -4,13 +4,11 @@ import java.security.SecureRandom;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -28,7 +26,6 @@ import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
-import org.cote.accountmanager.util.CalendarUtil;
 
 public class EpochUtil {
 	public static final Logger logger = LogManager.getLogger(EpochUtil.class);
@@ -315,7 +312,7 @@ public class EpochUtil {
 	public static BaseRecord endIncrement(OlioContext ctx, BaseRecord locationEpoch) {
 		BaseRecord inc = null;
 		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
-			rule.endIncrement(ctx, locationEpoch);
+			rule.endIncrement(ctx, locationEpoch, ctx.getCurrentIncrement());
 		}
 		ctx.processQueue();
 		return inc;
@@ -326,6 +323,7 @@ public class EpochUtil {
 	/// GenerateEpoch = startEpoch, continueEpoch, evolutions (years), 12 month rule evaluation, daily evaluation, <...updateQueue>, stopEpoch  
 	/// The process steps can run as deep or as long as desired, and the queue will be updated automatically at the end of each month, and the epoch
 	/// Or, when running asynchronously, updated at the end of the next step.
+	/*
 	public static BaseRecord generateEpoch(OlioContext ctx, int evolutions) {
 		BaseRecord epoch = null;
 		int increment = 1;
@@ -388,11 +386,7 @@ public class EpochUtil {
 					String locName = loc.get(FieldNames.FIELD_NAME) + " Population";
 					//BaseRecord popGrp = grps.stream().filter(f -> locName.equals((String)f.get(FieldNames.FIELD_NAME))).findFirst().get();
 					BaseRecord popGrp = ctx.getPopulationGroup(loc, "Population");
-					/*
-					Query pq = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-					pq.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
-					int count = IOSystem.getActiveContext().getSearch().count(pq);
-					*/
+
 					int count = OlioUtil.countPeople(popGrp);
 					if(count == 0){
 						logger.warn("Location " + locName + " is decimated");
@@ -435,4 +429,5 @@ public class EpochUtil {
 		}
 		return epoch;
 	}
+	*/
 }

@@ -2,7 +2,6 @@ package org.cote.accountmanager.olio;
 
 import java.time.ZonedDateTime;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -149,9 +148,9 @@ public class EventUtil {
 		return evts;
 	}
 	public static BaseRecord getLastEvent(BaseRecord user, BaseRecord world, BaseRecord location) {
-		return getLastEvent(user, world, location, TimeEnumType.UNKNOWN, ActionResultEnumType.UNKNOWN, true);
+		return getLastEvent(user, world, location, EventEnumType.UNKNOWN, TimeEnumType.UNKNOWN, ActionResultEnumType.UNKNOWN, true);
 	}
-	public static BaseRecord getLastEvent(BaseRecord user, BaseRecord world, BaseRecord location, TimeEnumType timeType, ActionResultEnumType state, boolean epochChild) {
+	public static BaseRecord getLastEvent(BaseRecord user, BaseRecord world, BaseRecord location, EventEnumType eventType, TimeEnumType timeType, ActionResultEnumType state, boolean epochChild) {
 		BaseRecord lastEpoch = getLastEpochEvent(user, world);
 		if(lastEpoch == null && epochChild) {
 			return null;
@@ -169,6 +168,9 @@ public class EventUtil {
 		}
 		if(state != ActionResultEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_STATE, state);
+		}
+		if(eventType != EventEnumType.UNKNOWN) {
+			q.field(FieldNames.FIELD_TYPE, eventType);
 		}
 		BaseRecord lastEvt = null;
 		try {

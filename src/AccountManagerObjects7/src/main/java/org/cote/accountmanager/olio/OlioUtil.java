@@ -3,7 +3,6 @@ package org.cote.accountmanager.olio;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,8 +28,8 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
-import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
@@ -167,7 +166,7 @@ public class OlioUtil {
 			query.set(FieldNames.FIELD_SORT_FIELD, "random()");
 			query.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
 			qr = IOSystem.getActiveContext().getSearch().find(query);
-		} catch (IndexException | ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 		if(qr != null && qr.getCount() > 0) {
@@ -243,6 +242,26 @@ public class OlioUtil {
 		return IOSystem.getActiveContext().getAccessPoint().create(user, qual);
 	}
 	*/
+	
+	public static BaseRecord getCreatePopulationGroup(OlioContext context, String name) throws FieldException, ValueException, ModelNotFoundException, ReaderException {
+		BaseRecord popDir = context.getWorld().get("population");
+		BaseRecord[] grps = IOSystem.getActiveContext().getSearch().findByNameInParent(ModelNames.MODEL_GROUP, popDir.get(FieldNames.FIELD_ID), name);
+		if(grps.length > 0) {
+			return grps[0];
+		}
+		BaseRecord grp = newRegionGroup(context.getUser(), popDir, name);
+		IOSystem.getActiveContext().getRecordUtil().createRecord(grp);
+		return grp;
+	}
+	protected static BaseRecord newRegionGroup(BaseRecord user, BaseRecord parent, String groupName) throws FieldException, ValueException, ModelNotFoundException {
+		BaseRecord grp = RecordFactory.model(ModelNames.MODEL_GROUP).newInstance();
+		grp.set(FieldNames.FIELD_NAME, groupName);
+		grp.set(FieldNames.FIELD_TYPE, GroupEnumType.PERSON);
+		grp.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
+		IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, grp, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return grp;
+	}
+	
 	public static BaseRecord newGroupRecord(BaseRecord user, String model, String groupPath, BaseRecord template) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(dir == null) {
@@ -342,6 +361,18 @@ public class OlioUtil {
 			logger.info("Time to stage population: " + (stop - start));
 		}
 		return ctx.getPopulationMap().get(id);
+	}
+	
+	public static List<BaseRecord> listGroupPopulation(OlioContext ctx, BaseRecord group){
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+		q.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
+		try {
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		//q.setCache(false);
+		return new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
 	
 	protected static BaseRecord getCreateTrait(OlioContext ctx, String name, TraitEnumType type) {

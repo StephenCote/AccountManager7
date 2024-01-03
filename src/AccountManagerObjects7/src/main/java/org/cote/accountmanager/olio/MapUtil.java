@@ -20,6 +20,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
@@ -28,6 +29,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
+import org.cote.accountmanager.util.FileUtil;
 
 /// MapUtil is currently only setup to work with generated GridSquare maps, which use the same model as the GeoLocation data
 /// At the 'admin2' level, each Grid Square is 1 square kilometer
@@ -35,7 +37,7 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class MapUtil {
 	public static final Logger logger = LogManager.getLogger(MapUtil.class);
-	
+	private static String exportPath = IOFactory.DEFAULT_FILE_BASE + "/.olio/maps"; 
 	public static void printMapFromAdmin2(OlioContext ctx) {
 		/// Find the admin2 location of the first location and map that
 		///
@@ -109,7 +111,8 @@ public class MapUtil {
 
 		}
 		g2d.dispose();
-		File outputfile = new File("./map - admin2 - " + location.get(FieldNames.FIELD_NAME) + ".png");
+		FileUtil.makePath(exportPath);
+		File outputfile = new File(exportPath + "/map - admin2 - " + location.get(FieldNames.FIELD_NAME) + ".png");
 		try {
 			ImageIO.write(image, "png", outputfile);
 		} catch (IOException e) {
@@ -190,7 +193,8 @@ public class MapUtil {
 			g2d.drawRect(x, y, 50, 50);
 		}
 		g2d.dispose();
-		File outputfile = new File("./map - location - " + location.get(FieldNames.FIELD_NAME) + ".png");
+		FileUtil.makePath(exportPath);
+		File outputfile = new File(exportPath + "/map - location - " + location.get(FieldNames.FIELD_NAME) + ".png");
 		try {
 			ImageIO.write(image, "png", outputfile);
 		} catch (IOException e) {

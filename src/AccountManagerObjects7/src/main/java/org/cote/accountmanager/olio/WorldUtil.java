@@ -4,7 +4,6 @@ import java.security.SecureRandom;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,6 +12,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.ParticipationFactory;
@@ -315,15 +315,7 @@ public class WorldUtil {
 		}
 		return root;
 	}
-	
-	private static BaseRecord newRegionGroup(BaseRecord user, BaseRecord parent, String groupName) throws FieldException, ValueException, ModelNotFoundException {
-		BaseRecord grp = RecordFactory.model(ModelNames.MODEL_GROUP).newInstance();
-		grp.set(FieldNames.FIELD_NAME, groupName);
-		grp.set(FieldNames.FIELD_TYPE, GroupEnumType.PERSON);
-		grp.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
-		IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, grp, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		return grp;
-	}
+
 	
 	public static BaseRecord populateRegion(BaseRecord user, BaseRecord world, BaseRecord location, BaseRecord rootEvent, int popCount){
 
@@ -353,9 +345,9 @@ public class WorldUtil {
 			event.set("eventEnd", rootEvent.get("eventEnd"));
 
 			List<BaseRecord> grps = event.get(FieldNames.FIELD_GROUPS);
-			BaseRecord popGrp = newRegionGroup(user, popDir, locName + " Population");
+			BaseRecord popGrp = OlioUtil.newRegionGroup(user, popDir, locName + " Population");
 			grps.add(popGrp);
-			grps.add(newRegionGroup(user, popDir, locName + " Cemetary"));
+			grps.add(OlioUtil.newRegionGroup(user, popDir, locName + " Cemetary"));
 			
 			/*
 			for(String name : leaderPopulation){
