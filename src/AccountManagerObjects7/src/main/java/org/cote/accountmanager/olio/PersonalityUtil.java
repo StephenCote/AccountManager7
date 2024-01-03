@@ -14,6 +14,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
@@ -64,7 +65,7 @@ public class PersonalityUtil {
 	 * Self-actualization
 	 * Esteem (respect, self-esteem, status, recognition, strength, freedom)
 	 * Love and belonging (friendship, intimacy, family, sense of connection)
-	 * Saftey needs (personal security, employment, resources, health, property
+	 * Safety needs (personal security, employment, resources, health, property
 	 * Physiological needs (air, water, food, shelter, sleep, clothing, reproduction)
 	 */
 	private static final String[] personalityFields = new String[]{"openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"};
@@ -94,10 +95,14 @@ public class PersonalityUtil {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"personality", "statistics"});
 		BaseRecord per = person.get("personality");
 		BaseRecord stats = person.get("statistics");
+		BaseRecord inst = person.get("instinct");
+		BaseRecord sto = person.get("store");
 		IOSystem.getActiveContext().getReader().populate(per);
+		IOSystem.getActiveContext().getReader().populate(inst);
+		IOSystem.getActiveContext().getReader().populate(sto);
 		IOSystem.getActiveContext().getReader().populate(stats);
 		PersonalityProfile prof = createProfile(octx.getWorld(), person);
-		logger.info("Analyzing " + person.get(FieldNames.FIELD_NAME));
+		/// logger.info("Analyzing " + person.get(FieldNames.FIELD_NAME));
 		return prof;
 	}
 	
@@ -130,7 +135,23 @@ public class PersonalityUtil {
 		prof.setExtraverted(VeryEnumType.valueOf((double)per.get("extraversion")));
 		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
 		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
-
+		
+		BaseRecord inst = person.get("instinct");
+		
+		prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
+		prof.setFlight(InstinctEnumType.valueOf((double)inst.get("flight")));
+		prof.setFeed(InstinctEnumType.valueOf((double)inst.get("feed")));
+		prof.setDrink(InstinctEnumType.valueOf((double)inst.get("drink")));
+		prof.setMate(InstinctEnumType.valueOf((double)inst.get("mate")));
+		prof.setHerd(InstinctEnumType.valueOf((double)inst.get("herd")));
+		prof.setHygiene(InstinctEnumType.valueOf((double)inst.get("hygiene")));
+		prof.setCooperate(InstinctEnumType.valueOf((double)inst.get("cooperate")));
+		prof.setResist(InstinctEnumType.valueOf((double)inst.get("resist")));
+		prof.setAdapt(InstinctEnumType.valueOf((double)inst.get("adapt")));
+		prof.setLaugh(InstinctEnumType.valueOf((double)inst.get("laugh")));
+		prof.setCry(InstinctEnumType.valueOf((double)inst.get("cry")));
+		prof.setProtect(InstinctEnumType.valueOf((double)inst.get("protect")));
+		
 		BaseRecord stats = person.get("statistics");
 		double d1 = 100.0;
 		prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get("physicalStrength")*5)/d1));
@@ -139,6 +160,7 @@ public class PersonalityUtil {
 		prof.setAgility(HighEnumType.valueOf(((int)stats.get("agility")*5)/d1));
 		prof.setSpeed(HighEnumType.valueOf(((int)stats.get("speed")*5)/d1));
 		prof.setMentalStrength(HighEnumType.valueOf(((int)stats.get("mentalStrength")*5)/d1));
+		
 		prof.setMentalEndurance(HighEnumType.valueOf(((int)stats.get("mentalEndurance")*5)/d1));
 		prof.setIntelligence(HighEnumType.valueOf(((int)stats.get("intelligence")*5)/d1));
 		prof.setCharisma(HighEnumType.valueOf(((int)stats.get("charisma")*5)/d1));
@@ -151,7 +173,17 @@ public class PersonalityUtil {
 		prof.setReaction(HighEnumType.valueOf(((int)stats.get("reaction")*5)/d1));
 		prof.setScience(HighEnumType.valueOf(((int)stats.get("science")*5)/d1));
 		prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
-
+		prof.setLuck(HighEnumType.valueOf(((int)stats.get("luck")*5)/d1));
+		
+		/// do they have clothes?
+		BaseRecord store = person.get("store");
+		List<BaseRecord> apparel = store.get("apparel");
+		if(apparel.size() == 0) {
+			prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.CLOTHING);
+		}
+		List<BaseRecord> items = store.get("items");
+		/// do they have water?
+		
 		return prof;
 	}
 	

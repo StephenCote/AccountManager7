@@ -40,11 +40,189 @@ public class PersonalityProfile {
 	private HighEnumType magic = HighEnumType.DISREGARDED;
 	private HighEnumType health = HighEnumType.DISREGARDED;
 	private HighEnumType maximumHealth = HighEnumType.DISREGARDED;
+	private HighEnumType luck = HighEnumType.DISREGARDED;
+	
+	private InstinctEnumType fight = InstinctEnumType.STASIS;
+	private InstinctEnumType flight = InstinctEnumType.STASIS;
+	private InstinctEnumType feed = InstinctEnumType.STASIS;
+	private InstinctEnumType drink = InstinctEnumType.STASIS;
+	private InstinctEnumType mate = InstinctEnumType.STASIS;
+	private InstinctEnumType herd = InstinctEnumType.STASIS;
+	private InstinctEnumType hygiene = InstinctEnumType.STASIS;
+	private InstinctEnumType cooperate = InstinctEnumType.STASIS;
+	private InstinctEnumType resist = InstinctEnumType.STASIS;
+	private InstinctEnumType adapt = InstinctEnumType.STASIS;
+	private InstinctEnumType laugh = InstinctEnumType.STASIS;
+	private InstinctEnumType cry = InstinctEnumType.STASIS;
+	private InstinctEnumType protect = InstinctEnumType.STASIS;
+	
+	enum PhysiologicalNeeds {
+		AIR,
+		WATER,
+		FOOD,
+		SHELTER,
+		SLEEP,
+		CLOTHING,
+		REPRODUCTION
+	};
+	private List<PhysiologicalNeeds> physiologicalNeeds = new ArrayList<>();
+	enum SafetyNeeds {
+		SECURITY,
+		EMPLOYMENT,
+		RESOURCES,
+		HEALTH,
+		PROPERTY
+	};
+	private List<SafetyNeeds> safetyNeeds = new ArrayList<>();
+	enum LoveNeeds {
+		FRIENDSHIP,
+		INTIMACY,
+		FAMILY,
+		CONNECTION
+	};
+	private List<LoveNeeds> loveNeeds = new ArrayList<>();
+	enum EsteemNeeds{
+		RESPECT,
+		SELF_ESTEEM,
+		STATUS,
+		RECOGNITION,
+		STRENGTH,
+		FREEDOM
+	};
+	private List<EsteemNeeds> esteemNeeds = new ArrayList<>();
 	
 	public PersonalityProfile() {
 		
 	}
 	
+	public InstinctEnumType getFight() {
+		return fight;
+	}
+
+	public void setFight(InstinctEnumType fight) {
+		this.fight = fight;
+	}
+
+	public InstinctEnumType getFlight() {
+		return flight;
+	}
+
+	public void setFlight(InstinctEnumType flight) {
+		this.flight = flight;
+	}
+
+	public InstinctEnumType getFeed() {
+		return feed;
+	}
+
+	public void setFeed(InstinctEnumType feed) {
+		this.feed = feed;
+	}
+
+	public InstinctEnumType getDrink() {
+		return drink;
+	}
+
+	public void setDrink(InstinctEnumType drink) {
+		this.drink = drink;
+	}
+
+	public InstinctEnumType getMate() {
+		return mate;
+	}
+
+	public void setMate(InstinctEnumType mate) {
+		this.mate = mate;
+	}
+
+	public InstinctEnumType getHerd() {
+		return herd;
+	}
+
+	public void setHerd(InstinctEnumType herd) {
+		this.herd = herd;
+	}
+
+	public InstinctEnumType getHygiene() {
+		return hygiene;
+	}
+
+	public void setHygiene(InstinctEnumType hygiene) {
+		this.hygiene = hygiene;
+	}
+
+	public InstinctEnumType getCooperate() {
+		return cooperate;
+	}
+
+	public void setCooperate(InstinctEnumType cooperate) {
+		this.cooperate = cooperate;
+	}
+
+	public InstinctEnumType getResist() {
+		return resist;
+	}
+
+	public void setResist(InstinctEnumType resist) {
+		this.resist = resist;
+	}
+
+	public InstinctEnumType getAdapt() {
+		return adapt;
+	}
+
+	public void setAdapt(InstinctEnumType adapt) {
+		this.adapt = adapt;
+	}
+
+	public InstinctEnumType getLaugh() {
+		return laugh;
+	}
+
+	public void setLaugh(InstinctEnumType laugh) {
+		this.laugh = laugh;
+	}
+
+	public InstinctEnumType getCry() {
+		return cry;
+	}
+
+	public void setCry(InstinctEnumType cry) {
+		this.cry = cry;
+	}
+
+	public InstinctEnumType getProtect() {
+		return protect;
+	}
+
+	public void setProtect(InstinctEnumType protect) {
+		this.protect = protect;
+	}
+
+	public List<PhysiologicalNeeds> getPhysiologicalNeeds() {
+		return physiologicalNeeds;
+	}
+
+	public List<SafetyNeeds> getSafetyNeeds() {
+		return safetyNeeds;
+	}
+
+	public List<LoveNeeds> getLoveNeeds() {
+		return loveNeeds;
+	}
+
+	public List<EsteemNeeds> getEsteemNeeds() {
+		return esteemNeeds;
+	}
+
+	public HighEnumType getLuck() {
+		return luck;
+	}
+
+	public void setLuck(HighEnumType luck) {
+		this.luck = luck;
+	}
+
 	public HighEnumType getScience() {
 		return science;
 	}
