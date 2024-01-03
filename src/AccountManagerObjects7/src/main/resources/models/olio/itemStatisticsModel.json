@@ -34,11 +34,31 @@
 			"description": "Range in meters"
 		},
 		{
-			"name": "consumes",
+			"name": "consumptionType",
 			"type": "string",
 			"maxLength": 16,
 			"description": "General indicator that the item passively or actively consumes some other item or resource.  It's up to the implementation rule to determine how."
+		},
+		{
+			"name": "consumption",
+			"type": "int",
+			"minValue": 0,
+			"description": "General indicator of how much of the consumptionType is consumed.  It's up to the implementation rule to determine how."
+		},
+		{
+			"name": "replenishmentType",
+			"type": "string",
+			"maxLength": 16,
+			"description": "General indicator that the item passively or actively replenishes some other item or resource.  It's up to the implementation rule to determine how."
+		},
+		{
+			"name": "replenishment",
+			"type": "int",
+			"minValue": 0,
+			"description": "General indicator of how much of the replenishmentType is replenished.  It's up to the implementation rule to determine how."
 		}
+
+
 	]
 }
 

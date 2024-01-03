@@ -72,13 +72,13 @@
 			"name": "positiveInstincts",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["fight", "flight", "feed", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
+			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
 		},
 		{
 			"name": "negativeInstincts",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["fight", "flight", "feed", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
+			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
 		},
 		{
 			"name": "counterActions",

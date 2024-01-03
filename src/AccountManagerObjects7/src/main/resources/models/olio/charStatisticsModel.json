@@ -101,6 +101,13 @@
 			"validateRange": true
 		},
 		{
+			"name": "luck",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
 			"name": "magic",
 			"type": "int",
 			"virtual": true,

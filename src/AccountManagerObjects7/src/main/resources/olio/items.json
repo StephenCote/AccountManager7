@@ -2,5 +2,7 @@
 	"knife:Basic knife template:template:weapon:::Attack Damage::damage=1,range=0,protection=0:offensive=0.25,skill=0.1",
 	"spear:Basic spear template:template:weapon:::Attack Damage::damage=3,range=30,protection=0:offensive=0.25,skill=0.1",
 	"sling:Basic sling template:template:weapon:::Attack Damage::damage=2,range=40,protection=0:offensive=0.25,skill=0.1",
-	"atlatl:Basic atlatl template:template:weapon:::Attack Damage::damage=2,range=50,protection=0:offensive=0.25,skill=0.1"
+	"atlatl:Basic atlatl template:template:weapon:::Attack Damage::damage=2,range=50,protection=0:offensive=0.25,skill=0.1",
+	"murky water:Basic water template:template:liquid:::Quench::replenishmentType=water,replenishment=1:",
+	"filthy root:Basic food template:template:food:::Sate::replenishmentType=food,replenishment=1:"
 ]

@@ -35,6 +35,13 @@
 			"validateRange": true
 		},
 		{
+			"name": "drink",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
 			"name": "mate",
 			"type": "double",
 			"minValue": -100,
