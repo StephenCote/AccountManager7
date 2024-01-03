@@ -90,7 +90,7 @@ public class TokenOperation extends Operation {
 					logger.error("Urn could not be found: " + murn);
 				}
 			}
-			catch(IndexException | ReaderException | FieldException | ValueException | ModelNotFoundException e0) {
+			catch(ReaderException | FieldException | ValueException | ModelNotFoundException e0) {
 				logger.error(e0);
 				return OperationResponseEnumType.ERROR;
 			}

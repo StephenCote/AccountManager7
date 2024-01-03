@@ -47,7 +47,7 @@ public class CacheFileSearch extends FileSearch implements ICache {
 	}
 	
 	@Override
-	public QueryResult find(Query query) throws IndexException, ReaderException {
+	public QueryResult find(Query query) throws ReaderException {
 		QueryResult res = null;
 		String hash = query.hash();
 		if(cache.containsKey(hash)) {

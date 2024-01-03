@@ -3,7 +3,6 @@ package org.cote.accountmanager.util;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -52,7 +51,7 @@ public abstract class PathUtil implements IPath {
 		return makePath(owner, model, path, type, organizationId, false);
 	}
 	
-	/// Synchronized make path - when concurrent sessions hit the hierachical create method, it's possible that the same object can be created twice, violating any constraint condition
+	/// Synchronized make path - when concurrent sessions hit the hierarchical create method, it's possible that the same object can be created twice, violating any constraint condition
 	/// This in turn MAY result in a corrupted cache entry (still looking into that currency issue)
 	///
 	public synchronized BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId) {
@@ -92,10 +91,10 @@ public abstract class PathUtil implements IPath {
 					continue;
 				}
 				String utype = type;
-				/// When trying to get type specific paths, allow to build off a singlur base such as /home/{name} vs. duplicating /home/{name}
+				
+				/// When trying to get type specific paths, allow to build off a singular base such as /home/{name} vs. duplicating /home/{name}
 				/// TODO: This needs to be configurable because it would also be helpful in the Community layout
 				///
-				
 				if(owner != null && (e.equals("home") || e.equals(owner.get(FieldNames.FIELD_NAME)))) {
 					if(model.equals(ModelNames.MODEL_GROUP)) {
 						utype = "DATA";
@@ -116,17 +115,9 @@ public abstract class PathUtil implements IPath {
 					if(!doCreate) {
 						logger.warn("Failed to find '" + e + "' " + (type != null ? "of type (" + type + ") " : "") + "in parent " + parentId + " in path " + path + ", create = false");
 						node = null;
-						/*
-						StackTraceElement[] st = new Throwable().getStackTrace();
-						for(int i = 0; i < st.length; i++) {
-							logger.error(st[i].toString());
-						}
-						*/
 						break;
 					}
 					else {
-						// logger.info("Node not found at " + e + " " + parentId);
-						
 						node = RecordFactory.model(model).newInstance();
 						node.set(FieldNames.FIELD_NAME, e);
 						node.set(FieldNames.FIELD_PARENT_ID, parentId);
@@ -147,71 +138,35 @@ public abstract class PathUtil implements IPath {
 								(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
 						) {
 							logger.error("Not authorized to create " + model + " " + (type != null ? "of type (" + type + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path);
-							/*
-							StackTraceElement[] st = new Throwable().getStackTrace();
-							for(int i = 0; i < st.length; i++) {
-								logger.error(st[i].toString());
-							}
-							*/
-							/*
-							if(prr != null) {
-								logger.error(prr.toString());
-							}
-							*/
 							return null;
-						}
-						
-						if(prr == null) {
-							// logger.warn("*** Creating node '" + e + "' without authorization check because " + (enforceAuthorization ? "enforced" : "not enforced") + " and owner " + (owner != null ? "" : "not") + " specified");
 						}
 						
 						writer.write(node);
 						writer.flush();
 						parentId = node.get(FieldNames.FIELD_ID);
-						//create = true;
 					}
 				}
 				else if(nodes.length == 1) {
 					node = nodes[0];
 					parentId = node.get(FieldNames.FIELD_ID);
 					if(type == null) {
-						//logger.info("Inherit parent type: " + type);
 						type = node.get(FieldNames.FIELD_TYPE);
 					}
 				}
 				else {
 					logger.error("Invalid search for " + model + " type " + type + " parent " + parentId + " org " + organizationId + " from '" + e + "' with " + nodes.length + " results");
-					StackTraceElement[] st = new Throwable().getStackTrace();
-					for(int i = 0; i < st.length; i++) {
-						logger.error(st[i].toString());
-					}
 				}
 			}
 			if(doCreate) {
 				writer.flush();
 			}
-			//if(create) {
-				/// invoke translate to pick up any virtual properties applicable to read operations, such as the calculated path
-				//writer.translate(RecordOperation.READ, node);
-			//}
+
 		}
-		catch(ValueException | WriterException | IndexException | ReaderException | FieldException | ModelNotFoundException e) {
+		catch(ValueException | WriterException | ReaderException | FieldException | ModelNotFoundException e) {
 			logger.error(e.getMessage());
 			node = null;
 		}
-		/*
-		 /// Not enforcing here at the moment in favor of enforcing at the common access point
-		PolicyResponseType prr = null;
-		if(node != null && IOSystem.getActiveContext().isEnforceAuthorization()
-			&& (
-				owner == null
-				||
-				(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_READ_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
-		) {
-			logger.error("Not authorized to view " + model + " path " + path);
-			return null;
-		}
-		*/
+
 		return node;
 
 	}

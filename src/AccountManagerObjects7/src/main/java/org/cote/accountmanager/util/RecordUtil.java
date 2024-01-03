@@ -11,7 +11,6 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -386,7 +385,7 @@ public class RecordUtil {
 		}
 		try {
 			qr = search.find(query);
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 			
 		}
@@ -607,7 +606,7 @@ public class RecordUtil {
 			else if(recs.length == 1) {
 				rec = recs[0];
 			}
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 			
 		}
@@ -624,7 +623,7 @@ public class RecordUtil {
 			else if(recs.length == 1) {
 				rec = recs[0];
 			}
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 			
 		}
@@ -638,7 +637,7 @@ public class RecordUtil {
 			if(recs.length == 1) {
 				rec = recs[0];
 			}
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 			
 		}
@@ -686,7 +685,7 @@ public class RecordUtil {
 			else {
 				logger.debug("Didn't find any records");
 			}
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 		return rec;
@@ -697,7 +696,7 @@ public class RecordUtil {
 		QueryResult res = null;
 		try {
 			res = IOSystem.getActiveContext().getSearch().find(query);
-		} catch (IndexException | ReaderException  e) {
+		} catch (ReaderException  e) {
 			logger.error(e);
 		}
 		if(res != null && res.getResults().length > 0) {

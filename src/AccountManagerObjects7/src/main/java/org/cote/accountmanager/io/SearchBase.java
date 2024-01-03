@@ -2,7 +2,6 @@ package org.cote.accountmanager.io;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -31,7 +30,7 @@ public abstract class SearchBase implements ISearch {
 			ISearch altSearch = RecordFactory.getClassInstance(ms.getIo().getSearch());
 			try {
 				qr = altSearch.find(query);
-			} catch (IndexException | ReaderException e) {
+			} catch (ReaderException e) {
 				logger.error(e);
 			}
 		}
@@ -55,7 +54,7 @@ public abstract class SearchBase implements ISearch {
 		QueryResult result = null;
 		try {
 			result = find(query);
-		} catch (NullPointerException | IndexException | ReaderException e) {
+		} catch (NullPointerException | ReaderException e) {
 			logger.error(e);
 			
 		}
@@ -70,7 +69,7 @@ public abstract class SearchBase implements ISearch {
 		QueryResult result = null;
 		try {
 			result = find(query);
-		} catch (NullPointerException | IndexException | ReaderException e) {
+		} catch (NullPointerException | ReaderException e) {
 			logger.error(e);
 			
 		}
@@ -86,42 +85,42 @@ public abstract class SearchBase implements ISearch {
 		return records;
 	}
 	
-	public BaseRecord findByPath(BaseRecord contextUser, String modelName, String path, long organizationId) throws IndexException, ReaderException {
+	public BaseRecord findByPath(BaseRecord contextUser, String modelName, String path, long organizationId) throws ReaderException {
 		return findByPath(contextUser, modelName, path, null, organizationId);
 	}
 	
-	public BaseRecord findByPath(BaseRecord contextUser, String modelName, String path, String type, long organizationId) throws IndexException, ReaderException {
+	public BaseRecord findByPath(BaseRecord contextUser, String modelName, String path, String type, long organizationId) throws ReaderException {
 		return IOSystem.getActiveContext().getPathUtil().findPath(contextUser, modelName, path, type, organizationId);
 	}
 	
-	public BaseRecord[] findByName(String model, String name) throws IndexException, ReaderException {
+	public BaseRecord[] findByName(String model, String name) throws ReaderException {
 		return findRecords(QueryUtil.createQuery(model, FieldNames.FIELD_NAME, name));
 	}
-	public BaseRecord[] findByName(String model, String name, long organizationId) throws IndexException, ReaderException {
+	public BaseRecord[] findByName(String model, String name, long organizationId) throws ReaderException {
 		Query query = QueryUtil.createQuery(model, FieldNames.FIELD_NAME, name);
 		query.field(FieldNames.FIELD_ORGANIZATION_ID, ComparatorEnumType.EQUALS, organizationId);
 		return findRecords(query);
 	}
 	
-	public BaseRecord[] findByUrn(String model, String urn) throws IndexException, ReaderException {
+	public BaseRecord[] findByUrn(String model, String urn) throws ReaderException {
 		return findRecords(QueryUtil.createQuery(model, FieldNames.FIELD_URN, urn));
 	}
-	public BaseRecord[] findByObjectId(String model, String objectId) throws IndexException, ReaderException {
+	public BaseRecord[] findByObjectId(String model, String objectId) throws ReaderException {
 		return findRecords(QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId));
 	}
-	public BaseRecord[] findById(String model, long id) throws IndexException, ReaderException {
+	public BaseRecord[] findById(String model, long id) throws ReaderException {
 		return findRecords(QueryUtil.createQuery(model, FieldNames.FIELD_ID, id));
 	}
-	public BaseRecord[] findByNameInParent(String model, long parentId, String name) throws IndexException, ReaderException {
+	public BaseRecord[] findByNameInParent(String model, long parentId, String name) throws ReaderException {
 		return findByNameInParent(model, parentId, name, 0L);
 	}
-	public BaseRecord[] findByNameInParent(String model, long parentId, String name, String type) throws IndexException, ReaderException {
+	public BaseRecord[] findByNameInParent(String model, long parentId, String name, String type) throws ReaderException {
 		return findByNameInParent(model, parentId, name, type, 0L);
 	}
-	public BaseRecord[] findByNameInParent(String model, long parentId, String name, long organizationId) throws ReaderException, IndexException {
+	public BaseRecord[] findByNameInParent(String model, long parentId, String name, long organizationId) throws ReaderException {
 		return findByNameInParent(model, parentId, name, null, organizationId);
 	}
-	public BaseRecord[] findByNameInParent(String model, long parentId, String name, String type, long organizationId) throws ReaderException, IndexException {
+	public BaseRecord[] findByNameInParent(String model, long parentId, String name, String type, long organizationId) throws ReaderException {
 		Query query = QueryUtil.createQuery(model, FieldNames.FIELD_PARENT_ID, parentId);
 		if(organizationId > 0L) {
 			query.field(FieldNames.FIELD_ORGANIZATION_ID, ComparatorEnumType.EQUALS, organizationId);
@@ -135,17 +134,17 @@ public abstract class SearchBase implements ISearch {
 		return findRecords(query);
 	}
 
-	public BaseRecord[] findByNameInGroup(String model, long groupId, String name) throws IndexException, ReaderException {
+	public BaseRecord[] findByNameInGroup(String model, long groupId, String name) throws ReaderException {
 		return findByNameInGroup(model, groupId, name, 0L);
 	}
-	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, String type) throws IndexException, ReaderException {
+	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, String type) throws ReaderException {
 		return findByNameInGroup(model, groupId, name, type, 0L);
 	}
-	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, long organizationId) throws IndexException, ReaderException {
+	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, long organizationId) throws ReaderException {
 		return findByNameInGroup(model, groupId, name, null, organizationId);
 	}
 	
-	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, String type, long organizationId) throws ReaderException, IndexException {
+	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, String type, long organizationId) throws ReaderException {
 		Query query = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
 		if(organizationId > 0L) {
 			query.field(FieldNames.FIELD_ORGANIZATION_ID, ComparatorEnumType.EQUALS, organizationId);

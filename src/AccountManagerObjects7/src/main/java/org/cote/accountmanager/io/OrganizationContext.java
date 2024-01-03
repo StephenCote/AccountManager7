@@ -6,7 +6,6 @@ import org.apache.commons.codec.binary.Hex;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.SystemException;
@@ -155,7 +154,7 @@ public class OrganizationContext {
 			}
 			
 		}
-		catch(NullPointerException | IndexException | ReaderException | FieldException | ModelNotFoundException | ValueException e) {
+		catch(NullPointerException | ReaderException | FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 			
 		}

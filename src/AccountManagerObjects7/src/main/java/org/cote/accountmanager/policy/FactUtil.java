@@ -232,7 +232,7 @@ public class FactUtil {
 				logger.error(matchFact.toString());
 			}
 		}
-		 catch (ScriptException | IndexException | ReaderException e) {
+		 catch (ScriptException | ReaderException e) {
 				logger.error(e);
 			}
 

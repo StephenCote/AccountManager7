@@ -351,7 +351,7 @@ public class FileIndexer {
 						}
 					}
 					
-				} catch (IndexException | ReaderException e) {
+				} catch (ReaderException e) {
 					logger.error(e);
 					
 				}

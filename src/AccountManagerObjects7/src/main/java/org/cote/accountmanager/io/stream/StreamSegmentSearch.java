@@ -5,7 +5,6 @@ import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOStatistics;
 import org.cote.accountmanager.io.ISearch;
@@ -57,7 +56,7 @@ public class StreamSegmentSearch implements ISearch {
 	///
 	
 	@Override
-	public QueryResult find(Query query) throws IndexException, ReaderException {
+	public QueryResult find(Query query) throws ReaderException {
 		logger.info("Use Segment Search!");
 		List<BaseRecord> segments = new ArrayList<>();
 		QueryResult res = new QueryResult(query, segments.toArray(new BaseRecord[0]));
@@ -103,88 +102,88 @@ public class StreamSegmentSearch implements ISearch {
 	}
 
 	@Override
-	public BaseRecord[] findByName(String model, String name) throws IndexException, ReaderException {
+	public BaseRecord[] findByName(String model, String name) throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord[] findByName(String model, String name, long organizationId)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public BaseRecord[] findByUrn(String model, String urn) throws IndexException, ReaderException {
+	public BaseRecord[] findByUrn(String model, String urn) throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord findByPath(BaseRecord contextUser, String modelName, String path, long organizationId)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord findByPath(BaseRecord contextUser, String modelName, String path, String type,
-			long organizationId) throws IndexException, ReaderException {
+			long organizationId) throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public BaseRecord[] findByObjectId(String model, String objectId) throws IndexException, ReaderException {
+	public BaseRecord[] findByObjectId(String model, String objectId) throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
-	public BaseRecord[] findById(String model, long id) throws IndexException, ReaderException {
+	public BaseRecord[] findById(String model, long id) throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord[] findByNameInParent(String model, long parentId, String name)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord[] findByNameInParent(String model, long parentId, String name, long organizationId)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord[] findByNameInParent(String model, long parentId, String name, String type)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord[] findByNameInParent(String model, long parentId, String name, String type, long organizationId)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord[] findByNameInGroup(String model, long groupId, String name)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}
 
 	@Override
 	public BaseRecord[] findByNameInGroup(String model, long groupId, String name, long organizationId)
-			throws IndexException, ReaderException {
+			throws ReaderException {
 		// TODO Auto-generated method stub
 		return null;
 	}

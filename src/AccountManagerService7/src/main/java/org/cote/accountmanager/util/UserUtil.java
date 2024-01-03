@@ -46,7 +46,7 @@ public class UserUtil {
 				data = profileL[0];
 			}
 		}
-		catch(ReaderException | IndexException | FieldException | ValueException | ModelNotFoundException | ModelException | FactoryException e) {
+		catch(ReaderException | FieldException | ValueException | ModelNotFoundException | ModelException | FactoryException e) {
 			logger.error(e.getMessage());
 		}
 		return data;

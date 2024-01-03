@@ -33,17 +33,18 @@ public class FileSearch extends SearchBase {
 		return findRecords(query).length;
 	}
 	
-	public QueryResult find(Query query) throws IndexException, ReaderException {
+	public QueryResult find(Query query) throws ReaderException {
 		
 		if(useAlternateIO(query)) {
 			return findAlternate(query);
 		}
 		
-		BaseRecord[] recs = findByIndex(IOSystem.getActiveContext().getIndexManager().getInstance(query.get(FieldNames.FIELD_TYPE)).findIndexEntries(query));
+		BaseRecord[] recs = new BaseRecord[0];
 
 		try {
+			recs = findByIndex(IOSystem.getActiveContext().getIndexManager().getInstance(query.get(FieldNames.FIELD_TYPE)).findIndexEntries(query));
 			query.set(FieldNames.FIELD_EXECUTED, true);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
+		} catch (FieldException | ValueException | ModelNotFoundException | IndexException e) {
 			logger.error(e);
 		}
 

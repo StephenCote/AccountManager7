@@ -164,7 +164,7 @@ public class TokenService {
 				CryptoFactory.getInstance().importCryptoBean(outBean, tokenType.get(FieldNames.FIELD_DATA), false);
 			}
 		}
-		catch(ReaderException | FieldException | ValueException | ModelNotFoundException | WriterException | IndexException e){
+		catch(ReaderException | FieldException | ValueException | ModelNotFoundException | WriterException e){
 			logger.error(e.getMessage());
 		}
 		return outBean;

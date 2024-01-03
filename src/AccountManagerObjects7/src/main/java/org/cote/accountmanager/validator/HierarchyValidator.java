@@ -2,7 +2,6 @@ package org.cote.accountmanager.validator;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IExecutable;
 import org.cote.accountmanager.io.IOSystem;
@@ -42,7 +41,7 @@ public class HierarchyValidator implements IExecutable {
 			if(qr != null && qr.getResults().length > 0) {
 				outBool = inHierarchy(model, hierarchyField, baseId, qr.getResults()[0].get(hierarchyField));
 			}
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 		return outBool;

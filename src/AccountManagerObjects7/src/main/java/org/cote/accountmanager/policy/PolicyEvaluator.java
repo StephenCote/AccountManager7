@@ -150,7 +150,7 @@ public class PolicyEvaluator {
 		BaseRecord[] records = new BaseRecord[0];
 		try {
 			records = search.findByUrn(ModelNames.MODEL_POLICY, prt.get(FieldNames.FIELD_URN));
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 		BaseRecord outRec = null;

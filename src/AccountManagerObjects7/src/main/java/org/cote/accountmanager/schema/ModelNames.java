@@ -7,7 +7,6 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -202,7 +201,7 @@ public class ModelNames {
 		QueryResult qr = null;
 		try {
 			qr = IOSystem.getActiveContext().getSearch().find(q);
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 		

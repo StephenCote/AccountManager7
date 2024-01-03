@@ -15,7 +15,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
@@ -98,7 +97,7 @@ public class Factory {
 		BaseRecord[] recs = new BaseRecord[0];
 		try {
 			recs = context.getSearch().findByName(ModelNames.MODEL_USER, ADMIN_USER_NAME, organizationId);
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 		if(recs.length == 1) {

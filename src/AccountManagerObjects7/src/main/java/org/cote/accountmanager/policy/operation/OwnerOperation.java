@@ -1,7 +1,6 @@
 package org.cote.accountmanager.policy.operation;
 
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -80,7 +79,7 @@ import org.cote.accountmanager.util.RecordUtil;
 						logger.warn("Failed to find urn: " + surn);
 					}
 				}
-				catch(IndexException | ReaderException e0) {
+				catch(ReaderException e0) {
 					logger.error(e0);
 					return OperationResponseEnumType.ERROR;
 				}
@@ -121,7 +120,7 @@ import org.cote.accountmanager.util.RecordUtil;
 						logger.error("Urn could not be found: " + murn);
 					}
 				}
-				catch(IndexException | ReaderException | FieldException | ValueException | ModelNotFoundException e0) {
+				catch(ReaderException | FieldException | ValueException | ModelNotFoundException e0) {
 					logger.error(e0);
 					return OperationResponseEnumType.ERROR;
 				}

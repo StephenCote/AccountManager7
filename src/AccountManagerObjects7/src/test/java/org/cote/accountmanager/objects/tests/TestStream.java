@@ -318,7 +318,7 @@ public class TestStream extends BaseTest {
 			assertTrue("Expected byte length to match", overRead.length == allBytes.length);
 			// logger.info(data.toFullString());
 
-		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException    e) {
+		} catch (NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ReaderException    e) {
 			logger.error(e);
 			e.printStackTrace();
 		}

@@ -99,7 +99,7 @@ public class TestAuthentication extends BaseTest {
 			query.field(FieldNames.FIELD_REFERENCE_ID, testUser1.get(FieldNames.FIELD_ID));
 			query.set(FieldNames.FIELD_RECORD_COUNT, 1);
 			res = ioContext.getSearch().find(query);
-		} catch (IndexException | ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 		assertNotNull("Result is null", res);

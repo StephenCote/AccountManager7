@@ -233,7 +233,7 @@ public class ArticleUtil {
 			}
 
 		}
-		catch(ReaderException | IndexException e) {
+		catch(ReaderException e) {
 			logger.error(e.getMessage());
 			logger.error("Error",e);
 		}
@@ -281,7 +281,7 @@ public class ArticleUtil {
 				QueryResult qr = IOSystem.getActiveContext().getSearch().find(search);
 				articleData = qr.getResults();
 			}
-			catch(ReaderException | FieldException | ValueException | ModelNotFoundException | IndexException e) {
+			catch(ReaderException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
 		

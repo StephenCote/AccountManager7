@@ -125,7 +125,7 @@ public class TestQuery extends BaseTest {
 		QueryResult result = null;
 		try {
 			result = ioContext.getSearch().find(query);
-		} catch (IndexException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 		assertNotNull("Result was null", result);

@@ -306,7 +306,7 @@ public class PolicyUtil {
 			}
 
 		}
-		catch(ReaderException | IndexException | FieldException | ValueException | ModelNotFoundException | FactoryException e) {
+		catch(ReaderException | FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 			logger.error(e);
 		}
 		return prrs.toArray(new PolicyResponseType[0]);

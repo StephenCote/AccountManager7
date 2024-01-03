@@ -5,7 +5,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.cache.ICache;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
@@ -62,7 +61,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	}
 	
 	@Override
-	public QueryResult find(final Query query) throws IndexException, ReaderException {
+	public QueryResult find(final Query query) throws ReaderException {
 
 			if(query.key() == null) {
 				throw new ReaderException("Null query key");

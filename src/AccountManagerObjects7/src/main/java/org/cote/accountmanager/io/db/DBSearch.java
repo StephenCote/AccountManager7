@@ -11,7 +11,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
@@ -71,7 +70,7 @@ public class DBSearch extends SearchBase {
 		return count;
 	}
 	
-	public QueryResult find(final Query query) throws IndexException, ReaderException {
+	public QueryResult find(final Query query) throws ReaderException {
 		
 		if(useAlternateIO(query)) {
 			return findAlternate(query);

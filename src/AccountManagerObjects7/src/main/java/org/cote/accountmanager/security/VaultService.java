@@ -464,7 +464,7 @@ public class VaultService
 				return null;
 			}
 		}
-		catch(IndexException | ReaderException e) {
+		catch(ReaderException e) {
 			logger.error(e);
 		}
 		return pvault;
