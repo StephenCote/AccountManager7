@@ -13,7 +13,8 @@ public interface IOlioEvolveRule {
 	public void endLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch);
 	public BaseRecord startIncrement(OlioContext context, BaseRecord locationEpoch);
 	public BaseRecord continueIncrement(OlioContext context, BaseRecord locationEpoch);
-	public void endIncrement(OlioContext context, BaseRecord locationEpoch);
+	public void evaluateIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment);
+	public void endIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment);
 	public BaseRecord nextIncrement(OlioContext context, BaseRecord parentEvent);
 	public void beginEvolution(OlioContext context);
 

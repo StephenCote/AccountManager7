@@ -1,33 +1,24 @@
 package org.cote.accountmanager.olio.rules;
 
-import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
-import java.time.temporal.TemporalAdjusters;
-import java.util.Arrays;
-import java.util.Date;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 
-public class GenericEvolveRule implements IOlioEvolveRule {
-	public static final Logger logger = LogManager.getLogger(GenericEvolveRule.class);
+public class Increment24HourRule implements IOlioEvolveRule {
+	public static final Logger logger = LogManager.getLogger(Increment24HourRule.class);
 	private TimeEnumType incrementType = TimeEnumType.HOUR;
 	
 	
@@ -158,14 +149,15 @@ public class GenericEvolveRule implements IOlioEvolveRule {
 			logger.warn("Returning current pending increment.");
 			return rec;
 		}
-		return nextIncrement(context, locationEpoch, locationEpoch);
+		return nextIncrement(context, locationEpoch);
+
 	}
 
 	@Override
 	public BaseRecord continueIncrement(OlioContext context, BaseRecord locationEpoch) {
 		// TODO Auto-generated method stub
 		// logger.info(locationEpoch.toFullString());
-		BaseRecord rec = EventUtil.getLastEvent(context.getUser(), context.getWorld(), locationEpoch.get("location"), incrementType, ActionResultEnumType.PENDING, false); 
+		BaseRecord rec = EventUtil.getLastEvent(context.getUser(), context.getWorld(), locationEpoch.get("location"), EventEnumType.PERIOD, incrementType, ActionResultEnumType.PENDING, false); 
 		if(rec != null) {
 			return rec;
 			/*
@@ -179,9 +171,12 @@ public class GenericEvolveRule implements IOlioEvolveRule {
 	}
 
 	@Override
-	public void endIncrement(OlioContext context, BaseRecord locationEpoch) {
+	public void endIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord currentIncrement) {
 		// TODO Auto-generated method stub
-		BaseRecord rec = continueIncrement(context, locationEpoch);
+		BaseRecord rec = currentIncrement;
+		if(currentIncrement == null) {
+			rec = continueIncrement(context, locationEpoch);
+		}
 		if(rec == null) {
 			logger.warn("Current increment was not found");
 			return;
@@ -207,7 +202,7 @@ public class GenericEvolveRule implements IOlioEvolveRule {
 	/// The advancement criteria is as follows:
 	///    1) If the event for the current increment doesn't exist, create one and return it
 
-	private TimeEnumType nextTime(TimeEnumType time) {
+	private TimeEnumType getChildTime(TimeEnumType time) {
 		TimeEnumType otime = TimeEnumType.UNKNOWN;
 		switch(time) {
 			case YEAR:
@@ -226,13 +221,15 @@ public class GenericEvolveRule implements IOlioEvolveRule {
 		return otime;
 	}
 	
-	private String getTimeName(BaseRecord parentEvent) {
+	private String getChildTimeName(BaseRecord parentEvent) {
 		TimeEnumType ptet = TimeEnumType.valueOf(parentEvent.get("timeType"));
-		TimeEnumType tet = nextTime(ptet);
+		TimeEnumType tet = getChildTime(ptet);
 		ZonedDateTime prog = parentEvent.get("eventProgress");
-		int val = 0;
+		return getTimeName(prog, tet);
+	}
+	
+	private String getTimeName(ZonedDateTime prog, TimeEnumType tet) {
 		StringBuilder buff = new StringBuilder();
-		// buff.append(prog.getYear() + "/" + String.format("%02d", prog.getMonthValue()) + "/" + String.format("%02d", prog.getDayOfMonth()) + " " + String.format("%02d", prog.getHour()) + ":00");
 		buff.append(prog.getYear() + "/" + String.format("%02d", prog.getMonthValue()));
 		if(tet == TimeEnumType.DAY || tet == TimeEnumType.HOUR) {
 			 buff.append("/" + String.format("%02d", prog.getDayOfMonth()));
@@ -240,127 +237,126 @@ public class GenericEvolveRule implements IOlioEvolveRule {
 		if(tet == TimeEnumType.HOUR) {
 			 buff.append(" " + String.format("%02d", prog.getHour()) + ":00");
 		}
-		/*
-		if(tet == TimeEnumType.MONTH) {
-			val = prog.getMonthValue();
-		}
-		else if(tet == TimeEnumType.DAY) {
-			val = prog.getDayOfMonth();
-		}
-		else if(tet == TimeEnumType.HOUR) {
-			val = prog.getHour();
-		}
-		return tet.toString() + " " + val;
-		*/
+
 		return buff.toString();
 	}
 	
 	@Override
 	public BaseRecord nextIncrement(OlioContext context, BaseRecord parentEvent) {
-		return nextIncrement(context, parentEvent, parentEvent);
-	}
-	
-	public BaseRecord nextIncrement(OlioContext context, BaseRecord parentEvent, BaseRecord baseEvent) {
-
-		IOSystem.getActiveContext().getReader().populate(parentEvent);
-		
-		TimeEnumType ptet = TimeEnumType.valueOf(parentEvent.get("timeType")); 
-
-		/// Read progress from the base because the start, end, and prog times will be edged
-		///
-		ZonedDateTime prog = baseEvent.get("eventProgress");
-		
-		int month = prog.getMonthValue();
-		/// Don't queue
 		BaseRecord inc = null;
-
-		/// Determine the period type
-		TimeEnumType tet = nextTime(ptet);
-		
-		String ename = getTimeName(parentEvent);
 		try {
-			/// If it's the end of the year or the end of the month
-			/// Then request the nextIncrement of the parentEvent parent
-			///
-			BaseRecord[] cevts = EventUtil.getChildEvents(context.getWorld(), parentEvent, null, ename, tet, EventEnumType.UNKNOWN);
-
-			boolean create = false;
-			if(cevts.length == 0) {
-				create = true;
-			}
-			else {
-				// logger.info("Advance to next " + ptet.toString() + " by incrementing " + incrementType.toString());
-				if(incrementType == TimeEnumType.HOUR) {
-					prog = prog.plusHours(1);
-				}
-				else if(incrementType == TimeEnumType.DAY) {
-					prog = prog.plusDays(1);
-					
-				}
-				else if(incrementType == TimeEnumType.MONTH) {
-					prog = prog.plusMonths(1); 
-				}
-				/// if rolled over the end of the year, bail out
-				if(prog.getMonthValue() < month) {
-					logger.warn("End of epoch.  No further increments");
-					return null;
-				}
-				
-				baseEvent.set("eventProgress", prog);
-				logger.info("Sniff: " + tet + " " + prog + " Name:'" + ename + "'");
-				if(tet != TimeEnumType.UNKNOWN) {
-					if(tet != incrementType) {
-						/// move down to a lower time increment
-						inc = nextIncrement(context, cevts[0], baseEvent);
-					}
-					else {
-						/// move to the next adjacent time increment
-						inc = nextIncrement(context, parentEvent, baseEvent);
-					}
-				}
-				else {
-					logger.warn("Outside time scope: " + tet + " -> " + incrementType);
-					return null;
-				}
-
-			}
-			/// times should already be adjusted to the next increment
-			/// for month, day, and year progress will be set to the top of the day/hour
-			/// for hour, start and end will follow the progress
-			if(create) {
-				inc = EventUtil.newEvent(context.getUser(), context.getWorld(), parentEvent, EventEnumType.PERIOD, ename, prog);
-				inc.set("timeType", tet);
-				if(tet == TimeEnumType.MONTH) {
-					edgeMonth(inc);
-				}
-				else if(tet == TimeEnumType.DAY) {
-					edgeDay(inc);
-				}
-				else if(tet == TimeEnumType.HOUR) {
-					edgeHour(inc);
-				}
-				IOSystem.getActiveContext().getRecordUtil().createRecord(inc);
-				
-				if(tet != TimeEnumType.UNKNOWN && tet != incrementType) {
-					inc = nextIncrement(context, inc, baseEvent);
-				}
-			}
-			else {
-				logger.warn("Inside existing time scope - " + tet.toString());
-			}
-
-			if(inc != null) {
-				parentEvent.set("eventProgress", prog);
-				context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
-			}
+			inc = findNextIncrement(context, parentEvent);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
 		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
-		}
-
 		return inc;
 	}
 	
-	
+	private BaseRecord getCreateIncrement(OlioContext context, BaseRecord parentEvent, ZonedDateTime time, TimeEnumType tet) throws FieldException, ValueException, ModelNotFoundException {
+		String name = getTimeName(time, tet);
+		BaseRecord[] cevts = EventUtil.getChildEvents(context.getWorld(), parentEvent, null, name, tet, EventEnumType.UNKNOWN);
+		if(cevts.length > 0) {
+			parentEvent.set("eventProgress", time);
+			context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+			return cevts[0];
+		}
+		BaseRecord evt = EventUtil.newEvent(context.getUser(), context.getWorld(), parentEvent, EventEnumType.PERIOD, name, time);
+		evt.set("timeType", tet);
+		parentEvent.set("eventProgress", time);
 
+		if(tet == TimeEnumType.MONTH) {
+			edgeMonth(evt);
+		}
+		else if(tet == TimeEnumType.DAY) {
+			edgeDay(evt);
+		}
+		else if(tet == TimeEnumType.HOUR) {
+			edgeHour(evt);
+		}
+		IOSystem.getActiveContext().getRecordUtil().createRecord(evt);
+		context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+		return evt;
+	}
+	
+	/// Given the current progress from the parent event, return the next time increment
+	/// The 24HourRule is to move into the next TimeEnumType.HOUR, advancing as needed the DAY and MONTH
+	/// 
+	private BaseRecord findNextIncrement(OlioContext context, BaseRecord parentEvent) throws FieldException, ValueException, ModelNotFoundException {
+		BaseRecord inc = null;
+		
+		ZonedDateTime prog = parentEvent.get("eventProgress");
+		ZonedDateTime end = parentEvent.get("eventEnd");
+		// logger.info("Find next " + incrementType + " increment for " + parentEvent.get(FieldNames.FIELD_NAME));
+		TimeEnumType ptet = TimeEnumType.valueOf(parentEvent.get("timeType")); 
+		TimeEnumType tet = getChildTime(ptet);
+		int imonth = prog.getMonthValue();
+		if(incrementType == TimeEnumType.HOUR) {
+			prog = prog.plusHours(1);
+		}
+		else if(incrementType == TimeEnumType.DAY) {
+			prog = prog.plusDays(1);
+		}
+		else if(incrementType == TimeEnumType.MONTH) {
+			prog = prog.plusMonths(1);
+		}
+		
+		if(prog.toEpochSecond() >= end.toEpochSecond()) {
+			logger.warn("Reached the end of the epoch");
+			return null;
+		}
+		if(prog.getMonthValue() < imonth) {
+			logger.warn("Reached the end of the epoch (#2)");
+			return null;
+		}
+		
+		BaseRecord outRec = null;
+		BaseRecord year = getCreateIncrement(context, parentEvent, prog, TimeEnumType.YEAR);
+		if(year == null) {
+			logger.error("Failed to find or create yearly increment");
+			return null;
+		}
+		BaseRecord month = getCreateIncrement(context, year, prog, TimeEnumType.MONTH);
+		if(month == null) {
+			logger.error("Failed to find or create monthly increment");
+			return null;
+		}
+		if(incrementType == TimeEnumType.MONTH) {
+			outRec = month;
+		}
+		else if(incrementType == TimeEnumType.DAY || incrementType == TimeEnumType.HOUR) {
+		
+			BaseRecord day = getCreateIncrement(context, month, prog, TimeEnumType.DAY);
+			if(day == null) {
+				logger.error("Failed to find or create daily increment");
+				return null;
+			}
+			if(incrementType == TimeEnumType.DAY) {
+				outRec = day;
+			}
+			else {
+				BaseRecord hour = getCreateIncrement(context, day, prog, TimeEnumType.HOUR);
+				if(hour == null) {
+					logger.error("Failed to find or create hourly increment");
+					return null;
+				}
+				outRec = hour;
+			}
+		}
+		else {
+			logger.error("Unhandled increment type: " + incrementType);
+			return null;
+		}
+
+		// parentEvent.set("eventProgress", prog);
+		return outRec;
+		
+		//context.processQueue();
+	}
+	@Override
+	public void evaluateIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment) {
+		// TODO Auto-generated method stub
+		
+	}
+	
 }
