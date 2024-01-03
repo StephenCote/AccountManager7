@@ -7,7 +7,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -238,6 +237,15 @@ public class OlioContext {
 	public void endEpoch() {
 		EpochUtil.endEpoch(this);
 	}
+	public void evaluateIncrement() {
+		if(currentIncrement == null) {
+			logger.error("Invalid increment");
+			return;
+		}
+		for(IOlioEvolveRule r : config.getEvolutionRules()) {
+			r.evaluateIncrement(this, currentEvent, currentIncrement);
+		}
+	}
 	public BaseRecord startOrContinueIncrement() {
 		return startOrContinueIncrement(currentEvent);
 	}
@@ -245,13 +253,26 @@ public class OlioContext {
 		if(locationEpoch == null) {
 			logger.error("Invalid location epoch");
 		}
+		BaseRecord inc = null;
+		for(IOlioEvolveRule r : config.getEvolutionRules()) {
+			inc = r.continueIncrement(this, locationEpoch);
+			if(inc != null) {
+				break;
+			}
+		}
+		if(inc != null) {
+			currentIncrement = inc;
+			return inc;
+		}
+		return startIncrement(locationEpoch);
+		/*
 		BaseRecord[] childEvts = EventUtil.getChildEvents(world, locationEpoch, null, null, TimeEnumType.UNKNOWN, EventEnumType.UNKNOWN);
 		if(childEvts.length > 0) {
 			BaseRecord cur = childEvts[childEvts.length - 1];
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(cur.get(FieldNames.FIELD_STATE));
 			if(aet == ActionResultEnumType.PENDING) {
 				for(IOlioEvolveRule r : config.getEvolutionRules()) {
-					r.continueIncrement(this, cur);
+					r.continueIncrement(this, locationEpoch);
 				}
 				currentIncrement = cur;
 				return currentIncrement;
@@ -261,7 +282,9 @@ public class OlioContext {
 				logger.warn(cur.toFullString());
 			}
 		}
+		
 		return startIncrement(locationEpoch);
+		*/
 	}
 	
 	public BaseRecord startIncrement() {
@@ -273,6 +296,7 @@ public class OlioContext {
 			return null;
 		}
 		BaseRecord inc = EpochUtil.startIncrement(this, locationEpoch);
+		currentIncrement = inc;
 		return inc;
 	}
 	public BaseRecord endIncrement() {
@@ -413,6 +437,7 @@ public class OlioContext {
 	public BaseRecord getRootLocation() {
 		 return GeoLocationUtil.getRootLocation(this);
 	}
+	/*
 	public BaseRecord generateEpoch() {
 		return generateEpoch(1);
 	}
@@ -424,7 +449,7 @@ public class OlioContext {
 		currentEpoch = EpochUtil.generateEpoch(this, count);
 		return currentEpoch;
 	}
-
+	*/
 	public BaseRecord getCurrentEpoch() {
 		return currentEpoch;
 	}

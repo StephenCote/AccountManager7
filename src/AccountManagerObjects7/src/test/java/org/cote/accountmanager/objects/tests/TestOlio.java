@@ -30,15 +30,18 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.PersonalityUtil;
-import org.cote.accountmanager.olio.rules.GenericEvolveRule;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
+import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
+import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.TimeEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -98,61 +101,84 @@ public class TestOlio extends BaseTest {
 				new GenericItemDataLoadRule()
 			}));
 			
-			cfg.getEvolutionRules().add(new GenericEvolveRule());
+			// Increment24HourRule incRule = new Increment24HourRule();
+			// incRule.setIncrementType(TimeEnumType.HOUR);
+			cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
+				new Increment24HourRule(),
+				new HierarchicalNeedsRule()
+			}));
 			OlioContext octx = new OlioContext(cfg);
 
 			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
-
 			octx.initialize();
 			assertNotNull("Root location is null", octx.getRootLocation());
-			
-			
-			/*
-			if(octx.getCurrentEpoch() == null) {
-				octx.startEpoch();
-			}
-			
-			logger.info(octx.getCurrentEpoch() == null);
-			*/
+			// logger.info("Emitting maps");
+			// MapUtil.printMapFromAdmin2(octx);
 			BaseRecord evt = octx.startOrContinueEpoch();
 			assertNotNull("Epoch is null", evt);
 			BaseRecord[] locs = octx.getLocations();
-			BaseRecord levt = octx.startOrContinueLocationEpoch(locs[0]);
-			assertNotNull("Location epoch is null", levt);
-			BaseRecord cevt = octx.continueIncrement();
-			if(cevt != null) {
-				octx.endIncrement();
-			}
-			try {
-
-				BaseRecord ievt = octx.startIncrement();
-				assertNotNull("Increment is null", ievt);
-				
-				cevt = octx.continueIncrement();
-				assertNotNull("Continued increment is null", cevt);
-
-				long id1 = cevt.get(FieldNames.FIELD_ID);
-				long id2 = cevt.get(FieldNames.FIELD_ID);
-				assertTrue("Expected events to be the same", id1 == id2);
-				
-				octx.endIncrement();
-				
-				for(int i = 0; i < 750; i++) {
-					BaseRecord inc = octx.startIncrement();
-					
+			for(BaseRecord lrec : locs) {
+				BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
+				assertNotNull("Location epoch is null", levt);
+				// logger.info("Working with epoch " + levt.get(FieldNames.FIELD_NAME) + " " + levt.get("eventStart") + " to " + levt.get("eventEnd") + " " + lrec.get(FieldNames.FIELD_NAME));
+				BaseRecord cevt = octx.startOrContinueIncrement();
+				try {
+					octx.evaluateIncrement();
+				}
+				catch(Exception e) {
+					e.printStackTrace();
+				}
+				/*
+				List<BaseRecord> lpop = octx.getPopulation(locs[0]);
+				BaseRecord per = lpop.get((new Random()).nextInt(lpop.size()));
+				assertNotNull("Person is null", per);
+				PersonalityProfile prof = PersonalityUtil.analyzePersonality(octx, per);
+				logger.info(JSONUtil.exportObject(prof));
+				*/
+				/*
+				BaseRecord cevt = octx.continueIncrement();
+				if(cevt != null) {
+					logger.info("End previous increment");
 					octx.endIncrement();
 				}
-				
-				octx.endLocationEpoch(ievt);
-				octx.endEpoch();
-				//octx.processQueue();
-				// logger.info(ievt.toFullString());
-				
+				try {
+					logger.info("Start increment");
+					BaseRecord ievt = octx.startIncrement();
+					assertNotNull("Increment is null", ievt);
+					
+					logger.info("Test continue increment");
+					cevt = octx.continueIncrement();
+					assertNotNull("Continued increment is null", cevt);
+	
+					long id1 = cevt.get(FieldNames.FIELD_ID);
+					long id2 = cevt.get(FieldNames.FIELD_ID);
+					assertTrue("Expected events to be the same", id1 == id2);
+					
+					octx.endIncrement();
+					logger.info("Blast increments");
+					for(int i = 0; i < 366; i++) {
+						//logger.info("Blast " + (i + 1));
+						BaseRecord inc = octx.startIncrement();
+						if(inc == null) {
+							logger.info("End of epoch reached");
+							break;
+						}
+						octx.endIncrement();
+						
+						//octx.processQueue();
+					}
+					
+					octx.endLocationEpoch(ievt);
+					octx.endEpoch();
+					//octx.processQueue();
+					// logger.info(ievt.toFullString());
+					
+				}
+				catch(StackOverflowError | Exception e) {
+					e.printStackTrace();
+				}
+				*/
 			}
-			catch(StackOverflowError | Exception e) {
-				e.printStackTrace();
-			}
-			
 			/*
 			ZonedDateTime start = levt.get("eventStart");
 			ZonedDateTime prog = levt.get("eventProgress");
