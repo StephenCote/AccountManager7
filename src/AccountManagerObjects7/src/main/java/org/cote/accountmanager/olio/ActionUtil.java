@@ -55,11 +55,12 @@ public class ActionUtil {
 			for(String build : builders) {
 				BaseRecord act = newAction(ctx, null);
 				String[] pairs = build.split(":");
-				if(pairs.length < 12) {
-					logger.error("Unexpected format - expected at least 12 pairs, found " + pairs.length);
+				if(pairs.length < 1) {
+					logger.error("Unexpected format - expected at least 1 pairs, found " + pairs.length);
 					logger.error(build);
 					continue;
 				}
+				acts.add(act);
 				act.set(FieldNames.FIELD_NAME, pairs[0]);
 				
 				if(pairs[1].length() > 0) {
@@ -122,7 +123,7 @@ public class ActionUtil {
 					ca.addAll(Arrays.asList(pairs[12].split(",")));
 				}
 
-				acts.add(act);
+				
 			}
 		}
 		catch(FieldException | ValueException | ModelNotFoundException e) {

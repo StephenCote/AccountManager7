@@ -14,6 +14,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 public class ModelSchema {
 	public static final Logger logger = LogManager.getLogger(ModelSchema.class);
 	private String name = null;
+	private String shortName = null;
 	
 	@JsonProperty("absolute")	
 	private boolean abs = false;
@@ -58,6 +59,14 @@ public class ModelSchema {
 		
 	}
 	
+	public String getShortName() {
+		return shortName;
+	}
+
+	public void setShortName(String shortName) {
+		this.shortName = shortName;
+	}
+
 	public List<String> getLikeInherits() {
 		return likeInherits;
 	}

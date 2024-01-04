@@ -5,7 +5,9 @@ import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -91,6 +93,45 @@ public class PersonalityUtil {
 		}
 	}
 	
+	private static Map<Long, PersonalityProfile> profiles = new ConcurrentHashMap<>();
+	
+	public static PersonalityProfile updateProfile(OlioContext octx, BaseRecord person) {
+		long id = person.get(FieldNames.FIELD_ID);
+		if(id <= 0L) {
+			logger.error("Invalid identifier");
+			return null;
+		}
+		if(!profiles.containsKey(id)) {
+			return getProfile(octx, person);
+		}
+		PersonalityProfile prof = profiles.get(id);
+		updateProfile(octx.getWorld(), person, prof);
+		profiles.put(id,  prof);
+		return prof;
+
+	}
+	
+	public static PersonalityProfile getProfile(OlioContext octx, BaseRecord person) {
+		
+		long id = person.get(FieldNames.FIELD_ID);
+		if(id <= 0L) {
+			logger.error("Invalid identifier");
+			return null;
+		}
+		
+		if(profiles.containsKey(id)) {
+			return profiles.get(id);
+		}
+		
+		PersonalityProfile prof = analyzePersonality(octx, person);
+		
+		if(prof != null) {
+			profiles.put(id, prof);
+		}
+		
+		return prof;
+	}
+	
 	public static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"personality", "statistics"});
 		BaseRecord per = person.get("personality");
@@ -106,9 +147,14 @@ public class PersonalityUtil {
 		return prof;
 	}
 	
-	public static PersonalityProfile createProfile(BaseRecord world, BaseRecord person) {
+	
+	protected static PersonalityProfile createProfile(BaseRecord world, BaseRecord person) {
 		PersonalityProfile prof = new PersonalityProfile();
 		prof.setId(person.get(FieldNames.FIELD_ID));
+		updateProfile(world, person, prof);
+		return prof;
+	}
+	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {
 		prof.setName(person.get(FieldNames.FIELD_NAME));
 		prof.setRecord(person);
 		prof.setGender(person.get("gender"));
@@ -174,7 +220,11 @@ public class PersonalityUtil {
 		prof.setScience(HighEnumType.valueOf(((int)stats.get("science")*5)/d1));
 		prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
 		prof.setLuck(HighEnumType.valueOf(((int)stats.get("luck")*5)/d1));
-		
+
+		analyzePhysiologicalNeeds(person, prof);
+	}
+	
+	protected static void analyzePhysiologicalNeeds(BaseRecord person, PersonalityProfile prof) {
 		/// do they have clothes?
 		BaseRecord store = person.get("store");
 		List<BaseRecord> apparel = store.get("apparel");
@@ -183,8 +233,7 @@ public class PersonalityUtil {
 		}
 		List<BaseRecord> items = store.get("items");
 		/// do they have water?
-		
-		return prof;
+
 	}
 	
 }

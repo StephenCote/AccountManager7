@@ -35,6 +35,7 @@ import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -53,18 +54,33 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     private String[] fkImportFields = null;
     private NodeLink currentNode = null;
     private String lastModel = null;
+    private boolean condensedFields = false;
+    private boolean detectCondensedFields = true;
     
     public RecordDeserializer() {
     	this(null);
     }
     public RecordDeserializer(Class<?> c) {
     	super(c);
+    	mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
     }
 
     
     
     
-    public void setFkImportFields(String[] fkImportFields) {
+    public boolean isCondensedFields() {
+		return condensedFields;
+	}
+	public void setCondensedFields(boolean condensedFields) {
+		this.condensedFields = condensedFields;
+	}
+	public boolean isDetectCondensedFields() {
+		return detectCondensedFields;
+	}
+	public void setDetectCondensedFields(boolean detectCondensedFields) {
+		this.detectCondensedFields = detectCondensedFields;
+	}
+	public void setFkImportFields(String[] fkImportFields) {
 		this.fkImportFields = fkImportFields;
 	}
 	public void applyModule(SimpleModule mod) {
@@ -99,6 +115,19 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 		return model;
 	}
 	
+	private String getName(ModelSchema schema, String shortName) {
+		String name = shortName;
+		List<FieldSchema> fschemas = schema.getFields().stream().filter(s -> ((condensedFields && s.getShortName() != null && s.getShortName().equals(shortName)) || s.getName().equals(shortName))).collect(Collectors.toList());
+		if(fschemas.size() > 0) {
+			if(fschemas.size() > 1) {
+				logger.error("Found multiple matches for name '" + shortName + "'");
+			}
+			name = fschemas.get(0).getName();
+			
+		}
+		return name;
+	}
+	
 	@SuppressWarnings("unchecked")
 	@Override
     public T deserialize(JsonParser jsonParser, DeserializationContext context) throws IOException, JsonProcessingException
@@ -107,6 +136,10 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         String modelName = null;
         if(node.has(RecordFactory.JSON_MODEL_KEY)) {
         	modelName = node.get(RecordFactory.JSON_MODEL_KEY).asText();
+        }
+        else if((detectCondensedFields || condensedFields) && node.has(RecordFactory.JSON_MODEL_SHORT_KEY)) {
+        	modelName = node.get(RecordFactory.JSON_MODEL_SHORT_KEY).asText();
+        	condensedFields = true;
         }
         else {
         	modelName = findModel(jsonParser, node, currentNode);
@@ -165,6 +198,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         	String fname = entry.getKey();
         	if(fname.equals(RecordFactory.JSON_MODEL_KEY)) {
         		continue;
+        	}
+        	if(condensedFields) {
+        		if(fname.equals(RecordFactory.JSON_MODEL_SHORT_KEY)) {
+        			continue;
+        		}
+        		fname = getName(ltype, fname);
         	}
          	JsonNode value = entry.getValue();
          	boolean possibleForeign = false;

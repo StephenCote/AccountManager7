@@ -41,6 +41,7 @@ public class RecordFactory {
 	
 	public static String GENERATED_PACKAGE_NAME = "org.cote.accountmanager.objects.generated";
 	public static final String JSON_MODEL_KEY = "model";
+	public static final String JSON_MODEL_SHORT_KEY = "m";
 
 	private static Map<String, String> looseImports = new ConcurrentHashMap<>();
 	private static Map<String, BaseRecord> looseBaseModels = new ConcurrentHashMap<>();
@@ -384,6 +385,20 @@ public class RecordFactory {
 		if(mod == null) {
 			logger.debug("Failed to import loose model for " + name);
 			return null;
+		}
+		Set<String> shortMap = new HashSet<>();
+		for(FieldSchema fs: mod.getFields()) {
+			if(fs.getShortName() != null) {
+				if(shortMap.contains(fs.getShortName())) {
+					logger.error(name + " " + fs.getName() + " short name " + fs.getShortName() + " defined more than once");
+				}
+				else if(mod.getFieldSchema(fs.getShortName()) != null) {
+					logger.error(name + " " + fs.getName() + " short name is already a field name");
+				}
+				else {
+					shortMap.add(fs.getShortName());
+				}
+			}
 		}
 		schemas.put(name,  mod);
 		return mod;

@@ -78,7 +78,7 @@ public class ItemUtil {
 				BaseRecord oq = mf.newInstance(ModelNames.MODEL_QUALITY, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
 				BaseRecord os = mf.newInstance(ModelNames.MODEL_ITEM_STATISTICS, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
 				String[] pairs = item.split(":");
-				if(pairs.length != 10) {
+				if(pairs.length != 11) {
 					logger.error("Unexpected format - expected 10 pairs, found " + pairs.length);
 					logger.error(item);
 					continue;
@@ -119,9 +119,18 @@ public class ItemUtil {
 						skills.add(rmat);
 					}
 				}
-				/// 8 = stats
+				/// 8 = tags
 				if(pairs[8].length() > 0) {
-					String[] mats = pairs[8].split(",");
+					String[] tagz = pairs[8].split(",");
+					List<BaseRecord> tags = ob.get("tags");
+					for(String s: tagz) {
+						BaseRecord rmat = OlioUtil.getCreateTag(ctx, s, ModelNames.MODEL_ITEM);
+						tags.add(rmat);
+					}
+				}
+				/// 9 = stats
+				if(pairs[9].length() > 0) {
+					String[] mats = pairs[9].split(",");
 					for(String m: mats) {
 						String[] mpair = m.split("=");
 						if(mpair.length != 2) {
@@ -131,9 +140,9 @@ public class ItemUtil {
 						os.set(mpair[0], Integer.parseInt(mpair[1]));
 					}
 				}
-				/// 9 = qualities
-				if(pairs[9].length() > 0) {
-					String[] mats = pairs[9].split(",");
+				/// 10 = qualities
+				if(pairs[10].length() > 0) {
+					String[] mats = pairs[10].split(",");
 					for(String m: mats) {
 						String[] mpair = m.split("=");
 						if(mpair.length != 2) {

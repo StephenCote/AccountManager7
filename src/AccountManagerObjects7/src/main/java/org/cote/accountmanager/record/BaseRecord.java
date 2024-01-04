@@ -41,7 +41,7 @@ public abstract class BaseRecord {
 	
 	private Map<String, FieldType> fieldMap = new ConcurrentHashMap<>();
 	private List<FieldType> fields = new CopyOnWriteArrayList<>();
-	
+
 	public BaseRecord(String name, FieldType[] inFields) {
 		model = name;
 		setFields(Arrays.asList(inFields));
@@ -59,7 +59,7 @@ public abstract class BaseRecord {
 	
 	@JsonIgnore
 	public String toString() {
-		return RecordUtil.toJSONString(this, true);
+		return RecordUtil.toJSONString(this, true, true);
 	}
 	
 	@JsonIgnore

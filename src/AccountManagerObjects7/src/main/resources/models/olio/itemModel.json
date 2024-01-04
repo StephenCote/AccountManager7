@@ -4,6 +4,7 @@
 	"inherits": [
 		"common.name",
 		"common.groupExt",
+		"data.tagsExt",
 		"common.ownerId",
 		"common.objectId",
 		"system.organizationExt",

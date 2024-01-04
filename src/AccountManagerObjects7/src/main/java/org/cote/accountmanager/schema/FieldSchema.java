@@ -14,6 +14,7 @@ public class FieldSchema {
 	public static final Logger logger = LogManager.getLogger(FieldSchema.class);
 	
 	private String name = null;
+	private String shortName = null;
 	private String type = null;
 	private String baseClass = null;
 	private String baseModel = null;
@@ -76,6 +77,14 @@ public class FieldSchema {
 	
 	public FieldSchema() {
 		
+	}
+
+	public String getShortName() {
+		return shortName;
+	}
+
+	public void setShortName(String shortName) {
+		this.shortName = shortName;
 	}
 
 	public boolean isValidateRange() {

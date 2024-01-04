@@ -34,6 +34,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.schema.type.TagEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 
@@ -374,7 +375,26 @@ public class OlioUtil {
 		//q.setCache(false);
 		return new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
-	
+	protected static BaseRecord getCreateTag(OlioContext ctx, String name, String type) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_TAG, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("tagsGroup.id"));
+		q.field(FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_TYPE, type);
+		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if(rec == null) {
+			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("tagsGroup.path"));
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			try {
+				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TAG, ctx.getUser(), null, plist);
+				rec.set(FieldNames.FIELD_TYPE, type);
+				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+			}
+			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		return rec;
+		
+	}
 	protected static BaseRecord getCreateTrait(OlioContext ctx, String name, TraitEnumType type) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("traits.id"));
 		q.field(FieldNames.FIELD_NAME, name);

@@ -1,9 +1,22 @@
 package org.cote.accountmanager.record;
 
+import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
 public class RecordSerializerConfig {
 
+	public static SimpleModule getCondensedUnfilteredModule() {
+		RecordSerializer ser = new RecordSerializer();
+		ser.setFilterVirtual(false);
+		ser.setFilterForeign(false);
+		ser.setFilterEphemeral(false);
+		ser.setCondenseFields(true);
+		SimpleModule unfilteredModule = new SimpleModule();
+		unfilteredModule.addSerializer(LooseRecord.class, ser);
+		
+		return unfilteredModule;
+	}
+	
 	public static SimpleModule getUnfilteredModule() {
 		RecordSerializer ser = new RecordSerializer();
 		ser.setFilterVirtual(false);

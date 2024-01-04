@@ -33,6 +33,8 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.GeneralException;
 
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.core.json.JsonReadFeature;
+import com.fasterxml.jackson.core.json.JsonWriteFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.module.SimpleModule;
@@ -44,6 +46,8 @@ public class JSONUtil {
 	
 	public static <T> List<T> getList(String data, Class<?> itemClass, SimpleModule module){
 		ObjectMapper mapper = new ObjectMapper();
+		mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
+		
 		if(module != null) {
 			mapper.registerModule(module);
 		}
@@ -60,6 +64,7 @@ public class JSONUtil {
 	
 	public static <T> Map<String,T> getMap(byte[] data, Class<?> keyClass, Class<?> mapClass){
 		ObjectMapper mapper = new ObjectMapper();
+		mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
 		Map<String,T> map = null;
 		try {
 			TypeFactory t = TypeFactory.defaultInstance();
@@ -81,6 +86,7 @@ public class JSONUtil {
 	public static <T> T importObject(String s, Class<T> cls, SimpleModule module/*JsonDeserializer jdes*/) {
 	    
 		ObjectMapper mapper = new ObjectMapper();
+		mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
         if(module != null) {
             //SimpleModule usageModule = new SimpleModule().addDeserializer(cls, jdes);
             mapper.registerModule(module);
@@ -100,10 +106,14 @@ public class JSONUtil {
 	    return exportObject(obj, null);
 	}
 	public static <T> String exportObject(T obj, SimpleModule module){
-		return exportObject(obj, module, false);
+		return exportObject(obj, module, false, false);
 	}
-	public static <T> String exportObject(T obj, SimpleModule module, boolean noPrettyPrint){
+	public static <T> String exportObject(T obj, SimpleModule module, boolean noPrettyPrint, boolean noQuotes){
 		ObjectMapper mapper = new ObjectMapper();
+		//mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
+		if(noQuotes) {
+			mapper.disable(JsonWriteFeature.QUOTE_FIELD_NAMES.mappedFeature());
+		}
         if(module != null) {
             mapper.registerModule(module);
          }

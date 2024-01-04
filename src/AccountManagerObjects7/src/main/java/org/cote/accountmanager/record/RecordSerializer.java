@@ -19,6 +19,7 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.JsonGenerator.Feature;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonSerializer;
 import com.fasterxml.jackson.databind.SerializerProvider;
@@ -32,12 +33,21 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	private boolean condenseModelDeclarations = true;
 	private boolean condenseDeclarations = false;
 	private boolean stopCondensing = false;
+	private boolean condenseFields = false;
 	
     public RecordSerializer() {
 
     }
 
-    public boolean isFilterVirtual() {
+    public boolean isCondenseFields() {
+		return condenseFields;
+	}
+
+	public void setCondenseFields(boolean condenseFields) {
+		this.condenseFields = condenseFields;
+	}
+
+	public boolean isFilterVirtual() {
 		return filterVirtual;
 	}
 
@@ -71,6 +81,13 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		this.condenseModelDeclarations = condenseModelDeclarations;
 	}
 
+	protected String getName(FieldSchema f) {
+		if(condenseFields && f.getShortName() != null) {
+			return f.getShortName();
+		}
+		return f.getName();
+	}
+	
 	@Override
     public void serialize(BaseRecord value, JsonGenerator jgen, SerializerProvider provider) throws IOException, JsonProcessingException {
     	ModelSchema ltype = RecordFactory.getSchema(value.getModel());
@@ -86,11 +103,9 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
         	}
        		condenseDeclarations = true;
 
-       		jgen.writeStringField(RecordFactory.JSON_MODEL_KEY, value.getModel());
+       		jgen.writeStringField((condenseFields ? RecordFactory.JSON_MODEL_SHORT_KEY : RecordFactory.JSON_MODEL_KEY), value.getModel());
         }
-        // logger.info("*** SERIALIZE " + value.getModel());
         for(FieldType f: value.getFields()) {
-        	// logger.info("*** SERIALIZE FIELD " + f.getName() + " " + f.getValueType().toString());
         	FieldSchema lft = ltype.getFieldSchema(f.getName());
         	if(
         		(filterVirtual && lft.isVirtual())
@@ -116,13 +131,13 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        		if(f.getValue() != null) {
 	        			String lowVal = f.getValue();
 	        			if(!lowVal.equals("UNKNOWN")) {
-	        				jgen.writeStringField(f.getName(), lowVal.toLowerCase());
+	        				jgen.writeStringField(getName(lft), lowVal.toLowerCase());
 	        			}
 	        		}
 	        		break;
         		case STRING:
 	        		if(f.getValue() != null) {
-	        			jgen.writeStringField(f.getName(), f.getValue());
+	        			jgen.writeStringField(getName(lft), f.getValue());
 	        		}
 	        		break;
 	        	case LONG:
@@ -133,37 +148,37 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        		
 	        		long lval = f.getValue();
 	        		if(lval != 0L) {
-	        			jgen.writeNumberField(f.getName(), lval);
+	        			jgen.writeNumberField(getName(lft), lval);
 	        		}
 	        		break;
 	        	case BOOLEAN:
 	        		if(f.getValue() != null) {
-	        			jgen.writeBooleanField(f.getName(), f.getValue());
+	        			jgen.writeBooleanField(getName(lft), f.getValue());
 	        		}
 	        		break;
 	        	case ZONETIME:
 	        		ZonedDateTime zone = f.getValue();
 	        		if(zone != null) {
-	        			jgen.writeStringField(f.getName(), zone.format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
+	        			jgen.writeStringField(getName(lft), zone.format(DateTimeFormatter.ISO_ZONED_DATE_TIME));
 	        		}
 	        		break;
 	        	case TIMESTAMP:
 	        		long ldval = ((Date)f.getValue()).getTime();
 	        		if(ldval != 0L) {
-	        			jgen.writeNumberField(f.getName(), ldval);
+	        			jgen.writeNumberField(getName(lft), ldval);
 	        		}
 	        		break;
 	        	case BLOB:
 	        		byte[] data = f.getValue();
 	        		if(data != null && data.length > 0) {
-	        			jgen.writeBinaryField(f.getName(), data);
+	        			jgen.writeBinaryField(getName(lft), data);
 	        		}
 	        		break;
 	        	case INT:
 	        		if(f.getValue() != null) {
 		        		int ival = f.getValue();
 		        		if(ival != 0) {
-		        			jgen.writeNumberField(f.getName(), ival);
+		        			jgen.writeNumberField(getName(lft), ival);
 		        		}
 	        		}
 	        		break;
@@ -171,7 +186,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        		if(f.getValue() != null) {
 		        		double dval = f.getValue();
 		        		if(dval != 0.0) {
-		        			jgen.writeNumberField(f.getName(), dval);
+		        			jgen.writeNumberField(getName(lft), dval);
 		        		}
 	        		}
 	        		break;
@@ -181,7 +196,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        			boolean directWrite = true;
 		        		if(filterForeign && lft.isForeign() && lft.getBaseType().equals(FieldTypes.TYPE_MODEL) && lft.getBaseModel() != null && lft.getForeignField() != null) {
 	        				String fprop = lft.getForeignField();
-	        				String fkey = f.getName() + FK_SUFFIX;
+	        				String fkey = getName(lft) + FK_SUFFIX;
 	        				BaseRecord rec1 = (BaseRecord) list.get(0);
 	        				FieldType ftype = rec1.getField(fprop);
 	        				if(ftype == null) {
@@ -224,7 +239,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        				condenseDeclarations = false;
 		        				stopCondensing = true;
 		        			}
-		        			jgen.writeArrayFieldStart(f.getName());
+		        			jgen.writeArrayFieldStart(getName(lft));
 		        			for(Object o: list) {
 		        				/// TODO: Add smarter limits on preventing recursion
 		        				/// PLAN: Add an instance level tracker to only allow an object to appear once with all foreign references, and subsequently without
@@ -259,7 +274,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        				}
 
 	        				else {
-		        				String fkey = f.getName() + FK_SUFFIX;
+		        				String fkey = getName(lft) + FK_SUFFIX;
 		        				switch(ftype.getValueType()) {
 		        					case LONG:
 		        						long flval = ftype.getValue();
@@ -294,7 +309,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        					jgen.writeObjectField(f.getName(), o2.copyRecord(ol.toArray(new String[0])));
 	        				}
 	        				else {
-	        					jgen.writeObjectField(f.getName(), mval);
+	        					jgen.writeObjectField(getName(lft), mval);
 	        				}
 	        			}
 	        		}

@@ -79,9 +79,10 @@
 					<excludes>
 						<!--
 						
-						<exclude>**/TestOlio.java</exclude>
+						<exclude>**/TestCondensedModel.java</exclude>
 						-->
 						<!-- Repeatable Set -->
+						<exclude>**/TestOlio.java</exclude>
 						<exclude>**/TestBulkOperation.java</exclude>	
 						<exclude>**/TestNoise.java</exclude>
 						<exclude>**/TestModelLayout.java</exclude>

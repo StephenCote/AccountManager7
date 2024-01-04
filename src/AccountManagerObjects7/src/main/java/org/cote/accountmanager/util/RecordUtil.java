@@ -68,11 +68,11 @@ public class RecordUtil {
 	}
 	
 	public static String toJSONString(BaseRecord rec) {
-		return toJSONString(rec, false);
+		return toJSONString(rec, false, false);
 	}
-	public static String toJSONString(BaseRecord rec, boolean noPrettyPrint) {
+	public static String toJSONString(BaseRecord rec, boolean noPrettyPrint, boolean noQuotes) {
 		sortFields(rec);
-		return JSONUtil.exportObject(rec, RecordSerializerConfig.getUnfilteredModule(), noPrettyPrint);
+		return JSONUtil.exportObject(rec, RecordSerializerConfig.getUnfilteredModule(), noPrettyPrint, noQuotes);
 	}
 	
 	public static String toFullJSONString(BaseRecord rec) {
