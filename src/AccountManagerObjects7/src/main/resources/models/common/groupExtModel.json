@@ -8,7 +8,8 @@
 			"baseProperty": "id",
 			"baseModel": "auth.group",
 			"index": true,
-			"recursive": true
+			"recursive": true,
+			"shortName": "g"
 		},
 		{
 			"name": "groupPath",
@@ -17,7 +18,8 @@
 			"baseModel": "auth.group",
 			"baseProperty": "groupId",
 			"provider": "org.cote.accountmanager.provider.PathProvider",
-			"priority": 1
+			"priority": 1,
+			"shortName": "gp"
 		}
 	]
 }

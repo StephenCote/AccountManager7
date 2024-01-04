@@ -4,6 +4,7 @@
 "fields": [
 	{
 	"name": "order",
-	"type": "int"
+	"type": "int",
+	"shortName": "ord"
 	}
 ]}

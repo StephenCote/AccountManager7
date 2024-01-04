@@ -6,25 +6,30 @@
 "fields": [
 	{
 		"name": "journalDate",
-		"type": "timestamp"
+		"type": "timestamp",
+		"shortName": "jd"
 	},
 	{
 		"name": "version",
-		"type": "double"
+		"type": "double",
+		"shortName": "jv"
 	},
 	{
 		"name": "baseline",
-		"type": "boolean"
+		"type": "boolean",
+		"shortName": "jb"
 	},
 
 	{
 		"name": "modified",
 		"baseModel": "$flex",
-		"type": "model"
+		"type": "model",
+		"shortName": "jm"
 	},
 	{
 		"name": "fields",
 		"type": "list",
-		"baseType": "string"
+		"baseType": "string",
+		"shortName": "jf"
 	}
 ]}

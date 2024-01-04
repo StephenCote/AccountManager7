@@ -36,7 +36,8 @@
 				"roles": {
 					"read": ["AccountUsersReaders"]
 				}
-			}
+			},
+			"shortName": "ci"
 		},
 		{
 			"name": "homeDirectory",
@@ -47,13 +48,15 @@
 				"roles": {
 					"read": ["AccountUsersReaders"]
 				}
-			}
+			},
+			"shortName": "hd"
 		},
 		{
 			"name": "status",
 			"baseClass": "org.cote.accountmanager.schema.type.UserStatusEnumType",
 			"type": "enum",
-			"maxLength": 16
+			"maxLength": 16,
+			"shortName": "stat"
 		},
 		{
 			"name": "type",

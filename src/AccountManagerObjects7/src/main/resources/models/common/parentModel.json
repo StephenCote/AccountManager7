@@ -19,7 +19,8 @@
 			"required": true,
 			"index": true,
 			"default": 0,
-			"recursive": true
+			"recursive": true,
+			"shortName": "pi"
 		}
 	]
 }

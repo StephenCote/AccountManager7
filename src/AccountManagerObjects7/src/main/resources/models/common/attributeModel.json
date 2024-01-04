@@ -6,17 +6,20 @@
 	{
 		"name": "value",
 		"type": "flex",
-		"valueType": "valueType"
+		"valueType": "valueType",
+		"shortName": "v"
 	},
 	{
 		"name": "valueType",
 		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
 		"type": "enum",
-		"maxLength": 16
+		"maxLength": 16,
+		"shortName": "vt"
 	},
 	{
 		"name": "name",
 		"type": "string",
-		"maxLength": 64
+		"maxLength": 64,
+		"shortName": "n"
 	}
 ]}

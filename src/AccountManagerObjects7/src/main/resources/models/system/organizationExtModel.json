@@ -9,14 +9,16 @@
 			"baseModel": "system.organization",
 			"baseProperty": "organizationId",
 			"provider": "org.cote.accountmanager.provider.PathProvider",
-			"priority": 1
+			"priority": 1,
+			"shortName": "op"
 		},
 		{
 			"name": "organizationId",
 			"type": "long",
 			"required": true,
 			"index": true,
-			"dynamicPolicy": false
+			"dynamicPolicy": false,
+			"shortName": "o"
 		}
 	]
 }

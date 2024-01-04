@@ -6,7 +6,8 @@
 			"name": "alignment",
 			"baseClass": "org.cote.accountmanager.olio.AlignmentEnumType",
 			"type": "enum",
-			"maxLength": 32
+			"maxLength": 32,
+			"shortName": "aln"
 		}
 	]
 }

@@ -5,6 +5,7 @@
 	{
 		"name": "description",
 		"type": "string",
-		"maxLength": 512
+		"maxLength": 512,
+		"shortName": "dsc"
 	}
 ]}

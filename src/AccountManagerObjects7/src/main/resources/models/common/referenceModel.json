@@ -6,11 +6,13 @@
 		{
 			"name": "referenceModel",
 			"type": "string",
-			"maxLength": 64
+			"maxLength": 64,
+			"shortName": "rm"
 		},
 		{
 			"name": "referenceId",
-			"type": "long"
+			"type": "long",
+			"shortName": "ri"
 		}
 	]
 }

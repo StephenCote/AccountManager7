@@ -10,7 +10,8 @@
 			"readOnly": true,
 			"private": true,
 			"sequence": true,
-			"primaryKey": true
+			"primaryKey": true,
+			"shortName": "i"
 		}
 	]
 }

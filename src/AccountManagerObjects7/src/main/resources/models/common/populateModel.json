@@ -5,14 +5,16 @@
 		{
 			"name": "populated",
 			"type": "boolean",
-			"ephemeral": true
+			"ephemeral": true,
+			"shortName": "pop"
 		},
 		{
 			"name": "populatedFields",
 			"type": "list",
 			"baseType": "string",
 			"ephemeral": true,
-			"private": true
+			"private": true,
+			"shortName": "popf"
 		}
 	]
 }

@@ -10,6 +10,7 @@
 		"index": true,
 		"allowNull": false,
 		"maxLength":256,
-		"rules": ["$notEmpty"]
+		"rules": ["$notEmpty"],
+		"shortName": "n"
 	}
 ]}

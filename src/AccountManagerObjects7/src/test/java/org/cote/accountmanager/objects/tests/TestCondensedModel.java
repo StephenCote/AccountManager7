@@ -51,6 +51,7 @@ public class TestCondensedModel extends BaseTest {
 			data = ioContext.getFactory().newInstance("condensed", testUser1, null, plist);
 			data.set("condensedName", "Condensed Name " + UUID.randomUUID().toString());
 			data.set("condensedVal", (new Random()).nextInt());
+			ioContext.getAccessPoint().create(testUser1, data);
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException  e) {
 			logger.error(e);
@@ -60,5 +61,10 @@ public class TestCondensedModel extends BaseTest {
 		logger.info(ser);
 		BaseRecord data2 = JSONUtil.importObject(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		assertNotNull("Data is null", data2);
+		logger.info(data2.toFullString());
+		
+		ioContext.getReader().populate(testUser1, 3);
+		logger.info(JSONUtil.exportObject(testUser1, RecordSerializerConfig.getCondensedUnfilteredModule(), false, true));
+		
 	}
 }

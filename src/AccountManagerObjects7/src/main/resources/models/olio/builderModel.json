@@ -37,7 +37,8 @@
 			"baseModel": "olio.schedule",
 			"foreign": true,
 			"participantModel": "buildable.schedule",
-			"description": "Schedule to use for reoccuring builders"
+			"description": "Schedule to use for reoccuring builders",
+			"shortName": "sch"
 		},
 		{
 			"name": "store",
@@ -45,11 +46,13 @@
 			"baseModel": "olio.store",
 			"foreign": true,
 			"participantModel": "buildable.store",
-			"description": "Store where a produced item will be placed"
+			"description": "Store where a produced item will be placed",
+			"shortName": "sto"
 		},
 		{
 			"name": "renewable",
-			"type": "boolean"
+			"type": "boolean",
+			"shortName": "ren"
 		},
 		{
 			"name": "materials",
@@ -57,14 +60,16 @@
 			"baseType": "model",
 			"baseModel": "olio.item",
 			"participantModel": "builder.material",
-			"foreign": true
+			"foreign": true,
+			"shortName": "mat"
 		},
 		{
 			"name": "apparel",
 			"type": "model",
 			"baseModel": "olio.apparel",
 			"description": "Templates to use when building out apparel/wearables",
-			"foreign": true
+			"foreign": true,
+			"shortName": "app"
 		},
 		{
 			"name": "item",
@@ -79,7 +84,8 @@
 			"baseType": "model",
 			"baseModel": "data.trait",
 			"participantModel": "builder.skill",
-			"foreign": true
+			"foreign": true,
+			"shortName": "sk"
 		},
 		{
 			"name": "perks",
@@ -87,7 +93,8 @@
 			"baseType": "model",
 			"baseModel": "data.trait",
 			"participantModel": "builder.perk",
-			"foreign": true
+			"foreign": true,
+			"shortName": "pks"
 		},
 		{
 			"name": "features",
@@ -95,7 +102,8 @@
 			"baseType": "model",
 			"baseModel": "data.trait",
 			"participantModel": "builder.feature",
-			"foreign": true
+			"foreign": true,
+			"shortName": "feat"
 		}
 	]
 }

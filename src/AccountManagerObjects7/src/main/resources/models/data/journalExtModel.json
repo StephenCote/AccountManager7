@@ -8,6 +8,7 @@
 		"baseModel": "data.journal",
 		"foreign": true,
 		"provider": "org.cote.accountmanager.provider.JournalProvider",
-		"priority": 100
+		"priority": 100,
+		"shortName": "jrn"
 	}
 ]}

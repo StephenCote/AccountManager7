@@ -5,27 +5,32 @@
 	{
 		"name": "keyId",
 		"type": "string",
-		"maxLength": 64
+		"maxLength": 64,
+		"shortName": "kid"
 	},
 	{
 		"name": "vaultId",
 		"type": "string",
-		"maxLength": 64
+		"maxLength": 64,
+		"shortName": "vid"
 	},
 	{
 		"name": "vaulted",
-		"type": "boolean"
+		"type": "boolean",
+		"shortName": "vb"
 	},
 	{
 		"name": "vaultedFields",
 		"type": "list",
 		"baseType": "string",
-		"ephemeral": true
+		"ephemeral": true,
+		"shortName": "vf"
 	},
 	{
 		"name": "unvaultedFields",
 		"type": "list",
 		"baseType": "string",
-		"ephemeral": true
+		"ephemeral": true,
+		"shortName": "uf"
 	}
 ]}

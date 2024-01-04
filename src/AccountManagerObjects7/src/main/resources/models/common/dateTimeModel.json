@@ -5,15 +5,18 @@
 	"fields":[
 		{
 			"name": "createdDate",
-			"type": "timestamp"
+			"type": "timestamp",
+			"shortName": "cd"
 		},
 		{
 			"name": "modifiedDate",
-			"type": "timestamp"
+			"type": "timestamp",
+			"shortName": "md"
 		},
 		{
 			"name": "expiryDate",
-			"type": "timestamp"
+			"type": "timestamp",
+			"shortName": "ed"
 		}
 	]
 }

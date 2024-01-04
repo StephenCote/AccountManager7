@@ -28,11 +28,13 @@
 		{
 			"name": "category",
 			"type": "string",
-			"maxLength": 24
+			"maxLength": 24,
+			"shortName": "cat"
 		},
 		{
 			"name": "quantity",
-			"type": "int"
+			"type": "int",
+			"shortName": "quan"
 		},
 		{
 			"name": "age",
@@ -45,7 +47,8 @@
 		{
 			"name": "materials",
 			"type": "list",
-			"baseType": "string"
+			"baseType": "string",
+			"shortName": "mat"
 		},
 		{
 			"name": "perks",
@@ -53,7 +56,8 @@
 			"baseType": "model",
 			"baseModel": "data.trait",
 			"participantModel": "trait.perk",
-			"foreign": true
+			"foreign": true,
+			"shortName": "pks"
 		},
 		{
 			"name": "features",
@@ -61,13 +65,15 @@
 			"baseType": "model",
 			"baseModel": "data.trait",
 			"participantModel": "trait.feature",
-			"foreign": true
+			"foreign": true,
+			"shortName": "feat"
 		},
 		{
 			"name": "statistics",
 			"type": "model",
 			"baseModel": "olio.itemStatistics",
-			"foreign": true
+			"foreign": true,
+			"shortName": "stat"
 		}
 	]
 }

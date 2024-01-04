@@ -8,7 +8,8 @@
 			"baseType": "model",
 			"baseModel": "common.attribute",
 			"referenced": true,
-			"followReference": false
+			"followReference": false,
+			"shortName": "al"
 		}
 	]
 }

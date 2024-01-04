@@ -8,7 +8,8 @@
 			"baseType": "model",
 			"baseModel": "policy.control",
 			"foreign": true,
-			"followReference": false
+			"followReference": false,
+			"shortName": "ctls"
 		}
 	]
 }

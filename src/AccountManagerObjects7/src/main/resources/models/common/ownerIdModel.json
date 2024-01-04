@@ -6,7 +6,8 @@
 			"name": "ownerId",
 			"type": "long",
 			"required": true,
-			"private": true
+			"private": true,
+			"shortName": "ow"
 		}
 	]
 }
