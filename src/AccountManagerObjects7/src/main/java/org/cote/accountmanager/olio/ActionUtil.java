@@ -62,11 +62,12 @@ public class ActionUtil {
 				}
 				acts.add(act);
 				act.set(FieldNames.FIELD_NAME, pairs[0]);
-				
+				if(pairs.length < 2) continue;
 				if(pairs[1].length() > 0) {
 					List<String> ca = act.get("counterActions");
 					ca.addAll(Arrays.asList(pairs[1].split(",")));
 				}
+				if(pairs.length < 12) continue;
 				if(pairs[2].length() > 0) {
 					act.set("minimumTime", Integer.parseInt(pairs[2]));
 				}
