@@ -23,6 +23,7 @@ import org.cote.accountmanager.util.ResourceUtil;
 public class ActionUtil {
 	public static final Logger logger = LogManager.getLogger(ActionUtil.class);
 	
+	/*
 	protected static BaseRecord newAction(OlioContext ctx, String name) {
 		BaseRecord rec = null;
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actions.path"));
@@ -37,7 +38,7 @@ public class ActionUtil {
 		}
 		return rec;
 	}
-	
+	*/
 	public static BaseRecord[] getActions(OlioContext ctx) {
 		return OlioUtil.list(ctx, ModelNames.MODEL_ACTION, "actions");
 	}
@@ -46,27 +47,34 @@ public class ActionUtil {
 		int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
 		if(count == 0) {
 			BaseRecord[] actions = importActions(ctx);
-			IOSystem.getActiveContext().getRecordUtil().createRecords(actions);
+			ctx.processQueue();
 		}
 	}
 	protected static BaseRecord[] importActions(OlioContext ctx) {
 		logger.info("Import default action configuration");
 		List<BaseRecord> acts = JSONUtil.getList(ResourceUtil.getResource("./olio/actions.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		try {
+			
 			for(BaseRecord act : acts) {
-				IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(ctx.getUser(), act, act.get(FieldNames.FIELD_NAME), ctx.getWorld().get("actions.path"), ctx.getUser().get(FieldNames.FIELD_ORGANIZATION_ID));
-				List<BaseRecord> tags = act.get("tags");
+				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actions.path"));
+				plist.parameter(FieldNames.FIELD_NAME, act.get(FieldNames.FIELD_NAME));
+
+				BaseRecord actr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION, ctx.getUser(), act, plist);
+				//IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(ctx.getUser(), act, act.get(FieldNames.FIELD_NAME), ctx.getWorld().get("actions.path"), ctx.getUser().get(FieldNames.FIELD_ORGANIZATION_ID));
+				List<BaseRecord> tags = actr.get("tags");
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
 					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getModel()));
 				}
-				act.set("tags", itags);
+				actr.set("tags", itags);
+				ctx.queue(actr);
 			}
 			
 		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
+		catch(ModelNotFoundException | FieldException | ValueException | FactoryException e) {
 			logger.error(e);
 		}
+
 		/*
 		
 		try {
