@@ -1,10 +1,229 @@
 [
-	"rudimentary shelter::location:false::sticks:::basic survival:4::waterresistance=.2,skill=0.1",
-	"igloo::location:false::snow:::basic survival:8::defensive=.1,insulation=.5,skill=.2",
-	"grass hut::location:false::sticks,grass:::basic survival:8::defensive=.05,insulation=.1,heatresistance=.1,waterresistance=.25,skill=.2",
-	"leather tent::location:false::sticks,leather:::basic survival:8::defensive=.05,insulation=.25,heatresistance=.25,waterresistance=.35,skill=.2",
-	"bone knife::location:false::sticks,bone:knife::basic survival:8::offensive=0.01,skill=.1",
-	"crooked spear::location:false::sticks,bone:spear::basic survival:8::offensive=0.01,skill=.1",
-	"basic sling::location:false::leather:sling::basic survival:8::offensive=0.01,skill=.1",
-	"primitive atlatl::location:false::sticks,leather:atlatl::basic survival:8::offensive=0.01,skill=.3"
+	{
+		"model": "olio.builder",
+		"materials": [
+			{
+				"name": "sticks"
+			}
+		],
+		"name": "rudimentary shelter",
+		"qualities": [
+			{
+				"skill": 0.1,
+				"unit": "us",
+				"waterresistance": 0.2
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 4,
+		"type": "location"
+	},
+	{
+		"materials": [
+			{
+				"name": "snow"
+			}
+		],
+		"name": "igloo",
+		"qualities": [
+			{
+				"defensive": 0.1,
+				"insulation": 0.5,
+				"skill": 0.2,
+				"unit": "us"
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 8,
+		"type": "location"
+	},
+	{
+		"materials": [
+			{
+				"name": "sticks"
+			},
+			{
+				"name": "grass"
+			}
+		],
+		"name": "grass hut",
+		"qualities": [
+			{
+				"defensive": 0.05,
+				"heatresistance": 0.1,
+				"insulation": 0.1,
+				"skill": 0.2,
+				"unit": "us",
+				"waterresistance": 0.25
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 8,
+		"type": "location"
+	},
+	{
+		"materials": [
+			{
+				"name": "sticks"
+			},
+			{
+				"name": "leather"
+			}
+		],
+		"name": "leather tent",
+		"qualities": [
+			{
+				"defensive": 0.05,
+				"heatresistance": 0.25,
+				"insulation": 0.25,
+				"skill": 0.2,
+				"unit": "us",
+				"waterresistance": 0.35
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 8,
+		"type": "location"
+	},
+	{
+		"item": {
+			"name": "knife"
+		},
+		"materials": [
+			{
+				"name": "sticks"
+			},
+			{
+				"name": "bone"
+			}
+		],
+		"name": "bone knife",
+		"qualities": [
+			{
+				"offensive": 0.01,
+				"skill": 0.1,
+				"unit": "us"
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 8,
+		"type": "location"
+	},
+	{
+		"item": {
+			"name": "spear"
+		},
+		"materials": [
+			{
+				"name": "sticks"
+			},
+			{
+				"name": "bone"
+			}
+		],
+		"name": "crooked spear",
+		"qualities": [
+			{
+				"offensive": 0.01,
+				"skill": 0.1,
+				"unit": "us"
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 8,
+		"type": "location"
+	},
+	{
+		"item": {
+			"name": "sling"
+		},
+		"materials": [
+			{
+				"name": "leather"
+			}
+		],
+		"name": "basic sling",
+		"qualities": [
+			{
+				"offensive": 0.01,
+				"skill": 0.1,
+				"unit": "us"
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 8,
+		"type": "location"
+	},
+	{
+		"item": {
+			"name": "atlatl"
+		},
+		"materials": [
+			{
+				"name": "sticks"
+			},
+			{
+				"name": "leather"
+			}
+		],
+		"name": "primitive atlatl",
+		"qualities": [
+			{
+				"offensive": 0.01,
+				"skill": 0.3,
+				"unit": "us"
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 8,
+		"type": "location"
+	}
 ]

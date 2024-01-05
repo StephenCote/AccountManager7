@@ -1,7 +1,0 @@
-[
-	"each verb + state markers is an action definition.  The counter hints are for composing actionResults with opposing actions",
-	"the state markers only indicate whether that value should be used in the computation of the actionResult, and it is up to the specific context and rule to determine how it's used, if at all",
-	"verb:counter1,counter2:minTime:maxTime:energy:[personality]:[instincts]:[statistics]:[state]",
-	"verb:counter1,counter2:minTime:maxTime:energy:[personality]:[!personality]:[instincts]:[!instincts]:[statistics]:[!statistics]:[state]:[!state]",
-	"verb:counter1,counter2:
-]
