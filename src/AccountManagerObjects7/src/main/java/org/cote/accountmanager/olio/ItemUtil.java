@@ -15,6 +15,8 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
@@ -22,6 +24,7 @@ import org.cote.accountmanager.util.ResourceUtil;
 
 public class ItemUtil {
 	public static final Logger logger = LogManager.getLogger(ItemUtil.class);
+	
 	
 	protected static BaseRecord newItem(OlioContext ctx, String name) {
 		BaseRecord rec = null;
@@ -38,6 +41,7 @@ public class ItemUtil {
 		}
 		return rec;
 	}
+
 	
 	public static BaseRecord getItemTemplate(OlioContext ctx, String name) {
 		Query q = OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
@@ -59,7 +63,8 @@ public class ItemUtil {
 		int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
 		if(count == 0) {
 			BaseRecord[] items = importItems(ctx);
-			IOSystem.getActiveContext().getRecordUtil().createRecords(items);
+			ctx.processQueue();
+			//IOSystem.getActiveContext().getRecordUtil().createRecords(items);
 		}
 	}
 	
@@ -67,97 +72,54 @@ public class ItemUtil {
 	/// 
 	protected static BaseRecord[] importItems(OlioContext ctx) {
 		logger.info("Import default item configuration");
-		String[] items = JSONUtil.importObject(ResourceUtil.getResource("./olio/items.json"), String[].class);
-		List<BaseRecord> blds = new ArrayList<>();
+		List<BaseRecord> items = JSONUtil.getList(ResourceUtil.getResource("./olio/items.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		List<BaseRecord> oitems = new ArrayList<>();
 
 		Factory mf = IOSystem.getActiveContext().getFactory();
 
 		try {
-			for(String item : items) {
-				BaseRecord ob = mf.newInstance(ModelNames.MODEL_ITEM, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("items.path")));
-				BaseRecord oq = mf.newInstance(ModelNames.MODEL_QUALITY, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
-				BaseRecord os = mf.newInstance(ModelNames.MODEL_ITEM_STATISTICS, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
-				String[] pairs = item.split(":");
-				if(pairs.length != 11) {
-					logger.error("Unexpected format - expected 10 pairs, found " + pairs.length);
-					logger.error(item);
-					continue;
-				}
-				ob.set(FieldNames.FIELD_NAME, pairs[0]);
-				ob.set("statistics", os);
-				List<BaseRecord> qs = ob.get("qualities");
-				qs.add(oq);
-				if(pairs[1].length() > 0) {
-					ob.set(FieldNames.FIELD_DESCRIPTION, pairs[1]);
-				}
-				ob.set(FieldNames.FIELD_TYPE,  pairs[2]);
-				ob.set("category", pairs[3]);
-				if(pairs[4].length() > 0) {
-					logger.warn("Handle store reference");
-					ob.set("store", null);
-				}
-				if(pairs[5].length() > 0) {
-					List<String> materials = ob.get("materials");
-					materials.addAll(Arrays.asList(pairs[5].split(",")));
-				}
+			for(BaseRecord item : items) {
 				
-				/// 6 = perks
-				if(pairs[6].length() > 0) {
-					String[] skilz = pairs[6].split(",");
-					List<BaseRecord> skills = ob.get("perks");
-					for(String s: skilz) {
-						BaseRecord rmat = OlioUtil.getCreatePerk(ctx, s);
-						skills.add(rmat);
-					}
+				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("items.path"));
+				plist.parameter(FieldNames.FIELD_NAME, item.get(FieldNames.FIELD_NAME));
+				BaseRecord itm = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM, ctx.getUser(), item, plist);
+
+				BaseRecord os = mf.newInstance(ModelNames.MODEL_ITEM_STATISTICS, ctx.getUser(), item.get("statistics"), ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
+				itm.set("statistics", os);
+
+				List<BaseRecord> qs = itm.get("qualities");
+				BaseRecord oq = mf.newInstance(ModelNames.MODEL_QUALITY, ctx.getUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
+				qs.clear();
+				qs.add(oq);
+				
+				List<BaseRecord> tags = itm.get("tags");
+				List<BaseRecord> itags = new ArrayList<>();
+				for(BaseRecord t: tags) {
+					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), item.getModel()));
 				}
-				/// 7 = features
-				if(pairs[7].length() > 0) {
-					String[] skilz = pairs[7].split(",");
-					List<BaseRecord> skills = ob.get("features");
-					for(String s: skilz) {
-						BaseRecord rmat = OlioUtil.getCreateFeature(ctx, s);
-						skills.add(rmat);
-					}
+				itm.set("tags", itags);
+				
+				List<BaseRecord> perks = itm.get("perks");
+				List<BaseRecord> iperks = new ArrayList<>();
+				for(BaseRecord t: perks) {
+					iperks.add(OlioUtil.getCreatePerk(ctx, t.get(FieldNames.FIELD_NAME)));
 				}
-				/// 8 = tags
-				if(pairs[8].length() > 0) {
-					String[] tagz = pairs[8].split(",");
-					List<BaseRecord> tags = ob.get("tags");
-					for(String s: tagz) {
-						BaseRecord rmat = OlioUtil.getCreateTag(ctx, s, ModelNames.MODEL_ITEM);
-						tags.add(rmat);
-					}
+				itm.set("perks", iperks);
+				
+				List<BaseRecord> feats = itm.get("features");
+				List<BaseRecord> ifeats = new ArrayList<>();
+				for(BaseRecord t: feats) {
+					ifeats.add(OlioUtil.getCreateFeature(ctx, t.get(FieldNames.FIELD_NAME)));
 				}
-				/// 9 = stats
-				if(pairs[9].length() > 0) {
-					String[] mats = pairs[9].split(",");
-					for(String m: mats) {
-						String[] mpair = m.split("=");
-						if(mpair.length != 2) {
-							logger.error("Invalid quality pair: " + m);
-							continue;
-						}
-						os.set(mpair[0], Integer.parseInt(mpair[1]));
-					}
-				}
-				/// 10 = qualities
-				if(pairs[10].length() > 0) {
-					String[] mats = pairs[10].split(",");
-					for(String m: mats) {
-						String[] mpair = m.split("=");
-						if(mpair.length != 2) {
-							logger.error("Invalid quality pair: " + m);
-							continue;
-						}
-						oq.set(mpair[0], Double.parseDouble(mpair[1]));
-					}
-				}
-				blds.add(ob);
+				itm.set("features", ifeats);
+
+				ctx.queue(itm);
+				oitems.add(itm);
 			}
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
-		return blds.toArray(new BaseRecord[0]);
+		return oitems.toArray(new BaseRecord[0]);
 	}
 }

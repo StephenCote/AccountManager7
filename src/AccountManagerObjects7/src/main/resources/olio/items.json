@@ -1,8 +1,160 @@
 [
-	"knife:Basic knife template:template:weapon:::Attack Damage::weapon:damage=1,range=0,protection=0:offensive=0.25,skill=0.1",
-	"spear:Basic spear template:template:weapon:::Attack Damage::weapon:damage=3,range=30,protection=0:offensive=0.25,skill=0.1",
-	"sling:Basic sling template:template:weapon:::Attack Damage::weapon:damage=2,range=40,protection=0:offensive=0.25,skill=0.1",
-	"atlatl:Basic atlatl template:template:weapon:::Attack Damage::weapon:damage=2,range=50,protection=0:offensive=0.25,skill=0.1",
-	"murky water:Basic water template:template:liquid:::Quench::water:replenishment=1:skill=0.1",
-	"filthy root:Basic food template:template:food:::Sate::food:replenishment=1:skill=0.1"
+	{
+		"model": "olio.item",
+		"category": "weapon",
+		"description": "Basic knife template",
+		"name": "knife",
+		"perks": [
+			{
+				"name": "Attack Damage"
+			}
+		],
+		"qualities": [
+			{
+				"offensive": 0.25,
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"damage": 1
+		},
+		"tags": [
+			{
+				"name": "weapon"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "weapon",
+		"description": "Basic spear template",
+		"name": "spear",
+		"perks": [
+			{
+				"name": "Attack Damage"
+			}
+		],
+		"qualities": [
+			{
+				"offensive": 0.25,
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"damage": 3,
+			"range": 30
+		},
+		"tags": [
+			{
+				"name": "weapon"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "weapon",
+		"description": "Basic sling template",
+		"name": "sling",
+		"perks": [
+			{
+				"name": "Attack Damage"
+			}
+		],
+		"qualities": [
+			{
+				"offensive": 0.25,
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"damage": 2,
+			"range": 40
+		},
+		"tags": [
+			{
+				"name": "weapon"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "weapon",
+		"description": "Basic atlatl template",
+		"name": "atlatl",
+		"perks": [
+			{
+				"name": "Attack Damage"
+			}
+		],
+		"qualities": [
+			{
+				"offensive": 0.25,
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"damage": 2,
+			"range": 50
+		},
+		"tags": [
+			{
+				"name": "weapon"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "liquid",
+		"description": "Basic water template",
+		"name": "murky water",
+		"perks": [
+			{
+				"name": "Quench"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "water"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "food",
+		"description": "Basic food template",
+		"name": "filthy root",
+		"perks": [
+			{
+				"name": "Sate"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "food"
+			}
+		],
+		"type": "template"
+	}
 ]
