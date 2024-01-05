@@ -39,6 +39,7 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.TimeEnumType;
@@ -89,7 +90,7 @@ public class TestOlio extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				false,
+				true,
 				resetUniverse
 			);
 		
@@ -116,6 +117,17 @@ public class TestOlio extends BaseTest {
 			// MapUtil.printMapFromAdmin2(octx);
 			BaseRecord evt = octx.startOrContinueEpoch();
 			assertNotNull("Epoch is null", evt);
+			try {
+				Query q = QueryUtil.createQuery(ModelNames.MODEL_ACTION, FieldNames.FIELD_GROUP_ID, octx.getWorld().get("actions.id"));
+				q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+				List<BaseRecord> acts = Arrays.asList(ioContext.getSearch().findRecords(q));
+				logger.info("Actions: " + acts.size());
+				//logger.info(JSONUtil.exportObject(acts, RecordSerializerConfig.getCondensedUnfilteredModule()));
+				logger.info(JSONUtil.exportObject(acts, RecordSerializerConfig.getForeignUnfilteredModule()));
+			}
+			catch(Exception e) {
+				logger.error(e);
+			}
 			BaseRecord[] locs = octx.getLocations();
 			for(BaseRecord lrec : locs) {
 				BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
@@ -124,10 +136,15 @@ public class TestOlio extends BaseTest {
 				BaseRecord cevt = octx.startOrContinueIncrement();
 				try {
 					octx.evaluateIncrement();
+
 				}
 				catch(Exception e) {
 					e.printStackTrace();
 				}
+				
+				
+
+				
 				/*
 				List<BaseRecord> lpop = octx.getPopulation(locs[0]);
 				BaseRecord per = lpop.get((new Random()).nextInt(lpop.size()));

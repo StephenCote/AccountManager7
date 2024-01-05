@@ -10,19 +10,22 @@
 			"type": "int",
 			"minValue": 0,
 			"maxValue": 20,
-			"validateRange": true
+			"validateRange": true,
+			"shortName": "hard"
 		},
 		{
 			"name": "minimumTime",
 			"type": "int",
 			"minValue": -1,
-			"description": "Minimum amount of seconds required to perform the action"
+			"description": "Minimum amount of seconds required to perform the action",
+			"shortName": "mint"
 		},
 		{
 			"name": "maximumTime",
 			"type": "int",
 			"minValue": -1,
-			"description": "Maximum amount of seconds to perform the action before becoming counter-productive or futile"
+			"description": "Maximum amount of seconds to perform the action before becoming counter-productive or futile",
+			"shortName": "maxt"
 		},
 		{
 			"name": "minimumEnergyCost",
@@ -30,67 +33,78 @@
 			"minValue": 0,
 			"maxValue": 1,
 			"description": "Minimum amount of energy required to perform the action, expressed as a percentage of maximum available energy",
-			"validateRange": true
+			"validateRange": true,
+			"shortName": "mine"
 		},
 		{
 			"name": "positiveStatistics",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed", "mentalStrength", "mentalEndurance", "intelligence", "wisdom", "charisma", "creativity", "spirituality", "science", "reaction", "save", "magic", "maximumHealth"]
+			"limit": ["physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed", "mentalStrength", "mentalEndurance", "intelligence", "wisdom", "charisma", "creativity", "spirituality", "science", "reaction", "save", "magic", "maximumHealth"],
+			"shortName": "psta"
 		},
 		{
 			"name": "negativeStatistics",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed", "mentalStrength", "mentalEndurance", "intelligence", "wisdom", "charisma", "creativity", "spirituality", "science", "reaction", "save", "magic", "maximumHealth"]
+			"limit": ["physicalStrength", "physicalEndurance", "manualDexterity", "agility", "speed", "mentalStrength", "mentalEndurance", "intelligence", "wisdom", "charisma", "creativity", "spirituality", "science", "reaction", "save", "magic", "maximumHealth"],
+			"shortName": "nsta"
 		},
 		{
 			"name": "positivePersonality",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["open", "conscientious", "extraverted", "agreeable", "neurotic"]
+			"limit": ["open", "conscientious", "extraverted", "agreeable", "neurotic"],
+			"shortName": "pper"
 		},
 		{
 			"name": "negativePersonality",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["open", "conscientious", "extraverted", "agreeable", "neurotic"]
+			"limit": ["open", "conscientious", "extraverted", "agreeable", "neurotic"],
+			"shortName": "nper"
 		},
 		{
 			"name": "positiveStates",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["health", "energy"]
+			"limit": ["health", "energy"],
+			"shortName": "pst"
 		},
 		{
 			"name": "negativeStates",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["health", "energy"]
+			"limit": ["health", "energy"],
+			"shortName": "nst"
 		},
 		{
 			"name": "positiveInstincts",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
+			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"],
+			"shortName": "pi"
 		},
 		{
 			"name": "negativeInstincts",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"]
+			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"],
+			"shortName": "ni"
 		},
 		{
 			"name": "counterActions",
 			"type": "list",
-			"baseType": "string"
+			"baseType": "string",
+			"shortName": "ca"
 		},
 		{
 			"name": "requiredSkills",
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "data.trait",
-			"foreign": true
+			"foreign": true,
+			"shortName": "rs"
 		}
 	]
 }

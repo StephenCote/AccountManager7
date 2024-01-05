@@ -31,38 +31,44 @@
 			"type": "model",
 			"baseModel": "olio.store",
 			"foreign": true,
-			"participantModel": "person.store"
+			"participantModel": "person.store",
+			"shortName": "sto"
 		},
 
 		{
 			"name": "statistics",
 			"type": "model",
 			"baseModel": "olio.charStatistics",
-			"foreign": true
+			"foreign": true,
+			"shortName": "sta"
 		},
 		{
 			"name": "instinct",
 			"type": "model",
 			"baseModel": "olio.instinct",
-			"foreign": true
+			"foreign": true,
+			"shortName": "inst"
 		},
 		{
 			"name": "behavior",
 			"type": "model",
 			"baseModel": "olio.behavior",
-			"foreign": true
+			"foreign": true,
+			"shortName": "beh"
 		},
 		{
 			"name": "personality",
 			"type": "model",
 			"baseModel": "olio.personality",
-			"foreign": true
+			"foreign": true,
+			"shortName": "per"
 		},
 		{
 			"name": "state",
 			"type": "model",
 			"baseModel": "olio.state",
-			"foreign": true
+			"foreign": true,
+			"shortName": "st"
 		}
 	]
 }

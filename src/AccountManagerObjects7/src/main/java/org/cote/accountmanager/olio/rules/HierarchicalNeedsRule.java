@@ -38,7 +38,7 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 		List<BaseRecord> party = (partyPlay ? NeedsUtil.getCreateParty(context, locationEpoch) : context.getPopulation(locationEpoch.get("location")));
 		for(BaseRecord p: party) {
 			PersonalityProfile prof = PersonalityUtil.getProfile(context, p);
-			logger.info(JSONUtil.exportObject(prof));
+			// logger.info(JSONUtil.exportObject(prof));
 		}
 
 	}

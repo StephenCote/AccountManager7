@@ -32,13 +32,15 @@
 			"name": "timeType",
 			"baseClass": "org.cote.accountmanager.schema.type.TimeEnumType",
 			"type": "enum",
-			"maxLength": 32
+			"maxLength": 32,
+			"shortName": "tt"
 		},
 		{
 			"name": "state",
 			"baseClass": "org.cote.accountmanager.schema.type.ActionResultEnumType",
 			"type": "enum",
-			"maxLength": 32
+			"maxLength": 32,
+			"shortName": "st"
 		},
 		{
 			"name": "entryTraits",
@@ -46,7 +48,8 @@
 			"baseType": "model",
 			"baseModel": "data.trait",
 			"foreign": true,
-			"participantModel": "event.entryTrait"
+			"participantModel": "event.entryTrait",
+			"shortName": "et"
 		},
 		{
 			"name": "exitTraits",
@@ -54,7 +57,8 @@
 			"baseType": "model",
 			"baseModel": "data.trait",
 			"foreign": true,
-			"participantModel": "event.exitTrait"
+			"participantModel": "event.exitTrait",
+			"shortName": "xt"
 		},
 		{
 			"name": "actors",
@@ -62,7 +66,8 @@
 			"baseType": "model",
 			"baseModel": "olio.charPerson",
 			"foreign": true,
-			"participantModel": "event.actor"
+			"participantModel": "event.actor",
+			"shortName": "as"
 		},
 		{
 			"name": "participants",
@@ -70,7 +75,8 @@
 			"baseType": "model",
 			"baseModel": "olio.charPerson",
 			"foreign": true,
-			"participantModel": "event.participant"
+			"participantModel": "event.participant",
+			"shortName": "ps"
 		},
 		{
 			"name": "observers",
@@ -78,7 +84,8 @@
 			"baseType": "model",
 			"baseModel": "olio.charPerson",
 			"foreign": true,
-			"participantModel": "event.observer"
+			"participantModel": "event.observer",
+			"shortName": "os"
 		},
 		{
 			"name": "influencers",
@@ -86,29 +93,35 @@
 			"baseType": "model",
 			"baseModel": "olio.charPerson",
 			"foreign": true,
-			"participantModel": "event.influencer"
+			"participantModel": "event.influencer",
+			"shortName": "is"
 		},
 		{
 			"name": "location",
 			"type": "model",
 			"baseModel": "data.geoLocation",
-			"foreign": true
+			"foreign": true,
+			"shortName": "loc"
 		},
 		{
 			"name": "eventStart",
-			"type": "zonetime"
+			"type": "zonetime",
+			"shortName": "es"
 		},
 		{
 			"name": "eventProgress",
-			"type": "zonetime"
+			"type": "zonetime",
+			"shortName": "ep"
 		},
 		{
 			"name": "inProgress",
-			"type": "boolean"
+			"type": "boolean",
+			"shortName": "ip"
 		},
 		{
 			"name": "eventEnd",
-			"type": "zonetime"
+			"type": "zonetime",
+			"shortName": "ee"
 		},
 		{
 			"name": "precedingEvents",
@@ -116,7 +129,8 @@
 			"baseType": "model",
 			"baseModel": "olio.event",
 			"foreign": true,
-			"participantModel": "event.preceding"
+			"participantModel": "event.preceding",
+			"shortName": "pe"
 		},
 		{
 			"name": "subsequentEvents",
@@ -124,13 +138,15 @@
 			"baseType": "model",
 			"baseModel": "olio.event",
 			"foreign": true,
-			"participantModel": "event.subsequent"
+			"participantModel": "event.subsequent",
+			"shortName": "se"
 		},
 		{
 			"name": "behavior",
 			"type": "model",
 			"baseModel": "olio.behavior",
-			"foreign": true
+			"foreign": true,
+			"shortName": "be"
 		},
 		{
 			"name": "groups",
@@ -138,7 +154,8 @@
 			"baseType": "model",
 			"baseModel": "auth.group",
 			"foreign": true,
-			"participantModel": "event.group"
+			"participantModel": "event.group",
+			"shortName": "gps"
 		},
 		{
 			"name": "actions",
@@ -146,7 +163,8 @@
 			"baseType": "model",
 			"baseModel": "olio.actionResult",
 			"foreign": true,
-			"participantModel": "action.result"
+			"participantModel": "action.result",
+			"shortName": "acts"
 		},
 		{
 			"name": "epoch",

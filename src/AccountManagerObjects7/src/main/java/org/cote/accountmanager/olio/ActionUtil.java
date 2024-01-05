@@ -13,6 +13,8 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
@@ -49,8 +51,24 @@ public class ActionUtil {
 	}
 	protected static BaseRecord[] importActions(OlioContext ctx) {
 		logger.info("Import default action configuration");
-		String[] builders = JSONUtil.importObject(ResourceUtil.getResource("./olio/actions.json"), String[].class);
-		List<BaseRecord> acts = new ArrayList<>();
+		List<BaseRecord> acts = JSONUtil.getList(ResourceUtil.getResource("./olio/actions.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		try {
+			for(BaseRecord act : acts) {
+				IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(ctx.getUser(), act, act.get(FieldNames.FIELD_NAME), ctx.getWorld().get("actions.path"), ctx.getUser().get(FieldNames.FIELD_ORGANIZATION_ID));
+				List<BaseRecord> tags = act.get("tags");
+				List<BaseRecord> itags = new ArrayList<>();
+				for(BaseRecord t: tags) {
+					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getModel()));
+				}
+				act.set("tags", itags);
+			}
+			
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		/*
+		
 		try {
 			for(String build : builders) {
 				BaseRecord act = newAction(ctx, null);
@@ -130,6 +148,7 @@ public class ActionUtil {
 		catch(FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+		*/
 		return acts.toArray(new BaseRecord[0]);
 	}
 	

@@ -1,18 +1,174 @@
 [
-	"hunt:wait,gather:3600::.1:openness,conscientiousness,extraversion::fight:cry:physicalStrength,physicalEndurance,agility,dexterity,speed,reaction::health,energy:",
-	"gather:wait,hunt:3600::.1:openness,conscientiousness,extraversion::herd,cooperate,adapt::physicalEndurance,mentalStrength,dexterity,wisdom,science::health,energy:",
-	"wait::60::0:agreeableness,neuroticism::cry,protect,resist,mate:flight:mentalEndurance,intelligence::health,energy:",
-	"prepare::3600::1:conscientiousness,extraversion,agreeableness,neuroticism::::mentalStrength,mentalEndurance,intelligence::health:energy",
-	"shelter::3600:::neuroticism,conscientiousness::mate,hygiene,protect:flight:::health:",
-	"build",
-	"fight:defend,flee",
-	"flee",
-	"defend:fight",
-	"scout:wander",
-	"navigate:wander",
-	"wander",
-	"sleep::::health,energy",
-	"eat::::health,energy",
-	"drink::::health,energy"
-
+	{
+		"model": "olio.action",
+		"counterActions": [
+			"wait",
+			"gather"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 3600,
+		"name": "hunt",
+		"negativeInstincts": [
+			"cry"
+		],
+		"positiveInstincts": [
+			"fight"
+		],
+		"positivePersonality": [
+			"openness",
+			"conscientiousness",
+			"extraversion"
+		],
+		"positiveStates": [
+			"health",
+			"energy"
+		],
+		"positiveStatistics": [
+			"physicalStrength",
+			"physicalEndurance",
+			"agility",
+			"dexterity",
+			"speed",
+			"reaction"
+		]
+	},
+	{
+		"counterActions": [
+			"wait",
+			"hunt"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 3600,
+		"name": "gather",
+		"positiveInstincts": [
+			"herd",
+			"cooperate",
+			"adapt"
+		],
+		"positivePersonality": [
+			"openness",
+			"conscientiousness",
+			"extraversion"
+		],
+		"positiveStates": [
+			"health",
+			"energy"
+		],
+		"positiveStatistics": [
+			"physicalEndurance",
+			"mentalStrength",
+			"dexterity",
+			"wisdom",
+			"science"
+		]
+	},
+	{
+		"minimumTime": 60,
+		"name": "wait",
+		"negativeInstincts": [
+			"flight"
+		],
+		"positiveInstincts": [
+			"cry",
+			"protect",
+			"resist",
+			"mate"
+		],
+		"positivePersonality": [
+			"agreeableness",
+			"neuroticism"
+		],
+		"positiveStates": [
+			"health",
+			"energy"
+		],
+		"positiveStatistics": [
+			"mentalEndurance",
+			"intelligence"
+		]
+	},
+	{
+		"minimumEnergyCost": 1.0,
+		"minimumTime": 3600,
+		"name": "prepare",
+		"negativeStates": [
+			"energy"
+		],
+		"positivePersonality": [
+			"conscientiousness",
+			"extraversion",
+			"agreeableness",
+			"neuroticism"
+		],
+		"positiveStates": [
+			"health"
+		],
+		"positiveStatistics": [
+			"mentalStrength",
+			"mentalEndurance",
+			"intelligence"
+		]
+	},
+	{
+		"minimumTime": 3600,
+		"name": "shelter",
+		"negativeInstincts": [
+			"flight"
+		],
+		"positiveInstincts": [
+			"mate",
+			"hygiene",
+			"protect"
+		],
+		"positivePersonality": [
+			"neuroticism",
+			"conscientiousness"
+		],
+		"positiveStates": [
+			"health"
+		]
+	},
+	{
+		"name": "build"
+	},
+	{
+		"counterActions": [
+			"defend",
+			"flee"
+		],
+		"name": "fight"
+	},
+	{
+		"name": "flee"
+	},
+	{
+		"counterActions": [
+			"fight"
+		],
+		"name": "defend"
+	},
+	{
+		"counterActions": [
+			"wander"
+		],
+		"name": "scout"
+	},
+	{
+		"counterActions": [
+			"wander"
+		],
+		"name": "navigate"
+	},
+	{
+		"name": "wander"
+	},
+	{
+		"name": "sleep"
+	},
+	{
+		"name": "eat"
+	},
+	{
+		"name": "drink"
+	}
 ]
