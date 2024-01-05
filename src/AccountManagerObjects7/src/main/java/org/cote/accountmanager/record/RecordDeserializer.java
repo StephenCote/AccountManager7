@@ -11,6 +11,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -49,11 +50,13 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     private ObjectMapper mapper = new ObjectMapper();
     
     public static final Logger logger = LogManager.getLogger(RecordDeserializer.class);
-    // private IReader reader = null;
-    private boolean accessForeignKey = false;
+
     private String[] fkImportFields = null;
     private NodeLink currentNode = null;
-    private String lastModel = null;
+	private boolean accessForeignKey = false;
+	private boolean trace = false;
+	private int level = 0;
+    private Map<Integer, String> lastModel = new ConcurrentHashMap<>();
     private boolean condensedFields = false;
     private boolean detectCondensedFields = true;
     
@@ -65,10 +68,13 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     	mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
     }
 
-    
-    
-    
-    public boolean isCondensedFields() {
+    public boolean isTrace() {
+		return trace;
+	}
+	public void setTrace(boolean trace) {
+		this.trace = trace;
+	}
+	public boolean isCondensedFields() {
 		return condensedFields;
 	}
 	public void setCondensedFields(boolean condensedFields) {
@@ -132,12 +138,14 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 	@Override
     public T deserialize(JsonParser jsonParser, DeserializationContext context) throws IOException, JsonProcessingException
     {
+		
         JsonNode node = jsonParser.getCodec().readTree(jsonParser);
         String modelName = null;
         if(node.has(RecordFactory.JSON_MODEL_KEY)) {
         	modelName = node.get(RecordFactory.JSON_MODEL_KEY).asText();
         }
         else if((detectCondensedFields || condensedFields) && node.has(RecordFactory.JSON_MODEL_SHORT_KEY)) {
+        	logger.warn("Deserializing by condensed fields");
         	modelName = node.get(RecordFactory.JSON_MODEL_SHORT_KEY).asText();
         	condensedFields = true;
         }
@@ -145,8 +153,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         	modelName = findModel(jsonParser, node, currentNode);
         }
         if(modelName == null) {
-        	if(lastModel != null) {
-        		modelName = lastModel;
+        	if(lastModel.containsKey(level)) {
+        		modelName = lastModel.get(level);
+            	if(trace) {
+            		logger.info("Adopting last model: " + level + " " + lastModel.get(level));
+            	}
+
         	}
         	else {
 	        	logger.error("Invalid model name");
@@ -160,7 +172,11 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         	}
         }
         else {
-        	lastModel = modelName;
+        	lastModel.put(level, modelName);
+        	
+        	if(trace) {
+        		logger.info("Assigning last model: " + level + " " + lastModel.get(level));
+        	}
         }
         if(modelName.equals(ModelNames.MODEL_SELF) || modelName.equals(ModelNames.MODEL_FLEX)) {
         	logger.error("Unresolved " + modelName +" reference");
@@ -168,7 +184,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     		logger.error(JSONUtil.exportObject(currentNode));
     		return null;
         }
-
+        
         ModelSchema ltype = RecordFactory.getSchema(modelName);
         List<FieldType> fields = new CopyOnWriteArrayList<>();
         BaseRecord type = null;
@@ -193,6 +209,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         Map<String, JsonNode> foreignFlex = new HashMap<>();
         Map<String, JsonNode> fieldFlex = new HashMap<>();
         
+        level++;
         while(pairs.hasNext()) {
         	Map.Entry<String, JsonNode> entry = pairs.next();
         	String fname = entry.getKey();
@@ -214,7 +231,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
          	}
         	FieldType ifld = type.getField(fname);
         	if(ifld == null) {
-        		logger.error("Invalid field: " + fname);
+        		logger.error("Invalid field: " + modelName + "." + fname);
         	}
         	else {
         		FieldType fld = null;
@@ -310,9 +327,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 			} catch (ValueException | IOException e) {
 				logger.error(e);
 			}
-        	
         }
         currentNode = lastNode;
+        level--;
         if(errors > 0) {
         	return null;
         }
