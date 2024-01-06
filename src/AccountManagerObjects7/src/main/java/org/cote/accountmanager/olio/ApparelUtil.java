@@ -18,10 +18,12 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
@@ -62,6 +64,44 @@ public class ApparelUtil {
 	private static int colorDeckSize = 100;
 	private static String[] colorDeck = new String[0];
 	private static Map<String, String> colorComplements = new HashMap<>();
+	
+	protected static BaseRecord getApparelTemplate(OlioContext ctx, String name) {
+		return getCreateApparel(ctx, name, "template", null);
+	}
+	
+	protected static BaseRecord newApparel(OlioContext ctx, String name, String type, String cat) {
+		BaseRecord rec = null;
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("apparel.path"));
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		try {
+			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_APPAREL, ctx.getUser(), null, plist);
+			rec.set(FieldNames.FIELD_TYPE, type);
+			rec.set("category", cat);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+		}
+		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return rec;
+	}
+	protected static BaseRecord getCreateApparel(OlioContext ctx, String name, String type, String cat) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_APPAREL, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("apparel.id"));
+		q.field(FieldNames.FIELD_NAME, name);
+		if(type != null) {
+			q.field(FieldNames.FIELD_TYPE, type);
+		}
+		if(cat != null) {
+			q.field("category", cat);
+		}		
+		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if(rec == null) {
+			rec = newApparel(ctx, name, type, cat);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+		}
+		return rec;
+		
+	}
+
 	
 	public static String randomWearable(int level, String location, String gender) {
 		return randomWearable(clothingTypes, level, location, gender);

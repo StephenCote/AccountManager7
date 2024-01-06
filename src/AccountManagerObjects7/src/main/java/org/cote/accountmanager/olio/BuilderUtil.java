@@ -26,18 +26,22 @@ public class BuilderUtil {
 	public static final Logger logger = LogManager.getLogger(BuilderUtil.class);
 	
 
-	
-	protected static BaseRecord getCreateRawMaterial(OlioContext ctx, String name) {
+	protected static BaseRecord getCreateRawMaterial(OlioContext ctx, String name, String type, String cat) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("items.id"));
 		q.field(FieldNames.FIELD_NAME, name);
-		q.field(FieldNames.FIELD_TYPE, "template");
-		q.field("category", "raw material");
+		if(type != null) {
+			q.field(FieldNames.FIELD_TYPE, type);
+		}
+		if(cat != null) {
+			q.field("category", cat);
+		}
+
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(rec == null) {
 			rec = ItemUtil.newItem(ctx, name);
 			try {
-				rec.set(FieldNames.FIELD_TYPE, "template");
-				rec.set("category", "raw material");
+				rec.set(FieldNames.FIELD_TYPE, type);
+				rec.set("category", cat);
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
@@ -76,6 +80,11 @@ public class BuilderUtil {
 				if(itm != null) {
 					bld.set("item", ItemUtil.getItemTemplate(ctx, itm.get(FieldNames.FIELD_NAME)));
 				}
+				
+				BaseRecord app = bld.get("apparel");
+				if(app != null) {
+					bld.set("apparel", ApparelUtil.getApparelTemplate(ctx, app.get(FieldNames.FIELD_NAME)));
+				}
 
 				List<BaseRecord> qs = bld.get("qualities");
 				BaseRecord oq = mf.newInstance(ModelNames.MODEL_QUALITY, ctx.getUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
@@ -99,7 +108,7 @@ public class BuilderUtil {
 				List<BaseRecord> mats = bld.get("materials");
 				List<BaseRecord> imats = new ArrayList<>();
 				for(BaseRecord t: mats) {
-					imats.add(getCreateRawMaterial(ctx, t.get(FieldNames.FIELD_NAME)));
+					imats.add(getCreateRawMaterial(ctx, t.get(FieldNames.FIELD_NAME), "template", "raw material"));
 				}
 				bld.set("materials", imats);
 				

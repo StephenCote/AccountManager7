@@ -23,6 +23,12 @@
 			"description": "The type this apparel is supposed to represent, such as a suit, casual outfit, etc"
 		},
 		{
+			"name": "category",
+			"type": "string",
+			"maxLength": 24,
+			"shortName": "cat"
+		},
+		{
 			"name": "gender",
 			"type": "string",
 			"maxLength": 6,
