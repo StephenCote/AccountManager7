@@ -21,17 +21,18 @@ Context Rules (IOlioContextRule):
 	- Rules evaluated during context initialization and setup.  This allows for creating custom locations or picking locations from any loaded world data.
 Evolution Rules (IOlioEvolutionRule):
 	- Rules evaluated during evolution cycles. This will allow for tailoring the progression over a particular event.
-
-
 	- There currently isn't the concept of civilizations or countries
 	- Rather, there are populations of people in locations, associated with an initial location. 
- 
+
+Rule Evaluation:
+Where the original data generator created generic life events on a monthly basis, the new version is meant to configurable, allowing to use whichever rules are desired.
+   
 	
 Locations and Mapping
 Locations can use global geolocation data with correct latitudes, longitudes, and names,
 or generated locations to use the Military Grid Reference System (MGRS)
 
-Terrain blasting and walking is used to create the semblance of a landscape
+Terrain blasting and walking is used to create the semblance of a landscape, though the results won't be very realistic since there's zero attention paid to elevation, weather, etc.
 
 NEW METRICS
 

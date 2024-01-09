@@ -281,7 +281,7 @@ public class WorldUtil {
 				}
 				else {
 					logger.info("Construct region: " + locName);
-					BaseRecord popEvent = populateRegion(ctx.getUser(), world, loc, root, ctx.getConfig().getBasePopulationCount());
+					BaseRecord popEvent = populateRegion(ctx, loc, root, ctx.getConfig().getBasePopulationCount());
 					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					events.add(popEvent);
 					event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
@@ -316,26 +316,27 @@ public class WorldUtil {
 		return root;
 	}
 
-	
-	public static BaseRecord populateRegion(BaseRecord user, BaseRecord world, BaseRecord location, BaseRecord rootEvent, int popCount){
+	/// TODO - drop the superfluous parameters
+	///
+	public static BaseRecord populateRegion(OlioContext ctx, BaseRecord location, BaseRecord rootEvent, int popCount){
 
 		long totalAge = 0L;
 		String locName = location.get(FieldNames.FIELD_NAME);
 		logger.info("Populating " + locName + " with " + popCount + " people");
 		long start = System.currentTimeMillis();
 		BaseRecord event = null;
-		BaseRecord parWorld = world.get("basis");
+		BaseRecord parWorld = ctx.getWorld().get("basis");
 		if(parWorld == null) {
 			logger.error("A basis world is required");
 			return null;
 		}
 		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
 		try {
-			BaseRecord popDir = world.get("population");
-			BaseRecord evtDir = world.get("events");
+			BaseRecord popDir = ctx.getWorld().get("population");
+			BaseRecord evtDir = ctx.getWorld().get("events");
 			
 			ParameterList plist = ParameterList.newParameterList("path", evtDir.get(FieldNames.FIELD_PATH));
-			event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, plist);
+			event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
 			event.set(FieldNames.FIELD_LOCATION, location);
 			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
 			event.set(FieldNames.FIELD_NAME, "Populate " + locName);
@@ -345,9 +346,9 @@ public class WorldUtil {
 			event.set("eventEnd", rootEvent.get("eventEnd"));
 
 			List<BaseRecord> grps = event.get(FieldNames.FIELD_GROUPS);
-			BaseRecord popGrp = OlioUtil.newRegionGroup(user, popDir, locName + " Population");
+			BaseRecord popGrp = OlioUtil.newRegionGroup(ctx.getUser(), popDir, locName + " Population");
 			grps.add(popGrp);
-			grps.add(OlioUtil.newRegionGroup(user, popDir, locName + " Cemetary"));
+			grps.add(OlioUtil.newRegionGroup(ctx.getUser(), popDir, locName + " Cemetary"));
 			
 			/*
 			for(String name : leaderPopulation){
@@ -367,7 +368,7 @@ public class WorldUtil {
 				int totalAbsoluteAlignment = 0;
 				ZonedDateTime now = ZonedDateTime.now();
 
-				Decks.shuffleDecks(user, parWorld);
+				Decks.shuffleDecks(ctx.getUser(), parWorld);
 				if(Decks.maleNamesDeck.length == 0 || Decks.femaleNamesDeck.length == 0 || Decks.surnameNamesDeck.length == 0 || Decks.occupationsDeck.length == 0) {
 					logger.error("Empty names");
 				}
@@ -375,7 +376,8 @@ public class WorldUtil {
 				logger.info("Creating population of " + popCount);
 
 				for(int i = 0; i < popCount; i++){
-					BaseRecord person = CharacterUtil.randomPerson(user, world, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
+					BaseRecord person = CharacterUtil.randomPerson(ctx.getUser(), ctx.getWorld(), null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
+					AddressUtil.simpleAddressPerson(ctx, location, person);
 					/// AddressUtil.addressPerson(user, world, person, location);
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
@@ -400,7 +402,7 @@ public class WorldUtil {
 				logger.info("Creating event memberships");
 				List<BaseRecord> parts = new ArrayList<>();
 				for(BaseRecord rec : actors) {
-					parts.add(ParticipationFactory.newParticipation(user, popGrp, null, rec));
+					parts.add(ParticipationFactory.newParticipation(ctx.getUser(), popGrp, null, rec));
 				}
 				IOSystem.getActiveContext().getRecordUtil().updateRecords(parts.toArray(new BaseRecord[0]));
 				int eventAlignment = (totalAbsoluteAlignment / popCount) - 4;
@@ -477,6 +479,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ITEM, (long)world.get("items.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ITEM_STATISTICS, (long)world.get("statistics.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_TAG, (long)world.get("tagsGroup.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_ANIMAL, (long)world.get("animals.id"), orgId);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");
 		RecordFactory.cleanupOrphans(null);

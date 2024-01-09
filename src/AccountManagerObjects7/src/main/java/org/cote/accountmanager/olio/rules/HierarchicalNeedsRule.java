@@ -35,10 +35,11 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 	public void evaluateIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment) {
 		// TODO Auto-generated method stub
 		logger.info("Evaluate " + locationEpoch.get(FieldNames.FIELD_NAME) + " " + increment.get(FieldNames.FIELD_NAME));
+		logger.info(increment.toFullString());
 		List<BaseRecord> party = (partyPlay ? NeedsUtil.getCreateParty(context, locationEpoch) : context.getPopulation(locationEpoch.get("location")));
 		for(BaseRecord p: party) {
 			PersonalityProfile prof = PersonalityUtil.getProfile(context, p);
-			// logger.info(JSONUtil.exportObject(prof));
+			//logger.info(JSONUtil.exportObject(prof));
 		}
 
 	}

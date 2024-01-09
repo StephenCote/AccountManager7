@@ -82,14 +82,14 @@
 			"name": "positiveInstincts",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"],
+			"limit": ["sleep", "fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"],
 			"shortName": "pi"
 		},
 		{
 			"name": "negativeInstincts",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"],
+			"limit": ["sleep", "fight", "flight", "feed", "drink", "mate", "herd", "hygiene", "cooperate", "resist", "adapt", "laugh", "cry", "protect"],
 			"shortName": "ni"
 		},
 		{

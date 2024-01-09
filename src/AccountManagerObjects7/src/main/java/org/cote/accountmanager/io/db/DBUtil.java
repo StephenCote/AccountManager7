@@ -335,7 +335,8 @@ public class DBUtil {
 		*/
 		String tableName = getTableName(baseSchema, schema.getName());
 		buff.append("DROP TABLE IF EXISTS " + tableName + " CASCADE;\n");
-
+		RecordUtil.sortFields(schema);
+		
 		for(FieldSchema f : schema.getFields()) {
 			if(f.isVirtual() || f.isEphemeral()) {
 				continue;

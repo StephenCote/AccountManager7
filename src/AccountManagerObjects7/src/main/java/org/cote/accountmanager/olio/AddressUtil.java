@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -20,6 +21,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ContactEnumType;
+import org.cote.accountmanager.schema.type.ContactInformationEnumType;
 import org.cote.accountmanager.schema.type.LocationEnumType;
 
 public class AddressUtil {
@@ -35,9 +37,37 @@ public class AddressUtil {
 	protected static final String[] STREET_TYPE_BASE = new String[]{"","","","Avenue","Street","Drive","Circle","Court","Place","Terrace","Highway","Pike","Boulevard","Alley","Bend","Gardens","Gate","Grove","Heights","Lane","Trail","Vale","Way","Cove","Park","Plaza","Ridge","Hill","Canyon","Loop","Circle","Road","View"};
 	private static int randomStreetSeed = 1000;
 	
+	protected static BaseRecord simpleAddressPerson(OlioContext ctx, BaseRecord location, BaseRecord person) {
+		/// IOSystem.getActiveContext().getReader().populate(person, new String[] {FieldNames.FIELD_CONTACT_INFORMATION});
+		/// person.get(FieldNames.FIELD_CONTACT_INFORMATION);
+		BaseRecord cit = null;
+		try {
+			// if(cit == null) {
+				cit = RecordFactory.newInstance(ModelNames.MODEL_CONTACT_INFORMATION);
+				cit.set("contactInformationType", ContactInformationEnumType.PERSON);
+				cit.set(FieldNames.FIELD_REFERENCE_ID, person.get(FieldNames.FIELD_ID));
+				cit.set(FieldNames.FIELD_REFERENCE_TYPE, person.getModel());
+				IOSystem.getActiveContext().getRecordUtil().applyOwnership(ctx.getUser(), cit, ctx.getUser().get(FieldNames.FIELD_ORGANIZATION_ID));
+				List<BaseRecord> addrs = cit.get("addresses");
+				BaseRecord addr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ADDRESS, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("addresses.path")));
+				addr.set(FieldNames.FIELD_NAME, UUID.randomUUID().toString());
+				addr.set("location", location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
+				addr.set("locationType", LocationEnumType.OTHER);
+				addr.set("preferred", true);
+				addrs.add(addr);
+				//IOSystem.getActiveContext().getRecordUtil().createRecord(cit);
+				person.set(FieldNames.FIELD_CONTACT_INFORMATION, cit);
+			// }
+		}
+		catch(ModelNotFoundException | FieldException | ValueException | FactoryException e) {
+			logger.error(e);
+		}
+		return cit;
+	}
+	
 	/// Returns an array of objects related to the address
 	///
-	public static BaseRecord[] addressPerson(BaseRecord user, BaseRecord world, BaseRecord person, BaseRecord location) {
+	protected static BaseRecord[] randomAddressPerson(BaseRecord user, BaseRecord world, BaseRecord person, BaseRecord location) {
 		List<BaseRecord> objs = new ArrayList<>();
 		if(location == null) {
 			location = GeoLocationUtil.randomLocation(user, world);

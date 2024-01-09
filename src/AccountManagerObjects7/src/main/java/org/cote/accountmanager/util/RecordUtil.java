@@ -113,7 +113,11 @@ public class RecordUtil {
 	public static boolean isEqual(BaseRecord rec, BaseRecord rec2) {
 		return hash(rec).equals(hash(rec2));
 	}
-	
+	public static void sortFields(ModelSchema schema) {
+		if(schema != null) {
+			schema.getFields().sort((f1, f2) -> f1.getName().compareTo(f2.getName()));
+		}
+	}
 	public static void sortFields(BaseRecord rec) {
 		if(rec != null) {
 			rec.getFields().sort((f1, f2) -> f1.getName().compareTo(f2.getName()));

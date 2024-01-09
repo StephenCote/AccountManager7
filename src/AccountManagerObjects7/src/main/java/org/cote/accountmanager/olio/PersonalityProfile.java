@@ -42,6 +42,7 @@ public class PersonalityProfile {
 	private HighEnumType maximumHealth = HighEnumType.DISREGARDED;
 	private HighEnumType luck = HighEnumType.DISREGARDED;
 	
+	private InstinctEnumType sleep = InstinctEnumType.STASIS;
 	private InstinctEnumType fight = InstinctEnumType.STASIS;
 	private InstinctEnumType flight = InstinctEnumType.STASIS;
 	private InstinctEnumType feed = InstinctEnumType.STASIS;
@@ -95,6 +96,14 @@ public class PersonalityProfile {
 		
 	}
 	
+	public InstinctEnumType getSleep() {
+		return sleep;
+	}
+
+	public void setSleep(InstinctEnumType sleep) {
+		this.sleep = sleep;
+	}
+
 	public InstinctEnumType getFight() {
 		return fight;
 	}

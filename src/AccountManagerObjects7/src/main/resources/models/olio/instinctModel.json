@@ -14,6 +14,13 @@
 	"label": "Instinct",
 	"fields": [
 		{
+			"name": "sleep",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
 			"name": "fight",
 			"type": "double",
 			"minValue": -100,

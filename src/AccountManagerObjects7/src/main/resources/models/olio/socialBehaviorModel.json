@@ -16,6 +16,7 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.personalityTrait",
+			"participantModel": "trait.positive",
 			"foreign": true
 		},
 		{
@@ -23,6 +24,7 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.personalityTrait",
+			"participantModel": "trait.negative",
 			"foreign": true
 		}
 	]

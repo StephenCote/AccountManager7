@@ -4,10 +4,12 @@ import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -20,6 +22,7 @@ import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
+import org.cote.accountmanager.schema.type.LocationEnumType;
 
 public class PersonalityUtil {
 	public static final Logger logger = LogManager.getLogger(PersonalityUtil.class);
@@ -184,6 +187,7 @@ public class PersonalityUtil {
 		
 		BaseRecord inst = person.get("instinct");
 		
+		prof.setSleep(InstinctEnumType.valueOf((double)inst.get("sleep")));
 		prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
 		prof.setFlight(InstinctEnumType.valueOf((double)inst.get("flight")));
 		prof.setFeed(InstinctEnumType.valueOf((double)inst.get("feed")));
@@ -227,12 +231,29 @@ public class PersonalityUtil {
 	protected static void analyzePhysiologicalNeeds(BaseRecord person, PersonalityProfile prof) {
 		/// do they have clothes?
 		BaseRecord store = person.get("store");
+		BaseRecord cit = person.get(FieldNames.FIELD_CONTACT_INFORMATION);
 		List<BaseRecord> apparel = store.get("apparel");
 		if(apparel.size() == 0) {
 			prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.CLOTHING);
 		}
+		
 		List<BaseRecord> items = store.get("items");
-		/// do they have water?
+		List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
+		if(water.size() == 0) {
+			prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.WATER);
+		}
+		
+		List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get("category"))).collect(Collectors.toList());
+		if(food.size() == 0) {
+			prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.FOOD);
+		}
+		if(cit != null) {
+			List<BaseRecord> addrl = cit.get("addresses");
+			List<BaseRecord> home = addrl.stream().filter(a -> LocationEnumType.HOME.toString().equals(a.get("locationType"))).collect(Collectors.toList());
+			if(home.size() == 0) {
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.SHELTER);	
+			}
+		}
 
 	}
 	

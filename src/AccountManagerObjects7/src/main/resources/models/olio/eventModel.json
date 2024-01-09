@@ -149,6 +149,13 @@
 			"shortName": "be"
 		},
 		{
+			"name": "instinct",
+			"type": "model",
+			"baseModel": "olio.instinct",
+			"foreign": true,
+			"shortName": "inst"
+		},
+		{
 			"name": "groups",
 			"type": "list",
 			"baseType": "model",

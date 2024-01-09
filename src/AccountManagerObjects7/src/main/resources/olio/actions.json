@@ -163,7 +163,16 @@
 		"name": "wander"
 	},
 	{
-		"name": "sleep"
+		"name": "sleep",
+		"counterActions": [
+			"wake"
+		]
+	},
+	{
+		"name": "wake",
+		"counterActions": [
+			"sleep"
+		]
 	},
 	{
 		"name": "eat"
@@ -175,6 +184,15 @@
 		"name": "socialize"
 	},
 	{
-		"name": "organize"
+		"name": "organize",
+		"counterActions": [
+			"protest"
+		]
+	},
+	{
+		"name": "protest",
+		"counterActions": [
+			"organize"
+		]
 	}
 ]

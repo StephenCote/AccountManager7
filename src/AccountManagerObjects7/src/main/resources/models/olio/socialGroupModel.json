@@ -16,6 +16,15 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.socialBehavior",
+			"participantModel": "behavior.positive",
+			"foreign": true
+		},
+		{
+			"name": "negative",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.socialBehavior",
+			"participantModel": "behavior.negative",
 			"foreign": true
 		}
 	]

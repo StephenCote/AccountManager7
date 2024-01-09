@@ -108,9 +108,34 @@
 		"type": "template"
 	},
 	{
-		"category": "liquid",
+		"category": "water",
 		"description": "Basic water template",
 		"name": "murky water",
+		"perks": [
+			{
+				"name": "Quench"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "water"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "water",
+		"description": "Basic water template",
+		"name": "melted snow",
 		"perks": [
 			{
 				"name": "Quench"

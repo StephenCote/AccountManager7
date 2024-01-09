@@ -1,0 +1,76 @@
+{
+	"name": "olio.animal",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.name",
+		"common.groupExt",
+		"data.tagsExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.description",
+		"common.alignment"
+	],
+	"group": "Animals",
+	"icon": "category",
+	"label": "Animal",
+	"query": ["id", "groupId", "name"],
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "type",
+			"type": "string",
+			"maxLength": 24
+		},
+		{
+			"name": "category",
+			"type": "string",
+			"maxLength": 24,
+			"shortName": "cat"
+		},
+		{
+			"name": "age",
+			"type": "int"
+		},
+		{
+			"name": "traits",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.trait",
+			"foreign": true,
+			"participantModel": "person.trait"
+		},
+		{
+			"name": "store",
+			"type": "model",
+			"baseModel": "olio.store",
+			"foreign": true,
+			"participantModel": "person.store",
+			"shortName": "sto"
+		},
+
+		{
+			"name": "statistics",
+			"type": "model",
+			"baseModel": "olio.charStatistics",
+			"foreign": true,
+			"shortName": "sta"
+		},
+		{
+			"name": "instinct",
+			"type": "model",
+			"baseModel": "olio.instinct",
+			"foreign": true,
+			"shortName": "inst"
+		},
+		{
+			"name": "state",
+			"type": "model",
+			"baseModel": "olio.state",
+			"foreign": true,
+			"shortName": "st"
+		}
+	]
+}
