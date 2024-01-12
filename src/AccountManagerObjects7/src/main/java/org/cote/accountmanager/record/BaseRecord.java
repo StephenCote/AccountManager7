@@ -93,7 +93,22 @@ public abstract class BaseRecord {
 			.map(f -> f.getName())
 			.collect(Collectors.toList())
 		;
-		return copyRecord(fields.toArray(new String[0]));
+		ModelSchema ms = RecordFactory.getSchema(model);
+		BaseRecord copy = copyRecord(fields.toArray(new String[0]));
+		for(FieldType f: copy.getFields()) {
+			FieldSchema fs = ms.getFieldSchema(f.getName());
+			try {
+				if(f.getValueType() == FieldEnumType.MODEL && f.getValue() != null) {
+					f.setValue(((BaseRecord)f.getValue()).copyDeidentifiedRecord());
+				}
+				else if(f.getValueType() == FieldEnumType.LIST && ModelNames.MODEL_MODEL.equals(fs.getBaseType())) {
+					f.setValue(((List<BaseRecord>)f.getValue()).stream().map(f1 -> f1.copyDeidentifiedRecord()).collect(Collectors.toList()));
+				}
+			} catch (ValueException e) {
+				logger.error(e);
+			}
+		}
+		return copy;
 	}
 	public BaseRecord copyRecord() {
 		return copyRecord(new String[0]);

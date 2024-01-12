@@ -180,6 +180,12 @@
 		"foreign": true
 	},
 	{
+		"name": "animals",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "tagsGroup",
 		"baseModel": "auth.group",
 		"type": "model",

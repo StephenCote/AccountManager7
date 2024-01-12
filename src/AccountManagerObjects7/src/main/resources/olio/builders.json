@@ -10,7 +10,6 @@
 		"qualities": [
 			{
 				"skill": 0.1,
-				"unit": "us",
 				"waterresistance": 0.2
 			}
 		],
@@ -35,8 +34,7 @@
 			{
 				"defensive": 0.1,
 				"insulation": 0.5,
-				"skill": 0.2,
-				"unit": "us"
+				"skill": 0.2
 			}
 		],
 		"renewable": false,
@@ -65,7 +63,6 @@
 				"heatresistance": 0.1,
 				"insulation": 0.1,
 				"skill": 0.2,
-				"unit": "us",
 				"waterresistance": 0.25
 			}
 		],
@@ -95,7 +92,6 @@
 				"heatresistance": 0.25,
 				"insulation": 0.25,
 				"skill": 0.2,
-				"unit": "us",
 				"waterresistance": 0.35
 			}
 		],
@@ -125,8 +121,7 @@
 		"qualities": [
 			{
 				"offensive": 0.01,
-				"skill": 0.1,
-				"unit": "us"
+				"skill": 0.1
 			}
 		],
 		"renewable": false,
@@ -155,8 +150,7 @@
 		"qualities": [
 			{
 				"offensive": 0.01,
-				"skill": 0.1,
-				"unit": "us"
+				"skill": 0.1
 			}
 		],
 		"renewable": false,
@@ -182,8 +176,7 @@
 		"qualities": [
 			{
 				"offensive": 0.01,
-				"skill": 0.1,
-				"unit": "us"
+				"skill": 0.1
 			}
 		],
 		"renewable": false,
@@ -212,8 +205,7 @@
 		"qualities": [
 			{
 				"offensive": 0.01,
-				"skill": 0.3,
-				"unit": "us"
+				"skill": 0.3
 			}
 		],
 		"renewable": false,
@@ -239,8 +231,7 @@
 		"qualities": [
 			{
 				"defensive": 0.05,
-				"skill": 0.3,
-				"unit": "us"
+				"skill": 0.3
 			}
 		],
 		"renewable": false,
@@ -269,8 +260,7 @@
 		"qualities": [
 			{
 				"defensive": 0.05,
-				"skill": 0.3,
-				"unit": "us"
+				"skill": 0.3
 			}
 		],
 		"renewable": false,
@@ -302,8 +292,7 @@
 		"qualities": [
 			{
 				"defensive": 0.05,
-				"skill": 0.3,
-				"unit": "us"
+				"skill": 0.3
 			}
 		],
 		"renewable": false,
@@ -318,5 +307,197 @@
 		],
 		"time": 8,
 		"type": "apparel"
+	},
+	{
+		"item": {
+			"name": "bait snare"
+		},
+		"materials": [
+			{
+				"name": "stick"
+			},
+			{
+				"name": "bait"
+			},
+			{
+				"name": "rope"
+			}
+		],
+		"name": "bait snare",
+		"qualities": [
+			{
+				"skill": 0.25
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 1,
+		"type": "item",
+		"tags": [
+			{
+				"name": "trap"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "paiute deadfall"
+		},
+		"materials": [
+			{
+				"name": "stick"
+			},
+			{
+				"name": "rock"
+			},
+			{
+				"name": "rope"
+			}
+		],
+		"name": "paiute deadfall",
+		"qualities": [
+			{
+				"skill": 0.25
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 1,
+		"type": "item",
+		"tags": [
+			{
+				"name": "trap"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "net"
+		},
+		"materials": [
+			{
+				"name": "rope"
+			}
+		],
+		"name": "net",
+		"qualities": [
+			{
+				"skill": 0.25
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 1,
+		"type": "item",
+		"tags": [
+			{
+				"name": "trap"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "grass rope"
+		},
+		"materials": [
+			{
+				"name": "grass"
+			}
+		],
+		"name": "net",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "rope"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "hair rope"
+		},
+		"materials": [
+			{
+				"name": "hair"
+			}
+		],
+		"name": "hair rope",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "rope"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "leather rope"
+		},
+		"materials": [
+			{
+				"name": "leather"
+			}
+		],
+		"name": "leather rope",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"renewable": false,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "rope"
+			}
+		]
 	}
 ]

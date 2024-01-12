@@ -31,6 +31,17 @@
 			"shortName": "cat"
 		},
 		{
+			"name": "groupName",
+			"type": "string",
+			"maxLength": 24,
+			"shortName": "grpn"
+		},
+		{
+			"name": "habitat",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "age",
 			"type": "int"
 		},
@@ -47,7 +58,7 @@
 			"type": "model",
 			"baseModel": "olio.store",
 			"foreign": true,
-			"participantModel": "person.store",
+			"participantModel": "animal.store",
 			"shortName": "sto"
 		},
 

@@ -22,18 +22,22 @@ public enum TerrainEnumType {
 		POND(10),
 		PLAINS(11),
 		GRASS(12),
-		LAKE(13),
-		VALLEY(14),
-		RIVER(15),
-		FOREST(16),
-		STREAM(17),
-		HILL(18),
-		PLATEAU(19),
-		MOUNTAIN(20),
-		CAVE(21),
-		SHELTER(22),
-		INDOORS(23),
-		VOID(24)
+		SAVANNA(13),
+		LAKE(14),
+		VALLEY(15),
+		RIVER(16),
+		JUNGLE(17),
+		FOREST(18),
+		STREAM(19),
+		HILL(20),
+		PLATEAU(21),
+		MOUNTAIN(22),
+		CAVE(23),
+		SHELTER(24),
+		INDOORS(25),
+		UNDERWATER(26),
+		AIR(27),
+		VOID(28)
 	;
 	
 	 private static Map<TerrainEnumType, Color> colorMap = new HashMap<>();
@@ -52,10 +56,12 @@ public enum TerrainEnumType {
 			colorMap.put(TerrainEnumType.POND, Color.decode("#7285A5"));
 			colorMap.put(TerrainEnumType.PLAINS, Color.decode("#A9BA90"));
 			colorMap.put(TerrainEnumType.GRASS, Color.decode("#3F7040"));
+			colorMap.put(TerrainEnumType.SAVANNA, Color.decode("#C6F304"));
 			colorMap.put(TerrainEnumType.LAKE, Color.decode("#6693F5"));
 			colorMap.put(TerrainEnumType.VALLEY, Color.decode("#98FB98"));
 			colorMap.put(TerrainEnumType.RIVER, Color.decode("#4D516D"));
 			colorMap.put(TerrainEnumType.FOREST, Color.decode("#0B6623"));
+			colorMap.put(TerrainEnumType.JUNGLE, Color.decode("#12AB3B"));
 			colorMap.put(TerrainEnumType.STREAM, Color.decode("#0F52BA"));
 			colorMap.put(TerrainEnumType.HILL, Color.decode("#81560F"));
 			colorMap.put(TerrainEnumType.PLATEAU, Color.decode("#EEDC82"));
@@ -81,9 +87,10 @@ public enum TerrainEnumType {
 	   		OASIS,
 	   		PLAINS,
 	   		GRASS,
-	   		OASIS,
 	   		VALLEY,
-	   		FOREST
+	   		FOREST,
+	   		SAVANNA,
+	   		JUNGLE
 	   	});
 	   	
 	   	private static List<TerrainEnumType> rockyTerrain = Arrays.asList(new TerrainEnumType[] {
@@ -123,7 +130,7 @@ public enum TerrainEnumType {
 			if(val < 0) {
 				return UNKNOWN;
 			}
-			else if (val > 24) {
+			else if (val > 28) {
 				return VOID;
 			}
 	        return terrainMap.get(val);

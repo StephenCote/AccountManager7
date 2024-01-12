@@ -43,6 +43,15 @@
 			"baseModel": "olio.apparel",
 			"foreign": true,
 			"participantModel": "store.wearable"
+		},
+		{
+			"name": "locations",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.geoLocation",
+			"foreign": true,
+			"participantModel": "store.location",
+			"description": "Locations that belong to this store - eg: locations a person owns, etc"
 		}
 	]
 }

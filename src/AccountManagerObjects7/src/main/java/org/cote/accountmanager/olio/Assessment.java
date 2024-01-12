@@ -21,7 +21,7 @@ public class Assessment {
 		/// personal security, employment, resources, health, property
 		SAFETY,
 		/// friendship, intimacy, family, sense of connection
-		BELONGING,
+		BELONGING, /// Alt: LOVE
 		/// respect, self-esteem, status, recognition, strength, freedom
 		ESTEEM,
 		/// morality, creativity, spontaneity, problem solving, lack of prejudice, acceptance of facts

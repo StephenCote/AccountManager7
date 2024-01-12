@@ -165,7 +165,7 @@
 			"minValue": -1,
 			"maxValue": 20,
 			"default": -1,
-			"description": "Note: This is currently duplicated with state.health because it's directly tied to the save calculation",
+			"description": "Note: This is duplicated with state.health because it's tied to the save calculation",
 			"validateRange": true
 		},
 		{

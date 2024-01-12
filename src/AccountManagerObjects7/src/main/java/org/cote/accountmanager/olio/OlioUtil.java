@@ -430,27 +430,60 @@ public class OlioUtil {
 	}
 	protected static <T> BaseRecord[] list(OlioContext ctx, String model, String groupName, String fieldName, T val) {
 		Query q = getQuery(ctx.getUser(), model, ctx.getWorld().get(groupName + ".path"));
+		BaseRecord[] recs = new BaseRecord[0];
+
 		try {
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			if(fieldName != null) {
 				q.set(fieldName, val);
 			}
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
+			if(qr.getResults().length > 0) {
+				recs = qr.getResults();
+			}
+
+		} catch (FieldException | ValueException | ModelNotFoundException | ReaderException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
-		BaseRecord[] recs = new BaseRecord[0];
-		QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(ctx.getUser(), q);
-		if(qr.getResults().length > 0) {
-			recs = qr.getResults();
-		}
 		return recs;
+	}
+	
+	public static BaseRecord getFullRecord(BaseRecord rec) {
+		Query q = QueryUtil.createQuery(rec.getModel(), FieldNames.FIELD_ID, rec.get(FieldNames.FIELD_ID));
+		try {
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
 	
 	public static Query getQuery(BaseRecord user, String model, String groupPath) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
+	}
+	
+	public static BaseRecord getCreateRefStore(OlioContext ctx, BaseRecord ref) {
+		BaseRecord store = null;
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_STORE, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("stores.id"));
+		q.field(FieldNames.FIELD_REFERENCE_TYPE, ref.getModel());
+		q.field(FieldNames.FIELD_REFERENCE_ID, ref.get(FieldNames.FIELD_ID));
+		try {
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			store = IOSystem.getActiveContext().getSearch().findRecord(q);
+			if(store == null) {
+				store = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
+				store.set(FieldNames.FIELD_REFERENCE_TYPE, ref.getModel());
+				store.set(FieldNames.FIELD_REFERENCE_ID, ref.get(FieldNames.FIELD_ID));
+				IOSystem.getActiveContext().getRecordUtil().createRecord(store);
+			}
+
+		} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
+			logger.error(e);
+		}
+		return store;
 	}
 	
 }

@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -52,6 +53,24 @@ public class GeoLocationUtil {
     	return odds;
     }
 	*/
+	private static Map<Long, List<BaseRecord>> cellMap = new ConcurrentHashMap<>();
+	
+	public static List<BaseRecord> getCells(OlioContext ctx, BaseRecord location){
+		long id = location.get(FieldNames.FIELD_ID);
+		if(cellMap.containsKey(id)) {
+			return cellMap.get(id);
+		}
+		IOSystem.getActiveContext().getReader().populate(location);
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, id);
+		cq.field("geoType", "cell");
+		cq.setCache(false);
+		cq.setLimitFields(false);
+		List<BaseRecord> cells = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(cq));
+		if(cells.size() > 0) {
+			cellMap.put(id,  cells);
+		}
+		return cells;
+	}
 	public static BaseRecord[] getLocationsByFeature(BaseRecord location, String feature, long groupId){
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_PARENT_ID));
 		/// DON'T search by group id because feature level grid squares may still be in the universe group

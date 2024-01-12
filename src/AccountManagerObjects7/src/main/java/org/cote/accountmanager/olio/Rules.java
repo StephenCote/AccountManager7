@@ -1,5 +1,7 @@
 package org.cote.accountmanager.olio;
 
+import org.cote.accountmanager.schema.type.TerrainEnumType;
+
 public class Rules {
 
 	public static final int INITIAL_STATISTICS_ALLOTMENT = 120;
@@ -40,4 +42,90 @@ public class Rules {
 	/// Note: if a family, should drag the whole group with them
 	///
 	public static final double INITIAL_EMMIGRATION_RATE = 0.01;
+	
+	/// 50% chance there's some kind of wildlife
+	///
+	public static final double ODDS_ANY_ANIMAL_GROUP = 0.5;
+	
+	/// 20% chance per animal group
+	public static final double ODDS_ANIMAL_GROUP = 0.2;
+	
+	/// General guideline when dropping a small group of animals in a location
+	/// When using the map grid, the location size is a square km
+	///
+	public static final int ANIMAL_GROUP_COUNT = 10;
+	
+	/// 15% chance of an animal being dead
+	///
+	public static final double ANIMAL_CARCASS_ODDS = 0.15;
+	
+	public static double getAnimalOdds(TerrainEnumType type) {
+		double typeOdds = Rules.ODDS_ANIMAL_GROUP;
+		switch(type) {
+			case GLACIER:
+				typeOdds -= 0.1;
+				break;
+			case TUNDRA:
+				typeOdds -= 0.05;
+				break;
+			case OCEAN:
+				typeOdds += 0.2;
+				break;
+			case SHORELINE:
+				break;
+			case MARSH:
+			case SWAMP:
+				typeOdds += 0.1;
+				break;
+			case CLEAR:
+				break;
+			case DESERT:
+			case DUNES:
+				typeOdds -= 0.1;
+				break;
+			case OASIS:
+			case POND:
+				typeOdds += 0.3;
+				break;
+			case PLAINS:
+				typeOdds += 0.1;
+				break;
+			case GRASS:
+				typeOdds += 0.2;
+				break;
+			case SAVANNA:
+				typeOdds += 0.3;
+				break;
+			case LAKE:
+				typeOdds += 0.2;
+				break;
+			case VALLEY:
+				typeOdds += 0.2;
+				break;
+			case RIVER:
+				typeOdds += 0.1;
+				break;
+			case JUNGLE:
+				typeOdds += 0.5;
+				break;
+			case FOREST:
+				typeOdds += 0.2;
+				break;
+			case STREAM:
+			case HILL:
+				typeOdds += 0.1;
+				break;
+			case PLATEAU:
+				typeOdds -= 0.05;
+				break;
+			case MOUNTAIN:
+				typeOdds -= 0.1;
+				break;
+			case CAVE:
+				typeOdds -= 0.05;
+				break;
+		}
+		
+		return typeOdds;
+	}
 }

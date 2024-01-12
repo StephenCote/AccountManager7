@@ -57,7 +57,7 @@ public class PersonalityProfile {
 	private InstinctEnumType cry = InstinctEnumType.STASIS;
 	private InstinctEnumType protect = InstinctEnumType.STASIS;
 	
-	enum PhysiologicalNeeds {
+	public enum PhysiologicalNeeds {
 		AIR,
 		WATER,
 		FOOD,
@@ -67,7 +67,7 @@ public class PersonalityProfile {
 		REPRODUCTION
 	};
 	private List<PhysiologicalNeeds> physiologicalNeeds = new ArrayList<>();
-	enum SafetyNeeds {
+	public enum SafetyNeeds {
 		SECURITY,
 		EMPLOYMENT,
 		RESOURCES,
@@ -75,14 +75,14 @@ public class PersonalityProfile {
 		PROPERTY
 	};
 	private List<SafetyNeeds> safetyNeeds = new ArrayList<>();
-	enum LoveNeeds {
+	public enum LoveNeeds {
 		FRIENDSHIP,
 		INTIMACY,
 		FAMILY,
 		CONNECTION
 	};
 	private List<LoveNeeds> loveNeeds = new ArrayList<>();
-	enum EsteemNeeds{
+	public enum EsteemNeeds{
 		RESPECT,
 		SELF_ESTEEM,
 		STATUS,

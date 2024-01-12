@@ -42,7 +42,19 @@ public class ItemUtil {
 		return rec;
 	}
 
-	
+	public static BaseRecord getCreateItemTemplate(OlioContext ctx, String name) {
+		BaseRecord tmp = getItemTemplate(ctx, name);
+		if(tmp == null) {
+			tmp = newItem(ctx, name);
+			try {
+				tmp.set("type", "template");
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e.toString());
+			}
+			IOSystem.getActiveContext().getRecordUtil().createRecord(tmp);
+		}
+		return tmp;
+	}
 	public static BaseRecord getItemTemplate(OlioContext ctx, String name) {
 		Query q = OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
 		q.field("type", "template");

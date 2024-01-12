@@ -5,6 +5,7 @@ import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -18,7 +19,10 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
+import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
+import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
@@ -114,6 +118,67 @@ public class PersonalityUtil {
 
 	}
 	
+	protected static int countPhysiologicalNeed(Map<BaseRecord, PersonalityProfile> map, PhysiologicalNeeds need) {
+		return map.values().stream()
+		  .map(c -> c.getPhysiologicalNeeds().contains(need) ? 1 : 0)
+		  .reduce(0, Integer::sum);
+	}
+
+	protected static int countSafetyNeed(Map<BaseRecord, PersonalityProfile> map, SafetyNeeds need) {
+		return map.values().stream()
+		  .map(c -> c.getSafetyNeeds().contains(need) ? 1 : 0)
+		  .reduce(0, Integer::sum);
+	}
+	
+	protected static int countEsteemNeed(Map<BaseRecord, PersonalityProfile> map, EsteemNeeds need) {
+		return map.values().stream()
+		  .map(c -> c.getEsteemNeeds().contains(need) ? 1 : 0)
+		  .reduce(0, Integer::sum);
+	}
+	
+	protected static int countLoveNeed(Map<BaseRecord, PersonalityProfile> map, LoveNeeds need) {
+		return map.values().stream()
+		  .map(c -> c.getLoveNeeds().contains(need) ? 1 : 0)
+		  .reduce(0, Integer::sum);
+	}
+	
+	
+	public static PersonalityGroupProfile getGroupProfile(Map<BaseRecord, PersonalityProfile> map){
+		PersonalityGroupProfile pgp = new PersonalityGroupProfile();
+		
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.FOOD, countPhysiologicalNeed(map, PhysiologicalNeeds.FOOD));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.WATER, countPhysiologicalNeed(map, PhysiologicalNeeds.WATER));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.REPRODUCTION, countPhysiologicalNeed(map, PhysiologicalNeeds.REPRODUCTION));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.SHELTER, countPhysiologicalNeed(map, PhysiologicalNeeds.SHELTER));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.CLOTHING, countPhysiologicalNeed(map, PhysiologicalNeeds.CLOTHING));
+		
+		pgp.getSafetyNeeds().put(SafetyNeeds.EMPLOYMENT, countSafetyNeed(map, SafetyNeeds.EMPLOYMENT));
+		pgp.getSafetyNeeds().put(SafetyNeeds.HEALTH, countSafetyNeed(map, SafetyNeeds.HEALTH));
+		pgp.getSafetyNeeds().put(SafetyNeeds.PROPERTY, countSafetyNeed(map, SafetyNeeds.PROPERTY));
+		pgp.getSafetyNeeds().put(SafetyNeeds.RESOURCES, countSafetyNeed(map, SafetyNeeds.RESOURCES));
+		pgp.getSafetyNeeds().put(SafetyNeeds.SECURITY, countSafetyNeed(map, SafetyNeeds.SECURITY));
+		
+		pgp.getLoveNeeds().put(LoveNeeds.CONNECTION, countLoveNeed(map, LoveNeeds.CONNECTION));
+		pgp.getLoveNeeds().put(LoveNeeds.FAMILY, countLoveNeed(map, LoveNeeds.FAMILY));
+		pgp.getLoveNeeds().put(LoveNeeds.FRIENDSHIP, countLoveNeed(map, LoveNeeds.FRIENDSHIP));
+		pgp.getLoveNeeds().put(LoveNeeds.INTIMACY, countLoveNeed(map, LoveNeeds.INTIMACY));
+		
+		pgp.getEsteemNeeds().put(EsteemNeeds.FREEDOM, countEsteemNeed(map, EsteemNeeds.FREEDOM));
+		pgp.getEsteemNeeds().put(EsteemNeeds.RECOGNITION, countEsteemNeed(map, EsteemNeeds.RECOGNITION));
+		pgp.getEsteemNeeds().put(EsteemNeeds.RESPECT, countEsteemNeed(map, EsteemNeeds.RESPECT));
+		pgp.getEsteemNeeds().put(EsteemNeeds.SELF_ESTEEM, countEsteemNeed(map, EsteemNeeds.SELF_ESTEEM));
+		pgp.getEsteemNeeds().put(EsteemNeeds.STATUS, countEsteemNeed(map, EsteemNeeds.STATUS));
+		pgp.getEsteemNeeds().put(EsteemNeeds.STRENGTH, countEsteemNeed(map, EsteemNeeds.STRENGTH));
+		
+		return pgp;
+	}
+	public static Map<BaseRecord, PersonalityProfile> getProfileMap(OlioContext octx, List<BaseRecord> persons){
+		Map<BaseRecord, PersonalityProfile> map = new HashMap<>();
+		for(BaseRecord per : persons) {
+			map.put(per, getProfile(octx, per));
+		}
+		return map;
+	}
 	public static PersonalityProfile getProfile(OlioContext octx, BaseRecord person) {
 		
 		long id = person.get(FieldNames.FIELD_ID);
@@ -254,6 +319,55 @@ public class PersonalityUtil {
 				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.SHELTER);	
 			}
 		}
+		
+		List<BaseRecord> partners = person.get("partners");
+		int marker = 0;
+		if(partners.size() == 0) {
+			prof.getLoveNeeds().add(LoveNeeds.INTIMACY);
+			marker++;
+		}
+
+		List<BaseRecord> siblings = person.get("siblings");
+		List<BaseRecord> dependents = person.get("dependents");
+		if(partners.size() == 0 && siblings.size() == 0 && dependents.size() == 0) {
+			prof.getLoveNeeds().add(LoveNeeds.FAMILY);
+			marker++;
+		}
+		
+		List<BaseRecord> social = person.get("socialRing");
+		if(social.size() == 0) {
+			prof.getLoveNeeds().add(LoveNeeds.FRIENDSHIP);
+			marker++;
+		}
+		
+		if(marker == 0) {
+			prof.getLoveNeeds().add(LoveNeeds.CONNECTION);
+		}
+		
+		//// Security calculation
+		//// Finance + Personal
+		prof.getSafetyNeeds().add(SafetyNeeds.SECURITY);
+		
+		//// Employment calculation - use scheduled activity count
+		prof.getSafetyNeeds().add(SafetyNeeds.EMPLOYMENT);
+		
+		//// simple calculation - if the person has nothing
+		if(items.size() == 0) {
+			prof.getSafetyNeeds().add(SafetyNeeds.RESOURCES);
+		}
+		
+		List<BaseRecord> locs = store.get("locations");
+		if(locs.size() == 0) {
+			prof.getSafetyNeeds().add(SafetyNeeds.PROPERTY);
+		}
+		
+		BaseRecord state = person.get("state");
+		double health = state.get("health");
+		if(health < 0.25) {
+			prof.getSafetyNeeds().add(SafetyNeeds.HEALTH);
+		}
+		
+		/// TODO: Initial esteem calculations
 
 	}
 	

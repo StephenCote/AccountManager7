@@ -1,10 +1,24 @@
 {
 	"name": "data.tag",
-	"inherits": ["data.directory", "common.description"],
+	"inherits": [
+		"common.groupExt",
+		"common.parent",
+		"common.description",
+		"common.name",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey",
+		"common.attributeList"
+	],
+	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"group": "Tags",
 	"icon": "category",
 	"label": "Tag",
 	"dedicatedParticipation": true,
+	"constraints": ["name, type, groupId, organizationId"],
+	"query": ["id", "groupId", "name", "type"],
 	"fields": [
 		{
 			"name": "type",

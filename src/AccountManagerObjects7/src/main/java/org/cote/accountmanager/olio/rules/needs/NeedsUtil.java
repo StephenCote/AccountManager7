@@ -4,19 +4,31 @@ import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.PersonalityGroupProfile;
+import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
+import org.cote.accountmanager.olio.PersonalityUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class NeedsUtil {
 
@@ -87,6 +99,25 @@ public class NeedsUtil {
 	
 	
 	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment){
+		List<BaseRecord> acts = new ArrayList<>();
+		return acts;
+	}
+
+	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
+		// List<BaseRecord> pop = ctx.getPopulation(locationEpoch.get("location"));
+		Map<BaseRecord, PersonalityProfile> map = PersonalityUtil.getProfileMap(ctx, group);
+		PersonalityGroupProfile pgp = PersonalityUtil.getGroupProfile(map);
+		BaseRecord location = OlioUtil.getFullRecord(locationEpoch.get("location"));
+		IOSystem.getActiveContext().getReader().populate(location);
+		// logger.info(location.toFullString());
+		BaseRecord store = OlioUtil.getCreateRefStore(ctx, location);
+		//Map<String, List<BaseRecord>> apop = AnimalUtil.getAnimalPopulation(ctx, location);
+		Map<String, List<BaseRecord>> apop = AnimalUtil.paintAnimalPopulation(ctx, location);
+		/*
+		for(PhysiologicalNeeds need : pgp.getPhysiologicalNeedsPriority()) {
+			logger.info(need.toString());
+		}
+		*/
 		List<BaseRecord> acts = new ArrayList<>();
 		return acts;
 	}

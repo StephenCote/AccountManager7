@@ -29,6 +29,13 @@
 			"validateRange": true
 		},
 		{
+			"name": "entrapment",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
 			"name": "range",
 			"type": "int",
 			"description": "Range in meters"
