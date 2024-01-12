@@ -263,8 +263,8 @@ public class EpochUtil {
 				lgrps.add(popGrp);
 				//logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " begins " + (String)childEpoch.get(FieldNames.FIELD_NAME));
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
-				ctx.setCurrentEvent(childEpoch);
 				ctx.setCurrentLocation(location);
+				ctx.setCurrentEvent(childEpoch);
 				evt = childEpoch;
 				
 				for(IOlioEvolveRule r : ctx.getConfig().getEvolutionRules()) {

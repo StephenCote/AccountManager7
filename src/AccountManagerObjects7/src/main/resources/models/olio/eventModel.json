@@ -104,6 +104,15 @@
 			"shortName": "loc"
 		},
 		{
+			"name": "realm",
+			"type": "model",
+			"baseModel": "olio.realm",
+			"foreign": true,
+			"followReference":false,
+			"shortName": "rea"
+		},
+
+		{
 			"name": "eventStart",
 			"type": "zonetime",
 			"shortName": "es"

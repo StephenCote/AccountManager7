@@ -47,6 +47,8 @@ public class OlioContext {
 	private Map<Long, Map<String,List<BaseRecord>>> demographicMap = new ConcurrentHashMap<>();
 	private Map<String, List<BaseRecord>> queue = new HashMap<>();
 	
+	private List<BaseRecord> realms = new ArrayList<>();
+	
 	private ZonedDateTime currentTime = ZonedDateTime.now();
 	private ZonedDateTime currentMonth = currentTime;
 	private ZonedDateTime currentDay = currentTime;
@@ -196,6 +198,48 @@ public class OlioContext {
 			if(aet != ActionResultEnumType.COMPLETE) {
 				IOSystem.getActiveContext().getRecordUtil().deleteRecord(currentEpoch);
 				currentEpoch = EventUtil.getLastEpochEvent(this);
+			}
+		}
+	}
+	private Map<Long, BaseRecord> realmMap = new ConcurrentHashMap<>();
+	public BaseRecord getRealm(BaseRecord location) {
+		long id = location.get(FieldNames.FIELD_ID);
+		if(!realmMap.containsKey(id)) {
+			BaseRecord realm = RealmUtil.getCreateRealm(this, location);
+			if(realm == null) {
+				logger.error("Realm is null");
+				return null;
+			}
+			realmMap.put(id, realm);
+		}
+		BaseRecord realm = realmMap.get(id);
+		updateRealm(realm);
+		return realm;
+	}
+	
+	private void updateRealm(BaseRecord realm) {
+		if(currentLocation == null) {
+			return;
+		}
+		
+		IOSystem.getActiveContext().getReader().populate(realm);
+		BaseRecord org = realm.get("origin");
+		if(org == null) {
+			logger.error("Origin is missing");
+			logger.error(realm.toFullString());
+			return;
+		}
+		long rloc = realm.get("origin.id");
+		long currId = currentLocation.get(FieldNames.FIELD_ID);
+		if(rloc == currId) {
+			try {
+				realm.set("currentEpoch", currentEpoch);
+				realm.set("currentEvent", currentEvent);
+				realm.set("currentIncrement", currentIncrement);
+				queue(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "currentEpoch", "currentEvent", "currentIncrement"}));
+			}
+			catch(ModelNotFoundException | FieldException | ValueException e) {
+				logger.error(e);
 			}
 		}
 	}

@@ -211,7 +211,7 @@ public class WorldUtil {
 		}
 		return targ;
 	}
-
+	
 	protected static BaseRecord generateRegion(OlioContext ctx) {
 		
 		List<BaseRecord> events = new ArrayList<>(); 
@@ -480,6 +480,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ITEM_STATISTICS, (long)world.get("statistics.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_TAG, (long)world.get("tagsGroup.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ANIMAL, (long)world.get("animals.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_REALM, (long)world.get("realmsGroup.id"), orgId);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");
 		RecordFactory.cleanupOrphans(null);

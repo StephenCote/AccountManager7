@@ -191,5 +191,18 @@
 		"type": "model",
 		"foreign": true,
 		"description": "Using an alternate name so as not to conflict with the existing 'tags' property"
+	},
+	{
+		"name": "realmsGroup",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
+		"name": "realms",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "olio.realm",
+		"foreign": true
 	}
 ]}

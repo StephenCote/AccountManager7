@@ -12,7 +12,9 @@ Data:
 
 Context
 	- The Olio Context primarily relates events and locations.
-		- There are no specific 'community', 'civilization', 'country' associations at the context level - it's up to the locations and rules to stipulate
+		- At the moment, there are no specific 'community', 'civilization', 'country' associations at the context level - it's up to the locations and rules to stipulate
+		- A realm model exists to represent these, and includes a pointer to the origin location given that temporal event context originates from those points
+		
 	- Events are organized in the following hierarchy:
 		- Construction - the root event for the world contains construct and incept events for introduced locations
 		

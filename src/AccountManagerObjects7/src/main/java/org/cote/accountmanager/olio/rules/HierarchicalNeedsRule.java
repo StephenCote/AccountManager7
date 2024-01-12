@@ -36,6 +36,8 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 		// TODO Auto-generated method stub
 		logger.info("Evaluate " + locationEpoch.get(FieldNames.FIELD_NAME) + " " + increment.get(FieldNames.FIELD_NAME));
 		// logger.info(increment.toFullString());
+		BaseRecord realm = context.getRealm(locationEpoch.get("location"));
+
 		List<BaseRecord> party = (partyPlay ? NeedsUtil.getCreateParty(context, locationEpoch) : context.getPopulation(locationEpoch.get("location")));
 		NeedsUtil.recommend(context, locationEpoch, increment, party);
 		/*

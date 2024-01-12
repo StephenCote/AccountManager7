@@ -129,7 +129,12 @@ public class NeedsUtil {
 		String partyName = loc.get(FieldNames.FIELD_NAME) + " Party";
 		BaseRecord grp = null;
 		try {
+			BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
 			grp = OlioUtil.getCreatePopulationGroup(ctx, partyName);
+			if(realm.get("principalGroup") == null) {
+				realm.set("principalGroup", grp);
+				IOSystem.getActiveContext().getRecordUtil().updateRecord(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "principalGroup", FieldNames.FIELD_ORGANIZATION_ID}));
+			}
 			party = OlioUtil.listGroupPopulation(ctx, grp);
 			if(party.size() == 0) {
 				List<BaseRecord> lpop = ctx.getPopulation(loc);

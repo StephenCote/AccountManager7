@@ -1,0 +1,102 @@
+{
+	"name": "olio.realm",
+	"inherits": [
+		"data.directory",
+		"common.description"
+	],
+	"group": "Realms",
+	"icon": "note",
+	"label": "Realm",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "population",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "populationGroups",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "auth.group",
+			"foreign": true,
+			"participantModel": "community.group"
+		},
+		{
+			"name": "principalGroup",
+			"type": "model",
+			"baseModel": "auth.group",
+			"foreign": true,
+			"description": "Placeholder for a primary group (aka: party or band)"
+		},
+		{
+			"name": "leadershipGroup",
+			"type": "model",
+			"baseModel": "auth.group",
+			"foreign": true,
+			"description": "Placeholder for any leadership group"
+		},
+
+		{
+			"name": "origin",
+			"baseModel": "data.geoLocation",
+			"type": "model",
+			"foreign": true,
+			"participantModel": "community.origin"
+		},
+		{
+			"name": "currentEpoch",
+			"baseModel": "olio.event",
+			"type": "model",
+			"foreign": true,
+			"followReference":false
+		},
+		{
+			"name": "currentEvent",
+			"baseModel": "olio.event",
+			"type": "model",
+			"foreign": true,
+			"followReference":false
+		},
+		{
+			"name": "currentIncrement",
+			"baseModel": "olio.event",
+			"type": "model",
+			"foreign": true,
+			"followReference":false
+		},
+		{
+			"name": "locations",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.geoLocation",
+			"foreign": true,
+			"participantModel": "community.realm"
+		},
+		{
+			"name": "currencies",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.item",
+			"foreign": true,
+			"participantModel": "community.currency"
+		},
+		{
+			"name": "schedules",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.schedule",
+			"participantModel": "community.schedule",
+			"foreign": true
+		},
+		{
+			"name": "store",
+			"type": "model",
+			"baseModel": "olio.store",
+			"foreign": true,
+			"participantModel": "person.store",
+			"shortName": "sto"
+		}
+	]
+}

@@ -126,7 +126,7 @@ public class AnimalUtil {
 			for(BaseRecord a : animp) {
 				if(random.nextDouble() <= odds) {
 					int count = random.nextInt(1, maxCount);
-					logger.info("Add a " + a.get("groupName") + " of " + a.get(FieldNames.FIELD_NAME) + " with " + count);
+					// logger.info("Add a " + a.get("groupName") + " of " + a.get(FieldNames.FIELD_NAME) + " with " + count);
 					List<BaseRecord> grp = new ArrayList<>();
 					for(int i = 0; i < count; i++) {
 						BaseRecord anim1 = a.copyDeidentifiedRecord();
@@ -144,13 +144,13 @@ public class AnimalUtil {
 					pop.put(a.get("groupName"), grp);
 				}
 				else {
-					logger.info("Skip adding " + a.get("groupName") + " of " + a.get(FieldNames.FIELD_NAME));
+					// logger.info("Skip adding " + a.get("groupName") + " of " + a.get(FieldNames.FIELD_NAME));
 				}
 			}
 			//logger.info("Found " + animp.size() + " templates for " + type.toString());
 		}
 		if(pop.keySet().size() == 0) {
-			logger.info("No animals around " + location.get(FieldNames.FIELD_NAME));
+			// logger.info("No animals around " + location.get(FieldNames.FIELD_NAME));
 		}
 		animalSpread.put(id, pop);
 		return pop;
