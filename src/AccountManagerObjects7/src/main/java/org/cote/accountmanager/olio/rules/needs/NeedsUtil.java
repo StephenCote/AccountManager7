@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -19,6 +20,8 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.AnimalUtil;
+import org.cote.accountmanager.olio.GeoLocationUtil;
+import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityGroupProfile;
@@ -97,6 +100,75 @@ public class NeedsUtil {
 	 *  
 	 */
 	
+	protected static void agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map) {
+		BaseRecord eloc = event.get("location");
+
+		List<BaseRecord> zoo = realm.get("zoo");
+		// logger.info("Realm zoo: " + zoo.size());
+		List<BaseRecord> acells = GeoLocationUtil.getCells(ctx, eloc);
+		BaseRecord rloc = null;
+		
+		try {
+			for(BaseRecord p: map.keySet()) {
+				boolean blup = false;
+				
+				PersonalityProfile pp = map.get(p);
+				String name = p.get(FieldNames.FIELD_NAME);
+				BaseRecord state = p.get("state");
+				boolean immobile = state.get("immobilized");
+				boolean alive = state.get("alive");
+				boolean awake = state.get("awake");
+	
+				BaseRecord location = state.get("currentLocation");
+				if(location == null) {
+					if(rloc == null) {
+						rloc = acells.get(random.nextInt(acells.size()));
+					}
+					location = rloc;
+					state.set("currentLocation", rloc);
+					blup = true;
+				}
+				long id = location.get(FieldNames.FIELD_ID);
+				long pid = location.get(FieldNames.FIELD_PARENT_ID);
+			
+				String geoType = location.get("geoType");
+				if(geoType.equals("feature")) {
+					logger.warn("Feature placement detected: Move " + name);
+				}
+				else {
+					int currLocCount = map.keySet().stream()
+					  .map(c -> c.get("state.currentLocation") != null && ((long)c.get("state.currentLocation.id")) == id ? 1 : 0)
+					  .reduce(0, Integer::sum);
+					
+					/// Animals are currently attached to the parent location
+					///
+					List<BaseRecord> zpop = zoo.stream().filter(zp -> (zp.get("state.currentLocation") != null && ((long)zp.get("state.currentLocation.id")) == pid)).collect(Collectors.toList());
+
+					logger.info("Agitate " + name + " in " + location.get(FieldNames.FIELD_NAME));
+					logger.info("People count: " + currLocCount);
+					logger.info("Critter count: " + zpop.size());
+					
+					int eastings = location.get("eastings");
+					int northings = location.get("northings");
+					logger.info(eastings + ", " + northings);
+					if(alive && awake && !immobile) {
+						if(state.get("currentEvent") != null) {
+							logger.info("Agitating " + name + " who is currently busy");
+						}
+						/// .....
+						
+						if(blup) {
+							ctx.queue(state.copyRecord(new String[] {FieldNames.FIELD_ID, "currentLocation"}));
+						}
+					}
+				}
+			}
+			ctx.processQueue();
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}
 	
 	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment){
 		List<BaseRecord> acts = new ArrayList<>();
@@ -107,12 +179,16 @@ public class NeedsUtil {
 		// List<BaseRecord> pop = ctx.getPopulation(locationEpoch.get("location"));
 		Map<BaseRecord, PersonalityProfile> map = PersonalityUtil.getProfileMap(ctx, group);
 		PersonalityGroupProfile pgp = PersonalityUtil.getGroupProfile(map);
+		logger.info("Calculating recommendation ....");
+		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
+		agitate(ctx, realm, increment, map);
+		MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
+		/*
 		BaseRecord location = OlioUtil.getFullRecord(locationEpoch.get("location"));
 		IOSystem.getActiveContext().getReader().populate(location);
-		// logger.info(location.toFullString());
 		BaseRecord store = OlioUtil.getCreateRefStore(ctx, location);
-		//Map<String, List<BaseRecord>> apop = AnimalUtil.getAnimalPopulation(ctx, location);
 		Map<String, List<BaseRecord>> apop = AnimalUtil.paintAnimalPopulation(ctx, location);
+		*/
 		/*
 		for(PhysiologicalNeeds need : pgp.getPhysiologicalNeedsPriority()) {
 			logger.info(need.toString());

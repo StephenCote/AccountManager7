@@ -72,7 +72,15 @@
 			"baseType": "model",
 			"baseModel": "data.geoLocation",
 			"foreign": true,
-			"participantModel": "community.realm"
+			"participantModel": "community.location"
+		},
+		{
+			"name": "zoo",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.animal",
+			"foreign": true,
+			"participantModel": "community.animal"
 		},
 		{
 			"name": "currencies",

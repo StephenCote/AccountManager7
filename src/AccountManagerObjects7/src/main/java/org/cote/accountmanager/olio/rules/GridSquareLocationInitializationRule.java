@@ -43,6 +43,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	private int maxOpenSpace = 15;
 	private int mapWidth1km = 100;
 	private int mapHeight1km = 100;
+	/// Not obvious: The cellWidth set to 10x10 in a 1km square means each cell is really 100m x 100m
 	private int mapCellWidthM = 10;
 	private int mapCellHeightM = 10;
 	private DecimalFormat df2 = new DecimalFormat("00");

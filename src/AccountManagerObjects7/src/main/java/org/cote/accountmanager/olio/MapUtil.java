@@ -152,6 +152,10 @@ public class MapUtil {
 	}
 	
 	public static void printLocationMap(OlioContext ctx, BaseRecord location) {
+		printLocationMap(ctx, location, null, new ArrayList<>());
+	}
+	
+	public static void printLocationMap(OlioContext ctx, BaseRecord location, BaseRecord realm, List<BaseRecord> pop) {
 		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
 		logger.info("NOTE: This currently expects a GridSquare layout");
 		printDescriptionByFeature(ctx, location, (String)location.get("feature"));
@@ -177,7 +181,10 @@ public class MapUtil {
 
 		BufferedImage image = new BufferedImage(cellWidth, cellHeight, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g2d = image.createGraphics();
-
+		List<BaseRecord> zoo = new ArrayList<>();
+		if(realm != null) {
+			zoo = realm.get("zoo");
+		}
 		for(BaseRecord cell : cells) {
 			String ctype = cell.get("geoType");
 			int east = cell.get("eastings");
@@ -191,6 +198,23 @@ public class MapUtil {
 			g2d.fillRect(x, y, 50, 50);
 			g2d.setColor(Color.DARK_GRAY);
 			g2d.drawRect(x, y, 50, 50);
+			long cid = cell.get(FieldNames.FIELD_ID);
+
+			List<BaseRecord> lpop = pop.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+			if(lpop.size() > 0) {
+				g2d.setColor(Color.WHITE);
+				g2d.fillOval(x + 20, y + 20, 10, 10);
+			}
+			
+			if(realm != null) {
+				List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+				
+				if(zpop.size() > 0) {
+					g2d.setColor(Color.RED);
+					g2d.fillOval(x + 5, y + 5, 10, 10);
+				}
+			}
+
 		}
 		g2d.dispose();
 		FileUtil.makePath(exportPath);

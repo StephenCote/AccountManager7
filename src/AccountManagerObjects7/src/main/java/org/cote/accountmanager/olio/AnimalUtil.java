@@ -45,7 +45,8 @@ public class AnimalUtil {
 
 		List<BaseRecord> oanims = new ArrayList<>();
 		for(BaseRecord anim: animals) {
-			BaseRecord oanim = anim.copyDeidentifiedRecord();
+			//BaseRecord oanim = anim.copyDeidentifiedRecord();
+			BaseRecord oanim = anim;
 			BaseRecord state = oanim.get("state");
 			try {
 				oanim.set(FieldNames.FIELD_TYPE, "random");
@@ -74,23 +75,14 @@ public class AnimalUtil {
 						}
 						pap.get(k).addAll(cpap.get(k));
 					}
-					/*
-					Map<String, List<BaseRecord>> cpap = getAnimalPopulation(ctx, c, 3);
-					List<BaseRecord> apap = new ArrayList<>();
-					for(String k: cpap.keySet()) {
-						if(!pap.containsKey(k)) {
-							pap.put(k, new ArrayList<>());
-						}
-						pap.get(k).addAll(cpap.get(k));
-						apap.addAll(cpap.get(k));
-					}
-					attachAnimal(ctx, c, apap);
-					*/
 				}
 			}
 			else {
 				logger.error("**** No cells for location: " + location.get(FieldNames.FIELD_NAME));
 			}
+		}
+		else {
+			logger.warn("**** Location is not a 'feature' location");
 		}
 		ctx.processQueue();
 		return pap;
@@ -214,7 +206,7 @@ public class AnimalUtil {
 				}
 
 				BaseRecord oanim = newAnimal(ctx, pairs[0]);
-				oanim.set("type", "template");
+				oanim.set(FieldNames.FIELD_TYPE, "template");
 				oanims.add(oanim);
 				oanim.set("groupName", pairs[1]);
 				List<String> habitat = oanim.get("habitat");

@@ -131,13 +131,13 @@ public class CharacterUtil {
 			person.set("lastName", lastName);
 			person.set(FieldNames.FIELD_NAME, name);
 	
+			/*
 			List<String> trades = person.get("trades");
 			trades.add((
 				tnames != null ? tnames[rand.nextInt(tnames.length)]
 				:
 					OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID)))
 			));
-			
 			if(Math.random() < .15) {
 				trades.add((
 					tnames != null ? tnames[rand.nextInt(tnames.length)]
@@ -145,7 +145,7 @@ public class CharacterUtil {
 						OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, occDir.get(FieldNames.FIELD_ID)))
 				));			
 			}
-	
+			*/
 			
 			AlignmentEnumType alignment = OlioUtil.getRandomAlignment();
 			person.set(FieldNames.FIELD_ALIGNMENT, alignment);

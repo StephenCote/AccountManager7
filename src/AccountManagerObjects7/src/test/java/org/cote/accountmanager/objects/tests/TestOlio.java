@@ -90,7 +90,7 @@ public class TestOlio extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				true,
+				false,
 				resetUniverse
 			);
 		
@@ -114,7 +114,12 @@ public class TestOlio extends BaseTest {
 			octx.initialize();
 			assertNotNull("Root location is null", octx.getRootLocation());
 			// logger.info("Emitting maps");
-			// MapUtil.printMapFromAdmin2(octx);
+			try {
+				MapUtil.printMapFromAdmin2(octx);
+			}
+			catch(Exception e) {
+				e.printStackTrace();
+			}
 			BaseRecord evt = octx.startOrContinueEpoch();
 			assertNotNull("Epoch is null", evt);
 			try {
@@ -123,7 +128,7 @@ public class TestOlio extends BaseTest {
 				List<BaseRecord> acts = Arrays.asList(ioContext.getSearch().findRecords(q));
 				logger.info("Actions: " + acts.size());
 				//logger.info(JSONUtil.exportObject(acts, RecordSerializerConfig.getCondensedUnfilteredModule()));
-				logger.info(JSONUtil.exportObject(acts, RecordSerializerConfig.getForeignUnfilteredModule()));
+				// logger.info(JSONUtil.exportObject(acts, RecordSerializerConfig.getForeignUnfilteredModule()));
 			}
 			catch(Exception e) {
 				logger.error(e);

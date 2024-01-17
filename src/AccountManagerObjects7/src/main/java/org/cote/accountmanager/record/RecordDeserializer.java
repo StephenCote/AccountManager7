@@ -346,7 +346,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 			FieldType outFld = fld;
         	switch(ifld.getValueType()) {
 	        	case ZONETIME:
-	        		fld.setValue(ZonedDateTime.parse(value.textValue(), DateTimeFormatter.ISO_ZONED_DATE_TIME));
+	        		String zdv = value.textValue();
+	        		/// TODO: Verify the value isn't re-adjusted from GMT
+	        		if(zdv.indexOf("Z") == -1) {
+	        			zdv += "Z";
+	        		}
+	        		fld.setValue(ZonedDateTime.parse(zdv, DateTimeFormatter.ISO_ZONED_DATE_TIME));
 	        		break;
     			case TIMESTAMP:
     				fld.setValue(new Date(value.longValue()));

@@ -26,7 +26,7 @@
 			"type": "model",
 			"baseModel": "data.geoLocation",
 			"foreign": true,
-			"followReference": false
+			"followReference": true
 		},
 		{
 			"name": "currentAction",
@@ -38,6 +38,15 @@
 			"name": "alive",
 			"type": "boolean",
 			"default": true
+		},
+		{
+			"name": "awake",
+			"type": "boolean",
+			"default": true
+		},
+		{
+			"name": "immobilized",
+			"type": "boolean"
 		},
 		{
 			"name": "incapacitated",

@@ -231,7 +231,7 @@ public class OlioContext {
 		}
 		long rloc = realm.get("origin.id");
 		long currId = currentLocation.get(FieldNames.FIELD_ID);
-		if(rloc == currId) {
+		if(rloc > 0L && rloc == currId) {
 			try {
 				realm.set("currentEpoch", currentEpoch);
 				realm.set("currentEvent", currentEvent);
