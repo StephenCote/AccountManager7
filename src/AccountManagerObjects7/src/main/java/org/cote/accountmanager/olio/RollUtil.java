@@ -25,8 +25,17 @@ public class RollUtil {
 		}
 		return minMax(val);
 	}
-	public static double roll20() {
+	public static double roll20Dbl() {
 		return rand.nextDouble(0, Rules.ROLL_MAXIMUM);
+	}
+	public static int roll20Int() {
+		return rand.nextInt(0, (int)Rules.ROLL_MAXIMUM);
+	}
+	public static boolean catastrophicFailure(int val) {
+		return (val == 0);
+	}
+	public static boolean naturalSuccess(int val) {
+		return (val == (int)Rules.ROLL_MAXIMUM);
 	}
 	
 	public static boolean catastrophicFailure(double val) {
@@ -37,12 +46,12 @@ public class RollUtil {
 	}
 
 	protected static boolean rollStat20(BaseRecord rec, String statName) {
-		double sval = rec.get("statistics." + statName);
-		if(sval == 0.0) {
-			logger.warn("Statistic " + statName + " is 0.0");
+		int sval = rec.get("statistics." + statName);
+		if(sval == 0) {
+			logger.warn("Statistic " + statName + " is 0");
 			return false;
 		}
-		double roll = roll20();
+		int roll = roll20Int();
 		if(catastrophicFailure(roll)) {
 			logger.warn("Catastrophic failure of " + statName + "!");
 			return false;
