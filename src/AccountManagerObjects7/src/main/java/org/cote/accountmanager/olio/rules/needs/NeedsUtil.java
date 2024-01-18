@@ -171,7 +171,7 @@ public class NeedsUtil {
 					///
 					List<BaseRecord> zpop = localWildlife(realm, location);
 					for(BaseRecord z : zpop) {
-						BaseRecord zstate = z.get("state");)
+						BaseRecord zstate = z.get("state");
 						if(agitateLocation(ctx, zstate)) {
 							ctx.queue(zstate.copyRecord(new String[] {"id", "currentEast", "currentNorth"}));
 						}
