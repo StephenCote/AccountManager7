@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.TerrainUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -41,11 +42,15 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	private String GZD = "30K";
 	private int minOpenSpace = 5;
 	private int maxOpenSpace = 15;
+	/// Not obvious: The 'feature' mapWidth/Height is set to 100x100 square kilometers
 	private int mapWidth1km = 100;
 	private int mapHeight1km = 100;
-	/// Not obvious: The cellWidth set to 10x10 in a 1km square means each cell is really 100m x 100m
-	private int mapCellWidthM = 10;
-	private int mapCellHeightM = 10;
+
+	/// Not obvious: The cellWidth is set to 10x10 in a 1km square means each cell is really 100m x 100m (the multiplier is defined in the rules)
+	///
+	private int mapCellWidthM = Rules.MAP_EXTERIOR_CELL_WIDTH;
+	private int mapCellHeightM = Rules.MAP_EXTERIOR_CELL_HEIGHT;
+	
 	private DecimalFormat df2 = new DecimalFormat("00");
 	private DecimalFormat df3 = new DecimalFormat("000");
 
@@ -92,7 +97,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 		prepGrid(context);
 	}
 	
-	protected void prepCells(OlioContext ctx, BaseRecord location) {
+	public void prepCells(OlioContext ctx, BaseRecord location) {
 		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));

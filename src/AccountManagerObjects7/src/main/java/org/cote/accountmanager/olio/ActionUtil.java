@@ -28,7 +28,8 @@ public class ActionUtil {
 	}
 	
 	public static void loadActions(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
+		// int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
 		if(count == 0) {
 			importActions(ctx);
 			ctx.processQueue();

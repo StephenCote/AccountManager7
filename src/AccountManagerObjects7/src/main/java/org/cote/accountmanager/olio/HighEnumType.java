@@ -5,6 +5,8 @@ import java.text.DecimalFormat;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
+
 public enum HighEnumType {
 	DISREGARDED(-0.9),
     NEVER(0),
@@ -57,4 +59,15 @@ public enum HighEnumType {
 		}
         return highMap.get(pval);
     }
+    
+    public static ComparatorEnumType compare(HighEnumType lvl1, HighEnumType lvl2) {
+    	ComparatorEnumType comp = ComparatorEnumType.UNKNOWN;
+    	double val1 = lvl1.val;
+    	double val2 = lvl2.val;
+    	if(val1 < val2) comp = ComparatorEnumType.LESS_THAN;
+    	else if (val1 == val2) comp = ComparatorEnumType.GREATER_THAN;
+    	else comp = ComparatorEnumType.EQUALS;
+    	return comp;
+    }
+
 }

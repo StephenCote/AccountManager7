@@ -185,7 +185,7 @@ public class AnimalUtil {
 	}
 	
 	public static void loadAnimals(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ANIMAL, ctx.getWorld().get("animals.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ANIMAL, ctx.getWorld().get("animals.path")));
 		if(count == 0) {
 			importAnimals(ctx);
 			ctx.processQueue();
@@ -200,8 +200,8 @@ public class AnimalUtil {
 			
 			for(String anim : anims) {
 				String[] pairs = anim.split(":");
-				if(pairs.length < 3) {
-					logger.warn("Expected at least three pairs: " + anim);
+				if(pairs.length < 4) {
+					logger.warn("Expected at least four pairs: " + anim);
 					continue;
 				}
 
@@ -209,20 +209,57 @@ public class AnimalUtil {
 				oanim.set(FieldNames.FIELD_TYPE, "template");
 				oanims.add(oanim);
 				oanim.set("groupName", pairs[1]);
+				
+				char[] instKeys = pairs[2].toCharArray();
+				if(instKeys.length >= 3) {
+					BaseRecord inst = oanim.get("instinct");
+					double fight = 0;
+					double protect = 0;
+					double flight = 0;
+					double herd = 0;
+					double coop = 0;
+					double stealth = 0;
+					if(instKeys[0] == 'a') fight += 50;
+					else if(instKeys[0] == 'f') flight += 25;
+					else if(instKeys[0] == 'p') protect += 50;
+					else {
+						logger.warn("Unhandled 1: " + instKeys[0] + " from " + pairs[0] + " " + pairs[2]);
+					}
+					if(instKeys[1] == 's') herd -= 25;
+					else if(instKeys[1] == 'h') {
+						herd += 50;
+					}
+					else {
+						logger.warn("Unhandled 2: " + instKeys[1] + " from " + pairs[0] + " " + pairs[2]);
+					}
+					if(instKeys[2] == 's') stealth += 25;
+					else if(instKeys[2] == 'c') coop += 50;
+					else if(instKeys[2] == 'f') fight += 25;
+					else {
+						logger.warn("Unhandled 3: " + instKeys[2] + " from " + pairs[0] + " " + pairs[2]);
+					}
+					inst.set("fight", fight);
+					inst.set("flight", flight);
+					inst.set("protect", protect);
+					inst.set("cooperate", coop);
+					inst.set("hide", stealth);
+					
+				}
+				
 				List<String> habitat = oanim.get("habitat");
-				for(String h : pairs[2].split(",")) {
+				for(String h : pairs[3].split(",")) {
 					habitat.add(h.trim());
 				}
 				
 				ctx.queue(oanim);
 				oanims.add(oanim);
-				if(pairs.length < 4) {
+				if(pairs.length < 5) {
 					continue;
 				}
 				
 				BaseRecord store = oanim.get("store");
 				List<BaseRecord> items = store.get("items");
-				for(String i : pairs[3].split(",")) {
+				for(String i : pairs[4].split(",")) {
 					items.add(ItemUtil.getCreateItemTemplate(ctx, i.trim()));
 				}
 				/*

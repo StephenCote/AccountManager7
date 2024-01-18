@@ -39,7 +39,7 @@ public class StatisticsProvider  implements IProvider {
 			computeAverage(model, lfield, new String[] {"intelligence", "wisdom", "creativity"});
 		}
 		else if(lfield.getName().equals("reaction")) {
-			computeAverage(model, lfield, new String[] {"agility", "speed", "wisdom"});
+			computeAverage(model, lfield, new String[] {"agility", "speed", "wisdom", "perception"});
 		}
 		else if(lfield.getName().equals("maximumHealth")) {
 			computeAverage(model, lfield, new String[] {"physicalStrength", "physicalEndurance", "mentalStrength", "mentalEndurance", "charisma"});

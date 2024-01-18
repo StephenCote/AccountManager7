@@ -28,9 +28,13 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.LocationEnumType;
 
-public class PersonalityUtil {
-	public static final Logger logger = LogManager.getLogger(PersonalityUtil.class);
+public class ProfileUtil {
+	public static final Logger logger = LogManager.getLogger(ProfileUtil.class);
 	private static SecureRandom rand = new SecureRandom();
+	private static Map<Long, PersonalityProfile> profiles = new ConcurrentHashMap<>();
+	private static Map<Long, AnimalProfile> animalProfiles = new ConcurrentHashMap<>();
+	
+
 
 	/*
 	 Open
@@ -100,8 +104,6 @@ public class PersonalityUtil {
 		}
 	}
 	
-	private static Map<Long, PersonalityProfile> profiles = new ConcurrentHashMap<>();
-	
 	public static PersonalityProfile updateProfile(OlioContext octx, BaseRecord person) {
 		long id = person.get(FieldNames.FIELD_ID);
 		if(id <= 0L) {
@@ -115,7 +117,21 @@ public class PersonalityUtil {
 		updateProfile(octx.getWorld(), person, prof);
 		profiles.put(id,  prof);
 		return prof;
-
+	}
+	
+	public static AnimalProfile updateAnimalProfile(OlioContext octx, BaseRecord animal) {
+		long id = animal.get(FieldNames.FIELD_ID);
+		if(id <= 0L) {
+			logger.error("Invalid identifier");
+			return null;
+		}
+		if(!animalProfiles.containsKey(id)) {
+			return getAnimalProfile(octx, animal);
+		}
+		AnimalProfile prof = animalProfiles.get(id);
+		updateAnimalProfile(octx.getWorld(), animal, prof);
+		animalProfiles.put(id,  prof);
+		return prof;
 	}
 	
 	protected static int countPhysiologicalNeed(Map<BaseRecord, PersonalityProfile> map, PhysiologicalNeeds need) {
@@ -179,6 +195,15 @@ public class PersonalityUtil {
 		}
 		return map;
 	}
+	
+	public static Map<BaseRecord, AnimalProfile> getAnimalProfileMap(OlioContext octx, List<BaseRecord> animals){
+		Map<BaseRecord, AnimalProfile> map = new HashMap<>();
+		for(BaseRecord per : animals) {
+			map.put(per, getAnimalProfile(octx, per));
+		}
+		return map;
+	}
+	
 	public static PersonalityProfile getProfile(OlioContext octx, BaseRecord person) {
 		
 		long id = person.get(FieldNames.FIELD_ID);
@@ -200,21 +225,57 @@ public class PersonalityUtil {
 		return prof;
 	}
 	
-	public static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
-		IOSystem.getActiveContext().getReader().populate(person, new String[] {"personality", "statistics"});
-		BaseRecord per = person.get("personality");
-		BaseRecord stats = person.get("statistics");
-		BaseRecord inst = person.get("instinct");
-		BaseRecord sto = person.get("store");
-		IOSystem.getActiveContext().getReader().populate(per);
+	public static AnimalProfile getAnimalProfile(OlioContext octx, BaseRecord animal) {
+		
+		long id = animal.get(FieldNames.FIELD_ID);
+		if(id <= 0L) {
+			logger.error("Invalid identifier");
+			return null;
+		}
+		
+		if(animalProfiles.containsKey(id)) {
+			return animalProfiles.get(id);
+		}
+		
+		AnimalProfile prof = analyzeAnimal(octx, animal);
+		
+		if(prof != null) {
+			animalProfiles.put(id, prof);
+		}
+		
+		return prof;
+	}
+	private static void checkPopulation(BaseRecord animal) {
+		IOSystem.getActiveContext().getReader().populate(animal, new String[] {"statistics", "instinct", "store"});
+		BaseRecord stats = animal.get("statistics");
+		BaseRecord inst = animal.get("instinct");
+		BaseRecord sto = animal.get("store");
 		IOSystem.getActiveContext().getReader().populate(inst);
 		IOSystem.getActiveContext().getReader().populate(sto);
 		IOSystem.getActiveContext().getReader().populate(stats);
-		PersonalityProfile prof = createProfile(octx.getWorld(), person);
-		/// logger.info("Analyzing " + person.get(FieldNames.FIELD_NAME));
+		
+	}
+	public static AnimalProfile analyzeAnimal(OlioContext octx, BaseRecord animal) {
+		checkPopulation(animal);
+		AnimalProfile prof = createAnimalProfile(octx.getWorld(), animal);
 		return prof;
 	}
 	
+	public static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
+		checkPopulation(person);
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {"personality"});
+		BaseRecord per = person.get("personality");
+		IOSystem.getActiveContext().getReader().populate(per);
+		PersonalityProfile prof = createProfile(octx.getWorld(), person);
+		return prof;
+	}
+	
+	protected static AnimalProfile createAnimalProfile(BaseRecord world, BaseRecord animal) {
+		AnimalProfile prof = new AnimalProfile();
+		prof.setId(animal.get(FieldNames.FIELD_ID));
+		updateAnimalProfile(world, animal, prof);
+		return prof;
+	}
 	
 	protected static PersonalityProfile createProfile(BaseRecord world, BaseRecord person) {
 		PersonalityProfile prof = new PersonalityProfile();
@@ -222,36 +283,14 @@ public class PersonalityUtil {
 		updateProfile(world, person, prof);
 		return prof;
 	}
-	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {
-		prof.setName(person.get(FieldNames.FIELD_NAME));
-		prof.setRecord(person);
-		prof.setGender(person.get("gender"));
-		prof.setAge(person.get("age"));
-		List<BaseRecord> parts = person.get("partners");
-		List<BaseRecord> deps = person.get("dependents");
-		prof.setMarried(parts.size() > 0);
-		prof.setChildren(deps.size() > 0);
-		try {
-			prof.setAlive(!CharacterUtil.isDeceased(person));
-		} catch (ModelException e) {
-			logger.error(e);
-		}
-
-		prof.setEvents(Arrays.asList(EventUtil.getEvents(world, person, new String[]{"actors", "participants", "observers", "influencers"}, EventEnumType.UNKNOWN)));
-		Optional<BaseRecord> dopt = prof.getEvents().stream().filter(e -> EventEnumType.DIVORCE.toString().equals(((String)e.get(FieldNames.FIELD_TYPE)).toUpperCase())).findFirst();
-		if(dopt.isPresent()) {
-			prof.setDivorced(true);
-		}
-
-		BaseRecord per = person.get("personality");
-		prof.setOpen(VeryEnumType.valueOf((double)per.get("openness")));
-		prof.setConscientious(VeryEnumType.valueOf((double)per.get("conscientiousness")));
-		prof.setExtraverted(VeryEnumType.valueOf((double)per.get("extraversion")));
-		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
-		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
+	protected static void updateAnimalProfile(BaseRecord world, BaseRecord animal, AnimalProfile prof) {
+		prof.setName(animal.get(FieldNames.FIELD_NAME));
+		prof.setRecord(animal);
+		prof.setGender(animal.get("gender"));
+		prof.setAge(animal.get("age"));
+		prof.setAlive(animal.get("state.alive"));
 		
-		BaseRecord inst = person.get("instinct");
-		
+		BaseRecord inst = animal.get("instinct");
 		prof.setSleep(InstinctEnumType.valueOf((double)inst.get("sleep")));
 		prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
 		prof.setFlight(InstinctEnumType.valueOf((double)inst.get("flight")));
@@ -267,7 +306,7 @@ public class PersonalityUtil {
 		prof.setCry(InstinctEnumType.valueOf((double)inst.get("cry")));
 		prof.setProtect(InstinctEnumType.valueOf((double)inst.get("protect")));
 		
-		BaseRecord stats = person.get("statistics");
+		BaseRecord stats = animal.get("statistics");
 		double d1 = 100.0;
 		prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get("physicalStrength")*5)/d1));
 		prof.setPhysicalEndurance(HighEnumType.valueOf(((int)stats.get("physicalEndurance")*5)/d1));
@@ -289,6 +328,29 @@ public class PersonalityUtil {
 		prof.setScience(HighEnumType.valueOf(((int)stats.get("science")*5)/d1));
 		prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
 		prof.setLuck(HighEnumType.valueOf(((int)stats.get("luck")*5)/d1));
+		prof.setPerception(HighEnumType.valueOf(((int)stats.get("perception")*5)/d1));
+
+	}
+	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {
+		updateAnimalProfile(world, person, prof);
+
+		List<BaseRecord> parts = person.get("partners");
+		List<BaseRecord> deps = person.get("dependents");
+		prof.setMarried(parts.size() > 0);
+		prof.setChildren(deps.size() > 0);
+
+		prof.setEvents(Arrays.asList(EventUtil.getEvents(world, person, new String[]{"actors", "participants", "observers", "influencers"}, EventEnumType.UNKNOWN)));
+		Optional<BaseRecord> dopt = prof.getEvents().stream().filter(e -> EventEnumType.DIVORCE.toString().equals(((String)e.get(FieldNames.FIELD_TYPE)).toUpperCase())).findFirst();
+		if(dopt.isPresent()) {
+			prof.setDivorced(true);
+		}
+
+		BaseRecord per = person.get("personality");
+		prof.setOpen(VeryEnumType.valueOf((double)per.get("openness")));
+		prof.setConscientious(VeryEnumType.valueOf((double)per.get("conscientiousness")));
+		prof.setExtraverted(VeryEnumType.valueOf((double)per.get("extraversion")));
+		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
+		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
 
 		analyzePhysiologicalNeeds(person, prof);
 	}

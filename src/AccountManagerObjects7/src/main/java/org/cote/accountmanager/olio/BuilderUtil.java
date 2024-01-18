@@ -56,7 +56,7 @@ public class BuilderUtil {
 	}
 	
 	public static void loadBuilders(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_BUILDER, ctx.getWorld().get("builders.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_BUILDER, ctx.getWorld().get("builders.path")));
 		if(count == 0) {
 			BaseRecord[] builders = importBuilders(ctx);
 			ctx.processQueue();

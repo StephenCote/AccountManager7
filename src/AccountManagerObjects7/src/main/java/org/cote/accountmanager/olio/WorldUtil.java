@@ -52,13 +52,13 @@ public class WorldUtil {
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
-		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
-		//return IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
-		
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
+
 	public static BaseRecord getCreateWorld(BaseRecord user, String groupPath, String worldName, String[] features) {
 		return getCreateWorld(user, null, groupPath, worldName, features);
 	}
+	
 	public static BaseRecord getCreateWorld(BaseRecord user, BaseRecord basis, String groupPath, String worldName, String[] features) {
 		BaseRecord rec = getWorld(user, groupPath, worldName);
 		if(rec == null) {
@@ -99,7 +99,7 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getReader().populate(occDir);
 
 		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
+		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
 
 	}
 	
@@ -113,7 +113,7 @@ public class WorldUtil {
 		if(features.length > 0) {
 			GeoParser.loadInfo(user, locDir.get(FieldNames.FIELD_PATH), basePath, features, reset);
 		}
-		return IOSystem.getActiveContext().getAccessPoint().count(user, GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID)));
+		return IOSystem.getActiveContext().getSearch().count(GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID)));
 
 	}
 	private static int loadDictionary(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -129,7 +129,7 @@ public class WorldUtil {
 		WordNetParser.loadAdjectives(user, groupPath, wnetPath, 0, reset);
 		WordNetParser.loadNouns(user, groupPath, wnetPath, 0, reset);
 		WordNetParser.loadVerbs(user, groupPath, wnetPath, 0, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, WordNetParser.getQuery(user, null, groupPath));
+		return IOSystem.getActiveContext().getSearch().count(WordNetParser.getQuery(user, null, groupPath));
 	}
 	private static int loadNames(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -139,7 +139,7 @@ public class WorldUtil {
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadNames(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_WORD, groupPath));
+		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, groupPath));
 	}
 	private static int loadColors(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -149,7 +149,7 @@ public class WorldUtil {
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadColors(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
+		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
 	}
 	private static int loadPatterns(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -159,7 +159,7 @@ public class WorldUtil {
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadPatterns(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_DATA, groupPath));
+		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_DATA, groupPath));
 	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -169,7 +169,7 @@ public class WorldUtil {
 		String groupPath = traitsDir.get(FieldNames.FIELD_PATH);
 
 		WordParser.loadTraits(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
+		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_TRAIT, groupPath));
 	}
 	private static int loadSurnames(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
@@ -177,7 +177,7 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getReader().populate(nameDir);
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
 		WordParser.loadSurnames(user, groupPath, basePath, reset);
-		return IOSystem.getActiveContext().getAccessPoint().count(user, OlioUtil.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
+		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
 
 	public static void loadWorldData(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -382,7 +382,7 @@ public class WorldUtil {
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
 					person.set("age", (int)years);
-					PersonalityUtil.rollPersonality(person.get("personality"));
+					ProfileUtil.rollPersonality(person.get("personality"));
 					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);
 					totalAge += years;
 					totalAbsoluteAlignment += (alignment + 4);

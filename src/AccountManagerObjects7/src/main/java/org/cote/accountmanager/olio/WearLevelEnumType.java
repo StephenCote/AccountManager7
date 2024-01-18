@@ -56,6 +56,7 @@ public enum WearLevelEnumType {
         return levelMap.get(val);
     }
     public static int valueOf(WearLevelEnumType lvl) {
-    	return levelMap.entrySet().stream().filter(entry -> lvl == entry.getValue()).map(Map.Entry::getKey).findFirst().get();
+    	return lvl.val;
+    	/// return levelMap.entrySet().stream().filter(entry -> lvl == entry.getValue()).map(Map.Entry::getKey).findFirst().get();
     }
 }

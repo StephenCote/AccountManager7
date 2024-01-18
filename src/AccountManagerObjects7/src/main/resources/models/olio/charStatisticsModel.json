@@ -78,6 +78,13 @@
 			"validateRange": true
 		},
 		{
+			"name": "perception",
+			"type": "int",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true
+		},
+		{
 			"name": "creativity",
 			"type": "int",
 			"minValue": 0,

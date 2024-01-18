@@ -3,8 +3,21 @@ package org.cote.accountmanager.olio;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class Rules {
+	
+	/// exterior cell = cell_width * cell_multiplier.  E.G.: 10 x 10 = 100 meters.
+	public static final int MAP_EXTERIOR_CELL_WIDTH = 10;
+	public static final int MAP_EXTERIOR_CELL_HEIGHT = 10;
+	public static final int MAP_EXTERIOR_CELL_MULTIPLIER = 10;
+	
+	public static final double ROLL_MAXIMUM = 20;
+	public static final double ROLL_MAXIMUM_MODIFICATION = 19.5;
+	public static final double ROLL_MINIMUM = 0;
+	public static final double ROLL_MINIMUM_MODIFICATION = 0.5;
+	public static final double ROLL_NATURAL_VARIANCE = 0.1;
+	public static final double ROLL_FAILURE_THRESHOLD = 1;
 
-	public static final int INITIAL_STATISTICS_ALLOTMENT = 120;
+	public static final int INITIAL_STATISTICS_ALLOTMENT = 130;
+	public static final int INITIAL_STATISTICS_ALLOTMENT_CHILD = 65;
 	public static final int INITIAL_MINIMUM_STATISTIC = 1;
 	public static final int MAXIMUM_STATISTIC = 20;
 	public static final int MAXIMUM_CHILD_AGE = 10;

@@ -22,6 +22,7 @@ public class StatisticsUtil {
 	private static final StatisticRule[] statistics = new StatisticRule[]{
 		new StatisticRule("physicalStrength"), new StatisticRule("physicalEndurance"), new StatisticRule("manualDexterity"), new StatisticRule("agility"), new StatisticRule("speed"), new StatisticRule("mentalStrength"),
 		new StatisticRule("mentalEndurance"), new StatisticRule("intelligence"), new StatisticRule("wisdom"), new StatisticRule("charisma"), new StatisticRule("creativity"), new StatisticRule("spirituality"), new StatisticRule("luck")
+		, new StatisticRule("perception")
 	};
 	
 	public static void rollStatistics(BaseRecord rec) {
@@ -33,14 +34,17 @@ public class StatisticsUtil {
 			return;
 		}
 		IOSystem.getActiveContext().getReader().populate(rec);
-		int maxStat = Rules.MAXIMUM_STATISTIC;
-		if(age > 0 && age < 13) {
-			maxStat = 10;
-		}
 		
 		/// Every statistic receives a minimum of 1
 		///  - (statistics.length * Rules.INITIAL_MINIMUM_STATISTIC)
 		int allotment = Rules.INITIAL_STATISTICS_ALLOTMENT;
+		int maxStat = Rules.MAXIMUM_STATISTIC;
+		if(age > 0 && age < 13) {
+			allotment = Rules.INITIAL_STATISTICS_ALLOTMENT_CHILD;
+			maxStat = 10;
+		}
+		
+
 		int total = 0;
 		try {
 			List<StatisticRule> slist = Arrays.asList(statistics);

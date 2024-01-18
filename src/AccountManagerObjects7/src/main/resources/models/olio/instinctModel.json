@@ -35,6 +35,13 @@
 			"validateRange": true
 		},
 		{
+			"name": "hide",
+			"type": "double",
+			"minValue": -100,
+			"maxValue": 100,
+			"validateRange": true
+		},
+		{
 			"name": "feed",
 			"type": "double",
 			"minValue": -100,

@@ -27,7 +27,10 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityGroupProfile;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
-import org.cote.accountmanager.olio.PersonalityUtil;
+import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.Rules;
+import org.cote.accountmanager.olio.ThreatUtil;
+import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -39,6 +42,9 @@ public class NeedsUtil {
 	private static final SecureRandom random = new SecureRandom();
 	private static final int partyMin = 3;
 	private static final int partyMax = 10;
+	private static final int minPartyAge = 14;
+	private static final int maxPartyAge = 40;
+	private static final int maxPartyCheck = 5;
 	
 	
 	/*
@@ -99,7 +105,22 @@ public class NeedsUtil {
 	 *    c) Evaluate behavior and personality impacts
 	 *  
 	 */
-	
+	protected static boolean agitateLocation(OlioContext context, BaseRecord state) throws FieldException, ValueException, ModelNotFoundException {
+		int east = state.get("currentEast");
+		int north = state.get("currentNorth");
+		boolean bal = false;
+		if(east == 0 || north == 0) {
+			state.set("currentEast", random.nextInt(1, Rules.MAP_EXTERIOR_CELL_WIDTH) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+			state.set("currentNorth", random.nextInt(1, Rules.MAP_EXTERIOR_CELL_HEIGHT) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+			bal = true;
+		}
+		return bal;
+	}
+	protected static List<BaseRecord> localWildlife(BaseRecord realm, BaseRecord location){
+		long id = location.get(FieldNames.FIELD_ID);
+		List<BaseRecord> zoo = realm.get("zoo");
+		return zoo.stream().filter(zp -> (zp.get("state.currentLocation") != null && ((long)zp.get("state.currentLocation.id")) == id)).collect(Collectors.toList());
+	}
 	protected static void agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map) {
 		BaseRecord eloc = event.get("location");
 
@@ -111,6 +132,7 @@ public class NeedsUtil {
 		try {
 			for(BaseRecord p: map.keySet()) {
 				boolean blup = false;
+				boolean bloc = false;
 				
 				PersonalityProfile pp = map.get(p);
 				String name = p.get(FieldNames.FIELD_NAME);
@@ -118,6 +140,8 @@ public class NeedsUtil {
 				boolean immobile = state.get("immobilized");
 				boolean alive = state.get("alive");
 				boolean awake = state.get("awake");
+				
+
 	
 				BaseRecord location = state.get("currentLocation");
 				if(location == null) {
@@ -127,6 +151,9 @@ public class NeedsUtil {
 					location = rloc;
 					state.set("currentLocation", rloc);
 					blup = true;
+				}
+				if(agitateLocation(ctx, state)) {
+					bloc = true;
 				}
 				long id = location.get(FieldNames.FIELD_ID);
 				long pid = location.get(FieldNames.FIELD_PARENT_ID);
@@ -142,23 +169,40 @@ public class NeedsUtil {
 					
 					/// Animals are currently attached to the parent location
 					///
-					List<BaseRecord> zpop = zoo.stream().filter(zp -> (zp.get("state.currentLocation") != null && ((long)zp.get("state.currentLocation.id")) == pid)).collect(Collectors.toList());
+					List<BaseRecord> zpop = localWildlife(realm, location);
+					for(BaseRecord z : zpop) {
+						BaseRecord zstate = z.get("state");)
+						if(agitateLocation(ctx, zstate)) {
+							ctx.queue(zstate.copyRecord(new String[] {"id", "currentEast", "currentNorth"}));
+						}
+					}
+							//zoo.stream().filter(zp -> (zp.get("state.currentLocation") != null && ((long)zp.get("state.currentLocation.id")) == id)).collect(Collectors.toList());
 
 					logger.info("Agitate " + name + " in " + location.get(FieldNames.FIELD_NAME));
-					logger.info("People count: " + currLocCount);
-					logger.info("Critter count: " + zpop.size());
+					/// logger.info("People count: " + currLocCount);
+					/// logger.info("Critter count: " + zpop.size());
 					
-					int eastings = location.get("eastings");
-					int northings = location.get("northings");
-					logger.info(eastings + ", " + northings);
+
+					/// logger.info(eastings + ", " + northings);
 					if(alive && awake && !immobile) {
 						if(state.get("currentEvent") != null) {
-							logger.info("Agitating " + name + " who is currently busy");
+							logger.warn("Agitating " + name + " who is currently busy");
+						}
+						else {
+							Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, p);
 						}
 						/// .....
-						
+						List<String> upf = new ArrayList<>();
 						if(blup) {
-							ctx.queue(state.copyRecord(new String[] {FieldNames.FIELD_ID, "currentLocation"}));
+							upf.add("currentLocation");
+						}
+						if(bloc) {
+							upf.add("currentEast");
+							upf.add("currentNorth");
+						}
+						if(upf.size() > 0) {
+							upf.add(FieldNames.FIELD_ID);
+							ctx.queue(state.copyRecord(upf.toArray(new String[0])));
 						}
 					}
 				}
@@ -177,8 +221,8 @@ public class NeedsUtil {
 
 	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
 		// List<BaseRecord> pop = ctx.getPopulation(locationEpoch.get("location"));
-		Map<BaseRecord, PersonalityProfile> map = PersonalityUtil.getProfileMap(ctx, group);
-		PersonalityGroupProfile pgp = PersonalityUtil.getGroupProfile(map);
+		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
+		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
 		logger.info("Calculating recommendation ....");
 		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
 		agitate(ctx, realm, increment, map);
@@ -222,12 +266,12 @@ public class NeedsUtil {
 					long id = per.get(FieldNames.FIELD_ID);
 					int age = per.get("age");
 					int check = 0;
-					while(partSet.contains(id) || age < 14 || age > 40) {
+					while(partSet.contains(id) || age < minPartyAge || age > maxPartyAge) {
 						per = lpop.get(random.nextInt(lpop.size()));
 						id = per.get(FieldNames.FIELD_ID);
 						age = per.get("age");
 						check++;
-						if(check > 3) {
+						if(check > maxPartyCheck) {
 							break;
 						}
 					}

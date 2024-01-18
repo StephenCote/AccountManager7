@@ -29,7 +29,9 @@ public class CharacterUtil {
 	public static final Logger logger = LogManager.getLogger(CharacterUtil.class);
 	private static SecureRandom rand = new SecureRandom();
 	
+	//// TODO: Deprecate in favor of state.alive
 	public static boolean isDeceased(BaseRecord person) throws ModelException{
+		
 		return AttributeUtil.getAttributeValue(person, "deceased", false);
 	}
 	public static int getCurrentAge(OlioContext ctx, BaseRecord person) {

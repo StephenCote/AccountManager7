@@ -57,6 +57,16 @@
 			"type": "boolean"
 		},
 		{
+			"name": "currentEast",
+			"type": "int",
+			"description": "Meters from the western grid line of the currentLocation"
+		},
+		{
+			"name": "currentNorth",
+			"type": "int",
+			"description": "Meters from the southern grid line of the currentLocation"
+		},
+		{
 			"name": "health",
 			"type": "double",
 			"minValue": 0,

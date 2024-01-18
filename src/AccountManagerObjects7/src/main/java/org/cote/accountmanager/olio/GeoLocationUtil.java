@@ -150,7 +150,9 @@ public class GeoLocationUtil {
 		int y1 = location1.get("northings");
 		int x2 = location2.get("eastings");
 		int y2 = location2.get("northings");
-		// logger.info(x1 + ", " + y1 + " -> " + x2 + ", " + y2);
+		return distance(x1, y1, x2, y2);
+	}
+	public static double distance(int x1, int y1, int x2, int y2) {
 		return Math.sqrt(Math.pow((double)x2 - x1,2) + Math.pow((double)y2 - y1, 2));
 	}
 	public static float calculateDistance(BaseRecord location1, BaseRecord location2) {

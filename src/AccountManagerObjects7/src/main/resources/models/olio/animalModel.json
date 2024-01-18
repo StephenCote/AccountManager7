@@ -46,6 +46,11 @@
 			"type": "int"
 		},
 		{
+			"name": "gender",
+			"type": "string",
+			"maxLength": 10
+		},
+		{
 			"name": "traits",
 			"type": "list",
 			"baseType": "model",
