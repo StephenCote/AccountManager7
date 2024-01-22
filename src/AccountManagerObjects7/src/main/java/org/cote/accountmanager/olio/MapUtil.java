@@ -202,16 +202,44 @@ public class MapUtil {
 
 			List<BaseRecord> lpop = pop.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
 			if(lpop.size() > 0) {
-				g2d.setColor(Color.WHITE);
-				g2d.fillOval(x + 20, y + 20, 10, 10);
+				for(BaseRecord p : lpop) {
+					int peast = p.get("state.currentEast");
+					/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
+					///
+					if(peast > 0) {
+						peast = peast / 2;
+					}
+					int pnorth = p.get("state.currentNorth");
+					if(pnorth > 0) {
+						pnorth = pnorth / 2;
+					}
+					g2d.setColor(Color.WHITE);
+					g2d.fillOval(x + peast, y + pnorth, 10, 10);
+				}
 			}
 			
 			if(realm != null) {
 				List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
 				
 				if(zpop.size() > 0) {
-					g2d.setColor(Color.RED);
-					g2d.fillOval(x + 5, y + 5, 10, 10);
+					for(BaseRecord z : zpop) {
+						int peast = z.get("state.currentEast");
+						int pnorth = z.get("state.currentNorth");
+						/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
+						///
+						if(peast > 0) {
+							peast = peast / 2;
+						}
+						if(pnorth > 0) {
+							pnorth = pnorth / 2;
+						}
+
+						g2d.setColor(Color.RED);
+
+						g2d.fillOval(x + peast, y + pnorth, 10, 10);
+
+						//g2d.fillOval(x + 5, y + 5, 10, 10);
+					}
 				}
 			}
 

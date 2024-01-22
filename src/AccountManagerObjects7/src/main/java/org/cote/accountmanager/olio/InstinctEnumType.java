@@ -66,14 +66,12 @@ public enum InstinctEnumType {
     	/// return levelMap.entrySet().stream().filter(entry -> lvl == entry.getValue()).map(Map.Entry::getKey).findFirst().get();
     }
     
-    public static ComparatorEnumType compare(InstinctEnumType lvl1, InstinctEnumType lvl2) {
-    	ComparatorEnumType comp = ComparatorEnumType.UNKNOWN;
-    	double val1 = lvl1.val;
-    	double val2 = lvl2.val;
-    	if(val1 < val2) comp = ComparatorEnumType.LESS_THAN;
-    	else if (val1 == val2) comp = ComparatorEnumType.GREATER_THAN;
-    	else comp = ComparatorEnumType.EQUALS;
-    	return comp;
+    public static ComparatorEnumType compare(InstinctEnumType lvl1, InstinctEnumType lvl2, double mod) {
+    	return RollUtil.compare(lvl1.val, lvl2.val, mod);
     }
-
+    
+    public static ComparatorEnumType compare(InstinctEnumType lvl1, InstinctEnumType lvl2) {
+    	return RollUtil.compare(lvl1.val, lvl2.val);
+    }
+    
 }

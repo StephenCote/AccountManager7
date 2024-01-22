@@ -29,7 +29,7 @@ import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.PersonalityProfile;
-import org.cote.accountmanager.olio.PersonalityUtil;
+import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
@@ -80,7 +80,7 @@ public class TestOlio extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
+		// IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 				testUser1,
 				testProperties.getProperty("test.datagen.path"),
@@ -113,13 +113,9 @@ public class TestOlio extends BaseTest {
 			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
 			octx.initialize();
 			assertNotNull("Root location is null", octx.getRootLocation());
-			// logger.info("Emitting maps");
-			try {
-				MapUtil.printMapFromAdmin2(octx);
-			}
-			catch(Exception e) {
-				e.printStackTrace();
-			}
+			
+			/// MapUtil.printMapFromAdmin2(octx);
+
 			BaseRecord evt = octx.startOrContinueEpoch();
 			assertNotNull("Epoch is null", evt);
 			try {

@@ -315,6 +315,13 @@ public abstract class BaseRecord {
 		}
 		
 	}
+	public <T> void setValue(String fieldName, T val) {
+		try {
+			set(fieldName, val);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
    public synchronized <T> void set(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {
 		if(prototype) {
 			throw new ValueException(String.format(ValueException.PROTOTYPE_READONLY_EXCEPTION, fieldName, model));

@@ -122,7 +122,13 @@ public class AnimalUtil {
 					List<BaseRecord> grp = new ArrayList<>();
 					for(int i = 0; i < count; i++) {
 						BaseRecord anim1 = a.copyDeidentifiedRecord();
+						int age = random.nextInt(1,20);
+						anim1.setValue("age", age);
+						StatisticsUtil.rollStatistics(anim1.get("statistics"), age);
+						
 						BaseRecord state = anim1.get("state");
+						state.setValue("currentLocation", location);
+						StateUtil.agitateLocation(ctx, state);
 						try {
 							anim1.set(FieldNames.FIELD_TYPE, "random");
 							if(random.nextDouble() <= Rules.ANIMAL_CARCASS_ODDS) {

@@ -56,9 +56,9 @@ public class Rules {
 	///
 	public static final double INITIAL_EMMIGRATION_RATE = 0.01;
 	
-	/// 50% chance there's some kind of wildlife
-	///
-	public static final double ODDS_ANY_ANIMAL_GROUP = 0.5;
+	/// chance there's some kind of wildlife in a given cell
+	/// note: When the cell map is larger, like 100x100, then this can lead to a very large animal population
+	public static final double ODDS_ANY_ANIMAL_GROUP = 0.2;
 	
 	/// 20% chance per animal group
 	public static final double ODDS_ANIMAL_GROUP = 0.2;
@@ -71,6 +71,13 @@ public class Rules {
 	/// 15% chance of an animal being dead
 	///
 	public static final double ANIMAL_CARCASS_ODDS = 0.15;
+
+	/// Number of cells to include when evaluating populations across cells
+	/// This is directly related to the map cell size, and effectively makes anything beyond invisible for certain evaluations
+	/// E.G.: a distance of 3 cells = cell_width * cell multiplier * distance == meters, or 300 meters
+	/// It's up to the implementing rule to look across features
+	///
+	public static final int MAXIMUM_OBSERVATION_DISTANCE = 3;
 	
 	public static double getAnimalOdds(TerrainEnumType type) {
 		double typeOdds = Rules.ODDS_ANIMAL_GROUP;

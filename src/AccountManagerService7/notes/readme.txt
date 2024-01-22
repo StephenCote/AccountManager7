@@ -14,15 +14,16 @@ pg_stat_statements.track= top
 
 create extension pg_stat_statements;
 
-SELECT  substring(query, 1, 50) AS query,
+SELECT 
 round(total_exec_time::numeric, 2) AS total_time,
 calls,
 round(mean_exec_time::numeric, 2) AS mean,
 round((100 * total_exec_time /
-sum(total_exec_time::numeric) OVER ())::numeric, 2) AS percentage_cpu
+sum(total_exec_time::numeric) OVER ())::numeric, 2) AS percentage_cpu,
+substring(query, 1, 250) AS query
 FROM    pg_stat_statements
 ORDER BY total_time DESC
-LIMIT 10;
+LIMIT 50;
 
 /// Reset
 select * from pg_stat_statements_reset();

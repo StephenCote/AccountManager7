@@ -14,6 +14,10 @@ public class AnimalProfile {
 	private String gender = null;
 	private boolean alive = false;
 	
+	/// temporary placeholder for instinct-driven fixations
+	///
+	private List<BaseRecord> fixationTarget = new ArrayList<>();
+	
 	private HighEnumType physicalStrength = HighEnumType.DISREGARDED;
 	private HighEnumType physicalEndurance = HighEnumType.DISREGARDED;
 	private HighEnumType manualDexterity = HighEnumType.DISREGARDED;
@@ -52,6 +56,14 @@ public class AnimalProfile {
 
 	public AnimalProfile() {
 		
+	}
+
+	public List<BaseRecord> getFixationTarget() {
+		return fixationTarget;
+	}
+
+	public void setFixationTarget(List<BaseRecord> fixationTarget) {
+		this.fixationTarget = fixationTarget;
 	}
 
 	public BaseRecord getRecord() {

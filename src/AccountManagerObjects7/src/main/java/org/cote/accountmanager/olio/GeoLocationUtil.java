@@ -35,6 +35,8 @@ public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
 	private static Map<String, String[]> altNamesCache = new HashMap<>();
 
+	private static Map<Long, List<BaseRecord>> cellMap = new ConcurrentHashMap<>();
+
 	private static SecureRandom rand = new SecureRandom();
     
 	/*
@@ -53,8 +55,34 @@ public class GeoLocationUtil {
     	return odds;
     }
 	*/
-	private static Map<Long, List<BaseRecord>> cellMap = new ConcurrentHashMap<>();
 	
+	public static List<BaseRecord> getAdjacentCells(OlioContext ctx, BaseRecord origin, int distance){
+		BaseRecord parentLoc = getParentLocation(ctx, origin);
+		return getAdjacentCells(getCells(ctx, parentLoc), origin, distance);
+	}
+	public static List<BaseRecord> getAdjacentCells(List<BaseRecord> cells, BaseRecord origin, int distance){
+		IOSystem.getActiveContext().getReader().populate(origin, new String[] {"eastings", "northings"});
+		int east = origin.get("eastings");
+		int north = origin.get("northings");
+		
+		int peast = east + distance;
+		int neast = east - distance;
+		int pnorth = north + distance;
+		int nnorth = north - distance;
+		long id = origin.get("id");
+		List<BaseRecord> outCells = cells.stream().filter(c -> {
+			long cid = c.get("id");
+			int ceast = c.get("eastings");
+			int cnorth = c.get("northings");
+			return (cid != id && (ceast == peast || ceast == neast || ceast == east) && (cnorth == pnorth || cnorth == nnorth || cnorth == north));
+		}).collect(Collectors.toList());
+		return outCells;
+	}
+	public static BaseRecord getParentLocation(OlioContext ctx, BaseRecord location) {
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, location.get(FieldNames.FIELD_PARENT_ID));
+		cq.setLimitFields(false);
+		return IOSystem.getActiveContext().getSearch().findRecord(cq);
+	}
 	public static List<BaseRecord> getCells(OlioContext ctx, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
 		if(cellMap.containsKey(id)) {

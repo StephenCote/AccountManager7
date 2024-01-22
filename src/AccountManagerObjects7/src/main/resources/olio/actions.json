@@ -3,7 +3,8 @@
 		"model": "olio.action",
 		"counterActions": [
 			"wait",
-			"gather"
+			"gather",
+			"flee"
 		],
 		"minimumEnergyCost": 0.1,
 		"minimumTime": 3600,
@@ -35,7 +36,8 @@
 	{
 		"counterActions": [
 			"wait",
-			"hunt"
+			"hunt",
+			"flee"
 		],
 		"minimumEnergyCost": 0.1,
 		"minimumTime": 3600,
@@ -65,6 +67,9 @@
 	{
 		"minimumTime": 60,
 		"name": "wait",
+		"counterActions": [
+			"flee"
+		],
 		"negativeInstincts": [
 			"flight"
 		],
@@ -112,6 +117,10 @@
 	{
 		"minimumTime": 3600,
 		"name": "shelter",
+		"counterActions": [
+			"flee",
+			"defend"
+		],
 		"negativeInstincts": [
 			"flight"
 		],
@@ -139,7 +148,10 @@
 		"name": "fight"
 	},
 	{
-		"name": "flee"
+		"name": "flee",
+		"counterActions": [
+			"fight"
+		]
 	},
 	{
 		"counterActions": [

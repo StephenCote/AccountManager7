@@ -363,7 +363,7 @@ public class OlioUtil {
 		}
 		return ctx.getPopulationMap().get(id);
 	}
-	
+
 	public static List<BaseRecord> listGroupPopulation(OlioContext ctx, BaseRecord group){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 		q.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
