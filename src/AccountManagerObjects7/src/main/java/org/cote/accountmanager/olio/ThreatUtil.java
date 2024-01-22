@@ -138,7 +138,7 @@ public class ThreatUtil {
 					logger.warn(ap.getName() + " is now fixated");
 				}
 				else if(tet == ThreatEnumType.ANIMAL_TARGET) {
-					logger.warn(ap.getName() + " is acting all crazy like: " + tet.toString());
+					logger.warn(ap.getName() + " made a spectacle of itself: " + tet.toString());
 				}
 				else {
 					logger.warn(ap.getName() + " is acting aggressive: " + tet.toString());
