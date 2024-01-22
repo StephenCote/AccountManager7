@@ -11,7 +11,6 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
-import org.cote.accountmanager.util.JSONUtil;
 
 public class ThreatUtil {
 	public static final Logger logger = LogManager.getLogger(ThreatUtil.class);
@@ -148,19 +147,8 @@ public class ThreatUtil {
 			else {
 				// logger.info(ap.getName() + " is not currently aggressive");
 			}
-			/*
-			RollEnumType per = RollUtil.rollPerception(ap.getRecord(), person);
-			RollEnumType per2 = RollUtil.rollPerception(person, ap.getRecord());
-			if(per == RollEnumType.CATASTROPHIC_FAILURE) {
-				logger.warn(), null, person, state, pp, zoo, acells, aids, zpop, amap);
-				per2 = RollUtil.rollPerception(person, ap.getRecord());
-			}
-			
-			logger.info(ap.getName() + (toxic ? " toxic" : "") + (isagg ? " aggressive" : "") + (per == RollEnumType.SUCCESS || per == RollEnumType.NATURAL_SUCCESS ? " noticed" : "") + " -- " + person.get("name"));
-			*/
 		}
 
-		// logger.info("Evaluate animal threat to " + person.get("name"));
 		return tpop;
 	}
 	
@@ -170,18 +158,12 @@ public class ThreatUtil {
 		long locId = state.get("currentLocation.id");
 		long id = person.get(FieldNames.FIELD_ID);
 		List<BaseRecord> pop = ctx.getPopulation(event.get("location"));
-		/// logger.info("Checking total pop: " + pop.size());
 		NeedsUtil.agitateLocation(ctx, realm, event, pop, false);
-		/*
-		for(BaseRecord p: pop) {
-			StateUtil.agitateLocation(ctx, p.get("state"));
-		}
-		*/
+
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, state.get("currentLocation"), Rules.MAXIMUM_OBSERVATION_DISTANCE);
 		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		
 		/// Find people in the current and adjacent cells
-		
 		List<BaseRecord> ppop = pop.stream().filter(zp ->{
 			BaseRecord zloc = zp.get("state.currentLocation");
 			long zlid = (zloc != null ? zloc.get("id") : 0L);
@@ -243,7 +225,7 @@ public class ThreatUtil {
 		List<PersonalityProfile> people = evaluatePersonalThreat(ctx, realm, event, group, person);
 		addThreat(threats, ThreatEnumType.EXISTENTIAL_THREAT, people.stream().filter(a -> a.getFixationTarget().size() > 0).map(a -> a.getRecord()).collect(Collectors.toList()));
 		addThreat(threats, ThreatEnumType.PERSONAL_THREAT, people.stream().filter(a -> a.getFixationTarget().size() == 0).map(a -> a.getRecord()).collect(Collectors.toList()));
-		// logger.info(person.get("name") + " has " + threats.keySet().size() + " threats");
+
 		return threats;
 	}
 	private static void addThreat(Map<ThreatEnumType,List<BaseRecord>> map, ThreatEnumType threat, List<BaseRecord> recs) {

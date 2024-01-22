@@ -1,6 +1,5 @@
 package org.cote.accountmanager.record;
 
-import com.fasterxml.jackson.core.json.JsonReadFeature;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 
 public class RecordSerializerConfig {
