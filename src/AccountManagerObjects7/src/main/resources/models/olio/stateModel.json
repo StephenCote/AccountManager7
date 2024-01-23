@@ -59,12 +59,14 @@
 		{
 			"name": "currentEast",
 			"type": "int",
-			"description": "Meters from the western grid line of the currentLocation"
+			"description": "Meters from the western grid line of the currentLocation",
+			"default": -1
 		},
 		{
 			"name": "currentNorth",
 			"type": "int",
-			"description": "Meters from the southern grid line of the currentLocation"
+			"description": "Meters from the southern grid line of the currentLocation",
+			"default": -1
 		},
 		{
 			"name": "health",

@@ -120,9 +120,14 @@ public class NeedsUtil {
 					state.set("currentLocation", rloc);
 					blup = true;
 				}
-				if(StateUtil.agitateLocation(ctx, state)) {
+				/*
+				if(StateUtil.setInitialLocation(ctx, state)) {
 					bloc = true;
 				}
+				*/
+				StateUtil.agitateLocation(ctx, state);
+				blup = true;
+				bloc = true;
 				String geoType = location.get("geoType");
 				if(geoType.equals("feature")) {
 					logger.warn("Feature placement detected: Move " + name);

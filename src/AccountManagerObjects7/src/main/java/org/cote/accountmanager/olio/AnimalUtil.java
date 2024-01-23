@@ -125,7 +125,8 @@ public class AnimalUtil {
 						
 						BaseRecord state = anim1.get("state");
 						state.setValue("currentLocation", location);
-						StateUtil.agitateLocation(ctx, state);
+						StateUtil.setInitialLocation(ctx, state);
+						//StateUtil.agitateLocation(ctx, state);
 						try {
 							anim1.set(FieldNames.FIELD_TYPE, "random");
 							if(random.nextDouble() <= Rules.ANIMAL_CARCASS_ODDS) {

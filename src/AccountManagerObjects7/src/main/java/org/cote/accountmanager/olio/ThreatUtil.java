@@ -52,10 +52,10 @@ public class ThreatUtil {
 		return perc;
 	}
 	public static boolean isRelativelyAggressive(AnimalProfile possibleThreat, PersonalityProfile person) {
-		/// Do they have any 'fight' in 'em?
+
 		boolean isAgg = false;
 		if(!possibleThreat.isAlive()) {
-			logger.info("Sheesh, " + possibleThreat.getName() + " isn't even alive");
+			/// logger.info("Sheesh, " + possibleThreat.getName() + " isn't even alive");
 			return false;
 		}
 		
