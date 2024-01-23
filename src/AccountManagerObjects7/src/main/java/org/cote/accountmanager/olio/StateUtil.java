@@ -18,7 +18,10 @@ public class StateUtil {
 	public static BaseRecord findCell(OlioContext ctx, BaseRecord state, List<BaseRecord> cells, int x, int y) {
 		BaseRecord loc = state.get("currentLocation");
 		BaseRecord cell = loc;
-		
+		if(cells.size() == 0) {
+			logger.error("Empty cell list");
+			return null;
+		}
 		BaseRecord par = GeoLocationUtil.getParentLocation(ctx, loc);
 		int xedge = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		int yedge = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
@@ -45,13 +48,12 @@ public class StateUtil {
 					cell = ocell.get();
 				}
 				else {
-					logger.error("Couldn't find it");
+					logger.error("Couldn't find it at " + veast + ", " + vnorth);
 				}
 			}
 		}
 		else {
 			/// return current location
-			logger.info("Same cell");
 			return loc;
 		}
 		return cell;
@@ -99,7 +101,11 @@ public class StateUtil {
 		
 	}
 	public static void agitateLocation(OlioContext context, BaseRecord state) {
-		agitateLocation(context, state, GeoLocationUtil.getCells(context, state.get("currentLocation")));
+		BaseRecord loc = state.get("currentLocation");
+		if(loc == null) {
+			return;
+		}
+		agitateLocation(context, state, GeoLocationUtil.getCells(context, GeoLocationUtil.getParentLocation(context, loc)));
 	}
 	public static void agitateLocation(OlioContext context, BaseRecord state, List<BaseRecord> cells) {
 		BaseRecord loc = state.get("currentLocation");

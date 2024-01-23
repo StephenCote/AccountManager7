@@ -120,12 +120,9 @@ public class NeedsUtil {
 					state.set("currentLocation", rloc);
 					blup = true;
 				}
-				/*
-				if(StateUtil.setInitialLocation(ctx, state)) {
-					bloc = true;
-				}
-				*/
+
 				StateUtil.agitateLocation(ctx, state);
+
 				blup = true;
 				bloc = true;
 				String geoType = location.get("geoType");
