@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -17,6 +18,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -106,8 +108,15 @@ public class NeedsUtil {
 		if(tmap.keySet().size() > 0) {
 			logger.warn("TODO: Evaluate initial threats");
 		}
+		
+		List<PhysiologicalNeeds> pneeds = pgp.getPhysiologicalNeedsPriority();
+		
+		String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
+		logger.info(nar);
+		
 		MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
-
+		MapUtil.printRealmMap(ctx, realm);
+		
 		List<BaseRecord> acts = new ArrayList<>();
 		
 		return acts;
@@ -268,6 +277,24 @@ public class NeedsUtil {
 			logger.error(e);
 		}
 		return party;
+	}
+	
+	public static boolean isNaked(BaseRecord record) {
+		List<BaseRecord> items = record.get("store.apparel");
+		/// TODO: Need to filter for inuse
+		return items.size() == 0;
+	}	
+	
+	public static boolean needsFood(BaseRecord record) {
+		List<BaseRecord> items = record.get("store.items");
+		List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get("category"))).collect(Collectors.toList());
+		return food.size() == 0;
+	}
+	
+	public static boolean needsWater(BaseRecord record) {
+		List<BaseRecord> items = record.get("store.items");
+		List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
+		return water.size() == 0;
 	}
 	
 }

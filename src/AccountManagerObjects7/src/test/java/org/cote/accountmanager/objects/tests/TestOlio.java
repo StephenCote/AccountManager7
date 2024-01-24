@@ -115,10 +115,12 @@ public class TestOlio extends BaseTest {
 			assertNotNull("Root location is null", octx.getRootLocation());
 			
 			MapUtil.printMapFromAdmin2(octx);
+			/*
 			BaseRecord[] realms = octx.getRealms();
 			for(BaseRecord r: realms) {
 				MapUtil.printRealmMap(octx, r);
 			}
+			*/
 
 			BaseRecord evt = octx.startOrContinueEpoch();
 			assertNotNull("Epoch is null", evt);

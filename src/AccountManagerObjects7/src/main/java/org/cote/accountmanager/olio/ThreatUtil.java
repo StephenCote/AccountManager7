@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
@@ -51,6 +52,9 @@ public class ThreatUtil {
 		if(perc < 0) perc = 0;
 		return perc;
 	}
+
+
+
 	public static boolean isRelativelyAggressive(AnimalProfile possibleThreat, PersonalityProfile person) {
 
 		boolean isAgg = false;
@@ -62,23 +66,30 @@ public class ThreatUtil {
 		/// Percentage of distance by (very limited) maximum visibility
 		double dr = distanceRelativity(possibleThreat.getRecord(), person.getRecord());
 
+		/// Is the animal starving
+		boolean starving = InstinctUtil.checkFeedInstinct(possibleThreat, InstinctEnumType.STRONG, dr); 
+		
 		/// do they have any 'fight' in them relative to distance
-		boolean fight = InstinctEnumType.compare(possibleThreat.getFight(), InstinctEnumType.AVERAGE, dr) == ComparatorEnumType.GREATER_THAN;
-		/// do they have a strong sense of 'protection' relative to distance
+		boolean fight = InstinctUtil.checkFeedInstinct(possibleThreat, InstinctEnumType.AVERAGE, dr); 
+
+		/// do they have a sense of 'protection' relative to distance
 		///
-		boolean protect = InstinctEnumType.compare(possibleThreat.getProtect(), InstinctEnumType.STRONG, dr) == ComparatorEnumType.GREATER_THAN;
-		if(fight || protect) {
+		boolean protect = InstinctUtil.checkProtectInstinct(possibleThreat, InstinctEnumType.STRONG, dr);
+		if(fight || protect || starving) {
 			/// Do they see the person (perception)?
-			RollEnumType perc = RollUtil.rollStat20(possibleThreat.getRecord(), "perception");
+			RollEnumType perc = RollUtil.rollPerception(possibleThreat.getRecord());
 			if(perc == RollEnumType.SUCCESS || perc == RollEnumType.NATURAL_SUCCESS) {
+				isAgg = true;
 				/// Do they 'react' to the person
-				RollEnumType react = RollUtil.rollStat20(possibleThreat.getRecord(), "reaction");
+				/*
+				RollEnumType react = RollUtil.rollReaction(possibleThreat.getRecord());
 				if(react == RollEnumType.SUCCESS || react == RollEnumType.NATURAL_SUCCESS) {
 					isAgg = true;
 				}
 				else {
 					// logger.info(possibleThreat.getName() + " didn't react to 'em");
 				}
+				*/
 
 			}
 			else {
@@ -105,59 +116,57 @@ public class ThreatUtil {
 		List<BaseRecord> items = record.get("store.items");
 		return items.stream().filter(i -> "toxin".equals(i.get("name"))).collect(Collectors.toList()).size() > 0;
 	}
+
+	public static ThreatEnumType evaluateAggressive(AnimalProfile ap, PersonalityProfile pp, ThreatEnumType threat, ThreatEnumType antiThreat) {
+		boolean isagg = isRelativelyAggressive(ap, pp);
+		ThreatEnumType tet = ThreatEnumType.NONE;
+		if(isagg) {
+			/// roll for reaction to act on the aggression
+			tet = evaluateStatThreat(ap.getRecord(), pp.getRecord(), "reaction", threat, antiThreat);
+			if(tet == ThreatEnumType.EXISTENTIAL_THREAT) {
+				ap.getFixationTarget().add(pp.getRecord());
+				logger.warn(ap.getName() + " is now fixated");
+			}
+			else if(tet == ThreatEnumType.ANIMAL_TARGET || tet == ThreatEnumType.PERSONAL_TARGET) {
+				logger.warn(ap.getName() + " made a spectacle of itself: " + tet.toString());
+			}
+			else {
+				logger.warn(ap.getName() + " is acting aggressive: " + tet.toString());
+			}
+		}
+		else {
+			// logger.info(ap.getName() + " is not currently aggressive");
+		}
+		return tet;
+	}
 	
 	public static List<AnimalProfile> evaluateAnimalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, BaseRecord person){
 		BaseRecord state = person.get("state");
 		// BaseRecord stats = person.get("statistics");
 		PersonalityProfile pp = group.get(person);
-		long locId = state.get("currentLocation.id");
 		List<BaseRecord> zoo = realm.get("zoo");
 		NeedsUtil.agitateLocation(ctx, realm, event, zoo, false, true);
 		
-		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, state.get("currentLocation"), Rules.MAXIMUM_OBSERVATION_DISTANCE);
-		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
-		
 		/// Find animals in the current and adjacent cells
-		List<BaseRecord> zpop = zoo.stream().filter(zp ->{
-			BaseRecord zloc = zp.get("state.currentLocation");
-			long zlid = (zloc != null ? zloc.get("id") : 0L);
-			return (zlid > 0 && (zlid == locId || aids.contains(zlid)));
-		}).collect(Collectors.toList());
-		
+		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(ctx, zoo, state.get("currentLocation"));
+
 		List<AnimalProfile> tpop = new ArrayList<>();
 		Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(ctx, zpop);
 		for(AnimalProfile ap : amap.values()) {
-			boolean toxic = isToxic(ap.getRecord());
-			boolean isagg = isRelativelyAggressive(ap, pp);
-			ThreatEnumType tet = ThreatEnumType.NONE;
-			if(isagg) {
-				tet = evaluateStatThreat(ap.getRecord(), person, "perception", ThreatEnumType.ANIMAL_THREAT, ThreatEnumType.ANIMAL_TARGET);
+			// boolean toxic = isToxic(ap.getRecord());
+			ThreatEnumType tet = evaluateAggressive(ap, pp, ThreatEnumType.ANIMAL_THREAT, ThreatEnumType.ANIMAL_TARGET);
+			if(tet != ThreatEnumType.NONE) {
 				tpop.add(ap);
-				
-				if(tet == ThreatEnumType.EXISTENTIAL_THREAT) {
-					ap.getFixationTarget().add(person);
-					logger.warn(ap.getName() + " is now fixated");
-				}
-				else if(tet == ThreatEnumType.ANIMAL_TARGET) {
-					logger.warn(ap.getName() + " made a spectacle of itself: " + tet.toString());
-				}
-				else {
-					logger.warn(ap.getName() + " is acting aggressive: " + tet.toString());
-				}
-				
-			}
-			else {
-				// logger.info(ap.getName() + " is not currently aggressive");
 			}
 		}
 
 		return tpop;
 	}
+
 	
 	public static List<PersonalityProfile> evaluatePersonalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, BaseRecord person){
 		BaseRecord state = person.get("state");
 		PersonalityProfile pp = group.get(person);
-		long locId = state.get("currentLocation.id");
 		long id = person.get(FieldNames.FIELD_ID);
 		
 		/// Exclude the primary party from the general populace for purposes of agitating and assessing threat with the remainder of the population
@@ -165,19 +174,11 @@ public class ThreatUtil {
 		List<Long> gids = group.keySet().stream().map(r -> ((long)r.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		List<BaseRecord> pop = ctx.getPopulation(event.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList();
 		
-		///
 		NeedsUtil.agitateLocation(ctx, realm, event, pop, false, true);
 
-		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, state.get("currentLocation"), Rules.MAXIMUM_OBSERVATION_DISTANCE);
-		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
-		
 		/// Find people in the current and adjacent cells
-		List<BaseRecord> ppop = pop.stream().filter(zp ->{
-			BaseRecord zloc = zp.get("state.currentLocation");
-			long zlid = (zloc != null ? zloc.get("id") : 0L);
-			return (zlid > 0 && (zlid == locId || aids.contains(zlid)));
-		}).collect(Collectors.toList());
-		
+		List<BaseRecord> ppop = GeoLocationUtil.limitToAdjacent(ctx, pop, state.get("currentLocation"));
+
 		List<PersonalityProfile> tpop = new ArrayList<>();
 		Map<BaseRecord, PersonalityProfile> amap = ProfileUtil.getProfileMap(ctx, ppop);
 		for(PersonalityProfile ap : amap.values()) {
@@ -185,21 +186,9 @@ public class ThreatUtil {
 				/// skip self
 				continue;
 			}
-			boolean isagg = isRelativelyAggressive(ap, pp);
-			ThreatEnumType tet = ThreatEnumType.NONE;
-			if(isagg) {
-				tet = evaluateStatThreat(ap.getRecord(), person, "perception", ThreatEnumType.ANIMAL_THREAT, ThreatEnumType.ANIMAL_TARGET);
+			ThreatEnumType tet = evaluateAggressive(ap, pp, ThreatEnumType.PERSONAL_THREAT, ThreatEnumType.PERSONAL_TARGET);
+			if(tet != ThreatEnumType.NONE) {
 				tpop.add(ap);
-				if(tet == ThreatEnumType.EXISTENTIAL_THREAT) {
-					ap.getFixationTarget().add(person);
-					logger.warn(ap.getName() + " is now fixated");
-				}
-				else {
-					logger.warn(ap.getName() + " is acting aggressive: " + tet.toString());
-				}
-			}
-			else {
-				// logger.info(ap.getName() + " is not currently aggressive");
 			}
 		}
 

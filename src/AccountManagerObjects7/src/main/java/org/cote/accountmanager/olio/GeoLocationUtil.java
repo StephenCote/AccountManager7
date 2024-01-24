@@ -76,7 +76,18 @@ public class GeoLocationUtil {
 		return val;
 	}
 	
-	public void prepareGridCells(OlioContext ctx, BaseRecord location) {
+	public static List<BaseRecord> limitToAdjacent(OlioContext ctx, List<BaseRecord> pop, BaseRecord location){
+		long locId = location.get(FieldNames.FIELD_ID);
+		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, location, Rules.MAXIMUM_OBSERVATION_DISTANCE);
+		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
+		return pop.stream().filter(zp ->{
+			BaseRecord zloc = zp.get("state.currentLocation");
+			long zlid = (zloc != null ? zloc.get("id") : 0L);
+			return (zlid > 0 && (zlid == locId || aids.contains(zlid)));
+		}).collect(Collectors.toList());
+	}
+	
+	public static void prepareGridCells(OlioContext ctx, BaseRecord location) {
 		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
