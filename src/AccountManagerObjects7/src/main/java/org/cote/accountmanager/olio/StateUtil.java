@@ -15,6 +15,7 @@ import org.cote.accountmanager.schema.FieldNames;
 public class StateUtil {
 	public static final Logger logger = LogManager.getLogger(StateUtil.class);
 	private static final SecureRandom random = new SecureRandom();
+	
 	public static BaseRecord findCell(OlioContext ctx, BaseRecord state, List<BaseRecord> cells, int x, int y) {
 		BaseRecord loc = state.get("currentLocation");
 		BaseRecord cell = loc;
@@ -35,6 +36,7 @@ public class StateUtil {
 			else if(y > xedge) northings += 1;
 			if(eastings < 0 || eastings > (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) || northings < 0 || northings > (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1)) {
 				logger.info("Cross feature!");
+				return null;
 			}
 			else {
 				final int veast = eastings;
@@ -71,12 +73,16 @@ public class StateUtil {
 		long id = loc.get(FieldNames.FIELD_ID);
 		BaseRecord node = findCell(context, state, cells, x, y);
 		if(node == null) {
-			logger.warn("Failed to find node at: " + x + ", " + y);
+			/// logger.warn("Failed to find node at: " + x + ", " + y);
+			/// failed to find node.  don't move.  just bail
+			///
+			return;
 		}
 		else {
 			long nid = node.get(FieldNames.FIELD_ID);
 			/// different cell
 			if(id != nid) {
+				/// logger.warn("Moving from cell " + id + " to " + nid);
 				if(x < 0) {
 					x = xedge;
 				}
@@ -93,6 +99,7 @@ public class StateUtil {
 			}
 			state.setValue("currentEast", x);
 			state.setValue("currentNorth", y);
+			// logger.info("Move " + x + ", " + y);
 			// context.queue(state.copyRecord(new String[] { FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth" }));
 		}
 		
@@ -103,25 +110,38 @@ public class StateUtil {
 	public static void agitateLocation(OlioContext context, BaseRecord state) {
 		BaseRecord loc = state.get("currentLocation");
 		if(loc == null) {
+			logger.warn("Location is null");
 			return;
 		}
+
 		agitateLocation(context, state, GeoLocationUtil.getCells(context, GeoLocationUtil.getParentLocation(context, loc)));
 	}
 	public static void agitateLocation(OlioContext context, BaseRecord state, List<BaseRecord> cells) {
 		BaseRecord loc = state.get("currentLocation");
 		if(loc == null) {
+			logger.warn("Location is null");
 			return;
 		}
+		
+		/// If the state is currently committed to an action, don't agitate it's location
+		///
+		if(state.get("currentAction") != null) {
+			logger.warn("Don't agitate with current action");
+			return;
+		}
+
 		int east = state.get("currentEast");
 		int north = state.get("currentNorth");
 		if(east == -1 || north == -1) {
+			/// logger.warn("Set initial location");
 			setInitialLocation(context, state);
 			return;
 		}
 		int reast = (random.nextInt(-1,1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + east;
 		int rnorth = (random.nextInt(-1,1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + north;
-		
+
 		move(context, state, cells, reast, rnorth, true, false);
+		// logger.info("Move from " + east + ", " + north + " to " + state.get("currentEast") + ", " + state.get("currentNorth"));
 		
 	}
 	public static boolean setInitialLocation(OlioContext context, BaseRecord state) {

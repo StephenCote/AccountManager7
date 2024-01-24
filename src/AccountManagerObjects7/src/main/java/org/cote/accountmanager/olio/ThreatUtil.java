@@ -112,6 +112,8 @@ public class ThreatUtil {
 		PersonalityProfile pp = group.get(person);
 		long locId = state.get("currentLocation.id");
 		List<BaseRecord> zoo = realm.get("zoo");
+		NeedsUtil.agitateLocation(ctx, realm, event, zoo, false, true);
+		
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, state.get("currentLocation"), Rules.MAXIMUM_OBSERVATION_DISTANCE);
 		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		
@@ -157,8 +159,14 @@ public class ThreatUtil {
 		PersonalityProfile pp = group.get(person);
 		long locId = state.get("currentLocation.id");
 		long id = person.get(FieldNames.FIELD_ID);
-		List<BaseRecord> pop = ctx.getPopulation(event.get("location"));
-		NeedsUtil.agitateLocation(ctx, realm, event, pop, false);
+		
+		/// Exclude the primary party from the general populace for purposes of agitating and assessing threat with the remainder of the population
+		///
+		List<Long> gids = group.keySet().stream().map(r -> ((long)r.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
+		List<BaseRecord> pop = ctx.getPopulation(event.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList();
+		
+		///
+		NeedsUtil.agitateLocation(ctx, realm, event, pop, false, true);
 
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, state.get("currentLocation"), Rules.MAXIMUM_OBSERVATION_DISTANCE);
 		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());

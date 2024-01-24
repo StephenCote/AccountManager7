@@ -90,58 +90,77 @@ public class NeedsUtil {
 	 *    c) Evaluate behavior and personality impacts
 	 *  
 	 */
+	
+	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment){
+		List<BaseRecord> acts = new ArrayList<>();
+		return acts;
+	}
+
+	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
+		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
+		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
+		
+		logger.info("Calculating initial recommendation ....");
+		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
+		Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map, false);
+		if(tmap.keySet().size() > 0) {
+			logger.warn("TODO: Evaluate initial threats");
+		}
+		MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
+
+		List<BaseRecord> acts = new ArrayList<>();
+		
+		return acts;
+	}
 
 	protected static List<BaseRecord> localWildlife(BaseRecord realm, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
 		List<BaseRecord> zoo = realm.get("zoo");
 		return zoo.stream().filter(zp -> (zp.get("state.currentLocation") != null && ((long)zp.get("state.currentLocation.id")) == id)).collect(Collectors.toList());
 	}
-	protected static void agitateLocation(OlioContext ctx, BaseRecord realm, BaseRecord event, List<BaseRecord> pop, boolean cluster) {
+	
+	protected static void agitateLocation(OlioContext ctx, BaseRecord realm, BaseRecord event, List<BaseRecord> pop, boolean cluster, boolean roam) {
 		BaseRecord eloc = event.get("location");
 		List<BaseRecord> acells = GeoLocationUtil.getCells(ctx, eloc);
 		BaseRecord rloc = null;
 		
 		try {
 			for(BaseRecord p: pop) {
-				boolean blup = false;
-				boolean bloc = false;
-				
 				String name = p.get(FieldNames.FIELD_NAME);
 				BaseRecord state = p.get("state");
+				if((boolean)state.get("agitated") == true) {
+					continue;
+				}
 				BaseRecord location = state.get("currentLocation");
 				if(location == null) {
 					if(rloc == null) {
 						rloc = acells.get(random.nextInt(acells.size()));
 					}
 					location = rloc;
+					state.set("currentLocation", rloc);
 					if(!cluster) {
 						rloc = null;
 					}
-					state.set("currentLocation", rloc);
-					blup = true;
 				}
-
 				StateUtil.agitateLocation(ctx, state);
+				state.setValue("agitated", true);
+				// logger.info("Agitate " + p.get("name") + " " + location.get("name") + ", " + state.get("currentEast") + ", " + state.get("currentNorth"));
 
-				blup = true;
-				bloc = true;
 				String geoType = location.get("geoType");
 				if(geoType.equals("feature")) {
 					logger.warn("Feature placement detected: Move " + name);
 				}
 				else {
 					List<String> upf = new ArrayList<>();
-					if(blup) {
-						upf.add("currentLocation");
+					upf.add("currentLocation");
+					upf.add("currentEast");
+					upf.add("currentNorth");
+					/// if not roaming, then persist the agitated state to prevent further location agitation
+					if(!roam) {
+						upf.add("agitated");
 					}
-					if(bloc) {
-						upf.add("currentEast");
-						upf.add("currentNorth");
-					}
-					if(upf.size() > 0) {
-						upf.add(FieldNames.FIELD_ID);
-						ctx.queue(state.copyRecord(upf.toArray(new String[0])));
-					}
+					upf.add(FieldNames.FIELD_ID);
+					ctx.queue(state.copyRecord(upf.toArray(new String[0])));
 				}
 			}
 			ctx.processQueue();
@@ -150,11 +169,11 @@ public class NeedsUtil {
 			logger.error(e);
 		}
 	}
-	protected static Map<BaseRecord, Map<ThreatEnumType,List<BaseRecord>>> agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map) {
+	protected static Map<BaseRecord, Map<ThreatEnumType,List<BaseRecord>>> agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
 		BaseRecord eloc = event.get("location");
 		Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> tmap = new HashMap<>();
 		try {
-			agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true);
+			agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true, roam);
 			for(BaseRecord p: map.keySet()) {
 
 				String name = p.get(FieldNames.FIELD_NAME);
@@ -199,26 +218,7 @@ public class NeedsUtil {
 		return tmap;
 	}
 	
-	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment){
-		List<BaseRecord> acts = new ArrayList<>();
-		return acts;
-	}
 
-	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
-		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
-		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
-		logger.info("Calculating recommendation ....");
-		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
-		Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map);
-		if(tmap.keySet().size() > 0) {
-			logger.warn("TODO: Evaluate initial threats");
-		}
-		MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
-
-		List<BaseRecord> acts = new ArrayList<>();
-		
-		return acts;
-	}
 	
 	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch){
 		List<BaseRecord> party = new ArrayList<>();

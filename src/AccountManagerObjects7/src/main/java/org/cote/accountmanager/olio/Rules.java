@@ -4,6 +4,9 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class Rules {
 	
+	
+	public static final int MAP_EXTERIOR_FEATURE_WIDTH = 100;
+	public static final int MAP_EXTERIOR_FEATURE_HEIGHT = 100;
 	/// exterior cell = cell_width * cell_multiplier.  E.G.: 10 x 10 = 100 meters.
 	public static final int MAP_EXTERIOR_CELL_WIDTH = 10;
 	public static final int MAP_EXTERIOR_CELL_HEIGHT = 10;

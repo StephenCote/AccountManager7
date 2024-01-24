@@ -42,6 +42,7 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 				}
 			}
 			IOSystem.getActiveContext().getRecordUtil().createRecords(parts.toArray(new BaseRecord[0]));
+			context.clearCache();
 		}
 	}
 	
@@ -51,7 +52,14 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 
 		logger.info("Evaluate " + locationEpoch.get(FieldNames.FIELD_NAME) + " " + increment.get(FieldNames.FIELD_NAME));
 		
+		/// populate any animal life as needed
 		checkAnimalPopulation(context, locationEpoch);
+		
+		/// Party Play will pick a small band of work with, versus the total population
+		/// This becomes the primaryGroup of the 'realm' for this location
+		/// NOTE/TODO: The realm/location relationship is currently a bit disconnected in the way they are initially set up
+		/// This was supposed to allow for flexibility, but depending on the rule chain, can quickly become mandatory
+		///
 		List<BaseRecord> party = (partyPlay ? NeedsUtil.getCreateParty(context, locationEpoch) : context.getPopulation(locationEpoch.get("location")));
 
 		NeedsUtil.recommend(context, locationEpoch, increment, party);

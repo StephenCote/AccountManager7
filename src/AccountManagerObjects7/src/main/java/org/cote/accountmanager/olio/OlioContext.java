@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -61,10 +62,12 @@ public class OlioContext {
 	public void clearCache() {
 		populationMap.clear();
 		demographicMap.clear();
+		realms.clear();
 		if(queue.size() > 0) {
 			logger.error("Warning: request to clear pending queue");
 		}
 		clearQueue();
+		CacheUtil.clearCache();
 	}
 	public void clearQueue() {
 		queue.clear();
@@ -200,6 +203,13 @@ public class OlioContext {
 				currentEpoch = EventUtil.getLastEpochEvent(this);
 			}
 		}
+	}
+	public BaseRecord[] getRealms() {
+		List<BaseRecord> rlms = new ArrayList<>();
+		for(BaseRecord loc: getLocations()) {
+			rlms.add(getRealm(loc));
+		}
+		return rlms.toArray(new BaseRecord[0]);
 	}
 	private Map<Long, BaseRecord> realmMap = new ConcurrentHashMap<>();
 	public BaseRecord getRealm(BaseRecord location) {

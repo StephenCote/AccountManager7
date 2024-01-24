@@ -38,22 +38,17 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	
 	private SecureRandom rand = new SecureRandom();
 
-	/// 30K is in the middle of the ocean
-	private String GZD = "30K";
 	private int minOpenSpace = 5;
 	private int maxOpenSpace = 15;
 	/// Not obvious: The 'feature' mapWidth/Height is set to 100x100 square kilometers
-	private int mapWidth1km = 100;
-	private int mapHeight1km = 100;
+	private int mapWidth1km = Rules.MAP_EXTERIOR_FEATURE_WIDTH;
+	private int mapHeight1km = Rules.MAP_EXTERIOR_FEATURE_HEIGHT;
 
 	/// Not obvious: The cellWidth is set to 10x10 in a 1km square means each cell is really 100m x 100m (the multiplier is defined in the rules)
 	///
 	private int mapCellWidthM = Rules.MAP_EXTERIOR_CELL_WIDTH;
 	private int mapCellHeightM = Rules.MAP_EXTERIOR_CELL_HEIGHT;
 	
-	private DecimalFormat df2 = new DecimalFormat("00");
-	private DecimalFormat df3 = new DecimalFormat("000");
-
 	private int maxConnectedRegions = 5;
     
     BaseRecord zone = null;
@@ -117,12 +112,12 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 				for(int x = 0; x < mapCellWidthM; x++) {
 					int ie = x; //  * 10
 					int in = y; //  * 10
-	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
+	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GeoLocationUtil.GZD + " " + location.get("kident") + " " + GeoLocationUtil.df2.format((int)location.get("eastings")) + "" + GeoLocationUtil.df2.format((int)location.get("northings")) + " " + GeoLocationUtil.df3.format(ie) + "" + GeoLocationUtil.df3.format(in), iter++);
 	    			/// Location util defaults to putting new locations into the universe.  change to the world group
 	    			///
 	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 	    			cell.set("area", (double)10);
-	    			cell.set("gridZone", GZD);
+	    			cell.set("gridZone", GeoLocationUtil.GZD);
 	    			cell.set("kident", location.get("kident"));
 	    			cell.set("eastings", x);
 	    			cell.set("northings", y);
@@ -144,11 +139,11 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	
     private void prepGrid(OlioContext ctx) {
     	int iter = 100;
-    	zone = GeoLocationUtil.newLocation(ctx, null, GZD, iter++);
+    	zone = GeoLocationUtil.newLocation(ctx, null, GeoLocationUtil.GZD, iter++);
     	IOSystem.getActiveContext().getRecordUtil().createRecord(zone);
     	BaseRecord[][] grid = new BaseRecord[mapWidth1km][mapHeight1km];
     	try {
-	    	zone.set("gridZone", GZD);
+	    	zone.set("gridZone", GeoLocationUtil.GZD);
 	    	String identH = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 	    	String identV = "ABCDEFGHJKLMNPQRSTUV";
 	    	List<BaseRecord> blocks = new ArrayList<>();
@@ -156,9 +151,9 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
     			for(int x = 0; x < identH.length(); x++) {
     				String sx = identH.substring(x,x+1);
     				String sy = identV.substring(y,y+1);
-    				BaseRecord block = GeoLocationUtil.newLocation(ctx, zone, GZD + " " + sx + sy, iter++);
+    				BaseRecord block = GeoLocationUtil.newLocation(ctx, zone, GeoLocationUtil.GZD + " " + sx + sy, iter++);
     				block.set("area", (double)mapWidth1km * mapHeight1km);
-    				block.set("gridZone", GZD);
+    				block.set("gridZone", GeoLocationUtil.GZD);
     				block.set("kident", sx + sy);
     				blocks.add(block);
     				block.set("geoType", "admin2");
@@ -172,9 +167,9 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
     		blocks.clear();
 	    	for(int x = 0; x < mapWidth1km; x++) {
 	    		for(int y = 0; y < mapHeight1km; y++) {
-	    			grid[x][y] = GeoLocationUtil.newLocation(ctx, k100, GZD + " " + k100.get("kident") + " " + df2.format(x) + "" + df2.format(y), iter++);
+	    			grid[x][y] = GeoLocationUtil.newLocation(ctx, k100, GeoLocationUtil.GZD + " " + k100.get("kident") + " " + GeoLocationUtil.df2.format(x) + "" + GeoLocationUtil.df2.format(y), iter++);
 	    			grid[x][y].set("area", (double)1000);
-	    			grid[x][y].set("gridZone", GZD);
+	    			grid[x][y].set("gridZone", GeoLocationUtil.GZD);
 	    			grid[x][y].set("kident", k100.get("kident"));
 	    			grid[x][y].set("eastings", x);
 	    			grid[x][y].set("northings", y);
@@ -233,10 +228,8 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
                 logger.error("Exceeded location attempts");
                 break;
             }
-            int t = rand.nextInt(0, mapWidth1km);
-            int l = rand.nextInt(0, mapHeight1km);
-            if(l == 0) l = 1;
-            if(t == 0) t = 1;
+            int t = rand.nextInt(1, mapWidth1km);
+            int l = rand.nextInt(1, mapHeight1km);
             if(l + w >= mapWidth1km) l = mapWidth1km - w - 2;
             if(t + h >= mapWidth1km) t = mapHeight1km - h - 2;
 

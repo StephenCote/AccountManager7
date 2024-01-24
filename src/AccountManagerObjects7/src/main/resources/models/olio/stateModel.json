@@ -45,6 +45,11 @@
 			"default": true
 		},
 		{
+			"name": "agitated",
+			"type": "boolean",
+			"description": "Bit indicating that the state was intentionally agitated"
+		},
+		{
 			"name": "immobilized",
 			"type": "boolean"
 		},
