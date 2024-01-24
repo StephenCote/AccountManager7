@@ -5,8 +5,10 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,24 +39,84 @@ public class GeoLocationUtil {
 
 	private static Map<Long, List<BaseRecord>> cellMap = new ConcurrentHashMap<>();
 
+	/// 30K is in the middle of the ocean
+	public static final String GZD = "30K";
+	public static final DecimalFormat df2 = new DecimalFormat("00");
+	public static final DecimalFormat df3 = new DecimalFormat("000");
+
 	private static SecureRandom rand = new SecureRandom();
     
-	/*
-    public static TerrainEnumType randomArable() {
-    	return TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size()));
-    }
-    public static TerrainEnumType randomInlandWater() {
-    	return TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size()));
-    }
+	public static int getMaximumHeight(List<BaseRecord> locations) {
+		return getMaximumInt(locations, "northings");
+	}
+	public static int getMaximumWidth(List<BaseRecord> locations) {
+		return getMaximumInt(locations, "eastings");
+	}
+	public static int getMinimumHeight(List<BaseRecord> locations) {
+		return getMinimumInt(locations, "northings");
+	}
+	public static int getMinimumWidth(List<BaseRecord> locations) {
+		return getMinimumInt(locations, "eastings");
+	}
+	public static int getMaximumInt(List<BaseRecord> locations, String field) {
+		int val = 0;
+		Optional<Integer> oval = locations.stream().map(l -> (int)l.get(field)).max(Comparator.naturalOrder());
+		if(oval.isPresent()) {
+			val = oval.get();
+		}
+		return val;
+	}
 
-    public static double oddsToTransition(TerrainEnumType ter1, TerrainEnumType ter2) {
-    	double odds = 0.0;
-    	int v1 = TerrainEnumType.valueOf(ter1);
-    	int v2 = TerrainEnumType.valueOf(ter2);
-    	
-    	return odds;
-    }
-	*/
+	public static int getMinimumInt(List<BaseRecord> locations, String field) {
+		int val = 0;
+		Optional<Integer> oval = locations.stream().map(l -> (int)l.get(field)).min(Comparator.naturalOrder());
+		if(oval.isPresent()) {
+			val = oval.get();
+		}
+		return val;
+	}
+	
+	public void prepareGridCells(OlioContext ctx, BaseRecord location) {
+		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+		IOSystem.getActiveContext().getReader().populate(location);
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
+		
+		cq.field("geoType", "cell");
+		int count = IOSystem.getActiveContext().getSearch().count(cq);
+		if(count > 0) {
+			logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
+			return;
+		}
+		logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");
+		// logger.info(location.toFullString());
+		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID)));
+		List<BaseRecord> cells = new ArrayList<>();
+		try {
+			for(int y = 0; y < Rules.MAP_EXTERIOR_CELL_HEIGHT; y++) {
+				for(int x = 0; x < Rules.MAP_EXTERIOR_CELL_WIDTH; x++) {
+					int ie = x; //  * 10
+					int in = y; //  * 10
+	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
+	    			/// Location util defaults to putting new locations into the universe.  change to the world group
+	    			///
+	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+	    			cell.set("area", (double)10);
+	    			cell.set("gridZone", GZD);
+	    			cell.set("kident", location.get("kident"));
+	    			cell.set("eastings", x);
+	    			cell.set("northings", y);
+	    			cell.set("geoType", "cell");
+	    			cells.add(cell);
+				}
+			}
+			TerrainUtil.blastCells(ctx, location, cells, Rules.MAP_EXTERIOR_CELL_WIDTH, Rules.MAP_EXTERIOR_CELL_HEIGHT);
+			IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}
+
 	
 	public static List<BaseRecord> getAdjacentCells(OlioContext ctx, BaseRecord origin, int distance){
 		BaseRecord parentLoc = getParentLocation(ctx, origin);

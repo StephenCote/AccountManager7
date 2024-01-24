@@ -120,6 +120,76 @@ public class MapUtil {
 		}
 
 	}
+
+	public static void printRealmMap(OlioContext ctx, BaseRecord realm) {
+		logger.info("Printing realm: " + realm.get(FieldNames.FIELD_NAME));
+		logger.info("NOTE: This currently expects a GridSquare layout");
+		IOSystem.getActiveContext().getReader().populate(realm);
+		List<BaseRecord> locs = realm.get("locations");
+
+
+		// int featureWidth = Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		// int featureHeight = Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+
+		int featureWidth = Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		int featureHeight = Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+
+		
+		int minHeight = GeoLocationUtil.getMinimumHeight(locs);
+		int height = (GeoLocationUtil.getMaximumHeight(locs) - minHeight + 1) * featureHeight;
+		int minWidth = GeoLocationUtil.getMinimumWidth(locs);
+		int width = (GeoLocationUtil.getMaximumWidth(locs) - minWidth + 1) * featureWidth;
+
+		// logger.info(width + ", " + height + "; " + featureWidth + ", " + featureHeight);
+		
+		int cellWidth = Rules.MAP_EXTERIOR_CELL_WIDTH;
+		int cellHeight = Rules.MAP_EXTERIOR_CELL_HEIGHT;
+
+		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g2d = image.createGraphics();
+		for(BaseRecord uloc : locs) {
+			BaseRecord loc = uloc;
+			IOSystem.getActiveContext().getReader().populate(loc);
+			int east = loc.get("eastings");
+			int north = loc.get("northings");
+			int x = (east - minWidth) * featureWidth;
+			int y = (north - minHeight) * featureHeight;
+			String type = loc.get("geoType");
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get("terrainType"));
+			Color c = TerrainEnumType.getColor(tet);
+			// logger.info(x + ", " + y + " " + cellWidth + ", " + cellHeight + " " + tet.toString() + " " + c.toString());
+			g2d.setColor(c);
+			g2d.fillRect(x, y, featureWidth, featureHeight);
+			
+			List<BaseRecord> cells = GeoLocationUtil.getCells(ctx, loc);
+			for(BaseRecord cell: cells) {
+				int ceast = cell.get("eastings");
+				int cnorth = cell.get("northings");
+				TerrainEnumType ctet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+				Color cc = TerrainEnumType.getColor(ctet);
+				g2d.setColor(cc);
+				int cx = x + (ceast * cellWidth);
+				int cy = y + (cnorth * cellHeight);
+				// logger.info(x + ", " + y + " " + ceast + ", " + cnorth + " " + cx + ", " + cy + " " + cellWidth + ", " + cellHeight + " " + ctet.toString() + " " + cc.toString());
+				g2d.fillRect(cx, cy, cellWidth, cellHeight);
+				g2d.setColor(Color.DARK_GRAY);
+				g2d.drawRect(cx, cy, cellWidth, cellHeight);
+			}
+			
+			g2d.setColor(Color.DARK_GRAY);
+			g2d.drawRect(x, y, featureWidth, featureHeight);
+			
+		}
+		g2d.dispose();
+		FileUtil.makePath(exportPath);
+		File outputfile = new File(exportPath + "/map - realm - " + realm.get(FieldNames.FIELD_NAME) + ".png");
+		try {
+			ImageIO.write(image, "png", outputfile);
+		} catch (IOException e) {
+			logger.error(e);
+		}
+
+	}
 	
 	public static void printLocationMaps(OlioContext ctx) {
 		for(BaseRecord rec : ctx.getLocations()) {
@@ -214,6 +284,7 @@ public class MapUtil {
 						pnorth = pnorth / 2;
 					}
 					g2d.setColor(Color.WHITE);
+					// logger.info("blit " + p.get("state.currentLocation.name") + " " + p.get("state.currentLocation.id") + " ~= " + cid + " " + (x + peast) + ", " + (y + pnorth));
 					g2d.fillOval(x + peast, y + pnorth, 10, 10);
 				}
 			}
