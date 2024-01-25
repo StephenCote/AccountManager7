@@ -60,7 +60,7 @@ public class NarrativeUtil {
 		if(needs.size() > 0) {
 			buff.append(" " + pro + " needs " + needs.stream().collect(Collectors.joining(", ")));
 			if(needs.size() >= 3) {
-				buff.append(" (" + pro + " is naked and afraid).");
+				buff.append(" (" + pro + " is naked and afraid)");
 			}
 			buff.append(".");
 		}
@@ -70,7 +70,7 @@ public class NarrativeUtil {
 
 
 		String names = group.stream().filter(p -> !fname.equals(p.get("firstName"))).map(p -> ((String)p.get("firstName") + " (" + p.get("age") + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
-		buff.append(" She is accompanied by " + names + ".");
+		buff.append(" " + pro + " is accompanied by " + names + ".");
 		
 		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(event.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
 		List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);

@@ -23,6 +23,12 @@
 			"foreign": true
 		},
 		{
+			"name": "builder",
+			"type": "model",
+			"baseModel": "olio.builder",
+			"foreign": true
+		},
+		{
 			"name": "counterAction",
 			"type": "model",
 			"baseModel": "olio.action",

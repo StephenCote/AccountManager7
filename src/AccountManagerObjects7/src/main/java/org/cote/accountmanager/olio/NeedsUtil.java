@@ -13,15 +13,18 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 
 public class NeedsUtil {
 
@@ -101,15 +104,18 @@ public class NeedsUtil {
 	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
-		
+
 		logger.info("Calculating initial recommendation ....");
 		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
+		/// Agitate the map, people, and animals, and identify initial threats
+		///
 		Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map, false);
 		if(tmap.keySet().size() > 0) {
 			logger.warn("TODO: Evaluate initial threats");
 		}
+		/// Evaluate needs 
+		List<BaseRecord> actions = evaluateNeeds(ctx, locationEpoch, increment, group, map);
 		
-		List<PhysiologicalNeeds> pneeds = pgp.getPhysiologicalNeedsPriority();
 		
 		String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
 		logger.info(nar);
@@ -120,6 +126,54 @@ public class NeedsUtil {
 		List<BaseRecord> acts = new ArrayList<>();
 		
 		return acts;
+	}
+	
+	protected static BaseRecord createActionForNeed(OlioContext ctx, PhysiologicalNeeds need) {
+		BaseRecord action = null;
+		BaseRecord builder = null;
+		BaseRecord actionResult = null;
+		if(need == PhysiologicalNeeds.SHELTER) {
+			List<BaseRecord> builders = Arrays.asList(BuilderUtil.getBuilders(ctx)).stream().filter(b -> ((String)b.get("type")).equals("location")).collect(Collectors.toList());
+			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("build")).collect(Collectors.toList());
+			action = actions.get(0);
+			builder = builders.get(random.nextInt(0, builders.size()));
+		}
+		else if(need == PhysiologicalNeeds.FOOD) {
+			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("gather") || ((String)b.get("name")).equals("hunt")).collect(Collectors.toList());
+			action = actions.get(random.nextInt(0, actions.size()));
+		}
+		else if(need == PhysiologicalNeeds.WATER) {
+			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("gather")).collect(Collectors.toList());
+			action = actions.get(random.nextInt(0, actions.size()));
+		}
+		else if(need == PhysiologicalNeeds.REPRODUCTION) {
+			/// 
+		}
+		if(action != null) {
+			ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
+			try {
+				actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BUILDER, ctx.getUser(), null, plist);
+				actionResult.set("action", action);
+				actionResult.set("builder", builder);
+			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+
+		}
+
+		return actionResult;
+	}
+	protected static List<BaseRecord> evaluateNeeds(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group, Map<BaseRecord, PersonalityProfile> map) {
+		List<BaseRecord> actions = new ArrayList<>();
+		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
+		List<PhysiologicalNeeds> pneeds = pgp.getPhysiologicalNeedsPriority();
+		for(PhysiologicalNeeds need: pneeds) {
+			BaseRecord act = createActionForNeed(ctx, need);
+			if(act != null) {
+				logger.info(act.toFullString());
+			}
+		}
+		return actions;
 	}
 
 	protected static List<BaseRecord> localWildlife(BaseRecord realm, BaseRecord location){
