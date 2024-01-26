@@ -124,113 +124,18 @@ public class TestOlio extends BaseTest {
 
 			BaseRecord evt = octx.startOrContinueEpoch();
 			assertNotNull("Epoch is null", evt);
-			try {
-				Query q = QueryUtil.createQuery(ModelNames.MODEL_ACTION, FieldNames.FIELD_GROUP_ID, octx.getWorld().get("actions.id"));
-				q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-				List<BaseRecord> acts = Arrays.asList(ioContext.getSearch().findRecords(q));
-				logger.info("Actions: " + acts.size());
-				//logger.info(JSONUtil.exportObject(acts, RecordSerializerConfig.getCondensedUnfilteredModule()));
-				// logger.info(JSONUtil.exportObject(acts, RecordSerializerConfig.getForeignUnfilteredModule()));
-			}
-			catch(Exception e) {
-				logger.error(e);
-			}
 			BaseRecord[] locs = octx.getLocations();
 			for(BaseRecord lrec : locs) {
 				BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
 				assertNotNull("Location epoch is null", levt);
-				// logger.info("Working with epoch " + levt.get(FieldNames.FIELD_NAME) + " " + levt.get("eventStart") + " to " + levt.get("eventEnd") + " " + lrec.get(FieldNames.FIELD_NAME));
 				BaseRecord cevt = octx.startOrContinueIncrement();
 				try {
 					octx.evaluateIncrement();
-
 				}
 				catch(Exception e) {
 					e.printStackTrace();
 				}
-				
-				
-
-				
-				/*
-				List<BaseRecord> lpop = octx.getPopulation(locs[0]);
-				BaseRecord per = lpop.get((new Random()).nextInt(lpop.size()));
-				assertNotNull("Person is null", per);
-				PersonalityProfile prof = PersonalityUtil.analyzePersonality(octx, per);
-				logger.info(JSONUtil.exportObject(prof));
-				*/
-				/*
-				BaseRecord cevt = octx.continueIncrement();
-				if(cevt != null) {
-					logger.info("End previous increment");
-					octx.endIncrement();
-				}
-				try {
-					logger.info("Start increment");
-					BaseRecord ievt = octx.startIncrement();
-					assertNotNull("Increment is null", ievt);
-					
-					logger.info("Test continue increment");
-					cevt = octx.continueIncrement();
-					assertNotNull("Continued increment is null", cevt);
-	
-					long id1 = cevt.get(FieldNames.FIELD_ID);
-					long id2 = cevt.get(FieldNames.FIELD_ID);
-					assertTrue("Expected events to be the same", id1 == id2);
-					
-					octx.endIncrement();
-					logger.info("Blast increments");
-					for(int i = 0; i < 366; i++) {
-						//logger.info("Blast " + (i + 1));
-						BaseRecord inc = octx.startIncrement();
-						if(inc == null) {
-							logger.info("End of epoch reached");
-							break;
-						}
-						octx.endIncrement();
-						
-						//octx.processQueue();
-					}
-					
-					octx.endLocationEpoch(ievt);
-					octx.endEpoch();
-					//octx.processQueue();
-					// logger.info(ievt.toFullString());
-					
-				}
-				catch(StackOverflowError | Exception e) {
-					e.printStackTrace();
-				}
-				*/
 			}
-			/*
-			ZonedDateTime start = levt.get("eventStart");
-			ZonedDateTime prog = levt.get("eventProgress");
-			ZonedDateTime end = levt.get("eventEnd");
-			
-			long tdiff = end.toInstant().toEpochMilli() - start.toInstant().toEpochMilli();
-			long pdiff = end.toInstant().toEpochMilli() - prog.toInstant().toEpochMilli();
-			
-			//long diffInHours = TimeUnit.MILLISECONDS.toHours(diff);
-			long totalDays = TimeUnit.MILLISECONDS.toDays(tdiff);
-			long progDays = TimeUnit.MILLISECONDS.toDays(pdiff);
-			logger.info("Total days: " + totalDays);
-			logger.info("Remaining days: " + progDays);
-			*/
-			//logger.info("Computing maps");
-
-			//MapUtil.printMapFromAdmin2(octx);
-
-			/*
-			ItemUtil.loadItems(octx);
-			BaseRecord[] items = ItemUtil.getItems(octx);
-			assertTrue("Expected some item templates", items.length > 0);
-			BuilderUtil.loadBuilders(octx);
-			BaseRecord[] builds = BuilderUtil.getBuilders(octx);
-			assertTrue("Expected some builds", builds.length > 0);
-			logger.info(builds[0].toFullString());
-			 */
-
 	}
 	
 

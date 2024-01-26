@@ -152,7 +152,7 @@ public class NeedsUtil {
 		if(action != null) {
 			ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
 			try {
-				actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BUILDER, ctx.getUser(), null, plist);
+				actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_RESULT, ctx.getUser(), null, plist);
 				actionResult.set("action", action);
 				actionResult.set("builder", builder);
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -170,7 +170,7 @@ public class NeedsUtil {
 		for(PhysiologicalNeeds need: pneeds) {
 			BaseRecord act = createActionForNeed(ctx, need);
 			if(act != null) {
-				logger.info(act.toFullString());
+				actions.add(act);
 			}
 		}
 		return actions;

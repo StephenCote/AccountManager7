@@ -18,6 +18,11 @@ Context
 	- Events are organized in the following hierarchy:
 		- Construction - the root event for the world contains construct and incept events for introduced locations
 		
+Time (Machine)
+	- When the olio models are journaled (by inheriting data.journalExt), they allow a sort of 'time machine' effect to take place on event sequences
+	- A simulation may run over a period of time, and then, at any point in the sequence, it could be forked at a particular place and time into a separate 'world', which could then proceed with it's own variation and history from the point of divergence
+	- For example, journaling state, statistics, personality, and instinct would allow the unique qualities of a character to be retrieved from a point in time
+	- Note: participations are not yet covered by journaling, so inventories and relationships are not yet covered  
 
 Context Rules (IOlioContextRule):
 	- Rules evaluated during context initialization and setup.  This allows for creating custom locations or picking locations from any loaded world data.

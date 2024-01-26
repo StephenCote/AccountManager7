@@ -153,6 +153,7 @@ public class ModelNames {
 	public static final String MODEL_WEARABLE = "olio.wearable";
 	public static final String MODEL_EVENT = "olio.event";
 	public static final String MODEL_CHAR_STATE = "olio.state";
+	public static final String MODEL_PLAYER_STATE = "olio.playerState";
 	public static final String MODEL_ACTION = "olio.action";
 	public static final String MODEL_ACTION_RESULT = "olio.actionResult";
 	public static final String MODEL_SCHEDULE = "olio.schedule";

@@ -1,0 +1,59 @@
+{
+	"name": "olio.playerState",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Player States",
+	"icon": "category",
+	"label": "Player State",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "realm",
+			"type": "model",
+			"baseModel": "olio.realm",
+			"foreign": true,
+			"followReference": false
+		},
+		{
+			"name": "character",
+			"type": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"followReference": true
+		},
+		{
+			"name": "user",
+			"type": "model",
+			"baseModel": "system.user",
+			"foreign": true,
+			"followReference": true
+		},
+		{
+			"name": "currentEvent",
+			"type": "model",
+			"baseModel": "olio.event",
+			"foreign": true,
+			"followReference": true
+		},
+		{
+			"name": "currentLocation",
+			"type": "model",
+			"baseModel": "data.geoLocation",
+			"foreign": true,
+			"followReference": true
+		},
+		{
+			"name": "currentAction",
+			"type": "model",
+			"baseModel": "olio.actionResult",
+			"foreign": true
+		}
+	]
+}
