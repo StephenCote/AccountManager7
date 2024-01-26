@@ -57,14 +57,14 @@ public class JournalProvider implements IProvider {
 			return;
 		}
 	
-		logger.info("Calculate journal entry for " + operation.toString() + " " + model.get(FieldNames.FIELD_NAME));
+		/// logger.info("Calculate journal entry for " + operation.toString() + " " + model.get(FieldNames.FIELD_NAME));
 		try {
 			if(RecordOperation.CREATE.equals(operation)) {
-				logger.info("Prepare journal create");
+				/// logger.info("Prepare journal create");
 				createJournalObject(model);
 			}
 			else if(RecordOperation.UPDATE.equals(operation)) {
-				logger.info("Prepare journal update");
+				/// logger.info("Prepare journal update");
 				updateJournalObject(model);;
 			}
 		}
