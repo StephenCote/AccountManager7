@@ -20,7 +20,10 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
+import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
+import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
 import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -115,7 +118,7 @@ public class NeedsUtil {
 		}
 		/// Evaluate needs 
 		List<BaseRecord> actions = evaluateNeeds(ctx, locationEpoch, increment, group, map);
-		
+		logger.info("Group actions to delegate: " + actions.size());
 		
 		String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
 		logger.info(nar);
@@ -155,6 +158,8 @@ public class NeedsUtil {
 				actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_RESULT, ctx.getUser(), null, plist);
 				actionResult.set("action", action);
 				actionResult.set("builder", builder);
+				actionResult.set("needType", "physiological");
+				actionResult.set("need", need.toString().toLowerCase());
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
@@ -163,6 +168,23 @@ public class NeedsUtil {
 
 		return actionResult;
 	}
+	
+	protected static BaseRecord createActionForNeed(OlioContext ctx, SafetyNeeds need) {
+		BaseRecord actionResult = null;
+		return actionResult;
+	}
+
+	protected static BaseRecord createActionForNeed(OlioContext ctx, EsteemNeeds need) {
+		BaseRecord actionResult = null;
+		return actionResult;
+	}
+
+	protected static BaseRecord createActionForNeed(OlioContext ctx, LoveNeeds need) {
+		BaseRecord actionResult = null;
+		return actionResult;
+	}
+
+	
 	protected static List<BaseRecord> evaluateNeeds(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group, Map<BaseRecord, PersonalityProfile> map) {
 		List<BaseRecord> actions = new ArrayList<>();
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
@@ -173,6 +195,31 @@ public class NeedsUtil {
 				actions.add(act);
 			}
 		}
+
+		List<SafetyNeeds> sneeds = pgp.getSafetyNeedsPriority();
+		for(SafetyNeeds need: sneeds) {
+			BaseRecord act = createActionForNeed(ctx, need);
+			if(act != null) {
+				actions.add(act);
+			}
+		}
+		
+		List<LoveNeeds> lneeds = pgp.getLoveNeedsPriority();
+		for(LoveNeeds need: lneeds) {
+			BaseRecord act = createActionForNeed(ctx, need);
+			if(act != null) {
+				actions.add(act);
+			}
+		}
+		
+		List<EsteemNeeds> eneeds = pgp.getEsteemNeedsPriority();
+		for(EsteemNeeds need: eneeds) {
+			BaseRecord act = createActionForNeed(ctx, need);
+			if(act != null) {
+				actions.add(act);
+			}
+		}
+		
 		return actions;
 	}
 

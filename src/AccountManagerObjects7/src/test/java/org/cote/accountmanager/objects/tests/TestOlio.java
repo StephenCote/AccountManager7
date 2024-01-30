@@ -77,6 +77,9 @@ public class TestOlio extends BaseTest {
 		/// Eastings: ##### - within a 100K ident on a map with a 1000m grid, the first two numbers come from the label of the grid line west of the position, and the last three digits are the distance in meters from the wester grid line 
 		/// 
 		AuditUtil.setLogToConsole(false);
+		
+		assertNotNull("Sloan is null", ProfileUtil.getSloan("rluen"));
+
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());

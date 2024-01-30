@@ -41,16 +41,18 @@ public class NarrativeUtil {
 		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
 		
 
-		buff.append(fname + " is a " + age + " year old " + ("male".equals(gender) ? "man" : "woman"));
+		buff.append(fname + " is a " + age + " year old " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(" " + pro + " is a '" + pp.getMbtiTitle() + "' and is " + pp.getMbtiDescription() + ".");
+		buff.append(" " + pro + " is");
 		if(stets.size() > 0) {
 			buff.append(" standing on a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(",")) + ".");
 		}
 		else {
-			buff.append(" standing in an expanse of " + tet.toString().toLowerCase());
+			buff.append(" standing in an expanse of " + tet.toString().toLowerCase() + ".");
 		}
 		
 		if(threatMap.keySet().size() > 0) {
-			buff.append(pro + " is threatened by some people or animals");
+			buff.append(" " + pro + " is threatened by some people or animals.");
 		}
 		
 		List<String> needs = new ArrayList<>();

@@ -44,7 +44,7 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
-	protected static boolean resetDataSchema = false;
+	protected static boolean resetDataSchema = true;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	
@@ -81,7 +81,7 @@ public class BaseTest {
 		/// resetIO("./test.7z");
 
 		/// USE POSTGRESQL
-		resetIO("jdbc:postgresql://localhost:15431/am7", "am7user", "password");
+		resetIO(testProperties.getProperty("test.db.url"), testProperties.getProperty("test.db.user"), testProperties.getProperty("test.db.password"));
 
 		/// USE H2
 		// resetIO("jdbc:h2:./am7/h2", "sa", "1234");

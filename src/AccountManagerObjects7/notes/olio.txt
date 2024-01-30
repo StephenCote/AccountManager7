@@ -46,16 +46,81 @@ NEW METRICS
 Personality Traits
 Primary (Big 5 - OCEAN):
 	Openness - [inventive/curiosity to consistent/cautious]
+	  	Non-curious (low)
+	  	Inquisitive (high)
 	Conscientiousness - [organized/efficient to extravagant/careless]
+	    Organized (high)
+	    Unstructered (low)
 	Extraversion - [outgoing/energetic to solitary/reserved]
+	    Social (high)
+	    Reserved (low)
 	Agreeableness - [friendly/compassionate to critical/rational/detached]
+	    Accommodating (high)
+	    Egocentric (low)
 	Neuroticism - [resilient/confident to sensitive/nervous]
+	    Limbic (high)
+	    Calm (low)
 
+Careers by personality type: https://similarminds.com/personality_types.html
+
+Extraversion + Sociable, energetic, assertive, outgoing, confident - Dominant, attention-seeking, impulsive, talkative
+Neuroticism	+ Very aware of risks, problems, and issues. More aware of others’ negative emotions - Anxious, moody, prone to stress, easily upset
+Conscientiousness + Organized, responsible, reliable, diligent, disciplined - Perfectionistic, rigid, overly cautious, workaholic
+Agreeableness + Compassionate, empathetic, cooperative, tolerant - Submissive, overly trusting, conflict-avoidant, gullible
+Openness + Imaginative, curious, creative, open-minded, adaptable - Unfocused, impractical, prone to overthinking, unpredictable
 
 + Creativity (std attribute)
 + Spirituality (std attribute)
 + Magic ~ Fae = avg(creativity, spirituality, willpower, wisdom) (Reclassify magic/fae potential from its own discrete value to an average of other values)
 + Science = avg(intelligence, creativity, wisdom) 
+
+From https://psychcentral.com/health/personality-type-compatibility#personality-compatibility
+ISTJ — The Inspector
+ISTP — The Crafter
+ISFJ — The Protector
+ISFP — The Artist
+INFP — The Mediator
+INFJ — The Advocate
+INTP — The Thinker
+INTJ — The Architect
+ESTJ — The Director
+ESTP — The Persuader
+ESFP — The Performer
+ESFJ — The Caregiver
+ENFP — The Champion
+ENFJ — The Giver
+ENTP — The Debater
+ENTJ — The Commander
+
+Compatibility:
+Romantic satisfaction rates over 70%:
+
+SJ: sensing and judging
+NF: intuiting and feeling
+
+These categories would be the most compatible:
+
+ISTJ, ESTJ, ISFJ, and ESFJ
+INFP, ENFP, INFJ, and ENFJ
+
+Most highly compatible matches:
+
+ENFJ and INFP
+ENTJ and INFP
+INFJ and ENFP
+INTJ and ENFP
+ENTP and INFJ
+ISFP and ENFJ
+ENTP and INTJ
+INTP and ENTJ
+ESTJ and ISFP
+ESFJ and ISFP
+ISTJ and ESFP
+ISFJ and ESFP
+ESTJ and ISTP
+ESFJ and ISTP
+
+https://www.verywellmind.com/the-myers-briggs-type-indicator-2795583
 
 Magic
 ORIGINAL RAW NOTES

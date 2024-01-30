@@ -41,6 +41,18 @@
 			"maxLength": 32
 		},
 		{
+			"name": "need",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Placeholder for the name of a need the action satisfies"
+		},
+		{
+			"name": "needType",
+			"type": "string",
+			"maxLength": 32,
+			"description": "Placeholder for the type need the action satisfies"
+		},
+		{
 			"name": "store",
 			"type": "model",
 			"baseModel": "olio.store",
