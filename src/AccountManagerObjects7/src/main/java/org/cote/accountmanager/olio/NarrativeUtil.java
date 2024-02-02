@@ -9,6 +9,9 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
+import org.cote.accountmanager.olio.personality.CompatibilityEnumType;
+import org.cote.accountmanager.olio.personality.MBTIUtil;
+import org.cote.accountmanager.olio.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
@@ -89,6 +92,18 @@ public class NarrativeUtil {
 		else {
 			buff.append(" There don't seem to be any animals.");
 		}
+		
+		buff.append("\n" + fname + " (" + gender + ") compatibility with group:");
+		long id = pov.get("id");
+		for(BaseRecord p : group) {
+			if(id == (long)p.get("id")) {
+				continue;
+			}
+			String compatKey = OCEANUtil.getCompatibilityKey(pov.get("personality"), p.get("personality"));
+			CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(pov.get("personality.mbtiKey"), p.get("personality.mbtiKey"));
+			buff.append("\n" + p.get("firstName") + " (" + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString());
+		}
+		
 		return buff.toString();
 	}
 	
