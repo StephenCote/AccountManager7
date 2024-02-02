@@ -82,7 +82,7 @@ public class MapUtil {
 		Graphics2D g2d = image.createGraphics();
 		for(BaseRecord uloc : plocs) {
 			BaseRecord loc = uloc;
-			Optional<BaseRecord> oloc = locs.stream().filter(l -> l.get(FieldNames.FIELD_NAME).equals(uloc.get(FieldNames.FIELD_NAME))).findFirst();
+			Optional<BaseRecord> oloc = locs.stream().filter(l -> l.get(FieldNames.FIELD_NAME) != null && l.get(FieldNames.FIELD_NAME).equals(uloc.get(FieldNames.FIELD_NAME))).findFirst();
 			boolean blot = false;
 			if(oloc.isPresent()) {
 				loc = oloc.get();
