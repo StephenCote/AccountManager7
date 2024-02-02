@@ -125,7 +125,8 @@ public class StateUtil {
 		
 		/// If the state is currently committed to an action, don't agitate it's location
 		///
-		if(state.get("currentAction") != null) {
+		List<BaseRecord> acts = state.get("actions");
+		if(acts.size() > 0) {
 			logger.warn("Don't agitate with current action");
 			return;
 		}

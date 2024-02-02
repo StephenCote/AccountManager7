@@ -8,6 +8,8 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.personality.Sloan;
+import org.cote.accountmanager.olio.personality.SloanUtil;
 import org.cote.accountmanager.provider.IProvider;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordOperation;
@@ -29,18 +31,18 @@ public class PersonalityProvider  implements IProvider {
 			return;
 		}
 		if(lfield.getName().equals("sloanKey")) {
-			model.set(lfield.getName(), ProfileUtil.getSloanKey(model));
+			model.set(lfield.getName(), SloanUtil.getSloanKey(model));
 		}
 		else if(lfield.getName().equals("sloanCardinal")) {
-			model.set(lfield.getName(), ProfileUtil.getSloanCardinal(model));
+			model.set(lfield.getName(), SloanUtil.getSloanCardinal(model));
 		}
 		else if(lfield.getName().equals("mbtiKey")) {
-			Sloan sloan = ProfileUtil.getSloan(model.get("sloanKey"));
+			Sloan sloan = SloanUtil.getSloan(model.get("sloanKey"));
 			if(sloan != null) {
 				model.set(lfield.getName(), sloan.getMbtiKey());
 			}
 			else {
-				logger.warn("Sloan key is null or invalid: " + model.get("sloanKey") + " / empty map = " + ProfileUtil.getSloanDef().isEmpty());
+				logger.warn("Sloan key is null or invalid: " + model.get("sloanKey") + " / empty map = " + SloanUtil.getSloanDef().isEmpty());
 			}
 		}
 	}

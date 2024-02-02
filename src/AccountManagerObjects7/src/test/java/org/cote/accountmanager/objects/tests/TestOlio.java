@@ -30,6 +30,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.personality.SloanUtil;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
@@ -39,6 +40,7 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -78,7 +80,7 @@ public class TestOlio extends BaseTest {
 		/// 
 		AuditUtil.setLogToConsole(false);
 		
-		assertNotNull("Sloan is null", ProfileUtil.getSloan("rluen"));
+		assertNotNull("Sloan is null", SloanUtil.getSloan("rluen"));
 
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
@@ -93,7 +95,7 @@ public class TestOlio extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				false,
+				true,
 				resetUniverse
 			);
 		
@@ -117,7 +119,12 @@ public class TestOlio extends BaseTest {
 			octx.initialize();
 			assertNotNull("Root location is null", octx.getRootLocation());
 			
-			MapUtil.printMapFromAdmin2(octx);
+			try {
+				MapUtil.printMapFromAdmin2(octx);
+			}
+			catch(Exception e) {
+				e.printStackTrace();
+			}
 			/*
 			BaseRecord[] realms = octx.getRealms();
 			for(BaseRecord r: realms) {
@@ -139,6 +146,8 @@ public class TestOlio extends BaseTest {
 					e.printStackTrace();
 				}
 			}
+			
+			// RecordFactory.cleanupOrphans(null);
 	}
 	
 

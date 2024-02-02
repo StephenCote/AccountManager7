@@ -29,9 +29,10 @@
 			"followReference": true
 		},
 		{
-			"name": "currentAction",
-			"type": "model",
-			"baseModel": "olio.actionResult",
+			"name": "actions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.action",
 			"foreign": true
 		},
 		{

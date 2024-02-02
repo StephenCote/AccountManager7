@@ -44,6 +44,8 @@ public class BaseTest {
 	protected OrganizationContext orgContext = null;
 	protected String organizationPath = "/Development";
 	protected DBUtil dbUtil = null;
+	
+	/// Configured via property definition
 	protected static boolean resetDataSchema = true;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
@@ -62,15 +64,11 @@ public class BaseTest {
 				return;
 			}
 		}
-		
+		resetDataSchema = Boolean.parseBoolean(testProperties.getProperty("test.db.reset"));
 		testDataPath = testProperties.getProperty("test.data.path");
 		
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
-		/// 
-		//resetIO(null);
 		
-		// resetIO("jdbc:h2:./am7/h2", "sa", "1234");
-		/// NOTE: Still need to add recursive query in StatementUtil for PG
 		IOFactory.addPermittedPath("c:\\tmp\\xpic");
 
 		/// USE FILE
@@ -80,11 +78,9 @@ public class BaseTest {
 		/// There are some latent bugs in using the File Archive format, plus it's incredibly slow
 		/// resetIO("./test.7z");
 
-		/// USE POSTGRESQL
+		/// USE POSTGRESQL or H2
 		resetIO(testProperties.getProperty("test.db.url"), testProperties.getProperty("test.db.user"), testProperties.getProperty("test.db.password"));
 
-		/// USE H2
-		// resetIO("jdbc:h2:./am7/h2", "sa", "1234");
 	}
 	
 	@After

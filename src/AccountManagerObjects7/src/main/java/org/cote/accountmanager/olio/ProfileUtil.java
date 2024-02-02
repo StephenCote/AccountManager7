@@ -24,6 +24,10 @@ import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
+import org.cote.accountmanager.olio.personality.MBTI;
+import org.cote.accountmanager.olio.personality.MBTIUtil;
+import org.cote.accountmanager.olio.personality.Sloan;
+import org.cote.accountmanager.olio.personality.SloanUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
@@ -43,7 +47,7 @@ public class ProfileUtil {
 	Agreeableness - [friendly/compassionate to critical/rational/detached]
 	Neuroticism - [resilient/confident to sensitive/nervous]
 	 */
-	private static final String[] personalityFields = new String[]{"openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"};
+	public static final String[] PERSONALITY_FIELDS = new String[]{"openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"};
 /*
 
 Primary (Big 5 - OCEAN):
@@ -73,85 +77,10 @@ SLOAN Notation
 	Accommodating or Egocentric
 	Non-curious or Inquisitive
  */
-	private static Map<String, Sloan> sloanDef = new ConcurrentHashMap<>();
-	protected static Map<String, Sloan> getSloanDef() {
-		if(sloanDef.keySet().size() == 0) {
-			String[] sloanJson = JSONUtil.importObject(ResourceUtil.getResource("./olio/sloan.json"), String[].class);
-			for(String s: sloanJson) {
-				String[] pairs = s.split("\\|");
-				String dis = "";
-				if(pairs.length > 4) dis = pairs[4];
-				sloanDef.put(pairs[0], new Sloan(pairs[0], pairs[1], pairs[2], pairs[3], dis));
-			}
-		}
-		return sloanDef;
-	}
+
+
 	
-	private static Map<String, MBTI> mbtiDef = new ConcurrentHashMap<>();
-	protected static Map<String, MBTI> getMBTIDef(){
-		if(mbtiDef.keySet().size() == 0) {
-			String[] mbtiJson = JSONUtil.importObject(ResourceUtil.getResource("./olio/mbti.json"), String[].class);
-			for(String s: mbtiJson) {
-				String[] pairs = s.split("\\|");
-				mbtiDef.put(pairs[0], new MBTI(pairs[0], pairs[1], pairs[2]));
-			}			
-		}
-		return mbtiDef;
-	}
 	
-	private static final String SLOAN_SOCIAL_KEY = "social";
-	private static final String SLOAN_RESERVED_KEY = "reserved";
-	private static final String SLOAN_LIMBIC_KEY = "limbic";
-	private static final String SLOAN_CALM_KEY = "calm";
-	private static final String SLOAN_ORGANIZED_KEY = "organized";
-	private static final String SLOAN_UNSTRUCTURED_KEY = "unstructured";
-	private static final String SLOAN_ACCOMMODATING_KEY = "accommodating";
-	private static final String SLOAN_EGOCENTRIC_KEY = "egocentric";
-	private static final String SLOAN_NONCURIOUS_KEY = "non-curious";
-	private static final String SLOAN_INQUISITIVE_KEY = "inquisitive";
-	protected static String getSloanKey(BaseRecord rec) {
-		double ext = rec.get(personalityFields[2]);
-		double neu = rec.get(personalityFields[4]);
-		double con = rec.get(personalityFields[1]);
-		double agr = rec.get(personalityFields[3]);
-		double ope = rec.get(personalityFields[0]);
-		StringBuilder bld = new StringBuilder();
-		if(ext > 0.5) {
-			bld.append(SLOAN_SOCIAL_KEY.substring(0,1));
-		}
-		else {
-			bld.append(SLOAN_RESERVED_KEY.substring(0,1));			
-		}
-		if(neu > 0.5) {
-			bld.append(SLOAN_LIMBIC_KEY.substring(0,1));
-		}
-		else {
-			bld.append(SLOAN_CALM_KEY.substring(0,1));			
-		}
-		if(con > 0.5) {
-			bld.append(SLOAN_ORGANIZED_KEY.substring(0,1));
-		}
-		else {
-			bld.append(SLOAN_UNSTRUCTURED_KEY.substring(0,1));			
-		}
-		if(agr > 0.5) {
-			bld.append(SLOAN_ACCOMMODATING_KEY.substring(0,1));
-		}
-		else {
-			bld.append(SLOAN_EGOCENTRIC_KEY.substring(0,1));			
-		}
-		if(ope > 0.5) {
-			bld.append(SLOAN_INQUISITIVE_KEY.substring(0,1));
-		}
-		else {
-			bld.append(SLOAN_NONCURIOUS_KEY.substring(0,1));			
-		}
-		return bld.toString();
-	}
-	
-	public static String getSloanCardinal(BaseRecord rec) {
-		return Collections.max(Arrays.asList(personalityFields), Comparator.comparing(c -> (double)rec.get(c)));
-	}
 	
 	
 	/*
@@ -206,7 +135,7 @@ SLOAN Notation
 		df.setRoundingMode(RoundingMode.HALF_EVEN);
 
 		try {
-			for(String s : personalityFields) {
+			for(String s : PERSONALITY_FIELDS) {
 				double val =Double.parseDouble(df.format(rand.nextDouble()));
 				rec.set(s, val);
 			}
@@ -464,15 +393,17 @@ SLOAN Notation
 		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
 		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
 		
-		Sloan sloan = getSloan(per.get("sloanKey"));
-		MBTI mbti = getMBTI(per.get("mbtiKey"));
+		Sloan sloan = SloanUtil.getSloan(per.get("sloanKey"));
+		MBTI mbti = MBTIUtil.getMBTI(per.get("mbtiKey"));
 		if(sloan != null) {
+			prof.setSloanKey(sloan.getKey());
 			prof.setSloanDescription(sloan.getDescription());
 		}
 		else {
 			// logger.warn("Sloan is null");
 		}
 		if(mbti != null) {
+			prof.setMbtiKey(mbti.getKey());
 			prof.setMbtiTitle(mbti.getName());
 			prof.setMbtiDescription(mbti.getDescription());
 		}
@@ -482,28 +413,7 @@ SLOAN Notation
 
 		analyzePhysiologicalNeeds(person, prof);
 	}
-	public static MBTI getMBTI(String key) {
-		Map<String, MBTI> mbtiMap = getMBTIDef();
-		if(key != null && mbtiMap.containsKey(key)) {
-			return mbtiMap.get(key);
-		}
-		else {
-			logger.warn("Invalid mbti key '" + key + "'");
-		}
 
-		return null;
-	}
-	public static Sloan getSloan(String key) {
-		Map<String, Sloan> sloanMap = getSloanDef();
-		if(key != null && sloanMap.containsKey(key)) {
-			return sloanMap.get(key);
-		}
-		else {
-			logger.warn("Invalid sloan key '" + key + "'");
-		}
-		return null;
-	}
-	
 	protected static void analyzePhysiologicalNeeds(BaseRecord person, PersonalityProfile prof) {
 		/// do they have clothes?
 		BaseRecord store = person.get("store");
@@ -583,80 +493,4 @@ SLOAN Notation
 	}
 	
 }
-class MBTI {
-	private String key = null;
-	private String name = null;
-	private String description = null;
-	public MBTI(String key, String name, String description) {
-		this.key = key;
-		this.name = name;
-		this.description = description;
-	}
-	public String getKey() {
-		return key;
-	}
-	public String getName() {
-		return name;
-	}
-	public String getDescription() {
-		return description;
-	}
-	public void setKey(String key) {
-		this.key = key;
-	}
-	public void setName(String name) {
-		this.name = name;
-	}
-	public void setDescription(String description) {
-		this.description = description;
-	}
-	
-}
-class Sloan {
-	private String key = null;
-	private String mbtiKey = null;
-	private String description = null;
-	private List<String> favoredCareers = null;
-	private List<String> disfavoredCareers = null;
-	public Sloan(String key, String mbtiKey, String description, String favored, String disfavored) {
-		this.key = key;
-		this.mbtiKey = mbtiKey;
-		this.description = description;
-		this.favoredCareers = Arrays.asList(favored.split(",")).stream().map(s -> s.trim()).collect(Collectors.toList());
-		this.disfavoredCareers = Arrays.asList(disfavored.split(",")).stream().map(s -> s.trim()).collect(Collectors.toList());
-	}
-	public String getKey() {
-		return key;
-	}
-	public String getDescription() {
-		return description;
-	}
-	public List<String> getFavoredCareers() {
-		return favoredCareers;
-	}
-	public List<String> getDisfavoredCareers() {
-		return disfavoredCareers;
-	}
 
-	public String getMbtiKey() {
-		return mbtiKey;
-	}
-	public void setMbtiKey(String mbtiKey) {
-		this.mbtiKey = mbtiKey;
-	}
-	public void setKey(String key) {
-		this.key = key;
-	}
-	public void setDescription(String description) {
-		this.description = description;
-	}
-	public void setFavoredCareers(List<String> favoredCareers) {
-		this.favoredCareers = favoredCareers;
-	}
-	public void setDisfavoredCareers(List<String> disfavoredCareers) {
-		this.disfavoredCareers = disfavoredCareers;
-	}
-	
-	
-	
-}

@@ -11,7 +11,9 @@ public class PersonalityProfile extends AnimalProfile {
 	private boolean married = false;
 	private boolean children = false;
 	private boolean divorced = false;
+	private String sloanKey = null;
 	private String sloanDescription = null;
+	private String mbtiKey = null;
 	private String mbtiTitle = null;
 	private String mbtiDescription = null;
 	private VeryEnumType open = VeryEnumType.DISREGARDED;
@@ -59,6 +61,22 @@ public class PersonalityProfile extends AnimalProfile {
 		
 	}
 	
+	public String getMbtiKey() {
+		return mbtiKey;
+	}
+
+	public void setMbtiKey(String mbtiKey) {
+		this.mbtiKey = mbtiKey;
+	}
+
+	public String getSloanKey() {
+		return sloanKey;
+	}
+
+	public void setSloanKey(String sloanKey) {
+		this.sloanKey = sloanKey;
+	}
+
 	public String getMbtiTitle() {
 		return mbtiTitle;
 	}
