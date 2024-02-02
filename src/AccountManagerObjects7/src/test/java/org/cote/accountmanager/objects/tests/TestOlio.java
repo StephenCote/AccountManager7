@@ -95,7 +95,7 @@ public class TestOlio extends BaseTest {
 				new String[] {},
 				2,
 				50,
-				true,
+				false,
 				resetUniverse
 			);
 		
