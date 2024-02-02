@@ -114,11 +114,14 @@ public class NeedsUtil {
 		///
 		Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map, false);
 		if(tmap.keySet().size() > 0) {
-			logger.warn("TODO: Evaluate initial threats");
+			logger.warn("TODO: Evaluate initial threats into actions");
 		}
 		/// Evaluate needs 
 		List<BaseRecord> actions = evaluateNeeds(ctx, locationEpoch, increment, group, map);
 		logger.info("Group actions to delegate: " + actions.size());
+		
+		/// Delegate actions
+		delegateActions(ctx, map, actions);
 		
 		String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
 		logger.info(nar);
@@ -129,6 +132,28 @@ public class NeedsUtil {
 		List<BaseRecord> acts = new ArrayList<>();
 		
 		return acts;
+	}
+	protected static List<BaseRecord> filterByMBTI(Map<BaseRecord, PersonalityProfile> map, String mtbiKey){
+		return map.values().stream()
+			.filter(pp -> pp.getMbtiKey() != null && pp.getMbtiKey().equals(mtbiKey))
+			.map(pp -> pp.getRecord())
+			.collect(Collectors.toList())
+		;
+	}
+
+
+	protected static void delegateActions(OlioContext ctx, Map<BaseRecord, PersonalityProfile> map, List<BaseRecord> actions) {
+		/// Given a set of actions
+		/// Find any 'commanders'
+		List<BaseRecord> natCommand = filterByMBTI(map, "entj");
+		/// Find any 'directors'
+		List<BaseRecord> natDir = filterByMBTI(map, "estj");
+		if(natCommand.size() > 0) {
+			logger.info(natCommand.size() + " people want to take charge");
+		}
+		else if(natDir.size() > 0) {
+			logger.info(natDir.size() + " people step up to try to take lead");
+		}
 	}
 	
 	protected static BaseRecord createActionForNeed(OlioContext ctx, PhysiologicalNeeds need) {
