@@ -46,7 +46,7 @@ public class BaseTest {
 	protected DBUtil dbUtil = null;
 	
 	/// Configured via property definition
-	protected static boolean resetDataSchema = true;
+	protected static boolean resetDataSchema = false;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	
