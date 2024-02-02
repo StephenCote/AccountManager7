@@ -146,14 +146,14 @@ public class StatementUtil {
 				StringBuilder sql = new StringBuilder();
 				sql.append("DELETE FROM " + partTable + " WHERE id IN (SELECT P1.id FROM " + partTable + " P1 ");
 				sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participationid ");
-				sql.append("WHERE P1.participationmodel = '" + smodel + "' AND A1 IS NULL);");
+				sql.append("WHERE P1.participationmodel = '" + smodel + "' AND A1.id IS NULL);");
 				sqls.add(sql.toString());
 				
 				if(RecordUtil.inherits(ms, ModelNames.MODEL_PARENT)) {
 					sql = new StringBuilder();
 					sql.append("DELETE FROM " + table + " WHERE id IN (SELECT P1.id FROM " + table + " P1 ");
 					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.parentId ");
-					sql.append("WHERE P1.parentId > 0 AND A1 IS NULL);");
+					sql.append("WHERE P1.parentId > 0 AND A1.id IS NULL);");
 					sqls.add(sql.toString());
 				}
 				
@@ -161,7 +161,7 @@ public class StatementUtil {
 					sql = new StringBuilder();
 					sql.append("DELETE FROM " + table + " WHERE id IN (SELECT P1.id FROM " + table + " P1 ");
 					sql.append("LEFT JOIN " + IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_GROUP) + " A1 ON A1.id = P1.groupId ");
-					sql.append("WHERE P1.groupId > 0 AND A1 IS NULL);");
+					sql.append("WHERE P1.groupId > 0 AND A1.id IS NULL);");
 					sqls.add(sql.toString());
 				}
 				
@@ -169,15 +169,15 @@ public class StatementUtil {
 					String groupPartTable = IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_GROUP), ModelNames.MODEL_PARTICIPATION);
 					sql = new StringBuilder();
 					sql.append("DELETE FROM " + groupPartTable + " WHERE id IN (SELECT P1.id FROM " + groupPartTable + " P1 ");
-					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participationid ");
-					sql.append("WHERE P1.participantmodel = '" + smodel + "' AND A1 IS NULL);");
+					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participantid ");
+					sql.append("WHERE P1.participantmodel = '" + smodel + "' AND A1.id IS NULL);");
 					sqls.add(sql.toString());
 
 					String rolePartTable = IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_ROLE), ModelNames.MODEL_PARTICIPATION);
 					sql = new StringBuilder();
 					sql.append("DELETE FROM " + rolePartTable + " WHERE id IN (SELECT P1.id FROM " + rolePartTable + " P1 ");
-					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participationid ");
-					sql.append("WHERE P1.participantmodel = '" + smodel + "' AND A1 IS NULL);");
+					sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.participantid ");
+					sql.append("WHERE P1.participantmodel = '" + smodel + "' AND A1.id IS NULL);");
 					sqls.add(sql.toString());
 					
 				}
@@ -188,7 +188,7 @@ public class StatementUtil {
 						sql = new StringBuilder();
 						sql.append("DELETE FROM " + refTable + " WHERE id IN (SELECT P1.id FROM " + refTable + " P1 ");
 						sql.append("LEFT JOIN " + table + " A1 ON A1.id = P1.referenceId ");
-						sql.append("WHERE P1.referencemodel = '" + smodel + "' AND A1 IS NULL);");
+						sql.append("WHERE P1.referencemodel = '" + smodel + "' AND A1.id IS NULL);");
 						sqls.add(sql.toString());
 					}
 				}
