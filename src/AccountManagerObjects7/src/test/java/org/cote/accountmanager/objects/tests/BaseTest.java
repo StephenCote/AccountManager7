@@ -47,6 +47,7 @@ public class BaseTest {
 	
 	/// Configured via property definition
 	protected static boolean resetDataSchema = false;
+	private static boolean checkReset = false;
 	protected static Properties testProperties = null;
 	protected String testDataPath = null;
 	
@@ -64,7 +65,10 @@ public class BaseTest {
 				return;
 			}
 		}
-		resetDataSchema = Boolean.parseBoolean(testProperties.getProperty("test.db.reset"));
+		if(!checkReset) {
+			checkReset = true;
+			resetDataSchema = Boolean.parseBoolean(testProperties.getProperty("test.db.reset"));
+		}
 		testDataPath = testProperties.getProperty("test.data.path");
 		
 		/// NOTE: The current setup will throw an error if trying to deserialize a model whose schema has not yet been loaded.  This was done intentionally to only support intentionally loaded schemas
