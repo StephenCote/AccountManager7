@@ -218,32 +218,6 @@
 		],
 		"qualities": [
 			{
-				"skill": 0.1
-			}
-		],
-		"resaleAdjustment": 0.5,
-		"statistics": {
-			"entrapment": 0.25,
-			"damage": 0.2
-		},
-		"tags": [
-			{
-				"name": "trap"
-			}
-		],
-		"type": "template"
-	},
-	{
-		"category": "trap",
-		"description": "Paiute Deadfall",
-		"name": "paiute deadfall",
-		"perks": [
-			{
-				"name": "Trap"
-			}
-		],
-		"qualities": [
-			{
 				"skill": 0.3
 			}
 		],

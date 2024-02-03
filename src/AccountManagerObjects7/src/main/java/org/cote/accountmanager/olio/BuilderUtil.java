@@ -27,7 +27,7 @@ public class BuilderUtil {
 	
 
 	protected static BaseRecord getCreateRawMaterial(OlioContext ctx, String name, String type, String cat) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("items.id"));
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("items.id"));
 		q.field(FieldNames.FIELD_NAME, name);
 		if(type != null) {
 			q.field(FieldNames.FIELD_TYPE, type);

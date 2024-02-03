@@ -27,13 +27,12 @@ public class ItemUtil {
 	
 	protected static BaseRecord newItem(OlioContext ctx, String name) {
 		BaseRecord rec = null;
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("items.path"));
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("items.path"));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
-			BaseRecord stat = rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM_STATISTICS, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getUniverse().get("statistics.path")));
+			BaseRecord stat = rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM_STATISTICS, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
 			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM, ctx.getUser(), null, plist);
 			rec.set("statistics", stat);
-			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);

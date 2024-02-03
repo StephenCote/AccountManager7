@@ -122,12 +122,17 @@ public class AnimalUtil {
 						int age = random.nextInt(1,20);
 						anim1.setValue("age", age);
 						StatisticsUtil.rollStatistics(anim1.get("statistics"), age);
-						
-						BaseRecord state = anim1.get("state");
-						state.setValue("currentLocation", location);
-						StateUtil.setInitialLocation(ctx, state);
-						//StateUtil.agitateLocation(ctx, state);
+						BaseRecord store = anim1.get("store");
+						List<BaseRecord> items = store.get("items");
 						try {
+							for(BaseRecord it : items) {
+								it.set("type", null);
+							}
+							BaseRecord state = anim1.get("state");
+							state.setValue("currentLocation", location);
+							StateUtil.setInitialLocation(ctx, state);
+							//StateUtil.agitateLocation(ctx, state);
+
 							anim1.set(FieldNames.FIELD_TYPE, "random");
 							if(random.nextDouble() <= Rules.ANIMAL_CARCASS_ODDS) {
 								state.set("alive", false);
