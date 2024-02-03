@@ -1,0 +1,49 @@
+{
+	"name": "olio.inventoryEntry",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
+		"system.primaryKey"
+	],
+	"group": "Inventory Entries",
+	"icon": "category",
+	"label": "Inventory Entry",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "quantity",
+			"type": "int",
+			"shortName": "quan"
+		},
+		{
+			"name": "age",
+			"type": "int"
+		},
+		{
+			"name": "inuse",
+			"type": "boolean"
+		},
+		{
+			"name": "item",
+			"type": "model",
+			"baseModel": "olio.item",
+			"foreign": true
+		},
+				{
+			"name": "apparel",
+			"type": "model",
+			"baseModel": "olio.apparel",
+			"foreign": true
+		},
+		{
+			"name": "wearable",
+			"type": "model",
+			"baseModel": "olio.wearable",
+			"foreign": true
+		}
+	]
+}

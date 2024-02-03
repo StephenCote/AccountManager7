@@ -21,6 +21,14 @@
 			"maxLength": 128
 		},
 		{
+			"name": "inventory",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.inventoryEntry",
+			"foreign": true,
+			"participantModel": "store.entry"
+		},
+		{
 			"name": "items",
 			"type": "list",
 			"baseType": "model",
@@ -40,7 +48,7 @@
 			"name": "wearables",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "olio.apparel",
+			"baseModel": "olio.wearable",
 			"foreign": true,
 			"participantModel": "store.wearable"
 		},
