@@ -130,14 +130,14 @@ public class MBTIUtil {
 		mbtiCompat.add(new MBTICompatibility("enfj", "estj", CompatibilityEnumType.NOT_COMPATIBLE));	
 		
 		/// intj
-		mbtiCompat.add(new MBTICompatibility("infj", "infp", CompatibilityEnumType.COMPATIBLE));
-		mbtiCompat.add(new MBTICompatibility("infj", "enfp", CompatibilityEnumType.IDEAL));
-		mbtiCompat.add(new MBTICompatibility("infj", "infj", CompatibilityEnumType.COMPATIBLE));
-		mbtiCompat.add(new MBTICompatibility("infj", "enfj", CompatibilityEnumType.COMPATIBLE));
-		mbtiCompat.add(new MBTICompatibility("infj", "intj", CompatibilityEnumType.COMPATIBLE));
-		mbtiCompat.add(new MBTICompatibility("infj", "entj", CompatibilityEnumType.COMPATIBLE));
-		mbtiCompat.add(new MBTICompatibility("infj", "intp", CompatibilityEnumType.COMPATIBLE));
-		mbtiCompat.add(new MBTICompatibility("infj", "entp", CompatibilityEnumType.IDEAL));
+		mbtiCompat.add(new MBTICompatibility("intj", "infp", CompatibilityEnumType.COMPATIBLE));
+		mbtiCompat.add(new MBTICompatibility("intj", "enfp", CompatibilityEnumType.IDEAL));
+		mbtiCompat.add(new MBTICompatibility("intj", "infj", CompatibilityEnumType.COMPATIBLE));
+		mbtiCompat.add(new MBTICompatibility("intj", "enfj", CompatibilityEnumType.COMPATIBLE));
+		mbtiCompat.add(new MBTICompatibility("intj", "intj", CompatibilityEnumType.COMPATIBLE));
+		mbtiCompat.add(new MBTICompatibility("intj", "entj", CompatibilityEnumType.COMPATIBLE));
+		mbtiCompat.add(new MBTICompatibility("intj", "intp", CompatibilityEnumType.COMPATIBLE));
+		mbtiCompat.add(new MBTICompatibility("intj", "entp", CompatibilityEnumType.IDEAL));
 		mbtiCompat.add(new MBTICompatibility("intj", "isfp", CompatibilityEnumType.PARTIAL));
 		mbtiCompat.add(new MBTICompatibility("intj", "esfp", CompatibilityEnumType.PARTIAL));
 		mbtiCompat.add(new MBTICompatibility("intj", "istp", CompatibilityEnumType.PARTIAL));
