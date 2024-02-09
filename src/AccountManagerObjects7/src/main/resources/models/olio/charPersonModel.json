@@ -38,7 +38,7 @@
 		{
 			"name": "statistics",
 			"type": "model",
-			"baseModel": "olio.charStatistics",
+			"baseModel": "olio.statistics",
 			"foreign": true,
 			"shortName": "sta"
 		},

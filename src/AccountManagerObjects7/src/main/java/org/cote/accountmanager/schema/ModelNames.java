@@ -138,7 +138,7 @@ public class ModelNames {
 	// olio
 	public static final String MODEL_ANIMAL = "olio.animal";
 	public static final String MODEL_CHAR_PERSON = "olio.charPerson";
-	public static final String MODEL_CHAR_STATISTICS = "olio.charStatistics";
+	public static final String MODEL_CHAR_STATISTICS = "olio.statistics";
 	public static final String MODEL_CHAR_SKILL = "olio.charSkill";
 	public static final String MODEL_INSTINCT = "olio.instinct";
 	public static final String MODEL_PERSONALITY = "olio.personality";

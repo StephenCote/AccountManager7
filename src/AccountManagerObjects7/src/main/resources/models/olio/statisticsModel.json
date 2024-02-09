@@ -1,5 +1,5 @@
 {
-	"name": "olio.charStatistics",
+	"name": "olio.statistics",
 	"likeInherits": ["data.directory"],
 	"inherits": [
 		"common.groupExt",
