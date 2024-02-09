@@ -3,12 +3,15 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -25,9 +28,12 @@ import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
 import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
+import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.util.JSONUtil;
 
 public class NeedsUtil {
 
@@ -133,26 +139,51 @@ public class NeedsUtil {
 		
 		return acts;
 	}
-	protected static List<BaseRecord> filterByMBTI(Map<BaseRecord, PersonalityProfile> map, String mtbiKey){
-		return map.values().stream()
-			.filter(pp -> pp.getMbtiKey() != null && pp.getMbtiKey().equals(mtbiKey))
-			.map(pp -> pp.getRecord())
-			.collect(Collectors.toList())
-		;
+
+
+	/// Given some leader, identify if the current group will accept them
+	///
+	protected static List<PersonalityProfile> contestLeader(List<PersonalityProfile> map, PersonalityProfile leader) {
+		Set<PersonalityProfile> contest = new HashSet<>();
+		
+		List<PersonalityProfile> prettyNarcissists = PersonalityUtil.filterBetterLookingPrettyNarcissists(map, leader); 
+		if(prettyNarcissists.size() > 0) {
+			logger.warn("Uh-oh, it looks like " + prettyNarcissists.size() + " narcissists prettier than the leader might be contesting that");
+		}
+		else {
+			logger.info("No prettier narcissists around");
+		}
+		return new ArrayList<>(contest);
 	}
 
 
+	
 	protected static void delegateActions(OlioContext ctx, Map<BaseRecord, PersonalityProfile> map, List<BaseRecord> actions) {
 		/// Given a set of actions
 		/// Find any 'commanders'
-		List<BaseRecord> natCommand = filterByMBTI(map, "entj");
-		/// Find any 'directors'
-		List<BaseRecord> natDir = filterByMBTI(map, "estj");
-		if(natCommand.size() > 0) {
-			logger.info(natCommand.size() + " people want to take charge");
-		}
-		else if(natDir.size() > 0) {
-			logger.info(natDir.size() + " people step up to try to take lead");
+		List<PersonalityProfile> lgrp = new ArrayList<>();
+		PersonalityProfile leader = null;
+		if(map.keySet().size() > 1) {
+			List<PersonalityProfile> natCommand = PersonalityUtil.filterCommanders(new ArrayList<>(map.values()));
+			/// Find any 'directors'
+			List<PersonalityProfile> natDir = PersonalityUtil.filterDirectors(new ArrayList<>(map.values()));
+			if(natCommand.size() > 0) {
+				logger.info(natCommand.size() + " people want to take charge");
+				lgrp = natCommand;
+
+			}
+			else if(natDir.size() > 0) {
+				logger.info(natDir.size() + " people step up to try to take lead");
+				lgrp = natDir;
+			}
+			else {
+				logger.info("Nobody stepped up to take charge");
+				lgrp = new ArrayList<>(map.values());
+			}
+			leader = PersonalityUtil.identifyLeader(lgrp);
+			if(lgrp.size() > 1) {
+				contestLeader(lgrp, leader);
+			}
 		}
 	}
 	
