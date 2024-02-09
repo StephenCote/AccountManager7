@@ -119,12 +119,16 @@ public class AnimalUtil {
 					List<BaseRecord> grp = new ArrayList<>();
 					for(int i = 0; i < count; i++) {
 						BaseRecord anim1 = a.copyDeidentifiedRecord();
-						int age = random.nextInt(1,20);
-						anim1.setValue("age", age);
-						StatisticsUtil.rollStatistics(anim1.get("statistics"), age);
-						BaseRecord store = anim1.get("store");
-						List<BaseRecord> items = store.get("items");
 						try {
+							anim1.set("store.items", a.get("store.items"));
+							convertItemsToInventory(ctx, anim1);
+							
+							int age = random.nextInt(1,20);
+							anim1.setValue("age", age);
+							StatisticsUtil.rollStatistics(anim1.get("statistics"), age);
+							BaseRecord store = anim1.get("store");
+							List<BaseRecord> items = store.get("items");
+
 							for(BaseRecord it : items) {
 								it.set("type", null);
 							}
@@ -156,7 +160,28 @@ public class AnimalUtil {
 		animalSpread.put(id, pop);
 		return pop;
 	}
-	
+	protected static void convertItemsToInventory(OlioContext ctx, BaseRecord rec) {
+		BaseRecord store = rec.get("store");
+		if(store == null) {
+			logger.warn("Store was null");
+			return;
+		}
+		List<BaseRecord> items = store.get("items");
+		List<BaseRecord> entries = store.get("inventory");
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path"));
+		for(BaseRecord i : items) {
+
+
+			try {
+				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getUser(), null, plist);
+				inv.set("item", i);
+				entries.add(inv);
+			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		items.clear();
+	}
 	protected static List<BaseRecord> getAnimalTemplates(OlioContext ctx){
 		if(animalTemplates.size() > 0) {
 			return animalTemplates;
