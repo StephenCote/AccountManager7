@@ -46,6 +46,16 @@ public enum HighEnumType {
     private HighEnumType(final double val) {
     	this.val = val;
     }
+	public static HighEnumType margin(HighEnumType h1, HighEnumType h2) {
+		return valueOf(Math.abs(h1.val - h2.val));
+	}
+	public static boolean marginCompare(HighEnumType h1, HighEnumType h2, HighEnumType h3, ComparatorEnumType comp) {
+		return compare(margin(h1, h2), h3, comp);
+	}
+
+    public static double valueOf(HighEnumType high) {
+    	return high.val;
+    }
 
     public static HighEnumType valueOf(double val) {
 		DecimalFormat df = new DecimalFormat("#.#");
@@ -59,7 +69,22 @@ public enum HighEnumType {
 		}
         return highMap.get(pval);
     }
-    
+    public static boolean compare(HighEnumType lvl1, HighEnumType lvl2, ComparatorEnumType comp) {
+    	ComparatorEnumType hcomp = compare(lvl1, lvl2);
+
+    	return (
+    		hcomp == comp
+    		||
+    		(hcomp == ComparatorEnumType.GREATER_THAN && comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.EQUALS && comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.LESS_THAN && comp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.EQUALS && comp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
+    	);
+
+    }
     public static ComparatorEnumType compare(HighEnumType lvl1, HighEnumType lvl2) {
     	ComparatorEnumType comp = ComparatorEnumType.UNKNOWN;
     	double val1 = lvl1.val;

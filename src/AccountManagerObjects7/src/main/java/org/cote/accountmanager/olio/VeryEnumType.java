@@ -60,5 +60,27 @@ public enum VeryEnumType {
     	else comp = ComparatorEnumType.EQUALS;
     	return comp;
     }
+    
+	public static VeryEnumType margin(VeryEnumType v1, VeryEnumType v2) {
+		return valueOf(Math.abs(v1.val - v2.val));
+	}
+	public static boolean marginCompare(VeryEnumType v1, VeryEnumType v2, VeryEnumType v3, ComparatorEnumType comp) {
+		return compare(margin(v1, v2), v3, comp);
+	}
+    public static boolean compare(VeryEnumType lvl1, VeryEnumType lvl2, ComparatorEnumType comp) {
+    	ComparatorEnumType hcomp = compare(lvl1, lvl2);
+    	return (
+    		hcomp == comp
+    		||
+    		(hcomp == ComparatorEnumType.GREATER_THAN && comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.EQUALS && comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.LESS_THAN && comp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.EQUALS && comp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
+    	);
+
+    }
 
 }
