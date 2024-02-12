@@ -3,15 +3,12 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.Function;
-import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -32,8 +29,6 @@ import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.ComparatorEnumType;
-import org.cote.accountmanager.util.JSONUtil;
 
 public class NeedsUtil {
 
@@ -367,11 +362,9 @@ public class NeedsUtil {
 						if(state.get("currentEvent") != null) {
 							logger.warn("Agitating " + name + " who is currently busy");
 						}
-						else {
-							Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, p);
-							if(threats.keySet().size() > 0) {
-								tmap.put(p, threats);
-							}
+						Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, p);
+						if(threats.keySet().size() > 0) {
+							tmap.put(p, threats);
 						}
 					}
 				}
