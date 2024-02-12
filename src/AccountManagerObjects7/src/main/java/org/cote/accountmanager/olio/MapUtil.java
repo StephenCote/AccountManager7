@@ -228,7 +228,7 @@ public class MapUtil {
 	public static void printLocationMap(OlioContext ctx, BaseRecord location, BaseRecord realm, List<BaseRecord> pop) {
 		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
 		logger.info("NOTE: This currently expects a GridSquare layout");
-		printDescriptionByFeature(ctx, location, (String)location.get("feature"));
+		// printDescriptionByFeature(ctx, location, (String)location.get("feature"));
 		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));

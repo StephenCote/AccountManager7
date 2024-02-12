@@ -48,7 +48,6 @@ public class RegionInterceptor implements IParseInterceptor {
 			}
 		} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		
 	}

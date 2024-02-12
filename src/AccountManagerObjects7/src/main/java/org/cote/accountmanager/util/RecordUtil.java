@@ -101,7 +101,6 @@ public class RecordUtil {
 		catch(Exception e) {
 			logger.error(e);
 			logger.error(crec.toFullString());
-			e.printStackTrace();
 			hash = "Tmp hash - " + UUID.randomUUID().toString();
 		}
 		return hash;

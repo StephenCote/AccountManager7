@@ -74,7 +74,6 @@ public class AttributeUtil {
 		catch(Exception e) {
 			logger.error(e);
 			logger.error(record.getModel() + ".attribute." + name);
-			e.printStackTrace();
 		}
 
 		return outT;

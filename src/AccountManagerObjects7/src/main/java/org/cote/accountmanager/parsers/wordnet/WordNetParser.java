@@ -75,7 +75,6 @@ public class WordNetParser {
 			deleted = IOSystem.getActiveContext().getWriter().delete(lq);
 		} catch (WriterException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return deleted;
 	}
@@ -285,7 +284,6 @@ public class WordNetParser {
 		}
 		catch(StringIndexOutOfBoundsException | IOException | FactoryException | FieldException | ValueException | ModelNotFoundException  e){
 			logger.error(e.getMessage());
-			e.printStackTrace();
 			if(lastRecord != null) {
 				logger.error(lastRecord.toString());
 			}

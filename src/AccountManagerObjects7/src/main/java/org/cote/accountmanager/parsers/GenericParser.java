@@ -205,10 +205,7 @@ public class GenericParser {
 			if(lastRecord != null) {
 				logger.error(lastRecord.toString());
 			}
-			
-			e.printStackTrace();
 			error = true;
-
 		}
 		if(error) {
 			return new ArrayList<>();

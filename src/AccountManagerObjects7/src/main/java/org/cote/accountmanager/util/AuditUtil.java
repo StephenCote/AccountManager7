@@ -159,10 +159,6 @@ public class AuditUtil {
 			}
 			else {
 				logger.error("Organization path is null");
-				StackTraceElement[] st = new Throwable().getStackTrace();
-				for(int i = 0; i < st.length; i++) {
-					logger.error(st[i].toString());
-				}
 			}
 			// IOSystem.getActiveContext().getRecordUtil().createRecord(audit);
 			IOSystem.getActiveContext().getQueue().enqueue(audit);

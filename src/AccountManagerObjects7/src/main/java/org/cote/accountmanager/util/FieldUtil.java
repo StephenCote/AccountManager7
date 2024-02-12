@@ -68,10 +68,6 @@ public class FieldUtil {
 		   }
 		   else if(value != null){
 			   logger.error("Failed to set flex field: " + fieldName);
-				StackTraceElement[] st = new Throwable().getStackTrace();
-				for(int i = 0; i < st.length; i++) {
-					logger.error(st[i].toString());
-				}
 		   }
 	   }
    public static <T> void setFlex(BaseRecord record, String fieldName, FieldEnumType type, T value) {

@@ -119,7 +119,6 @@ public class EvolutionUtil {
 		}
 		catch(Exception e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 	}
 	
@@ -212,7 +211,6 @@ public class EvolutionUtil {
 		}
 		catch(ModelException | FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 	}
 	

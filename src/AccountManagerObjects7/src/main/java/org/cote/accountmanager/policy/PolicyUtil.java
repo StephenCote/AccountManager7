@@ -691,11 +691,6 @@ public class PolicyUtil {
 				}
 				else {
 					logger.error("Group could not be found");
-					logger.error(resource.toString());
-					StackTraceElement[] st = new Throwable().getStackTrace();
-					for(int i = 0; i < st.length; i++) {
-						logger.error(st[i].toString());
-					}
 				}
 			}
 			else {

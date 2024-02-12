@@ -1,7 +1,6 @@
 package org.cote.accountmanager.olio.rules;
 
 import java.security.SecureRandom;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;

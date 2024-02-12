@@ -3,10 +3,7 @@ package org.cote.accountmanager.olio;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,8 +29,6 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.LocationEnumType;
-import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ResourceUtil;
 
 public class ProfileUtil {
 	public static final Logger logger = LogManager.getLogger(ProfileUtil.class);

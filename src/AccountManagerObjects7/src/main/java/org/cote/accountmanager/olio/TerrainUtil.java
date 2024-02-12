@@ -244,7 +244,7 @@ public class TerrainUtil {
 			}
 		}
 		catch(Exception e) {
-			e.printStackTrace();
+			logger.error(e.getMessage());
 		}
 	}
 	protected static void blastRegions(List<BaseRecord> locs, TerrainEnumType tet, int mapWidth, int mapHeight, int iterations) {

@@ -45,20 +45,11 @@ public class GeoParser {
 	}
 	public static int cleanupLocation(String geoType, String isoCode, long groupId, long organizationId) {
 		Query lq = getQuery(geoType, isoCode, groupId, organizationId);
-		/*
-		QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, groupId);
-		lq.field("geoType", geoType);
-		if(isoCode != null) {
-			lq.field("iso", isoCode);
-		}
-		lq.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
-		*/
 		int deleted = 0;
 		try {
 			deleted = IOSystem.getActiveContext().getWriter().delete(lq);
 		} catch (WriterException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return deleted;
 	}
@@ -116,7 +107,6 @@ public class GeoParser {
 		}
 		catch(Exception e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return count;
 	}

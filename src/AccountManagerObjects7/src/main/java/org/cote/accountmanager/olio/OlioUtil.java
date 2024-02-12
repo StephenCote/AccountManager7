@@ -275,7 +275,6 @@ public class OlioUtil {
 		}
 		catch(ClassCastException | FactoryException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return irec;
 	}
@@ -443,7 +442,6 @@ public class OlioUtil {
 
 		} catch (FieldException | ValueException | ModelNotFoundException | ReaderException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return recs;
 	}

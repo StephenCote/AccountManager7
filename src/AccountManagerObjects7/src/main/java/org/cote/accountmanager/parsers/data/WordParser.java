@@ -157,7 +157,6 @@ public class WordParser {
 			deleted = IOSystem.getActiveContext().getWriter().delete(lq);
 		} catch (WriterException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return deleted;
 	}

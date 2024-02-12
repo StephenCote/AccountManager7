@@ -57,7 +57,6 @@ public class JSONUtil {
 			lst = mapper.readValue(data, listType);
 		} catch (IOException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		return lst;
 	}

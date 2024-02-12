@@ -500,7 +500,6 @@ public class WorldUtil {
 			deleted = IOSystem.getActiveContext().getWriter().delete(lq);
 		} catch (WriterException e) {
 			logger.error(e);
-			e.printStackTrace();
 		}
 		logger.info("Cleaned up " + deleted + " " + model + " in #" + groupId + " (#" + organizationId + ")");
 		return deleted;

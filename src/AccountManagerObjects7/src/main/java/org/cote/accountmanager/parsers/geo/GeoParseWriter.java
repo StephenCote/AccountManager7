@@ -51,7 +51,6 @@ public class GeoParseWriter implements IParseWriter {
 							}
 						} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
 							logger.error(e);
-							e.printStackTrace();
 							break;
 						}
 					}
