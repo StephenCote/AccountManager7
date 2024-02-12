@@ -1,20 +1,15 @@
 package org.cote.accountmanager.olio.personality;
 
-import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.olio.HighEnumType;
+import org.cote.accountmanager.olio.AnimalProfile;
 import org.cote.accountmanager.olio.PersonalityProfile;
-import org.cote.accountmanager.olio.VeryEnumType;
+import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class PersonalityUtil {
 	public static final Logger logger = LogManager.getLogger(PersonalityUtil.class);
@@ -56,26 +51,32 @@ public class PersonalityUtil {
 	public static List<PersonalityProfile> filterNarcissists(List<PersonalityProfile> map){
 		return map.stream()
 			.filter(p ->
-				VeryEnumType.compare(p.getExtraverted(), VeryEnumType.MOSTLY, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
-				&& VeryEnumType.compare(p.getAgreeable(), VeryEnumType.LESS_FREQUENTLY, ComparatorEnumType.GREATER_THAN_OR_EQUALS) 
+				Rules.ruleMostly(p.getExtraverted())
+				&&
+				Rules.ruleNotUsually(p.getAgreeable())
 			)
 			.collect(Collectors.toList())
 		;
 	}
+
 	public static List<PersonalityProfile> filterPretty(List<PersonalityProfile> map){
 		return map.stream()
 			.filter(p ->
-				HighEnumType.compare(p.getCharisma(), HighEnumType.ELEVATED, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+				Rules.rulePrettyGood(p.getCharisma())
 			)
 			.collect(Collectors.toList())
 		;
+	}
+
+	public static boolean sameProfile(AnimalProfile ap1, AnimalProfile ap2) {
+		return ap1.getId() == ap2.getId();
 	}
 	public static List<PersonalityProfile> filterBetterLooking(List<PersonalityProfile> map, PersonalityProfile ref){
 		return map.stream()
 			.filter(p ->
-				ref.getId() != p.getId()
+				!sameProfile(ref, p)
 				&&
-				HighEnumType.marginCompare(p.getCharisma(), ref.getCharisma(), HighEnumType.ADEQUATE, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+				Rules.ruleBetterThan(p.getCharisma(), ref.getCharisma())
 			)
 			.collect(Collectors.toList())
 		;
