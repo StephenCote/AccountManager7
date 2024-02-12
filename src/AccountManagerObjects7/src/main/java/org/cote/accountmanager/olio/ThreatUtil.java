@@ -8,10 +8,8 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class ThreatUtil {
 	public static final Logger logger = LogManager.getLogger(ThreatUtil.class);
@@ -70,13 +68,14 @@ public class ThreatUtil {
 		boolean starving = InstinctUtil.checkFeedInstinct(possibleThreat, InstinctEnumType.STRONG, dr); 
 		
 		/// do they have any 'fight' in them relative to distance
-		boolean fight = InstinctUtil.checkFeedInstinct(possibleThreat, InstinctEnumType.AVERAGE, dr); 
+		boolean fight = InstinctUtil.checkFightInstinct(possibleThreat, InstinctEnumType.AVERAGE, dr); 
 
 		/// do they have a sense of 'protection' relative to distance
 		///
 		boolean protect = InstinctUtil.checkProtectInstinct(possibleThreat, InstinctEnumType.STRONG, dr);
 		if(fight || protect || starving) {
 			/// Do they see the person (perception)?
+			// logger.info(possibleThreat.getName() + " has a fight, protect, or feed instinct");
 			RollEnumType perc = RollUtil.rollPerception(possibleThreat.getRecord());
 			if(perc == RollEnumType.SUCCESS || perc == RollEnumType.NATURAL_SUCCESS) {
 				isAgg = true;
@@ -90,24 +89,15 @@ public class ThreatUtil {
 					// logger.info(possibleThreat.getName() + " didn't react to 'em");
 				}
 				*/
-
 			}
 			else {
-				// logger.info(possibleThreat.getName() + " didn't see 'em");
+				// logger.info("But, " + possibleThreat.getName() + " didn't react");
 			}
 
 		}
 		else {
 			// logger.info(possibleThreat.getName() + " has no fight or protective instinct in 'em");
-			/*
-			if(possibleThreat.getName().equals("wolf")) {
-				double d = StateUtil.getDistance(possibleThreat.getRecord().get("state"), person.getRecord().get("state"));
-				logger.info(d + " --> " + dr);
-				logger.info(JSONUtil.exportObject(possibleThreat));
-			}
-			*/
 		}
-		//if(possibleThreat.getFight())
 
 		return isAgg;
 	}
@@ -131,7 +121,7 @@ public class ThreatUtil {
 				logger.warn(ap.getName() + " made a spectacle of itself: " + tet.toString());
 			}
 			else {
-				logger.warn(ap.getName() + " is acting aggressive: " + tet.toString());
+				// logger.warn(ap.getName() + " is acting aggressive: " + tet.toString());
 			}
 		}
 		else {
@@ -149,7 +139,6 @@ public class ThreatUtil {
 		
 		/// Find animals in the current and adjacent cells
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(ctx, zoo, state.get("currentLocation"));
-
 		List<AnimalProfile> tpop = new ArrayList<>();
 		Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(ctx, zpop);
 		for(AnimalProfile ap : amap.values()) {
@@ -159,7 +148,6 @@ public class ThreatUtil {
 				tpop.add(ap);
 			}
 		}
-
 		return tpop;
 	}
 
