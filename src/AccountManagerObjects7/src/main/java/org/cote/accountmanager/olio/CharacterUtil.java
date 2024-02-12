@@ -3,8 +3,12 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -107,6 +111,8 @@ public class CharacterUtil {
 			}
 			String gen = isMale ? "male":"female";
 			person.set("gender", gen);
+			person.set("race", randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
+			setStyleByRace(person);
 			
 			Query fnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
 			fnq.field("gender", gen.substring(0, 1).toUpperCase());
@@ -219,6 +225,119 @@ public class CharacterUtil {
 		if(!mem2) {
 			logger.warn("Failed to " + action + " " + person2.get(FieldNames.FIELD_ID) + " " + person2.get(FieldNames.FIELD_NAME) + " " + dir + " " + person1.get(FieldNames.FIELD_ID) + " " + person1.get(FieldNames.FIELD_NAME));
 		}
+	}
+	
+	/// white, black, gray not included
+	///
+	private static final String[] natHairColors = new String[] {
+		"blond",
+		"dark blond",
+		"medium brown",
+		"dark brown",
+		"reddish-brown",
+		"red"
+	};
+	private static final String[] natEyeColors = new String[] {
+		"brown",
+		"amber",
+		"hazel",
+		"green",
+		"blue",
+		"gray"
+	};
+	private static final String[] femaleHairStyles = new String[] {
+		"pixie cut", "bob", "medium length", "shoulder length", "long", "short", "bun", "ponytail", "pigtails", "curly", "dreadlocks", "mohawk", "long wavy", "plaits", "ringlets", "shaved", "bald", "tangled"	
+	};
+	private static final String[] maleHairStyles = new String[] {
+		"pixie cut", "shoulder length", "short", "dreadlocks", "mohawk", "shaved", "bald", "ponytail", "messy"
+	};
+
+	public static void setStyleByRace(BaseRecord person) throws FieldException, ValueException, ModelNotFoundException {
+		String gender = person.get("gender");
+		List<String> rets = person.get("race");
+		if(rets.size() == 0) {
+			return;
+		}
+		RaceEnumType pret = RaceEnumType.valueOf(rets.get(0));
+		String hairColor = null;
+		String eyeColor = null;
+		String hairStyle = "messy";
+		if(gender != null && gender.equals("male")) {
+			hairStyle = maleHairStyles[rand.nextInt(maleHairStyles.length)];
+		}
+		else {
+			hairStyle = femaleHairStyles[rand.nextInt(femaleHairStyles.length)];
+		}
+		switch(pret) {
+			case A:
+			case B:
+			case C:
+			case D:
+				eyeColor = "brown";
+				hairColor = "black";
+				break;
+			case E:
+				eyeColor = natEyeColors[rand.nextInt(natEyeColors.length)];
+				hairColor = natHairColors[rand.nextInt(natHairColors.length)];
+				break;
+			case R:
+				eyeColor = "gray";
+				hairColor = "silver";
+				break;
+			case W:
+				eyeColor = "green";
+				hairColor = "green";
+				break;
+			case X:
+			case Y:
+				eyeColor = natEyeColors[rand.nextInt(natEyeColors.length)];
+				hairColor = natHairColors[rand.nextInt(natHairColors.length)];
+			case Z:
+				eyeColor = "blue";
+				hairColor = "silver";
+				hairStyle = "pixie cut";
+				break;
+		}
+		person.set("eyeColor", eyeColor);
+		person.set("hairStyle", hairStyle);
+		person.set("hairColor", hairColor);
+
+	}
+	public static List<RaceEnumType> randomRaceType(){
+		return randomRaceType(Rules.DEFAULT_RACE_PERCENTAGE);
+	}
+	public static List<RaceEnumType> randomRaceType(Map<RaceEnumType, Double> odds){
+		List<RaceEnumType> races = new ArrayList<>();
+		boolean multi = (rand.nextDouble() <= Rules.DEFAULT_TWO_OR_MORE_RACE_PERCENTAGE);
+		
+		//.mapToInt(Integer::intValue)
+		double total = odds.entrySet().stream().map(l -> l.getValue()).mapToDouble(Double::doubleValue).sum();
+		double perc = rand.nextDouble(total);
+		List<RaceEnumType> sorted = odds.entrySet().stream().sorted(Comparator.comparing(Map.Entry::getValue)).map(Map.Entry::getKey).collect(Collectors.toList());
+		double tot = 0.0;
+		RaceEnumType ret = RaceEnumType.U;
+		for(RaceEnumType rtet : sorted) {
+			tot += odds.get(rtet);
+			if(perc <= tot) {
+				ret = rtet;
+				break;
+			}
+		}
+		races.add(ret);
+		if(multi) {
+			ret = RaceEnumType.U;
+			perc = rand.nextDouble(total);
+			for(RaceEnumType rtet : sorted) {
+				tot += odds.get(rtet);
+				if(perc <= tot) {
+					ret = rtet;
+					break;
+				}
+			}
+			races.add(ret);
+		}
+
+		return races;
 	}
 	
 }

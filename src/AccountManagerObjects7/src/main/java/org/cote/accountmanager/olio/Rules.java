@@ -1,9 +1,15 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
+import java.util.HashMap;
+import java.util.Map;
+
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class Rules {
 	
+	private static final SecureRandom random = new SecureRandom();
 	
 	public static final int MAP_EXTERIOR_FEATURE_WIDTH = 100;
 	public static final int MAP_EXTERIOR_FEATURE_HEIGHT = 100;
@@ -150,5 +156,33 @@ public class Rules {
 		}
 		
 		return typeOdds;
+	}
+	
+	public static final Double DEFAULT_TWO_OR_MORE_RACE_PERCENTAGE = 0.03;
+	public static Map<RaceEnumType, Double> DEFAULT_RACE_PERCENTAGE = new HashMap<>();
+	static {
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.A, 0.013);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.B, 0.063);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.C, 0.136);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.D, 0.003);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.E, 0.755);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.R, 0.001);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.W, 0.001);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.X, 0.001);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.Y, 0.001);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.Z, 0.001);
+	}
+	
+	public static boolean ruleNotUsually(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.NOT_USUALLY, ComparatorEnumType.LESS_THAN_OR_EQUALS);
+	}
+	public static boolean ruleMostly(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.MOSTLY, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
+	public static boolean rulePrettyGood(HighEnumType h1) {
+		return HighEnumType.compare(h1, HighEnumType.ELEVATED, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}	
+	public static boolean ruleBetterThan(HighEnumType h1, HighEnumType h2) {
+		return HighEnumType.marginCompare(h1, h2, HighEnumType.ADEQUATE, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}
 }

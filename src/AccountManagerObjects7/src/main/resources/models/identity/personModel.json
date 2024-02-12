@@ -9,6 +9,12 @@
 	"dedicatedParticipation": true,
 	"fields": [
 		{
+			"name": "race",
+			"type": "list",
+			"baseType": "string",
+			"shortName": "rac"
+		},
+		{
 			"name": "firstName",
 			"type": "string",
 			"maxLength": 127
@@ -36,6 +42,10 @@
 		{
 			"name": "birthDate",
 			"type": "zonetime"
+		},
+		{
+			"name": "age",
+			"type": "int"
 		},
 		{
 			"name": "gender",

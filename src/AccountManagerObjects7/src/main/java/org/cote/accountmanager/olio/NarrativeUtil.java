@@ -19,6 +19,15 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 public class NarrativeUtil {
 	public static final Logger logger = LogManager.getLogger(NarrativeUtil.class);
 	
+	public static String getRaceDescription(List<String> races) {
+		StringBuilder desc = new StringBuilder();
+		for(String rc: races) {
+			RaceEnumType ret = RaceEnumType.valueOf(rc);
+			if(desc.length() > 0) desc.append(" and ");
+			desc.append(RaceEnumType.valueOf(ret));
+		}
+		return desc.toString();
+	}
 	public static String lookaround(OlioContext ctx, BaseRecord realm, BaseRecord event, BaseRecord increment, List<BaseRecord> group, BaseRecord pov, Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> threatMap) {
 		StringBuilder buff = new StringBuilder();
 		PersonalityProfile pp = ProfileUtil.analyzePersonality(ctx, pov);
@@ -32,19 +41,26 @@ public class NarrativeUtil {
 		String fname = pov.get("firstName");
 		int age = pov.get("age");
 		
+		
+		String hairColor = pov.get("hairColor");
+		String hairStyle = pov.get("hairStyle");
+		String eyeColor = pov.get("eyeColor");
+		
 		String gender = pov.get("gender");
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String pos = ("male".equals(gender) ? "him" : "her");
 		boolean nak = NeedsUtil.isNaked(pov);
 		boolean fod = NeedsUtil.needsFood(pov);
 		boolean dri = NeedsUtil.needsWater(pov);
+		
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 		//Set<TerrainEnumType> stets = acells.stream().map(c -> TerrainEnumType.valueOf((String)c.get("terrainType"))).collect(Collectors.toSet());
 		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
 		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
 		
-
-		buff.append(fname + " is a " + age + " year old " + ("male".equals(gender) ? "man" : "woman") + ".");
+		String raceDesc = getRaceDescription(pov.get("race"));
+		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(" " + pro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		buff.append(" " + pro + " is a '" + pp.getMbtiTitle() + "' and is " + pp.getMbtiDescription() + ".");
 		buff.append(" " + pro + " is");
 		if(stets.size() > 0) {
@@ -101,7 +117,7 @@ public class NarrativeUtil {
 			}
 			String compatKey = OCEANUtil.getCompatibilityKey(pov.get("personality"), p.get("personality"));
 			CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(pov.get("personality.mbtiKey"), p.get("personality.mbtiKey"));
-			buff.append("\n" + p.get("firstName") + " (" + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString());
+			buff.append("\n" + p.get("firstName") + " " + getRaceDescription(p.get("race")) + " (" + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString());
 		}
 		
 		return buff.toString();

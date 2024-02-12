@@ -10,8 +10,19 @@
 	"dedicatedParticipation": true,
 	"fields": [
 		{
-			"name": "age",
-			"type": "int"
+			"name": "eyeColor",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "hairColor",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "hairStyle",
+			"type": "string",
+			"maxLength": 64
 		},
 		{
 			"name": "trades",
