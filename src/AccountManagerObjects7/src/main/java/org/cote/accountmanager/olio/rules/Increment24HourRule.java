@@ -261,7 +261,7 @@ public class Increment24HourRule implements IOlioEvolveRule {
 			context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
 			return cevts[0];
 		}
-		BaseRecord evt = EventUtil.newEvent(context.getUser(), context.getWorld(), parentEvent, EventEnumType.PERIOD, name, time);
+		BaseRecord evt = EventUtil.newEvent(context, parentEvent, EventEnumType.PERIOD, name, time);
 		evt.set("timeType", tet);
 		parentEvent.set("eventProgress", time);
 
