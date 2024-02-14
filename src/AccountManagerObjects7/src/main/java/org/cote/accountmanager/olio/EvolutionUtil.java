@@ -172,7 +172,7 @@ public class EvolutionUtil {
 					
 					additions.add(baby);
 
-					EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.BIRTH, "Birth of " + baby.get(FieldNames.FIELD_NAME), now, new BaseRecord[] {per}, new BaseRecord[] {baby}, (partner != null ? new BaseRecord[] {partner} : null), ctx.getQueue());
+					EventUtil.newEvent(ctx, ctx.getCurrentEvent(), EventEnumType.BIRTH, "Birth of " + baby.get(FieldNames.FIELD_NAME), now, new BaseRecord[] {per}, new BaseRecord[] {baby}, (partner != null ? new BaseRecord[] {partner} : null), true);
 				}
 				
 				if(rulePersonDeath(eventAlignment, popGrp, per, currentAge)){
@@ -188,7 +188,7 @@ public class EvolutionUtil {
 					}
 					IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), popGrp, per, null, false);
 					IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), cemGrp, per, null, true);
-					EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.DEATH, "Death of " + per.get(FieldNames.FIELD_NAME) + " at the age of " + currentAge, now, new BaseRecord[] {per}, null, null, ctx.getQueue());
+					EventUtil.newEvent(ctx, ctx.getCurrentEvent(), EventEnumType.DEATH, "Death of " + per.get(FieldNames.FIELD_NAME) + " at the age of " + currentAge, now, new BaseRecord[] {per}, null, null, true);
 					deaths.add(per);
 				}
 			}
@@ -377,7 +377,7 @@ public class EvolutionUtil {
 					partner = popt.get();
 				}
 
-				EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.DIVORCE, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME), ctx.getCurrentMonth(), new BaseRecord[] {per, partner}, null, null, ctx.getQueue());
+				EventUtil.newEvent(ctx, ctx.getCurrentEvent(), EventEnumType.DIVORCE, "Divorce of " + per.get(FieldNames.FIELD_NAME) + " from " + partner.get(FieldNames.FIELD_NAME), ctx.getCurrentMonth(), new BaseRecord[] {per, partner}, null, null, true);
 				CharacterUtil.couple(ctx.getUser(), per, partner, false);
 				remap.add(per);
 				remap.add(partner);
@@ -399,7 +399,7 @@ public class EvolutionUtil {
 				
 				if(rand.nextDouble() <= Rules.INITIAL_MARRIAGE_RATE) {
 					CharacterUtil.couple(ctx.getUser(), man, woman);
-					EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEvent(), EventEnumType.MARRIAGE, "Marriage of " + man.get(FieldNames.FIELD_NAME) + " to " + woman.get(FieldNames.FIELD_NAME), ctx.getCurrentMonth(), new BaseRecord[] {man, woman}, null, null, ctx.getQueue());
+					EventUtil.newEvent(ctx, ctx.getCurrentEvent(), EventEnumType.MARRIAGE, "Marriage of " + man.get(FieldNames.FIELD_NAME) + " to " + woman.get(FieldNames.FIELD_NAME), ctx.getCurrentMonth(), new BaseRecord[] {man, woman}, null, null, true);
 					
 					remap.add(man);
 					remap.add(woman);

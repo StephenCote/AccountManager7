@@ -81,19 +81,19 @@ public class EventUtil {
 	}
 	
 	public static BaseRecord newEvent(
-		BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, ZonedDateTime startTime
+		OlioContext ctx, BaseRecord parentEvent, EventEnumType type, String name, ZonedDateTime startTime
 	) {
-		return newEvent(user, world, parentEvent, type, name, startTime, null, null, null, null);
+		return newEvent(ctx, parentEvent, type, name, startTime, null, null, null, false);
 	}
 	public static BaseRecord newEvent(
-			BaseRecord user, BaseRecord world, BaseRecord parentEvent, EventEnumType type, String name, ZonedDateTime startTime,
+			OlioContext ctx, BaseRecord parentEvent, EventEnumType type, String name, ZonedDateTime startTime,
 			BaseRecord[] actors, BaseRecord[] participants, BaseRecord[] influencers,
-			Map<String, List<BaseRecord>> queue
+			boolean enqueue
 		) {
 		BaseRecord evt = null;
-		ParameterList elist = ParameterList.newParameterList("path", world.get("events.path"));
+		ParameterList elist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
 		try {
-			evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, user, null, elist);
+			evt = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, elist);
 			/// TODO: Need a way to bulk-add hierarchies
 			/// The previous version used a complex method of identifier assignment and rewrite with negative values
 			evt.set(FieldNames.FIELD_NAME, name);
@@ -116,8 +116,8 @@ public class EventUtil {
 			evt.set("eventStart", startTime);
 			evt.set("eventProgress", startTime);
 			evt.set("eventEnd", startTime);
-			if(queue != null) {
-				OlioUtil.queueAdd(queue, evt);
+			if(enqueue) {
+				ctx.queue(evt);
 			}
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {

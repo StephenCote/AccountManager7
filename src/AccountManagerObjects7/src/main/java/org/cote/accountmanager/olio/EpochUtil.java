@@ -135,7 +135,7 @@ public class EpochUtil {
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
 		ZonedDateTime startTime = ((ZonedDateTime)lastEpoch.get("eventEnd")).plusDays(1).with(LocalTime.of(0,0,0));
 		logger.info("Start time: " + startTime);
-		epoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTime);
+		epoch = EventUtil.newEvent(ctx, rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTime);
 		try {
 			epoch.set("eventProgress", startTime);
 			epoch.set("inProgress", true);
@@ -252,7 +252,7 @@ public class EpochUtil {
 				AlignmentEnumType useAlignment = (rand.nextDouble() < Rules.ODDS_INVERT_ALIGNMENT ? invertedAlignment : alignment);
 				String childTitle = EpochUtil.generateEpochTitle(ctx.getUser(), ctx.getUniverse(), useAlignment);
 				
-				BaseRecord childEpoch = EventUtil.newEvent(ctx.getUser(), ctx.getWorld(), ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ctx.getCurrentEpoch().get("eventStart"));
+				BaseRecord childEpoch = EventUtil.newEvent(ctx, ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ctx.getCurrentEpoch().get("eventStart"));
 				childEpoch.set(FieldNames.FIELD_LOCATION, location);
 				childEpoch.set("eventProgress", ctx.getCurrentEpoch().get("eventProgress"));
 				childEpoch.set("inProgress", true);
