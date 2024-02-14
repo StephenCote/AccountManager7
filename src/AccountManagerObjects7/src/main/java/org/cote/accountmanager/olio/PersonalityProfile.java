@@ -11,6 +11,9 @@ public class PersonalityProfile extends AnimalProfile {
 	private boolean married = false;
 	private boolean children = false;
 	private boolean divorced = false;
+	private boolean narcissist = false;
+	private boolean psychopath = false;
+	private boolean machiavellian = false;
 	private String sloanKey = null;
 	private String sloanDescription = null;
 	private String mbtiKey = null;
@@ -61,6 +64,30 @@ public class PersonalityProfile extends AnimalProfile {
 		
 	}
 	
+	public boolean isNarcissist() {
+		return narcissist;
+	}
+
+	public void setNarcissist(boolean narcissist) {
+		this.narcissist = narcissist;
+	}
+
+	public boolean isPsychopath() {
+		return psychopath;
+	}
+
+	public void setPsychopath(boolean psychopath) {
+		this.psychopath = psychopath;
+	}
+
+	public boolean isMachiavellian() {
+		return machiavellian;
+	}
+
+	public void setMachiavellian(boolean machiavellian) {
+		this.machiavellian = machiavellian;
+	}
+
 	public String getMbtiKey() {
 		return mbtiKey;
 	}

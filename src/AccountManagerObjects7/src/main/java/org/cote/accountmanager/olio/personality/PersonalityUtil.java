@@ -48,17 +48,8 @@ public class PersonalityUtil {
 		return filterProfileByMBTI(map, "estj");
 	}
 	
-	public static List<PersonalityProfile> filterNarcissists(List<PersonalityProfile> map){
-		return map.stream()
-			.filter(p ->
-				Rules.ruleMostly(p.getExtraverted())
-				&&
-				Rules.ruleNotUsually(p.getAgreeable())
-			)
-			.collect(Collectors.toList())
-		;
-	}
 
+	
 	public static List<PersonalityProfile> filterPretty(List<PersonalityProfile> map){
 		return map.stream()
 			.filter(p ->
@@ -83,6 +74,6 @@ public class PersonalityUtil {
 	}
 	
 	public static List<PersonalityProfile> filterBetterLookingPrettyNarcissists(List<PersonalityProfile> map, PersonalityProfile ref){
-		return filterBetterLooking(filterPretty(filterNarcissists(map)), ref);
+		return filterBetterLooking(filterPretty(DarkTriadUtil.filterNarcissism(map)), ref);
 	}
 }

@@ -13,6 +13,7 @@ import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
@@ -60,7 +61,7 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 		/// NOTE/TODO: The realm/location relationship is currently a bit disconnected in the way they are initially set up
 		/// This was supposed to allow for flexibility, but depending on the rule chain, can quickly become mandatory
 		///
-		List<BaseRecord> party = (partyPlay ? NeedsUtil.getCreateParty(context, locationEpoch) : context.getPopulation(locationEpoch.get("location")));
+		List<BaseRecord> party = (partyPlay ? GroupDynamicUtil.getCreateParty(context, locationEpoch) : context.getPopulation(locationEpoch.get("location")));
 
 		NeedsUtil.recommend(context, locationEpoch, increment, party);
 
