@@ -176,13 +176,35 @@ public class Rules {
 	public static boolean ruleNotUsually(VeryEnumType v1) {
 		return VeryEnumType.compare(v1, VeryEnumType.NOT_USUALLY, ComparatorEnumType.LESS_THAN_OR_EQUALS);
 	}
+	public static boolean ruleLessFrequently(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.LESS_FREQUENTLY, ComparatorEnumType.LESS_THAN_OR_EQUALS);
+	}
+	public static boolean ruleSomewhat(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.SOMEWHAT, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
+	public static boolean ruleLessSomewhat(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.SOMEWHAT, ComparatorEnumType.LESS_THAN_OR_EQUALS);
+	}
 	public static boolean ruleMostly(VeryEnumType v1) {
 		return VeryEnumType.compare(v1, VeryEnumType.MOSTLY, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}
+	public static boolean ruleUsually(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.USUALLY, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
+	public static boolean ruleFrequently(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.FREQUENTLY, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
+	public static boolean ruleSlightly(VeryEnumType v1) {
+		return VeryEnumType.compare(v1, VeryEnumType.SLIGHTLY, ComparatorEnumType.LESS_THAN_OR_EQUALS);
+	}
+
 	public static boolean rulePrettyGood(HighEnumType h1) {
 		return HighEnumType.compare(h1, HighEnumType.ELEVATED, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}	
 	public static boolean ruleBetterThan(HighEnumType h1, HighEnumType h2) {
 		return HighEnumType.marginCompare(h1, h2, HighEnumType.ADEQUATE, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
+	public static boolean ruleFair(HighEnumType h1) {
+		return HighEnumType.compare(h1, HighEnumType.FAIR, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}
 }

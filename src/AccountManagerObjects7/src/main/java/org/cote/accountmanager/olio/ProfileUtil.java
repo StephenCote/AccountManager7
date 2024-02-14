@@ -21,8 +21,10 @@ import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
+import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.olio.personality.MBTI;
 import org.cote.accountmanager.olio.personality.MBTIUtil;
+import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.olio.personality.Sloan;
 import org.cote.accountmanager.olio.personality.SloanUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -387,6 +389,10 @@ SLOAN Notation
 		prof.setExtraverted(VeryEnumType.valueOf((double)per.get("extraversion")));
 		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
 		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
+		
+		prof.setMachiavellian(DarkTriadUtil.isMachiavellian(prof));
+		prof.setNarcissist(DarkTriadUtil.isNarcissist(prof));
+		prof.setPsychopath(DarkTriadUtil.isPsychopath(prof));
 		
 		Sloan sloan = SloanUtil.getSloan(per.get("sloanKey"));
 		MBTI mbti = MBTIUtil.getMBTI(per.get("mbtiKey"));
