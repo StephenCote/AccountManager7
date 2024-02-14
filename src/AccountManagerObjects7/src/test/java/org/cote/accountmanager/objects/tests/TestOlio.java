@@ -87,67 +87,67 @@ public class TestOlio extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		// IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
-				testUser1,
-				testProperties.getProperty("test.datagen.path"),
-				worldPath,
-				miniName,
-				miniSub,
-				new String[] {},
-				2,
-				50,
-				false,
-				resetUniverse
-			);
+			testUser1,
+			testProperties.getProperty("test.datagen.path"),
+			worldPath,
+			miniName,
+			miniSub,
+			new String[] {},
+			2,
+			50,
+			true,
+			resetUniverse
+		);
+	
+		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
+		///
+		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
+			new GridSquareLocationInitializationRule(),
+			new LocationPlannerRule(),
+			new GenericItemDataLoadRule()
+		}));
 		
-			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
-			///
-			cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
-				new GridSquareLocationInitializationRule(),
-				new LocationPlannerRule(),
-				new GenericItemDataLoadRule()
-			}));
-			
-			// Increment24HourRule incRule = new Increment24HourRule();
-			// incRule.setIncrementType(TimeEnumType.HOUR);
-			cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
-				new Increment24HourRule(),
-				new HierarchicalNeedsRule()
-			}));
-			OlioContext octx = new OlioContext(cfg);
+		// Increment24HourRule incRule = new Increment24HourRule();
+		// incRule.setIncrementType(TimeEnumType.HOUR);
+		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
+			new Increment24HourRule(),
+			new HierarchicalNeedsRule()
+		}));
+		OlioContext octx = new OlioContext(cfg);
 
-			logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
-			octx.initialize();
-			assertNotNull("Root location is null", octx.getRootLocation());
-			
+		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
+		octx.initialize();
+		assertNotNull("Root location is null", octx.getRootLocation());
+		
+		try {
+			MapUtil.printMapFromAdmin2(octx);
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+		/*
+		BaseRecord[] realms = octx.getRealms();
+		for(BaseRecord r: realms) {
+			MapUtil.printRealmMap(octx, r);
+		}
+		*/
+
+		BaseRecord evt = octx.startOrContinueEpoch();
+		assertNotNull("Epoch is null", evt);
+		BaseRecord[] locs = octx.getLocations();
+		for(BaseRecord lrec : locs) {
+			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
+			assertNotNull("Location epoch is null", levt);
+			BaseRecord cevt = octx.startOrContinueIncrement();
 			try {
-				MapUtil.printMapFromAdmin2(octx);
+				octx.evaluateIncrement();
 			}
 			catch(Exception e) {
 				e.printStackTrace();
 			}
-			/*
-			BaseRecord[] realms = octx.getRealms();
-			for(BaseRecord r: realms) {
-				MapUtil.printRealmMap(octx, r);
-			}
-			*/
-
-			BaseRecord evt = octx.startOrContinueEpoch();
-			assertNotNull("Epoch is null", evt);
-			BaseRecord[] locs = octx.getLocations();
-			for(BaseRecord lrec : locs) {
-				BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
-				assertNotNull("Location epoch is null", levt);
-				BaseRecord cevt = octx.startOrContinueIncrement();
-				try {
-					octx.evaluateIncrement();
-				}
-				catch(Exception e) {
-					e.printStackTrace();
-				}
-			}
-			
-			// RecordFactory.cleanupOrphans(null);
+		}
+		
+		// RecordFactory.cleanupOrphans(null);
 	}
 	
 
