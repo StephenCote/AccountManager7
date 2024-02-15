@@ -109,6 +109,9 @@ public class GroupDynamicUtil {
 				List<PersonalityProfile> contesting = GroupDynamicUtil.contestLeadership(lgrp, leader);
 				if(contesting.size() > 0) {
 					logger.info(contesting.size() + " people are contesting leadership");
+					for(PersonalityProfile c: contesting) {
+						
+					}
 				}
 			}
 		}

@@ -180,6 +180,12 @@
 		"foreign": true
 	},
 	{
+		"name": "interactions",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "items",
 		"baseModel": "auth.group",
 		"type": "model",

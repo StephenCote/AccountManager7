@@ -40,6 +40,44 @@
 			"type": "enum",
 			"maxLength": 32
 		},
+		
+		{
+			"name": "actorType",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "actt"
+		},
+		{
+			"name": "actor",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "interactorType",
+			"shortName": "act"
+		},
+		{
+			"name": "delegateType",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "delt"
+		},
+		{
+			"name": "delegate",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "delegateType",
+			"shortName": "del"
+		},
+
+		{
+			"name": "outcome",
+			"baseClass": "org.cote.accountmanager.olio.OutcomeEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "equilibrium",
+			"shortName": "out"
+		},
 		{
 			"name": "need",
 			"type": "string",
@@ -94,7 +132,17 @@
 			"baseModel": "olio.personality",
 			"description": "Personality modifiers from this action",
 			"foreign": true
+		},
+		{
+			"name": "interactions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.interaction",
+			"foreign": true,
+			"participantModel": "actionResult.interaction",
+			"shortName": "ias"
 		}
+
 	]
 }
 

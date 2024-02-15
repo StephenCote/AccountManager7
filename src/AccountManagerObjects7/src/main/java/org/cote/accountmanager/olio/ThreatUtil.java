@@ -14,31 +14,6 @@ import org.cote.accountmanager.schema.FieldNames;
 public class ThreatUtil {
 	public static final Logger logger = LogManager.getLogger(ThreatUtil.class);
 	
-	public static enum ThreatEnumType {
-		NONE,
-		EXISTENTIAL_THREAT,
-		ANIMAL_THREAT,
-		ANIMAL_TARGET,
-		PERSONAL_THREAT,
-		PERSONAL_TARGET,
-		ECONOMIC_THREAT,
-		ECONOMIC_TARGET,
-		IDEOLOGICAL_THREAT,
-		IDEOLOGICAL_TARGET,
-		ENVIRONMENTAL_THREAT,
-		HEALTH_THREAT,
-		POLITICAL_THREAT,
-		POLITICAL_TARGET
-		/*
-		ENVIRONMENTAL_SECURITY,
-		ECONOMIC_SECURITY,
-		FOOD_SECURITY,
-		HEALTH_SECURITY,
-		PERSONAL_SECURITY,
-		COMMUNITY_SECURITY,
-		POLITICAL_SECURITY
-		*/
-	};
 	public static double distanceRelativity(BaseRecord rec1, BaseRecord rec2) {
 		int maxDist = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		double dist = StateUtil.getDistance(rec1.get("state"), rec2.get("state"));
@@ -114,7 +89,7 @@ public class ThreatUtil {
 			/// roll for reaction to act on the aggression
 			tet = evaluateStatThreat(ap.getRecord(), pp.getRecord(), "reaction", threat, antiThreat);
 			if(tet == ThreatEnumType.EXISTENTIAL_THREAT) {
-				ap.getFixationTarget().add(pp.getRecord());
+				ap.getFixations().add(pp.getRecord());
 				logger.warn(ap.getName() + " is now fixated");
 			}
 			else if(tet == ThreatEnumType.ANIMAL_TARGET || tet == ThreatEnumType.PERSONAL_TARGET) {
@@ -205,11 +180,11 @@ public class ThreatUtil {
 		Map<ThreatEnumType,List<BaseRecord>> threats = new HashMap<>();
 		
 		List<AnimalProfile> anim = evaluateAnimalThreat(ctx, realm, event, group, person);
-		addThreat(threats, ThreatEnumType.EXISTENTIAL_THREAT, anim.stream().filter(a -> a.getFixationTarget().size() > 0).map(a -> a.getRecord()).collect(Collectors.toList()));
-		addThreat(threats, ThreatEnumType.ANIMAL_THREAT, anim.stream().filter(a -> a.getFixationTarget().size() == 0).map(a -> a.getRecord()).collect(Collectors.toList()));
+		addThreat(threats, ThreatEnumType.EXISTENTIAL_THREAT, anim.stream().filter(a -> a.getFixations().size() > 0).map(a -> a.getRecord()).collect(Collectors.toList()));
+		addThreat(threats, ThreatEnumType.ANIMAL_THREAT, anim.stream().filter(a -> a.getFixations().size() == 0).map(a -> a.getRecord()).collect(Collectors.toList()));
 		List<PersonalityProfile> people = evaluatePersonalThreat(ctx, realm, event, group, person);
-		addThreat(threats, ThreatEnumType.EXISTENTIAL_THREAT, people.stream().filter(a -> a.getFixationTarget().size() > 0).map(a -> a.getRecord()).collect(Collectors.toList()));
-		addThreat(threats, ThreatEnumType.PERSONAL_THREAT, people.stream().filter(a -> a.getFixationTarget().size() == 0).map(a -> a.getRecord()).collect(Collectors.toList()));
+		addThreat(threats, ThreatEnumType.EXISTENTIAL_THREAT, people.stream().filter(a -> a.getFixations().size() > 0).map(a -> a.getRecord()).collect(Collectors.toList()));
+		addThreat(threats, ThreatEnumType.PERSONAL_THREAT, people.stream().filter(a -> a.getFixations().size() == 0).map(a -> a.getRecord()).collect(Collectors.toList()));
 
 		return threats;
 	}

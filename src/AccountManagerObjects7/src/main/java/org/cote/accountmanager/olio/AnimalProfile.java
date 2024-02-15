@@ -16,7 +16,8 @@ public class AnimalProfile {
 	
 	/// temporary placeholder for instinct-driven fixations
 	///
-	private List<BaseRecord> fixationTarget = new ArrayList<>();
+	private List<BaseRecord> fixations = new ArrayList<>();
+	private List<BaseRecord> interactions = new ArrayList<>();
 	
 	private HighEnumType physicalStrength = HighEnumType.DISREGARDED;
 	private HighEnumType physicalEndurance = HighEnumType.DISREGARDED;
@@ -58,12 +59,20 @@ public class AnimalProfile {
 		
 	}
 
-	public List<BaseRecord> getFixationTarget() {
-		return fixationTarget;
+	public List<BaseRecord> getFixations() {
+		return fixations;
 	}
 
-	public void setFixationTarget(List<BaseRecord> fixationTarget) {
-		this.fixationTarget = fixationTarget;
+	public void setFixations(List<BaseRecord> fixations) {
+		this.fixations = fixations;
+	}
+
+	public List<BaseRecord> getInteractions() {
+		return interactions;
+	}
+
+	public void setInteractions(List<BaseRecord> interactions) {
+		this.interactions = interactions;
 	}
 
 	public BaseRecord getRecord() {

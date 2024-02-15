@@ -24,7 +24,6 @@ import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
-import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
@@ -101,7 +100,7 @@ public class NeedsUtil {
 		List<BaseRecord> acts = new ArrayList<>();
 		return acts;
 	}
-
+	
 	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
@@ -110,10 +109,24 @@ public class NeedsUtil {
 		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
 		/// Agitate map, people, animals, and identify initial threats
 		///
-		Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map, false);
+		List<BaseRecord> inters = increment.get("interactions");
+		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map, false);
 		if(tmap.keySet().size() > 0) {
-			logger.warn("TODO: Evaluate initial threats into actions");
+			// logger.warn("TODO: Evaluate initial threats into actions");
+			/// Evaluate initial threats into interaction placeholders
+			///
+			tmap.forEach((pp, threats) -> {
+				threats.forEach((tet, al) -> {
+					al.forEach(a -> {
+						BaseRecord inter = InteractionUtil.newInteraction(ctx, increment, a, tet, pp.getRecord());
+						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get("firstName"));
+						inters.add(inter);
+						ctx.queue(inter);
+					});
+				});
+			});
 		}
+		ctx.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
 		/// Evaluate needs 
 		List<BaseRecord> actions = evaluateNeeds(ctx, locationEpoch, increment, group, map);
 		logger.info("Group actions to delegate: " + actions.size());
@@ -282,13 +295,13 @@ public class NeedsUtil {
 			logger.error(e);
 		}
 	}
-	protected static Map<BaseRecord, Map<ThreatEnumType,List<BaseRecord>>> agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
+	protected static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
 		BaseRecord eloc = event.get("location");
-		Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> tmap = new HashMap<>();
+		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = new HashMap<>();
 		try {
 			agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true, roam);
-			for(BaseRecord p: map.keySet()) {
-
+			for(PersonalityProfile pp: map.values()) {
+				BaseRecord p = pp.getRecord();
 				String name = p.get(FieldNames.FIELD_NAME);
 				BaseRecord state = p.get("state");
 				boolean immobile = state.get("immobilized");
@@ -316,7 +329,7 @@ public class NeedsUtil {
 						}
 						Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, p);
 						if(threats.keySet().size() > 0) {
-							tmap.put(p, threats);
+							tmap.put(pp, threats);
 						}
 					}
 				}

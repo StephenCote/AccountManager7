@@ -74,7 +74,7 @@ public class RecordFactory {
 		
 		Object enumValue = null;
 		try{
-			enumValue = Enum.valueOf((Class)cls, value);
+			enumValue = Enum.valueOf((Class)cls, value.toUpperCase());
 		}
 		catch(NullPointerException | IllegalArgumentException iae) {
 			logger.error(String.format("Error looking up enum value %s for %s", value, name));

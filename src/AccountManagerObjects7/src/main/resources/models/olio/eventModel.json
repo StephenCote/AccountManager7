@@ -111,7 +111,15 @@
 			"followReference":false,
 			"shortName": "rea"
 		},
-
+		{
+			"name": "interactions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.interaction",
+			"foreign": true,
+			"participantModel": "actionResult.interaction",
+			"shortName": "ias"
+		},
 		{
 			"name": "eventStart",
 			"type": "zonetime",

@@ -389,6 +389,9 @@ public class OlioContext {
 	public void queue(BaseRecord obj) {
 		OlioUtil.queueAdd(queue, obj);
 	}
+	public void queueUpdate(BaseRecord obj, String[] fields) {
+		OlioUtil.queueUpdate(queue, obj, fields);
+	}
 	public void processQueue() {
 		queue.forEach((k, v) -> {
 			IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));

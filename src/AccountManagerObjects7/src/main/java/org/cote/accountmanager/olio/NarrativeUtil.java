@@ -8,7 +8,6 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.olio.ThreatUtil.ThreatEnumType;
 import org.cote.accountmanager.olio.personality.CompatibilityEnumType;
 import org.cote.accountmanager.olio.personality.MBTIUtil;
 import org.cote.accountmanager.olio.personality.OCEANUtil;
@@ -52,7 +51,7 @@ public class NarrativeUtil {
 		}
 		return desc.toString();
 	}
-	public static String lookaround(OlioContext ctx, BaseRecord realm, BaseRecord event, BaseRecord increment, List<BaseRecord> group, BaseRecord pov, Map<BaseRecord, Map<ThreatEnumType, List<BaseRecord>>> threatMap) {
+	public static String lookaround(OlioContext ctx, BaseRecord realm, BaseRecord event, BaseRecord increment, List<BaseRecord> group, BaseRecord pov, Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> threatMap) {
 		StringBuilder buff = new StringBuilder();
 		PersonalityProfile pp = ProfileUtil.analyzePersonality(ctx, pov);
 
@@ -120,7 +119,7 @@ public class NarrativeUtil {
 		
 		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(event.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
 		List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
-		String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.joining(", "));
+		String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		if(fpop.size() > 0) {
 			buff.append(" There are " + fpop.size() +" strangers nearby.");
 		}
