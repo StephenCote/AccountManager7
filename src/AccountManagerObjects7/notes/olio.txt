@@ -133,6 +133,12 @@ ISFP and ENTP
 ESFJ and INTJ
 ISFJ and ENTJ
 
+Character Roles
+Given the typical roles a character may play: Protagonist, Deuteragonist (sidekick), Contagonist (antagonist sidekick), Antagonist, Antihero, Guide, Henchmen, Love Interest, Temptress, Confidant, Foil,
+These roles are traditionally applied to the overall 'narrative' from the narrator or character point of view.
+In the olio context, the role is defined at the level of 'interaction'
+
+
 Magic
 ORIGINAL RAW NOTES
 The following raw notes were taken from a thirty-year-old table-top gaming system I developed and played out.  The logic will be used as an example set of population rules. 
