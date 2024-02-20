@@ -6,6 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -18,6 +19,7 @@ import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
@@ -127,6 +129,21 @@ public class GroupDynamicUtil {
 	public static List<PersonalityProfile> contestLeadership(List<PersonalityProfile> map, PersonalityProfile leader) {
 		Set<PersonalityProfile> contest = new HashSet<>();
 		
+		List<PersonalityProfile> primeAge = map.stream().filter(pp -> pp.getId() != leader.getId() && pp.getAge() >= Rules.MINIMUM_ADULT_AGE && pp.getAge() <= Rules.SENIOR_AGE).collect(Collectors.toList());
+		List<PersonalityProfile> primeDipAge = primeAge.stream().filter(pp -> pp.getMbti().getGroup().equals("diplomat")).collect(Collectors.toList());
+		if(
+			primeDipAge.size() > 0
+			&&
+			(leader.getAge() < Rules.MINIMUM_ADULT_AGE || leader.getAge() >= Rules.SENIOR_AGE)
+		) {
+			logger.warn("One or more people are worried the leader is too young or too old");
+			contest.addAll(primeDipAge);
+		}
+		
+		if(primeAge.size() > 0 && leader.getAge() <= Rules.MAXIMUM_CHILD_AGE) {
+			logger.warn("Do " + primeAge.size() + " adults really want a child as their leader?");
+		}
+			
 		List<PersonalityProfile> prettyNarcissists = PersonalityUtil.filterBetterLookingPrettyNarcissists(map, leader); 
 		if(prettyNarcissists.size() > 0) {
 			logger.warn("Uh-oh, it looks like " + prettyNarcissists.size() + " narcissists prettier than the leader might be contesting that");
