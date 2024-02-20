@@ -50,6 +50,27 @@
 			"validateRange": true
 		},
 		{
+			"name": "machiavellianism",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "narcissism",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
+			"name": "psychopathy",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
 			"name": "sloanKey",
 			"type": "string",
 			"maxLength": 5,
@@ -65,6 +86,13 @@
 		},
 		{
 			"name": "mbtiKey",
+			"type": "string",
+			"maxLength": 24,
+			"provider": "org.cote.accountmanager.olio.PersonalityProvider",
+			"priority": 15
+		},
+		{
+			"name": "darkTriadKey",
 			"type": "string",
 			"maxLength": 24,
 			"provider": "org.cote.accountmanager.olio.PersonalityProvider",

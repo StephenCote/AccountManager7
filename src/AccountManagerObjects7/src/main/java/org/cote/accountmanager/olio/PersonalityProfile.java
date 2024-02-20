@@ -3,7 +3,9 @@ package org.cote.accountmanager.olio;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.cote.accountmanager.olio.personality.MBTI;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class PersonalityProfile extends AnimalProfile {
 	
@@ -11,19 +13,26 @@ public class PersonalityProfile extends AnimalProfile {
 	private boolean married = false;
 	private boolean children = false;
 	private boolean divorced = false;
+	/*
 	private boolean narcissist = false;
 	private boolean psychopath = false;
 	private boolean machiavellian = false;
+	*/
 	private String sloanKey = null;
 	private String sloanDescription = null;
+	private String darkTriadKey = null;
+	
 	private String mbtiKey = null;
-	private String mbtiTitle = null;
-	private String mbtiDescription = null;
+	private MBTI mbti = null;
+
 	private VeryEnumType open = VeryEnumType.DISREGARDED;
 	private VeryEnumType conscientious = VeryEnumType.DISREGARDED;
 	private VeryEnumType extraverted = VeryEnumType.DISREGARDED;
 	private VeryEnumType agreeable = VeryEnumType.DISREGARDED;
 	private VeryEnumType neurotic = VeryEnumType.DISREGARDED;
+	private VeryEnumType narcissist = VeryEnumType.DISREGARDED;
+	private VeryEnumType machiavellian = VeryEnumType.DISREGARDED;
+	private VeryEnumType psychopath = VeryEnumType.DISREGARDED;
 	
 	public enum PhysiologicalNeeds {
 		AIR,
@@ -63,7 +72,45 @@ public class PersonalityProfile extends AnimalProfile {
 	public PersonalityProfile() {
 		
 	}
+	public boolean isNarcissist() {
+		return VeryEnumType.compare(narcissist, VeryEnumType.SOMEWHAT, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
+	public VeryEnumType getNarcissist() {
+		return narcissist;
+	}
+
+	public void setNarcissist(VeryEnumType narcissist) {
+		this.narcissist = narcissist;
+	}
+	public boolean isMachiavellian() {
+		return VeryEnumType.compare(machiavellian, VeryEnumType.SOMEWHAT, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
+	public VeryEnumType getMachiavellian() {
+		return machiavellian;
+	}
+
+	public void setMachiavellian(VeryEnumType machiavellian) {
+		this.machiavellian = machiavellian;
+	}
+	public boolean isPsychopath() {
+		return VeryEnumType.compare(psychopath, VeryEnumType.SOMEWHAT, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+	}
 	
+	public VeryEnumType getPsychopath() {
+		return psychopath;
+	}
+
+	public void setPsychopath(VeryEnumType psychopath) {
+		this.psychopath = psychopath;
+	}
+
+	public String getDarkTriadKey() {
+		return darkTriadKey;
+	}
+	public void setDarkTriadKey(String darkTriadKey) {
+		this.darkTriadKey = darkTriadKey;
+	}
+	/*
 	public boolean isNarcissist() {
 		return narcissist;
 	}
@@ -87,7 +134,7 @@ public class PersonalityProfile extends AnimalProfile {
 	public void setMachiavellian(boolean machiavellian) {
 		this.machiavellian = machiavellian;
 	}
-
+	*/
 	public String getMbtiKey() {
 		return mbtiKey;
 	}
@@ -104,24 +151,16 @@ public class PersonalityProfile extends AnimalProfile {
 		this.sloanKey = sloanKey;
 	}
 
-	public String getMbtiTitle() {
-		return mbtiTitle;
-	}
-
-	public void setMbtiTitle(String mbtiTitle) {
-		this.mbtiTitle = mbtiTitle;
-	}
-
-	public String getMbtiDescription() {
-		return mbtiDescription;
-	}
-
-	public void setMbtiDescription(String mbtiDescription) {
-		this.mbtiDescription = mbtiDescription;
-	}
-
 	public String getSloanDescription() {
 		return sloanDescription;
+	}
+
+	public MBTI getMbti() {
+		return mbti;
+	}
+
+	public void setMbti(MBTI mbti) {
+		this.mbti = mbti;
 	}
 
 	public void setSloanDescription(String sloanDescription) {

@@ -8,6 +8,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.olio.personality.Sloan;
 import org.cote.accountmanager.olio.personality.SloanUtil;
 import org.cote.accountmanager.provider.IProvider;
@@ -44,6 +45,9 @@ public class PersonalityProvider  implements IProvider {
 			else {
 				logger.warn("Sloan key is null or invalid: " + model.get("sloanKey") + " / empty map = " + SloanUtil.getSloanDef().isEmpty());
 			}
+		}
+		else if(lfield.getName().equals("darkTriadKey")) {
+			model.set(lfield.getName(), DarkTriadUtil.getDarkTriadKey(model));
 		}
 	}
 

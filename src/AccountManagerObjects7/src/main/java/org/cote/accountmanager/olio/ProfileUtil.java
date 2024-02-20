@@ -45,6 +45,7 @@ public class ProfileUtil {
 	Neuroticism - [resilient/confident to sensitive/nervous]
 	 */
 	public static final String[] PERSONALITY_FIELDS = new String[]{"openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"};
+	public static final String[] DARK_PERSONALITY_FIELDS = new String[]{"machiavellianism", "narcissism", "psychopathy"};
 /*
 
 Primary (Big 5 - OCEAN):
@@ -133,9 +134,10 @@ SLOAN Notation
 
 		try {
 			for(String s : PERSONALITY_FIELDS) {
-				double val =Double.parseDouble(df.format(rand.nextDouble()));
+				double val = Double.parseDouble(df.format(rand.nextDouble()));
 				rec.set(s, val);
 			}
+			DarkTriadUtil.rollDarkPersonality(rec);
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -390,9 +392,10 @@ SLOAN Notation
 		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
 		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
 		
-		prof.setMachiavellian(DarkTriadUtil.isMachiavellian(prof));
-		prof.setNarcissist(DarkTriadUtil.isNarcissist(prof));
-		prof.setPsychopath(DarkTriadUtil.isPsychopath(prof));
+		prof.setMachiavellian(VeryEnumType.valueOf((double)per.get("machiavellianism")));
+		prof.setNarcissist(VeryEnumType.valueOf((double)per.get("narcissism")));
+		prof.setPsychopath(VeryEnumType.valueOf((double)per.get("psychopathy")));
+		prof.setDarkTriadKey(per.get("darkTriadKey"));
 		
 		Sloan sloan = SloanUtil.getSloan(per.get("sloanKey"));
 		MBTI mbti = MBTIUtil.getMBTI(per.get("mbtiKey"));
@@ -405,8 +408,7 @@ SLOAN Notation
 		}
 		if(mbti != null) {
 			prof.setMbtiKey(mbti.getKey());
-			prof.setMbtiTitle(mbti.getName());
-			prof.setMbtiDescription(mbti.getDescription());
+			prof.setMbti(mbti);
 		}
 		else {
 			// logger.warn("MBTI is null");
