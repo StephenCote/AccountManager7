@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.personality.CompatibilityEnumType;
+import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.olio.personality.MBTIUtil;
 import org.cote.accountmanager.olio.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -19,8 +20,10 @@ public class NarrativeUtil {
 	public static final Logger logger = LogManager.getLogger(NarrativeUtil.class);
 	
 	public static String getDarkTriadDescription(PersonalityProfile prof) {
-		StringBuilder desc = new StringBuilder();
+		//StringBuilder desc = new StringBuilder();
+		
 		StringBuilder desc2 = new StringBuilder();
+		/*
 		if(prof.isMachiavellian()) {
 			desc.append("is machiavellian and may be callous, lack morality, and/or are motivated by self-interest");
 		}
@@ -33,13 +36,16 @@ public class NarrativeUtil {
 			if(desc.length() > 0) desc.append("; ");
 			desc.append("is a psychopath and may show low levels of empathy and high levels of impulsivity and thrill-seeking");
 		}
-		desc2.append("Personality-wise, " + prof.getRecord().get("firstName") + " ");
+		*/
+		desc2.append("Personality-wise, " + prof.getRecord().get("firstName") + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()) + ".");
+		/*
 		if(desc.length() > 0) {
 			desc2.append(desc.toString() + ".");
 		}
 		else {
 			desc2.append("does not reflect dark traits.");
 		}
+		*/
 		return desc2.toString();
 	}
 	public static String getRaceDescription(List<String> races) {
@@ -84,7 +90,7 @@ public class NarrativeUtil {
 		String raceDesc = getRaceDescription(pov.get("race"));
 		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
 		buff.append(" " + pro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
-		buff.append(" " + pro + " is a '" + pp.getMbtiTitle() + "' and is " + pp.getMbtiDescription() + ".");
+		buff.append(" " + pro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + getDarkTriadDescription(pp));
 		buff.append(" " + pro + " is");
 		if(stets.size() > 0) {
