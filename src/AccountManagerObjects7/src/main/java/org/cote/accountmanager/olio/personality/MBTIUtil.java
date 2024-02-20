@@ -32,7 +32,7 @@ public class MBTIUtil {
 			String[] mbtiJson = JSONUtil.importObject(ResourceUtil.getResource("./olio/mbti.json"), String[].class);
 			for(String s: mbtiJson) {
 				String[] pairs = s.split("\\|");
-				mbtiDef.put(pairs[0], new MBTI(pairs[0], pairs[1], pairs[2]));
+				mbtiDef.put(pairs[0], new MBTI(pairs[0], pairs[1], pairs[2], pairs[3]));
 			}			
 		}
 		return mbtiDef;
