@@ -262,7 +262,7 @@ public class TerrainUtil {
 		if(x < 0 || x >= gridWidth) x = rand.nextInt(gridWidth);
 		if(y < 0 || y >= gridHeight) y = rand.nextInt(gridHeight);
 		
-		while(tet == TerrainEnumType.UNKNOWN || tet == TerrainEnumType.VOID || tet == TerrainEnumType.SHELTER || tet == TerrainEnumType.INDOORS || tet == TerrainEnumType.CAVE) {
+		while(!TerrainEnumType.isTerra(tet)) {
 			tet = OlioUtil.randomEnum(TerrainEnumType.class);
 		}
 		

@@ -110,6 +110,18 @@ public enum TerrainEnumType {
 	        }
 	    }
 	    
+	    public static boolean isTerra(TerrainEnumType tet) {
+	    	return (
+	    		tet != TerrainEnumType.UNKNOWN
+	    		&& tet != TerrainEnumType.VOID
+	    		&& tet != TerrainEnumType.SHELTER
+	    		&& tet != TerrainEnumType.INDOORS
+	    		&& tet != TerrainEnumType.CAVE
+	    		&& tet != TerrainEnumType.AIR
+	    		&& tet != TerrainEnumType.UNDERWATER
+	    	);
+	    }
+	    
 	    private TerrainEnumType(final int val) {
 	    	this.val = val;
 	    }
