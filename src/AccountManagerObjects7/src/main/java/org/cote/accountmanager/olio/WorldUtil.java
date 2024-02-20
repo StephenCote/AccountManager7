@@ -381,8 +381,10 @@ public class WorldUtil {
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
 					person.set("age", (int)years);
-					ProfileUtil.rollPersonality(person.get("personality"));
+					
 					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);
+					ProfileUtil.rollPersonality(person.get("personality"));
+					
 					totalAge += years;
 					totalAbsoluteAlignment += (alignment + 4);
 					
