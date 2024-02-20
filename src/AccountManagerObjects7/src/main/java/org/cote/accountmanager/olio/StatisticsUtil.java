@@ -33,7 +33,7 @@ public class StatisticsUtil {
 			logger.error("Record is not a statistics record");
 			return;
 		}
-		IOSystem.getActiveContext().getReader().populate(rec);
+		// IOSystem.getActiveContext().getReader().populate(rec);
 		
 		/// Every statistic receives a minimum of 1
 		///  - (statistics.length * Rules.INITIAL_MINIMUM_STATISTIC)

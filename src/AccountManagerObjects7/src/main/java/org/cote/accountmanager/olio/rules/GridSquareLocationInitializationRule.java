@@ -154,7 +154,9 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
     				block.set("area", (double)mapWidth1km * mapHeight1km);
     				block.set("gridZone", GeoLocationUtil.GZD);
     				block.set("kident", sx + sy);
+    				
     				blocks.add(block);
+    				/// BUG Note: setting geotype after adding to list - this either isn't getting picked up, or is incorrect here because setting before adding to the list causes an error with the mapping utility
     				block.set("geoType", "admin2");
     				// block.set("eastings", x * 100);
     				// block.set("northings", y * 100);
