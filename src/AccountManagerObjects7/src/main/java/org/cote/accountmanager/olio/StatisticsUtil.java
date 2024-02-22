@@ -1,9 +1,12 @@
 package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -14,6 +17,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 
 public class StatisticsUtil {
@@ -71,7 +75,74 @@ public class StatisticsUtil {
 		
 	}
 	
+	public static void computeSum(BaseRecord model, FieldSchema field, String[] fields) throws ValueException, FieldException, ModelNotFoundException {
+		model.set(field.getName(), getSum(model, fields));
+	}
+
+	public static int getSum(BaseRecord model, String[] fields) {
+		int val = 0;
+		for(String f : fields) {
+			val += (int)model.get(f);
+		}
+		return val;
+	}
+	
+	public static void computeAverage(BaseRecord model, FieldSchema field, String[] fields) throws ValueException, FieldException, ModelNotFoundException {
+		model.set(field.getName(), getAverage(model, fields));
+	}
+	public static int getMaximumInt(BaseRecord model, String[] fields) {
+		int val = 0;
+		Optional<Integer> opt = Arrays.stream(fields).map(s -> (int)model.get(s)).max(Comparator.naturalOrder());
+		if(opt.isPresent()) {
+			val = opt.get();
+		}
+		return val;
+	}
+	public static int getMinimumInt(BaseRecord model, String[] fields) {
+		int val = 0;
+		Optional<Integer> opt = Arrays.stream(fields).map(s -> (int)model.get(s)).min(Comparator.naturalOrder());
+		if(opt.isPresent()) {
+			val = opt.get();
+		}
+		return val;
+	}
+	public static int getAverage(BaseRecord model, String[] fields) {
+		int val = 0;
+		int avg = 0;
+		for(String f : fields) {
+			if(model.hasField(f)) {
+				val += (int)model.get(f);
+			}
+			else {
+				logger.error("Field is missing: " + model.getModel() + "." + f);
+			}
+		}
+		if(val > 0) {
+			// logger.info("Compute average: " + val + " / " + fields.length);
+			avg = val / fields.length;
+		}
+		return avg;
+	}
+	
+	public static double getDblAverage(BaseRecord model, String[] fields) {
+		double val = 0;
+		double avg = 0;
+		for(String f : fields) {
+			if(model.hasField(f)) {
+				val += (double)model.get(f);
+			}
+			else {
+				logger.error("Field is missing: " + model.getModel() + "." + f);
+			}
+		}
+		if(val > 0) {
+			// logger.info("Compute average: " + val + " / " + fields.length);
+			avg = val / fields.length;
+		}
+		return avg;
+	}
 }
+
 class StatisticRule{
 	private String name = null;
 	private int multiplier = 0;

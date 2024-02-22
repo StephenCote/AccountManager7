@@ -23,8 +23,10 @@ public class Rules {
 	public static final double ROLL_MINIMUM = 0;
 	public static final double ROLL_MINIMUM_MODIFICATION = 0.5;
 	public static final double ROLL_NATURAL_VARIANCE = 0.1;
+	public static final double ROLL_NATURAL_VARIANCE_1 = 0.01;
 	public static final double ROLL_FAILURE_THRESHOLD = 1;
-
+	public static final double ROLL_FAILURE_THRESHOLD_1 = 0.01;
+	public static final double ROLL_MAXIMUM_1 = 1.0;
 	public static final int INITIAL_STATISTICS_ALLOTMENT = 130;
 	public static final int INITIAL_STATISTICS_ALLOTMENT_CHILD = 65;
 	public static final int INITIAL_MINIMUM_STATISTIC = 1;
@@ -167,6 +169,7 @@ public class Rules {
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.D, 0.003);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.E, 0.755);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.R, 0.001);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.V, 0.001);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.W, 0.001);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.X, 0.001);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.Y, 0.001);

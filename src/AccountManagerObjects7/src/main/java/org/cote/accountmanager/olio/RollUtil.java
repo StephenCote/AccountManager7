@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
@@ -29,6 +30,9 @@ public class RollUtil {
 	public static double roll20Dbl() {
 		return rand.nextDouble(0, Rules.ROLL_MAXIMUM);
 	}
+	public static double roll1Dbl() {
+		return rand.nextDouble();
+	}
 	public static int roll20Int() {
 		return rand.nextInt(0, (int)Rules.ROLL_MAXIMUM);
 	}
@@ -40,33 +44,89 @@ public class RollUtil {
 	}
 	
 	public static boolean catastrophicFailure(double val) {
-		return (val < Rules.ROLL_FAILURE_THRESHOLD);
+		return (val < Rules.ROLL_FAILURE_THRESHOLD_1);
 	}
 	public static boolean naturalSuccess(double val) {
-		return (val >= (Rules.ROLL_MAXIMUM - Rules.ROLL_NATURAL_VARIANCE));
+		return (val >= (Rules.ROLL_MAXIMUM_1 - Rules.ROLL_NATURAL_VARIANCE_1));
 	}
 
-	protected static RollEnumType rollStat20(BaseRecord rec, String statName) {
+	public static RollEnumType rollStat20(BaseRecord rec, String statName) {
 		int sval = rec.get("statistics." + statName);
 		if(sval == 0) {
 			logger.warn("Statistic " + statName + " is 0");
 			return RollEnumType.INVALID_STATISTIC;
 		}
+		return rollStat20(sval);
+	}
+	
+	public static RollEnumType rollStat20(int stat) {
+		if(stat == 0) {
+			logger.warn("Statistic is 0");
+			return RollEnumType.INVALID_STATISTIC;
+		}
 		int roll = roll20Int();
 		if(catastrophicFailure(roll)) {
-			// logger.warn("Catastrophic failure of " + statName + "!");
 			return RollEnumType.CATASTROPHIC_FAILURE;
 		}
 		if(naturalSuccess(roll)) {
-			// logger.warn("Natural success of " + statName + "!");
 			return RollEnumType.NATURAL_SUCCESS;
 		}
-		if(sval >= roll) {
+		if(stat >= roll) {
 			return RollEnumType.SUCCESS;
 		}
 		return RollEnumType.FAILURE;
 	}
 
+	public static RollEnumType rollStat1(BaseRecord rec, String statName) {
+		double sval = rec.get("statistics." + statName);
+		if(sval == 0) {
+			logger.warn("Statistic " + statName + " is 0");
+			return RollEnumType.INVALID_STATISTIC;
+		}
+		return rollStat1(sval);
+	}
+	
+	public static RollEnumType rollStat1(double stat) {
+		if(stat == 0) {
+			logger.warn("Statistic is 0");
+			return RollEnumType.INVALID_STATISTIC;
+		}
+		double roll = roll1Dbl();
+		if(catastrophicFailure(roll)) {
+			return RollEnumType.CATASTROPHIC_FAILURE;
+		}
+		if(naturalSuccess(roll)) {
+			return RollEnumType.NATURAL_SUCCESS;
+		}
+		if(stat >= roll) {
+			return RollEnumType.SUCCESS;
+		}
+		return RollEnumType.FAILURE;
+	}
+	
+	public static OutcomeEnumType rollToOutcome(RollEnumType ret) {
+		OutcomeEnumType oet = OutcomeEnumType.EQUILIBRIUM;
+		switch(ret) {
+			case CATASTROPHIC_FAILURE:
+				oet = OutcomeEnumType.VERY_UNFAVORABLE;
+				break;
+			case FAILURE:
+				oet = OutcomeEnumType.UNFAVORABLE;
+				break;
+			case SUCCESS:
+				oet = OutcomeEnumType.FAVORABLE;
+				break;
+			case NATURAL_SUCCESS:
+				oet = OutcomeEnumType.VERY_FAVORABLE;
+				break;
+			default:
+				logger.warn("Unhandled roll: " + ret.toString());
+				break;
+		}
+		return oet;
+	}
+	
+	
 	public static RollEnumType rollReaction(BaseRecord rec) {
 		return rollStat20(rec, "reaction");
 	}
@@ -74,6 +134,27 @@ public class RollUtil {
 	public static RollEnumType rollPerception(BaseRecord rec) {
 		return rollStat20(rec, "perception");
 	}
+	
+	public static RollEnumType rollCharisma(BaseRecord rec) {
+		return rollStat20(rec, "charisma");
+	}
+	public static RollEnumType rollCounterCharisma(BaseRecord rec) {
+		return rollStat20(StatisticsUtil.getAverage(rec, new String[] {"charisma", "intelligence"}));
+	}
+
+	/*
+	public static RollEnumType rollDeception(BaseRecord actor, BaseRecord interactor) {
+		boolean dec = false;
+		/// Deception Mod Stat = actor(max(charisma, intelligence) + min(creativity, perception) / 2) - interactor(avg(perception, wisdom, mentalEndurance) / 2)
+		int decStat = DarkTriadUtil.getDeceptionStatistic(actor);
+		int decMod = decStat - DarkTriadUtil.getDeceptionCounterStatistic(interactor);
+		if(decMod <= 0) {
+			logger.warn(actor.get("firstName") + " has no chance to deceive " + interactor.get("firstName"));
+			return RollEnumType.FAILURE;
+		}
+		return rollStat20(decMod);
+	}
+	*/
 	public static boolean isBetterStat(BaseRecord rec, BaseRecord rec2, String statName) {
 		int sval = rec.get("statistics." + statName);
 		int sval2 = rec2.get("statistics." + statName);

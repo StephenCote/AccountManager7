@@ -30,19 +30,19 @@ public class StatisticsProvider  implements IProvider {
 			return;
 		}
 		if(lfield.getName().equals("willpower")) {
-			computeAverage(model, lfield, new String[] {"mentalEndurance", "mentalStrength"});
+			StatisticsUtil.computeAverage(model, lfield, new String[] {"mentalEndurance", "mentalStrength"});
 		}
 		else if(lfield.getName().equals("magic")) {
-			computeAverage(model, lfield, new String[] {"willpower", "wisdom", "creativity", "spirituality"});
+			StatisticsUtil.computeAverage(model, lfield, new String[] {"willpower", "wisdom", "creativity", "spirituality"});
 		}
 		else if(lfield.getName().equals("science")) {
-			computeAverage(model, lfield, new String[] {"intelligence", "wisdom", "creativity"});
+			StatisticsUtil.computeAverage(model, lfield, new String[] {"intelligence", "wisdom", "creativity"});
 		}
 		else if(lfield.getName().equals("reaction")) {
-			computeAverage(model, lfield, new String[] {"agility", "speed", "wisdom", "perception"});
+			StatisticsUtil.computeAverage(model, lfield, new String[] {"agility", "speed", "wisdom", "perception"});
 		}
 		else if(lfield.getName().equals("maximumHealth")) {
-			computeAverage(model, lfield, new String[] {"physicalStrength", "physicalEndurance", "mentalStrength", "mentalEndurance", "charisma"});
+			StatisticsUtil.computeAverage(model, lfield, new String[] {"physicalStrength", "physicalEndurance", "mentalStrength", "mentalEndurance", "charisma"});
 			int maxHealth = model.get("maximumHealth");
 			int health = model.get("health");
 			if(health < 0) {
@@ -50,47 +50,14 @@ public class StatisticsProvider  implements IProvider {
 			}
 		}
 		else if(lfield.getName().equals("save")) {
-			int avg = getAverage(model, new String[] {"willpower", "health", "physicalStrength"});
+			int avg = StatisticsUtil.getAverage(model, new String[] {"willpower", "health", "physicalStrength"});
 			double val = (avg * 5)/100;
 			DecimalFormat df = new DecimalFormat("#.#");
 			df.setRoundingMode(RoundingMode.HALF_EVEN);
-			// logger.info("Save: " + avg + " ~= " + val);
 			model.set(lfield.getName(), Double.parseDouble(df.format(val)));
 		}
 	}
 
-	private void computeSum(BaseRecord model, FieldSchema field, String[] fields) throws ValueException, FieldException, ModelNotFoundException {
-		model.set(field.getName(), getSum(model, fields));
-	}
 
-	private int getSum(BaseRecord model, String[] fields) {
-		int val = 0;
-		for(String f : fields) {
-			val += (int)model.get(f);
-		}
-		return val;
-	}
-	
-	private void computeAverage(BaseRecord model, FieldSchema field, String[] fields) throws ValueException, FieldException, ModelNotFoundException {
-		model.set(field.getName(), getAverage(model, fields));
-	}
-	
-	private int getAverage(BaseRecord model, String[] fields) {
-		int val = 0;
-		int avg = 0;
-		for(String f : fields) {
-			if(model.hasField(f)) {
-				val += (int)model.get(f);
-			}
-			else {
-				logger.error("Field is missing: " + model.getModel() + "." + f);
-			}
-		}
-		if(val > 0) {
-			// logger.info("Compute average: " + val + " / " + fields.length);
-			avg = val / fields.length;
-		}
-		return avg;
-	}
 
 }

@@ -27,7 +27,7 @@ public class PersonalityUtil {
 		;
 	}
 
-	public static PersonalityProfile identifyLeader(List<PersonalityProfile> profs) {
+	public static PersonalityProfile identifyLeaderPersonality(List<PersonalityProfile> profs) {
 		profs.sort(PersonalityUtil.leaderComparator());
 		return profs.get(profs.size() - 1);
 	}

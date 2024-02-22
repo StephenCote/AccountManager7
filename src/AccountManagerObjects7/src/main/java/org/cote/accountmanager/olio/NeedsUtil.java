@@ -126,14 +126,14 @@ public class NeedsUtil {
 				});
 			});
 		}
-		ctx.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
+		
 		/// Evaluate needs 
 		List<BaseRecord> actions = evaluateNeeds(ctx, locationEpoch, increment, group, map);
 		logger.info("Group actions to delegate: " + actions.size());
 		
 		/// Delegate actions
-		GroupDynamicUtil.delegateActions(ctx, map, actions);
-		
+		GroupDynamicUtil.delegateActions(ctx, locationEpoch, increment, map, actions);
+		ctx.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
 		String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
 		logger.info(nar);
 		

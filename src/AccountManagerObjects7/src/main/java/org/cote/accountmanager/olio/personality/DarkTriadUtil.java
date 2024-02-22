@@ -13,10 +13,16 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.olio.OutcomeEnumType;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.ReasonEnumType;
+import org.cote.accountmanager.olio.RollEnumType;
+import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.Rules;
+import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 
 public class DarkTriadUtil {
 	public static final Logger logger = LogManager.getLogger(DarkTriadUtil.class);
@@ -61,6 +67,116 @@ public class DarkTriadUtil {
 		return null;
 	}
 	
+
+	public static int getDeceptionCounterStatistic(BaseRecord record) {
+		BaseRecord stat = record.get("statistics");
+		int cs = StatisticsUtil.getAverage(stat, new String[] {"perception", "wisdom", "mentalEndurance"});
+		return cs;
+		//if(cs > 0) return cs / 2;
+		//return 0;
+	}
+	public static int getDeceptionStatistic(BaseRecord record) {
+		BaseRecord stat = record.get("statistics");
+		int ci = StatisticsUtil.getMaximumInt(stat, new String[] {"charisma", "intelligence"});
+		int cp = StatisticsUtil.getMinimumInt(stat, new String[] {"creativity", "perception"});
+		int cv = ci + cp;
+		if(cv > 0) {
+			return cv / 2;
+		}
+		return 0;
+	}
+	public static RollEnumType rollDeception(BaseRecord rec) {
+		int decStat = DarkTriadUtil.getDeceptionStatistic(rec);
+		return RollUtil.rollStat20(decStat);
+	}
+	public static RollEnumType rollCounterDeception(BaseRecord rec) {
+		int cntStat = DarkTriadUtil.getDeceptionCounterStatistic(rec);
+		return RollUtil.rollStat20(cntStat);
+	}
+	/*
+	public static RollEnumType rollDeception(BaseRecord actor, BaseRecord interactor) {
+		RollEnumType ret = rollDeception(actor);
+		if(ret == RollEnumType.SUCCESS || ret == RollEnumType.NATURAL_SUCCESS) {
+			RollEnumType ret2 = rollCounterDeception(interactor);
+			if(ret2 == RollEnumType.SUCCESS || ret2 == RollEnumType.NATURAL_SUCCESS) {
+				logger.info(interactor.get("firstName") + " caught on to " + actor.get("firstName") + "'s deception");
+			}
+			else {
+				deceived = true;
+			}
+		}
+		else if(ret == RollEnumType.CATASTROPHIC_FAILURE) {
+			logger.warn(actor.get("firstName") + " critically failed an attempt to deceive");
+		}
+		return deceived;
+	}
+	*/
+	public static RollEnumType rollNarcissism(BaseRecord rec) {
+		return RollUtil.rollStat1(rec.get("personality.narcissism"));
+	}
+	public static RollEnumType rollCounterNarcissism(BaseRecord rec) {
+		return RollUtil.rollStat20(StatisticsUtil.getAverage(rec.get("statistics"), new String[] {"spirituality", "willpower"}));
+	}
+	public static RollEnumType rollPsycopathy(BaseRecord rec) {
+		return RollUtil.rollStat1(rec.get("personality.psycopathy"));
+	}
+	public static RollEnumType rollCounterPsycopathy(BaseRecord rec) {
+		return RollUtil.rollStat1(StatisticsUtil.getDblAverage(rec.get("personality"), new String[] {"conscientiousness", "agreeableness"}));
+	}
+	public static OutcomeEnumType ruleDarkTriad(BaseRecord interaction, PersonalityProfile actor, PersonalityProfile interactor) {
+		OutcomeEnumType actorOutcome = OutcomeEnumType.EQUILIBRIUM;
+		OutcomeEnumType interactorOutcome = OutcomeEnumType.EQUILIBRIUM;
+		ReasonEnumType ret = interaction.getEnum("actorReason");
+		RollEnumType roll = RollEnumType.UNKNOWN;
+		RollEnumType iroll = RollEnumType.UNKNOWN;
+		switch(ret) {
+			case ATTRACTIVE_NARCISSISM:
+				roll = RollUtil.rollCharisma(actor.getRecord());
+				iroll = RollUtil.rollCounterCharisma(interactor.getRecord());				
+				break;
+			case NARCISSISM:
+				roll = rollNarcissism(actor.getRecord());
+				iroll = rollCounterNarcissism(interactor.getRecord());
+				break;
+			case MACHIAVELLIANISM:
+				roll = rollDeception(actor.getRecord());
+				iroll = rollCounterDeception(interactor.getRecord());
+				break;
+			case PSYCHOPATHY:
+				roll = rollPsycopathy(actor.getRecord());
+				iroll = rollCounterPsycopathy(interactor.getRecord());
+				break;
+			default:
+				logger.error("Unhandled reason type: " + ret.toString());
+				break;
+		}
+		/// This is a fairly simple rule at the moment, meant to test tendencies vs. counter tendencies
+		/// eg: A psycopath acts up, is the other able to counteract that instance of the person being a psycho
+		/// Follow on actions then may dictate any ramifications, ie: if a psycho actor loses here, does that escalate into a different type of challenge?
+		/// That determination should be made by the parent rule, and not within the utility
+		///
+		actorOutcome = RollUtil.rollToOutcome(roll);
+		interactorOutcome = RollUtil.rollToOutcome(iroll);
+
+		if(roll == RollEnumType.SUCCESS || roll == RollEnumType.NATURAL_SUCCESS) {
+			if(iroll == RollEnumType.SUCCESS || iroll == RollEnumType.NATURAL_SUCCESS) {
+				actorOutcome = OutcomeEnumType.UNFAVORABLE;
+			}
+		}
+		else if(roll == RollEnumType.FAILURE || roll == RollEnumType.CATASTROPHIC_FAILURE) {
+			if(iroll != RollEnumType.SUCCESS && iroll != RollEnumType.NATURAL_SUCCESS) {
+				interactorOutcome = OutcomeEnumType.FAVORABLE;
+			}
+		}
+		try {
+			interaction.set("actorOutcome", actorOutcome);
+			interaction.set("interactorOutcome", interactorOutcome);
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		return actorOutcome;
+	}
 	
 	public static List<PersonalityProfile> filterNarcissism(List<PersonalityProfile> map){
 		return map.stream()
@@ -120,7 +236,9 @@ public class DarkTriadUtil {
 
 		DecimalFormat df = new DecimalFormat("#.##");
 		df.setRoundingMode(RoundingMode.HALF_EVEN);
-		double agreeLimit = 1.0 - ((double)per.get("agreeableness"));
+		/// Allow a minimum of ten percent to dark personality traits
+		///
+		double agreeLimit = Math.max(1.0 - ((double)per.get("agreeableness")), 0.10);
 		double avgLimit = ((double)per.get("openness") + (double)per.get("extraversion")) / 2;
 		double prettyPsycho = Math.min(agreeLimit, avgLimit);
 		
