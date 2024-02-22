@@ -295,6 +295,9 @@ public class GeoLocationUtil {
 	public static BaseRecord[] getRegionLocations(BaseRecord user, BaseRecord world) {
 		List<BaseRecord> locs = new ArrayList<>();
 		BaseRecord[] evts = EventUtil.getBaseRegionEvents(user, world);
+		if(evts.length == 0) {
+			logger.error("Zero region events were found");
+		}
 		for(BaseRecord evt : evts) {
 			locs.add(evt.get("location"));
 		}

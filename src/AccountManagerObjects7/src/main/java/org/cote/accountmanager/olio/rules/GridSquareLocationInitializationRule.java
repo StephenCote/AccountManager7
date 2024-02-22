@@ -102,7 +102,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 			logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
 			return;
 		}
-		logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");
+		/// logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");
 		// logger.info(location.toFullString());
 		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID)));
 		List<BaseRecord> cells = new ArrayList<>();
@@ -154,10 +154,10 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
     				block.set("area", (double)mapWidth1km * mapHeight1km);
     				block.set("gridZone", GeoLocationUtil.GZD);
     				block.set("kident", sx + sy);
+    				block.set("geoType", "admin2");
     				
     				blocks.add(block);
-    				/// BUG Note: setting geotype after adding to list - this either isn't getting picked up, or is incorrect here because setting before adding to the list causes an error with the mapping utility
-    				block.set("geoType", "admin2");
+    				
     				// block.set("eastings", x * 100);
     				// block.set("northings", y * 100);
 	    		}
@@ -309,7 +309,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 			logger.error(e);
 		}
 		recs.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(lq)));
-		logger.info("Returning " + recs.size() + " locs");
+		/// logger.info("Returning " + recs.size() + " locs");
 		return recs.toArray(new BaseRecord[0]);
 	}
 

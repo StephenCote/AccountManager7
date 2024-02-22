@@ -51,7 +51,7 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 	@Override
 	public void evaluateIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment) {
 
-		logger.info("Evaluate " + locationEpoch.get(FieldNames.FIELD_NAME) + " " + increment.get(FieldNames.FIELD_NAME));
+		// logger.info("Evaluate " + locationEpoch.get(FieldNames.FIELD_NAME) + " " + increment.get(FieldNames.FIELD_NAME));
 		
 		/// populate any animal life as needed
 		checkAnimalPopulation(context, locationEpoch);

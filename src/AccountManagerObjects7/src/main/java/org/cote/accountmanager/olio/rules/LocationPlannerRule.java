@@ -31,7 +31,7 @@ public class LocationPlannerRule implements IOlioContextRule {
 			return;
 		}
 		
-		logger.info("Planning for " + location.get(FieldNames.FIELD_NAME) + " " + pop.size());	
+		// logger.info("Planning for " + location.get(FieldNames.FIELD_NAME) + " " + pop.size());	
 		Map<String,List<BaseRecord>> demographicMap = context.getDemographicMap(location);
 		for(BaseRecord p : pop) {
 			OlioUtil.setDemographicMap(context.getUser(), demographicMap, event, p);
@@ -39,7 +39,7 @@ public class LocationPlannerRule implements IOlioContextRule {
 		
 		DensityEnumType dens = DensityEnumType.valueOf(pop.size());
 		int val = DensityEnumType.getValue(dens);
-		logger.info("Density: " + dens.toString());
+		// logger.info("Density: " + dens.toString());
 		String enc = standardVillage;
 		if(val > 250) {
 			enc = standardHamlet;

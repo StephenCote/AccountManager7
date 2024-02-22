@@ -63,7 +63,7 @@ public class BuilderUtil {
 		}
 	}
 	protected static BaseRecord[] importBuilders(OlioContext ctx) {
-		logger.info("Import default builder configuration");
+		// logger.info("Import default builder configuration");
 
 		List<BaseRecord> blds = JSONUtil.getList(ResourceUtil.getResource("./olio/builders.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		List<BaseRecord> oblds = new ArrayList<>();

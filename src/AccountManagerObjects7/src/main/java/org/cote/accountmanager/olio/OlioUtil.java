@@ -357,7 +357,7 @@ public class OlioUtil {
 			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 			ctx.getPopulationMap().put(id, pop);
 			long stop = System.currentTimeMillis();
-			logger.info("Time to stage population: " + (stop - start));
+			// logger.info("Time to stage population: " + (stop - start));
 		}
 		return ctx.getPopulationMap().get(id);
 	}

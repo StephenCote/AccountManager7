@@ -116,7 +116,8 @@ public class OlioContext {
 				return;
 			}
 			IOSystem.getActiveContext().getReader().populate(universe, 2);
-			WorldUtil.loadWorldData(config.getUser(), universe, config.getDataPath(), config.isResetUniverse());
+			/// WorldUtil.loadWorldData(config.getUser(), universe, config.getDataPath(), config.isResetUniverse());
+			WorldUtil.loadWorldData(this);
 			
 			world = WorldUtil.getCreateWorld(config.getUser(), universe, config.getWorldPath(), config.getWorldName(), new String[0]);
 			if(world == null) {
@@ -152,7 +153,7 @@ public class OlioContext {
 				eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 				BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
 				for(BaseRecord evt : evts) {
-					logger.info("Planning " + evt.get(FieldNames.FIELD_NAME));
+					// logger.info("Planning " + evt.get(FieldNames.FIELD_NAME));
 					for(IOlioContextRule rule : config.getContextRules()) {
 						rule.generateRegion(this, rootEvent, evt);
 					}
@@ -163,6 +164,7 @@ public class OlioContext {
 		}
 		catch(Exception e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 	}
 	
@@ -178,16 +180,24 @@ public class OlioContext {
 	}
 
 	public BaseRecord startOrContinueEpoch() {
-		if(currentEpoch != null) {
-			ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEpoch.get(FieldNames.FIELD_STATE));
-			if(aet == ActionResultEnumType.PENDING) {
-				for(IOlioEvolveRule r : config.getEvolutionRules()) {
-					r.continueEpoch(this, currentEpoch);
+		BaseRecord e = null;
+		try {
+			if(currentEpoch != null) {
+				ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEpoch.get(FieldNames.FIELD_STATE));
+				if(aet == ActionResultEnumType.PENDING) {
+					for(IOlioEvolveRule r : config.getEvolutionRules()) {
+						r.continueEpoch(this, currentEpoch);
+					}
+					return currentEpoch;
 				}
-				return currentEpoch;
 			}
+			e = startEpoch();
 		}
-		return startEpoch();
+		catch(Exception er) {
+			logger.error(er);
+			er.printStackTrace();
+		}
+		return e;
 	}
 	
 	public BaseRecord startEpoch() {

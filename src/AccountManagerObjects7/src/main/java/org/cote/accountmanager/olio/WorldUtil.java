@@ -37,11 +37,6 @@ public class WorldUtil {
     private static SecureRandom rand = new SecureRandom();
     
     
-    protected static boolean rapidDataTest = false;
-
-	
-
-	
 	public static BaseRecord getWorld(BaseRecord user, String groupPath, String worldName) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
@@ -101,7 +96,12 @@ public class WorldUtil {
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
 
 	}
-	
+	private static boolean fastDataCheck(BaseRecord user, BaseRecord world) {
+		IOSystem.getActiveContext().getReader().populate(world);
+		BaseRecord locDir = world.get("locations");
+		return IOSystem.getActiveContext().getSearch().count(GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID))) > 0;
+		
+	}
 	private static int loadLocations(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
 
@@ -179,24 +179,32 @@ public class WorldUtil {
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
 
-	public static void loadWorldData(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
+	// public static void loadWorldData(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
+	protected static void loadWorldData(OlioContext ctx) {
+		BaseRecord user = ctx.getUser();
+		BaseRecord world = ctx.getUniverse();
+		String basePath = ctx.getConfig().getDataPath();
+		boolean reset = ctx.getConfig().isResetUniverse();
+		if(!reset && ctx.getConfig().isFastDataCheck() && fastDataCheck(user, world)) {
+			return;
+		}
 		logger.info("Checking world data ...");
 		int locs = loadLocations(user, world, basePath + "/location", reset);
-		logger.info("Locations: " + locs);
+		// logger.info("Locations: " + locs);
 		int dict = loadDictionary(user, world, basePath + "/wn3.1.dict/dict", reset);
-		logger.info("Dictionary words: " + dict);
+		// logger.info("Dictionary words: " + dict);
 		int occs = loadOccupations(user, world, basePath + "/occupations/noc_2021_version_1.0_-_elements.csv", reset);
-		logger.info("Occupations: " + occs);
+		// logger.info("Occupations: " + occs);
 		int names = loadNames(user, world, basePath + "/names/yob2022.txt", reset);
-		logger.info("Names: " + names);
+		// logger.info("Names: " + names);
 		int surnames = loadSurnames(user, world, basePath + "/surnames/Names_2010Census.csv", reset);
-		logger.info("Surnames: " + surnames);
+		// logger.info("Surnames: " + surnames);
 		int traits = loadTraits(user, world, basePath, reset);
-		logger.info("Traits: " + traits);
+		// logger.info("Traits: " + traits);
 		int colors = loadColors(user, world, basePath + "/colors.csv", reset);
-		logger.info("Colors: " + colors);
+		// logger.info("Colors: " + colors);
 		int patterns = loadPatterns(user, world, basePath + "/patterns/patterns.csv", reset);
-		logger.info("Patterns: " + patterns);
+		// logger.info("Patterns: " + patterns);
 	}
 	public static BaseRecord cloneIntoGroup(BaseRecord src, BaseRecord dir) {
 		IOSystem.getActiveContext().getReader().populate(src);
@@ -224,7 +232,7 @@ public class WorldUtil {
 		}
 		BaseRecord root = EventUtil.getRootEvent(ctx);
 		if(root != null) {
-			logger.info("Region is already generated");
+			// logger.info("Region is already generated");
 			return root;
 		}
 		
@@ -264,7 +272,7 @@ public class WorldUtil {
 				BaseRecord event = null;
 
 				if(root == null) {
-					logger.info("Construct region: " + locName);
+					// logger.info("Construct region: " + locName);
 					ParameterList plist = ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH));
 					root = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
 					root.set(FieldNames.FIELD_NAME, "Construct Region " + locName);
@@ -279,7 +287,7 @@ public class WorldUtil {
 					event = root;
 				}
 				else {
-					logger.info("Construct region: " + locName);
+					// logger.info("Construct region: " + locName);
 					BaseRecord popEvent = populateRegion(ctx, loc, root, ctx.getConfig().getBasePopulationCount());
 					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					events.add(popEvent);
@@ -321,7 +329,7 @@ public class WorldUtil {
 
 		long totalAge = 0L;
 		String locName = location.get(FieldNames.FIELD_NAME);
-		logger.info("Populating " + locName + " with " + popCount + " people");
+		/// logger.info("Populating " + locName + " with " + popCount + " people");
 		long start = System.currentTimeMillis();
 		BaseRecord event = null;
 		BaseRecord parWorld = ctx.getWorld().get("basis");
@@ -372,7 +380,7 @@ public class WorldUtil {
 					logger.error("Empty names");
 				}
 
-				logger.info("Creating population of " + popCount);
+				// logger.info("Creating population of " + popCount);
 
 				for(int i = 0; i < popCount; i++){
 					BaseRecord person = CharacterUtil.randomPerson(ctx.getUser(), ctx.getWorld(), null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
@@ -395,12 +403,12 @@ public class WorldUtil {
 					actors.add(person);
 				}
 				
-				logger.info("Bulk loading population");
+				// logger.info("Bulk loading population");
 				int created = IOSystem.getActiveContext().getRecordUtil().updateRecords(actors.toArray(new BaseRecord[0]));
 				if(created != actors.size()) {
 					logger.error("Created " + created + " but expected " + actors.size() + " records");
 				}
-				logger.info("Creating event memberships");
+				// logger.info("Creating event memberships");
 				List<BaseRecord> parts = new ArrayList<>();
 				for(BaseRecord rec : actors) {
 					parts.add(ParticipationFactory.newParticipation(ctx.getUser(), popGrp, null, rec));
@@ -417,7 +425,7 @@ public class WorldUtil {
 				}
 				*/
 			}
-			logger.info("Update event");
+			// logger.info("Update event");
 			IOSystem.getActiveContext().getRecordUtil().updateRecord(event);
 
 		} catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
@@ -484,9 +492,10 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_REALM, (long)world.get("realmsGroup.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INVENTORY_ENTRY, (long)world.get("inventories.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
+		RecordFactory.cleanupOrphans(null);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");
-		RecordFactory.cleanupOrphans(null);
+
 		
 		return totalWrites;
 	}
@@ -504,7 +513,7 @@ public class WorldUtil {
 		} catch (WriterException e) {
 			logger.error(e);
 		}
-		logger.info("Cleaned up " + deleted + " " + model + " in #" + groupId + " (#" + organizationId + ")");
+		// logger.info("Cleaned up " + deleted + " " + model + " in #" + groupId + " (#" + organizationId + ")");
 		return deleted;
 	}
 	

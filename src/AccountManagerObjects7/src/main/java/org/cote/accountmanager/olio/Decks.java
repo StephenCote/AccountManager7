@@ -56,7 +56,7 @@ public class Decks {
 	
 	protected static void shuffleDecks(BaseRecord user, BaseRecord world) {
 		try {
-			logger.info("Shuffling decks");
+			// logger.info("Shuffling decks");
 			shuffleMaleNamesDeck(user, world, namesDeckCount);
 			shuffleFemaleNamesDeck(user, world, namesDeckCount);
 			shuffleSurnameNamesDeck(user, world, namesDeckCount * 2);

@@ -89,7 +89,7 @@ public class Increment24HourRule implements IOlioEvolveRule {
 
 		ZonedDateTime start = epoch.get("eventStart");
 		ZonedDateTime end = epoch.get("eventEnd");
-		logger.info("Begin epoch: " + epoch.get(FieldNames.FIELD_NAME) + " at " + start);
+		/// logger.info("Begin epoch: " + epoch.get(FieldNames.FIELD_NAME) + " at " + start);
 		/// Move the end of the epoch to the end of the year
 		
 		try {
@@ -125,7 +125,7 @@ public class Increment24HourRule implements IOlioEvolveRule {
 		// TODO Auto-generated method stub
 		// logger.info("Begin location epoch: " + epoch.get(FieldNames.FIELD_NAME));
 		edgeTimes(epoch);
-		logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " begins " + (String)epoch.get(FieldNames.FIELD_NAME));
+		// logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " begins " + (String)epoch.get(FieldNames.FIELD_NAME));
 		
 	}
 

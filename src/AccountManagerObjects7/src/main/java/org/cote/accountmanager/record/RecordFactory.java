@@ -448,7 +448,7 @@ public class RecordFactory {
 					logger.error(e);
 			    }
 				long stop = System.currentTimeMillis();
-				logger.info("Cleaned up orphans in " + (stop - start) + "ms");
+				// logger.info("Cleaned up orphans in " + (stop - start) + "ms");
 			}
 		}
 		else {

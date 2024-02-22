@@ -81,7 +81,7 @@ public class ItemUtil {
 	/// "name:desc:type:category:store[location,person]:materials:perks:features:damage=1,range=0,protection=1,consumes=0:opacity=0.0,elasticity=0.0,glossiness=0.0,viscocity=0.0,sliminess=0.0,smoothness=0.0,hardness=0.0,toughness=0.0,defensive=0.0,offensive=0.0,waterresistance=0.0,heatresistance=0.0,insulation=0.0,skill=0.0"
 	/// 
 	protected static BaseRecord[] importItems(OlioContext ctx) {
-		logger.info("Import default item configuration");
+		// logger.info("Import default item configuration");
 		List<BaseRecord> items = JSONUtil.getList(ResourceUtil.getResource("./olio/items.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		List<BaseRecord> oitems = new ArrayList<>();
 

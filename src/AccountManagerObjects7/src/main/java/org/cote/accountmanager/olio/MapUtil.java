@@ -42,6 +42,10 @@ public class MapUtil {
 		/// Find the admin2 location of the first location and map that
 		///
 		BaseRecord[] locs = ctx.getLocations();
+		if(locs.length == 0) {
+			logger.error("Context does not contain any locations!");
+			return;
+		}
 		BaseRecord loc = locs[0];
 		IOSystem.getActiveContext().getReader().populate(loc);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, loc.get(FieldNames.FIELD_PARENT_ID));
@@ -55,8 +59,8 @@ public class MapUtil {
 	}
 	
 	public static void printAdmin2Map(OlioContext ctx, BaseRecord location) {
-		logger.info("Printing admin2 location " + location.get(FieldNames.FIELD_NAME));
-		logger.info("NOTE: This currently expects a GridSquare layout");
+		// logger.info("Printing admin2 location " + location.get(FieldNames.FIELD_NAME));
+		// logger.info("NOTE: This currently expects a GridSquare layout");
 		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
 		IOSystem.getActiveContext().getReader().populate(location);
 		List<BaseRecord> locs = new ArrayList<>(Arrays.asList(ctx.getLocations()));
@@ -122,8 +126,8 @@ public class MapUtil {
 	}
 
 	public static void printRealmMap(OlioContext ctx, BaseRecord realm) {
-		logger.info("Printing realm: " + realm.get(FieldNames.FIELD_NAME));
-		logger.info("NOTE: This currently expects a GridSquare layout");
+		// logger.info("Printing realm: " + realm.get(FieldNames.FIELD_NAME));
+		// logger.info("NOTE: This currently expects a GridSquare layout");
 		IOSystem.getActiveContext().getReader().populate(realm);
 		List<BaseRecord> locs = realm.get("locations");
 
@@ -226,8 +230,8 @@ public class MapUtil {
 	}
 	
 	public static void printLocationMap(OlioContext ctx, BaseRecord location, BaseRecord realm, List<BaseRecord> pop) {
-		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
-		logger.info("NOTE: This currently expects a GridSquare layout");
+		// logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
+		// logger.info("NOTE: This currently expects a GridSquare layout");
 		// printDescriptionByFeature(ctx, location, (String)location.get("feature"));
 		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
 		IOSystem.getActiveContext().getReader().populate(location);

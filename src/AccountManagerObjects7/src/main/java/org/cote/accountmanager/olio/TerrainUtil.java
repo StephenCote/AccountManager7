@@ -59,7 +59,7 @@ public class TerrainUtil {
 	}
 	
 	public static void blastCells(OlioContext ctx, BaseRecord location, List<BaseRecord> cells, int mapWidth, int mapHeight) {
-		logger.info("Terrain blasting " + location.get(FieldNames.FIELD_NAME) + " cells");
+		// logger.info("Terrain blasting " + location.get(FieldNames.FIELD_NAME) + " cells");
 		Map<TerrainEnumType, Double> map = getTerrainTypesPerc(cells);
 		// fill in everything with the parent terrain type
 		TerrainEnumType tet = TerrainEnumType.valueOf((String)location.get("terrainType"));
@@ -91,7 +91,7 @@ public class TerrainUtil {
 		
 		Set<BaseRecord> targSet = new HashSet<>();
 
-		logger.info("Compute walks");
+		// logger.info("Compute walks");
 		longShortWalk(locs, targSet, mountains, rivers, TerrainEnumType.RIVER, true);
 		longShortWalk(locs, targSet, mountains, rivers, TerrainEnumType.RIVER, false);
 		longShortWalk(locs, targSet, rivers, oceans, TerrainEnumType.RIVER, true);
@@ -187,7 +187,7 @@ public class TerrainUtil {
 	     if(y3 < 0) y3 = 0;
 
 	     if(y2 == y3 && x2 == x3) {
-	    	 logger.info("Calc end crash");
+	    	 // logger.info("Calc end crash");
 	    	 return;
 	     }
 	     BaseRecord nloc = GeoLocationUtil.findLocationByGrid(locs, x3, y3);

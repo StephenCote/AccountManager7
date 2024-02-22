@@ -22,6 +22,7 @@ public class OlioContextConfiguration {
 	private boolean resetWorld = false;
 	private List<IOlioContextRule> contextRules = new ArrayList<>();
 	private List<IOlioEvolveRule> evolutionRules = new ArrayList<>();
+	private boolean fastDataCheck = true;
 	public OlioContextConfiguration() {
 		
 	}
@@ -48,6 +49,14 @@ public class OlioContextConfiguration {
 		this.resetWorld = resetWorld;
 		this.baseLocationCount = locationCount;
 		this.basePopulationCount = populationCount;
+	}
+
+	public boolean isFastDataCheck() {
+		return fastDataCheck;
+	}
+
+	public void setFastDataCheck(boolean fastDataCheck) {
+		this.fastDataCheck = fastDataCheck;
 	}
 
 	public List<IOlioEvolveRule> getEvolutionRules() {
