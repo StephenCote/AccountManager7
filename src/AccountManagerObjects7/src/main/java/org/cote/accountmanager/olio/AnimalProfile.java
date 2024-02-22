@@ -54,9 +54,19 @@ public class AnimalProfile {
 	private InstinctEnumType laugh = InstinctEnumType.STASIS;
 	private InstinctEnumType cry = InstinctEnumType.STASIS;
 	private InstinctEnumType protect = InstinctEnumType.STASIS;
-
+	
+	private AlignmentEnumType alignment = AlignmentEnumType.UNKNOWN;
+	
 	public AnimalProfile() {
 		
+	}
+
+	public AlignmentEnumType getAlignment() {
+		return alignment;
+	}
+
+	public void setAlignment(AlignmentEnumType alignment) {
+		this.alignment = alignment;
 	}
 
 	public List<BaseRecord> getFixations() {

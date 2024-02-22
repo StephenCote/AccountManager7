@@ -329,7 +329,7 @@ SLOAN Notation
 		prof.setGender(animal.get("gender"));
 		prof.setAge(animal.get("age"));
 		prof.setAlive(animal.get("state.alive"));
-		
+		prof.setAlignment(AlignmentEnumType.valueOf(animal.get(FieldNames.FIELD_ALIGNMENT)));
 		BaseRecord inst = animal.get("instinct");
 		prof.setSleep(InstinctEnumType.valueOf((double)inst.get("sleep")));
 		prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
