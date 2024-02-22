@@ -6,6 +6,7 @@ import java.util.Map;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public enum AlignmentEnumType {
 	CHAOTICEVIL(-4),
@@ -54,4 +55,37 @@ public enum AlignmentEnumType {
 		}
         return alignMap.get(val);
     }
+    
+    public static ComparatorEnumType compare(AlignmentEnumType lvl1, AlignmentEnumType lvl2) {
+    	ComparatorEnumType comp = ComparatorEnumType.UNKNOWN;
+    	double val1 = lvl1.val;
+    	double val2 = lvl2.val;
+    	if(val1 < val2) comp = ComparatorEnumType.LESS_THAN;
+    	else if (val1 == val2) comp = ComparatorEnumType.GREATER_THAN;
+    	else comp = ComparatorEnumType.EQUALS;
+    	return comp;
+    }
+    
+	public static AlignmentEnumType margin(AlignmentEnumType v1, AlignmentEnumType v2) {
+		return valueOf(Math.abs(v1.val - v2.val));
+	}
+	public static boolean marginCompare(AlignmentEnumType v1, AlignmentEnumType v2, AlignmentEnumType v3, ComparatorEnumType comp) {
+		return compare(margin(v1, v2), v3, comp);
+	}
+    public static boolean compare(AlignmentEnumType lvl1, AlignmentEnumType lvl2, ComparatorEnumType comp) {
+    	ComparatorEnumType hcomp = compare(lvl1, lvl2);
+    	return (
+    		hcomp == comp
+    		||
+    		(hcomp == ComparatorEnumType.GREATER_THAN && comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.EQUALS && comp == ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.LESS_THAN && comp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
+    		||
+    		(hcomp == ComparatorEnumType.EQUALS && comp == ComparatorEnumType.LESS_THAN_OR_EQUALS)
+    	);
+
+    }
+    
 }
