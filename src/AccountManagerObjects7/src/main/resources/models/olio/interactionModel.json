@@ -62,6 +62,14 @@
 			"shortName": "actr"
 		},
 		{
+			"name": "actorReason",
+			"baseClass": "org.cote.accountmanager.olio.ReasonEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "unknown",
+			"shortName": "actrr"
+		},
+		{
 			"name": "actorAlignment",
 			"baseClass": "org.cote.accountmanager.olio.AlignmentEnumType",
 			"type": "enum",
@@ -105,6 +113,14 @@
 			"type": "enum",
 			"maxLength": 32,
 			"shortName": "iactr"
+		},
+		{
+			"name": "interactorReason",
+			"baseClass": "org.cote.accountmanager.olio.ReasonEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "unknown",
+			"shortName": "iactrr"
 		},
 		{
 			"name": "interactorAlignment",

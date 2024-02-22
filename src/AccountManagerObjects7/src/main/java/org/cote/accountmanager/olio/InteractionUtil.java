@@ -16,15 +16,28 @@ public class InteractionUtil {
 
 	
 	public static BaseRecord newInteraction(OlioContext ctx, BaseRecord event, BaseRecord actor, ThreatEnumType actorThreat, BaseRecord interactor) {
-		return newInteraction(ctx, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, interactor, AlignmentEnumType.UNKNOWN, ThreatEnumType.NONE);
+		return newInteraction(ctx, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN, interactor, AlignmentEnumType.UNKNOWN, ThreatEnumType.NONE, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN);
 	}
 
 	
 	public static BaseRecord newInteraction(OlioContext ctx, BaseRecord event, BaseRecord actor, ThreatEnumType actorThreat, BaseRecord interactor, ThreatEnumType interactorThreat) {
-		return newInteraction(ctx, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, interactor, AlignmentEnumType.UNKNOWN, interactorThreat);
+		return newInteraction(ctx, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN, interactor, AlignmentEnumType.UNKNOWN, interactorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN);
 	}
 	
-	public static BaseRecord newInteraction(OlioContext ctx, BaseRecord event, BaseRecord actor, AlignmentEnumType actorAlignment, ThreatEnumType actorThreat, BaseRecord interactor, AlignmentEnumType interactorAlignment, ThreatEnumType interactorThreat) {
+	public static BaseRecord newInteraction(
+		OlioContext ctx,
+		BaseRecord event,
+		BaseRecord actor,
+		AlignmentEnumType actorAlignment,
+		ThreatEnumType actorThreat,
+		CharacterRoleEnumType actorRole,
+		ReasonEnumType actorReason,
+		BaseRecord interactor,
+		AlignmentEnumType interactorAlignment,
+		ThreatEnumType interactorThreat,
+		CharacterRoleEnumType interactorRole,
+		ReasonEnumType interactorReason
+	) {
 		BaseRecord inter = null;
 	
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("interactions.path"));
@@ -38,10 +51,15 @@ public class InteractionUtil {
 			inter.set("actorAlignment", actorAlignment);
 			inter.set("actorType", actor.getModel());
 			inter.set("actorThreat", actorThreat);
+			inter.set("actorRole", actorRole);
+			inter.set("actorReason", actorReason);
 			inter.set("interactor", interactor);
 			inter.set("interactorAlignment", interactorAlignment);
 			inter.set("interactorType", interactor.getModel());
-			inter.set("interActorThreat", interactorThreat);
+			inter.set("interactorThreat", interactorThreat);
+			inter.set("interactorRole", interactorRole);
+			inter.set("interactorReason", interactorReason);
+
 		}
 		catch(ModelNotFoundException | FactoryException | FieldException | ValueException e) {
 			logger.error(e);
