@@ -19,6 +19,11 @@ public class EnumValueType extends ValueType {
 		if(value == null) return (T)"UNKNOWN";
 		return (T)value;
 	}
+	
+	@SuppressWarnings("unchecked")
+	public <T> T getEnumValue() {
+		return (T)RecordFactory.getEnumValue(this.getBaseClass(), (value != null ? value : "UNKNOWN"));
+	}
 
 	@SuppressWarnings("unchecked")
 	public <T> void setValue(T value) throws ValueException {

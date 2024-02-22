@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldFactory;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.model.field.value.EnumValueType;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -249,7 +250,20 @@ public abstract class BaseRecord {
 			return null;
 		}
 		return fieldMap.get(name).getValue(this);
-		
+	}
+	
+	@JsonIgnore
+	public <T> T getEnum(String name) {
+		try {
+			checkField(name);
+		} catch (ModelNotFoundException | FieldException e) {
+			logger.error(e);
+			return null;
+		}
+		if(!fieldMap.get(name).getValueType().equals(FieldEnumType.ENUM) || fieldMap.get(name).getFieldValueType() == null) {
+			return null;
+		}
+		return ((EnumValueType)fieldMap.get(name).getFieldValueType()).getEnumValue();
 	}
 	
 	@JsonIgnore
