@@ -117,10 +117,10 @@ public class DarkTriadUtil {
 	public static RollEnumType rollCounterNarcissism(BaseRecord rec) {
 		return RollUtil.rollStat20(StatisticsUtil.getAverage(rec.get("statistics"), new String[] {"spirituality", "willpower"}));
 	}
-	public static RollEnumType rollPsycopathy(BaseRecord rec) {
-		return RollUtil.rollStat1(rec.get("personality.psycopathy"));
+	public static RollEnumType rollPsychopathy(BaseRecord rec) {
+		return RollUtil.rollStat1(rec.get("personality.psychopathy"));
 	}
-	public static RollEnumType rollCounterPsycopathy(BaseRecord rec) {
+	public static RollEnumType rollCounterPsychopathy(BaseRecord rec) {
 		return RollUtil.rollStat1(StatisticsUtil.getDblAverage(rec.get("personality"), new String[] {"conscientiousness", "agreeableness"}));
 	}
 	public static OutcomeEnumType ruleDarkTriad(BaseRecord interaction, PersonalityProfile actor, PersonalityProfile interactor) {
@@ -143,8 +143,8 @@ public class DarkTriadUtil {
 				iroll = rollCounterDeception(interactor.getRecord());
 				break;
 			case PSYCHOPATHY:
-				roll = rollPsycopathy(actor.getRecord());
-				iroll = rollCounterPsycopathy(interactor.getRecord());
+				roll = rollPsychopathy(actor.getRecord());
+				iroll = rollCounterPsychopathy(interactor.getRecord());
 				break;
 			default:
 				logger.error("Unhandled reason type: " + ret.toString());
