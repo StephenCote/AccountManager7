@@ -161,7 +161,7 @@
 		{
 			"name": "behavior",
 			"type": "model",
-			"baseModel": "olio.behavior",
+			"baseModel": "identity.behavior",
 			"foreign": true,
 			"shortName": "be"
 		},

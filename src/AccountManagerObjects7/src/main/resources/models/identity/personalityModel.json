@@ -1,5 +1,5 @@
 {
-	"name": "olio.personality",
+	"name": "identity.personality",
 	"likeInherits": ["data.directory"],
 	"inherits": [
 		"common.groupExt",

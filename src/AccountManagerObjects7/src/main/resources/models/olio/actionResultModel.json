@@ -129,7 +129,7 @@
 		{
 			"name": "personality",
 			"type": "model",
-			"baseModel": "olio.personality",
+			"baseModel": "identity.personality",
 			"description": "Personality modifiers from this action",
 			"foreign": true
 		},

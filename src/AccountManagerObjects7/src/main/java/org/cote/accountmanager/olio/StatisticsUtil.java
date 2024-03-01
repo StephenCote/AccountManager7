@@ -141,6 +141,17 @@ public class StatisticsUtil {
 		}
 		return avg;
 	}
+	
+	public static void addDouble(BaseRecord model, String fieldName, double val) {
+		double cval = model.get(fieldName);
+		try {
+			model.set(fieldName, cval + val);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		
+		
+	}
 }
 
 class StatisticRule{

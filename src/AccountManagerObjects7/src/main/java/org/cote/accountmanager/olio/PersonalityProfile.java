@@ -3,7 +3,7 @@ package org.cote.accountmanager.olio;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.cote.accountmanager.olio.personality.MBTI;
+import org.cote.accountmanager.personality.MBTI;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 

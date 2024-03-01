@@ -1,4 +1,4 @@
-package org.cote.accountmanager.olio.personality;
+package org.cote.accountmanager.personality;
 
 public class MBTI {
 	private String key = null;

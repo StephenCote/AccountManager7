@@ -328,26 +328,6 @@ public class OlioContext {
 			return inc;
 		}
 		return startIncrement(locationEpoch);
-		/*
-		BaseRecord[] childEvts = EventUtil.getChildEvents(world, locationEpoch, null, null, TimeEnumType.UNKNOWN, EventEnumType.UNKNOWN);
-		if(childEvts.length > 0) {
-			BaseRecord cur = childEvts[childEvts.length - 1];
-			ActionResultEnumType aet = ActionResultEnumType.valueOf(cur.get(FieldNames.FIELD_STATE));
-			if(aet == ActionResultEnumType.PENDING) {
-				for(IOlioEvolveRule r : config.getEvolutionRules()) {
-					r.continueIncrement(this, locationEpoch);
-				}
-				currentIncrement = cur;
-				return currentIncrement;
-			}
-			else {
-				logger.warn("Current increment is not in a pending state");
-				logger.warn(cur.toFullString());
-			}
-		}
-		
-		return startIncrement(locationEpoch);
-		*/
 	}
 	
 	public BaseRecord startIncrement() {

@@ -60,20 +60,8 @@
 			"foreign": true,
 			"shortName": "inst"
 		},
-		{
-			"name": "behavior",
-			"type": "model",
-			"baseModel": "olio.behavior",
-			"foreign": true,
-			"shortName": "beh"
-		},
-		{
-			"name": "personality",
-			"type": "model",
-			"baseModel": "olio.personality",
-			"foreign": true,
-			"shortName": "per"
-		},
+
+
 		{
 			"name": "state",
 			"type": "model",

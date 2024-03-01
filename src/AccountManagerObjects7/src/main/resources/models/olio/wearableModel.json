@@ -58,7 +58,7 @@
 			"name": "location",
 			"type": "list",
 			"baseType": "string",
-			"limit": ["head", "brow", "hair", "torso", "chest", "breast", "foot", "toe", "ankle", "thigh", "leg", "wrist", "hand", "finger", "arm", "neck", "groin", "shoulder", "bicep", "tricep", "face", "nose", "ear", "eye", "hip", "waist", "belly"]
+			"limit": ["head", "brow", "hair", "back", "torso", "chest", "breast", "foot", "toe", "ankle", "thigh", "leg", "shin", "wrist", "hand", "finger", "arm", "forearm", "neck", "groin", "shoulder", "bicep", "tricep", "upper arm", "knee", "elbow", "face", "nose", "ear", "eye", "hip", "waist", "belly"]
 		}
 
 	]

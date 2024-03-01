@@ -8,10 +8,10 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.olio.personality.CompatibilityEnumType;
+import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
-import org.cote.accountmanager.olio.personality.MBTIUtil;
-import org.cote.accountmanager.olio.personality.OCEANUtil;
+import org.cote.accountmanager.personality.MBTIUtil;
+import org.cote.accountmanager.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
@@ -37,7 +37,7 @@ public class NarrativeUtil {
 			desc.append("is a psychopath and may show low levels of empathy and high levels of impulsivity and thrill-seeking");
 		}
 		*/
-		desc2.append("Personality-wise, " + prof.getRecord().get("firstName") + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()) + ".");
+		desc2.append("Personality-wise, " + prof.getRecord().get("firstName") + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()) + " (" + prof.getDarkTriadKey() + ").");
 		/*
 		if(desc.length() > 0) {
 			desc2.append(desc.toString() + ".");

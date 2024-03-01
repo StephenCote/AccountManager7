@@ -87,7 +87,11 @@
 		"perks": [
 			{
 				"name": "Attack Damage"
+			},
+			{
+				"name": "Ranged"
 			}
+
 		],
 		"qualities": [
 			{
@@ -103,6 +107,116 @@
 		"tags": [
 			{
 				"name": "weapon"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "weapon",
+		"description": "Basic sword template",
+		"name": "sword",
+		"perks": [
+			{
+				"name": "Attack Damage"
+			}
+		],
+		"qualities": [
+			{
+				"offensive": 0.25,
+				"skill": 0.2
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"damage": 2
+		},
+		"tags": [
+			{
+				"name": "weapon"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "weapon",
+		"description": "Basic sword template",
+		"name": "long sword",
+		"perks": [
+			{
+				"name": "Attack Damage"
+			}
+		],
+		"qualities": [
+			{
+				"offensive": 0.3,
+				"skill": 0.2
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"damage": 2,
+			"range": 2
+		},
+		"tags": [
+			{
+				"name": "weapon"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "weapon",
+		"description": "Basic two-handed sword template",
+		"name": "two-handed sword",
+		"perks": [
+			{
+				"name": "Attack Damage"
+			}
+		],
+		"qualities": [
+			{
+				"offensive": 0.35,
+				"skill": 0.2
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"damage": 3,
+			"range": 3
+		},
+		"tags": [
+			{
+				"name": "weapon"
+			},
+			{
+				"name": "two-handed"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "armor",
+		"description": "Basic shield template",
+		"name": "shield",
+		"perks": [
+			{
+				"name": "Block Damage"
+			}
+		],
+		"qualities": [
+			{
+				"defensive": 0.25,
+				"skill": 0.2
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"protection": 2,
+			"damage": 1
+		},
+		"tags": [
+			{
+				"name": "shield"
 			}
 		],
 		"type": "template"

@@ -26,7 +26,8 @@
 			"baseType": "model",
 			"baseModel": "olio.inventoryEntry",
 			"foreign": true,
-			"participantModel": "store.entry"
+			"participantModel": "store.entry",
+			"description": "Inventory is meant to hold item references, particularly renewable or consumable items versus continually used items.  For example, an item in a merchant's or manufacturer's inventory entry versus an item that someone owns, and makes use of. At present, it is an abstract duplicate of what may be in the items or apparel or wearable lists, and may ultimately replace those."
 		},
 		{
 			"name": "items",

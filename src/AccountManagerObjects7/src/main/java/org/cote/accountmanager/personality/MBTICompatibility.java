@@ -1,4 +1,4 @@
-package org.cote.accountmanager.olio.personality;
+package org.cote.accountmanager.personality;
 
 public class MBTICompatibility {
 	private String key1 = null;

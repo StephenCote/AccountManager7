@@ -284,6 +284,10 @@ public class CharacterUtil {
 				eyeColor = "gray";
 				hairColor = "silver";
 				break;
+			case V:
+				eyeColor = "red";
+				hairColor = "white";
+				break;
 			case W:
 				eyeColor = "green";
 				hairColor = "green";

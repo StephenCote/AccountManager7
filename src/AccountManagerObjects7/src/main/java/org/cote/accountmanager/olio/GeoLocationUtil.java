@@ -212,11 +212,14 @@ public class GeoLocationUtil {
 	}
 
 	public static BaseRecord newLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
+		return newLocation(ctx, parent, name, id, false);
+	}
+	public static BaseRecord newLocation(OlioContext ctx, BaseRecord parent, String name, int id, boolean world) {
 		BaseRecord rec = null;
 		if(ctx.getWorld() == null) {
 			return rec;
 		}
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+		ParameterList plist = ParameterList.newParameterList("path", (world ? ctx.getWorld() : ctx.getUniverse()).get("locations.path"));
 		plist.parameter("name", name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getUser(), null, plist);

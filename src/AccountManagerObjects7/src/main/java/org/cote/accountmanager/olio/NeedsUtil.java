@@ -137,9 +137,10 @@ public class NeedsUtil {
 		String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
 		logger.info(nar);
 		
+		/*
 		MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
 		MapUtil.printRealmMap(ctx, realm);
-		
+		*/
 		List<BaseRecord> acts = new ArrayList<>();
 		
 		return acts;

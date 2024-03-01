@@ -206,18 +206,7 @@ public class WorldUtil {
 		int patterns = loadPatterns(user, world, basePath + "/patterns/patterns.csv", reset);
 		// logger.info("Patterns: " + patterns);
 	}
-	public static BaseRecord cloneIntoGroup(BaseRecord src, BaseRecord dir) {
-		IOSystem.getActiveContext().getReader().populate(src);
-		BaseRecord targ = src.copyDeidentifiedRecord();
-		try {
-			targ.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		}
-		catch(ValueException | FieldException | ModelNotFoundException e) {
-			logger.error(e);
-			targ = null;
-		}
-		return targ;
-	}
+
 	
 	protected static BaseRecord generateRegion(OlioContext ctx) {
 		
@@ -250,7 +239,7 @@ public class WorldUtil {
 		}
 		List<BaseRecord> locations = new ArrayList<>();
 		for(BaseRecord l : locs) {
-			locations.add(cloneIntoGroup(l, locDir));
+			locations.add(OlioUtil.cloneIntoGroup(l, locDir));
 		}
 		if(locations.isEmpty()){
 			logger.error("Expected a positive number of locations");

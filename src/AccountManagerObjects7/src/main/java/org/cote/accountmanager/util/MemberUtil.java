@@ -14,6 +14,7 @@ import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IMember;
 import org.cote.accountmanager.io.IOContext;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
@@ -116,6 +117,29 @@ public class MemberUtil implements IMember {
 		}
 		return list;
 	}
+	
+	public int deleteMembers(BaseRecord rec, BaseRecord effect) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_PARTICIPATION, FieldNames.FIELD_PARTICIPATION_MODEL, rec.getModel());
+		q.field(FieldNames.FIELD_PARTICIPATION_ID, rec.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, rec.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(effect == null) {
+			q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.AGGREGATE);
+		}
+		else {
+			q.field(FieldNames.FIELD_PERMISSION_ID, effect.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.GRANT_PERMISSION);
+		}
+		int del = 0;
+		try {
+			del = IOSystem.getActiveContext().getWriter().delete(q);
+		} catch (WriterException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		CacheUtil.clearCache(rec);
+		return del;
+	}
+	
 	public List<BaseRecord> getMembers(BaseRecord rec, String fieldName, String memberModelType) throws IndexException, ReaderException {
 		List<BaseRecord> recs = new ArrayList<>();
 

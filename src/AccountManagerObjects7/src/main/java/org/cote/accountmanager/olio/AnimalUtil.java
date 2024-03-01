@@ -121,7 +121,7 @@ public class AnimalUtil {
 						BaseRecord anim1 = a.copyDeidentifiedRecord();
 						try {
 							anim1.set("store.items", a.get("store.items"));
-							convertItemsToInventory(ctx, anim1);
+							ItemUtil.convertItemsToInventory(ctx, anim1);
 							
 							int age = random.nextInt(1,20);
 							anim1.setValue("age", age);
@@ -160,28 +160,7 @@ public class AnimalUtil {
 		animalSpread.put(id, pop);
 		return pop;
 	}
-	protected static void convertItemsToInventory(OlioContext ctx, BaseRecord rec) {
-		BaseRecord store = rec.get("store");
-		if(store == null) {
-			logger.warn("Store was null");
-			return;
-		}
-		List<BaseRecord> items = store.get("items");
-		List<BaseRecord> entries = store.get("inventory");
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path"));
-		for(BaseRecord i : items) {
 
-
-			try {
-				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getUser(), null, plist);
-				inv.set("item", i);
-				entries.add(inv);
-			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-		}
-		items.clear();
-	}
 	protected static List<BaseRecord> getAnimalTemplates(OlioContext ctx){
 		if(animalTemplates.size() > 0) {
 			return animalTemplates;

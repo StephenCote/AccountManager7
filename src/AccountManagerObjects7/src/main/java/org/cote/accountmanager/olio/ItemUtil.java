@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -65,10 +66,74 @@ public class ItemUtil {
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
-	public static BaseRecord[] getItems(OlioContext ctx) {
-		return OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders", "type", "template");
+	public static void convertItemsToInventory(OlioContext ctx, BaseRecord rec) {
+		BaseRecord store = rec.get("store");
+		if(store == null) {
+			logger.warn("Store was null");
+			return;
+		}
+		List<BaseRecord> items = store.get("items");
+		List<BaseRecord> entries = store.get("inventory");
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path"));
+		for(BaseRecord i : items) {
+
+
+			try {
+				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getUser(), null, plist);
+				inv.set("item", i);
+				entries.add(inv);
+			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		items.clear();
 	}
 	
+	public static void addItemToInventory(OlioContext ctx, BaseRecord rec, BaseRecord item) {
+		BaseRecord store = rec.get("store");
+		if(store == null) {
+			logger.warn("Store was null");
+			return;
+		}
+		List<BaseRecord> entries = store.get("inventory");
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path"));
+		try {
+			BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getUser(), null, plist);
+			inv.set("item", item);
+			entries.add(inv);
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	
+	public static BaseRecord buildItem(OlioContext ctx, String name) {
+		BaseRecord itemT = getItemTemplate(ctx, name);
+		if(itemT == null) {
+			logger.error("Failed to retrieve template for " + name);
+			return null;
+		}
+		return buildItem(ctx, itemT);
+	}
+	public static BaseRecord buildItem(OlioContext ctx, BaseRecord template) {
+		BaseRecord item = OlioUtil.cloneIntoGroup(template, ctx.getWorld().get("items"));
+		try {
+			item.set("type", null);
+			item.set("tags", template.get("tags"));
+			item.set("perks", template.get("perks"));
+			item.set("features", template.get("features"));
+		}
+		catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return item;
+	}
+	
+	public static List<BaseRecord> getTemplateBuilders(OlioContext ctx) {
+		return Arrays.asList(OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders", "type", "template"));
+	}
+	public static List<BaseRecord> getTemplateItems(OlioContext ctx) {
+		return Arrays.asList(OlioUtil.list(ctx, ModelNames.MODEL_ITEM, "items", "type", "template"));
+	}
 	public static void loadItems(OlioContext ctx) {
 		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
 		if(count == 0) {

@@ -13,7 +13,9 @@ import java.util.concurrent.TimeUnit;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
@@ -21,16 +23,22 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.olio.ActionUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
-import org.cote.accountmanager.olio.personality.SloanUtil;
+import org.cote.accountmanager.personality.SloanUtil;
+import org.cote.accountmanager.olio.rules.ArenaEvolveRule;
+import org.cote.accountmanager.olio.rules.ArenaInitializationRule;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
@@ -44,9 +52,11 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.EffectEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
@@ -60,15 +70,18 @@ public class TestOlio extends BaseTest {
 	 * notes/dataNotes.txt contains the links to these data sources 
 	 */
 	private boolean resetUniverse = false;
-	private boolean resetWorld = true;
+	private boolean resetWorld = false;
 	private String worldName = "Demo World";
 	private String miniName = "Mini World";
+	private String arenaName = "Arena World";
 	private String miniSub = "Mini Sub";
+	private String arenaSub = "Arena Sub";
 	private String subWorldName = "Sub World";
 	private String worldPath = "~/Worlds";
 	
 	/// Using MGRS-like coding to subdivide the random maps
 	///
+	/*
 	@Test
 	public void TestGrid() {
 
@@ -80,12 +93,10 @@ public class TestOlio extends BaseTest {
 		/// 
 		AuditUtil.setLogToConsole(false);
 		
-		assertNotNull("Sloan is null", SloanUtil.getSloan("rluen"));
-
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		// IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
+		IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 			testUser1,
 			testProperties.getProperty("test.datagen.path"),
@@ -95,7 +106,7 @@ public class TestOlio extends BaseTest {
 			new String[] {},
 			2,
 			50,
-			true,
+			false,
 			resetUniverse
 		);
 	
@@ -119,19 +130,6 @@ public class TestOlio extends BaseTest {
 		octx.initialize();
 		assertNotNull("Root location is null", octx.getRootLocation());
 		
-		try {
-			MapUtil.printMapFromAdmin2(octx);
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-		}
-		/*
-		BaseRecord[] realms = octx.getRealms();
-		for(BaseRecord r: realms) {
-			MapUtil.printRealmMap(octx, r);
-		}
-		*/
-
 		BaseRecord evt = octx.startOrContinueEpoch();
 		assertNotNull("Epoch is null", evt);
 		BaseRecord[] locs = octx.getLocations();
@@ -146,124 +144,79 @@ public class TestOlio extends BaseTest {
 				e.printStackTrace();
 			}
 		}
-		
-		// RecordFactory.cleanupOrphans(null);
+
 	}
+	*/
 	
-
-
-	/*
 	@Test
-	public void TestOlio4() {
-
+	public void TestArena1() {
+		logger.info("Test Olio - Arena");
 		AuditUtil.setLogToConsole(false);
+
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		
-		/// Note: Worlds are not currently keyed to a parent, and should be
-		
-		/// To use only custom locations, send in zero features.  It will be necessary to define a couple locations in a parent location in order to generate the populations
-		///
+		IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 			testUser1,
 			testProperties.getProperty("test.datagen.path"),
 			worldPath,
-			miniName,
-			miniSub,
+			arenaName,
+			arenaSub,
 			new String[] {},
-			2,
+			1,
 			50,
-			false,
+			true,
 			resetUniverse
 		);
-		/// Location requirements: Location Count + 2 - you need the 'country', the 'parent', and then the count of locations, where the 'parent' is random
+	
+		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
 		///
-		cfg.getContextRules().add(new GenericLocationInitializationRule("Root Sub", new String[] {"Sub 1", "Sub 2", "Sub 3", "Sub 4", "Sub 5"}));
-		cfg.getEvolutionRules().add(new LocationPlannerRule());
+		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
+			new ArenaInitializationRule(),
+			new GenericItemDataLoadRule()
+		}));
+		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
+				new ArenaEvolveRule()
+			}));
 		OlioContext octx = new OlioContext(cfg);
-		//// Using full country load
-		////
-		/ *
-		OlioContext octx = new OlioContext(
-			new OlioContextConfiguration(
-				testUser1,
-				testProperties.getProperty("test.datagen.path"),
-				worldPath,
-				worldName,
-				subWorldName,
-				new String[] {"AS", "GB", "IE", "US"},
-				2,
-				250,
-				false,
-				resetUniverse
-			)
-		);
-		* /
-		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
-		octx.initialize();
-		assertTrue("Expected olio context to be initialized", octx.isInitialized());
-		if(octx.getCurrentEpoch() == null) {
-			octx.generateEpoch();
-		}
-		
-		logger.info("Test start a new epoch");
-		BaseRecord test = octx.startEpoch();
-		assertNotNull("Epoch is null", test);
-		BaseRecord[] locs2 = octx.getLocations();
-		BaseRecord testE = octx.startLocationEvent(locs2[0]);
-		assertNotNull("Location event is null", testE);
-		
-		octx.abandonLocationEvent();
-		octx.abandonEpoch();
-		/ *
-		logger.info("Test start a new epoch while another epoch is open");
-		BaseRecord test2 = EpochUtil.startEpoch(octx);
-		assertNull("Epoch should be null", test2);
 
-		logger.info("Cleanup the open epoch");
-		octx.abandonEpoch();
-		* /
+		logger.info("Initialize olio context - Arena");
+		octx.initialize();
+		assertNotNull("Root location is null", octx.getRootLocation());
+		logger.info("Arena prepared");
 		
-		// BaseRecord per = octx.readRandomPerson();
-		// assertNotNull("Person is null", per);
-		//logger.info(per.toFullString());
-		/ *
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_ID, per.get(FieldNames.FIELD_ID));
+		// logger.info(octx.getUniverse().toFullString());
+		
+		BaseRecord evt = octx.startOrContinueEpoch();
+		BaseRecord[] locs = octx.getLocations();
 		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
-			// logger.info(meta.getSql());
-		} catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
-			logger.error(e);
-		}
-		* /
-		BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, octx.getWorld());
-		assertTrue("Expected two or more locations", locs.length > 0);
-		assertNotNull("Location is null", locs[0]);
-		// float dist = GeoLocationUtil.calculateDistance(locs[0], locs[1]);
-		// logger.info("Distance between " + locs[0].get(FieldNames.FIELD_NAME) + " and " + locs[1].get(FieldNames.FIELD_NAME) + " is " + dist);
-		BaseRecord per = null;
-		try {
-			List<BaseRecord> lpop = octx.getPopulation(locs[0]);
-			//FileUtil.emitFile("./tmp.txt", JSONUtil.exportObject(lpop, RecordSerializerConfig.getForeignUnfilteredModule()));
-			per = lpop.get((new Random()).nextInt(lpop.size()));
+			for(BaseRecord lrec : locs) {
+				logger.info("Loc: " + lrec.get(FieldNames.FIELD_NAME));
+				BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
+				BaseRecord cevt = octx.startOrContinueIncrement();
+				octx.evaluateIncrement();
+			}
+			/*
+			String[] fabs = ApparelUtil.getFabricTypes();
+			List<BaseRecord> wears = new ArrayList<>();
+			for(String s: fabs) {
+				BaseRecord wear = RecordFactory.newInstance(ModelNames.MODEL_WEARABLE);
+				List<BaseRecord> quals = wear.get("qualities");
+				quals.add(RecordFactory.newInstance(ModelNames.MODEL_QUALITY));
+				ApparelUtil.applyEmbeddedFabric(wear, s);
+				wears.add(wear);
+			}
+			FileUtil.emitFile("./wears.json", JSONUtil.exportObject(wears, RecordSerializerConfig.getForeignUnfilteredModule()));
+			*/
 		}
 		catch(Exception e) {
 			e.printStackTrace();
 		}
-		assertNotNull("Person is null", per);
-		PersonalityProfile prof = PersonalityUtil.analyzePersonality(octx, per);
-		logger.info(JSONUtil.exportObject(prof));
-		
-		for(BaseRecord e : prof.getEvents()) {
-			logger.info((String)e.get(FieldNames.FIELD_NAME));
-		}
-		
-		octx.clearCache();
-		
+
 	}
-	*/
+	
+	
 	/*
 	@Test
 	public void TestOlio2() {
@@ -294,42 +247,4 @@ public class TestOlio extends BaseTest {
 	}
 	*/
 	
-	/*
-	
-	assertNotNull("Event is null", event);
-
-	Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, subWorld.get("population.id"));
-	qp1.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-	BaseRecord person = OlioUtil.randomSelection(testUser1, qp1);
-	assertNotNull("Person is null", person);
-	logger.info(person.get(FieldNames.FIELD_NAME) + " is " + CharacterUtil.getCurrentAge(testUser1, subWorld, person) + " years old");
-	List<BaseRecord> apps = person.get("apparel");
-	if(apps.size() > 0) {
-		BaseRecord app = apps.get(0);
-		((List<BaseRecord>)app.get("wearables")).forEach(r -> {
-			logger.info(r.get("level") + " " + r.get("color") + " " + r.get("fabric") + " " + r.get("pattern.name") + " " + r.get("name"));
-		});
-	}
-	*/
-	/*
-	BaseRecord[] locs = GeoLocationUtil.getRegionLocations(testUser1, subWorld);
-	assertTrue("Expected one or more locations", locs.length > 0);
-	long start = System.currentTimeMillis();
-	List<BaseRecord> pop = WorldUtil.getPopulation(testUser1, subWorld, locs[0]);
-	long stop = System.currentTimeMillis();
-	
-	assertTrue("Expected a population", pop.size() > 0);
-	logger.info("Time to select population: " + (stop - start) + "ms");
-	Map<String,List<BaseRecord>> map = WorldUtil.getDemographicMap(testUser1, subWorld, locs[0]);
-	map.forEach((k, v) -> {
-		logger.info(k + " -- " + v.size());
-	});
-	map.get("Coupled").forEach(p -> {
-		long pid = p.get(FieldNames.FIELD_ID);
-		Optional<BaseRecord> popt = map.get("Coupled").stream().filter(f -> ((long)f.get(FieldNames.FIELD_ID) == pid)).findFirst();
-		if(popt.isEmpty()) {
-			logger.error("Uncoupled warning: " + p.get(FieldNames.FIELD_NAME));
-		}
-	});
-	*/
 }

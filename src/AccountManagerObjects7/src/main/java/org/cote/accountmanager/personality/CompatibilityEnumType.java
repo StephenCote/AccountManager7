@@ -1,4 +1,4 @@
-package org.cote.accountmanager.olio.personality;
+package org.cote.accountmanager.personality;
 
 import java.util.HashMap;
 import java.util.Map;

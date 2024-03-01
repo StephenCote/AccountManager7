@@ -1,5 +1,5 @@
 {
-	"name": "olio.behavior",
+	"name": "identity.behavior",
 	"likeInherits": ["data.directory"],
 	"inherits": [
 		"common.groupExt",
@@ -39,7 +39,7 @@
 			"name": "socialGroups",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "olio.socialGroup",
+			"baseModel": "identity.socialGroup",
 			"foreign": true
 		}
 	]

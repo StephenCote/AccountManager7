@@ -33,7 +33,7 @@
 			"baseModel": "olio.item",
 			"foreign": true
 		},
-				{
+		{
 			"name": "apparel",
 			"type": "model",
 			"baseModel": "olio.apparel",

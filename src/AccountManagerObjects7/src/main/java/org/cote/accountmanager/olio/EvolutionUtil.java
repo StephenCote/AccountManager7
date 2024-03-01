@@ -157,7 +157,7 @@ public class EvolutionUtil {
 					// queueAdd(queue, baby);
 					AddressUtil.randomAddressPerson(ctx.getUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get("location"));
 					List<BaseRecord> appl = baby.get("store.apparel");
-					appl.add(ApparelUtil.randomApparel(ctx.getUser(), ctx.getWorld(), baby));
+					appl.add(ApparelUtil.randomApparel(ctx, baby));
 					
 					IOSystem.getActiveContext().getRecordUtil().updateRecord(baby);
 					dep1.add(baby);

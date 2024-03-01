@@ -43,6 +43,107 @@ public class GroupDynamicUtil {
 	private static final int maxPartyAge = 40;
 	private static final int maxPartyCheck = 5;
 	
+	public static List<BaseRecord> randomParty(OlioContext ctx, BaseRecord locationEpoch){
+		return randomParty(ctx, locationEpoch, new HashSet<>());
+	}
+	public static List<BaseRecord> randomParty(OlioContext ctx, BaseRecord locationEpoch, List<BaseRecord> base){
+		return randomParty(ctx, locationEpoch, base.stream().map(r -> (long)r.get(FieldNames.FIELD_ID)).collect(Collectors.toSet()));
+	}
+
+	public static List<BaseRecord> randomParty(OlioContext ctx, BaseRecord locationEpoch, Set<Long> partSet){
+		List<BaseRecord> party = new ArrayList<>();
+		BaseRecord loc = locationEpoch.get("location");
+		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
+
+		List<BaseRecord> lpop = ctx.getPopulation(loc);
+		int len = random.nextInt(partyMin, partyMax);
+		for(int i = 0; i < len; i++) {
+			BaseRecord per = lpop.get(random.nextInt(lpop.size()));
+			long id = per.get(FieldNames.FIELD_ID);
+			int age = per.get("age");
+			int check = 0;
+			while(partSet.contains(id) || age < minPartyAge || age > maxPartyAge) {
+				per = lpop.get(random.nextInt(lpop.size()));
+				id = per.get(FieldNames.FIELD_ID);
+				age = per.get("age");
+				check++;
+				if(check > maxPartyCheck) {
+					break;
+				}
+			}
+			if(!partSet.contains(id)) {
+				partSet.add(id);
+				party.add(per);
+			}
+		}
+
+		return party;
+	}
+	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch){
+		BaseRecord loc = locationEpoch.get("location");
+		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
+		return getCreateParty(ctx, locationEpoch, loc.get(FieldNames.FIELD_NAME) + " Party", new HashSet<>());
+		/*
+		List<BaseRecord> party = new ArrayList<>();
+		BaseRecord loc = locationEpoch.get("location");
+		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
+		String partyName = loc.get(FieldNames.FIELD_NAME) + " Party";
+		BaseRecord grp = null;
+		try {
+			BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
+			grp = OlioUtil.getCreatePopulationGroup(ctx, partyName);
+			if(realm.get("principalGroup") == null) {
+				realm.set("principalGroup", grp);
+				IOSystem.getActiveContext().getRecordUtil().updateRecord(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "principalGroup", FieldNames.FIELD_ORGANIZATION_ID}));
+			}
+			party = OlioUtil.listGroupPopulation(ctx, grp);
+			if(party.size() == 0) {
+				List<BaseRecord> lpop = randomParty(ctx, locationEpoch);
+				for(BaseRecord per : lpop) {
+					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), grp, per, null, true)) {
+						logger.error("Failed to add member");
+					}
+				}
+				party = OlioUtil.listGroupPopulation(ctx, grp);
+			}
+		} catch (FieldException | ValueException | ModelNotFoundException | ReaderException e) {
+			logger.error(e);
+		}
+		return party;
+		*/
+	}
+	
+	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch, String partyName, List<BaseRecord> base){
+		return getCreateParty(ctx, locationEpoch, partyName, base.stream().map(r -> (long)r.get(FieldNames.FIELD_ID)).collect(Collectors.toSet()));
+	}
+	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch, String partyName, Set<Long> partySet){
+		List<BaseRecord> party = new ArrayList<>();
+
+		BaseRecord grp = null;
+		try {
+			BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
+			grp = OlioUtil.getCreatePopulationGroup(ctx, partyName);
+			if(realm.get("principalGroup") == null) {
+				realm.set("principalGroup", grp);
+				IOSystem.getActiveContext().getRecordUtil().updateRecord(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "principalGroup", FieldNames.FIELD_ORGANIZATION_ID}));
+			}
+			party = OlioUtil.listGroupPopulation(ctx, grp);
+			if(party.size() == 0) {
+				List<BaseRecord> lpop = randomParty(ctx, locationEpoch, partySet);
+				for(BaseRecord per : lpop) {
+					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), grp, per, null, true)) {
+						logger.error("Failed to add member");
+					}
+				}
+				party = OlioUtil.listGroupPopulation(ctx, grp);
+			}
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		return party;
+	}
+	
+	/*
 	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch){
 		List<BaseRecord> party = new ArrayList<>();
 		BaseRecord loc = locationEpoch.get("location");
@@ -92,7 +193,7 @@ public class GroupDynamicUtil {
 		}
 		return party;
 	}
-	
+	*/
 	public static void delegateActions(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, Map<BaseRecord, PersonalityProfile> map, List<BaseRecord> actions) {
 
 		PersonalityProfile leader = identifyLeader(ctx, locationEpoch, increment, map);

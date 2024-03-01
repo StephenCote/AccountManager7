@@ -243,14 +243,22 @@ public class OlioUtil {
 	}
 	*/
 	
-	public static BaseRecord getCreatePopulationGroup(OlioContext context, String name) throws FieldException, ValueException, ModelNotFoundException, ReaderException {
+	public static BaseRecord getCreatePopulationGroup(OlioContext context, String name)  {
 		BaseRecord popDir = context.getWorld().get("population");
-		BaseRecord[] grps = IOSystem.getActiveContext().getSearch().findByNameInParent(ModelNames.MODEL_GROUP, popDir.get(FieldNames.FIELD_ID), name);
-		if(grps.length > 0) {
-			return grps[0];
+		BaseRecord grp = null;
+		try{
+			BaseRecord[] grps = IOSystem.getActiveContext().getSearch().findByNameInParent(ModelNames.MODEL_GROUP, popDir.get(FieldNames.FIELD_ID), name);
+			if(grps.length > 0) {
+				return grps[0];
+			}
+
+			grp = newRegionGroup(context.getUser(), popDir, name);
+		
+			IOSystem.getActiveContext().getRecordUtil().createRecord(grp);
 		}
-		BaseRecord grp = newRegionGroup(context.getUser(), popDir, name);
-		IOSystem.getActiveContext().getRecordUtil().createRecord(grp);
+		catch(ReaderException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
 		return grp;
 	}
 	protected static BaseRecord newRegionGroup(BaseRecord user, BaseRecord parent, String groupName) throws FieldException, ValueException, ModelNotFoundException {
@@ -433,7 +441,7 @@ public class OlioUtil {
 		try {
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			if(fieldName != null) {
-				q.set(fieldName, val);
+				q.field(fieldName, val);
 			}
 			QueryResult qr = IOSystem.getActiveContext().getSearch().find(q);
 			if(qr.getResults().length > 0) {
@@ -481,6 +489,25 @@ public class OlioUtil {
 			logger.error(e);
 		}
 		return store;
+	}
+	
+	public static BaseRecord cloneIntoGroup(BaseRecord src, BaseRecord dir) {
+		IOSystem.getActiveContext().getReader().populate(src);
+		BaseRecord targ = src.copyDeidentifiedRecord();
+		try {
+			targ.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			targ.set(FieldNames.FIELD_GROUP_PATH, dir.get(FieldNames.FIELD_PATH));
+		}
+		catch(ValueException | FieldException | ModelNotFoundException e) {
+			logger.error(e);
+			targ = null;
+		}
+		return targ;
+	}
+	
+	public static boolean isTagged(BaseRecord rec, String tagName) {
+		List<BaseRecord> tags = rec.get("tags");
+		return tags.stream().filter(t -> tagName.equalsIgnoreCase(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
 	}
 	
 }

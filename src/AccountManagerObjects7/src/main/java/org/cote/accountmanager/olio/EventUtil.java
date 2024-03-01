@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.time.LocalTime;
 import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -202,4 +203,203 @@ public class EventUtil {
 		}
 		return epoch;
 	}
+	
+	public static void edgeHour(BaseRecord event) {
+		ZonedDateTime start = event.get("eventStart");
+		ZonedDateTime end = event.get("eventEnd");
+		ZonedDateTime prog = event.get("eventProgress");
+
+		try {
+			event.set("eventStart", prog.withMinute(0).withSecond(0));
+			event.set("eventProgress", event.get("eventStart"));
+			event.set("eventEnd", prog.withMinute(59).withSecond(59));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public static void edgeDay(BaseRecord event) {
+		ZonedDateTime start = event.get("eventStart");
+		ZonedDateTime end = event.get("eventEnd");
+		ZonedDateTime prog = event.get("eventProgress");
+
+		try {
+			event.set("eventStart", prog.with(LocalTime.of(0, 0, 0)));
+			event.set("eventProgress", event.get("eventStart"));
+			event.set("eventEnd", prog.with(LocalTime.of(23, 59, 59)));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public static void edgeMonth(BaseRecord event) {
+		ZonedDateTime start = event.get("eventStart");
+		ZonedDateTime end = event.get("eventEnd");
+
+		try {
+			event.set("eventStart", start.withDayOfMonth(1).with(LocalTime.of(0, 0, 0)));
+			event.set("eventProgress", event.get("eventStart"));
+			event.set("eventEnd", end.withDayOfMonth(end.getMonth().length(end.toLocalDate().isLeapYear())).with(LocalTime.of(23, 59, 59)));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	public static void edgeTimes(BaseRecord event) {
+		ZonedDateTime start = event.get("eventStart");
+		ZonedDateTime end = event.get("eventEnd");
+		try {
+			event.set("eventStart", start.with(LocalTime.of(0, 0, 0)));
+			event.set("eventProgress", event.get("eventStart"));
+			event.set("eventEnd", end.with(LocalTime.of(23, 59, 59)));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}
+	
+	public static void edgeEndOfYear(BaseRecord event) {
+		ZonedDateTime start = event.get("eventStart");
+		try {
+			event.set("eventEnd", start.withYear(start.getYear()).withMonth(12).withDayOfMonth(31).with(LocalTime.of(23, 59, 59)));
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
+	
+	/// Given the current progress from a parent event, return an event representing the next time increment
+	/// The 24HourRule is to move into the next TimeEnumType.HOUR, advancing as needed the DAY and MONTH
+	/// 
+	public static BaseRecord findNextIncrement(OlioContext context, BaseRecord parentEvent, TimeEnumType incrementType)  {
+		BaseRecord outRec = null;
+		try {
+			ZonedDateTime prog = parentEvent.get("eventProgress");
+			ZonedDateTime end = parentEvent.get("eventEnd");
+			int imonth = prog.getMonthValue();
+			if(incrementType == TimeEnumType.HOUR) {
+				prog = prog.plusHours(1);
+			}
+			else if(incrementType == TimeEnumType.DAY) {
+				prog = prog.plusDays(1);
+			}
+			else if(incrementType == TimeEnumType.MONTH) {
+				prog = prog.plusMonths(1);
+			}
+			
+			if(prog.toEpochSecond() >= end.toEpochSecond()) {
+				logger.warn("Reached the end of the epoch");
+				return null;
+			}
+			if(prog.getMonthValue() < imonth) {
+				logger.warn("Reached the end of the epoch (#2)");
+				return null;
+			}
+			
+			BaseRecord year = getCreateIncrement(context, parentEvent, prog, TimeEnumType.YEAR);
+			if(year == null) {
+				logger.error("Failed to find or create yearly increment");
+				return null;
+			}
+			BaseRecord month = getCreateIncrement(context, year, prog, TimeEnumType.MONTH);
+			if(month == null) {
+				logger.error("Failed to find or create monthly increment");
+				return null;
+			}
+			if(incrementType == TimeEnumType.MONTH) {
+				outRec = month;
+			}
+			else if(incrementType == TimeEnumType.DAY || incrementType == TimeEnumType.HOUR) {
+			
+				BaseRecord day = getCreateIncrement(context, month, prog, TimeEnumType.DAY);
+				if(day == null) {
+					logger.error("Failed to find or create daily increment");
+					return null;
+				}
+				if(incrementType == TimeEnumType.DAY) {
+					outRec = day;
+				}
+				else {
+					BaseRecord hour = getCreateIncrement(context, day, prog, TimeEnumType.HOUR);
+					if(hour == null) {
+						logger.error("Failed to find or create hourly increment");
+						return null;
+					}
+					outRec = hour;
+				}
+			}
+			else {
+				logger.error("Unhandled increment type: " + incrementType);
+				return null;
+			}
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		return outRec;
+	}
+	
+	public static BaseRecord getCreateIncrement(OlioContext context, BaseRecord parentEvent, ZonedDateTime time, TimeEnumType tet) throws FieldException, ValueException, ModelNotFoundException {
+		String name = getTimeName(time, tet);
+		BaseRecord[] cevts = EventUtil.getChildEvents(context.getWorld(), parentEvent, null, name, tet, EventEnumType.UNKNOWN);
+		if(cevts.length > 0) {
+			parentEvent.set("eventProgress", time);
+			context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+			return cevts[0];
+		}
+		BaseRecord evt = EventUtil.newEvent(context, parentEvent, EventEnumType.PERIOD, name, time);
+		evt.set("timeType", tet);
+		parentEvent.set("eventProgress", time);
+
+		if(tet == TimeEnumType.MONTH) {
+			EventUtil.edgeMonth(evt);
+		}
+		else if(tet == TimeEnumType.DAY) {
+			EventUtil.edgeDay(evt);
+		}
+		else if(tet == TimeEnumType.HOUR) {
+			EventUtil.edgeHour(evt);
+		}
+		IOSystem.getActiveContext().getRecordUtil().createRecord(evt);
+		context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+		return evt;
+	}
+	public static String getTimeName(ZonedDateTime prog, TimeEnumType tet) {
+		StringBuilder buff = new StringBuilder();
+		buff.append(prog.getYear() + "/" + String.format("%02d", prog.getMonthValue()));
+		if(tet == TimeEnumType.DAY || tet == TimeEnumType.HOUR) {
+			 buff.append("/" + String.format("%02d", prog.getDayOfMonth()));
+		}
+		if(tet == TimeEnumType.HOUR) {
+			 buff.append(" " + String.format("%02d", prog.getHour()) + ":00");
+		}
+
+		return buff.toString();
+	}
+	public static String getChildTimeName(BaseRecord parentEvent) {
+		TimeEnumType ptet = TimeEnumType.valueOf(parentEvent.get("timeType"));
+		TimeEnumType tet = getChildTime(ptet);
+		ZonedDateTime prog = parentEvent.get("eventProgress");
+		return EventUtil.getTimeName(prog, tet);
+	}
+	
+	public static TimeEnumType getChildTime(TimeEnumType time) {
+		TimeEnumType otime = TimeEnumType.UNKNOWN;
+		switch(time) {
+			case YEAR:
+				otime = TimeEnumType.MONTH;
+				break;
+			case MONTH:
+				otime = TimeEnumType.DAY;
+				break;
+			case DAY:
+				otime = TimeEnumType.HOUR;
+				break;
+			default:
+				logger.error("Unhandled time type: " + time.toString());
+				return otime;
+		}
+		return otime;
+	}
+	
+
 }

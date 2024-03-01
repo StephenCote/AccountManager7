@@ -135,17 +135,20 @@ public class ModelNames {
 	
 	
 	
+	
 	// olio
+	public static final String MODEL_PERSONALITY = "identity.personality";
+	public static final String MODEL_PERSONALITY_TRAIT = "identity.personalityTrait";
+	public static final String MODEL_SOCIAL_BEHAVIOR = "identity.socialBehavior";
+	public static final String MODEL_SOCIAL_GROUP = "identity.socialGroup";
+	public static final String MODEL_BEHAVIOR = "identity.behavior";
+	
 	public static final String MODEL_ANIMAL = "olio.animal";
 	public static final String MODEL_CHAR_PERSON = "olio.charPerson";
 	public static final String MODEL_CHAR_STATISTICS = "olio.statistics";
 	public static final String MODEL_CHAR_SKILL = "olio.charSkill";
 	public static final String MODEL_INSTINCT = "olio.instinct";
-	public static final String MODEL_PERSONALITY = "olio.personality";
-	public static final String MODEL_PERSONALITY_TRAIT = "olio.personalityTrait";
-	public static final String MODEL_SOCIAL_BEHAVIOR = "olio.socialBehavior";
-	public static final String MODEL_SOCIAL_GROUP = "olio.socialGroup";
-	public static final String MODEL_BEHAVIOR = "olio.behavior";
+
 	public static final String MODEL_QUALITY = "olio.quality";
 	public static final String MODEL_ITEM = "olio.item";
 	public static final String MODEL_ITEM_STATISTICS = "olio.itemStatistics";

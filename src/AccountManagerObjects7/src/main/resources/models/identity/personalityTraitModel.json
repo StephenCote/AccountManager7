@@ -1,5 +1,5 @@
 {
-	"name": "olio.personalityTrait",
+	"name": "identity.personalityTrait",
 	"inherits": [
 		"data.directory",
 		"common.description",

@@ -38,10 +38,11 @@ import org.cote.accountmanager.util.ResourceUtil;
 public class ApparelUtil {
 	public static final Logger logger = LogManager.getLogger(ApparelUtil.class);
 	
+	/*
 	private static Pattern randomCountPattern = Pattern.compile("[\"]*\\$count\\s*=\\s*\\[([\\d]+)\\-([\\d]+)\\][\"]*");
 	private static Pattern randomRangePattern = Pattern.compile("[\"]*\\$randomRange\\[([\\d\\.]+)\\-([\\d\\.]+)\\][\"]*");
 	private static Pattern parameterTokenPattern = Pattern.compile("\"\\$\\{([A-Za-z]+)\\.([A-Za-z]+)([A-Za-z\\[\\]=,\\s\\d\\.\\$\\-]*)\\}\"");
-	
+	*/
 	private static String[] clothingTypes = new String[0];
 	private static String[] jewelryTypes = new String[0];
 	private static String[] fabricTypes = new String[0];
@@ -65,6 +66,9 @@ public class ApparelUtil {
 	private static String[] colorDeck = new String[0];
 	private static Map<String, String> colorComplements = new HashMap<>();
 	
+	public static String[] getFabricTypes() {
+		return fabricTypes;
+	}
 	protected static BaseRecord getApparelTemplate(OlioContext ctx, String name) {
 		return getCreateApparel(ctx, name, "template", null);
 	}
@@ -102,7 +106,9 @@ public class ApparelUtil {
 		
 	}
 
-	
+	public static String randomWearable(WearLevelEnumType level, String location, String gender) {
+		return randomWearable(WearLevelEnumType.valueOf(level), location, gender);
+	}	
 	public static String randomWearable(int level, String location, String gender) {
 		return randomWearable(clothingTypes, level, location, gender);
 	}
@@ -196,7 +202,7 @@ public class ApparelUtil {
 		return rol.toArray(new String[0]);
 	}
 	
-	
+	/*
 	private static String replaceTokens(final String text) {
 		
 		Matcher mat = randomRangePattern.matcher(text);
@@ -258,7 +264,7 @@ public class ApparelUtil {
 
 		return ranType;
 	}
-	
+	*/
 	public static String findComplementaryColor(BaseRecord world, String colorName) {
 		if(colorComplements.containsKey(colorName)) {
 			return colorComplements.get(colorName);
@@ -342,7 +348,38 @@ public class ApparelUtil {
 			logger.error(e);
 		}
 	}
-	
+	public static void designWearable(OlioContext ctx, BaseRecord wear) {
+
+		String randomColor = null;
+		List<String> nfeats = new ArrayList<>();
+		BaseRecord pattern = null;
+		String cat = wear.get("category");
+		if(cat != null && cat.equals("jewelry")) {
+			randomColor = jewelryColors[rand.nextInt(jewelryColors.length)];
+			int randJ = rand.nextInt(100);
+			if(randJ > 65) {
+				nfeats.add(jewels[rand.nextInt(jewels.length)]);
+				if(randJ > 90) {
+					nfeats.add(jewels[rand.nextInt(jewels.length)]);	
+				}
+			}
+			List<String> mats = wear.get("materials");
+			mats.addAll(nfeats);
+		}
+		else {
+			randomColor = getRandomColor(ctx.getUser(), ctx.getUniverse());
+			pattern = getRandomPattern(ctx.getUser(), ctx.getUniverse());
+		}
+		String compColor = findComplementaryColor(ctx.getUniverse(), randomColor);
+		try {
+			wear.set("color", randomColor);
+			wear.set("complementColor", compColor);
+			wear.set("pattern", pattern);
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}
 	public static void designApparel(BaseRecord apparel) {
 		List<BaseRecord> wears = apparel.get("wearables");
 		List<BaseRecord> base = wears.stream().filter(w -> "clothing".equals(w.get("category")) && WearLevelEnumType.BASE.toString().equals((String)w.get("level"))).collect(Collectors.toList());
@@ -351,15 +388,12 @@ public class ApparelUtil {
 		alignPatternAndColors(suit, 0.6, 0.7);
 	}
 	
-	public static BaseRecord randomApparel(BaseRecord user, BaseRecord world, BaseRecord person) {
-		return randomApparel(user, world, (String)person.get("gender"));
+	public static BaseRecord randomApparel(OlioContext ctx, BaseRecord person) {
+		return randomApparel(ctx, (String)person.get("gender"));
 	}
 	
-	public static BaseRecord randomApparel(BaseRecord user, BaseRecord world, String gender) {
-		IOSystem.getActiveContext().getReader().populate(world, 2);
-		BaseRecord parWorld = world.get("basis");
-		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
-		BaseRecord app = OlioUtil.newGroupRecord(user, ModelNames.MODEL_APPAREL, world.get("apparel.path"), null);
+	public static BaseRecord randomApparel(OlioContext ctx, String gender) {
+		BaseRecord app = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
 		try {
 			app.set("gender", gender);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -369,11 +403,11 @@ public class ApparelUtil {
 		List<BaseRecord> wearList = app.get("wearables");
 		
 		for(String emb : wears) {
-			BaseRecord wearRec = OlioUtil.newGroupRecord(user, ModelNames.MODEL_WEARABLE, world.get("wearables.path"), null);
+			BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
 			List<BaseRecord> quals = wearRec.get("qualities");
-			quals.add(OlioUtil.newGroupRecord(user, ModelNames.MODEL_QUALITY, world.get("qualities.path"), null));
+			quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
 			wearList.add(wearRec);
-			applyEmbeddedWearable(user, world, wearRec, emb);
+			applyEmbeddedWearable(ctx, wearRec, emb);
 		}
 		designApparel(app);
 		return app;
@@ -404,18 +438,19 @@ public class ApparelUtil {
 	
 	
 	
-	protected static void applyRandomWearable(BaseRecord user, BaseRecord world, BaseRecord rec) {
+	protected static void applyRandomWearable(OlioContext ctx, BaseRecord rec) {
 		String type = rec.get(FieldNames.FIELD_TYPE);
 		String gender = rec.get("gender");
-		BaseRecord parWorld = world.get("basis");
-		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";
 		String randType = randomClothingType(gender, type);
-		applyEmbeddedWearable(user, world, rec, randType);
+		applyEmbeddedWearable(ctx, rec, randType);
 	}
 	
 	/// name - level - gender - opacity - elastic - glossy - smooth - def - water - heat - insul
+	public static String randomFabric(WearLevelEnumType level, String gender) {
+		return randomFabric(WearLevelEnumType.valueOf(level), gender);
+	}
 	protected static String randomFabric(int level, String gender) {
 		final String gcode;
 		if(gender != null) gcode = gender.substring(0, 1);
@@ -475,43 +510,22 @@ public class ApparelUtil {
 		}
 		return color;
 	}
-	
-	protected static void applyEmbeddedWearable(BaseRecord user, BaseRecord world, BaseRecord rec, String embType) {
-		BaseRecord parWorld = world.get("basis");
-		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
-		long patternDir = parWorld.get("patterns.id");
+
+	public static void embedWearable(OlioContext ctx, BaseRecord rec, String embType) {
+		applyEmbeddedWearable(ctx, rec, cpref + embType);
+	}
+	private static void applyEmbeddedWearable(OlioContext ctx, BaseRecord rec, String embType) {
+		long patternDir = ctx.getUniverse().get("patterns.id");
 		String gender = rec.get("gender");
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";
-
 		String[] tmeta = embType.split(":");
 		try {
 			String ttype = tmeta[0];
 			
 			rec.set("category", ttype);
-			String randomColor = null;
-			List<String> nfeats = new ArrayList<>();
-			BaseRecord pattern = null;
-			if(ttype.equals("jewelry")) {
-				randomColor = jewelryColors[rand.nextInt(jewelryColors.length)];
-				int randJ = rand.nextInt(100);
-				if(randJ > 65) {
-					nfeats.add(jewels[rand.nextInt(jewels.length)]);
-					if(randJ > 90) {
-						nfeats.add(jewels[rand.nextInt(jewels.length)]);	
-					}
-				}
-				List<String> mats = rec.get("materials");
-				mats.addAll(nfeats);
-			}
-			else {
-				randomColor = getRandomColor(user, parWorld);
-				pattern = getRandomPattern(user, parWorld);
-			}
-			String compColor = findComplementaryColor(parWorld, randomColor);
-			rec.set("color", randomColor);
-			rec.set("complementColor", compColor);
-			rec.set("pattern", pattern);
+			designWearable(ctx, rec);
+
 			rec.set(FieldNames.FIELD_TYPE, tmeta[1]);
 			rec.set(FieldNames.FIELD_NAME, tmeta[1]);
 			int lvl = Integer.parseInt(tmeta[2]);
@@ -542,32 +556,53 @@ public class ApparelUtil {
 	}
 	
 	// name - level - gender - opacity - elastic - glossy - smooth - def - water - heat - insul
-	private static void applyEmbeddedFabric(BaseRecord wearable, String emb) {
+	public static void applyFabric(BaseRecord rec, String fabricName) {
+		List<String> fabs = Arrays.asList(fabricTypes).stream().filter(f -> {
+			String[] tmat = f.split(":");
+			if(tmat.length > 3) {
+				String name = tmat[0];
+				return name.toLowerCase().equals(fabricName.toLowerCase());
+			}
+			return false;
+		}
+		).collect(Collectors.toList());
+		if(fabs.size() > 0) {
+			applyEmbeddedFabric(rec, fabs.get(0));
+		}
+
+	}
+	public static void applyEmbeddedFabric(BaseRecord rec, String emb) {
 		if(emb == null) {
 			return;
 		}
-		List<BaseRecord> quals = wearable.get("qualities");
+		List<BaseRecord> quals = rec.get("qualities");
 		if(quals.size() == 0) {
 			return;
 		}
 		BaseRecord qual = quals.get(0);
 		String[] tmat = emb.split(":");
 		try {
-			wearable.set("fabric", tmat[0]);
-			qual.set("opacity", Double.parseDouble(tmat[3]));
-			qual.set("elasticity", Double.parseDouble(tmat[4]));
-			qual.set("glossiness", Double.parseDouble(tmat[5]));
-			qual.set("smoothness", Double.parseDouble(tmat[6]));
-			qual.set("defensive", Double.parseDouble(tmat[7]));
-			qual.set("waterresistance", Double.parseDouble(tmat[8]));
-			qual.set("heatresistance", Double.parseDouble(tmat[9]));
-			qual.set("insulation", Double.parseDouble(tmat[10]));
+			if(rec.getModel().equals(ModelNames.MODEL_WEARABLE)) {
+				rec.set("fabric", tmat[0]);
+			}
+			else if(rec.getModel().equals(ModelNames.MODEL_ITEM)) {
+				List<String> mats = rec.get("materials");
+				mats.add(tmat[0]);
+			}
+			StatisticsUtil.addDouble(qual, "opacity", Double.parseDouble(tmat[3]));
+			StatisticsUtil.addDouble(qual, "elasticity", Double.parseDouble(tmat[4]));
+			StatisticsUtil.addDouble(qual, "glossiness", Double.parseDouble(tmat[5]));
+			StatisticsUtil.addDouble(qual, "smoothness", Double.parseDouble(tmat[6]));
+			StatisticsUtil.addDouble(qual, "defensive", Double.parseDouble(tmat[7]));
+			StatisticsUtil.addDouble(qual, "waterresistance", Double.parseDouble(tmat[8]));
+			StatisticsUtil.addDouble(qual, "heatresistance", Double.parseDouble(tmat[9]));
+			StatisticsUtil.addDouble(qual, "insulation", Double.parseDouble(tmat[10]));
 		} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			logger.error(emb);
 		}
 	}
-	
+	/*
 	private static void applyParameters(BaseRecord user, BaseRecord world, BaseRecord rec, String parms) {
 		if(parms != null) {
 			String[] pairs = parms.substring(1, parms.length() - 1).split(",");
@@ -624,7 +659,8 @@ public class ApparelUtil {
 			}
 		}
 	}
-	
+	*/
+	/*
 	public static String getOlioResource(BaseRecord user, BaseRecord world, String apparelBase, String gender) {
 
 		String appStr = replaceTokens(ResourceUtil.getResource(apparelBase));
@@ -664,7 +700,7 @@ public class ApparelUtil {
 
 		return rep.toString();
 	}
-
+	*/
 	public BaseRecord newApparel(BaseRecord user, BaseRecord world, String name, BaseRecord[] wearables) {
 		String wpath = world.get("apparel.path");
 		BaseRecord temp1 = IOSystem.getActiveContext().getFactory().template(ModelNames.MODEL_APPAREL, "{\"name\": \"" + name + "\"}");
