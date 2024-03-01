@@ -17,6 +17,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 
@@ -144,8 +145,14 @@ public class StatisticsUtil {
 	
 	public static void addDouble(BaseRecord model, String fieldName, double val) {
 		double cval = model.get(fieldName);
+		double mval = val + cval;
+		FieldSchema fs = RecordFactory.getSchema(model.getModel()).getFieldSchema(fieldName);
+		if(fs.isValidateRange()) {
+			if(mval > fs.getMaxValue()) mval = fs.getMaxValue();
+			if(mval < fs.getMinValue()) mval = fs.getMinValue();
+		}
 		try {
-			model.set(fieldName, cval + val);
+			model.set(fieldName, mval);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}

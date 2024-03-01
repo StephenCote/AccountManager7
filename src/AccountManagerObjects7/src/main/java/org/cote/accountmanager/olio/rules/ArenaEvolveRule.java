@@ -171,7 +171,7 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 			List<BaseRecord> armorL = getItemTemplates(ctx).stream().filter(r -> "armor".equals(r.get("category"))).collect(Collectors.toList());
 			BaseRecord armorT = armorL.get(random.nextInt(armorL.size()));
 			BaseRecord armor = ItemUtil.buildItem(ctx, armorT);
-			ApparelUtil.applyFabric(weap, weaponFab[random.nextInt(weaponFab.length)]);	
+			ApparelUtil.applyFabric(armor, weaponFab[random.nextInt(weaponFab.length)]);	
 			aweaps.add(armor);
 			// logger.info(weap.toFullString());
 		}
@@ -202,6 +202,7 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 				}
 				ctx.queueUpdate(sto, new String[] {FieldNames.FIELD_ID, "items"});
 			}
+
 			BaseRecord sta = p.get("state");
 			if(sta.get("currentLocation") == null) {
 				sta.setValue("currentLocation", cell);
