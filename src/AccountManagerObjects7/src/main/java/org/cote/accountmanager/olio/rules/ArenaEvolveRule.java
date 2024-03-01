@@ -15,6 +15,7 @@ import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.ItemUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.StateUtil;
@@ -141,6 +142,8 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 		
 			if(random.nextDouble() <= protectOdds[i]) {
 				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
+				List<BaseRecord> quals = wearRec.get("qualities");
+				quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
 				ApparelUtil.embedWearable(ctx, wearRec, ApparelUtil.randomWearable(WearLevelEnumType.OUTER, p, null));
 				ApparelUtil.applyEmbeddedFabric(wearRec, ApparelUtil.randomFabric(WearLevelEnumType.OUTER, null));
 				ApparelUtil.designWearable(ctx, wearRec);
@@ -200,6 +203,7 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 				for(BaseRecord a: arms) {
 					IOSystem.getActiveContext().getRecordUtil().createRecord(a);
 				}
+				iteml.addAll(arms);
 				ctx.queueUpdate(sto, new String[] {FieldNames.FIELD_ID, "items"});
 			}
 
@@ -209,6 +213,7 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 				StateUtil.agitateLocation(ctx, sta);
 				ctx.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth"});
 			}
+			logger.info(NarrativeUtil.describe(ctx, p));
 			// logger.info(p.toFullString());
 		}
 	}

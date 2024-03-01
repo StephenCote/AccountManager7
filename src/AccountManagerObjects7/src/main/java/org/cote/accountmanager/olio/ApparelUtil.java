@@ -573,10 +573,13 @@ public class ApparelUtil {
 	}
 	public static void applyEmbeddedFabric(BaseRecord rec, String emb) {
 		if(emb == null) {
+			logger.error("Fabric embed was null");
 			return;
 		}
 		List<BaseRecord> quals = rec.get("qualities");
 		if(quals.size() == 0) {
+			logger.error("Qualities not defined");
+
 			return;
 		}
 		BaseRecord qual = quals.get(0);
@@ -588,6 +591,9 @@ public class ApparelUtil {
 			else if(rec.getModel().equals(ModelNames.MODEL_ITEM)) {
 				List<String> mats = rec.get("materials");
 				mats.add(tmat[0]);
+			}
+			else {
+				logger.warn("Unhandled model for fab type: " + rec.getModel());
 			}
 			StatisticsUtil.addDouble(qual, "opacity", Double.parseDouble(tmat[3]));
 			StatisticsUtil.addDouble(qual, "elasticity", Double.parseDouble(tmat[4]));

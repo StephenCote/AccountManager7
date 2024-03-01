@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -57,6 +58,84 @@ public class NarrativeUtil {
 		}
 		return desc.toString();
 	}
+	public static String describeArmament(OlioContext ctx, BaseRecord person) {
+		StringBuilder buff = new StringBuilder();
+		List<BaseRecord> items = ((List<BaseRecord>)person.get("store.items")).stream().filter(w -> ("weapon".equals(w.get("category")) || "armor".equals(w.get("category")))).collect(Collectors.toList());
+		if(items.size() == 0) {
+			buff.append("is unarmed");
+		}
+		else {
+			buff.append("is armed with");
+			String andl = "";
+			for(BaseRecord w: items) {
+				String mat = "plastic";
+				List<String> mats = w.get("materials");
+				if(mats.size() > 0) mat = mats.get(0);
+				buff.append(andl + " " + mat + " " + w.get("name"));
+				andl = ", and";
+			}
+		}
+
+		return buff.toString();
+	}
+
+	public static String describeOutfit(OlioContext ctx, BaseRecord person) {
+		StringBuilder buff = new StringBuilder();
+		List<BaseRecord> appl = person.get("store.apparel");
+		if(appl.size() == 0) {
+			buff.append("is naked");
+		}
+		else {
+			BaseRecord app = null;
+			Optional<BaseRecord> oapp = appl.stream().filter(a -> ((boolean)a.get("inuse"))).findFirst();
+			if(oapp.isPresent()) {
+				app = oapp.get();
+			}
+			else {
+				app = appl.get(0);
+			}
+			List<BaseRecord> wearl = app.get("wearables");
+			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
+			buff.append("is wearing");
+			String andl = "";
+			for(BaseRecord w: wearl) {
+				buff.append(andl + " " + w.get("color") + " " + w.get("fabric") + " " + w.get("name"));
+				andl = ", and";
+			}
+		}
+		return buff.toString();
+		
+	}
+	public static String describe(OlioContext ctx, BaseRecord person) {
+		StringBuilder buff = new StringBuilder();
+		PersonalityProfile pp = ProfileUtil.analyzePersonality(ctx, person);
+
+		String name = person.get(FieldNames.FIELD_NAME);
+		String fname = person.get("firstName");
+		int age = person.get("age");
+
+		String hairColor = person.get("hairColor");
+		String hairStyle = person.get("hairStyle");
+		String eyeColor = person.get("eyeColor");
+		
+		String gender = person.get("gender");
+		String pro = ("male".equals(gender) ? "he" : "she");
+		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
+		String pos = ("male".equals(gender) ? "his" : "her");
+		
+		
+		boolean uarm = NeedsUtil.isUnarmed(person);
+		
+		String raceDesc = getRaceDescription(person.get("race"));
+		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
+		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
+		// buff.append(" " + getDarkTriadDescription(pp));
+		buff.append(" " + cpro + " " + describeOutfit(ctx, person) + ".");
+		buff.append(" " + cpro + " " + describeArmament(ctx, person) + ".");
+		return buff.toString();
+	}
+
 	public static String lookaround(OlioContext ctx, BaseRecord realm, BaseRecord event, BaseRecord increment, List<BaseRecord> group, BaseRecord pov, Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> threatMap) {
 		StringBuilder buff = new StringBuilder();
 		PersonalityProfile pp = ProfileUtil.analyzePersonality(ctx, pov);

@@ -352,6 +352,11 @@ public class NeedsUtil {
 		/// TODO: Need to filter for inuse
 		return items.size() == 0;
 	}	
+	public static boolean isUnarmed(BaseRecord record) {
+		List<BaseRecord> items = record.get("store.items");
+		List<BaseRecord> weaps = items.stream().filter(i -> "weapon".equals(i.get("category"))).collect(Collectors.toList());
+		return weaps.size() == 0;
+	}
 	
 	public static boolean needsFood(BaseRecord record) {
 		List<BaseRecord> items = record.get("store.items");

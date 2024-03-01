@@ -59,4 +59,9 @@ public enum WearLevelEnumType {
     	return lvl.val;
     	/// return levelMap.entrySet().stream().filter(entry -> lvl == entry.getValue()).map(Map.Entry::getKey).findFirst().get();
     }
+    public static int compareTo(WearLevelEnumType lvl1, WearLevelEnumType lvl2) {
+    	if(lvl1.val < lvl2.val) return -1;
+    	else if(lvl1.val == lvl2.val) return 0;
+    	else return 1;
+   }
 }
