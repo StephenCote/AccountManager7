@@ -98,8 +98,11 @@ public class NarrativeUtil {
 			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
 			buff.append("is wearing");
 			String andl = "";
+			
 			for(BaseRecord w: wearl) {
-				buff.append(andl + " " + w.get("color") + " " + w.get("fabric") + " " + w.get("name"));
+				String fab = w.get("fabric");
+				String col = w.get("color");
+				buff.append(andl + " " + (col != null ? col + " " : "") + (fab != null ? fab + " " : "") + w.get("name"));
 				andl = ", and";
 			}
 		}

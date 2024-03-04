@@ -10,6 +10,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.EventUtil;
@@ -178,9 +179,6 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 			aweaps.add(armor);
 			// logger.info(weap.toFullString());
 		}
-		// ItemUtil.addItemToInventory(ctx, weapT, weap);
-		// ctx.queueUpdate(weap, weaponFab);
-		/// ItemUtil.getCreateItemTemplate(ctx, animalParty1Name);
 		return aweaps;
 	}
 
@@ -189,22 +187,22 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 			BaseRecord sto = p.get("store");
 			List<BaseRecord> appl = sto.get("apparel");
 			List<BaseRecord> iteml = sto.get("items");
+			List<String> upf = new ArrayList<>();
 			if(appl.size() == 0) {
 				BaseRecord app = ApparelUtil.randomApparel(ctx, p);
 				List<BaseRecord> wears = app.get("wearables");
 				wears.addAll(randomArmor(ctx));
-				// ctx.queue(app);
 				IOSystem.getActiveContext().getRecordUtil().createRecord(app);
 				appl.add(app);
-				ctx.queueUpdate(sto, new String[] {FieldNames.FIELD_ID, "apparel"});
+				ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), sto, "apparel", app));
 			}
 			if(iteml.size() == 0) {
 				List<BaseRecord> arms = randomArms(ctx);
 				for(BaseRecord a: arms) {
 					IOSystem.getActiveContext().getRecordUtil().createRecord(a);
+					ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), sto, "items", a));
 				}
 				iteml.addAll(arms);
-				ctx.queueUpdate(sto, new String[] {FieldNames.FIELD_ID, "items"});
 			}
 
 			BaseRecord sta = p.get("state");
