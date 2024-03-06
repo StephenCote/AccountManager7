@@ -175,10 +175,15 @@ public class ApparelUtil {
 				}
 			}
 			else {
+				boolean topAndBottom = false;
 				if(req || probableMid >= rand.nextDouble()) {
 					String wear = randomWearable(i, "torso|breast|chest|shoulder|hand|head|neck", gender);
 					if(wear != null && !rol.contains(cpref + wear)) {
 						rol.add(cpref + wear);
+						if(filterWearables(new String[] {wear}, i, "waist|hip|leg|thigh|groin", gender).size() == 1) {
+							logger.warn("Wearable covers both top and bottom, so skip choosing bottom at this level: " + wear);
+							topAndBottom = true;
+						}
 					}
 					if(!req) {
 						wear = randomWearable(i, "shoulder|hand|head|neck", gender);
@@ -187,8 +192,8 @@ public class ApparelUtil {
 						}
 					}
 				}
-				if(req || probableMid >= rand.nextDouble()) {
-					String wear = randomWearable(i, "belly|waist|hip|leg|waist|groin", gender);
+				if(!topAndBottom && (req || probableMid >= rand.nextDouble())) {
+					String wear = randomWearable(i, "belly|waist|hip|leg|thigh|groin", gender);
 					if(wear != null && !rol.contains(cpref + wear)) {
 						rol.add(cpref + wear);
 					}
