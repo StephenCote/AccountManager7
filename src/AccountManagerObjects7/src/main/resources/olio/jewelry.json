@@ -1,7 +1,7 @@
 [
 	"armlet:7:u:tricep",
 	"bangle:7:u:wrist",
-	"bangle:7:f:clip",
+	"bangle:7:f:wrist,ankle",
 	"bracelet:7:u:wrist",
 	"cuff links:7:m:wrist,chest",
 	"ring:7:u:finger,toe",
