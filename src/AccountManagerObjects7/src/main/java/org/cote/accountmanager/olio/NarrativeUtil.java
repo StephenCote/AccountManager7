@@ -15,6 +15,7 @@ import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class NarrativeUtil {
@@ -38,7 +39,8 @@ public class NarrativeUtil {
 			desc.append("is a psychopath and may show low levels of empathy and high levels of impulsivity and thrill-seeking");
 		}
 		*/
-		desc2.append("Personality-wise, " + prof.getRecord().get("firstName") + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()) + " (" + prof.getDarkTriadKey() + ").");
+		desc2.append("Personality-wise, " + prof.getRecord().get("firstName") + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()));
+		// desc2.append(" (" + prof.getDarkTriadKey() + ").");
 		/*
 		if(desc.length() > 0) {
 			desc2.append(desc.toString() + ".");
@@ -67,12 +69,14 @@ public class NarrativeUtil {
 		else {
 			buff.append("is armed with");
 			String andl = "";
-			for(BaseRecord w: items) {
+			//for(BaseRecord w: items) {
+			for(int i = 0; i < items.size(); i++) {
+				BaseRecord w = items.get(i);
 				String mat = "plastic";
 				List<String> mats = w.get("materials");
 				if(mats.size() > 0) mat = mats.get(0);
 				buff.append(andl + " " + mat + " " + w.get("name"));
-				andl = ", and";
+				andl = ", " + (i == items.size() - 2 ? "and" : "");
 			}
 		}
 
@@ -98,12 +102,23 @@ public class NarrativeUtil {
 			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
 			buff.append("is wearing");
 			String andl = "";
-			
-			for(BaseRecord w: wearl) {
-				String fab = w.get("fabric");
-				String col = w.get("color");
-				buff.append(andl + " " + (col != null ? col + " " : "") + (fab != null ? fab + " " : "") + w.get("name"));
-				andl = ", and";
+			// for(BaseRecord w: wearl) {
+			for(int i = 0; i < wearl.size(); i++) {
+				BaseRecord w = wearl.get(i);
+				String col = (w.get("color") != null ? " " + ((String)w.get("color")).toLowerCase() : "");
+				if(col != null) {
+					col = col.replaceAll("\\([^()]*\\)", "");
+				}
+				String fab = (w.get("fabric") != null ? " " + ((String)w.get("fabric")).toLowerCase() : "");
+				List<String> locs = w.get("location");
+				String loc = (locs.size() > 0 ? " " + locs.get(0) : "");
+				String name = w.get("name");
+				if(name.contains("pierc")) {
+					name = "pierced" + loc + " ring";
+				}
+				buff.append(andl + col + fab + " " + name);
+				//andl = ", and";
+				andl = "," + (i == wearl.size() - 2 ? " and" : "");
 			}
 		}
 		return buff.toString();
@@ -130,12 +145,51 @@ public class NarrativeUtil {
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get("race"));
-		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(fname + " is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
-		// buff.append(" " + getDarkTriadDescription(pp));
+		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
+		buff.append(" " + getDarkTriadDescription(pp));
 		buff.append(" " + cpro + " " + describeOutfit(ctx, person) + ".");
 		buff.append(" " + cpro + " " + describeArmament(ctx, person) + ".");
+		return buff.toString();
+	}
+	
+	public static String getLooksPrettyUgly(PersonalityProfile prof) {
+		/// TODO: Aesthetic/Appearance determination is currently simplified to the charisma statistic
+		/// However, it could be better described as: charisma + symmetry + physical genetics + personality + fitness/health
+		/// personality, and fitness and health can be pulled from the other stats; at the moment there isn't a way to capture symmetry.
+		/// physical genetics could be determined given a suitable ancestry (eg: (charisma + symmetric + personality + fitness/health) / 4 -> physical genetics)
+		
+		String desc = "indescribable";
+		HighEnumType charm = prof.getCharisma();
+		if(HighEnumType.compare(charm, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "hideous";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "homely";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "bland";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "comely";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "pretty";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "beautiful";
+		}
+		else {
+			// desc = "pulchritudinous"
+			desc = "gorgeous";
+		}
+		return desc;
+	}
+	public static String describeAsthetics(PersonalityProfile prof) {
+		StringBuilder buff = new StringBuilder();
+		
 		return buff.toString();
 	}
 
