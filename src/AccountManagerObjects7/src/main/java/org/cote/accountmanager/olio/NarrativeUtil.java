@@ -39,7 +39,11 @@ public class NarrativeUtil {
 			desc.append("is a psychopath and may show low levels of empathy and high levels of impulsivity and thrill-seeking");
 		}
 		*/
-		desc2.append("Personality-wise, " + prof.getRecord().get("firstName") + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()));
+		String gender = prof.getGender();
+		String pro = ("male".equals(gender) ? "he" : "she");
+		/// prof.getRecord().get("firstName")
+		desc2.append("Personality-wise, " + pro + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()));
+		desc2.append(".");
 		// desc2.append(" (" + prof.getDarkTriadKey() + ").");
 		/*
 		if(desc.length() > 0) {
