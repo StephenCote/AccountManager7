@@ -30,6 +30,7 @@ import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.InteractionEnumType;
 
 public class NeedsUtil {
 
@@ -118,7 +119,7 @@ public class NeedsUtil {
 			tmap.forEach((pp, threats) -> {
 				threats.forEach((tet, al) -> {
 					al.forEach(a -> {
-						BaseRecord inter = InteractionUtil.newInteraction(ctx, increment, a, tet, pp.getRecord());
+						BaseRecord inter = InteractionUtil.newInteraction(ctx, InteractionEnumType.THREATEN, increment, a, tet, pp.getRecord());
 						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get("firstName"));
 						inters.add(inter);
 						ctx.queue(inter);

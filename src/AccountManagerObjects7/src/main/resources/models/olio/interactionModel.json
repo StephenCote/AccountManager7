@@ -22,6 +22,14 @@
 			"shortName": "dsc"
 		},
 		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.InteractionEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "unknown",
+			"shortName": "intt"
+		},
+		{
 			"name": "state",
 			"baseClass": "org.cote.accountmanager.schema.type.ActionResultEnumType",
 			"type": "enum",

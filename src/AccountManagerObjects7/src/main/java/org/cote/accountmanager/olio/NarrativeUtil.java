@@ -10,12 +10,14 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.InteractionEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class NarrativeUtil {
@@ -88,6 +90,11 @@ public class NarrativeUtil {
 	}
 
 	public static String describeOutfit(OlioContext ctx, BaseRecord person) {
+		return describeOutfit(ctx, person, false);
+	}
+	public static String describeOutfit(OlioContext ctx, BaseRecord person, boolean includeOuterArms) {
+			
+	
 		StringBuilder buff = new StringBuilder();
 		List<BaseRecord> appl = person.get("store.apparel");
 		if(appl.size() == 0) {
@@ -109,6 +116,12 @@ public class NarrativeUtil {
 			// for(BaseRecord w: wearl) {
 			for(int i = 0; i < wearl.size(); i++) {
 				BaseRecord w = wearl.get(i);
+				WearLevelEnumType lvle = w.getEnum("level");
+				int lvl = WearLevelEnumType.valueOf(lvle);
+				if(!includeOuterArms && lvl >= WearLevelEnumType.valueOf(WearLevelEnumType.OUTER)) {
+					continue;
+				}
+
 				String col = (w.get("color") != null ? " " + ((String)w.get("color")).toLowerCase() : "");
 				if(col != null) {
 					col = col.replaceAll("\\([^()]*\\)", "");
@@ -128,7 +141,31 @@ public class NarrativeUtil {
 		return buff.toString();
 		
 	}
+	
+	public static String describeInteraction(BaseRecord inter) {
+		String aname = inter.get("actor.firstName");
+		InteractionEnumType type = inter.getEnum("type");
+		AlignmentEnumType aalign = inter.getEnum("actorAlignment");
+		ThreatEnumType athr = inter.getEnum("actorThreat");
+		CharacterRoleEnumType arol = inter.getEnum("actorRole");
+		ReasonEnumType area = inter.getEnum("actorReason");
+		OutcomeEnumType aout = inter.getEnum("actorOutcome");
+		String iname = inter.get("interactor.firstName");
+		AlignmentEnumType ialign = inter.getEnum("interactorAlignment");
+		ThreatEnumType ithr = inter.getEnum("interactorThreat");
+		CharacterRoleEnumType irol = inter.getEnum("interactorRole");
+		ReasonEnumType irea = inter.getEnum("interactorReason");
+		OutcomeEnumType iout = inter.getEnum("interactorOutcome");
+		StringBuilder  buff = new StringBuilder();
+		buff.append(aname + " acts like a " + arol.toString().replace("_", " ").toLowerCase() + " and is a " + athr.toString().replace("_", " ").toLowerCase() + " to " +  iname + " due to " + area.toString().replace("_", " ").toLowerCase() + ".");
+		buff.append(" " + iname + " reacts like a " + irol.toString().replace("_", " ").toLowerCase() + " being a " + ithr.toString().replace("_", " ").toLowerCase() + " to " +  aname + " due to " + irea.toString().replace("_", " ").toLowerCase() + ".");
+		buff.append(" This " + type.toString().replace("_", " ").toLowerCase() + " interaction has a " + aout.toString().replace("_", " ").toLowerCase() + " outcome for " + aname + ", and a " + iout.toString().replace("_", " ").toLowerCase() + " outcome for " + iname + ".");
+		return buff.toString();
+	}
 	public static String describe(OlioContext ctx, BaseRecord person) {
+		return describe(ctx, person, false);
+	}
+	public static String describe(OlioContext ctx, BaseRecord person, boolean includeOuterArms) {
 		StringBuilder buff = new StringBuilder();
 		PersonalityProfile pp = ProfileUtil.analyzePersonality(ctx, person);
 
@@ -145,7 +182,6 @@ public class NarrativeUtil {
 		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
 		String pos = ("male".equals(gender) ? "his" : "her");
 		
-		
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get("race"));
@@ -154,8 +190,10 @@ public class NarrativeUtil {
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + getDarkTriadDescription(pp));
-		buff.append(" " + cpro + " " + describeOutfit(ctx, person) + ".");
-		buff.append(" " + cpro + " " + describeArmament(ctx, person) + ".");
+		buff.append(" " + cpro + " " + describeOutfit(ctx, person, includeOuterArms) + ".");
+		if(includeOuterArms) {
+			buff.append(" " + cpro + " " + describeArmament(ctx, person) + ".");
+		}
 		return buff.toString();
 	}
 	

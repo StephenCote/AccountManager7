@@ -3,6 +3,7 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.StringReader;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -10,6 +11,9 @@ import java.util.Date;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -19,6 +23,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
+
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -26,16 +31,29 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.olio.ActionUtil;
+import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.BuilderUtil;
+import org.cote.accountmanager.olio.CharacterRoleEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
+import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.MapUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.ReasonEnumType;
+import org.cote.accountmanager.olio.ThreatEnumType;
+import org.cote.accountmanager.olio.llm.OllamaExchange;
+import org.cote.accountmanager.olio.llm.OllamaMessage;
+import org.cote.accountmanager.olio.llm.OllamaRequest;
+import org.cote.accountmanager.olio.llm.OllamaResponse;
+import org.cote.accountmanager.olio.llm.OllamaUtil;
+import org.cote.accountmanager.personality.CompatibilityEnumType;
+import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.SloanUtil;
 import org.cote.accountmanager.olio.rules.ArenaEvolveRule;
 import org.cote.accountmanager.olio.rules.ArenaInitializationRule;
@@ -56,9 +74,11 @@ import org.cote.accountmanager.schema.type.EffectEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.json.JSONObject;
 import org.junit.Test;
 
 public class TestOlio extends BaseTest {
@@ -148,9 +168,140 @@ public class TestOlio extends BaseTest {
 	}
 	*/
 	
+	private boolean TestOllamaTags() {
+		boolean obool = false;
+		logger.info("Test Ollama");
+		Response rep = ClientUtil.getResponse("http://localhost:11434/api/tags");
+		if(rep.getStatus() == 200) {
+			// JSONObject obj = rep.readEntity(JSONObject.class);
+		     //StringReader stringReader = new StringReader(rep.readEntity(String.class)));
+		     JSONObject obj = new JSONObject(rep.readEntity(String.class));
+			//String objStr = rep.readEntity(String.class);
+			if(obj != null) {
+				obool = true;
+			}
+		}
+		return obool;
+	}
+	
+	
+	private boolean TestOllamaGenerate() {
+		boolean obool = false;
+		String msg = "What is the largest mammal?";
+		logger.info("Test Ollama Generate");
+		OllamaRequest req = new OllamaRequest();
+		req.setModel("dolphin-mistral");
+		req.setPrompt(msg);
+		req.setStream(false);
+		OllamaResponse rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/generate"), req, MediaType.APPLICATION_JSON_TYPE);
+		if(rep != null) {
+			logger.info(rep.getResponse());
+			req.setContext(rep.getContext());
+			req.setPrompt("What is the smallest?");
+			rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/generate"), req, MediaType.APPLICATION_JSON_TYPE);
+			if(rep != null) {
+				logger.info(rep.getResponse());
+			}
+			else {
+				logger.error("Null response");
+			}
+		}
+		return obool;
+	}
+	
+	private boolean TestOllamaChat() {
+		logger.info("Test Ollama Chat");
+		boolean obool = false;
+		OllamaRequest req = new OllamaRequest();
+		req.setModel("dolphin-mistral");
+		req.setStream(false);
+		OllamaMessage msg = new OllamaMessage();
+		msg.setRole("user");
+		msg.setContent("My name is Silas McGee.  How are you today?");
+		req.getMessages().add(msg);
+		OllamaResponse rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/chat"), req, MediaType.APPLICATION_JSON_TYPE);
+		if(rep != null) {
+			logger.info(rep.getMessage().getContent());
+			req.getMessages().add(rep.getMessage());
+			OllamaMessage msg2 = new OllamaMessage();
+			msg2.setRole("user");
+			msg2.setContent("I shall call you Bubbles.  What would be a good last name for you, Bubbles?");
+			req.getMessages().add(msg2);
+			rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/chat"), req, MediaType.APPLICATION_JSON_TYPE);
+			if(rep != null) {
+				logger.info(rep.getMessage().getContent());
+			}
+			else {
+				logger.error("Null response");
+			}
+		}
+		else {
+			logger.error("Null response");
+		}
+		return obool;
+	}
+	private String frontMatter = """
+
+	""";
+
+	private boolean TestPromptEng() {
+		OllamaUtil ou = new OllamaUtil();
+		OllamaExchange ex = ou.chat(frontMatter);
+		if(ex.getResponse() != null) {
+			logger.info(ex.getResponse().getMessage().getContent());
+		}
+		else {
+			logger.error("Null response");
+		}
+		return false;
+	}
+
+	private BaseRecord meetAndGreet(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
+		BaseRecord interaction = OlioUtil.randomInteraction(ctx, per1, per2);
+
+		// PersonalityProfile prof1 = ProfileUtil.analyzePersonality(ctx, per1);
+		// PersonalityProfile prof2 = ProfileUtil.analyzePersonality(ctx, per2);
+		CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(per1.get("personality.mbtiKey"), per2.get("personality.mbtiKey"));
+		StringBuilder buff = new StringBuilder();
+		buff.append("Write a narrative description about the following two characters, and the interaction that takes place between them.");
+		buff.append(" " + NarrativeUtil.describe(ctx, per1));
+		buff.append(" " + NarrativeUtil.describe(ctx, per2));
+		buff.append(" " + NarrativeUtil.describeInteraction(interaction));
+		logger.info(buff.toString());
+		OllamaUtil ou = new OllamaUtil();
+		OllamaExchange ex= ou.chat(buff.toString());
+		if(ex.getResponse() != null) {
+			logger.info(ex.getResponse().getMessage().getContent());
+		}
+		/*
+		logger.info(NarrativeUtil.describe(ctx, per1));
+		logger.info(mbtiCompat.toString());
+		logger.info(NarrativeUtil.describe(ctx, per2));
+		*/
+		logger.info(NarrativeUtil.describeInteraction(interaction));
+		return interaction;
+	}
+	
 	@Test
 	public void TestArena1() {
 		logger.info("Test Olio - Arena");
+		if(!TestOllamaTags()) {
+			return;
+		}
+		/*
+		if(!TestOllamaGenerate()) {
+			return;
+		}
+		
+		if(!TestOllamaChat()) {
+			return;
+		}
+		 */
+		/*
+		if(!TestPromptEng()) {
+			return;
+		}
+		*/
 		AuditUtil.setLogToConsole(false);
 
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -196,19 +347,18 @@ public class TestOlio extends BaseTest {
 				BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
 				BaseRecord cevt = octx.startOrContinueIncrement();
 				octx.evaluateIncrement();
+				BaseRecord realm = octx.getRealm(lrec);
+
+				BaseRecord popGrp1 = OlioUtil.getCreatePopulationGroup(octx, "Arena Party 1");
+				assertNotNull("Population group is null", popGrp1);
+				List<BaseRecord> party1  = OlioUtil.listGroupPopulation(octx, popGrp1);
+				List<BaseRecord> party2  = OlioUtil.listGroupPopulation(octx, OlioUtil.getCreatePopulationGroup(octx, "Arena Party 2"));
+
+				BaseRecord per1 = party1.get((new Random()).nextInt(party1.size()));
+				BaseRecord per2 = party2.get((new Random()).nextInt(party2.size()));
+				
+				meetAndGreet(octx, per1, per2);
 			}
-			/*
-			String[] fabs = ApparelUtil.getFabricTypes();
-			List<BaseRecord> wears = new ArrayList<>();
-			for(String s: fabs) {
-				BaseRecord wear = RecordFactory.newInstance(ModelNames.MODEL_WEARABLE);
-				List<BaseRecord> quals = wear.get("qualities");
-				quals.add(RecordFactory.newInstance(ModelNames.MODEL_QUALITY));
-				ApparelUtil.applyEmbeddedFabric(wear, s);
-				wears.add(wear);
-			}
-			FileUtil.emitFile("./wears.json", JSONUtil.exportObject(wears, RecordSerializerConfig.getForeignUnfilteredModule()));
-			*/
 		}
 		catch(Exception e) {
 			e.printStackTrace();
