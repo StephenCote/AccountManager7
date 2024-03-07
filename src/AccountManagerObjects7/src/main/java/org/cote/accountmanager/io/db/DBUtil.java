@@ -75,7 +75,6 @@ public class DBUtil {
 	}
 	
 	public DBUtil(String url, String user, String pwd, String jndiName) {
-		logger.info("CREATE DBUtil ...");
 		this.dataSourceUrl = url;
 		this.dataSourceUser = user;
 		this.dataSourcePassword = pwd;
