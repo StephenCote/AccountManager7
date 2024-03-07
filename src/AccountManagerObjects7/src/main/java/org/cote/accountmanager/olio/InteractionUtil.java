@@ -10,22 +10,24 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.InteractionEnumType;
 
 public class InteractionUtil {
 	public static final Logger logger = LogManager.getLogger(InteractionUtil.class);
 
 	
-	public static BaseRecord newInteraction(OlioContext ctx, BaseRecord event, BaseRecord actor, ThreatEnumType actorThreat, BaseRecord interactor) {
-		return newInteraction(ctx, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN, interactor, AlignmentEnumType.UNKNOWN, ThreatEnumType.NONE, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN);
+	public static BaseRecord newInteraction(OlioContext ctx, InteractionEnumType type, BaseRecord event, BaseRecord actor, ThreatEnumType actorThreat, BaseRecord interactor) {
+		return newInteraction(ctx, type, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN, interactor, AlignmentEnumType.UNKNOWN, ThreatEnumType.NONE, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN);
 	}
 
 	
-	public static BaseRecord newInteraction(OlioContext ctx, BaseRecord event, BaseRecord actor, ThreatEnumType actorThreat, BaseRecord interactor, ThreatEnumType interactorThreat) {
-		return newInteraction(ctx, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN, interactor, AlignmentEnumType.UNKNOWN, interactorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN);
+	public static BaseRecord newInteraction(OlioContext ctx, InteractionEnumType type, BaseRecord event, BaseRecord actor, ThreatEnumType actorThreat, BaseRecord interactor, ThreatEnumType interactorThreat) {
+		return newInteraction(ctx, type, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN, interactor, AlignmentEnumType.UNKNOWN, interactorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN);
 	}
 	
 	public static BaseRecord newInteraction(
 		OlioContext ctx,
+		InteractionEnumType type,
 		BaseRecord event,
 		BaseRecord actor,
 		AlignmentEnumType actorAlignment,
@@ -47,6 +49,7 @@ public class InteractionUtil {
 				inter.set("interactionStart", event.get("eventStart"));
 				inter.set("interactionEnd", event.get("eventEnd"));
 			}
+			inter.set("type", type);
 			inter.set("actor", actor);
 			inter.set("actorAlignment", actorAlignment);
 			inter.set("actorType", actor.getModel());

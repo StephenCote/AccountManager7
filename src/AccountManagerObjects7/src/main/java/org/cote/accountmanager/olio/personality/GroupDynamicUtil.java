@@ -32,6 +32,7 @@ import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
+import org.cote.accountmanager.schema.type.InteractionEnumType;
 
 public class GroupDynamicUtil {
 	public static final Logger logger = LogManager.getLogger(GroupDynamicUtil.class);
@@ -339,12 +340,12 @@ public class GroupDynamicUtil {
 		return evt;
 	}
 	
-	protected static BaseRecord newIntraGroupInteraction(OlioContext ctx, BaseRecord event, PersonalityProfile actor, ThreatEnumType actorThreat, ReasonEnumType actorReason, PersonalityProfile interactor, ThreatEnumType interactorThreat, ReasonEnumType interactorReason) {
+	protected static BaseRecord newIntraGroupInteraction(OlioContext ctx, InteractionEnumType type, BaseRecord event, PersonalityProfile actor, ThreatEnumType actorThreat, ReasonEnumType actorReason, PersonalityProfile interactor, ThreatEnumType interactorThreat, ReasonEnumType interactorReason) {
 		AlignmentEnumType eventAlign = AlignmentEnumType.valueOf(event.get(FieldNames.FIELD_ALIGNMENT));
 		AlignmentEnumType actorAlign = AlignmentEnumType.margin(eventAlign, actor.getAlignment());
 		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(eventAlign, interactor.getAlignment());
 		
-		return InteractionUtil.newInteraction(ctx, event, actor.getRecord(), actorAlign, actorThreat, CharacterRoleEnumType.INDETERMINATE, actorReason, interactor.getRecord(), interactorAlign, interactorThreat, CharacterRoleEnumType.INDETERMINATE, interactorReason);
+		return InteractionUtil.newInteraction(ctx, type, event, actor.getRecord(), actorAlign, actorThreat, CharacterRoleEnumType.INDETERMINATE, actorReason, interactor.getRecord(), interactorAlign, interactorThreat, CharacterRoleEnumType.INDETERMINATE, interactorReason);
 	}
 	
 	/// Given some leader, identify if the current group will accept them
@@ -365,7 +366,7 @@ public class GroupDynamicUtil {
 			logger.warn("One or more people are worried the leader is too young or too old");
 			for(PersonalityProfile p: primeDipAge) {
 				interactions.add(
-					newIntraGroupInteraction(ctx, increment, p, ThreatEnumType.IDEOLOGICAL_THREAT, ReasonEnumType.MATURITY, leader, ThreatEnumType.IDEOLOGICAL_TARGET, (leader.getAge() < Rules.MINIMUM_ADULT_AGE ? ReasonEnumType.IMMATURITY : ReasonEnumType.SENILITY))
+					newIntraGroupInteraction(ctx, InteractionEnumType.COMPETE, increment, p, ThreatEnumType.IDEOLOGICAL_THREAT, ReasonEnumType.MATURITY, leader, ThreatEnumType.IDEOLOGICAL_TARGET, (leader.getAge() < Rules.MINIMUM_ADULT_AGE ? ReasonEnumType.IMMATURITY : ReasonEnumType.SENILITY))
 				);
 			}
 			// contest.addAll(primeDipAge);
@@ -375,7 +376,7 @@ public class GroupDynamicUtil {
 			logger.warn("Do " + primeAge.size() + " adults really want a child as their leader?");
 			for(PersonalityProfile p: primeDipAge) {
 				interactions.add(
-					newIntraGroupInteraction(ctx, increment, p, ThreatEnumType.SOCIAL_THREAT, ReasonEnumType.MATURITY, leader, ThreatEnumType.SOCIAL_TARGET, ReasonEnumType.IMMATURITY)
+					newIntraGroupInteraction(ctx, InteractionEnumType.COMPETE, increment, p, ThreatEnumType.SOCIAL_THREAT, ReasonEnumType.MATURITY, leader, ThreatEnumType.SOCIAL_TARGET, ReasonEnumType.IMMATURITY)
 				);
 			}
 		}
@@ -385,7 +386,7 @@ public class GroupDynamicUtil {
 			// contest.addAll(prettyNarcissists);
 			for(PersonalityProfile p: prettyNarcissists) {
 				interactions.add(
-					newIntraGroupInteraction(ctx, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.ATTRACTIVE_NARCISSISM, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.LESS_ATTRACTIVE)
+					newIntraGroupInteraction(ctx, InteractionEnumType.COMPETE, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.ATTRACTIVE_NARCISSISM, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.LESS_ATTRACTIVE)
 				);
 			}
 
@@ -396,7 +397,7 @@ public class GroupDynamicUtil {
 			// contest.addAll(machiavellian);
 			for(PersonalityProfile p: machiavellian) {
 				interactions.add(
-					newIntraGroupInteraction(ctx, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.MACHIAVELLIANISM, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.UNKNOWN)
+					newIntraGroupInteraction(ctx, InteractionEnumType.COMPETE, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.MACHIAVELLIANISM, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.UNKNOWN)
 				);
 			}
 
@@ -406,7 +407,7 @@ public class GroupDynamicUtil {
 			// contest.addAll(machiavellian);
 			for(PersonalityProfile p: psychopath) {
 				interactions.add(
-					newIntraGroupInteraction(ctx, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.PSYCHOPATHY, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.SANE)
+					newIntraGroupInteraction(ctx, InteractionEnumType.CONFLICT, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.PSYCHOPATHY, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.SANE)
 				);
 			}
 		}
