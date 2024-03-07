@@ -6,6 +6,12 @@ docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
 docker exec -it ollama ollama run llama2:13b-text
 docker exec -it ollama ollama run dolphin-mistral
 
+curl http://localhost:11434/api/generate -d '{
+  "model": "dolphin-mistral",
+  "prompt": "Write a narrative description of the following: ",
+  "stream": false
+}'
+
 Evolution
 The original evolution rules were pretty rudimentary - Run through a set of hard-coded random rules across locations twelve times a year (once a month) to simulate birth, death, marriage, divorce, immigration.  Also, there was no real way to interrupt the process in the middle of an evolution so it was in no way interactive.
 
