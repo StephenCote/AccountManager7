@@ -23,7 +23,7 @@
 		},
 		{
 			"name": "type",
-			"baseClass": "org.cote.accountmanager.schema.type.InteractionEnumType",
+			"baseClass": "org.cote.accountmanager.olio.InteractionEnumType",
 			"type": "enum",
 			"maxLength": 32,
 			"default": "unknown",

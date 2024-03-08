@@ -10,11 +10,32 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.InteractionEnumType;
+import org.cote.accountmanager.olio.InteractionEnumType;
 
 public class InteractionUtil {
 	public static final Logger logger = LogManager.getLogger(InteractionUtil.class);
 
+	
+	public static BaseRecord randomInteraction(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
+		BaseRecord inter = InteractionUtil.newInteraction(
+			ctx,
+			OlioUtil.getRandomInteraction(),
+			null,
+			per1,
+			OlioUtil.getRandomAlignment(),
+			OlioUtil.getRandomPersonThreat(),
+			OlioUtil.getRandomCharacterRole(per1.get("gender")),
+			OlioUtil.getRandomReason(), 
+			per2,
+			OlioUtil.getRandomAlignment(),
+			OlioUtil.getRandomPersonThreat(),
+			OlioUtil.getRandomCharacterRole(per2.get("gender")),
+			OlioUtil.getRandomReason()
+		);
+		inter.setValue("actorOutcome", OlioUtil.getRandomOutcome());
+		inter.setValue("interactorOutcome", OlioUtil.getRandomOutcome());
+		return inter;
+	}
 	
 	public static BaseRecord newInteraction(OlioContext ctx, InteractionEnumType type, BaseRecord event, BaseRecord actor, ThreatEnumType actorThreat, BaseRecord interactor) {
 		return newInteraction(ctx, type, event, actor, AlignmentEnumType.UNKNOWN, actorThreat, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN, interactor, AlignmentEnumType.UNKNOWN, ThreatEnumType.NONE, CharacterRoleEnumType.UNKNOWN, ReasonEnumType.UNKNOWN);

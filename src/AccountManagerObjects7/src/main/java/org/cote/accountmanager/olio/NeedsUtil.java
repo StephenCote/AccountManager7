@@ -30,7 +30,7 @@ import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.InteractionEnumType;
+import org.cote.accountmanager.olio.InteractionEnumType;
 
 public class NeedsUtil {
 

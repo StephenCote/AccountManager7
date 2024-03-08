@@ -17,7 +17,7 @@ import org.cote.accountmanager.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
-import org.cote.accountmanager.schema.type.InteractionEnumType;
+import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class NarrativeUtil {

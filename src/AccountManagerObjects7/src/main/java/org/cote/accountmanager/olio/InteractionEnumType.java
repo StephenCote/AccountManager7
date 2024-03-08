@@ -1,4 +1,4 @@
-package org.cote.accountmanager.schema.type;
+package org.cote.accountmanager.olio;
 
 public enum InteractionEnumType {
 	ACCOMMODATE,

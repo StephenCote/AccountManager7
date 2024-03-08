@@ -32,7 +32,7 @@ import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
-import org.cote.accountmanager.schema.type.InteractionEnumType;
+import org.cote.accountmanager.olio.InteractionEnumType;
 
 public class GroupDynamicUtil {
 	public static final Logger logger = LogManager.getLogger(GroupDynamicUtil.class);

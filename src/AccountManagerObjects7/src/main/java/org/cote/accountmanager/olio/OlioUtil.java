@@ -33,7 +33,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.schema.type.InteractionEnumType;
+import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
@@ -142,7 +142,7 @@ public class OlioUtil {
 	}
 	public static CharacterRoleEnumType getRandomCharacterRole(String gender) {
 		CharacterRoleEnumType tets = randomEnum(CharacterRoleEnumType.class);
-		while(tets == CharacterRoleEnumType.UNKNOWN || ((gender == null || gender.equals("female")) && tets == CharacterRoleEnumType.TEMPTRESS)) {
+		while(tets == CharacterRoleEnumType.UNKNOWN || ((gender == null || gender.equals("male")) && tets == CharacterRoleEnumType.TEMPTRESS)) {
 			tets = randomEnum(CharacterRoleEnumType.class);
 		}
 		return tets;
@@ -170,27 +170,6 @@ public class OlioUtil {
 	}
 	public static OutcomeEnumType getRandomOutcome() {
 		return randomEnum(OutcomeEnumType.class);
-	}
-	
-	public static BaseRecord randomInteraction(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
-		BaseRecord inter = InteractionUtil.newInteraction(
-			ctx,
-			getRandomInteraction(),
-			null,
-			per1,
-			OlioUtil.getRandomAlignment(),
-			OlioUtil.getRandomPersonThreat(),
-			OlioUtil.getRandomCharacterRole(per1.get("gender")),
-			OlioUtil.getRandomReason(), 
-			per2,
-			OlioUtil.getRandomAlignment(),
-			OlioUtil.getRandomPersonThreat(),
-			OlioUtil.getRandomCharacterRole(per2.get("gender")),
-			OlioUtil.getRandomReason()
-		);
-		inter.setValue("actorOutcome", getRandomOutcome());
-		inter.setValue("interactorOutcome", getRandomOutcome());
-		return inter;
 	}
 	
 	public static String randomSelectionName(BaseRecord user, Query query) {

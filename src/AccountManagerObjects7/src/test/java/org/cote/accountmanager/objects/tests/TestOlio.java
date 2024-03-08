@@ -257,7 +257,7 @@ public class TestOlio extends BaseTest {
 	}
 
 	private BaseRecord meetAndGreet(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
-		BaseRecord interaction = OlioUtil.randomInteraction(ctx, per1, per2);
+		BaseRecord interaction = InteractionUtil.randomInteraction(ctx, per1, per2);
 
 		// PersonalityProfile prof1 = ProfileUtil.analyzePersonality(ctx, per1);
 		// PersonalityProfile prof2 = ProfileUtil.analyzePersonality(ctx, per2);
@@ -285,6 +285,7 @@ public class TestOlio extends BaseTest {
 	@Test
 	public void TestArena1() {
 		logger.info("Test Olio - Arena");
+		logger.warn("Note: Currently relies on ollama container running: docker exec -it ollama ollama run dolphin-mistral");
 		if(!TestOllamaTags()) {
 			return;
 		}
