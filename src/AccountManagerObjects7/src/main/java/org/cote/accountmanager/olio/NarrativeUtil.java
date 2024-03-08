@@ -9,15 +9,13 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.personality.CompatibilityEnumType;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
-import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class NarrativeUtil {

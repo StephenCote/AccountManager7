@@ -15,14 +15,12 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.olio.OutcomeEnumType;
 import org.cote.accountmanager.olio.PersonalityProfile;
-import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.ReasonEnumType;
 import org.cote.accountmanager.olio.RollEnumType;
 import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.schema.type.RoleEnumType;
 
 public class DarkTriadUtil {
 	public static final Logger logger = LogManager.getLogger(DarkTriadUtil.class);

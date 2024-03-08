@@ -24,7 +24,6 @@ import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.MBTI;
 import org.cote.accountmanager.personality.MBTIUtil;
-import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.personality.Sloan;
 import org.cote.accountmanager.personality.SloanUtil;
 import org.cote.accountmanager.record.BaseRecord;

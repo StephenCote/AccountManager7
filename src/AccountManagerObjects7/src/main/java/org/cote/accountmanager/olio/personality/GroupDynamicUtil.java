@@ -12,12 +12,12 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.CharacterRoleEnumType;
 import org.cote.accountmanager.olio.EventUtil;
+import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
@@ -32,7 +32,6 @@ import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
-import org.cote.accountmanager.olio.InteractionEnumType;
 
 public class GroupDynamicUtil {
 	public static final Logger logger = LogManager.getLogger(GroupDynamicUtil.class);

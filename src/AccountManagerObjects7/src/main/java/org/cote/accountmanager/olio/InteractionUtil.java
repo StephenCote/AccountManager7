@@ -10,7 +10,6 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.olio.InteractionEnumType;
 
 public class InteractionUtil {
 	public static final Logger logger = LogManager.getLogger(InteractionUtil.class);
