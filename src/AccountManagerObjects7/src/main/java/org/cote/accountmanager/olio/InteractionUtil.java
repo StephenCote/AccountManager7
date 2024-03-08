@@ -1,5 +1,10 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -8,31 +13,273 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.personality.CompatibilityEnumType;
+import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class InteractionUtil {
 	public static final Logger logger = LogManager.getLogger(InteractionUtil.class);
+	private static final SecureRandom rand = new SecureRandom();
 
+	public static ThreatEnumType getThreatForInteraction(InteractionEnumType inter) {
+		ThreatEnumType tet = ThreatEnumType.NONE;
+		if(inter == InteractionEnumType.COERCE) {
+			tet = ThreatEnumType.PSYCHOLOGICAL_THREAT;
+		}
+		else if(inter == InteractionEnumType.COMBAT || inter == InteractionEnumType.CONFLICT || inter == InteractionEnumType.THREATEN) {
+			tet = ThreatEnumType.PHYSICAL_THREAT;
+		}
+		else if(inter == InteractionEnumType.CRITICIZE) {
+			tet = ThreatEnumType.VERBAL_THREAT;
+		}
+		else if(inter == InteractionEnumType.PEER_PRESSURE) {
+			tet = ThreatEnumType.SOCIAL_THREAT;
+		}
+		else if(inter == InteractionEnumType.OPPOSE) {
+			tet = ThreatEnumType.IDEOLOGICAL_THREAT;
+		}
+
+		return tet;
+	}
+	/*
+	public static ReasonEnumType guessReason(PersonalityProfile prof1, AlignmentEnumType align, InteractionEnumType interType, CharacterRoleEnumType role, PersonalityProfile prof2) {
+		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
+		ProfileComparison pcomp = new ProfileComparison(prof1, prof2);
+		CompatibilityEnumType cet = pcomp.getCompatibility();
+		boolean ageIssue = pcomp.doesAgeCrossBoundary();
+		VeryEnumType isMach = prof1.getMachiavellian();
+		VeryEnumType isPsych = prof1.getPsychopath();
+		VeryEnumType isNarc = prof1.getNarcissist();
+		HighEnumType prettier = pcomp.getCharismaMargin();
+
+		int alignVal = AlignmentEnumType.getValue(align);
+		/// Given the current forces affecting alignment, are they still leaning towards the good
+		///
+		boolean leaningGood = AlignmentEnumType.compare(align, AlignmentEnumType.NEUTRAL, ComparatorEnumType.GREATER_THAN);
+		int iqual = InteractionEnumType.getCompare(interType);
+		int rqual = CharacterRoleEnumType.getCompare(role);
+		
+		/// Negative forces abound for a bad action
+		List<ReasonEnumType> possibleReasons = new ArrayList<>();
+		StringBuilder claim = new StringBuilder();
+		
+		/// Doing a bad thing
+		if(iqual < 0) {
+			
+		}
+		
+		if(alignVal < 0 && iqual < 0) {
+			/// by a person being bad
+			claim.append("Negative forces contribute to a bad action ");
+			if(rqual < 0) {
+				claim.append("by a person trying to be bad");
+				possibleReasons.addAll(ReasonEnumType.getNegativeReasons());
+				//ret = ReasonEnumType.getNegativeReasons().get(rand.nextInt(ReasonEnumType.getNegativeReasons().size()));
+			}
+			else if(rqual == 0) {
+				claim.append("by a person being indifferent");
+				possibleReasons.addAll(ReasonEnumType.getNeutralReasons());
+			}
+			else {
+				claim.append("by a person trying to be good");
+				possibleReasons.addAll(ReasonEnumType.getPositiveReasons());
+			}
+			
+		}
+		/// Positive or neutral forces lead to a bad action by a positive or negative role
+		if(iqual < 0) {
+			claim.append("Despite positive forces, a bad action is taken");
+			if(rqual > 0) {
+				claim.append("by a person trying to be good");
+			}
+			else if(rqual == 0) {
+				claim.append("by a person being indifferent");
+			}
+
+		}
+		if(possibleReasons.size() > 0) {
+			ret = possibleReasons.get(rand.nextInt(possibleReasons.size()));
+		}
+
+		
+		logger.info(claim.toString() + " - " + cet.toString() + " " + align.toString() + " " + interType.toString() + " " + role.toString() + " " + ret.toString());
+		
+		
+		return ret;
+	}
+	*/
+	
+	public static ReasonEnumType guessReason(PersonalityProfile prof1, AlignmentEnumType align, InteractionEnumType interType, CharacterRoleEnumType role, PersonalityProfile prof2) {
+		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
+		ProfileComparison pcomp = new ProfileComparison(prof1, prof2);
+		CompatibilityEnumType cet = pcomp.getCompatibility();
+		boolean ageIssue = pcomp.doesAgeCrossBoundary();
+		VeryEnumType isMach = prof1.getMachiavellian();
+		VeryEnumType isPsych = prof1.getPsychopath();
+		VeryEnumType isNarc = prof1.getNarcissist();
+		HighEnumType prettier = pcomp.getCharismaMargin();
+
+		int alignVal = AlignmentEnumType.getValue(align);
+		/// Given the current forces affecting alignment, are they still leaning towards the good
+		///
+		boolean leaningGood = AlignmentEnumType.compare(align, AlignmentEnumType.NEUTRAL, ComparatorEnumType.GREATER_THAN);
+		int iqual = InteractionEnumType.getCompare(interType);
+		int rqual = CharacterRoleEnumType.getCompare(role);
+		
+		/// Negative forces abound for a bad action
+		List<ReasonEnumType> possibleReasons = new ArrayList<>();
+		StringBuilder claim = new StringBuilder();
+		
+		/// Doing a bad thing
+		if(iqual < 0) {
+			
+		}
+		
+		if(alignVal < 0 && iqual < 0) {
+			/// by a person being bad
+			claim.append("Negative forces contribute to a bad action ");
+			if(rqual < 0) {
+				claim.append("by a person trying to be bad");
+				possibleReasons.addAll(ReasonEnumType.getNegativeReasons());
+				//ret = ReasonEnumType.getNegativeReasons().get(rand.nextInt(ReasonEnumType.getNegativeReasons().size()));
+			}
+			else if(rqual == 0) {
+				claim.append("by a person being indifferent");
+				possibleReasons.addAll(ReasonEnumType.getNeutralReasons());
+			}
+			else {
+				claim.append("by a person trying to be good");
+				possibleReasons.addAll(ReasonEnumType.getPositiveReasons());
+			}
+			
+		}
+		/// Positive or neutral forces lead to a bad action by a positive or negative role
+		if(iqual < 0) {
+			claim.append("Despite positive forces, a bad action is taken");
+			if(rqual > 0) {
+				claim.append("by a person trying to be good");
+			}
+			else if(rqual == 0) {
+				claim.append("by a person being indifferent");
+			}
+
+		}
+		if(possibleReasons.size() > 0) {
+			ret = possibleReasons.get(rand.nextInt(possibleReasons.size()));
+		}
+
+		
+		logger.info(claim.toString() + " - " + cet.toString() + " " + align.toString() + " " + interType.toString() + " " + role.toString() + " " + ret.toString());
+		
+		
+		return ret;
+	}
+	
+	/// Given two random people, guess a reason for them to interact based on their profiles
+	/// It's possible there's no good reason, captured as type.NONE
+	///
+	public static ReasonToDo guessReasonToInteract(PersonalityProfile prof1, AlignmentEnumType contextAlign, PersonalityProfile prof2) {
+
+		ReasonToDo rtd = new ReasonToDo();
+		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
+		CharacterRoleEnumType role = CharacterRoleEnumType.UNKNOWN;
+		InteractionEnumType inter = InteractionEnumType.UNKNOWN;
+		ProfileComparison pcomp = new ProfileComparison(prof1, prof2);
+		CompatibilityEnumType cet = pcomp.getCompatibility();
+		boolean isCompat = CompatibilityEnumType.compare(cet, CompatibilityEnumType.PARTIAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+		boolean ageIssue = pcomp.doesAgeCrossBoundary();
+		/*
+		VeryEnumType isMach = prof1.getMachiavellian();
+		VeryEnumType isPsych = prof1.getPsychopath();
+		VeryEnumType isNarc = prof1.getNarcissist();
+		HighEnumType prettier = pcomp.getCharismaMargin();
+		*/
+		double machDiff = pcomp.getMachiavellianDiff();
+		double psychDiff = pcomp.getPsychopathyDiff();
+		double narcDiff = pcomp.getNarcissismDiff();
+		int prettyDiff = pcomp.getCharismaDiff();
+		int smartDiff = pcomp.getIntelligenceDiff();
+		int strongDiff = pcomp.getPhysicalStrengthDiff();
+		int wisDiff = pcomp.getWisdomDiff();
+		
+		AlignmentEnumType actorAlign = AlignmentEnumType.margin(contextAlign, prof1.getAlignment());
+		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(contextAlign, prof2.getAlignment());
+
+		boolean leaningGood = AlignmentEnumType.compare(actorAlign, AlignmentEnumType.NEUTRAL, ComparatorEnumType.GREATER_THAN);
+		/// Should have good intentions (at the moment)
+		if(leaningGood) {
+			/// Compatibility - favor positive
+			if(isCompat) {
+				
+			}
+			/// favor neutral-negative
+			else {
+				
+			}
+		}
+		/// May not have good intentions (at the moment)
+		else {
+			/// Compatibility - favor collaborative neutral or positive
+			if(isCompat) {
+				
+			}
+			/// favor neutral-negative
+		}
+	
+		
+		logger.info("Figure out what to do with " + prof1.getName() + " and " + prof2.getName());
+		logger.info("How is #1 aligning? " + actorAlign.toString());
+		logger.info("How is #2 aligning? " + interactorAlign.toString());
+		logger.info("How much prettier is #1 from #2? " + prettyDiff);
+		logger.info("How much smarter is #1 from #2? " + smartDiff);
+		logger.info("How much stronger is #1 from #2? " + strongDiff);
+		logger.info("How much wiser is #1 from #2? " + wisDiff);
+		logger.info("How much more of machiavellian is #1 from #2? " + machDiff);
+		logger.info("How much more of a psychopath is #1 from #2? " + psychDiff);
+		logger.info("How much more narcissistic is #1 from #2? " + narcDiff);
+		logger.info("Are they compatible? " + cet.toString());
+		
+		return rtd;
+	}
+	
 	
 	public static BaseRecord randomInteraction(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
+		AlignmentEnumType interAlign = OlioUtil.getRandomAlignment();
+		AlignmentEnumType actorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
+		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
+		PersonalityProfile prof1 = ProfileUtil.getProfile(ctx, per1);
+		PersonalityProfile prof2 = ProfileUtil.getProfile(ctx, per2);
+		if(ProfileUtil.sameProfile(prof1, prof2)) {
+			logger.warn("Same profile");
+			return null;
+		}
+		InteractionEnumType interType = OlioUtil.getRandomInteraction();
+		CharacterRoleEnumType actorRole = OlioUtil.getRandomCharacterRole(per1.get("gender"));
+		//ReasonEnumType actorReason = guessReason(prof1, actorAlign, interType, actorRole, prof2);
+		ReasonToDo rtd = guessReasonToInteract(prof1, interAlign, prof2);
+		ThreatEnumType threat = getThreatForInteraction(interType);
+		ThreatEnumType athreat = ThreatEnumType.getTarget(threat);
 		BaseRecord inter = InteractionUtil.newInteraction(
 			ctx,
-			OlioUtil.getRandomInteraction(),
+			rtd.getInteraction(),
 			null,
 			per1,
-			OlioUtil.getRandomAlignment(),
-			OlioUtil.getRandomPersonThreat(),
-			OlioUtil.getRandomCharacterRole(per1.get("gender")),
-			OlioUtil.getRandomReason(), 
+			actorAlign,
+			rtd.getThreat(),
+			actorRole,
+			rtd.getReason(), 
 			per2,
-			OlioUtil.getRandomAlignment(),
-			OlioUtil.getRandomPersonThreat(),
+			interactorAlign,
+			athreat,
 			OlioUtil.getRandomCharacterRole(per2.get("gender")),
 			OlioUtil.getRandomReason()
 		);
 		inter.setValue("actorOutcome", OlioUtil.getRandomOutcome());
 		inter.setValue("interactorOutcome", OlioUtil.getRandomOutcome());
+		
 		return inter;
 	}
 	
@@ -88,6 +335,46 @@ public class InteractionUtil {
 			logger.error(e);
 		}
 		return inter;
+	}
+	
+}
+
+class ReasonToDo{
+	private InteractionEnumType interaction = InteractionEnumType.NONE;
+	private ReasonEnumType reason = ReasonEnumType.NONE;
+	private CharacterRoleEnumType role = CharacterRoleEnumType.UNKNOWN;
+	private ThreatEnumType threat = ThreatEnumType.NONE;
+	public ReasonToDo() {
+		
+	}
+	
+	public ThreatEnumType getThreat() {
+		return threat;
+	}
+
+	public void setThreat(ThreatEnumType threat) {
+		this.threat = threat;
+	}
+
+	public CharacterRoleEnumType getRole() {
+		return role;
+	}
+
+	public void setRole(CharacterRoleEnumType role) {
+		this.role = role;
+	}
+
+	public InteractionEnumType getInteraction() {
+		return interaction;
+	}
+	public void setInteraction(InteractionEnumType interaction) {
+		this.interaction = interaction;
+	}
+	public ReasonEnumType getReason() {
+		return reason;
+	}
+	public void setReason(ReasonEnumType reason) {
+		this.reason = reason;
 	}
 	
 }
