@@ -294,13 +294,13 @@ SLOAN Notation
 		IOSystem.getActiveContext().getReader().populate(stats);
 		
 	}
-	public static AnimalProfile analyzeAnimal(OlioContext octx, BaseRecord animal) {
+	protected static AnimalProfile analyzeAnimal(OlioContext octx, BaseRecord animal) {
 		checkPopulation(animal);
 		AnimalProfile prof = createAnimalProfile(octx.getWorld(), animal);
 		return prof;
 	}
 	
-	public static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
+	protected static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
 		checkPopulation(person);
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"personality"});
 		BaseRecord per = person.get("personality");
@@ -492,6 +492,10 @@ SLOAN Notation
 		
 		/// TODO: Initial esteem calculations
 
+	}
+	
+	public static boolean sameProfile(AnimalProfile ap1, AnimalProfile ap2) {
+		return ap1.getId() == ap2.getId();
 	}
 	
 }

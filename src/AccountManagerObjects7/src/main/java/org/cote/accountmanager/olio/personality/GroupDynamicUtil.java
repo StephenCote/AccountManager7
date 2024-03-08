@@ -143,57 +143,7 @@ public class GroupDynamicUtil {
 		return party;
 	}
 	
-	/*
-	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch){
-		List<BaseRecord> party = new ArrayList<>();
-		BaseRecord loc = locationEpoch.get("location");
-		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
-		String partyName = loc.get(FieldNames.FIELD_NAME) + " Party";
-		BaseRecord grp = null;
-		try {
-			BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
-			grp = OlioUtil.getCreatePopulationGroup(ctx, partyName);
-			if(realm.get("principalGroup") == null) {
-				realm.set("principalGroup", grp);
-				IOSystem.getActiveContext().getRecordUtil().updateRecord(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "principalGroup", FieldNames.FIELD_ORGANIZATION_ID}));
-			}
-			party = OlioUtil.listGroupPopulation(ctx, grp);
-			if(party.size() == 0) {
-				List<BaseRecord> lpop = ctx.getPopulation(loc);
-				int len = random.nextInt(partyMin, partyMax);
-				Set<Long> partSet = new HashSet<>();
-				// logger.info("Creating a party of " + len + " from " + lpop.size());
-				for(int i = 0; i < len; i++) {
-					BaseRecord per = lpop.get(random.nextInt(lpop.size()));
-					long id = per.get(FieldNames.FIELD_ID);
-					int age = per.get("age");
-					int check = 0;
-					while(partSet.contains(id) || age < minPartyAge || age > maxPartyAge) {
-						per = lpop.get(random.nextInt(lpop.size()));
-						id = per.get(FieldNames.FIELD_ID);
-						age = per.get("age");
-						check++;
-						if(check > maxPartyCheck) {
-							break;
-						}
-					}
-					if(!partSet.contains(id)) {
-						partSet.add(id);
-						if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), grp, per, null, true)) {
-							logger.error("Failed to add member");
-						}
-					}
-				}
-				party = OlioUtil.listGroupPopulation(ctx, grp);
-			}
-			// logger.info(partyName + " size = " + party.size());
-			
-		} catch (FieldException | ValueException | ModelNotFoundException | ReaderException e) {
-			logger.error(e);
-		}
-		return party;
-	}
-	*/
+	
 	public static void delegateActions(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, Map<BaseRecord, PersonalityProfile> map, List<BaseRecord> actions) {
 
 		PersonalityProfile leader = identifyLeader(ctx, locationEpoch, increment, map);
@@ -218,6 +168,7 @@ public class GroupDynamicUtil {
 		}
 		return oet;
 	}
+	
 	public static RollEnumType rollAgeMaturity(BaseRecord rec) {
 		
 		int age = rec.get("age");
@@ -393,7 +344,6 @@ public class GroupDynamicUtil {
 
 		List<PersonalityProfile> machiavellian = DarkTriadUtil.filterMachiavellianism(map, leader);
 		if(machiavellian.size() > 0) {
-			// contest.addAll(machiavellian);
 			for(PersonalityProfile p: machiavellian) {
 				interactions.add(
 					newIntraGroupInteraction(ctx, InteractionEnumType.COMPETE, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.MACHIAVELLIANISM, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.UNKNOWN)
@@ -403,10 +353,9 @@ public class GroupDynamicUtil {
 		}
 		List<PersonalityProfile> psychopath = DarkTriadUtil.filterPsychopath(map, leader);
 		if(psychopath.size() > 0 && !leader.isPsychopath()) {
-			// contest.addAll(machiavellian);
 			for(PersonalityProfile p: psychopath) {
 				interactions.add(
-					newIntraGroupInteraction(ctx, InteractionEnumType.CONFLICT, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.PSYCHOPATHY, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.SANE)
+					newIntraGroupInteraction(ctx, InteractionEnumType.CONFLICT, increment, p, ThreatEnumType.PSYCHOLOGICAL_THREAT, ReasonEnumType.PSYCHOPATHY, leader, ThreatEnumType.PSYCHOLOGICAL_TARGET, ReasonEnumType.SANITY)
 				);
 			}
 		}

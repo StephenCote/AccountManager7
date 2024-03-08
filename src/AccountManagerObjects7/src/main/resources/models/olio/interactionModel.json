@@ -62,6 +62,34 @@
 			"shortName": "act"
 		},
 		{
+			"name": "actorClaim",
+			"type": "string",
+			"maxLength": 128,
+			"shortName": "acla",
+			"description": "Textual statement representing the actor's immediate position of the interaction."
+		},
+		{
+			"name": "actorInstinct",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "ainst",
+			"description": "Name of any primary instinct driving the interaction."
+		},		
+		{
+			"name": "actorPersonality",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "aper",
+			"description": "Name of any primary personality trait driving the interaction."
+		},		
+		{
+			"name": "actorStatistic",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "asta",
+			"description": "Name of any primary statistic driving the interaction."
+		},		
+		{
 			"name": "actorRole",
 			"baseClass": "org.cote.accountmanager.olio.CharacterRoleEnumType",
 			"type": "enum",
@@ -114,6 +142,34 @@
 			"foreign": true,
 			"foreignType": "interactorType",
 			"shortName": "iact"
+		},
+		{
+			"name": "interactorClaim",
+			"type": "string",
+			"maxLength": 128,
+			"shortName": "icla",
+			"description": "Textual statement representing the interactor's immediate position of the interaction."
+		},
+		{
+			"name": "interactorInstinct",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "iinst",
+			"description": "Name of any primary instinct driving the interaction."
+		},		
+		{
+			"name": "interactorPersonality",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "iper",
+			"description": "Name of any primary personality trait driving the interaction."
+		},		
+		{
+			"name": "interactorStatistic",
+			"type": "string",
+			"maxLength": 32,
+			"shortName": "ista",
+			"description": "Name of any primary statistic driving the interaction."
 		},
 		{
 			"name": "interactorRole",

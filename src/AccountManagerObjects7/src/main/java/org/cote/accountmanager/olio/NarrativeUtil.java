@@ -165,7 +165,7 @@ public class NarrativeUtil {
 	}
 	public static String describe(OlioContext ctx, BaseRecord person, boolean includeOuterArms) {
 		StringBuilder buff = new StringBuilder();
-		PersonalityProfile pp = ProfileUtil.analyzePersonality(ctx, person);
+		PersonalityProfile pp = ProfileUtil.getProfile(ctx, person);
 
 		String name = person.get(FieldNames.FIELD_NAME);
 		String fname = person.get("firstName");
@@ -235,7 +235,7 @@ public class NarrativeUtil {
 
 	public static String lookaround(OlioContext ctx, BaseRecord realm, BaseRecord event, BaseRecord increment, List<BaseRecord> group, BaseRecord pov, Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> threatMap) {
 		StringBuilder buff = new StringBuilder();
-		PersonalityProfile pp = ProfileUtil.analyzePersonality(ctx, pov);
+		PersonalityProfile pp = ProfileUtil.getProfile(ctx, pov);
 
 		BaseRecord state = pov.get("state");
 		BaseRecord store = pov.get("store");

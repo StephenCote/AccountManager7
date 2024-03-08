@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -46,7 +47,7 @@ public class OlioUtil {
     protected static final long YEAR = 365 * DAY;
     
 	protected static Map<String, List<String>> dirNameCache = new HashMap<>();
-	
+	private static SecureRandom rand = new SecureRandom();
 	private static String[] demographicLabels = new String[]{"Alive","Child","Young Adult","Adult","Available","Senior","Mother","Coupled","Deceased"};
 	protected static Map<String,List<BaseRecord>> getDemographicMap(OlioContext ctx, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
@@ -147,9 +148,10 @@ public class OlioUtil {
 		return tets;
 	}
 	public static ThreatEnumType getRandomPersonThreat() {
-		ThreatEnumType tets = randomEnum(ThreatEnumType.class);
-		while(tets == ThreatEnumType.NONE || tets == ThreatEnumType.ANIMAL_THREAT) {
-			tets = randomEnum(ThreatEnumType.class);
+		ThreatEnumType[] threats = ThreatEnumType.getThreats();
+		ThreatEnumType tets = threats[rand.nextInt(threats.length)];
+		while(tets == ThreatEnumType.NONE || tets == ThreatEnumType.ANIMAL_THREAT || tets == ThreatEnumType.ANIMAL_TARGET) {
+			tets = threats[rand.nextInt(threats.length)];
 		}
 		return tets;
 	}
