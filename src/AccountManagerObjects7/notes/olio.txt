@@ -150,6 +150,40 @@ Given the typical roles a character may play: Protagonist, Deuteragonist (sideki
 These roles are traditionally applied to the overall 'narrative' from the narrator or character point of view.
 In the olio context, the role is defined at the level of 'interaction'
 
+Interaction
+Interaction is meant to capture an evaluatable exchange between two parties (person, animal, etc), the 'actor' and the 'interactor'.
+The actor initiates the interaction (interaction.type), acting in a contextual role (interaction.actorRole), behaving with some alignment (interaction.actorAlignment), representing a threat, target, or equilibration (interaction.actorThreat) for some reason (interaction.actorReason).
+The interactor reacts to the actor threat, reason, role, and alignment for the type of interaction, so that the interactor's role (interaction.interactorRole) is aligned, opposed, or tangental to the actor's role, responding with a threat, as a target, or with equilibration, for some reason (interaction.interactorReason).
+A general description (interaction.description) may be used to describe what is happening, the actor's motivation (interaction.actorclaim) and interactor's motivation (interaction.interactorClaim) may be used to provide narrative cues to why the actor is doing something, and why the interactor is responding the way they are.
+The actor and interactor both receive an outcome (interaction.actorOutcome, interaction.interactorOutcome) when the interaction completes.
+The interaction result state (interaction.state) is relative to the actor and the type of interaction.
+
+Example 1: Actor 1 and Actor 2 talk about the weather for five minutes.
+Actor 1 may start because they are trying to become friends with Actor 2, so actor 1's reason for trying is FRIENDSHIP.
+Actor 2, meanwhile, is a big intravert, so the reason for their response is INTRAVERSION.
+Each actor's role is meant to be contextual, so while they may primarily develop into CharacterRole A, at the interaction level they may be in a completely different role.
+The determination of role can be based on a combination of a number of factors, including instinct, statistic, personality, or prior interactions or events.
+For this example, Actor 1 may be in a FRIENDSHIP_INTEREST role.  Alternately, if Actor 1 is helping Actor 2 navigate somewhere, Actor 1 could be in a GUIDE role.  Or, if ulterior motives are involved, such as distracting Actor 2 from something, then Actor 1 may be in a HENCHMAN role, etc.
+Actor 2, meanwhile, may be in an INDETERMINATE or STRANGER role, relative to Actor 1.
+Therefore, the reason does not directly equate to the role, while the combination of the actor reason/role can be dynamic with the interactors reason/role.
+This allows for a simple exchange like Actor 1 talking to Actor 2 about the weather to capture more subtext about the interaction than the surface narrative may otherwise describe.
+The interaction threat is used to describe threat motivations for both.
+Actor 1 may be benign and not be representing a threat, and therefore represent a threat of NONE.
+However, Actor 2 may be a coward and perceive Actor 1 as threat, therefore their threat would be a *_TARGET.
+For example, Actor 1 may be ugly but have no threat motivation (ONNE), while Actor 2 may be a narcissist, and therefore Actor 1 talking to Actor 2 gives Actor 2 a threat value of SOCIAL_TARGET.
+The outcome for both can be determined however desired.
+When the interaction is associated with an Action or Event, those may in turn define other qualifying characteristics such as was anyone around to see it, or how should the result positevely or negatively impact instinct, material possession, state, or social consideration.
+
+Example 2: Events with Actions with Interactions
+Actor 1 wants to talk to Actor 2 about the weather, and Actor 3 is watching.  This can be expressed as event, with Actors 1 and 2 being the actors, and Actor 3 being the observer.
+A new ActionResult is created for some action (call it whatever, such as 'talk').  As the initiator, Actor 1 becomes the actor for the Action 1.
+A new Interaction is created for Actor 1 and Actor 2, and proceeds as with Example 1.
+Once the interaction is completed, then the Action Result outcome can be determined, and then any subsequent interactions determined.
+For example, if Actor 2 has a VERY_UNFAVORABLE outcome, Actor 3's personality or prior history may spawn a response to Actor 1, which becomes an interaction from Actor 3 to Actor 1.
+Or, Actor 3 may fall into a role relative to Actor 2 that would be counter to Actor 1 having a positive outcome in Actor 1's role, and this could become an interaction from Actor 3 to Actor 2.
+Or, Actor 2, with an UNFAVORABLE outcome, may turn to Actor 3 for support, which would become an interaction between Actor 2 to Actor 3.
+In this way, group activities become overlapping 1-to-1 interactions, whose outcomes lead into further interactions or completion of an action or event. 
+
 
 Magic
 ORIGINAL RAW NOTES
