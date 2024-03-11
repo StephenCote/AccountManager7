@@ -169,8 +169,13 @@ public class TestOlio extends BaseTest {
 	*/
 	
 	private boolean TestOllamaTags() {
-		boolean obool = false;
+
 		logger.info("Test Ollama");
+		logger.warn("Note: Currently relies on ollama container running:");
+		logger.warn("docker exec -it ollama ollama run dolphin-mistral");
+		logger.warn("docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama");
+		
+		boolean obool = false;
 		Response rep = ClientUtil.getResponse("http://localhost:11434/api/tags");
 		if(rep.getStatus() == 200) {
 			// JSONObject obj = rep.readEntity(JSONObject.class);
@@ -273,19 +278,13 @@ public class TestOlio extends BaseTest {
 		if(ex.getResponse() != null) {
 			logger.info(ex.getResponse().getMessage().getContent());
 		}
-		/*
-		logger.info(NarrativeUtil.describe(ctx, per1));
-		logger.info(mbtiCompat.toString());
-		logger.info(NarrativeUtil.describe(ctx, per2));
-		*/
-		logger.info(NarrativeUtil.describeInteraction(interaction));
+
 		return interaction;
 	}
 	
 	@Test
 	public void TestArena1() {
 		logger.info("Test Olio - Arena");
-		logger.warn("Note: Currently relies on ollama container running: docker exec -it ollama ollama run dolphin-mistral");
 		if(!TestOllamaTags()) {
 			return;
 		}
@@ -318,7 +317,7 @@ public class TestOlio extends BaseTest {
 			new String[] {},
 			1,
 			50,
-			true,
+			false,
 			resetUniverse
 		);
 	

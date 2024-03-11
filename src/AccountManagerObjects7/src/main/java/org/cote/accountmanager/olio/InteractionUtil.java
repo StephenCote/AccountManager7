@@ -247,15 +247,17 @@ public class InteractionUtil {
 	
 	
 	public static BaseRecord randomInteraction(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
-		AlignmentEnumType interAlign = OlioUtil.getRandomAlignment();
-		AlignmentEnumType actorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
-		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
+
 		PersonalityProfile prof1 = ProfileUtil.getProfile(ctx, per1);
 		PersonalityProfile prof2 = ProfileUtil.getProfile(ctx, per2);
 		if(ProfileUtil.sameProfile(prof1, prof2)) {
 			logger.warn("Same profile");
 			return null;
 		}
+		
+		AlignmentEnumType interAlign = OlioUtil.getRandomAlignment();
+		AlignmentEnumType actorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
+		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(interAlign, per2.getEnum("alignment"));
 		InteractionEnumType interType = OlioUtil.getRandomInteraction();
 		CharacterRoleEnumType actorRole = OlioUtil.getRandomCharacterRole(per1.get("gender"));
 		//ReasonEnumType actorReason = guessReason(prof1, actorAlign, interType, actorRole, prof2);
