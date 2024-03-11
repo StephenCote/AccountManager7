@@ -17,6 +17,8 @@ public class PersonalityGroupProfile {
 	private Map<EsteemNeeds, Integer> esteemNeeds = new HashMap<>();
 	private Map<LoveNeeds, Integer> loveNeeds = new HashMap<>();
 	
+	private Map<Long, Double> relativeWealth = new HashMap<>();
+	
 	public PersonalityGroupProfile() {
 		
 	}
@@ -56,6 +58,10 @@ public class PersonalityGroupProfile {
 
 	public Map<LoveNeeds, Integer> getLoveNeeds() {
 		return loveNeeds;
+	}
+	
+	public Map<Long, Double> getRelativeWealth(){
+		return relativeWealth;
 	}
 	
 	

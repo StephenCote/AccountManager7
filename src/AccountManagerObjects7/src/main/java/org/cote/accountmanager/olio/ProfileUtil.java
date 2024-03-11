@@ -196,7 +196,12 @@ SLOAN Notation
 		  .map(c -> c.getLoveNeeds().contains(need) ? 1 : 0)
 		  .reduce(0, Integer::sum);
 	}
-	
+
+	protected static void countMoney(Map<BaseRecord, PersonalityProfile> map, PersonalityGroupProfile pgp) {
+		for(BaseRecord p: map.keySet()) {
+			pgp.getRelativeWealth().put(p.get(FieldNames.FIELD_ID), ItemUtil.countMoney(p));
+		}
+	}
 	
 	public static PersonalityGroupProfile getGroupProfile(Map<BaseRecord, PersonalityProfile> map){
 		PersonalityGroupProfile pgp = new PersonalityGroupProfile();
@@ -224,6 +229,8 @@ SLOAN Notation
 		pgp.getEsteemNeeds().put(EsteemNeeds.SELF_ESTEEM, countEsteemNeed(map, EsteemNeeds.SELF_ESTEEM));
 		pgp.getEsteemNeeds().put(EsteemNeeds.STATUS, countEsteemNeed(map, EsteemNeeds.STATUS));
 		pgp.getEsteemNeeds().put(EsteemNeeds.STRENGTH, countEsteemNeed(map, EsteemNeeds.STRENGTH));
+		
+		countMoney(map, pgp);
 		
 		return pgp;
 	}
@@ -284,6 +291,7 @@ SLOAN Notation
 		
 		return prof;
 	}
+	
 	private static void checkPopulation(BaseRecord animal) {
 		IOSystem.getActiveContext().getReader().populate(animal, new String[] {"statistics", "instinct", "store"});
 		BaseRecord stats = animal.get("statistics");
@@ -292,8 +300,8 @@ SLOAN Notation
 		IOSystem.getActiveContext().getReader().populate(inst);
 		IOSystem.getActiveContext().getReader().populate(sto);
 		IOSystem.getActiveContext().getReader().populate(stats);
-		
 	}
+	
 	protected static AnimalProfile analyzeAnimal(OlioContext octx, BaseRecord animal) {
 		checkPopulation(animal);
 		AnimalProfile prof = createAnimalProfile(octx.getWorld(), animal);

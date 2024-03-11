@@ -209,9 +209,20 @@ public class GroupDynamicUtil {
 		else {
 			interactorOutcome = OutcomeEnumType.FAVORABLE;
 		}
+		if(actorOutcome == OutcomeEnumType.EQUILIBRIUM) {
+			if(interactorOutcome == OutcomeEnumType.FAVORABLE || interactorOutcome == OutcomeEnumType.VERY_FAVORABLE) {
+				actorOutcome = OutcomeEnumType.UNFAVORABLE;
+			}
+			else {
+				actorOutcome = OutcomeEnumType.FAVORABLE;
+			}
+
+		}
 		try {
-			interaction.set("actorOutcome", actorOutcome);
-			interaction.set("interactorOutcome", interactorOutcome);
+			if(interaction != null) {
+				interaction.set("actorOutcome", actorOutcome);
+				interaction.set("interactorOutcome", interactorOutcome);
+			}
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -291,10 +302,15 @@ public class GroupDynamicUtil {
 	}
 	
 	protected static BaseRecord newIntraGroupInteraction(OlioContext ctx, InteractionEnumType type, BaseRecord event, PersonalityProfile actor, ThreatEnumType actorThreat, ReasonEnumType actorReason, PersonalityProfile interactor, ThreatEnumType interactorThreat, ReasonEnumType interactorReason) {
-		AlignmentEnumType eventAlign = AlignmentEnumType.valueOf(event.get(FieldNames.FIELD_ALIGNMENT));
-		AlignmentEnumType actorAlign = AlignmentEnumType.margin(eventAlign, actor.getAlignment());
-		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(eventAlign, interactor.getAlignment());
-		
+		AlignmentEnumType eventAlign = AlignmentEnumType.NEUTRAL;
+		AlignmentEnumType actorAlign = actor.getAlignment();
+		AlignmentEnumType interactorAlign = interactor.getAlignment();
+
+		if(event != null) {
+			eventAlign = AlignmentEnumType.valueOf(event.get(FieldNames.FIELD_ALIGNMENT));
+			actorAlign = AlignmentEnumType.margin(eventAlign, actor.getAlignment());
+			interactorAlign = AlignmentEnumType.margin(eventAlign, interactor.getAlignment());
+		}
 		return InteractionUtil.newInteraction(ctx, type, event, actor.getRecord(), actorAlign, actorThreat, CharacterRoleEnumType.INDETERMINATE, actorReason, interactor.getRecord(), interactorAlign, interactorThreat, CharacterRoleEnumType.INDETERMINATE, interactorReason);
 	}
 	

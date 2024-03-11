@@ -393,5 +393,53 @@
 		],
 		"resaleAdjustment": 0.5,
 		"type": "template"
+	},
+	{
+		"category": "money",
+		"description": "Shiny pebble",
+		"name": "shiny pebble",
+		"qualities": [
+			{
+				"valueAdjustment": 0.25
+			}
+		],
+		"resaleAdjustment": 0.95,
+		"type": "template"
+	},
+	{
+		"category": "money",
+		"description": "Seashell",
+		"name": "seashell",
+		"qualities": [
+			{
+				"valueAdjustment": 0.25
+			}
+		],
+		"resaleAdjustment": 0.95,
+		"type": "template"
+	},
+	{
+		"category": "money",
+		"description": "Fiat script",
+		"name": "script",
+		"qualities": [
+			{
+				"valueAdjustment": 0.50
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"type": "template"
+	},
+	{
+		"category": "money",
+		"description": "Pocket lint",
+		"name": "lint",
+		"qualities": [
+			{
+				"valueAdjustment": 0.0
+			}
+		],
+		"resaleAdjustment": 0.0,
+		"type": "template"
 	}
 ]

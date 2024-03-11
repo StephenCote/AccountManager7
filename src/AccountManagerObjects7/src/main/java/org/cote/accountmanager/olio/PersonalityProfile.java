@@ -72,6 +72,11 @@ public class PersonalityProfile extends AnimalProfile {
 	public PersonalityProfile() {
 		
 	}
+	
+	public List<String> getRace(){
+		return getRecord().get("race");
+	}
+	
 	public boolean isNarcissist() {
 		return VeryEnumType.compare(narcissist, VeryEnumType.SOMEWHAT, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}

@@ -91,24 +91,6 @@ public class DarkTriadUtil {
 		int cntStat = DarkTriadUtil.getDeceptionCounterStatistic(rec);
 		return RollUtil.rollStat20(cntStat);
 	}
-	/*
-	public static RollEnumType rollDeception(BaseRecord actor, BaseRecord interactor) {
-		RollEnumType ret = rollDeception(actor);
-		if(ret == RollEnumType.SUCCESS || ret == RollEnumType.NATURAL_SUCCESS) {
-			RollEnumType ret2 = rollCounterDeception(interactor);
-			if(ret2 == RollEnumType.SUCCESS || ret2 == RollEnumType.NATURAL_SUCCESS) {
-				logger.info(interactor.get("firstName") + " caught on to " + actor.get("firstName") + "'s deception");
-			}
-			else {
-				deceived = true;
-			}
-		}
-		else if(ret == RollEnumType.CATASTROPHIC_FAILURE) {
-			logger.warn(actor.get("firstName") + " critically failed an attempt to deceive");
-		}
-		return deceived;
-	}
-	*/
 	public static RollEnumType rollNarcissism(BaseRecord rec) {
 		return RollUtil.rollStat1(rec.get("personality.narcissism"));
 	}

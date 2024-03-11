@@ -22,6 +22,10 @@
 			"description": "Default for US: dimensions in inches, weight in pounds"
 		},
 		{
+			"name": "valueAdjustment",
+			"type": "double"
+		},
+		{
 			"name": "width",
 			"type": "double"
 		},		

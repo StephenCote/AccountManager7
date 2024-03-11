@@ -3,6 +3,8 @@ package org.cote.accountmanager.olio;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -89,21 +91,186 @@ public class ItemUtil {
 		items.clear();
 	}
 	
-	public static void addItemToInventory(OlioContext ctx, BaseRecord rec, BaseRecord item) {
+	public static double countMoney(BaseRecord rec) {
+		double count = 0.0;
+		BaseRecord store = rec.get("store");
+		List<BaseRecord> inv = store.get("inventory");
+
+		for(BaseRecord i: inv) {
+			String cat = i.get("item.category");
+			if(cat == null || !cat.equals("money")) {
+				continue;
+			}
+			List<BaseRecord> quals = i.get("item.qualities");
+			double adj = 0.0;
+			if(quals != null && quals.size() > 0) {
+				adj = quals.get(0).get("valueAdjustment");
+			}
+			int quan = i.get("quantity");
+			count += (quan * adj);
+		}
+		return count;
+	}
+	
+	public static List<BaseRecord> getMoneyTemplates(OlioContext ctx){
+		return getMoneyTemplates(ctx, null);
+	}
+	public static List<BaseRecord> getMoneyTemplates(OlioContext ctx, String name){
+		return ItemUtil.getTemplateItems(ctx).stream().filter(i -> (name == null || name.equals(i.get(FieldNames.FIELD_NAME))) && ((String)i.get("category")).equals("money")).collect(Collectors.toList());
+	}
+	
+	public static int countItemInInventory(OlioContext ctx, BaseRecord rec, String itemName) {
+		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> ((String)i.get("type")).equals("template") && ((String)i.get(FieldNames.FIELD_NAME)).equals(itemName)).findFirst();
+		if(item.isPresent()) {
+			return countItemInInventory(ctx, rec, item.get());
+		}
+		return 0;
+	}
+	public static int countItemInInventory(OlioContext ctx, BaseRecord rec, BaseRecord item) {
 		BaseRecord store = rec.get("store");
 		if(store == null) {
 			logger.warn("Store was null");
-			return;
+			return 0;
 		}
+		int count = 0;
+		long id = item.get(FieldNames.FIELD_ID);
+		BaseRecord invItem = null;
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		if(oinvItem.isPresent()) {
+			count = oinvItem.get().get("quantity");
+		}
+		return 0;
+	}
+	public static int countItemByCategoryInInventory(OlioContext ctx, BaseRecord rec, String itemCat) {
+		
+		List<BaseRecord> items = getTemplateItems(ctx).stream().filter(i -> {
+			String type = i.get("type");
+			String cat = i.get("category");
+			return type != null && type.equals("template") && cat != null && cat.equals(itemCat);
+		}).collect(Collectors.toList());
+	
+		int count = 0;
+		for(BaseRecord i : items) {
+			count += countItemInInventory(ctx, rec, i);
+		}
+		return count;
+	}
+	public static int countItemByCategoryInInventory(OlioContext ctx, BaseRecord rec, BaseRecord item) {
+		BaseRecord store = rec.get("store");
+		if(store == null) {
+			logger.warn("Store was null");
+			return 0;
+		}
+		int count = 0;
+		long id = item.get(FieldNames.FIELD_ID);
+		BaseRecord invItem = null;
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		if(oinvItem.isPresent()) {
+			count = oinvItem.get().get("quantity");
+		}
+		return 0;
+	}
+	public static boolean depositItemIntoInventory(OlioContext ctx, BaseRecord rec, String itemName, int count) {
+		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> {
+			String type = i.get("type");
+			String name = i.get("name");
+			return type != null && type.equals("template") && name != null && name.equals(itemName);
+		}).findFirst();
+
+		if(item.isPresent()) {
+			return depositItemIntoInventory(ctx, rec, item.get(), count);
+		}
+		return false;
+	}
+	public static boolean depositItemIntoInventory(OlioContext ctx, BaseRecord rec, BaseRecord item, int count) {
+		BaseRecord store = rec.get("store");
+		if(store == null) {
+			logger.warn("Store was null");
+			return false;
+		}
+		if(count <= 0) {
+			logger.warn("Invalid count: " + count);
+			return false;
+		}
+		long id = item.get(FieldNames.FIELD_ID);
+		BaseRecord invItem = null;
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		if(oinvItem.isPresent()) {
+			invItem = oinvItem.get();
+		}
+		else {
+			invItem = addItemToInventory(ctx, rec, item);
+			IOSystem.getActiveContext().getRecordUtil().createRecord(invItem);
+		}
+		
+		int quan = invItem.get("quantity");
+		invItem.setValue("quantity", quan + count);
+		ctx.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
+
+		return true;
+	}
+	public static boolean withdrawItemFromInventory(OlioContext ctx, BaseRecord rec, String itemName, int count) {
+		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> {
+			String type = i.get("type");
+			String name = i.get("name");
+			return type != null && type.equals("template") && name != null && name.equals(itemName);
+		}).findFirst();
+		
+		if(item.isPresent()) {
+			return withdrawItemFromInventory(ctx, rec, item.get(), count);
+		}
+		return false;
+	}
+
+	public static boolean withdrawItemFromInventory(OlioContext ctx, BaseRecord rec, BaseRecord item, int count) {
+		BaseRecord store = rec.get("store");
+		if(store == null) {
+			logger.warn("Store was null");
+			return false;
+		}
+		if(count <= 0) {
+			logger.warn("Invalid count: " + count);
+			return false;
+		}
+		long id = item.get(FieldNames.FIELD_ID);
+		BaseRecord invItem = null;
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		if(oinvItem.isPresent()) {
+			invItem = oinvItem.get();
+		}
+		else {
+			/// Don't have any to withdraw
+			return false;
+		}
+		
+		int quan = ((int)invItem.get("quantity")) - count;
+		if(quan < 0) {
+			logger.warn("Withdraw amount is more than the quantity balance");
+			return false;
+		}
+		invItem.setValue("quantity", quan);
+		ctx.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
+
+		return true;
+	}
+	
+	public static BaseRecord addItemToInventory(OlioContext ctx, BaseRecord rec, BaseRecord item) {
+		BaseRecord store = rec.get("store");
+		if(store == null) {
+			logger.warn("Store was null");
+			return null;
+		}
+		BaseRecord inv = null;
 		List<BaseRecord> entries = store.get("inventory");
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path"));
 		try {
-			BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getUser(), null, plist);
+			inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getUser(), null, plist);
 			inv.set("item", item);
 			entries.add(inv);
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+		return inv;
 	}
 	
 	public static BaseRecord buildItem(OlioContext ctx, String name) {

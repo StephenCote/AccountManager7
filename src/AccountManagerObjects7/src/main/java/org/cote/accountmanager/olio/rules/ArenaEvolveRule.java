@@ -131,6 +131,8 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 		
 		outfitAndStage(context, acells.get(random.nextInt(acells.size())), party1);
 		outfitAndStage(context, acells.get(random.nextInt(acells.size())), party2);
+		showerWithMoney(context, party1);
+		showerWithMoney(context, party2);
 		context.processQueue();
 	}
 
@@ -181,7 +183,35 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 		}
 		return aweaps;
 	}
-
+	
+	private String[] monies = new String[] {"script", "seashell", "shiny pebble"};
+	private void showerWithMoney(OlioContext ctx, List<BaseRecord> party) {
+		String money = monies[random.nextInt(monies.length)];
+		
+		for(BaseRecord p: party) {
+			int count = ItemUtil.countItemByCategoryInInventory(ctx, p, "money");
+			if(count == 0) {
+				boolean isBroke = random.nextDouble() <= 0.25;
+				if(isBroke) {
+					/// give them a piece of lint
+					ItemUtil.depositItemIntoInventory(ctx, p, "lint", 1);
+				}
+				else {
+					int moneyMax = 100;
+					int moneyMin = 5;
+					if(random.nextDouble() <= 0.25) {
+						moneyMax = 150;
+						moneyMin = 25;
+						if(random.nextDouble() <= 0.10) {
+							moneyMax = 200;
+							moneyMin = 75;
+						}
+					}
+					ItemUtil.depositItemIntoInventory(ctx, p, money, random.nextInt(moneyMin, moneyMax));
+				}
+			}
+		}
+	}
 	private void outfitAndStage(OlioContext ctx, BaseRecord cell, List<BaseRecord> party) {
 		for(BaseRecord p: party) {
 			BaseRecord sto = p.get("store");

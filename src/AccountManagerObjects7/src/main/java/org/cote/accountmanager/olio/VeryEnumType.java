@@ -37,7 +37,9 @@ public enum VeryEnumType {
     private VeryEnumType(final double val) {
     	this.val = val;
     }
-
+    public static VeryEnumType opposite(VeryEnumType val) {
+    	return valueOf(Math.abs(1.0 - val.val));
+    }
     public static VeryEnumType valueOf(double val) {
 		DecimalFormat df = new DecimalFormat("#.#");
 		df.setRoundingMode(RoundingMode.HALF_EVEN);

@@ -1,8 +1,12 @@
 package org.cote.accountmanager.olio;
 
+import java.util.Arrays;
+import java.util.List;
+
 import org.cote.accountmanager.olio.personality.PersonalityRules;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class ProfileComparison {
 	private PersonalityProfile profile1 = null;
@@ -13,6 +17,34 @@ public class ProfileComparison {
 		this.profile1 = prof1;
 		this.profile2 = prof2;
 		compatibility = MBTIUtil.getCompatibility(prof1.getMbtiKey(), prof2.getMbtiKey());
+	}
+	
+	/// This is a rather lame compatibility determination at the moment
+	///
+	public CompatibilityEnumType getRomanticCompatibility() {
+		List<String> genders = Arrays.asList(new String[] {profile1.getGender(), profile2.getGender()});
+		CompatibilityEnumType compat = CompatibilityEnumType.NOT_COMPATIBLE;
+		/// Trad. romantic compatibility - personality match, gender match
+		if(genders.contains("male") && genders.contains("female") && profile1.getAge() >= Rules.MAXIMUM_CHILD_AGE && profile2.getAge() >= Rules.MAXIMUM_CHILD_AGE) {
+			/// Not a large age spread
+			if(compatibility != CompatibilityEnumType.NOT_COMPATIBLE) {
+				if(!doesAgeCrossBoundary()) {
+					if(HighEnumType.compare(getCharismaMargin(), HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+						compat = CompatibilityEnumType.IDEAL;	
+					}
+					else {
+						compat = CompatibilityEnumType.COMPATIBLE;
+					}
+				}
+				else {
+					compat = CompatibilityEnumType.PARTIAL;
+				}
+			}
+			else {
+				compat = CompatibilityEnumType.NOT_IDEAL;
+			}
+		}
+		return compat;
 	}
 	
 	public CompatibilityEnumType getCompatibility() {
@@ -61,4 +93,10 @@ public class ProfileComparison {
 	public double getNarcissismDiff() {
 		return getPersonalityDiff("narcissism");
 	}
+	public VeryEnumType getWealthMargin() {
+		double wealth1 = ItemUtil.countMoney(profile1.getRecord());
+		double wealth2 = ItemUtil.countMoney(profile2.getRecord());
+		return VeryEnumType.valueOf(Math.min(wealth1, wealth2) / Math.max(wealth1, wealth2));
+	}
+	
 }
