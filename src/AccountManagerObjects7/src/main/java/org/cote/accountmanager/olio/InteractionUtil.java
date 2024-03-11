@@ -1,6 +1,8 @@
 package org.cote.accountmanager.olio;
 
+import java.math.RoundingMode;
 import java.security.SecureRandom;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -14,6 +16,8 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
+import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -112,7 +116,7 @@ public class InteractionUtil {
 	}
 	*/
 	
-	public static ReasonEnumType guessReason(PersonalityProfile prof1, AlignmentEnumType align, InteractionEnumType interType, CharacterRoleEnumType role, PersonalityProfile prof2) {
+	public static ReasonEnumType guessReasonXXX(OlioContext ctx, PersonalityProfile prof1, AlignmentEnumType align, InteractionEnumType interType, CharacterRoleEnumType role, PersonalityProfile prof2) {
 		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
 		ProfileComparison pcomp = new ProfileComparison(prof1, prof2);
 		CompatibilityEnumType cet = pcomp.getCompatibility();
@@ -121,7 +125,7 @@ public class InteractionUtil {
 		VeryEnumType isPsych = prof1.getPsychopath();
 		VeryEnumType isNarc = prof1.getNarcissist();
 		HighEnumType prettier = pcomp.getCharismaMargin();
-
+		
 		int alignVal = AlignmentEnumType.getValue(align);
 		/// Given the current forces affecting alignment, are they still leaning towards the good
 		///
@@ -181,7 +185,7 @@ public class InteractionUtil {
 	/// Given two random people, guess a reason for them to interact based on their profiles
 	/// It's possible there's no good reason, captured as type.NONE
 	///
-	public static ReasonToDo guessReasonToInteract(PersonalityProfile prof1, AlignmentEnumType contextAlign, PersonalityProfile prof2) {
+	public static ReasonToDo guessReasonToInteract(OlioContext ctx, PersonalityProfile prof1, AlignmentEnumType contextAlign, PersonalityProfile prof2) {
 
 		ReasonToDo rtd = new ReasonToDo();
 		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
@@ -191,6 +195,7 @@ public class InteractionUtil {
 		CompatibilityEnumType cet = pcomp.getCompatibility();
 		boolean isCompat = CompatibilityEnumType.compare(cet, CompatibilityEnumType.PARTIAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 		boolean ageIssue = pcomp.doesAgeCrossBoundary();
+		
 		/*
 		VeryEnumType isMach = prof1.getMachiavellian();
 		VeryEnumType isPsych = prof1.getPsychopath();
@@ -204,7 +209,15 @@ public class InteractionUtil {
 		int smartDiff = pcomp.getIntelligenceDiff();
 		int strongDiff = pcomp.getPhysicalStrengthDiff();
 		int wisDiff = pcomp.getWisdomDiff();
-		
+		PersonalityProfile outLead = PersonalityUtil.identifyLeaderPersonality(Arrays.asList(prof1, prof2));
+		boolean isLeader = false;
+		boolean isLeaderContest = false;
+		if(outLead.getId() == prof1.getId()) {
+			isLeader = true;
+		}
+		else {
+			isLeaderContest = GroupDynamicUtil.contestLeadership(ctx, null, Arrays.asList(prof1), prof2).size() > 0;
+		}
 		AlignmentEnumType actorAlign = AlignmentEnumType.margin(contextAlign, prof1.getAlignment());
 		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(contextAlign, prof2.getAlignment());
 
@@ -228,11 +241,16 @@ public class InteractionUtil {
 			}
 			/// favor neutral-negative
 		}
-	
+		double wealth1 = ItemUtil.countMoney(prof1.getRecord());
+		double wealth2 = ItemUtil.countMoney(prof2.getRecord());
+		double wealthGap = 1 - (Math.min(wealth1, wealth2) / Math.max(wealth1, wealth2));
 		
-		logger.info("Figure out what to do with " + prof1.getName() + " and " + prof2.getName());
+		logger.info("Figure out what to do with " + prof1.getName() + " (" + prof1.getGender() + ", " + prof1.getAge() + ") " + prof2.getName() + " (" + prof2.getGender() + ", " + prof2.getAge() + ") ");
 		logger.info("How is #1 aligning? " + actorAlign.toString());
 		logger.info("How is #2 aligning? " + interactorAlign.toString());
+		logger.info("What is the wealth gap? " + wealthGap);
+		logger.info("Who is richer, #1 or #2? " + wealth1 + " " + wealth2);
+		logger.info("Is there an age disparity? " + ageIssue);
 		logger.info("How much prettier is #1 from #2? " + prettyDiff);
 		logger.info("How much smarter is #1 from #2? " + smartDiff);
 		logger.info("How much stronger is #1 from #2? " + strongDiff);
@@ -240,6 +258,15 @@ public class InteractionUtil {
 		logger.info("How much more of machiavellian is #1 from #2? " + machDiff);
 		logger.info("How much more of a psychopath is #1 from #2? " + psychDiff);
 		logger.info("How much more narcissistic is #1 from #2? " + narcDiff);
+		logger.info("Is #1 the leader? " + isLeader);
+		logger.info("Is #1 contesting #2's leadership? " + isLeaderContest);
+		/*
+		if(isLeaderContest) {
+			for(BaseRecord rec : leadContest) {
+				logger.info(rec.toFullString());
+			}
+		}
+		*/
 		logger.info("Are they compatible? " + cet.toString());
 		
 		return rtd;
@@ -261,7 +288,7 @@ public class InteractionUtil {
 		InteractionEnumType interType = OlioUtil.getRandomInteraction();
 		CharacterRoleEnumType actorRole = OlioUtil.getRandomCharacterRole(per1.get("gender"));
 		//ReasonEnumType actorReason = guessReason(prof1, actorAlign, interType, actorRole, prof2);
-		ReasonToDo rtd = guessReasonToInteract(prof1, interAlign, prof2);
+		ReasonToDo rtd = guessReasonToInteract(ctx, prof1, interAlign, prof2);
 		ThreatEnumType threat = getThreatForInteraction(interType);
 		ThreatEnumType athreat = ThreatEnumType.getTarget(threat);
 		BaseRecord inter = InteractionUtil.newInteraction(
