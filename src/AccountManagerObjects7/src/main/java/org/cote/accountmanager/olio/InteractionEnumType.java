@@ -7,6 +7,10 @@ import java.util.List;
 public enum InteractionEnumType {
 	ACCOMMODATE,
 	ALLY,
+	BARTER,
+	BEFRIEND,
+	BETRAY,
+	BREAK_UP,
 	COERCE,
 	COMBAT,
 	COMMERCE,
@@ -21,6 +25,7 @@ public enum InteractionEnumType {
 	ENTERTAIN,
 	EXCHANGE,
 	EXPRESS_GRATITUDE,
+	EXPRESS_INDIFFERENCE,
 	INTIMATE,
 	MENTOR,
 	NEGOTIATE,
@@ -28,22 +33,36 @@ public enum InteractionEnumType {
 	OPPOSE,
 	PEER_PRESSURE,
 	RECREATE,
+	RELATE,
 	ROMANCE,
+	SHUN,
 	SOCIALIZE,
 	THREATEN,
 	UNKNOWN;
-	
+
 	private static List<InteractionEnumType> positiveInteractions = Arrays.asList(new InteractionEnumType[] {
-		ACCOMMODATE, ALLY, COOPERATE, DATE, ENTERTAIN, EXPRESS_GRATITUDE, INTIMATE, MENTOR, RECREATE, ROMANCE
+		ACCOMMODATE, ALLY, BEFRIEND, COOPERATE, DATE, ENTERTAIN, EXPRESS_GRATITUDE, INTIMATE, MENTOR, RECREATE, ROMANCE
 		
 	});
 	private static List<InteractionEnumType> neutralInteractions = Arrays.asList(new InteractionEnumType[] {
 		COMMERCE, COMPETE, CORRESPOND, DEBATE, DEFEND, EXCHANGE, NEGOTIATE, SOCIALIZE, UNKNOWN, NONE
 	});
 	private static List<InteractionEnumType> negativeInteractions = Arrays.asList(new InteractionEnumType[] {
-		COERCE, COMBAT, CONFLICT, CRITICIZE, OPPOSE, PEER_PRESSURE, THREATEN
+		BREAK_UP, COERCE, COMBAT, CONFLICT, CRITICIZE, EXPRESS_INDIFFERENCE, OPPOSE, PEER_PRESSURE, SHUN, THREATEN
 	});
 	
+	public static List<InteractionEnumType> getPositiveInteractions() {
+		return positiveInteractions;
+	}
+
+	public static List<InteractionEnumType> getNeutralInteractions() {
+		return neutralInteractions;
+	}
+
+	public static List<InteractionEnumType> getNegativeInteractions() {
+		return negativeInteractions;
+	}
+
 	public static boolean isPositive(InteractionEnumType type) {
 		return positiveInteractions.contains(type);
 	}

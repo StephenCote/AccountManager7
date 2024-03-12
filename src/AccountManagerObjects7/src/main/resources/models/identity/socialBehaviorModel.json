@@ -1,11 +1,16 @@
 {
 	"name": "identity.socialBehavior",
+	"likeInherits": ["data.directory"],
 	"inherits": [
-		"data.directory",
-		"common.description",
+		"common.groupExt",
+		"common.ownerId",
+		"common.objectId",
+		"system.organizationExt",
+		"common.populate",
 		"common.alignment",
-		"policy.score"
+		"system.primaryKey"
 	],
+	"query": ["id", "groupId"],
 	"group": "SocialBehaviors",
 	"icon": "category",
 	"label": "Social Behavior",
@@ -15,7 +20,7 @@
 			"name": "positive",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "identity.personalityTrait",
+			"baseModel": "data.trait",
 			"participantModel": "trait.positive",
 			"foreign": true
 		},
@@ -23,7 +28,7 @@
 			"name": "negative",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "identity.personalityTrait",
+			"baseModel": "data.trait",
 			"participantModel": "trait.negative",
 			"foreign": true
 		}

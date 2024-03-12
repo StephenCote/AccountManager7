@@ -88,7 +88,13 @@
 			"maxLength": 32,
 			"shortName": "asta",
 			"description": "Name of any primary statistic driving the interaction."
-		},		
+		},
+		{
+			"name": "actorRoleSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
+		},
 		{
 			"name": "actorRole",
 			"baseClass": "org.cote.accountmanager.olio.CharacterRoleEnumType",
@@ -98,6 +104,12 @@
 			"shortName": "actr"
 		},
 		{
+			"name": "actorReasonSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
+		},
+		{
 			"name": "actorReason",
 			"baseClass": "org.cote.accountmanager.olio.ReasonEnumType",
 			"type": "enum",
@@ -105,6 +117,13 @@
 			"default": "unknown",
 			"shortName": "actrr"
 		},
+		{
+			"name": "actorAlignmentSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
+		},
+
 		{
 			"name": "actorAlignment",
 			"baseClass": "org.cote.accountmanager.olio.AlignmentEnumType",
@@ -120,6 +139,12 @@
 			"maxLength": 32,
 			"default": "equilibrium",
 			"shortName": "acto"
+		},
+		{
+			"name": "actorThreatSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
 		},
 		{
 			"name": "actorThreat",
@@ -172,6 +197,12 @@
 			"description": "Name of any primary statistic driving the interaction."
 		},
 		{
+			"name": "interactorRoleSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
+		},
+		{
 			"name": "interactorRole",
 			"baseClass": "org.cote.accountmanager.olio.CharacterRoleEnumType",
 			"type": "enum",
@@ -187,6 +218,18 @@
 			"shortName": "iactrr"
 		},
 		{
+			"name": "interactorReasonSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
+		},
+		{
+			"name": "interactorAlignmentSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
+		},
+		{
 			"name": "interactorAlignment",
 			"baseClass": "org.cote.accountmanager.olio.AlignmentEnumType",
 			"type": "enum",
@@ -200,6 +243,12 @@
 			"maxLength": 32,
 			"default": "equilibrium",
 			"shortName": "iacto"
+		},
+		{
+			"name": "interactorThreatSuggestion",
+			"type": "list",
+			"baseType": "string",
+			"ephemeral": true	
 		},
 		{
 			"name": "interactorThreat",

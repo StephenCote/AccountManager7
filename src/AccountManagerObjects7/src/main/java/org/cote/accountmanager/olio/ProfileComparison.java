@@ -2,10 +2,13 @@ package org.cote.accountmanager.olio;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.cote.accountmanager.olio.personality.PersonalityRules;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class ProfileComparison {
@@ -19,17 +22,22 @@ public class ProfileComparison {
 		compatibility = MBTIUtil.getCompatibility(prof1.getMbtiKey(), prof2.getMbtiKey());
 	}
 	
-	/// This is a rather lame compatibility determination at the moment
-	///
 	public CompatibilityEnumType getRomanticCompatibility() {
 		List<String> genders = Arrays.asList(new String[] {profile1.getGender(), profile2.getGender()});
 		CompatibilityEnumType compat = CompatibilityEnumType.NOT_COMPATIBLE;
 		/// Trad. romantic compatibility - personality match, gender match
-		if(genders.contains("male") && genders.contains("female") && profile1.getAge() >= Rules.MAXIMUM_CHILD_AGE && profile2.getAge() >= Rules.MAXIMUM_CHILD_AGE) {
-			/// Not a large age spread
+		if(genders.contains("male") && genders.contains("female") && profile1.getAge() >= Rules.MAXIMUM_CHILD_AGE && profile2.getAge() >= Rules.MAXIMUM_CHILD_AGE) { 
+			/// personality is at least a little compatible
 			if(compatibility != CompatibilityEnumType.NOT_COMPATIBLE) {
-				if(!doesAgeCrossBoundary()) {
-					if(HighEnumType.compare(getCharismaMargin(), HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+				if(!profile1.isMarried() && !profile2.isMarried()) {
+					/// TODO: Include X range of prior positive interactions, common interests, and ideologies
+					///
+					/// Not a large age spread, and not a huge gap in charisma (being used as a relative and general measure of physical and personality attractiveness) 
+					if(
+						getRacialCompatibility() != CompatibilityEnumType.NOT_COMPATIBLE
+						&& !doesAgeCrossBoundary()
+						&& HighEnumType.compare(getCharismaMargin(), HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)
+					) {
 						compat = CompatibilityEnumType.IDEAL;	
 					}
 					else {
@@ -46,7 +54,35 @@ public class ProfileComparison {
 		}
 		return compat;
 	}
-	
+	public CompatibilityEnumType getRacialCompatibility() {
+		CompatibilityEnumType cet = CompatibilityEnumType.NOT_COMPATIBLE;
+		List<String> race1 = profile1.getRace();
+		List<String> race2 = profile2.getRace();
+		if(race1.size() > 0 && race2.size() > 0) {
+			List<String> differences = race1.stream().filter(r -> !race2.contains(r)).collect(Collectors.toList());
+			if(differences.size() == 0) {
+				cet = CompatibilityEnumType.IDEAL;
+			}
+			/// TODO: Need to encapsulate this type of rule into something more data-driven and configurable
+			///
+			else if(
+				(race1.size() == 1 && race1.contains("alien")) || (race2.size() == 1 && race2.contains("alien"))
+				||
+				(race1.size() == 1 && race1.contains("vampire")) || (race2.size() == 1 && race2.contains("vampire"))
+				||
+				(race1.size() == 1 && race1.contains("robot")) || (race2.size() == 1 && race2.contains("robot"))
+			){
+				cet = CompatibilityEnumType.NOT_IDEAL;
+			}
+			else if(race1.contains(race2) || race2.contains(race1)){
+				cet = CompatibilityEnumType.COMPATIBLE;
+			}
+			else {
+				cet = CompatibilityEnumType.PARTIAL;
+			}
+		}
+		return cet;
+	}
 	public CompatibilityEnumType getCompatibility() {
 		return compatibility;
 	}
@@ -92,6 +128,11 @@ public class ProfileComparison {
 	}
 	public double getNarcissismDiff() {
 		return getPersonalityDiff("narcissism");
+	}
+	public double getWealthGap() {
+		double wealth1 = ItemUtil.countMoney(profile1.getRecord());
+		double wealth2 = ItemUtil.countMoney(profile2.getRecord());
+		return (1 - (Math.min(wealth1, wealth2) / Math.max(wealth1, wealth2)));
 	}
 	public VeryEnumType getWealthMargin() {
 		double wealth1 = ItemUtil.countMoney(profile1.getRecord());

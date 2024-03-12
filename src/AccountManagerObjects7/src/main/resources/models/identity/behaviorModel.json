@@ -9,6 +9,7 @@
 		"common.populate",
 		"system.primaryKey"
 	],
+	"query": ["id", "groupId"],
 	"group": "Behaviors",
 	"icon": "category",
 	"label": "Behavior",

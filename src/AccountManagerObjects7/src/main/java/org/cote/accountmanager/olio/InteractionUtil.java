@@ -6,6 +6,7 @@ import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -21,13 +22,24 @@ import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
 public class InteractionUtil {
 	public static final Logger logger = LogManager.getLogger(InteractionUtil.class);
 	private static final SecureRandom rand = new SecureRandom();
+	private static List<BaseRecord> interactionTemplates = new ArrayList<>();
 
+	public static List<BaseRecord> getInteractionTemplates(){
+		if(interactionTemplates.size() == 0) {
+			interactionTemplates = JSONUtil.getList(ResourceUtil.getResource("./olio/interactions.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		}
+		return interactionTemplates;
+	}
 	public static ThreatEnumType getThreatForInteraction(InteractionEnumType inter) {
 		ThreatEnumType tet = ThreatEnumType.NONE;
 		if(inter == InteractionEnumType.COERCE) {
@@ -182,18 +194,73 @@ public class InteractionUtil {
 		return ret;
 	}
 	
+	public static List<InteractionEnumType> getInteractionsByAlignment(AlignmentEnumType align) {
+		List<InteractionEnumType> inters = new ArrayList<>();
+		if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICNEUTRAL, ComparatorEnumType.LESS_THAN)) {
+			inters = InteractionEnumType.getNegativeInteractions();
+		}
+		else if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICGOOD, ComparatorEnumType.LESS_THAN)) {
+			inters = InteractionEnumType.getNeutralInteractions();
+		}
+		else inters = InteractionEnumType.getPositiveInteractions();
+		return inters;
+	}
+	
+	public static List<ReasonEnumType> getReasonsByAlignment(AlignmentEnumType align) {
+		List<ReasonEnumType> reas = new ArrayList<>();
+		if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICNEUTRAL, ComparatorEnumType.LESS_THAN)) {
+			reas = ReasonEnumType.getNegativeReasons();
+		}
+		else if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICGOOD, ComparatorEnumType.LESS_THAN)) {
+			reas = ReasonEnumType.getNeutralReasons();
+		}
+		else reas = ReasonEnumType.getPositiveReasons();
+		return reas;
+	}
+	
+	protected static List<BaseRecord> filterInteractionTemplates(AlignmentEnumType actorAlignment, ReasonEnumType actorReason, AlignmentEnumType interactorAlignment, ReasonEnumType interactorReason){
+		String alignStr = actorAlignment.toString().toLowerCase();
+		String interalignStr = interactorAlignment.toString().toLowerCase();
+		String reasStr = actorReason.toString().toLowerCase();
+		String interreasStr = interactorReason.toString().toLowerCase();
+		return getInteractionTemplates().stream().filter(i -> {
+			List<String> aligns = i.get("actorAlignmentSuggestion");
+			List<String> interaligns = i.get("interactorAlignmentSuggestion");
+			List<String> reas = i.get("actorReasonSuggestion");
+			List<String> interreas = i.get("interactorReasonSuggestion");
+
+			return (
+				(actorAlignment == AlignmentEnumType.UNKNOWN || aligns.contains(alignStr))
+				&&
+				(interactorAlignment == AlignmentEnumType.UNKNOWN || interaligns.contains(interalignStr))
+				&&
+				(actorReason == ReasonEnumType.UNKNOWN || reas.contains(reasStr))
+				&&
+				(interactorReason == ReasonEnumType.UNKNOWN || interreas.contains(interreasStr))
+
+			);
+		}).collect(Collectors.toList());
+	}
+	
 	/// Given two random people, guess a reason for them to interact based on their profiles
 	/// It's possible there's no good reason, captured as type.NONE
 	///
 	public static ReasonToDo guessReasonToInteract(OlioContext ctx, PersonalityProfile prof1, AlignmentEnumType contextAlign, PersonalityProfile prof2) {
-
+		if(prof1.getId() == prof2.getId()) {
+			logger.error("Profiles are the same");
+			return null;
+		}
 		ReasonToDo rtd = new ReasonToDo();
 		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
 		CharacterRoleEnumType role = CharacterRoleEnumType.UNKNOWN;
-		InteractionEnumType inter = InteractionEnumType.UNKNOWN;
+		//InteractionEnumType inter = InteractionEnumType.UNKNOWN;
+
 		ProfileComparison pcomp = new ProfileComparison(prof1, prof2);
 		CompatibilityEnumType cet = pcomp.getCompatibility();
+		CompatibilityEnumType rcet = pcomp.getRomanticCompatibility();
+		CompatibilityEnumType racet = pcomp.getRacialCompatibility();
 		boolean isCompat = CompatibilityEnumType.compare(cet, CompatibilityEnumType.PARTIAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
+		boolean isRoCompat = CompatibilityEnumType.compare(rcet, CompatibilityEnumType.PARTIAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 		boolean ageIssue = pcomp.doesAgeCrossBoundary();
 		
 		/*
@@ -221,33 +288,58 @@ public class InteractionUtil {
 		AlignmentEnumType actorAlign = AlignmentEnumType.margin(contextAlign, prof1.getAlignment());
 		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(contextAlign, prof2.getAlignment());
 
-		boolean leaningGood = AlignmentEnumType.compare(actorAlign, AlignmentEnumType.NEUTRAL, ComparatorEnumType.GREATER_THAN);
-		/// Should have good intentions (at the moment)
-		if(leaningGood) {
-			/// Compatibility - favor positive
-			if(isCompat) {
-				
-			}
-			/// favor neutral-negative
-			else {
-				
+		
+		
+		// boolean leaningGood = AlignmentEnumType.compare(actorAlign, AlignmentEnumType.NEUTRAL, ComparatorEnumType.GREATER_THAN);
+		List<ReasonEnumType> reasons = getReasonsByAlignment(actorAlign);
+
+		List<BaseRecord> inters = filterInteractionTemplates(actorAlign, ReasonEnumType.UNKNOWN, interactorAlign, ReasonEnumType.UNKNOWN);
+		if(inters.size() == 0) {
+			logger.error("Failed to find a reasonable interaction match");
+			return null;
+		}
+		BaseRecord inter = inters.get(rand.nextInt(inters.size()));
+		logger.info("Interaction: " + inter.get("type"));
+		
+		List<String> baseActorReasons = inter.get("actorReasonSuggestion");
+		List<ReasonEnumType> actorReasons = new ArrayList<>();
+		
+		String ainst = inter.get("actorInstinct");
+		for(String s: baseActorReasons) {
+			ReasonEnumType are = ReasonEnumType.valueOf(s);
+			if(reasons.contains(are)) {
+				if(
+					(
+						are != ReasonEnumType.INTIMACY
+						&& are != ReasonEnumType.ATTRACTION 
+						&& are != ReasonEnumType.SENSUALITY
+						&& (are != ReasonEnumType.INSTINCT || "mate".equals(ainst))
+					)
+					|| CompatibilityEnumType.compare(rcet, CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+				){
+					actorReasons.add(are);
+				}
 			}
 		}
-		/// May not have good intentions (at the moment)
-		else {
-			/// Compatibility - favor collaborative neutral or positive
-			if(isCompat) {
-				
-			}
-			/// favor neutral-negative
+		if(actorReasons.size() == 0) {
+			logger.error("Failed to identify any possible reasons");
+			return null;
 		}
+		ReasonEnumType actorReason = actorReasons.get(rand.nextInt(actorReasons.size()));
+		rtd.setReason(actorReason);
+		rtd.setInteraction(InteractionEnumType.valueOf(((String)inter.get("type")).toUpperCase()));
+		
+
 		double wealth1 = ItemUtil.countMoney(prof1.getRecord());
 		double wealth2 = ItemUtil.countMoney(prof2.getRecord());
-		double wealthGap = 1 - (Math.min(wealth1, wealth2) / Math.max(wealth1, wealth2));
+		double wealthGap = pcomp.getWealthGap();
 		
-		logger.info("Figure out what to do with " + prof1.getName() + " (" + prof1.getGender() + ", " + prof1.getAge() + ") " + prof2.getName() + " (" + prof2.getGender() + ", " + prof2.getAge() + ") ");
+		logger.info(prof1.getName() + " (" + prof1.getGender() + ", " + prof1.getAge() + ") wants to " + rtd.getReason().toString() + " because " + rtd.getReason().toString() + " with " + prof2.getName() + " (" + prof2.getGender() + ", " + prof2.getAge() + ") ");
 		logger.info("How is #1 aligning? " + actorAlign.toString());
 		logger.info("How is #2 aligning? " + interactorAlign.toString());
+		logger.info("Are their personalities compatible? " + cet.toString());
+		logger.info("Are they romantically compatibile? " + rcet.toString());
+		logger.info("Are they racially compatibile? " + racet.toString());
 		logger.info("What is the wealth gap? " + wealthGap);
 		logger.info("Who is richer, #1 or #2? " + wealth1 + " " + wealth2);
 		logger.info("Is there an age disparity? " + ageIssue);
@@ -267,7 +359,7 @@ public class InteractionUtil {
 			}
 		}
 		*/
-		logger.info("Are they compatible? " + cet.toString());
+		
 		
 		return rtd;
 	}

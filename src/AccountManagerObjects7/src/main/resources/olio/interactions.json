@@ -1,0 +1,81 @@
+[
+	{
+		"model": "olio.interaction",
+		"description": "Meet and greet",
+		"type": "socialize",
+		"actorAlignmentSuggestion": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"actorReasonSuggestion": ["attraction", "confidence", "community", "companionship", "friendship", "intimacy", "extraversion", "narcissism", "immaturity", "maturity"],
+		"actorRoleSuggestion": [], 
+		"actorThreatSuggestion": [],
+		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"interactorReasonSuggestion": ["less_attractive", "attractive_narcissism", "narcissism", "psychopathy", "sanity", "machiavellianism", "aloofness", "attraction", "revulsion", "companionship", "friendship", "intimacy", "extraversion", "confidence", "community", "maturity", "immaturity"],
+		"interactorRoleSuggestion": [],
+		"interactorThreatSuggestion": []
+	},
+	
+	
+	
+	{
+		"description": "Form alliance",
+		"type": "ally",
+		"actorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"actorReasonSuggestion": ["confidence", "community", "companionship", "extraversion", "narcissism", "machiavellianism", "maturity", "political"],
+		"actorRoleSuggestion": [], 
+		"actorThreatSuggestion": ["political_threat", "economic_threat", "existential_threat"],
+		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"interactorReasonSuggestion": ["attractive_narcissism", "narcissism", "psychopathy", "machiavellianism", "aloofness", "hostility", "companionship", "friendship", "extraversion", "confidence", "community", "maturity", "immaturity"],
+		"interactorRoleSuggestion": [],
+		"interactorThreatSuggestion": ["political_target", "economic_target", "existential_target"]
+	},
+	
+	{
+		"description": "Betrayal",
+		"type": "betray",
+		"actorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood"],
+		"actorReasonSuggestion": [ "intraversion", "narcissism", "machiavellianism", "immaturity", "political", "peer_pressure", "cowardice", "avarice", "instinct", "amorality", "sensuality", "intimacy"],
+		"actorRoleSuggestion": [],
+		"actorThreatSuggestion": ["ideological_threat", "political_threat", "economic_threat", "existential_threat", "personal_threat", "psychological_threat"],
+		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"interactorReasonSuggestion": ["attractive_narcissism", "narcissism", "psychopathy", "machiavellianism", "aloofness", "hostility", "peer_pressure", "intraversion", "maturity", "immaturity", "revenge"],
+		"interactorRoleSuggestion": [],
+		"interactorThreatSuggestion": ["ideological_target", "political_target", "economic_target", "existential_target", "personal_target", "psychological_target"]
+	},
+	
+	{
+		"description": "Generic combat",
+		"type": "combat",
+		"actorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"actorReasonSuggestion": [ "animal_threat", "extraversion", "narcissism", "machiavellianism", "hostility", "political", "peer_pressure", "instinct", "amorality", "coercion", "revenge"],
+		"actorRoleSuggestion": [], 
+		"actorThreatSuggestion": ["health_threat", "personal_threat", "physical_threat"],
+		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"interactorReasonSuggestion": ["psychopathy", "machiavellianism", "hostility", "peer_pressure", "immaturity", "revenge", "coercion", "guardianship"],
+		"interactorRoleSuggestion": [],
+		"interactorThreatSuggestion": ["animal_target", "health_target", "personal_target", "physical_target"]
+	},
+	
+	{
+		"description": "Generic barter",
+		"type": "barter",
+		"actorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"actorReasonSuggestion": [ "commerce", "amorality", "psychopathy", "machiavellianism"],
+		"actorRoleSuggestion": [], 
+		"actorThreatSuggestion": ["economic_threat"],
+		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"interactorReasonSuggestion": ["commerce", "morality", "amorality", "psychopathy", "machiavellianism"],
+		"interactorRoleSuggestion": [],
+		"interactorThreatSuggestion": ["economic_target"]
+	},
+	{
+		"description": "Generic relationship building",
+		"type": "relate",
+		"actorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"actorReasonSuggestion": [ "extraversion", "narcissism", "machiavellianism", "psychopathy", "peer_pressure", "attraction", "maturity", "confidance", "companionship", "friendship", "intimacy", "instinct", "coercion", "revenge"],
+		"actorRoleSuggestion": [], 
+		"actorThreatSuggestion": ["personal_threat", "physical_threat", "social_threat", "psychological_threat", "verbal_threat"],
+		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"interactorReasonSuggestion": ["psychopathy", "machiavellianism", "hostility", "immaturity", "revenge", "coercion", "guardianship", "maturity", "companionship", "friendship", "intimacy", "instinct"],
+		"interactorRoleSuggestion": [],
+		"interactorThreatSuggestion": ["personal_target", "physical_target", "social_target", "psychological_target", "verbal_target"]
+	}
+]
