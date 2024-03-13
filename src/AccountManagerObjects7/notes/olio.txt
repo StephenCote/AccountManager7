@@ -6,6 +6,8 @@ docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
 docker exec -it ollama ollama run llama2:13b-text
 docker exec -it ollama ollama run dolphin-mistral
 
+/// ollama run llama2-uncensored:7b-chat-fp16
+/// ollama run dolphin-mixtral
 curl http://localhost:11434/api/generate -d '{
   "model": "dolphin-mistral",
   "prompt": "Write a narrative description of the following: ",
