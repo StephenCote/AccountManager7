@@ -262,23 +262,37 @@ public class TestOlio extends BaseTest {
 	}
 
 	private BaseRecord meetAndGreet(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
-		BaseRecord interaction = InteractionUtil.randomInteraction(ctx, per1, per2);
+		
 
+		
+		BaseRecord interaction = InteractionUtil.randomInteraction(ctx, per1, per2);
+		if(interaction == null) {
+			logger.warn("Random interaction was null");
+			return null;
+		}
+		IOSystem.getActiveContext().getRecordUtil().createRecord(interaction);
+		
+		BaseRecord interaction2 = ioContext.getSearch().findRecord(QueryUtil.createQuery(ModelNames.MODEL_INTERACTION, FieldNames.FIELD_ID, interaction.get(FieldNames.FIELD_ID)));
+		assertNotNull("Interaction is null", interaction2);
+		logger.info(interaction2.toFullString());
 		// PersonalityProfile prof1 = ProfileUtil.analyzePersonality(ctx, per1);
 		// PersonalityProfile prof2 = ProfileUtil.analyzePersonality(ctx, per2);
 		CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(per1.get("personality.mbtiKey"), per2.get("personality.mbtiKey"));
 		StringBuilder buff = new StringBuilder();
+		/*
 		buff.append("Write a narrative description about the following two characters, and the interaction that takes place between them.");
 		buff.append(" " + NarrativeUtil.describe(ctx, per1));
 		buff.append(" " + NarrativeUtil.describe(ctx, per2));
+		*/
 		buff.append(" " + NarrativeUtil.describeInteraction(interaction));
 		logger.info(buff.toString());
+		/*
 		OllamaUtil ou = new OllamaUtil();
 		OllamaExchange ex= ou.chat(buff.toString());
 		if(ex.getResponse() != null) {
 			logger.info(ex.getResponse().getMessage().getContent());
 		}
-
+		*/
 		return interaction;
 	}
 	
