@@ -155,8 +155,17 @@ public class NarrativeUtil {
 		ReasonEnumType irea = inter.getEnum("interactorReason");
 		OutcomeEnumType iout = inter.getEnum("interactorOutcome");
 		StringBuilder  buff = new StringBuilder();
-		buff.append(aname + " acts like a " + arol.toString().replace("_", " ").toLowerCase() + " and is a " + athr.toString().replace("_", " ").toLowerCase() + " to " +  iname + " due to " + area.toString().replace("_", " ").toLowerCase() + ".");
-		buff.append(" " + iname + " reacts like a " + irol.toString().replace("_", " ").toLowerCase() + " being a " + ithr.toString().replace("_", " ").toLowerCase() + " to " +  aname + " due to " + irea.toString().replace("_", " ").toLowerCase() + ".");
+		String athreat = " to ";
+		if(athr != ThreatEnumType.NONE) {
+			athreat = " and is a " + athr.toString().replace("_", " ").toLowerCase() + " threat to ";
+		}
+		String ithreat = " to ";
+		if(ithr != ThreatEnumType.NONE) {
+			ithreat = " and is a " + ithr.toString().replace("_", " ").toLowerCase() + " threat to ";
+		}
+		buff.append(aname + " acts like a " + arol.toString().replace("_", " ").toLowerCase() + athreat + iname + " due to " + area.toString().replace("_", " ").toLowerCase() + ".");
+		buff.append(" " + iname + " reacts like a " + irol.toString().replace("_", " ").toLowerCase() + ithreat + aname + " due to " + irea.toString().replace("_", " ").toLowerCase() + ".");
+		
 		buff.append(" This " + type.toString().replace("_", " ").toLowerCase() + " interaction has a " + aout.toString().replace("_", " ").toLowerCase() + " outcome for " + aname + ", and a " + iout.toString().replace("_", " ").toLowerCase() + " outcome for " + iname + ".");
 		return buff.toString();
 	}

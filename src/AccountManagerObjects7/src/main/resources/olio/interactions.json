@@ -12,9 +12,6 @@
 		"interactorRoleSuggestion": [],
 		"interactorThreatSuggestion": []
 	},
-	
-	
-	
 	{
 		"description": "Form alliance",
 		"type": "ally",
@@ -27,7 +24,6 @@
 		"interactorRoleSuggestion": [],
 		"interactorThreatSuggestion": ["political_target", "economic_target", "existential_target"]
 	},
-	
 	{
 		"description": "Betrayal",
 		"type": "betray",
@@ -40,25 +36,26 @@
 		"interactorRoleSuggestion": [],
 		"interactorThreatSuggestion": ["ideological_target", "political_target", "economic_target", "existential_target", "personal_target", "psychological_target"]
 	},
-	
 	{
 		"description": "Generic combat",
 		"type": "combat",
 		"actorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
 		"actorReasonSuggestion": [ "extraversion", "narcissism", "machiavellianism", "hostility", "political", "peer_pressure", "instinct", "amorality", "coercion", "revenge"],
+		"actorReason": "coercion",
 		"actorRoleSuggestion": [], 
 		"actorThreatSuggestion": ["animal_threat", "health_threat", "personal_threat", "physical_threat"],
 		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
 		"interactorReasonSuggestion": ["psychopathy", "machiavellianism", "hostility", "peer_pressure", "immaturity", "revenge", "coercion", "guardianship"],
+		"interactorReason": "coercion",
 		"interactorRoleSuggestion": [],
 		"interactorThreatSuggestion": ["animal_target", "health_target", "personal_target", "physical_target"]
 	},
-	
 	{
 		"description": "Generic barter",
 		"type": "barter",
 		"actorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
 		"actorReasonSuggestion": [ "commerce", "amorality", "psychopathy", "machiavellianism"],
+		"actorReason": "commerce",
 		"actorRoleSuggestion": [], 
 		"actorThreatSuggestion": ["economic_threat"],
 		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
@@ -77,5 +74,17 @@
 		"interactorReasonSuggestion": ["psychopathy", "machiavellianism", "hostility", "immaturity", "revenge", "coercion", "guardianship", "maturity", "companionship", "friendship", "intimacy", "instinct"],
 		"interactorRoleSuggestion": [],
 		"interactorThreatSuggestion": ["personal_target", "physical_target", "social_target", "psychological_target", "verbal_target"]
+	},
+	{
+		"description": "Generic entertainment",
+		"type": "entertain",
+		"actorAlignmentSuggestion": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"actorReasonSuggestion": [ "extraversion", "narcissism", "peer_pressure", "maturity", "confidence", "coercion", "socialize"],
+		"actorRoleSuggestion": [], 
+		"actorThreatSuggestion": ["social_threat", "psychological_threat", "verbal_threat", "ideological_threat"],
+		"interactorAlignmentSuggestion": ["chaoticevil", "neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],
+		"interactorReasonSuggestion": ["extraversion", "intraversion", "community", "peer_pressure", "socialize"],
+		"interactorRoleSuggestion": [],
+		"interactorThreatSuggestion": ["social_target", "psychological_target", "verbal_target", "ideological_target"]
 	}
 ]

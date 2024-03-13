@@ -241,7 +241,7 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 				StateUtil.agitateLocation(ctx, sta);
 				ctx.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth"});
 			}
-			logger.info(NarrativeUtil.describe(ctx, p));
+			// logger.info(NarrativeUtil.describe(ctx, p));
 			// logger.info(p.toFullString());
 		}
 	}

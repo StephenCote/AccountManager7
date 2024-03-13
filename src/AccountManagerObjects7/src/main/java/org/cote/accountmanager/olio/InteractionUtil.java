@@ -130,7 +130,7 @@ public class InteractionUtil {
 	
 	public static ReasonEnumType guessReasonXXX(OlioContext ctx, PersonalityProfile prof1, AlignmentEnumType align, InteractionEnumType interType, CharacterRoleEnumType role, PersonalityProfile prof2) {
 		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
-		ProfileComparison pcomp = new ProfileComparison(prof1, prof2);
+		ProfileComparison pcomp = new ProfileComparison(ctx, prof1, prof2);
 		CompatibilityEnumType cet = pcomp.getCompatibility();
 		boolean ageIssue = pcomp.doesAgeCrossBoundary();
 		VeryEnumType isMach = prof1.getMachiavellian();
@@ -217,6 +217,29 @@ public class InteractionUtil {
 		else reas = ReasonEnumType.getPositiveReasons();
 		return reas;
 	}
+
+	public static CharacterRoleEnumType getCharacterRoleByAlignment(AlignmentEnumType align, String gender) {
+		CharacterRoleEnumType actorRole = CharacterRoleEnumType.UNKNOWN;
+		List<CharacterRoleEnumType> actorRoles = getCharacterRolesByAlignment(align,gender);
+		if(actorRoles.size() > 0) {
+			actorRole = actorRoles.get(rand.nextInt(actorRoles.size()));
+		}
+		return actorRole;
+	}
+	public static List<CharacterRoleEnumType> getCharacterRolesByAlignment(AlignmentEnumType align, String gender) {
+		List<CharacterRoleEnumType> reas = new ArrayList<>();
+		if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICNEUTRAL, ComparatorEnumType.LESS_THAN)) {
+			reas = CharacterRoleEnumType.getNegativeRoles();
+		}
+		else if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICGOOD, ComparatorEnumType.LESS_THAN)) {
+			reas = CharacterRoleEnumType.getNeutralRoles();
+		}
+		else reas = CharacterRoleEnumType.getPositiveRoles();
+		if(gender.equals("male")) {
+			reas.remove(CharacterRoleEnumType.TEMPTRESS);
+		}
+		return reas;
+	}
 	
 	protected static List<BaseRecord> filterInteractionTemplates(AlignmentEnumType actorAlignment, ReasonEnumType actorReason, AlignmentEnumType interactorAlignment, ReasonEnumType interactorReason){
 		String alignStr = actorAlignment.toString().toLowerCase();
@@ -251,48 +274,16 @@ public class InteractionUtil {
 			return null;
 		}
 		ReasonToDo rtd = new ReasonToDo();
-		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
-		CharacterRoleEnumType role = CharacterRoleEnumType.UNKNOWN;
-		//InteractionEnumType inter = InteractionEnumType.UNKNOWN;
 
-		ProfileComparison pcomp = new ProfileComparison(prof1, prof2);
-		CompatibilityEnumType cet = pcomp.getCompatibility();
+		ProfileComparison pcomp = new ProfileComparison(ctx, prof1, prof2);
 		CompatibilityEnumType rcet = pcomp.getRomanticCompatibility();
-		CompatibilityEnumType racet = pcomp.getRacialCompatibility();
-		boolean isCompat = CompatibilityEnumType.compare(cet, CompatibilityEnumType.PARTIAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
-		boolean isRoCompat = CompatibilityEnumType.compare(rcet, CompatibilityEnumType.PARTIAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
-		boolean ageIssue = pcomp.doesAgeCrossBoundary();
-		
-		/*
-		VeryEnumType isMach = prof1.getMachiavellian();
-		VeryEnumType isPsych = prof1.getPsychopath();
-		VeryEnumType isNarc = prof1.getNarcissist();
-		HighEnumType prettier = pcomp.getCharismaMargin();
-		*/
-		double machDiff = pcomp.getMachiavellianDiff();
-		double psychDiff = pcomp.getPsychopathyDiff();
-		double narcDiff = pcomp.getNarcissismDiff();
-		int prettyDiff = pcomp.getCharismaDiff();
-		int smartDiff = pcomp.getIntelligenceDiff();
-		int strongDiff = pcomp.getPhysicalStrengthDiff();
-		int wisDiff = pcomp.getWisdomDiff();
-		PersonalityProfile outLead = PersonalityUtil.identifyLeaderPersonality(Arrays.asList(prof1, prof2));
-		boolean isLeader = false;
-		boolean isLeaderContest = false;
-		if(outLead.getId() == prof1.getId()) {
-			isLeader = true;
-		}
-		else {
-			isLeaderContest = GroupDynamicUtil.contestLeadership(ctx, null, Arrays.asList(prof1), prof2).size() > 0;
-		}
+
 		AlignmentEnumType actorAlign = AlignmentEnumType.margin(contextAlign, prof1.getAlignment());
 		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(contextAlign, prof2.getAlignment());
-
 		
-		
-		// boolean leaningGood = AlignmentEnumType.compare(actorAlign, AlignmentEnumType.NEUTRAL, ComparatorEnumType.GREATER_THAN);
+		boolean leaningGood = AlignmentEnumType.compare(actorAlign, AlignmentEnumType.NEUTRAL, ComparatorEnumType.GREATER_THAN);
 		List<ReasonEnumType> reasons = getReasonsByAlignment(actorAlign);
-
+		List<ReasonEnumType> interactorReasons = getReasonsByAlignment(interactorAlign);
 		List<BaseRecord> inters = filterInteractionTemplates(actorAlign, ReasonEnumType.UNKNOWN, interactorAlign, ReasonEnumType.UNKNOWN);
 		if(inters.size() == 0) {
 			logger.error("Failed to find a reasonable interaction match");
@@ -324,45 +315,80 @@ public class InteractionUtil {
 				}
 			}
 		}
-		if(actorReasons.size() == 0) {
+		ReasonEnumType actorReason = inter.getEnum("actorReason");
+		if(actorReasons.size() == 0 && actorReason != ReasonEnumType.UNKNOWN) {
 			logger.error("Failed to identify any possible reasons");
 			return null;
 		}
-		ReasonEnumType actorReason = actorReasons.get(rand.nextInt(actorReasons.size()));
-		rtd.setReason(actorReason);
-		rtd.setInteraction(InteractionEnumType.valueOf(((String)inter.get("type")).toUpperCase()));
+		if(actorReason == ReasonEnumType.UNKNOWN) {
+			actorReason = actorReasons.get(rand.nextInt(actorReasons.size()));
+		}
 		
-
-		double wealth1 = ItemUtil.countMoney(prof1.getRecord());
-		double wealth2 = ItemUtil.countMoney(prof2.getRecord());
-		double wealthGap = pcomp.getWealthGap();
 		
-		logger.info(prof1.getName() + " (" + prof1.getGender() + ", " + prof1.getAge() + ") wants to " + rtd.getInteraction().toString() + " because " + rtd.getReason().toString() + " with " + prof2.getName() + " (" + prof2.getGender() + ", " + prof2.getAge() + ") ");
-		logger.info("How is #1 aligning? " + actorAlign.toString());
-		logger.info("How is #2 aligning? " + interactorAlign.toString());
-		logger.info("Are their personalities compatible? " + cet.toString());
-		logger.info("Are they romantically compatibile? " + rcet.toString());
-		logger.info("Are they racially compatibile? " + racet.toString());
-		logger.info("What is the wealth gap? " + wealthGap);
-		logger.info("Who is richer, #1 or #2? " + wealth1 + " " + wealth2);
-		logger.info("Is there an age disparity? " + ageIssue);
-		logger.info("How much prettier is #1 from #2? " + prettyDiff);
-		logger.info("How much smarter is #1 from #2? " + smartDiff);
-		logger.info("How much stronger is #1 from #2? " + strongDiff);
-		logger.info("How much wiser is #1 from #2? " + wisDiff);
-		logger.info("How much more of machiavellian is #1 from #2? " + machDiff);
-		logger.info("How much more of a psychopath is #1 from #2? " + psychDiff);
-		logger.info("How much more narcissistic is #1 from #2? " + narcDiff);
-		logger.info("Is #1 the leader? " + isLeader);
-		logger.info("Is #1 contesting #2's leadership? " + isLeaderContest);
-		/*
-		if(isLeaderContest) {
-			for(BaseRecord rec : leadContest) {
-				logger.info(rec.toFullString());
+		List<String> baseInteractorReasons = inter.get("interactorReasonSuggestion");
+		List<ReasonEnumType> iactorReasons = new ArrayList<>();
+		
+		String iinst = inter.get("interactorInstinct");
+		for(String s: baseInteractorReasons) {
+			ReasonEnumType are = ReasonEnumType.valueOf(s.toUpperCase());
+			if(interactorReasons.contains(are)) {
+				if(
+					(
+						are != ReasonEnumType.INTIMACY
+						&& are != ReasonEnumType.ATTRACTION 
+						&& are != ReasonEnumType.SENSUALITY
+						&& (are != ReasonEnumType.INSTINCT || "mate".equals(iinst))
+					)
+					|| CompatibilityEnumType.compare(rcet, CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+				){
+					iactorReasons.add(are);
+				}
 			}
 		}
-		*/
 		
+		ReasonEnumType interactorReason = inter.getEnum("interactorReason");
+		if(iactorReasons.size() > 0) {
+			interactorReason = iactorReasons.get(rand.nextInt(iactorReasons.size()));
+		}
+		
+		
+		/// Figure out what kind of threat, if any, the actor may represent 
+		ThreatEnumType actorThreat = ThreatEnumType.NONE;
+		if(!leaningGood) {
+			logger.info(prof1.getName() + " is not leaning to the good, and therefore may represent a threat");
+			List<ThreatEnumType> tets = new ArrayList<>();
+			List<String> baseActorThreats = inter.get("actorThreatSuggestion");
+			for(String s: baseActorThreats) {
+				ThreatEnumType tet = ThreatEnumType.valueOf(s.toUpperCase());
+				if(
+					tet != ThreatEnumType.ANIMAL_THREAT
+					&&
+					(!prof1.isMachiavellian() || tet == ThreatEnumType.POLITICAL_THREAT)
+					&&
+					((!prof1.isPsychopath() && !prof1.isMachiavellian()) || tet == ThreatEnumType.PSYCHOLOGICAL_THREAT)
+					&&
+					(!HighEnumType.compare(prof1.getPhysicalStrength(), HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS) || tet == ThreatEnumType.PHYSICAL_THREAT)
+				) {
+					tets.add(tet);
+				}
+			}
+			if(tets.size() > 0) {
+				actorThreat = tets.get(rand.nextInt(tets.size()));
+			}
+		}
+		
+		rtd.setReason(actorReason);
+		rtd.setInteraction(InteractionEnumType.valueOf(((String)inter.get("type")).toUpperCase()));
+		rtd.setThreat(actorThreat);
+		rtd.setRole(getCharacterRoleByAlignment(actorAlign, prof1.getGender()));
+		rtd.setAlignment(actorAlign);
+		
+		rtd.setInteractorAlignment(interactorAlign);
+		rtd.setInteractorRole(getCharacterRoleByAlignment(interactorAlign, prof2.getGender()));
+		rtd.setInteractorReason(interactorReason);
+		rtd.setInteractorThreat(ThreatEnumType.getTarget(actorThreat));
+		
+		/// logger.info(pcomp.compare());
 		
 		return rtd;
 	}
@@ -378,27 +404,32 @@ public class InteractionUtil {
 		}
 		
 		AlignmentEnumType interAlign = OlioUtil.getRandomAlignment();
-		AlignmentEnumType actorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
-		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(interAlign, per2.getEnum("alignment"));
-		InteractionEnumType interType = OlioUtil.getRandomInteraction();
-		CharacterRoleEnumType actorRole = OlioUtil.getRandomCharacterRole(per1.get("gender"));
+		// AlignmentEnumType actorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
+		// AlignmentEnumType interactorAlign = AlignmentEnumType.margin(interAlign, per2.getEnum("alignment"));
+		// InteractionEnumType interType = OlioUtil.getRandomInteraction();
+		// CharacterRoleEnumType actorRole = OlioUtil.getRandomCharacterRole(per1.get("gender"));
 		//ReasonEnumType actorReason = guessReason(prof1, actorAlign, interType, actorRole, prof2);
+
 		ReasonToDo rtd = guessReasonToInteract(ctx, prof1, interAlign, prof2);
-		ThreatEnumType threat = getThreatForInteraction(interType);
-		ThreatEnumType athreat = ThreatEnumType.getTarget(threat);
+		if(rtd == null) {
+			logger.error("Could not find a reason to interact");
+			return null;
+		}
+		// ThreatEnumType threat = getThreatForInteraction(interType);
+		// ThreatEnumType athreat = ThreatEnumType.getTarget(rtd.getThreat());
 		BaseRecord inter = InteractionUtil.newInteraction(
 			ctx,
 			rtd.getInteraction(),
 			null,
 			per1,
-			actorAlign,
+			rtd.getAlignment(),
 			rtd.getThreat(),
-			actorRole,
+			rtd.getRole(),
 			rtd.getReason(), 
 			per2,
-			interactorAlign,
-			athreat,
-			OlioUtil.getRandomCharacterRole(per2.get("gender")),
+			rtd.getInteractorAlignment(),
+			rtd.getInteractorThreat(),
+			rtd.getInteractorRole(),
 			OlioUtil.getRandomReason()
 		);
 		inter.setValue("actorOutcome", OlioUtil.getRandomOutcome());
@@ -465,13 +496,61 @@ public class InteractionUtil {
 
 class ReasonToDo{
 	private InteractionEnumType interaction = InteractionEnumType.NONE;
+	private AlignmentEnumType alignment = AlignmentEnumType.NEUTRAL;
 	private ReasonEnumType reason = ReasonEnumType.NONE;
 	private CharacterRoleEnumType role = CharacterRoleEnumType.UNKNOWN;
 	private ThreatEnumType threat = ThreatEnumType.NONE;
+
+	private AlignmentEnumType interactorAlignment = AlignmentEnumType.NEUTRAL;
+	private ReasonEnumType interactorReason = ReasonEnumType.NONE;
+	private CharacterRoleEnumType interactorRole = CharacterRoleEnumType.UNKNOWN;
+	private ThreatEnumType interactorThreat = ThreatEnumType.NONE;
+
+	
 	public ReasonToDo() {
 		
 	}
 	
+	public AlignmentEnumType getInteractorAlignment() {
+		return interactorAlignment;
+	}
+
+	public void setInteractorAlignment(AlignmentEnumType interactorAlignment) {
+		this.interactorAlignment = interactorAlignment;
+	}
+
+	public ReasonEnumType getInteractorReason() {
+		return interactorReason;
+	}
+
+	public void setInteractorReason(ReasonEnumType interactorReason) {
+		this.interactorReason = interactorReason;
+	}
+
+	public CharacterRoleEnumType getInteractorRole() {
+		return interactorRole;
+	}
+
+	public void setInteractorRole(CharacterRoleEnumType interactorRole) {
+		this.interactorRole = interactorRole;
+	}
+
+	public ThreatEnumType getInteractorThreat() {
+		return interactorThreat;
+	}
+
+	public void setInteractorThreat(ThreatEnumType interactorThreat) {
+		this.interactorThreat = interactorThreat;
+	}
+
+	public AlignmentEnumType getAlignment() {
+		return alignment;
+	}
+
+	public void setAlignment(AlignmentEnumType alignment) {
+		this.alignment = alignment;
+	}
+
 	public ThreatEnumType getThreat() {
 		return threat;
 	}
