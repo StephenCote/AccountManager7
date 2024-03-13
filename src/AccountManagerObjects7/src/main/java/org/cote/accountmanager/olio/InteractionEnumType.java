@@ -14,8 +14,10 @@ public enum InteractionEnumType {
 	COERCE,
 	COMBAT,
 	COMMERCE,
+	COMMUNICATE,
 	COMPETE,
 	CONFLICT,
+	CONGREGATE,
 	COOPERATE,
 	CORRESPOND,
 	CRITICIZE,
@@ -36,6 +38,7 @@ public enum InteractionEnumType {
 	RELATE,
 	ROMANCE,
 	SHUN,
+	SEPARATE,
 	SOCIALIZE,
 	THREATEN,
 	UNKNOWN;

@@ -35,6 +35,18 @@ public enum CharacterRoleEnumType {
 		ANTAGONIST, CONTAGONIST, ENEMY_INTEREST, HENCHMAN, TEMPTRESS
 	});
 	
+	public static List<CharacterRoleEnumType> getPositiveRoles() {
+		return positiveRoles;
+	}
+
+	public static List<CharacterRoleEnumType> getNeutralRoles() {
+		return neutralRoles;
+	}
+
+	public static List<CharacterRoleEnumType> getNegativeRoles() {
+		return negativeRoles;
+	}
+
 	public static boolean isPositive(CharacterRoleEnumType type) {
 		return positiveRoles.contains(type);
 	}

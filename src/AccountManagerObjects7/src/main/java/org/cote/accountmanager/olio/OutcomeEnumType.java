@@ -63,8 +63,8 @@ public enum OutcomeEnumType {
     	int val1 = lvl1.val;
     	int val2 = lvl2.val;
     	if(val1 < val2) comp = ComparatorEnumType.LESS_THAN;
-    	else if (val1 == val2) comp = ComparatorEnumType.GREATER_THAN;
-    	else comp = ComparatorEnumType.EQUALS;
+    	else if (val1 == val2) comp = ComparatorEnumType.EQUALS;
+    	else comp = ComparatorEnumType.GREATER_THAN;
     	return comp;
     }
 	

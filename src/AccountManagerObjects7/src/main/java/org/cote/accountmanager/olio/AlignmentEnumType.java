@@ -3,6 +3,8 @@ package org.cote.accountmanager.olio;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -24,7 +26,7 @@ public enum AlignmentEnumType {
     private int val;
 
     private static Map<Integer, AlignmentEnumType> alignMap = new HashMap<Integer, AlignmentEnumType>();
-
+    private static final Logger logger = LogManager.getLogger(AlignmentEnumType.class);
     static {
         for (AlignmentEnumType align : AlignmentEnumType.values()) {
             alignMap.put(align.val, align);
@@ -53,16 +55,20 @@ public enum AlignmentEnumType {
 		else if(val > 4) {
 			return LAWFULGOOD;
 		}
-        return alignMap.get(val);
+		AlignmentEnumType at = alignMap.get(val);
+		if(at == AlignmentEnumType.UNKNOWN) {
+			at = AlignmentEnumType.NEUTRAL;
+		}
+		return at;
     }
     
     public static ComparatorEnumType compare(AlignmentEnumType lvl1, AlignmentEnumType lvl2) {
     	ComparatorEnumType comp = ComparatorEnumType.UNKNOWN;
-    	double val1 = lvl1.val;
-    	double val2 = lvl2.val;
+    	int val1 = lvl1.val;
+    	int val2 = lvl2.val;
     	if(val1 < val2) comp = ComparatorEnumType.LESS_THAN;
-    	else if (val1 == val2) comp = ComparatorEnumType.GREATER_THAN;
-    	else comp = ComparatorEnumType.EQUALS;
+    	else if (val1 == val2) comp = ComparatorEnumType.EQUALS;
+    	else comp = ComparatorEnumType.GREATER_THAN;
     	return comp;
     }
     
