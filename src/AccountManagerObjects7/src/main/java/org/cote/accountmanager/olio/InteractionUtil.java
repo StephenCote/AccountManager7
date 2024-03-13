@@ -306,7 +306,7 @@ public class InteractionUtil {
 		
 		String ainst = inter.get("actorInstinct");
 		for(String s: baseActorReasons) {
-			ReasonEnumType are = ReasonEnumType.valueOf(s);
+			ReasonEnumType are = ReasonEnumType.valueOf(s.toUpperCase());
 			if(reasons.contains(are)) {
 				if(
 					(
@@ -318,6 +318,9 @@ public class InteractionUtil {
 					|| CompatibilityEnumType.compare(rcet, CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
 				){
 					actorReasons.add(are);
+				}
+				else {
+					// logger.info("Skip reason: " + are.toString());
 				}
 			}
 		}
@@ -334,7 +337,7 @@ public class InteractionUtil {
 		double wealth2 = ItemUtil.countMoney(prof2.getRecord());
 		double wealthGap = pcomp.getWealthGap();
 		
-		logger.info(prof1.getName() + " (" + prof1.getGender() + ", " + prof1.getAge() + ") wants to " + rtd.getReason().toString() + " because " + rtd.getReason().toString() + " with " + prof2.getName() + " (" + prof2.getGender() + ", " + prof2.getAge() + ") ");
+		logger.info(prof1.getName() + " (" + prof1.getGender() + ", " + prof1.getAge() + ") wants to " + rtd.getInteraction().toString() + " because " + rtd.getReason().toString() + " with " + prof2.getName() + " (" + prof2.getGender() + ", " + prof2.getAge() + ") ");
 		logger.info("How is #1 aligning? " + actorAlign.toString());
 		logger.info("How is #2 aligning? " + interactorAlign.toString());
 		logger.info("Are their personalities compatible? " + cet.toString());

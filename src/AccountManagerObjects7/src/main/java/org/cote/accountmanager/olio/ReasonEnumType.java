@@ -11,6 +11,7 @@ public enum ReasonEnumType {
 	ATTRACTIVE_NARCISSISM,
 	AVARICE,
 	COERCION,
+	COMMERCE,
 	COMMUNITY,
 	COMPANIONSHIP,
 	CONFIDENCE,
@@ -48,7 +49,7 @@ public enum ReasonEnumType {
 	});
 	
 	private static List<ReasonEnumType> neutralReasons = Arrays.asList(new ReasonEnumType[] {
-		UNKNOWN, AGE,COMPANIONSHIP, INTRAVERSION, EXTRAVERSION, INSTINCT, NONE
+		UNKNOWN, COMMERCE, AGE,COMPANIONSHIP, INTRAVERSION, EXTRAVERSION, INSTINCT, NONE
 	});
 	
 	private static List<ReasonEnumType> positiveReasons = Arrays.asList(new ReasonEnumType[] {
