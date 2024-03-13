@@ -706,7 +706,8 @@ public class StatementUtil {
 
 	public static DBStatementMeta getSelectTemplate(Query query) throws ModelException, FieldException {
 		DBStatementMeta meta = new DBStatementMeta(query);
-
+		DBUtil util = IOSystem.getActiveContext().getDbUtil();
+		
 		StringBuilder buff = new StringBuilder();
 		String model = query.get(FieldNames.FIELD_TYPE);
 		ModelSchema schema = RecordFactory.getSchema(model);
@@ -750,6 +751,27 @@ public class StatementUtil {
 					} catch (FieldException e) {
 						logger.error(e);
 					}
+				}
+				else if(modelMode && fs.isForeign() && fs.getBaseModel() != null && fs.getBaseModel().equals(ModelNames.MODEL_FLEX)) {
+					StringBuilder ajoin = new StringBuilder();
+					if(util.getConnectionType() == ConnectionEnumType.H2) {
+						ajoin.append("'id': " + alias + "." + util.getColumnName(fs.getName()));
+						if(fs.getForeignType() != null) {
+							FieldSchema fss = schema.getFieldSchema(fs.getForeignType());
+							ajoin.append(",'model': " + alias + "." + util.getColumnName(fss.getName()));	
+						}
+						cols.add("JSON_OBJECT(" + ajoin.toString() + ") as " + util.getColumnName(fs.getName()));
+
+					}
+					else if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+						ajoin.append("'id', " + alias + "." + util.getColumnName(fs.getName()));
+						if(fs.getForeignType() != null) {
+							FieldSchema fss = schema.getFieldSchema(fs.getForeignType());
+							ajoin.append(",'model', " + alias + "." + util.getColumnName(fss.getName()));	
+						}
+						cols.add("JSON_BUILD_OBJECT(" + ajoin.toString() + ") as " + util.getColumnName(fs.getName()));
+					}
+					
 				}
 				else if(fs.isForeign()
 						&&
