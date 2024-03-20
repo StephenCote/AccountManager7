@@ -5,6 +5,7 @@ ollama docker - https://ollama.com/blog/ollama-is-now-available-as-an-official-d
 docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
 docker exec -it ollama ollama run llama2:13b-text
 docker exec -it ollama ollama run dolphin-mistral
+/set system You are ...
 
 /// ollama run llama2-uncensored:7b-chat-fp16
 /// ollama run dolphin-mixtral

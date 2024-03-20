@@ -1,0 +1,35 @@
+Local RAG Setup:
+
+1) Install WSL 2
+2) Install Docker
+3) Install and run ollama image
+   docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+   (Note: use docker stop ollama | docker start ollama to start/stop the container)
+4) Install whatever model you want to use to test things out, eg: docker exec -it ollama ollama run dolphin-mistral
+   (Note: The model will auto-download from the Ollama library; this one is uncensored)
+5) Install and run Qdrant (docker)
+	docker run --name qdrant -p 6333:6333 -v ~/qdrant_storage:/qdrant/storage:z qdrant/qdrant
+6) Install Ollama on WSL via bash - yes, that means you've done this twice - or, do the next steps within the Docker ollama image
+   https://github.com/ollama/ollama
+7) Install the python3 requirements from https://github.com/Otman404/local-rag-llamaindex/blob/master/requirements.txt
+8) Download an HF model, such as Zephyr, and build the ollama model file from the desired configuration (instructions: https://otmaneboughaba.com/posts/local-llm-ollama-huggingface/)
+9) Modify data.py from (https://github.com/Otman404/local-rag-llamaindex/tree/master/rag) as needed, and install the dependencies from (https://github.com/Otman404/local-rag-llamaindex/blob/master/requirements.txt) (eg: I copied a bunch of personal college-age trash as an example)
+10)
+
+/// Ollama (in bash)
+ollama serve &
+ollama create zephyr-local -f model.cfg
+(test)
+ollama run zephyr-local
+
+
+/// INDEX Qdrant
+EG:
+curl -X 'PUT' -H 'Content-Type: application/json' 'http://127.0.0.1:6333/collections/researchpapers/' -d '{"field_name": "text", "field_schema":{"type: "text", "tokenizer": "word", "min_token_len": 2, "max_token_len": 30,"lowercase":true}}'
+
+/// start demo app
+uvicorn app:app --reload
+
+
+/// POST 
+curl -X 'POST' 'http://127.0.0.1:8000/api/search' -H 'accept: application/json' -H 'Content-Type: application/json' -d '{"query": "Who is the main character in The Verse?", "similarity_top_k": 3}'

@@ -78,8 +78,9 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestOlio.java</exclude>
+						<exclude>**/TestQdrant.java</exclude>
 						-->
+						<exclude>**/TestOlio.java</exclude>
 						<!-- Repeatable Set -->
 						<exclude>**/TestCondensedModel.java</exclude>
 						<exclude>**/TestBulkOperation.java</exclude>	
@@ -453,12 +454,16 @@
 			<artifactId>json</artifactId>
 			<version>20230618</version>
 		</dependency>
-		<dependency>
+<dependency>
     <groupId>de.articdive</groupId>
     <artifactId>jnoise-pipeline</artifactId>
     <version>4.1.0</version>
 </dependency>
-
+<dependency>
+  <groupId>io.qdrant</groupId>
+  <artifactId>client</artifactId>
+  <version>1.7.2</version>
+</dependency>
 
 		<!--
 <dependency>
