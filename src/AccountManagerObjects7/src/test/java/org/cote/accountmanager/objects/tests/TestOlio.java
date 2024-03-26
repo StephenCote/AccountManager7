@@ -3,6 +3,9 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -213,6 +216,13 @@ public class TestOlio extends BaseTest {
 		}
 		return obool;
 	}
+
+	
+	@Test
+	public void TestChat() {
+		logger.info("Test Chat Console");
+
+	}
 	
 	private boolean TestOllamaChat() {
 		logger.info("Test Ollama Chat");
@@ -295,27 +305,14 @@ public class TestOlio extends BaseTest {
 		*/
 		return interaction;
 	}
-	
+	/*
 	@Test
 	public void TestArena1() {
 		logger.info("Test Olio - Arena");
 		if(!TestOllamaTags()) {
 			return;
 		}
-		/*
-		if(!TestOllamaGenerate()) {
-			return;
-		}
-		
-		if(!TestOllamaChat()) {
-			return;
-		}
-		 */
-		/*
-		if(!TestPromptEng()) {
-			return;
-		}
-		*/
+
 		AuditUtil.setLogToConsole(false);
 
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
@@ -379,7 +376,7 @@ public class TestOlio extends BaseTest {
 		}
 
 	}
-	
+	*/
 	
 	/*
 	@Test
