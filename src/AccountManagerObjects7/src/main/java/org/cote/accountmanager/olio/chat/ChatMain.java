@@ -3,11 +3,15 @@ package org.cote.accountmanager.olio.chat;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import javax.ws.rs.core.MediaType;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
 import org.cote.accountmanager.olio.llm.OllamaMessage;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.OllamaResponse;
@@ -29,15 +33,23 @@ public class ChatMain {
 			OllamaResponse lastRep = null;
 			while (line != null && line.equalsIgnoreCase("quit") == false && line.equalsIgnoreCase("exit") == false && line.equalsIgnoreCase("/bye") == false) {
 				System.out.print(prompt);
-				line = is.readLine().substring(prompt.length());
+				line = is.readLine();
 				if(line.equalsIgnoreCase("/bye")) {
 					break;
 				}
+				// System.out.println("'" + line + "'");
 				newMessage(req, lastRep, line);
+				// System.out.println(JSONUtil.exportObject(req));
 				lastRep = chat(req);
 				if(lastRep != null) {
 					if(lastRep.getMessage() != null) {
-						System.out.println(lastRep.getMessage().getContent());
+						String cont = lastRep.getMessage().getContent();
+						if(cont != null) {
+							cont = cont.trim().replaceAll("^assistant:\s*", "");
+							System.out.println(cont);
+						}
+						// System.out.println(JSONUtil.exportObject(lastRep));
+						
 					}
 				}
 			}
@@ -56,6 +68,25 @@ public class ChatMain {
 		return req;
 	}
 	
+	private static int tokenLength = 16384;
+	private static void prune(OllamaRequest req) {
+		int curLength = req.getPrompt().length();
+		int marker = -1;
+		for(int i = 0; i < req.getMessages().size(); i++) {
+			curLength += req.getMessages().get(i).getContent().length();
+			if(curLength >= tokenLength) {
+				System.out.println("Prune at " + i + " / " + curLength);
+				marker = i - 1;
+				break;
+			}
+		}
+		if(marker > -1) {
+			List<OllamaMessage> msgs = Arrays.asList(Arrays.copyOfRange(req.getMessages().toArray(new OllamaMessage[0]), marker, req.getMessages().size()));
+			req.setMessages(msgs);
+			
+		}
+	}
+	
 	public static OllamaMessage newMessage(OllamaRequest req, OllamaResponse rep, String message) {
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole("user");
@@ -64,7 +95,7 @@ public class ChatMain {
 			req.getMessages().add(rep.getMessage());
 		}
 		req.getMessages().add(msg);
-		
+		prune(req);
 		return msg;
 	}
 	
@@ -107,7 +138,7 @@ public class ChatMain {
 	
 
 	private static String llmPrompt = """
-You play the role of the mentalist named Sariel.
+You play the role of Sariel.
 Start by chatting.
 """;
 }
