@@ -6,6 +6,7 @@ import java.util.List;
 public class OllamaRequest{
 	private String model = null;
 	private String prompt = null;
+	private String system = null;
 	private boolean stream = false;
 	private List<Integer> context = new ArrayList<>();
 	private List<OllamaMessage> messages = new ArrayList<>();
@@ -27,6 +28,15 @@ public class OllamaRequest{
 	public void setModel(String model) {
 		this.model = model;
 	}
+	
+	public String getSystem() {
+		return system;
+	}
+
+	public void setSystem(String system) {
+		this.system = system;
+	}
+
 	public String getPrompt() {
 		return prompt;
 	}
