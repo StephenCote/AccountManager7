@@ -109,24 +109,7 @@ public class RestServiceConfig extends ResourceConfig{
         public void onStartup(Container container) {
         	initializeAccountManager();
         }
-    	private void resetH2DBUtil(String url, String user, String pwd, boolean reset) {
-    		if(reset) {
-    			logger.info("Resetting database");
-    			File f = new File(url + ".mv.db");
-    			File f2 = new File(url + ".trace.db");
-    			if(f.exists()) {
-    				logger.info("Cleanup database: " + f.delete());
-    			}
-    			else {
-    				logger.info("No database to cleanup: " + url + ".mv");
-    			}
-    			if(f2.exists()) {
-    				logger.info("Cleanup database trace: " + f2.delete());
-    			}
-    		}
-    	}
 
-        /// 
     	protected IOProperties getDBProperties(String dataUrl, String dataUser, String dataPassword, String jndiName) {
     		IOProperties props = new IOProperties();
     		props.setDataSourceUrl(dataUrl);
@@ -148,27 +131,15 @@ public class RestServiceConfig extends ResourceConfig{
 			IOFactory.DEFAULT_FILE_BASE = path;
 			String dsName = context.getInitParameter("database.dsname");
 			boolean chkSchema = Boolean.parseBoolean(context.getInitParameter("database.checkSchema"));
-			//IOProperties props = getDBProperties("jdbc:h2:" + path + "/h2", "sa", "1234");
 			IOProperties props = getDBProperties(null, null, null, dsName);
 			props.setSchemaCheck(chkSchema);
-			//IOContext ioContext = IOSystem.open(RecordIO.FILE, null, null);
 			try {
 				IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
-				
 				for(String org : DEFAULT_ORGANIZATIONS) {
 					OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
 					if(!octx.isInitialized()) {
 						logger.error("**** Organizations are not configured.  Run /rest/setup");
 						break;
-						/*
-						logger.info("Creating organization " + org);
-						try {
-							octx.createOrganization();
-						} catch (NullPointerException | SystemException e) {
-							logger.error(e);
-							e.printStackTrace();
-						}
-						*/
 					}
 					else {
 						logger.info("Working with existing organization " + org);
