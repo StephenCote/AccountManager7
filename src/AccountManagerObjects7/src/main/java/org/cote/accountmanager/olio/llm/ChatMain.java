@@ -114,21 +114,21 @@ public class ChatMain {
 			String line = "";
 			OllamaRequest req = newRequest(model);
 			OllamaResponse lastRep = null;
-			while (line != null && line.equalsIgnoreCase("quit") == false && line.equalsIgnoreCase("exit") == false && line.equalsIgnoreCase("/bye") == false) {
+			while (line != null && line.equalsIgnoreCase("/quit") == false && line.equalsIgnoreCase("/exit") == false && line.equalsIgnoreCase("/bye") == false) {
 				System.out.print(prompt);
 				line = is.readLine();
 				if(line == null || line.equalsIgnoreCase("/bye")) {
 					break;
 				}
-				if(line.equals("new")) {
+				if(line.equals("/new")) {
 					req = newRequest(model);
 					continue;
 				}
-				if(line.equals("prune")) {
+				if(line.equals("/prune")) {
 					prune(req, true);
 					continue;
 				}
-				if(line.equals("prompt")) {
+				if(line.equals("/prompt")) {
 					if(chatMode && req.getMessages().size() > 0) {
 						req.getMessages().get(0).setContent(llmSystemPrompt.trim());
 					}
@@ -137,12 +137,12 @@ public class ChatMain {
 					}
 					continue;
 				}
-				if(line.equals("save")) {
+				if(line.equals("/save")) {
 					System.out.println("Saving ...");
 					FileUtil.emitFile("./" + saveName, JSONUtil.exportObject(req));
 					continue;
 				}
-				if(line.equals("load")) {
+				if(line.equals("/load")) {
 					System.out.println("Loading ...");
 					String sav = FileUtil.getFileAsString("./" + saveName);
 					if(sav != null && sav.length() > 0) {
@@ -252,6 +252,7 @@ public class ChatMain {
 
 
 	private static String llmSystemPrompt = """
-You are a helpful assistant named Siren.
+You play the role of an assistant named Siren.
+Begin conversationally.
 """;
 }

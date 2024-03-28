@@ -10,10 +10,19 @@ public class OllamaRequest{
 	private boolean stream = false;
 	private List<Integer> context = new ArrayList<>();
 	private List<OllamaMessage> messages = new ArrayList<>();
+	private OllamaOptions options = null;
 	public OllamaRequest() {
 		
 	}
 	
+	public OllamaOptions getOptions() {
+		return options;
+	}
+
+	public void setOptions(OllamaOptions options) {
+		this.options = options;
+	}
+
 	public List<OllamaMessage> getMessages() {
 		return messages;
 	}
