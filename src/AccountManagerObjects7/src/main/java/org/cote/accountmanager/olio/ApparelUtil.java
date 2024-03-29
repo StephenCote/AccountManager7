@@ -41,9 +41,9 @@ public class ApparelUtil {
 	private static String[] jewelryTypes = new String[0];
 	private static String[] fabricTypes = new String[0];
 	static {
-		clothingTypes = JSONUtil.importObject(ResourceUtil.getResource("./olio/clothing.json"), String[].class);
-		jewelryTypes = JSONUtil.importObject(ResourceUtil.getResource("./olio/jewelry.json"), String[].class);
-		fabricTypes = JSONUtil.importObject(ResourceUtil.getResource("./olio/fabrics.json"), String[].class);
+		clothingTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/clothing.json"), String[].class);
+		jewelryTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/jewelry.json"), String[].class);
+		fabricTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/fabrics.json"), String[].class);
 	}
 	private static String[] jewelryColors = {"Black", "Gold (Metallic)", "Old Gold", "Pale Gold", "Pale Silver", "Silver", "Platinum", "Rose Gold", "Titanium"};
 	private static String[] jewels = {"diamond", "ruby", "emerald", "sapphire", "pearl"};

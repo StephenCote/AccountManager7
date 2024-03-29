@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.llm;
 
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
 
 import javax.ws.rs.core.MediaType;
 
+import org.apache.commons.cli.Options;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOContext;
@@ -21,100 +23,123 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.olio.llm.OllamaMessage;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.OllamaResponse;
+import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
-public class ChatMain {
+public class Chat {
 	
 	protected IOContext ioContext = null;
-	protected OrganizationContext orgContext = null;
-	protected String organizationPath = "/Development";
+	// protected OrganizationContext orgContext = null;
+	// protected String organizationPath = "/Development";
 
 	
-	public static final Logger logger = LogManager.getLogger(ChatMain.class);
+	public static final Logger logger = LogManager.getLogger(Chat.class);
 	private boolean chatMode = true;
 	private boolean includeMessageHistory = chatMode;
 	private boolean includeContextHistory = !chatMode;
 	private boolean enablePrune = false;
 	private int tokenLength = 2048;
 	//private String model = "llama2-uncensored:7b-chat-q8_0";
-	//private String model = "dolphin-mistral";
-	private String model = "blue-orchid";
+	private String model = "dolphin-mistral";
+	//private String model = "blue-orchid";
 	private String saveName = "chat.save";
-	public static void main(String[] args){
-		ChatMain chat = new ChatMain();
-		chat.startContext();
-		(new ChatMain()).chatConsole();
-		chat.clearIO();
+	
+	private BaseRecord user = null;
+	private int pruneSkip = 1;
+	
+	private String llmSystemPrompt = """
+You play the role of an assistant named Siren.
+Begin conversationally.
+""";
+	
+	public Chat(BaseRecord user) {
+		this.user = user;
 	}
+
+	public int getPruneSkip() {
+		return pruneSkip;
+	}
+
+	public void setPruneSkip(int pruneSkip) {
+		this.pruneSkip = pruneSkip;
+	}
+
 	private void setMode(boolean chat) {
 		chatMode = chat;
 		includeMessageHistory = chatMode;
 		includeContextHistory = !chatMode;
 	}
-	private void startContext() {
-		IOFactory.DEFAULT_FILE_BASE = "../am7";
-		Properties properties = loadProperties();
-		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"));
+
+	
+	public boolean isChatMode() {
+		return chatMode;
 	}
 
-	private void resetContext(String dataUrl, String dataUser, String dataPassword) {
-		IOProperties props = new IOProperties();
-		props.setDataSourceUrl(dataUrl);
-		props.setDataSourceUserName(dataUser);
-		props.setDataSourcePassword(dataPassword);
-		props.setSchemaCheck(false);
-		resetIO(RecordIO.DATABASE, props);
+	public void setChatMode(boolean chatMode) {
+		this.chatMode = chatMode;
 	}
-	private void resetIO(RecordIO ioType, IOProperties properties) {
-		clearIO();
-		OrganizationContext octx = null;
-		try {
-			ioContext = IOSystem.open(ioType, properties);
-			octx = ioContext.getOrganizationContext(organizationPath, OrganizationEnumType.DEVELOPMENT);
-			if(!octx.isInitialized()) {
-				logger.info("Creating organization " + organizationPath);
-				octx.createOrganization();
-			}
-			else {
-				logger.debug("Working with existing organization " + organizationPath);
-			}
-		} catch (StackOverflowError | Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		orgContext = octx;
+
+	public boolean isIncludeMessageHistory() {
+		return includeMessageHistory;
 	}
-	
-	protected void clearIO() {
-		IOSystem.close();
-		ioContext = null;
-		orgContext = null;
+
+	public void setIncludeMessageHistory(boolean includeMessageHistory) {
+		this.includeMessageHistory = includeMessageHistory;
 	}
-	private Properties loadProperties() {
-		Properties properties = new Properties();
-		try {
-			InputStream fis = ClassLoader.getSystemResourceAsStream("resource.properties"); 
-			properties.load(fis);
-			fis.close();
-		} catch (IOException e) {
-			logger.error(e);
-			return null;
-		}
-		return properties;
+
+	public boolean isIncludeContextHistory() {
+		return includeContextHistory;
 	}
-	
+
+	public void setIncludeContextHistory(boolean includeContextHistory) {
+		this.includeContextHistory = includeContextHistory;
+	}
+
+	public int getTokenLength() {
+		return tokenLength;
+	}
+
+	public void setTokenLength(int tokenLength) {
+		this.tokenLength = tokenLength;
+	}
+
+	public String getModel() {
+		return model;
+	}
+
+	public void setModel(String model) {
+		this.model = model;
+	}
+
+	public String getLlmSystemPrompt() {
+		return llmSystemPrompt;
+	}
+
+	public void setLlmSystemPrompt(String llmSystemPrompt) {
+		this.llmSystemPrompt = llmSystemPrompt;
+	}
+
 	public void chatConsole(){
+		chatConsole(newRequest(model));
+	}
+	public void chatConsole(OllamaRequest req){
 		BufferedReader is = new BufferedReader(new InputStreamReader(System.in));
 		try{
 			String prompt = "> ";
 			String line = "";
-			OllamaRequest req = newRequest(model);
 			OllamaResponse lastRep = null;
 			while (line != null && line.equalsIgnoreCase("/quit") == false && line.equalsIgnoreCase("/exit") == false && line.equalsIgnoreCase("/bye") == false) {
+				if(lastRep == null && req.getMessages().size() > 0) {
+					logger.info("Initializing ...");
+					lastRep = chat(req);
+					if(lastRep != null) {
+						handleResponse(req, lastRep);
+					}
+				}
 				System.out.print(prompt);
 				line = is.readLine();
 				if(line == null || line.equalsIgnoreCase("/bye")) {
@@ -151,6 +176,7 @@ public class ChatMain {
 					continue;
 				}
 				// System.out.println("'" + line + "'");
+				
 				if(chatMode) {
 					newMessage(req, line);
 				}
@@ -161,23 +187,7 @@ public class ChatMain {
 				/// System.out.println(JSONUtil.exportObject(req));
 				lastRep = chat(req);
 				if(lastRep != null) {
-					if(includeContextHistory) {
-						req.setContext(lastRep.getContext());
-					}
-
-					/// System.out.println(JSONUtil.exportObject(lastRep));
-					if(lastRep.getMessage() != null) {
-						if(includeMessageHistory) {
-							req.getMessages().add(lastRep.getMessage());
-						}
-						String cont = lastRep.getMessage().getContent();
-						if(cont != null) {
-							cont = cont.trim().replaceAll("^assistant[:]*\s*", "");
-							System.out.println(cont);
-						}
-						
-						
-					}
+					handleResponse(req, lastRep);
 				}
 			}
 		    is.close();
@@ -185,6 +195,24 @@ public class ChatMain {
 		catch(IOException e){
 			logger.error(e.getMessage());
 		} 
+	}
+	
+	private void handleResponse(OllamaRequest req, OllamaResponse rep) {
+		if(includeContextHistory) {
+			req.setContext(rep.getContext());
+		}
+
+		/// System.out.println(JSONUtil.exportObject(lastRep));
+		if(rep.getMessage() != null) {
+			if(includeMessageHistory) {
+				req.getMessages().add(rep.getMessage());
+			}
+			String cont = rep.getMessage().getContent();
+			if(cont != null) {
+				cont = cont.trim().replaceAll("^assistant[:]*\s*", "");
+				System.out.println(cont);
+			}
+		}
 	}
 	
 	public OllamaRequest newRequest(String model) {
@@ -207,7 +235,7 @@ public class ChatMain {
 		if((!force && !enablePrune) || !chatMode) {
 			return;
 		}
-		if(req.getMessages().size() <= 1) {
+		if(req.getMessages().size() <= pruneSkip) {
 			return;
 		}
 		OllamaMessage ctxMsg = req.getMessages().get(0);
@@ -217,7 +245,7 @@ public class ChatMain {
 
 		/// Skip the first message used to set any context prompt
 		///
-		for(int i = 1; i < req.getMessages().size(); i++) {
+		for(int i = pruneSkip; i < req.getMessages().size(); i++) {
 			curLength += req.getMessages().get(i).getContent().split("\\W+").length;
 			if(curLength >= tokenLength) {
 				System.out.println("Prune prior to " + i + " of " + req.getMessages().size() + " / Token Size = " + curLength);
@@ -251,8 +279,5 @@ public class ChatMain {
 	}
 
 
-	private static String llmSystemPrompt = """
-You play the role of an assistant named Siren.
-Begin conversationally.
-""";
+
 }

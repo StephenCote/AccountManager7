@@ -20,7 +20,7 @@
 		<sonar.dynamicAnalysis>reuseReports</sonar.dynamicAnalysis>
 		<sonar.jacoco.reportPath>${project.basedir}/../target/jacoco.exec</sonar.jacoco.reportPath>
 		<sonar.language>java</sonar.language>
-
+		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
 	</properties>
 	<repositories>
 	<repository>
@@ -46,6 +46,7 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
+		<!--
 		<plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
@@ -66,6 +67,7 @@
           </execution>
         </executions>
       </plugin>
+      
 		  	<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-jar-plugin</artifactId>
@@ -74,13 +76,14 @@
 					<archive>
 						<manifest>
 							<addClasspath>true</addClasspath>
-							<mainClass>org.cote.accountmanager.olio.chat.ChatMain</mainClass>
+							<mainClass>org.cote.accountmanager.olio.llm.ChatMain</mainClass>
 							<classpathPrefix>./lib/</classpathPrefix>
 						</manifest>
 					</archive>
 				</configuration>
 
 			</plugin>
+		-->
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -404,6 +407,7 @@
     <artifactId>javax.ws.rs-api</artifactId>
     <version>2.1.1</version>
 </dependency>
+<!--
 <dependency>
     <groupId>org.glassfish.jersey.core</groupId>
     <artifactId>jersey-client</artifactId>
@@ -419,7 +423,7 @@
 	<artifactId>jersey-media-json-jackson</artifactId>
 			<version>2.41</version>
 </dependency>
-
+-->
 
 
 		<!--

@@ -192,7 +192,7 @@ public class NarrativeUtil {
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get("race"));
-		buff.append(fname + " is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + ", and a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
@@ -202,6 +202,62 @@ public class NarrativeUtil {
 			buff.append(" " + cpro + " " + describeArmament(ctx, person) + ".");
 		}
 		return buff.toString();
+	}
+	
+	public static String getIsPrettySmart(PersonalityProfile prof) {
+	
+		String desc = "indescribable";
+		HighEnumType charm = prof.getIntelligence();
+		if(HighEnumType.compare(charm, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "retarded";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "dumb as a box of rocks";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "schooled in the essentials";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "fairly smart";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "really smart";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "extremely smart";
+		}
+		else {
+			// desc = "pulchritudinous"
+			desc = "a real genius";
+		}
+		return desc;
+	}
+	
+	public static String getIsPrettyRipped(PersonalityProfile prof) {
+		String desc = "indescribable";
+		HighEnumType charm = prof.getPhysicalStrength();
+		if(HighEnumType.compare(charm, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "extremely weak";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "weak";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "able";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "athletic";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "olympian";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "carved in stone";
+		}
+		else {
+			desc = "an Adonis";
+		}
+		return desc;
 	}
 	
 	public static String getLooksPrettyUgly(PersonalityProfile prof) {

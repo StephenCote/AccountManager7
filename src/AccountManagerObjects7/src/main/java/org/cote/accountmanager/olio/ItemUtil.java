@@ -314,7 +314,7 @@ public class ItemUtil {
 	/// 
 	protected static BaseRecord[] importItems(OlioContext ctx) {
 		// logger.info("Import default item configuration");
-		List<BaseRecord> items = JSONUtil.getList(ResourceUtil.getResource("./olio/items.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		List<BaseRecord> items = JSONUtil.getList(ResourceUtil.getResource("olio/items.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		List<BaseRecord> oitems = new ArrayList<>();
 
 		Factory mf = IOSystem.getActiveContext().getFactory();
