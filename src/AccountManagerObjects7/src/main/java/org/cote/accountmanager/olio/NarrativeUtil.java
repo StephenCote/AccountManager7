@@ -192,7 +192,7 @@ public class NarrativeUtil {
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get("race"));
-		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + ", and a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
@@ -203,7 +203,35 @@ public class NarrativeUtil {
 		}
 		return buff.toString();
 	}
-	
+	public static String getIsPrettyMagic(PersonalityProfile prof) {
+		
+		String desc = "indescribable";
+		HighEnumType charm = prof.getMagic();
+		if(HighEnumType.compare(charm, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "has none";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "has fleeting sensations of something beyond";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "has innate perception and ability";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "is very capable and knows how to use it";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "is a legitimate wizard";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "is an extremely gifted wizard";
+		}
+		else {
+			// desc = "pulchritudinous"
+			desc = "is a sorceror supreme";
+		}
+		return desc;
+	}
+
 	public static String getIsPrettySmart(PersonalityProfile prof) {
 	
 		String desc = "indescribable";
