@@ -193,6 +193,7 @@ public class NarrativeUtil {
 		
 		String raceDesc = getRaceDescription(person.get("race"));
 		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(" Character wise, " + pro + " is " + getActsLikeSatan(pp) + ".");
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
@@ -287,7 +288,41 @@ public class NarrativeUtil {
 		}
 		return desc;
 	}
-	
+	public static String getActsLikeSatan(PersonalityProfile prof) {
+		String desc = "indescribable";
+		switch(prof.getAlignment()) {
+			case CHAOTICEVIL:
+				desc = "like Charles Manson or William Gacy";
+				break;
+			case NEUTRALEVIL:
+				desc = "like Stalin or Mao";
+				break;
+			case LAWFULEVIL:
+				desc = "like Hitler";
+				break;
+			case CHAOTICNEUTRAL:
+				desc = "like Blackbeard or Tyler Durden";
+				break;
+			case NEUTRAL:
+				desc = "like Machiavelli";
+				break;
+			case LAWFULNEUTRAL:
+				desc = "like Louis XIV or James Bond";
+				break;
+			case CHAOTICGOOD:
+				desc = "like Thomas Jefferson or Deadpool";
+				break;
+			case NEUTRALGOOD:
+				desc = "like Galadriel or Gandhi";
+				break;
+			case LAWFULGOOD:
+				desc = "like Lincoln or Captain America";
+				break;
+			default:
+				break;
+		}
+		return desc;
+	}
 	public static String getLooksPrettyUgly(PersonalityProfile prof) {
 		/// TODO: Aesthetic/Appearance determination is currently simplified to the charisma statistic
 		/// However, it could be better described as: charisma + symmetry + physical genetics + personality + fitness/health

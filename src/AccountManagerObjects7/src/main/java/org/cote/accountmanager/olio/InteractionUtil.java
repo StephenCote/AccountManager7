@@ -229,15 +229,16 @@ public class InteractionUtil {
 	public static List<CharacterRoleEnumType> getCharacterRolesByAlignment(AlignmentEnumType align, String gender) {
 		List<CharacterRoleEnumType> reas = new ArrayList<>();
 		if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICNEUTRAL, ComparatorEnumType.LESS_THAN)) {
-			reas = CharacterRoleEnumType.getNegativeRoles();
+			reas.addAll(CharacterRoleEnumType.getNegativeRoles());
 		}
 		else if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICGOOD, ComparatorEnumType.LESS_THAN)) {
-			reas = CharacterRoleEnumType.getNeutralRoles();
+			reas.addAll(CharacterRoleEnumType.getNeutralRoles());
 		}
-		else reas = CharacterRoleEnumType.getPositiveRoles();
+		else reas.addAll(CharacterRoleEnumType.getPositiveRoles());
 		if(gender.equals("male")) {
 			reas.remove(CharacterRoleEnumType.TEMPTRESS);
 		}
+		reas.remove(CharacterRoleEnumType.UNKNOWN);
 		return reas;
 	}
 	

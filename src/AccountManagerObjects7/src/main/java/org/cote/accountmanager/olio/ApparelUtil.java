@@ -18,6 +18,7 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -65,6 +66,58 @@ public class ApparelUtil {
 	}
 	protected static BaseRecord getApparelTemplate(OlioContext ctx, String name) {
 		return getCreateApparel(ctx, name, "template", null);
+	}
+	
+	public static void outfitAndStage(OlioContext ctx, BaseRecord cell, List<BaseRecord> party) {
+		for(BaseRecord p: party) {
+			BaseRecord sto = p.get("store");
+			List<BaseRecord> appl = sto.get("apparel");
+			List<BaseRecord> iteml = sto.get("items");
+			List<String> upf = new ArrayList<>();
+			if(appl.size() == 0) {
+				BaseRecord app = ApparelUtil.randomApparel(ctx, p);
+				List<BaseRecord> wears = app.get("wearables");
+				wears.addAll(ApparelUtil.randomArmor(ctx));
+				IOSystem.getActiveContext().getRecordUtil().createRecord(app);
+				appl.add(app);
+				ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), sto, "apparel", app));
+			}
+			if(iteml.size() == 0) {
+				List<BaseRecord> arms = ItemUtil.randomArms(ctx);
+				for(BaseRecord a: arms) {
+					IOSystem.getActiveContext().getRecordUtil().createRecord(a);
+					ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), sto, "items", a));
+				}
+				iteml.addAll(arms);
+			}
+
+			BaseRecord sta = p.get("state");
+			if(cell != null && sta.get("currentLocation") == null) {
+				sta.setValue("currentLocation", cell);
+				StateUtil.agitateLocation(ctx, sta);
+				ctx.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth"});
+			}
+		}
+	}
+	
+	public static List<BaseRecord> randomArmor(OlioContext ctx) {
+		List<BaseRecord> wears = new ArrayList<>();
+		String[] protect = new String[] {"head", "chest", "neck", "upper arm", "forearm", "hand", "foot", "shin", "thigh", "elbow", "knee"};
+		double[] protectOdds = new double[] {0.15, 0.25, 0.15, 0.15, 0.15, 0.25, 0.25, 0.15, 0.15, 0.10, 0.10};
+		for(int i = 0; i < protect.length; i++) {
+			String p = protect[i];
+		
+			if(rand.nextDouble() <= protectOdds[i]) {
+				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
+				List<BaseRecord> quals = wearRec.get("qualities");
+				quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
+				ApparelUtil.embedWearable(ctx, wearRec, ApparelUtil.randomWearable(WearLevelEnumType.OUTER, p, null));
+				ApparelUtil.applyEmbeddedFabric(wearRec, ApparelUtil.randomFabric(WearLevelEnumType.OUTER, null));
+				ApparelUtil.designWearable(ctx, wearRec);
+				wears.add(wearRec);
+			}
+		}
+		return wears;
 	}
 	
 	protected static BaseRecord newApparel(OlioContext ctx, String name, String type, String cat) {

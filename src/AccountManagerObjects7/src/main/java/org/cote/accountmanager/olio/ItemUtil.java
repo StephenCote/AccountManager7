@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,6 +28,64 @@ import org.cote.accountmanager.util.ResourceUtil;
 public class ItemUtil {
 	public static final Logger logger = LogManager.getLogger(ItemUtil.class);
 	
+	private static List<BaseRecord> itemTemplates = new ArrayList<>();
+	public static List<BaseRecord> getItemTemplates(OlioContext ctx){
+		if(itemTemplates.size() == 0) {
+			itemTemplates = ItemUtil.getTemplateItems(ctx);
+		}
+		return itemTemplates;
+	}
+	
+	private static String[] weaponFab = new String[] {"iron", "steel", "bronze", "stainless steel", "damascus steel"};
+	public static List<BaseRecord> randomArms(OlioContext ctx){
+		List<BaseRecord> aweaps = new ArrayList<>();
+		List<BaseRecord> weapL = getItemTemplates(ctx).stream().filter(r -> "weapon".equals(r.get("category"))).collect(Collectors.toList());
+		BaseRecord weapT = weapL.get(random.nextInt(weapL.size()));
+		BaseRecord weap = ItemUtil.buildItem(ctx, weapT);
+		//ctx.queue(weap);
+		ApparelUtil.applyFabric(weap, weaponFab[random.nextInt(weaponFab.length)]);
+		aweaps.add(weap);
+		
+		// logger.info(weap.toFullString());
+		if(!OlioUtil.isTagged(weap, "two-handed") && random.nextDouble() <= 0.25) {
+			List<BaseRecord> armorL = getItemTemplates(ctx).stream().filter(r -> "armor".equals(r.get("category"))).collect(Collectors.toList());
+			BaseRecord armorT = armorL.get(random.nextInt(armorL.size()));
+			BaseRecord armor = ItemUtil.buildItem(ctx, armorT);
+			ApparelUtil.applyFabric(armor, weaponFab[random.nextInt(weaponFab.length)]);	
+			aweaps.add(armor);
+			// logger.info(weap.toFullString());
+		}
+		return aweaps;
+	}
+	private static SecureRandom random = new SecureRandom();
+	private static String[] monies = new String[] {"script", "seashell", "shiny pebble"};
+	public static void showerWithMoney(OlioContext ctx, List<BaseRecord> party) {
+		String money = monies[random.nextInt(monies.length)];
+		
+		for(BaseRecord p: party) {
+			int count = ItemUtil.countItemByCategoryInInventory(ctx, p, "money");
+			if(count == 0) {
+				boolean isBroke = random.nextDouble() <= 0.25;
+				if(isBroke) {
+					/// give them a piece of lint
+					ItemUtil.depositItemIntoInventory(ctx, p, "lint", 1);
+				}
+				else {
+					int moneyMax = 100;
+					int moneyMin = 5;
+					if(random.nextDouble() <= 0.25) {
+						moneyMax = 150;
+						moneyMin = 25;
+						if(random.nextDouble() <= 0.10) {
+							moneyMax = 200;
+							moneyMin = 75;
+						}
+					}
+					ItemUtil.depositItemIntoInventory(ctx, p, money, random.nextInt(moneyMin, moneyMax));
+				}
+			}
+		}
+	}
 	
 	protected static BaseRecord newItem(OlioContext ctx, String name) {
 		BaseRecord rec = null;
