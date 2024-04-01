@@ -1,5 +1,9 @@
 olio (hodgepodge) contains a variety of data randomization and evolution models and utilities.
 
+Console Examples:
+Patch an existing character:
+olio -character1 OldFirstName -update -person "{firstName:\"New First\",middleName:\"New Middle\",lastName:\"New Last\",age:38,hairColor: \"brown\",hairStyle: \"tangled\", name:\"New Full Name\"}" -statistics "{charisma:12,wisdom:7,intelligence:6,willpower:10,creativity:15,spirituality:15,agility:17,physicalStrength:6}" -outfit "bra,underwear,tank top,skirt,sandals,anklet,amulet,piercing:7:f:ear," -show
+
 LLM
 ollama docker - https://ollama.com/blog/ollama-is-now-available-as-an-official-docker-image
 docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama

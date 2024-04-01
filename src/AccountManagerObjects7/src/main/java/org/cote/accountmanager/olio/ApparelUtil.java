@@ -161,14 +161,14 @@ public class ApparelUtil {
 	}
 	public static String randomWearable(String[] list, int level, String location, String gender) {
 		String wear = null;
-		List<String> wearl = filterWearables(list, level, location, gender);
+		List<String> wearl = filterWearables(list, level, location, gender, null);
 		if(wearl.size() > 0) {
 			wear = wearl.get(rand.nextInt(wearl.size()));
 		}
 		return wear;
 	}
 	
-	private static List<String> filterWearables(String[] list, int level, String location, String gender) {
+	private static List<String> filterWearables(String[] list, int level, String location, String gender, String name) {
 		final String gcode;
 		if(gender != null) {
 			gcode = gender.substring(0, 1);
@@ -181,7 +181,11 @@ public class ApparelUtil {
 			if(tmat.length > 3) {
 				int lvl = Integer.parseInt(tmat[1]);
 				String gc = tmat[2];
-				if(lvl == level && (gc.equals("u") || gc.equals(gcode))) {
+				//logger.info(level + "-" + lvl + " / " + gcode + "-" + gc + " / " + name + "-" + tmat[0]);
+				if((level < 0 || lvl == level) && (gc.equals("u") || gc.equals(gcode))) {
+					if(name != null) {
+						return name.equals(tmat[0]);
+					}
 					if(location == null) {
 						return true;
 					}
@@ -197,6 +201,36 @@ public class ApparelUtil {
 		}).collect(Collectors.toList());
 	}
 	
+	public static String[] getEmbeddedOutfit(String[] names, String gender) {
+		List<String> oft = new ArrayList<>();
+		for(String n: names) {
+			int mat = 0;
+			if(n.indexOf(":") > -1) {
+				if(!n.startsWith(cpref) && !n.startsWith(jpref)) {
+					oft.add(cpref + n);
+				}
+				else {
+					oft.add(n);
+				}
+				continue;
+			}
+			List<String> art = filterWearables(clothingTypes, -1, null, gender, n);
+			if(art.size() > 0) {
+				oft.add(cpref + art.get(0));
+				mat++;
+			}
+			art = filterWearables(jewelryTypes, -1, null, gender, n);
+			if(art.size() > 0) {
+				oft.add(jpref + art.get(0));
+				mat++;
+			}
+			if(mat == 0) {
+				logger.warn("Didn't find '" + n + "'");
+			}
+		}
+		return oft.toArray(new String[0]);
+		
+	}
 	public static String[] randomOutfit(WearLevelEnumType minLevel, WearLevelEnumType maxLevel, String gender, double probableMid) {
 		List<String> rol = new ArrayList<>();
 		int low = WearLevelEnumType.valueOf(minLevel);
@@ -230,8 +264,8 @@ public class ApparelUtil {
 					String wear = randomWearable(i, "torso|breast|chest|shoulder|hand|head|neck", gender);
 					if(wear != null && !rol.contains(cpref + wear)) {
 						rol.add(cpref + wear);
-						if(filterWearables(new String[] {wear}, i, "waist|hip|leg|thigh|groin", gender).size() == 1) {
-							logger.warn("Wearable covers both top and bottom, so skip choosing bottom at this level: " + wear);
+						if(filterWearables(new String[] {wear}, i, "waist|hip|leg|thigh|groin", gender, null).size() == 1) {
+							// logger.warn("Wearable covers both top and bottom, so skip choosing bottom at this level: " + wear);
 							topAndBottom = true;
 						}
 					}
@@ -442,19 +476,25 @@ public class ApparelUtil {
 		alignPatternAndColors(base, 0.8, 0.5);
 		alignPatternAndColors(suit, 0.6, 0.7);
 	}
+
+	public static BaseRecord constructApparel(OlioContext ctx, BaseRecord person, String[] names) {
+		return constructApparel(ctx, (String)person.get("gender"), getEmbeddedOutfit(names, (String)person.get("gender")));
+	}
+
 	
 	public static BaseRecord randomApparel(OlioContext ctx, BaseRecord person) {
 		return randomApparel(ctx, (String)person.get("gender"));
 	}
 	
 	public static BaseRecord randomApparel(OlioContext ctx, String gender) {
-		BaseRecord app = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
-		try {
-			app.set("gender", gender);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
 		String [] wears = randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, gender, .35);
+		return constructApparel(ctx, gender, wears);
+	}
+
+	public static BaseRecord constructApparel(OlioContext ctx, String gender, String[] wears) {
+		BaseRecord app = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
+		app.setValue("gender", gender);
+		
 		List<BaseRecord> wearList = app.get("wearables");
 		
 		for(String emb : wears) {
@@ -466,7 +506,7 @@ public class ApparelUtil {
 		}
 		designApparel(app);
 		return app;
-		
+
 	}
 	
 	protected static String randomClothingType(String gender, String type) {

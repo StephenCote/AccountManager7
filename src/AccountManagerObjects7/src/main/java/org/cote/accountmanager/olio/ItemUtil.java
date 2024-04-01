@@ -332,6 +332,27 @@ public class ItemUtil {
 		return inv;
 	}
 	
+	public static BaseRecord findStoredItemByName(BaseRecord person, String name) {
+		BaseRecord item = null;
+		BaseRecord store = person.get("store");
+		List<BaseRecord> appl = store.get("apparel");
+		List<BaseRecord> iteml = store.get("items");
+		for(BaseRecord a: appl) {
+			List<BaseRecord> wearl = a.get("wearables");
+			Optional<BaseRecord> owear = wearl.stream().filter(r -> name.equals(r.get(FieldNames.FIELD_NAME))).findFirst();
+			if(owear.isPresent()) {
+				item = owear.get();
+			}
+		}
+		if(item == null) {
+			Optional<BaseRecord> oitem = iteml.stream().filter(r -> name.equals(r.get(FieldNames.FIELD_NAME))).findFirst();
+			if(oitem.isPresent()) {
+				item = oitem.get();
+			}
+		}
+		return item;
+	}
+	
 	public static BaseRecord buildItem(OlioContext ctx, String name) {
 		BaseRecord itemT = getItemTemplate(ctx, name);
 		if(itemT == null) {
