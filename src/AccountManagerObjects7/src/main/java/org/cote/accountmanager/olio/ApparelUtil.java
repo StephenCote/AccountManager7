@@ -182,6 +182,9 @@ public class ApparelUtil {
 				int lvl = Integer.parseInt(tmat[1]);
 				String gc = tmat[2];
 				if(lvl == level && (gc.equals("u") || gc.equals(gcode))) {
+					if(location == null) {
+						return true;
+					}
 					String[] lcs = location.split("\\|");
 					for(String lc : lcs) {
 						if(tmat[3].contains(lc)) {
@@ -214,7 +217,7 @@ public class ApparelUtil {
 						}
 					}
 					if(probableMid >= rand.nextDouble()) {
-						String wear = randomWearable(jewelryTypes, i, jewrlLoc, gender);
+						String wear = randomWearable(jewelryTypes, i, null, gender);
 						if(wear != null && !rol.contains(jpref + wear)) {
 							rol.add(jpref + wear);
 						}

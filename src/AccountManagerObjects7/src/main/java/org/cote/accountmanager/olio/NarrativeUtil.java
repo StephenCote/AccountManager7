@@ -193,7 +193,7 @@ public class NarrativeUtil {
 		
 		String raceDesc = getRaceDescription(person.get("race"));
 		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
-		buff.append(" Character wise, " + pro + " is " + getActsLikeSatan(pp) + ".");
+		buff.append(" Morally, " + pro + " is " + getActsLikeSatan(pp) + ".");
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");

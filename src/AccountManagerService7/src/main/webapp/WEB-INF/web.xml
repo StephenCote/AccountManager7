@@ -97,7 +97,6 @@
 		<url-pattern>/*</url-pattern>
 		<dispatcher>REQUEST</dispatcher>
 	</filter-mapping>
-
 	<filter>
 		<filter-name>AuthNFilter</filter-name>
 		<filter-class>org.cote.jaas.TokenFilter</filter-class>
@@ -162,6 +161,13 @@
 		<servlet-class>org.cote.servlets.MediaFormServlet</servlet-class>
 		<enabled>true</enabled>
 		<async-supported>false</async-supported>
+	</servlet>
+	<servlet>
+		<display-name>WebSocketService</display-name>
+		<servlet-name>WebSocketService</servlet-name>
+		<servlet-class>org.cote.sockets.WebSocketService</servlet-class>
+		<enabled>true</enabled>
+		<async-supported>true</async-supported>
 	</servlet>
 	<servlet>
 		<display-name>MediaServlet</display-name>

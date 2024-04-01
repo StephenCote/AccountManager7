@@ -318,7 +318,7 @@ public class InteractionUtil {
 		}
 		ReasonEnumType actorReason = inter.getEnum("actorReason");
 		if(actorReasons.size() == 0 && actorReason != ReasonEnumType.UNKNOWN) {
-			logger.error("Failed to identify any possible reasons");
+			logger.warn("Failed to identify any possible reasons");
 			return null;
 		}
 		if(actorReason == ReasonEnumType.UNKNOWN) {
@@ -413,7 +413,7 @@ public class InteractionUtil {
 
 		ReasonToDo rtd = guessReasonToInteract(ctx, prof1, interAlign, prof2);
 		if(rtd == null) {
-			logger.error("Could not find a reason to interact");
+			logger.warn("Could not find a reason to interact");
 			return null;
 		}
 		// ThreatEnumType threat = getThreatForInteraction(interType);

@@ -1,14 +1,15 @@
 --- CURRENT SCRATCH NOTES
 -- pull up all characters' wardrobes
 
-select p1.name, w1.name, w1.color, w1.fabric, t1.name from a7_olio_charperson_0_1 p1
-inner join a7_olio_charperson_system_participation_0_1 sp1 on sp1.participantmodel = 'person.apparel' and sp1.participationmodel = 'olio.charPerson' and sp1.participationid = p1.id
-inner join a7_olio_apparel_system_participation_0_1 sp2 on sp2.participantmodel = 'olio.wearable' and sp2.participationmodel = 'olio.apparel' and sp2.participationid = sp1.participantid
-inner join a7_olio_apparel_0_1 a1 on a1.id = sp2.participationid
-inner join a7_olio_wearable_0_1 w1 on w1.id = sp2.participantid
-inner join a7_olio_wearable_system_participation_0_1 sp3 on sp3.participantmodel = 'olio.quality' and sp3.participationmodel = 'olio.wearable' and sp3.participationid = w1.id
-inner join a7_data_data_0_1 t1 on t1.id = w1.pattern
-where p1.gender = 'male'
+select CP.id, CP.name, CP.age, CP.gender, CP.eyeColor, CP.hairColor, CP.hairStyle, CP.race, IP.machiavellianism, IP.narcissism, IP.psychopathy,SS.charisma, SS.intelligence,SS.physicalStrength,W.level, W.category,W.type,W.name, W.color, W.fabric,W.location from a7_olio_charperson_0_1 CP
+inner join a7_olio_statistics_0_1 SS on SS.id = CP.statistics
+inner join a7_identity_personality_0_1 IP on IP.id = CP.personality
+inner join a7_olio_store_0_1 S on S.id = CP.store
+inner join a7_olio_store_system_participation_0_1 SP on S.id = SP.participationid
+inner join a7_olio_apparel_0_1 A on A.id = SP.participantid and SP.participantmodel = 'store.apparel'
+inner join a7_olio_apparel_system_participation_0_1 AP on A.id = AP.participationid
+inner join a7_olio_wearable_0_1 W on W.id = AP.participantid AND AP.participantmodel = 'olio.wearable'
+
 
 --- PREVIOUS AUTHORIZATION QUERIES
 -- can steve read data he owns

@@ -129,8 +129,8 @@ public class NeedsUtil {
 		/// Delegate actions
 		GroupDynamicUtil.delegateActions(ctx, locationEpoch, increment, map, actions);
 		ctx.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
-		String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
-		logger.info(nar);
+		// String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
+		// logger.info(nar);
 		
 		/*
 		MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
