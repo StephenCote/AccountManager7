@@ -55,10 +55,6 @@ public class ApparelUtil {
 	
 	private static SecureRandom rand = new SecureRandom();
 	
-	private static int patternDeckSize = 100;
-	private static BaseRecord[] patternDeck = new BaseRecord[0];
-	private static int colorDeckSize = 100;
-	private static String[] colorDeck = new String[0];
 	private static Map<String, String> colorComplements = new HashMap<>();
 	
 	public static String[] getFabricTypes() {
@@ -456,8 +452,8 @@ public class ApparelUtil {
 			mats.addAll(nfeats);
 		}
 		else {
-			randomColor = getRandomColor(ctx.getUser(), ctx.getUniverse());
-			pattern = getRandomPattern(ctx.getUser(), ctx.getUniverse());
+			randomColor = Decks.getRandomColor(ctx.getUser(), ctx.getUniverse());
+			pattern = Decks.getRandomPattern(ctx.getUser(), ctx.getUniverse());
 		}
 		String compColor = findComplementaryColor(ctx.getUniverse(), randomColor);
 		try {
@@ -569,42 +565,9 @@ public class ApparelUtil {
 		return outFab;
 	}
 	
-	public static void shuffleDecks(BaseRecord user, BaseRecord world) {
-		shufflePatternDeck(user, world);
-		shuffleColorDeck(user, world);
-	}
 	
-	private static void shufflePatternDeck(BaseRecord user, BaseRecord world) {
-		long patternDir = world.get("patterns.id");
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
-		q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
-		patternDeck = OlioUtil.randomSelections(user, q, patternDeckSize);
-	}
-	
-	public static BaseRecord getRandomPattern(BaseRecord user, BaseRecord world) {
-		if(patternDeck.length == 0) {
-			shufflePatternDeck(user, world);
-		}
-		BaseRecord pattern = null;
-		if(patternDeck.length > 0) {
-			pattern = patternDeck[rand.nextInt(patternDeck.length)];
-		}
-		return pattern;
-	}
 
-	private static void shuffleColorDeck(BaseRecord user, BaseRecord world) {
-		colorDeck = OlioUtil.getRandomOlioValues(user, world, "color", colorDeckSize);
-	}
-	public static String getRandomColor(BaseRecord user, BaseRecord world) {
-		if(colorDeck.length == 0) {
-			shuffleColorDeck(user, world);
-		}
-		String color = null;
-		if(colorDeck.length > 0) {
-			color = colorDeck[rand.nextInt(colorDeck.length)];
-		}
-		return color;
-	}
+
 
 	public static void embedWearable(OlioContext ctx, BaseRecord rec, String embType) {
 		applyEmbeddedWearable(ctx, rec, cpref + embType);

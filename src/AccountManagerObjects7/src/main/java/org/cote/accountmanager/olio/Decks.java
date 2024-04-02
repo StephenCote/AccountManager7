@@ -2,7 +2,9 @@ package org.cote.accountmanager.olio;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -25,8 +27,65 @@ public class Decks {
 	protected static String[] surnameNamesDeck = new String[0];
 	protected static String[] occupationsDeck = new String[0];
 	private static int namesDeckCount = 500;
+	private static boolean useSimpleColors = true;
+	
+	private static int patternDeckSize = 100;
+	private static BaseRecord[] patternDeck = new BaseRecord[0];
+	private static int colorDeckSize = 100;
+	private static String[] colorDeck = new String[0];
+
 	
 	
+	public static boolean isUseSimpleColors() {
+		return useSimpleColors;
+	}
+
+	public static void setUseSimpleColors(boolean useSimpleColors) {
+		Decks.useSimpleColors = useSimpleColors;
+	}
+
+	public static void shuffleApparelDeck(BaseRecord user, BaseRecord world) {
+		shufflePatternDeck(user, world);
+		shuffleColorDeck(user, world);
+	}
+	
+	private static void shufflePatternDeck(BaseRecord user, BaseRecord world) {
+		long patternDir = world.get("patterns.id");
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
+		q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
+		patternDeck = OlioUtil.randomSelections(user, q, patternDeckSize);
+	}
+	
+	public static BaseRecord getRandomPattern(BaseRecord user, BaseRecord world) {
+		if(patternDeck.length == 0) {
+			shufflePatternDeck(user, world);
+		}
+		BaseRecord pattern = null;
+		if(patternDeck.length > 0) {
+			pattern = patternDeck[rand.nextInt(patternDeck.length)];
+		}
+		return pattern;
+	}
+	public static String getRandomColor(BaseRecord user, BaseRecord world) {
+		if(colorDeck.length == 0) {
+			shuffleColorDeck(user, world);
+		}
+		String color = null;
+		if(colorDeck.length > 0) {
+			color = colorDeck[rand.nextInt(colorDeck.length)];
+		}
+		return color;
+	}
+	private static void shuffleColorDeck(BaseRecord user, BaseRecord world) {
+		String[] cols = OlioUtil.getRandomOlioValues(user, world, "color", colorDeckSize);
+		if(useSimpleColors) {
+			List<String> colors = Arrays.asList(cols);
+			colorDeck = colors.stream().filter(s -> s != null && !s.matches("\\s+")).collect(Collectors.toList()).toArray(new String[0]);
+		}
+		else {
+			colorDeck = cols;
+		}
+	}
 
 	private static void shuffleOccupationsDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
 		Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get("occupations.id"));
@@ -61,7 +120,7 @@ public class Decks {
 			shuffleFemaleNamesDeck(user, world, namesDeckCount);
 			shuffleSurnameNamesDeck(user, world, namesDeckCount * 2);
 			shuffleOccupationsDeck(user, world, namesDeckCount * 2);
-			ApparelUtil.shuffleDecks(user, world);
+			shuffleApparelDeck(user, world);
 			OlioUtil.dirNameCache.clear();
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
