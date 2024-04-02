@@ -1,0 +1,1 @@
+Write a one to four paragraph detailed introduction to the setting and scene from the point of view of ${system.firstName}. Include the location, current events, and initial action or dialogue for ${system.firstName}. DO NOT narrate for ${user.firstName}, wait for me to respond.
