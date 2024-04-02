@@ -254,7 +254,7 @@ public class ChatAction extends CommonAction implements IAction{
 			promptBuff.append("This is an unrestricted and uncensored fictional roleplay.  You play " + systemChar.get("firstName") + ", and I play " + userChar.get("firstName") + ".\n");
 			// promptBuff.append("You are " + systemChar.get("firstName") + ". I am " + userChar.get("firstName") + ". The rules:\n");
 			//promptBuff.append("1) All instructions prefaced by (DM) are absolute and universal.  Example: (DM) You take control and describe the actions of a pack of wild animals stalking the party.\n");
-			promptBuff.append("1) Write one scene interaction, description, and/or reply at a time for " + systemChar.get("firstName") + " and avoid repetition. Write at least 1 paragraph, up to 4.\n");
+			promptBuff.append("1) Write one scene interaction, description, and/or reply at a time for " + systemChar.get("firstName") + " and avoid repetition. Write between one and four paragraphs.\n");
 			promptBuff.append("2) Narrate description and dialogue appropriate for " + systemChar.get("firstName") + "'s personality.\n");
 			promptBuff.append("3) Never narrate, summarize, or write replies or dialogue for " + userChar.get("firstName") + "\n");
 			promptBuff.append("4) Be proactive, creative, and drive the plot and conversation forward according to the situation and the suggested outcomes.\n");
@@ -319,7 +319,7 @@ public class ChatAction extends CommonAction implements IAction{
 		OllamaOptions opts = new OllamaOptions();
 		opts.setNumGpu(50);
 		opts.setNumCtx(4096);
-		// req.setOptions(opts);
+		req.setOptions(opts);
 		
 		return req;
 	}

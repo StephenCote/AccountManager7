@@ -144,6 +144,7 @@ public class NarrativeUtil {
 				String name = w.get("name");
 				if(name.contains("pierc")) {
 					name = "pierced" + loc + " ring";
+					pat = "";
 				}
 				String opacs = "";
 				if(opac > 0.0 && opac <= 0.25) {
