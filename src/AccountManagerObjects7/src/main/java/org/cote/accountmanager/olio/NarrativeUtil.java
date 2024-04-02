@@ -21,6 +21,16 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 public class NarrativeUtil {
 	public static final Logger logger = LogManager.getLogger(NarrativeUtil.class);
 	
+	private static boolean describePatterns = true;
+	
+	public static boolean isDescribePatterns() {
+		return describePatterns;
+	}
+	
+	public static void setDescribePatterns(boolean describePatterns) {
+		NarrativeUtil.describePatterns = describePatterns;
+	}
+
 	public static String getDarkTriadDescription(PersonalityProfile prof) {
 		//StringBuilder desc = new StringBuilder();
 		
@@ -137,7 +147,7 @@ public class NarrativeUtil {
 				if(col != null) {
 					col = col.replaceAll("\\([^()]*\\)", "");
 				}
-				String pat = (w.get("pattern.name") != null ? " " + ((String)w.get("pattern.name")).toLowerCase() : "");
+				String pat = (w.get("pattern.name") != null ? " " + ((String)w.get("pattern.name")).toLowerCase().replace(" pattern", "") : "");
 				String fab = (w.get("fabric") != null ? " " + ((String)w.get("fabric")).toLowerCase() : "");
 				List<String> locs = w.get("location");
 				String loc = (locs.size() > 0 ? " " + locs.get(0) : "");
@@ -155,7 +165,7 @@ public class NarrativeUtil {
 					shins = " shiny";
 				}
 
-				buff.append(andl + shins + opacs + col + pat + fab + " " + name);
+				buff.append(andl + shins + opacs + col + (describePatterns ? pat : "") + fab + " " + name);
 				//andl = ", and";
 				andl = "," + (i == wearl.size() - 2 ? " and" : "");
 			}
@@ -636,6 +646,41 @@ public class NarrativeUtil {
 		}
 		else {
 			desc = "an Adonis";
+		}
+		return desc;
+	}
+	public static String getOthersActLikeSatan(AlignmentEnumType align) {
+		String desc = "indescribable";
+		switch(align) {
+			case CHAOTICEVIL:
+				desc = "have no respect for rules, people's lives, or anything except their own selfish and cruel desire";
+				break;
+			case NEUTRALEVIL:
+				desc = "are selfish, will turn on their own allies, and will harm others if it's a benefit";
+				break;
+			case LAWFULEVIL:
+				desc = "see well-ordered systems as necessary to fulfill their personal needs and desires";
+				break;
+			case CHAOTICNEUTRAL:
+				desc = "follow their own heart, shirk rules and traditions, and their freedoms come before good or evil";
+				break;
+			case NEUTRAL:
+				desc = "do not identify as being good or evil";
+				break;
+			case LAWFULNEUTRAL:
+				desc = "strongly believe in lawful concepts such as honor, in addition to personal codes";
+				break;
+			case CHAOTICGOOD:
+				desc = "do what is needed to bring about change for the good, and dislike bureaucracy";
+				break;
+			case NEUTRALGOOD:
+				desc = "act altruistically with regard for law, rules, and traditions";
+				break;
+			case LAWFULGOOD:
+				desc = "always act with honor and a sense of duty";
+				break;
+			default:
+				break;
 		}
 		return desc;
 	}
