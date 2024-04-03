@@ -99,6 +99,7 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord char2 = null;
 		BaseRecord inter = null;
 		BaseRecord evt = null;
+		BaseRecord cevt = null;
 		if(cmd.hasOption("olio")) {
 
 			octx = getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
@@ -106,7 +107,7 @@ public class ChatAction extends CommonAction implements IAction{
 			BaseRecord[] locs = octx.getLocations();
 			for(BaseRecord lrec : locs) {
 				evt = octx.startOrContinueLocationEpoch(lrec);
-				BaseRecord cevt = octx.startOrContinueIncrement();
+				cevt = octx.startOrContinueIncrement();
 				octx.evaluateIncrement();
 				if(cmd.hasOption("party")) {
 					List<BaseRecord> party1  = OlioUtil.listGroupPopulation(octx, OlioUtil.getCreatePopulationGroup(octx, "Arena Party 1"));
@@ -228,16 +229,16 @@ public class ChatAction extends CommonAction implements IAction{
 
 		}
 		if(cmd.hasOption("chat2")) {
-			logger.info(getSystemChatPromptTemplate(octx, evt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-			logger.info(getUserChatPromptTemplate(octx, evt, char1, char2, inter, cmd.getOptionValue("iprompt")));
+			logger.info(getSystemChatPromptTemplate(octx, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
+			logger.info(getUserChatPromptTemplate(octx, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
 		}
 		
 		if(cmd.hasOption("chat")) {
 			Chat chat = new Chat(user);
 			//String model = "llama2-uncensored:7b-chat-q8_0";
 			//String model = "zephyr-local";
-			//String model = "blue-orchid";
-			String model = "dolphin-mistral";
+			String model = "blue-orchid";
+			//String model = "dolphin-mistral";
 			if(cmd.hasOption("model")) {
 				model = cmd.getOptionValue("model");
 			}
@@ -250,7 +251,7 @@ public class ChatAction extends CommonAction implements IAction{
 				iprompt = cmd.getOptionValue("iprompt");
 			}
 			chat.setModel(model);
-			OllamaRequest req = getChatPrompt(octx, chat, prompt, iprompt, evt, char1, char2, inter);
+			OllamaRequest req = getChatPrompt(octx, chat, prompt, iprompt, cevt, char1, char2, inter);
 			// logger.info(char2.toFullString());
 			chat.chatConsole(req);
 		}
@@ -313,7 +314,7 @@ public class ChatAction extends CommonAction implements IAction{
 		
 		String romCompat = "we'd be doomed to fail";
 		if(CompatibilityEnumType.compare(profComp.getRomanticCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
-			romCompat = "there could be something  between us";
+			romCompat = "there could be something between us";
 		}
 		templ = profileRomanceCompat.matcher(templ).replaceAll("Romantically, " + romCompat + ".");
 		
@@ -322,33 +323,34 @@ public class ChatAction extends CommonAction implements IAction{
 			List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
 			Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
-			String tdesc = "expanse of " + tet.toString().toLowerCase();
+			String tdesc = "an expanse of " + tet.toString().toLowerCase();
 			if(stets.size() > 0) {
-				tdesc = " a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
+				tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
 			}
 			templ = locationTerrains.matcher(templ).replaceAll(tdesc);	
 			templ = locationTerrain.matcher(templ).replaceAll(tet.toString().toLowerCase());
 
 			
 		}
-		
+		String pdesc = "";
 		AlignmentEnumType align = AlignmentEnumType.NEUTRAL;
 		if(evt != null) {
 			align = evt.getEnum("alignment");
 		
 			BaseRecord realm = ctx.getRealm(evt.get("location"));
-			
+			if(realm == null) {
+				logger.error("Failed to find realm");
+			}
+
 			List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
 			String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
-			/*
-			List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(evt.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
+			List<Long> gids = Arrays.asList(new Long[] {userChar.get(FieldNames.FIELD_ID), systemChar.get(FieldNames.FIELD_ID)});
+			List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(evt.get("location")), cell);
+			pdesc = "No one seems to be nearby.";
 			if(fpop.size() > 0) {
-				buff.append(" There are " + fpop.size() +" strangers nearby.");
+				pdesc = "There are " + fpop.size() +" strangers nearby.";
 			}
-			else {
-				buff.append(" No one else seems to be around.");
-			}
-			*/
+			
 			String adesc = "No animals seem to be nearby.";
 			if(anames.length() > 0) {
 				adesc ="Some animals are close, including " + anames + ".";
@@ -357,6 +359,7 @@ public class ChatAction extends CommonAction implements IAction{
 			
 			
 		}
+		templ = peoplePop.matcher(templ).replaceAll(pdesc);
 		templ = eventAlign.matcher(templ).replaceAll(NarrativeUtil.getOthersActLikeSatan(align));
 
 		String leadDesc = "Neither one of us is in charge.";
@@ -385,9 +388,7 @@ public class ChatAction extends CommonAction implements IAction{
 			templ = locationTerrain.matcher(templ).replaceAll(loc.getEnum("terrainType").toString().toLowerCase());	
 		}
 		
-		if(interaction != null) {
-			templ = interactDesc.matcher(templ).replaceAll(NarrativeUtil.describeInteraction(interaction));
-		}
+		templ = interactDesc.matcher(templ).replaceAll((interaction != null ? NarrativeUtil.describeInteraction(interaction) : ""));
 		
 		templ = userPrompt.matcher(templ).replaceAll((iPrompt != null ? iPrompt : ""));
 		
@@ -409,8 +410,9 @@ public class ChatAction extends CommonAction implements IAction{
 		OllamaOptions opts = new OllamaOptions();
 		opts.setNumGpu(50);
 		opts.setNumCtx(4096);
-		// req.setOptions(opts);
-		
+		opts.setTemperature(0.85);
+		req.setOptions(opts);
+
 		return req;
 	}
 	
@@ -426,7 +428,7 @@ public class ChatAction extends CommonAction implements IAction{
 				universeName,
 				worldName,
 				new String[] {},
-				2,
+				1,
 				50,
 				resetWorld,
 				false
