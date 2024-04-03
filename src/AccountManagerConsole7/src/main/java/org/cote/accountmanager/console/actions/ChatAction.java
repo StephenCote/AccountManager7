@@ -229,8 +229,8 @@ public class ChatAction extends CommonAction implements IAction{
 
 		}
 		if(cmd.hasOption("chat2")) {
-			logger.info(getSystemChatPromptTemplate(octx, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-			logger.info(getUserChatPromptTemplate(octx, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
+			logger.info(getSystemChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
+			logger.info(getUserChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
 		}
 		
 		if(cmd.hasOption("chat")) {
@@ -251,7 +251,7 @@ public class ChatAction extends CommonAction implements IAction{
 				iprompt = cmd.getOptionValue("iprompt");
 			}
 			chat.setModel(model);
-			OllamaRequest req = getChatPrompt(octx, chat, prompt, iprompt, cevt, char1, char2, inter);
+			OllamaRequest req = getChatPrompt(octx, chat, prompt, iprompt, evt, cevt, char1, char2, inter);
 			// logger.info(char2.toFullString());
 			chat.chatConsole(req);
 		}
@@ -279,14 +279,14 @@ public class ChatAction extends CommonAction implements IAction{
 
 	private static Pattern userPrompt = Pattern.compile("\\$\\{userPrompt\\}");
 	
-	private static String getSystemChatPromptTemplate(OlioContext ctx, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		return getChatPromptTemplate(ctx, ResourceUtil.getResource("chat.system.prompt.txt"), evt, systemChar, userChar, interaction, iPrompt);
+	private static String getSystemChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("chat.system.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
-	private static String getUserChatPromptTemplate(OlioContext ctx, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		return getChatPromptTemplate(ctx, ResourceUtil.getResource("chat.user.prompt.txt"), evt, systemChar, userChar, interaction, iPrompt);
+	private static String getUserChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("chat.user.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
 
-	private static String getChatPromptTemplate(OlioContext ctx, String templ, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+	private static String getChatPromptTemplate(OlioContext ctx, String templ, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		
 		PersonalityProfile sysProf = ProfileUtil.getProfile(ctx, systemChar);
 		PersonalityProfile usrProf = ProfileUtil.getProfile(ctx, userChar);
@@ -335,8 +335,8 @@ public class ChatAction extends CommonAction implements IAction{
 		String pdesc = "";
 		AlignmentEnumType align = AlignmentEnumType.NEUTRAL;
 		if(evt != null) {
-			align = evt.getEnum("alignment");
-		
+			align = epoch.getEnum("alignment");
+
 			BaseRecord realm = ctx.getRealm(evt.get("location"));
 			if(realm == null) {
 				logger.error("Failed to find realm");
@@ -395,16 +395,16 @@ public class ChatAction extends CommonAction implements IAction{
 		return templ.trim();
 	}
 	
-	private static OllamaRequest getChatPrompt(OlioContext octx, Chat chat, String defPrompt, String iPrompt, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction) {
+	private static OllamaRequest getChatPrompt(OlioContext octx, Chat chat, String defPrompt, String iPrompt, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction) {
 		
 		chat.setLlmSystemPrompt(defPrompt);
 		OllamaRequest req = chat.newRequest(chat.getModel());
 		
 		if(systemChar != null && userChar != null) {
-			chat.setLlmSystemPrompt(getSystemChatPromptTemplate(octx, evt, systemChar, userChar, interaction, iPrompt));
+			chat.setLlmSystemPrompt(getSystemChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 			req = chat.newRequest(chat.getModel());
 			chat.setPruneSkip(2);
-			chat.newMessage(req, getUserChatPromptTemplate(octx, evt, systemChar, userChar, interaction, iPrompt));
+			chat.newMessage(req, getUserChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 		}
 		
 		OllamaOptions opts = new OllamaOptions();

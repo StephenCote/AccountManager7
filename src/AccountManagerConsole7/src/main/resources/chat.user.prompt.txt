@@ -1,3 +1,3 @@
-Write a one to four paragraph detailed introduction to the setting and scene from the point of view of ${system.firstName}. Be creative and include the location, current events, and initial action or dialogue for ${system.firstName}.
-Do not narrate or respond for ${user.firstName}, wait for me to respond.
+Write a one to four paragraph detailed introduction from the point of view of ${system.firstName}.
+Do not write for ${user.firstName}, wait for me to respond.
 ${userPrompt}
