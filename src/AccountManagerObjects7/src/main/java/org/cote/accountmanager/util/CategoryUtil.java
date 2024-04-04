@@ -17,7 +17,8 @@ public static final Logger logger = LogManager.getLogger(CategoryUtil.class);
 	
 	private static Pattern ruleTokenPattern = Pattern.compile("\"\\$\\{([A-Za-z]+)\\}\"", Pattern.MULTILINE);
 	
-	public static String[] CATEGORY_NAMES = new String[] {"identity", "asset", "business", "process", "event", "project", "policy", "resource", "form"};
+	/// "business", "resource", "project"
+	public static String[] CATEGORY_NAMES = new String[] {"identity", "asset", "process", "event", "policy", "form"};
 	
 	public static void clearCache() {
 		categories.clear();

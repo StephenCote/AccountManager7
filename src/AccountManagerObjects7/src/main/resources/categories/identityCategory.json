@@ -3,6 +3,6 @@
 	"name": "identity",
     "label" : "Identity",
     "icon" : "account_tree",
-    "order" : ["user","person","account","role","permission","contact","address"],
+    "order" : ["system.user","identity.person","identity.account","auth.role","auth.permission","identity.contact","identity.address"],
     "prototypes" : ["${application}"]
 }

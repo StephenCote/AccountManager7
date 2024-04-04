@@ -2,7 +2,7 @@
 	"model": "system.modelCategory",
     "label" : "Assets",
     "name": "asset",
-    "order" : ["application", "gallery","article", "data", "note", "group", "tag"],
+    "order" : ["identity.application", "gallery","article", "data.data", "data.note", "auth.group", "data.tag"],
     "icon" : "emoji_objects",
 	"prototypes" : ["${gallery}", "${article}"]
  }

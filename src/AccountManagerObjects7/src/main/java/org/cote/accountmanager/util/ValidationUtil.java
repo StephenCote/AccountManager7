@@ -26,6 +26,9 @@ public class ValidationUtil {
 	private static Map<String,Pattern> patterns = new ConcurrentHashMap<>();
 	private static Map<String, BaseRecord> rules = new ConcurrentHashMap<>();
 	
+	public static String[] SYSTEM_RULES = new String[] {
+		"email", "minLen5", "notEmpty", "notInParent", "trimBegin", "trimEnd", "trimEnds"
+	};
 	private static Pattern ruleTokenPattern = Pattern.compile("\"[\\$\\!\\&]{1}\\{([A-Za-z]+)\\}\"", Pattern.MULTILINE);
 	
 	public static void clearCache() {

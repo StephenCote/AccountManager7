@@ -61,6 +61,7 @@ import org.cote.accountmanager.schema.type.ValueEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.util.CategoryUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.cote.accountmanager.util.ValidationUtil;
 
 public class SchemaUtil {
 	public static final Logger logger = LogManager.getLogger(SchemaUtil.class);
@@ -68,6 +69,7 @@ public class SchemaUtil {
 	private static String categoryBuffer = null;
 	private static String enumBuffer = null;
 	private static String modelBuffer = null;
+	private static String validationRuleBuffer = null;
 	//private static Map<String, String> modelMap = new HashMap<>();
 	private static Set<String> modelSet = ConcurrentHashMap.newKeySet();
 	private static List<String> models = new ArrayList<>();
@@ -147,7 +149,23 @@ public class SchemaUtil {
 		return categoryBuffer;
 	}
 	
+	public static String getValidationRulesJSON() {
+		if(validationRuleBuffer == null) {
+			StringBuilder buff = new StringBuilder();
+			buff.append("[");
+			for(String s: ValidationUtil.SYSTEM_RULES) {
+				if(buff.length() > 1) {
+					buff.append(",\n");
+				}
+				buff.append(ResourceUtil.getValidationRuleResource(s));
+			}
+			buff.append("]\n");
+			validationRuleBuffer = "\"validationRules\": " + buff.toString();
+		}
+		return validationRuleBuffer;
+	}
+	
 	public static String getSchemaJSON() {
-		return "{" + getCategoriesJSON() + ",\n" + getEnumSchemaJSON() + ",\n" + getModelSchemaJSON() + "\n}";
+		return "{" + getCategoriesJSON() + ",\n" + getEnumSchemaJSON() + ",\n" + getModelSchemaJSON() + ",\n" + getValidationRulesJSON() + "\n}";
 	}
 }

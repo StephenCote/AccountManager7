@@ -3,8 +3,8 @@
     	"name": "gallery",
     	"prototype": true,
         "pathName" : "GalleryHome",
-        "limit" : ["data","group"],
+        "limit" : ["data.data","auth.group"],
         "type" : "group",
         "icon" : "collections",
-        "order" : ["group","data"]
+        "order" : ["auth.group","data.data"]
     }

@@ -2,6 +2,6 @@
 	"model": "system.modelCategory",
 	"name": "form",
     "label" : "Forms",
-    "order" : ["form","formelement","validationrule"],
+    "order" : ["form","formelement","policy.validationrule"],
     "icon" : "dynamic_form"
 }

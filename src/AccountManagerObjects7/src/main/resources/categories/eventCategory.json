@@ -2,6 +2,6 @@
 	"model": "system.modelCategory",
 	"name": "event",
     "label" : "Event",
-    "order" : ["message", "location","event","trait"],
+    "order" : ["message.spool", "data.geoLocation","olio.event","data.trait"],
     "icon" : "event_note"
 }

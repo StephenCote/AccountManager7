@@ -2,6 +2,6 @@
 	"model": "system.modelCategory",
 	"name": "policy",
     "label" : "Policy",
-    "order" : ["policy","rule","pattern","fact","operation","function"],
+    "order" : ["policy.policy","policy.rule","policy.pattern","policy.fact","policy.operation","policy.function"],
     "icon" : "policy"
 }

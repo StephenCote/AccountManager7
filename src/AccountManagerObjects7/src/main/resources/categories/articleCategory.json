@@ -3,8 +3,8 @@
 	"name": "article",
 	"prototype": true,
     "pathName" : "Articles",
-    "childTypes" : ["data","group"],
+    "childTypes" : ["data.data","auth.group"],
     "type" : "group",
     "icon" : "article",
-    "order" : ["group","data"]
+    "order" : ["auth.group","data.data"]
 }

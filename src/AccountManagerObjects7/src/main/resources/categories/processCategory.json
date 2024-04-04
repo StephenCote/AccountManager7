@@ -2,6 +2,6 @@
 	"model": "system.modelCategory",
 	"name": "process",
     "label" : "Process",
-    "order" : ["accessRequest", "methodology","process","processstep"],
+    "order" : ["access.accessRequest", "methodology","process","processstep"],
     "icon" : "insights"
 }

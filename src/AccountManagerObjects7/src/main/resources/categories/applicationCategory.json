@@ -4,7 +4,7 @@
     "pathName" : "Applications",
     "prototype": true,
     "type" : "group",
-    "limit" : ["data","group","permission","account"],
+    "limit" : ["data.data","auth.group","auth.permission","identity.account"],
     "icon" : "web_asset",
-    "order" : ["account","group","permission","data"]
+    "order" : ["identity.account","auth.group","auth.permission","data.data"]
 }
