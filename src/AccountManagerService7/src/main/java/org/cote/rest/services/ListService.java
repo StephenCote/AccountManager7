@@ -58,7 +58,7 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"admin","user"})
-@Path("/list/{type:[A-Za-z]+}")
+@Path("/list/{type:[A-Za-z\\.]+}")
 public class ListService {
 
 	@Context

@@ -56,7 +56,7 @@ public class PathService {
 	
 	@RolesAllowed({"user", "admin"})
 	@GET
-	@Path("/find/{type:[A-Za-z]+}/{objectType:[A-Za-z]+}/{path:[@\\.~\\/%\\sa-zA-Z_0-9\\-]+}")
+	@Path("/find/{type:[A-Za-z\\.]+}/{objectType:[A-Za-z]+}/{path:[@\\.~\\/%\\sa-zA-Z_0-9\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response findObject(@PathParam("type") String type, @PathParam("objectType") String objectType, @PathParam("path") String path, @Context HttpServletRequest request){
 		BaseRecord rec = doMakeFind(type, objectType, path, request, false);
@@ -66,7 +66,7 @@ public class PathService {
 	
 	@RolesAllowed({"user", "admin"})
 	@GET
-	@Path("/make/{type:[A-Za-z]+}/{objectType:[A-Za-z]+}/{path:[@\\.~\\/%\\sa-zA-Z_0-9\\-]+}")
+	@Path("/make/{type:[A-Za-z\\.]+}/{objectType:[A-Za-z]+}/{path:[@\\.~\\/%\\sa-zA-Z_0-9\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response makeFindObject(@PathParam("type") String type, @PathParam("objectType") String objectType, @PathParam("path") String path, @Context HttpServletRequest request){
 		BaseRecord rec = doMakeFind(type, objectType, path, request, true);
