@@ -554,11 +554,12 @@ public class NarrativeUtil {
 		
 		String raceDesc = getRaceDescription(person.get("race"));
 		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
 		buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
+		buff.append(" " + getDarkTriadDescription(pp));
+		
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
-		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
-		buff.append(" " + getDarkTriadDescription(pp));
 		buff.append(" " + cpro + " " + describeOutfit(ctx, person, includeOuterArms) + ".");
 		if(includeOuterArms) {
 			buff.append(" " + cpro + " " + describeArmament(ctx, person) + ".");
@@ -798,9 +799,9 @@ public class NarrativeUtil {
 		
 		String raceDesc = getRaceDescription(pov.get("race"));
 		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
-		buff.append(" " + pro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		buff.append(" " + pro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + getDarkTriadDescription(pp));
+		buff.append(" " + pro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		buff.append(" " + pro + " is");
 		if(stets.size() > 0) {
 			buff.append(" standing on a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(",")) + ".");
