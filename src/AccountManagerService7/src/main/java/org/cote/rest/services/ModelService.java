@@ -114,12 +114,12 @@ public class ModelService {
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response createModel(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
-		logger.info(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		if(imp == null) {
 			return Response.status(404).entity(null).build();
 		}
+
 		ModelSchema schema = RecordFactory.getSchema(imp.getModel());
 		BaseRecord op = null;
 		BaseRecord oop = null;
@@ -127,6 +127,7 @@ public class ModelService {
 
 		try {
 			op = IOSystem.getActiveContext().getFactory().newInstance(imp.getModel(), user, imp, null);
+			
 			oop = IOSystem.getActiveContext().getAccessPoint().create(user, op);
 			if(oop == null) {
 				logger.error("Failed to create record");
@@ -192,12 +193,12 @@ public class ModelService {
 		return Response.status((rseg == null ? 404 : 200)).entity((rseg != null ? rseg.toFullString() : null)).build();
 	}
 	
-	/*
+
 	@POST
-	@Path("/list")
+	@Path("/search")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response search(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
-		logger.warn("**** MOVE TO LIST");
+
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 		if(imp == null) {
@@ -212,5 +213,20 @@ public class ModelService {
 		}
 		return Response.status(200).entity(ops).build();
 	}
-	*/
+	
+	@POST
+	@Path("/search/count")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response searchCount(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
+
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(imp == null) {
+			return Response.status(404).entity(null).build();
+		}
+		Query query = new Query(imp);
+		
+		int count = IOSystem.getActiveContext().getAccessPoint().count(user, query);
+		return Response.status(200).entity(count).build();
+	}
 }

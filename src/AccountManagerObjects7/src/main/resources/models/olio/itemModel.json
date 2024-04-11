@@ -5,11 +5,7 @@
 		"common.name",
 		"common.groupExt",
 		"data.tagsExt",
-		"common.ownerId",
-		"common.objectId",
-		"system.organizationExt",
-		"common.populate",
-		"system.primaryKey",
+		"common.baseLight",
 		"common.description",
 		"olio.qualityExt",
 		"olio.priceExt"

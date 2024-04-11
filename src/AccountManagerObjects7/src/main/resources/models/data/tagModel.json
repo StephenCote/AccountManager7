@@ -1,16 +1,13 @@
 {
 	"name": "data.tag",
+	 "likeInherits": [
+        "data.directory"
+     ],
 	"inherits": [
 		"common.groupExt",
-		"common.parent",
 		"common.description",
 		"common.name",
-		"common.ownerId",
-		"common.objectId",
-		"system.organizationExt",
-		"common.populate",
-		"system.primaryKey",
-		"common.attributeList"
+		"common.baseLight"
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"group": "Tags",

@@ -37,7 +37,7 @@ public class PathProvider implements IProvider {
 			String ipath = field.getValue();
 			if(ipath != null) {
 				if(lfield.getBaseModel() != null && lfield.getBaseProperty() != null) {
-					logger.info("Creating/Finding path: " + ipath);
+					logger.info("Creating/Finding path: " + lfield.getBaseModel() + " " + ipath);
 					BaseRecord obj = null;
 					if(lfield.getBaseModel().equals(ModelNames.MODEL_ORGANIZATION)) {
 						OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(ipath, null);

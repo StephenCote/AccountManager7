@@ -6,12 +6,7 @@
 		"common.parent",
 		"common.description",
 		"common.name",
-		"common.ownerId",
-		"common.objectId",
-		"system.organizationExt",
-		"common.populate",
-		"system.primaryKey",
-		"common.attributeList",
+		"common.baseLight",
 		"common.alignment"
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",

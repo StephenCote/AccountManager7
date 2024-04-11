@@ -86,7 +86,9 @@ public class AuditUtil {
 		BaseRecord audit = null;
 		try {
 			audit = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_AUDIT, contextUser, null, ParameterUtil.newParameterList(FieldNames.FIELD_ACTION, action), actor, resource);
-			audit.set(FieldNames.FIELD_ORGANIZATION_PATH, contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH));
+			if(contextUser != null) {
+				audit.set(FieldNames.FIELD_ORGANIZATION_PATH, contextUser.get(FieldNames.FIELD_ORGANIZATION_PATH));
+			}
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}

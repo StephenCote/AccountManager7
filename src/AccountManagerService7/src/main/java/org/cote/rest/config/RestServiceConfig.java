@@ -129,6 +129,7 @@ public class RestServiceConfig extends ResourceConfig{
 			String path = context.getInitParameter("store.path");
 			ResourceUtil.RESOURCE_PREFIX = "";
 			IOFactory.DEFAULT_FILE_BASE = path;
+			IOFactory.addPermittedPath(path + "/.streams");
 			String dsName = context.getInitParameter("database.dsname");
 			boolean chkSchema = Boolean.parseBoolean(context.getInitParameter("database.checkSchema"));
 			IOProperties props = getDBProperties(null, null, null, dsName);

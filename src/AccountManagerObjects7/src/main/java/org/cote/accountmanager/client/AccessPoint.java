@@ -428,7 +428,7 @@ public class AccessPoint {
 		BaseRecord rec = null;
 		ActionEnumType aet = ActionEnumType.READ;
 		BaseRecord audit = AuditUtil.startAudit(contextUser, aet, contextUser, null);
-		AuditUtil.query(audit, model + " " + path + " " + type);
+		AuditUtil.query(audit, model + " " + path + " " + type + " in " + contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 		BaseRecord chkRec = null;
 		if(!make) {
 			chkRec = IOSystem.getActiveContext().getPathUtil().findPath(contextUser, model, path, type, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));

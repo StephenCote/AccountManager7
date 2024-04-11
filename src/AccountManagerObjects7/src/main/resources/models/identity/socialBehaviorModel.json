@@ -3,12 +3,9 @@
 	"likeInherits": ["data.directory"],
 	"inherits": [
 		"common.groupExt",
-		"common.ownerId",
-		"common.objectId",
-		"system.organizationExt",
-		"common.populate",
-		"common.alignment",
-		"system.primaryKey"
+		"common.baseLight",
+		"common.alignment"
+
 	],
 	"query": ["id", "groupId"],
 	"group": "SocialBehaviors",

@@ -63,6 +63,7 @@ public class CacheService {
 	public Response clearFactoryCaches(@PathParam("type") String type, @Context HttpServletRequest request){
 		logger.info("Request to clear all caches");
 		CacheUtil.clearCache();
+		clearAuthorizationCache(request);
 		return Response.status(200).entity(true).build();
 	}
 
@@ -70,7 +71,7 @@ public class CacheService {
 	@GET
 	@Path("/clearAuthorization")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response clearAuthorizationCache(@PathParam("type") String type, @Context HttpServletRequest request){
+	public Response clearAuthorizationCache(@Context HttpServletRequest request){
 		logger.info("Request to clear authorization cache");
 		((CachePolicyUtil)IOSystem.getActiveContext().getPolicyUtil()).clearCache();
 		return Response.status(200).entity(true).build();
@@ -78,13 +79,13 @@ public class CacheService {
 	
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/clear/{type:[A-Za-z]+}")
+	@Path("/clear/{type:[\\.A-Za-z]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response clearFactoryCache(@PathParam("type") String type, @Context HttpServletRequest request){
 		logger.info("Request to clear cache on: " + type);
-
-		CacheUtil.clearCacheByModel(type);
 		
+		CacheUtil.clearCacheByModel(type);
+		clearAuthorizationCache(request);
 		return Response.status(200).entity(true).build();
 	}
 

@@ -305,7 +305,7 @@ public class TestOlio extends BaseTest {
 		*/
 		return interaction;
 	}
-	/*
+	
 	@Test
 	public void TestArena1() {
 		logger.info("Test Olio - Arena");
@@ -376,7 +376,7 @@ public class TestOlio extends BaseTest {
 		}
 
 	}
-	*/
+	
 	
 	/*
 	@Test

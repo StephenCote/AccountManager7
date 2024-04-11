@@ -51,7 +51,6 @@ public class LoginService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response login(String json, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord cred = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-		logger.info("Import: " + json);
 		
 		boolean loginSuccess = true;
 		

@@ -573,7 +573,6 @@ public class RecordUtil {
 			rec.set(FieldNames.FIELD_NAME, name);
 		}
 		String path = resolveUserPath(user, ipath);
-		
 		BaseRecord dir = pathUtil.makePath(user, ModelNames.MODEL_GROUP, path, "DATA", organizationId);
 		if(dir != null) {
 			rec.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));

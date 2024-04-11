@@ -3,11 +3,7 @@
 	"likeInherits": ["data.directory"],
 	"inherits": [
 		"common.groupExt",
-		"common.ownerId",
-		"common.objectId",
-		"system.organizationExt",
-		"common.populate",
-		"system.primaryKey",
+		"common.baseLight",
 		"common.reference"
 	],
 	"group": "Schedules",

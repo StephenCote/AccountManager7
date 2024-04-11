@@ -4,11 +4,7 @@
 	"inherits": [
 		"common.groupExt",
 		"common.name",
-		"common.ownerId",
-		"common.objectId",
-		"system.organizationExt",
-		"common.populate",
-		"system.primaryKey"
+		"common.baseLight"
 	],
 	"group": "Colors",
 	"icon": "category",

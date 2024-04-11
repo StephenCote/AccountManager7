@@ -3,13 +3,9 @@
 	"likeInherits": ["data.directory"],
 	"inherits": [
 		"common.name",
-		"common.description",
 		"common.groupExt",
-		"common.ownerId",
-		"common.objectId",
-		"system.organizationExt",
-		"common.populate",
-		"system.primaryKey"
+		"common.description",
+		"common.baseLight"
 	],
 	"group": "Apparel",
 	"icon": "category",

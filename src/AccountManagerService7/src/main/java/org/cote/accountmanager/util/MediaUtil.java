@@ -63,7 +63,7 @@ import org.cote.service.util.ServiceUtil;
 
 public class MediaUtil {
 	public static final Logger logger = LogManager.getLogger(MediaUtil.class);
-	private static Pattern recPattern = Pattern.compile("^\\/([\\sA-Za-z0-9\\.]+)\\/([\\w]+)([%-_\\/\\s\\.A-Za-z0-9]+)$", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+	private static Pattern recPattern = Pattern.compile("^\\/([\\sA-Za-z0-9\\.]+)\\/([\\w\\.]+)([%-_\\/\\s\\.A-Za-z0-9]+)$", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
 	private static Pattern dimPattern = Pattern.compile("(\\/\\d+x\\d+)$", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
 	private static final VaultService vaultService = null;
 	private static int maximumImageWidth = -1;
@@ -227,7 +227,7 @@ public class MediaUtil {
 			response.sendError(404);
 		}
 	}
-
+	
 	public static void writeBinaryData(
 			HttpServletRequest request,
 			HttpServletResponse response,
@@ -274,9 +274,9 @@ public class MediaUtil {
 		/// 1) get the details only data and confirm it's an image
 		/// 
 		try{
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_NAME, objName);
 			if(options.isThumbnail()){
-				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
-				q.field(FieldNames.FIELD_NAME, objName);
 				q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID});
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
 				data = ThumbnailUtil.getCreateThumbnail(sdata, options.getThumbWidth(), options.getThumbHeight());
@@ -285,8 +285,12 @@ public class MediaUtil {
 				}
 			} /// End if thumbnail
 			else{
-				data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), objName);
-				
+				q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID});
+				data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+				//data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), objName);
+				if(data != null) {
+					logger.info(data.toFullString());
+				}
 				if(data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null && ((String)data.get(FieldNames.FIELD_CONTENT_TYPE)).startsWith("image/") && restrictSize){
 					logger.info("Redirecting to restricted image path");
 					IOSystem.getActiveContext().getReader().populate(group);
@@ -319,26 +323,14 @@ public class MediaUtil {
 
 		byte[] value = new byte[0];
 			
-			if(data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
-				//logger.warn("*** TODO: Read from stream");
-				BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
-				StreamSegmentUtil ssu = new StreamSegmentUtil();
-				value = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
-			}
-			else{
-				value = data.get(FieldNames.FIELD_BYTE_STORE);
-				/*
-				VaultBean vaultBean = (data.getVaulted() ? vaultService.getVaultByUrn(user, data.getVaultId()) : null);
-				if(data.getVaulted()){
-				if(vaultBean != null && vaultBean.getActiveKeyId() == null) vaultService.newActiveKey(vaultBean);
-					value = vaultService.extractVaultData(vaultBean, data);
-				
-				}
-				else{
-					value = DataUtil.getValue(data);
-				}
-				*/
-			}
+		if(data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
+			BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
+			StreamSegmentUtil ssu = new StreamSegmentUtil();
+			value = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
+		}
+		else{
+			value = data.get(FieldNames.FIELD_BYTE_STORE);
+		}
 
 		if(options.isEncodeData()){
 			value = BinaryUtil.toBase64(value);
