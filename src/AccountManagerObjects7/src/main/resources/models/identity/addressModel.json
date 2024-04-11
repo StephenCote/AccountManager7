@@ -6,6 +6,7 @@
 	],
 	"icon": "maps_home_work",
 	"label": "Address",
+	"group": "Addresses",
 	"fields": [
 		{
 			"name": "street",

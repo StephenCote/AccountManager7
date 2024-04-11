@@ -6,6 +6,7 @@
 	],
 	"icon": "person",
 	"label": "Person",
+	"group": "Persons",
 	"dedicatedParticipation": true,
 	"fields": [
 		{

@@ -3,6 +3,7 @@
 "inherits": ["data.directory", "common.description"],
 "icon": "contact_page",
 "label": "Contact",
+"group": "Contacts",
 "fields": [
 	{
 		"name": "contactValue",

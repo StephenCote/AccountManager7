@@ -3,6 +3,7 @@
 "inherits": ["data.directory"],
 "icon": "account_circle",
 "label": "Account",
+"group": "Accounts",
 "fields": [
 	{
 	"name": "contactInformation",

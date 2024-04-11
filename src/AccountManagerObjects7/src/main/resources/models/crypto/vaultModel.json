@@ -2,6 +2,7 @@
 "name": "crypto.vault",
 "inherits": ["data.directory", "common.dateTime"],
 "ephemeral": false,
+"group": ".vault",
 "fields": [
 	{
 		"name": "alias",
