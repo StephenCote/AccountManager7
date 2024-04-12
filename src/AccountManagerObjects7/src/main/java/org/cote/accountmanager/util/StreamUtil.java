@@ -219,6 +219,9 @@ public class StreamUtil {
         			List<BaseRecord> segs = streamRec.get(FieldNames.FIELD_SEGMENTS);
         			segs.add(seg);
         			streamRec = IOSystem.getActiveContext().getAccessPoint().create(user, streamRec);
+        			/// Bug/Patch - because stream uses a provider to automatically configure the source, and because the source is an encrypted field value, the field won't be encrypted because the field providers fire before the model provider
+        			/// Therefore, it's necessary to update the stream source
+        			IOSystem.getActiveContext().getAccessPoint().update(user, streamRec.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STREAM_SOURCE, FieldNames.FIELD_GROUP_ID}));
     			}
     			else {
     				IOSystem.getActiveContext().getAccessPoint().create(user, seg);
