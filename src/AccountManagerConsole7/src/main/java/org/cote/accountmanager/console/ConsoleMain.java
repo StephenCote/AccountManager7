@@ -106,16 +106,15 @@ public class ConsoleMain {
 		try {
 			CommandLine cmd = parser.parse( options, args);
 			logger.info("Initialize Context ...");
-			startContext();
+			startContext(cmd.hasOption("setup"));
 			if(ioContext == null) {
 				logger.error("Unable to initiate IOContext - proceed to setup");
 			}
 
-			if(ioContext != null && cmd.hasOption("organization")) {
-				if(cmd.hasOption("username") && cmd.hasOption("password")) {
+			if(ioContext != null) {
+				adminAction.handleCommand(cmd);
 
-					adminAction.handleCommand(cmd);
-
+				if(cmd.hasOption("organization") && cmd.hasOption("username") && cmd.hasOption("password")) {
 					BaseRecord user = ActionUtil.login(cmd.getOptionValue("organization"), cmd.getOptionValue("username"), cmd.getOptionValue("password"));
 					if(user != null) {
 						for(IAction act: actions) {
@@ -143,18 +142,19 @@ public class ConsoleMain {
 		*/
 	}
 	
-	private static void startContext() {
+	private static void startContext(boolean setup) {
 		Properties properties = loadProperties();
 		IOFactory.DEFAULT_FILE_BASE = properties.getProperty("app.basePath");
-		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"));
+		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));
 	}
 
-	private static void resetContext(String dataUrl, String dataUser, String dataPassword) {
+	private static void resetContext(String dataUrl, String dataUser, String dataPassword, boolean reset) {
 		IOProperties props = new IOProperties();
 		props.setDataSourceUrl(dataUrl);
 		props.setDataSourceUserName(dataUser);
 		props.setDataSourcePassword(dataPassword);
 		props.setSchemaCheck(false);
+		props.setReset(reset);
 		resetIO(RecordIO.DATABASE, props);
 	}
 	private static void resetIO(RecordIO ioType, IOProperties properties) {
