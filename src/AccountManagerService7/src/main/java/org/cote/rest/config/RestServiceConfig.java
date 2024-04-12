@@ -59,11 +59,7 @@ import org.glassfish.jersey.server.spi.Container;
 
 public class RestServiceConfig extends ResourceConfig{
 	private static final Logger logger = LogManager.getLogger(RestServiceConfig.class);
-    public static final String[] DEFAULT_ORGANIZATIONS = new String[] {
-        	"/System",
-        	"/Development",
-        	"/Public"
-      };
+
     
 	public RestServiceConfig(@Context ServletContext servletContext){
 		register(StartupHandler.class);
@@ -136,7 +132,7 @@ public class RestServiceConfig extends ResourceConfig{
 			props.setSchemaCheck(chkSchema);
 			try {
 				IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
-				for(String org : DEFAULT_ORGANIZATIONS) {
+				for(String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
 					OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
 					if(!octx.isInitialized()) {
 						logger.error("**** Organizations are not configured.  Run /rest/setup");

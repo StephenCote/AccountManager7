@@ -68,7 +68,7 @@ public class Setup {
 			logger.error("Null cred");
 		}
 		else {
-			for(String org : RestServiceConfig.DEFAULT_ORGANIZATIONS) {
+			for(String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
 				logger.info("Configuring " + OrganizationEnumType.valueOf(org.substring(1).toUpperCase()) + " " + org);
 				OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
 				try {
