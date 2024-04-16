@@ -23,7 +23,7 @@ import org.cote.service.util.ServiceUtil;
 
 
 @DeclareRoles({"admin","user"})
-@Path("/authorization/{type:[A-Za-z]+}")
+@Path("/authorization/{type:[\\.A-Za-z]+}")
 public class AuthorizationService {
 	
 	@Context
@@ -82,7 +82,7 @@ public class AuthorizationService {
 	*/
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/{objectId:[0-9A-Za-z\\-]+}/member/{actorType:[A-Za-z]+}/{actorId:[0-9A-Za-z\\-]+}/{enable:(true|false)}")
+	@Path("/{objectId:[0-9A-Za-z\\-]+}/member/{actorType:[\\.A-Za-z]+}/{actorId:[0-9A-Za-z\\-]+}/{enable:(true|false)}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response enableMember(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @PathParam("actorId") String actorId, @PathParam("enable") boolean enable, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);

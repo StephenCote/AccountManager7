@@ -78,9 +78,24 @@ public class ModelService {
 	public Response deleteModel(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		Query q = QueryUtil.createQuery(type, FieldNames.FIELD_OBJECT_ID, objectId);
-		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN});
+		ModelSchema ms = RecordFactory.getSchema(type);
+		String[] pfields = new String[] {
+				FieldNames.FIELD_ID,
+				FieldNames.FIELD_OWNER_ID,
+				FieldNames.FIELD_PARENT_ID,
+				FieldNames.FIELD_GROUP_ID,
+				FieldNames.FIELD_OBJECT_ID,
+				FieldNames.FIELD_URN,
+				FieldNames.FIELD_ORGANIZATION_ID
+		};
+		List<String> fields = new ArrayList<>();
+		for(String pf: pfields) {
+			if(ms.hasField(pf)) {
+				fields.add(pf);
+			}
+		}
+		q.setRequest(fields.toArray(new String[0]));
 		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-		//BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
 
 		if(rec == null) {
 			logger.error("Failed to find: " + type + " " + objectId);

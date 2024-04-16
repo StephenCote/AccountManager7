@@ -128,7 +128,7 @@ public abstract class SearchBase implements ISearch {
 		if(name != null) {
 			query.field(FieldNames.FIELD_NAME, ComparatorEnumType.EQUALS, name);	
 		}
-		if(type != null) {
+		if(type != null && !type.equalsIgnoreCase("unknown")) {
 			query.field(FieldNames.FIELD_TYPE, ComparatorEnumType.EQUALS, type.toUpperCase());
 		}
 		return findRecords(query);

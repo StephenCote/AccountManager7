@@ -1,13 +1,21 @@
 {
-"name": "data.data",
-"inherits": ["data.directory", "crypto.cryptoByteStore", "common.description", "common.dateTime", "data.streamExt"],
-"group": "Data",
-"icon": "data_object",
-"label": "Data",
-"fields": [
-	{
-		"name": "dimensions",
-		"type": "string",
-		"maxLength": 32
-	}
-]}
+	"name": "data.data",
+	"inherits": [
+		"data.directory",
+		"crypto.cryptoByteStore",
+		"common.description",
+		"common.dateTime",
+		"data.streamExt"
+	],
+	"group": "Data",
+	"icon": "data_object",
+	"label": "Data",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "dimensions",
+			"type": "string",
+			"maxLength": 32
+		}
+	]
+}
