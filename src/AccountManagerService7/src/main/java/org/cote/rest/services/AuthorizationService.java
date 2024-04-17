@@ -1,6 +1,9 @@
 
 package org.cote.rest.services;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import javax.annotation.security.DeclareRoles;
 import javax.annotation.security.RolesAllowed;
 import javax.servlet.ServletContext;
@@ -97,22 +100,36 @@ public class AuthorizationService {
 		}
 		return Response.status(200).entity(outBool).build();
 	}
-	/*
+
 	@RolesAllowed({"admin","user"})
-	@GET @Path("/{objectId:[0-9A-Za-z\\-]+}/{actorType:[A-Za-z]+}")
+	@GET @Path("/{objectId:[0-9A-Za-z\\-]+}/{actorType:[\\.A-Za-z]+}/count")
 	@Produces(MediaType.APPLICATION_JSON)
 	@Consumes(MediaType.APPLICATION_JSON)
-	public Response members(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @Context HttpServletRequest request){
-		AuditEnumType auditType = AuditEnumType.valueOf(objectType);
-		UserType user = ServiceUtil.getUserFromSession(request);
-		NameIdType container = BaseService.readByObjectId(auditType, objectId, request);
-		List<Object> members = new ArrayList<>();
-		if(container != null){
-			members = BaseService.listMembers(auditType, user, container, FactoryEnumType.valueOf(actorType));
+	public Response countMembers(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
+		int count = 0;
+		if(object != null){
+			count = IOSystem.getActiveContext().getAccessPoint().countMembers(user, object, actorType, null);
 		}
-		return Response.status(200).entity(members).build();
+		return Response.status(200).entity(count).build();
 	}
 	
+	@RolesAllowed({"admin","user"})
+	@GET @Path("/{objectId:[0-9A-Za-z\\-]+}/{actorType:[\\.A-Za-z]+}/{startIndex:[\\d]+}/{count:[\\d]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public Response members(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @PathParam("startIndex") long startIndex, @PathParam("count") int recordCount, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
+		List<BaseRecord> mems = new ArrayList<>();
+
+		if(object != null){
+			mems = IOSystem.getActiveContext().getAccessPoint().listMembers(user, object, actorType, null, startIndex, recordCount);
+		}
+		return Response.status(200).entity(mems).build();
+	}
+	/*
 	// [PERMISSION|ROLE]
 	// Used to retrieve permission or role objects relative to the user, which the user owns
 	// Used as a reference point for defining custom roles and permissions
