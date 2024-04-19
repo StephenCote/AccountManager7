@@ -7,6 +7,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -44,7 +45,12 @@ public class FactoryBase implements IFactory {
 					}
 					try {
 						//logger.info("Set " + f.getName() + " = " + recordTemplate.get(f.getName()));
-						rec.set(f.getName(), recordTemplate.get(f.getName()));
+						if(fs.getFieldType() == FieldEnumType.FLEX) {
+							rec.setFlex(f.getName(), recordTemplate.get(f.getName()));
+						}
+						else {
+							rec.set(f.getName(), recordTemplate.get(f.getName()));
+						}
 					} catch (ValueException e) {
 						logger.error(e);
 					}
