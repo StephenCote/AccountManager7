@@ -3,7 +3,7 @@
 	"abstract": true,
 	"inherits": ["common.ownerId", "common.objectId", "common.attributeList", "system.organizationExt", "common.populate", "system.primaryKey"],
 	"factory": "org.cote.accountmanager.factory.BaseFactory",
-	"query": ["id", "objectId", "ownerId"],
+	"query": ["id", "objectId", "ownerId", "organizationId"],
 	"fields": [
 
 	]
