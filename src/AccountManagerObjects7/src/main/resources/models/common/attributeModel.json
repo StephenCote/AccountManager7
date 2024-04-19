@@ -1,25 +1,50 @@
 {
-"name": "common.attribute",
-"inherits": ["common.base", "common.reference"],
-"followReference": false,
-"fields": [
-	{
-		"name": "value",
-		"type": "flex",
-		"valueType": "valueType",
-		"shortName": "v"
+	"name": "common.attribute",
+	"inherits": [
+		"common.base",
+		"common.reference"
+	],
+	"followReference": false,
+	"access": {
+		"roles": {
+			"create": [
+				"AccountUsers"
+			],
+			"read": [
+				"SystemAdministrators",
+				"DataAdministrators"
+			],
+			"update": [
+				"AccountAdministrators"
+			],
+			"delete": [
+				"SystemAdministrators",
+				"DataAdministrators"
+			],
+			"admin": [
+				"AccountAdministrators"
+			]
+		}
 	},
-	{
-		"name": "valueType",
-		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
-		"type": "enum",
-		"maxLength": 16,
-		"shortName": "vt"
-	},
-	{
-		"name": "name",
-		"type": "string",
-		"maxLength": 64,
-		"shortName": "n"
-	}
-]}
+	"fields": [
+		{
+			"name": "value",
+			"type": "flex",
+			"valueType": "valueType",
+			"shortName": "v"
+		},
+		{
+			"name": "valueType",
+			"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
+			"type": "enum",
+			"maxLength": 16,
+			"shortName": "vt"
+		},
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 64,
+			"shortName": "n"
+		}
+	]
+}
