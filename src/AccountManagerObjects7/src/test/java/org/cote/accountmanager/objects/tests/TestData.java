@@ -10,21 +10,27 @@ import java.util.UUID;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.StreamEnumType;
+import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ContentTypeUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -97,6 +103,60 @@ public class TestData extends BaseTest {
 		""";
 		BaseRecord req = JSONUtil.importObject(authReq,  LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		
+	}
+	
+	@Test
+	public void TestCreateAttribute() {
+		
+		logger.info("Test Create Attribute On Existing Object");
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Attributes");
+		Factory mf = ioContext.getFactory();
+		BaseRecord attrUser = mf.getCreateUser(testOrgContext.getAdminUser(), "attrUser", testOrgContext.getOrganizationId());
+
+		assertNotNull("Organization is null", testOrgContext);
+		assertNotNull("User is null", attrUser);
+		BaseRecord group = ioContext.getPathUtil().makePath(attrUser, ModelNames.MODEL_GROUP, "~/Attribute Test", "DATA", testOrgContext.getOrganizationId());
+		BaseRecord data = null;
+		String dataName = UUID.randomUUID().toString();
+		try {
+			data = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
+			ioContext.getRecordUtil().applyNameGroupOwnership(attrUser, data, dataName, "~/Attribute Test", testOrgContext.getOrganizationId());
+			data.set(FieldNames.FIELD_CONTENT_TYPE,  "text/plain");
+			data.set(FieldNames.FIELD_BYTE_STORE, "The data".getBytes());
+			ioContext.getAccessPoint().create(attrUser, data);
+
+			BaseRecord dataPatch = ioContext.getAccessPoint().findByNameInGroup(attrUser, ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), data.get(FieldNames.FIELD_NAME));
+			assertNotNull("Data was null", dataPatch);
+			//logger.info(dataPatch.toFullString());
+			
+			BaseRecord attr = AttributeUtil.addAttribute(dataPatch, "Demo attribute - " + UUID.randomUUID().toString(), true);
+			assertNotNull("New Attribute was null", attr);
+			//logger.info(attr.toFullString());
+			
+			BaseRecord nattr = ioContext.getAccessPoint().create(attrUser, attr);
+			assertNotNull("Failed to create new attribute", nattr);
+			
+			
+			/// Try passing the new attribute through the factory layer
+			//attr.set(FieldNames.FIELD_NAME, "Demo attribute 2 - " + UUID.randomUUID().toString());
+			logger.info(attr.toFullString());
+			BaseRecord attr2 = IOSystem.getActiveContext().getFactory().newInstance(attr.getModel(), attrUser, attr, null);
+
+			assertNotNull("New attribute was null", attr2);
+			logger.info(attr2.toFullString());
+			
+			BaseRecord nattr2 = ioContext.getAccessPoint().create(attrUser, attr2);
+			assertNotNull("Failed to create new attribute", nattr2);
+			logger.info(nattr2.toFullString());
+			
+			/// 
+
+			
+		} catch (ClassCastException | FieldException | ModelNotFoundException | ValueException | ModelException | FactoryException e1) {
+			logger.error(e1);
+			e1.printStackTrace();
+		}
 	}
 	
 
