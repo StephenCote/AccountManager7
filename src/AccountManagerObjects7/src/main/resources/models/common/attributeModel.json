@@ -1,7 +1,7 @@
 {
 	"name": "common.attribute",
 	"inherits": [
-		"common.base",
+		"common.baseLight",
 		"common.reference"
 	],
 	"followReference": false,
@@ -26,6 +26,9 @@
 			]
 		}
 	},
+	"query": ["name", "value", "valueType"],
+	"sortField": "name",
+	"sortOrder": "ASCENDING",
 	"fields": [
 		{
 			"name": "value",

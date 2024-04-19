@@ -570,7 +570,10 @@ public class StatementUtil {
 				// logger.warn("Missed " + fs.getName());
 			}
 		}
-
+		String orderClause = "";
+		if(msschema.getSortOrder() != OrderEnumType.UNKNOWN && msschema.getSortField() != null) {
+			orderClause = " ORDER BY " + salias + "." + msschema.getSortField() + " " + (msschema.getSortOrder() == OrderEnumType.ASCENDING ? "ASC" : "DESC");
+		}
 		if(util.getConnectionType() == ConnectionEnumType.H2) {
 			StringBuilder ajoin = new StringBuilder();
 			for(int i = 0; i < cols.size(); i++) {
@@ -604,11 +607,11 @@ public class StatementUtil {
 				ajoin.append("'" + f + "', " + s);
 			}
 			if(schema.isReferenced()) {
-				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceModel = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+				buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')" + orderClause + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + salias + ".referenceModel = '" + model + "' AND " + salias + ".referenceId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 			}
 			else if(schema.isForeign()) {
 				if(schema.getType().equals("list")) {
-					buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')) FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "')" + orderClause + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 				else {
 					buff.append("(SELECT JSON_BUILD_OBJECT(" + ajoin.toString() + ", 'model', '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + alias + "." + util.getColumnName(schema.getName()) + " = " + salias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
@@ -620,7 +623,7 @@ public class StatementUtil {
 		if(buff.length() == 0) {
 			throw new FieldException("**** Unhandled inner query: " + util.getConnectionType().toString());
 		}
-		
+
 		subQuery.setRequest(fields.toArray(new String[0]));
 		List<BaseRecord> queries = query.get(FieldNames.FIELD_QUERIES);
 		queries.add(subQuery);

@@ -6,6 +6,7 @@ import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -24,6 +25,8 @@ public class ModelSchema {
 	private boolean emitModel = false;
 	private String group = null;
 	private String provider = null;
+	private OrderEnumType sortOrder = OrderEnumType.UNKNOWN;
+	private String sortField = null;
 
 	private List<FieldSchema> fields = new ArrayList<>();
 	private List<String> inherits = new ArrayList<>();
@@ -59,6 +62,22 @@ public class ModelSchema {
 		
 	}
 	
+	public OrderEnumType getSortOrder() {
+		return sortOrder;
+	}
+
+	public void setSortOrder(OrderEnumType sortOrder) {
+		this.sortOrder = sortOrder;
+	}
+
+	public String getSortField() {
+		return sortField;
+	}
+
+	public void setSortField(String sortField) {
+		this.sortField = sortField;
+	}
+
 	public String getShortName() {
 		return shortName;
 	}

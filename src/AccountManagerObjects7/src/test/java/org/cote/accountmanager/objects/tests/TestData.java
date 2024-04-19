@@ -20,6 +20,8 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -108,6 +110,7 @@ public class TestData extends BaseTest {
 	@Test
 	public void TestCreateAttribute() {
 		
+		
 		logger.info("Test Create Attribute On Existing Object");
 		
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Attributes");
@@ -150,6 +153,14 @@ public class TestData extends BaseTest {
 			assertNotNull("Failed to create new attribute", nattr2);
 			logger.info(nattr2.toFullString());
 			
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, dataPatch.get(FieldNames.FIELD_OBJECT_ID));
+			q.setRequest(new String[] {
+				FieldNames.FIELD_ID,
+				FieldNames.FIELD_NAME,
+				FieldNames.FIELD_ATTRIBUTES
+			});
+			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
+			logger.info(meta.getSql());
 			/// 
 
 			
