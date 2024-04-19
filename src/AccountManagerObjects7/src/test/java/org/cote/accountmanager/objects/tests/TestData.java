@@ -157,7 +157,8 @@ public class TestData extends BaseTest {
 			q.setRequest(new String[] {
 				FieldNames.FIELD_ID,
 				FieldNames.FIELD_NAME,
-				FieldNames.FIELD_ATTRIBUTES
+				FieldNames.FIELD_ATTRIBUTES,
+				FieldNames.FIELD_TAGS
 			});
 			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
 			logger.info(meta.getSql());

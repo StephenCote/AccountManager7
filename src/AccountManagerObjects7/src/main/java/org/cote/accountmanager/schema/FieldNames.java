@@ -18,6 +18,7 @@ public class FieldNames {
 		public static final String FIELD_TYPE = "type";
 		public static final String FIELD_VALUE = "value";
 		public static final String FIELD_ATTRIBUTES = "attributes";
+		public static final String FIELD_TAGS = "tags";
 		public static final String FIELD_POPULATED = "populated";
 		public static final String FIELD_POPULATED_FIELDS = "populatedFields";
 		public static final String FIELD_STATUS = "status";
