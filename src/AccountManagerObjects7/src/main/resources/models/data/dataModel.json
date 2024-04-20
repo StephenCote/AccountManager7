@@ -11,6 +11,8 @@
 	"icon": "data_object",
 	"label": "Data",
 	"dedicatedParticipation": true,
+	"sortField": "name",
+	"sortOrder": "ASCENDING",
 	"fields": [
 		{
 			"name": "dimensions",

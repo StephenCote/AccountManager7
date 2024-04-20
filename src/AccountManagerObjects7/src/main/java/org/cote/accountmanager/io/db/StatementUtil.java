@@ -12,8 +12,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -570,10 +573,12 @@ public class StatementUtil {
 				// logger.warn("Missed " + fs.getName());
 			}
 		}
-		String orderClause = "";
+		String orderClause = getDefaultOrderClause(msschema.getName(), salias);
+		/*
 		if(msschema.getSortOrder() != OrderEnumType.UNKNOWN && msschema.getSortField() != null) {
 			orderClause = " ORDER BY " + salias + "." + msschema.getSortField() + " " + (msschema.getSortOrder() == OrderEnumType.ASCENDING ? "ASC" : "DESC");
 		}
+		*/
 		if(util.getConnectionType() == ConnectionEnumType.H2) {
 			StringBuilder ajoin = new StringBuilder();
 			for(int i = 0; i < cols.size(); i++) {
@@ -1016,10 +1021,57 @@ public class StatementUtil {
 			}
 		}
 		String orderClause = (query != null && order != null && sort != null ? " ORDER BY " + sort + " " + order : "");
+		if(orderClause.length() == 0) {
+			orderClause = getDefaultOrderClause(query.getType(), alias);
+		}
 		if (!isInstructionReadyForPagination(query)) {
 			return orderClause;
 		}
 		return orderClause + " LIMIT " + recordCount + " OFFSET " + startRecord;
+	}
+	protected static ModelSchema getModelOrder(String model, Set<String> iset) {
+		if(iset.contains(model)) {
+			return null;
+		}
+		iset.add(model);
+
+		ModelSchema oms = null;
+		ModelSchema ms = RecordFactory.getSchema(model);
+		if(ms.getSortOrder() != OrderEnumType.UNKNOWN && ms.getSortField() != null) {
+			return ms;
+		}
+		/// TODO: Fix recursion issue when first loading
+		/*
+		for(String s: ms.getInherits()) {
+			oms = getModelOrder(s, iset);
+			if(oms != null) {
+				break;
+			}
+		}
+		*/
+		return oms;
+	}
+	
+	private static Map<String, String> orderMap = new ConcurrentHashMap<>();
+	protected static String getDefaultOrderClause(String model, String alias) {
+		return getDefaultOrderClause(model, alias, orderMap);
+	}
+	private static String getDefaultOrderClause(String model, String alias, Map<String, String> omap) {
+		if(IOSystem.getActiveContext() == null || !IOSystem.getActiveContext().isInitialized()) {
+			return "";
+		}
+		String key = model + "." + alias;
+		if(omap.containsKey(key)) {
+			return omap.get(key);
+		}
+		// logger.info(model + " / " + omap.containsKey(model));
+		String orderClause = "";
+		ModelSchema ms = getModelOrder(model, ConcurrentHashMap.newKeySet());
+		if(ms != null) {
+			orderClause = " ORDER BY " + alias + "." + ms.getSortField() + " " + (ms.getSortOrder() == OrderEnumType.ASCENDING ? "ASC" : "DESC");
+		}
+		omap.put(key, orderClause);
+		return orderClause;
 	}
 	
 	public static <T> void applyPreparedStatement(BaseRecord record, DBStatementMeta meta, PreparedStatement statement) throws DatabaseException {

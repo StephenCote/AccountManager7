@@ -16,6 +16,8 @@
 	"dedicatedParticipation": true,
 	"constraints": ["name, type, groupId, organizationId"],
 	"query": ["id", "groupId", "name", "type"],
+	"sortField": "name",
+	"sortOrder": "ASCENDING",
 	"fields": [
 		{
 			"name": "type",

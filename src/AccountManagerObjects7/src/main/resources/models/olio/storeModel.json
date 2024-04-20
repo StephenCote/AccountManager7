@@ -9,6 +9,8 @@
 	"icon": "category",
 	"label": "Store",
 	"dedicatedParticipation": true,
+	"sortField": "name",
+	"sortOrder": "ASCENDING",
 	"fields": [
 		{
 			"name": "name",
