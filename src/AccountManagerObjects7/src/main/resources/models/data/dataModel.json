@@ -13,6 +13,7 @@
 	"dedicatedParticipation": true,
 	"sortField": "name",
 	"sortOrder": "ASCENDING",
+	"query": ["contentType"],
 	"fields": [
 		{
 			"name": "dimensions",

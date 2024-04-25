@@ -2,9 +2,10 @@
 	"model": "system.modelCategory",
 	"name": "article",
 	"prototype": true,
-    "pathName" : "Articles",
-    "childTypes" : ["data.data","auth.group"],
-    "type" : "group",
+    "group" : "Articles",
+    "limit" : ["data.data","auth.group"],
+    "type" : "auth.group",
     "icon" : "article",
+    "label": "Articles",
     "order" : ["auth.group","data.data"]
 }

@@ -9,6 +9,7 @@ public class DBStatementMeta {
 	private String sql = null;
 	private List<String> fields = new ArrayList<>();
 	private List<String> columns = new ArrayList<>();
+	private DBStatementEnumType statementType = DBStatementEnumType.UNKNOWN;
 
 	private Query query = null;
 	
@@ -20,6 +21,14 @@ public class DBStatementMeta {
 		this.query = query;
 	}
 	
+	public DBStatementEnumType getStatementType() {
+		return statementType;
+	}
+
+	public void setStatementType(DBStatementEnumType statementType) {
+		this.statementType = statementType;
+	}
+
 	public Query getQuery() {
 		return query;
 	}

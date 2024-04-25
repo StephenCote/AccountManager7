@@ -320,7 +320,7 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getDeleteTemplate(Query query) throws ModelException, FieldException {
 		DBStatementMeta meta = new DBStatementMeta(query);
-
+		meta.setStatementType(DBStatementEnumType.DELETE);
 		StringBuilder buff = new StringBuilder();
 		String model = query.get(FieldNames.FIELD_TYPE);
 		ModelSchema schema = RecordFactory.getSchema(model);
@@ -675,7 +675,7 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getCountTemplate(Query query) throws ModelException, FieldException {
 		DBStatementMeta meta = new DBStatementMeta(query);
-
+		meta.setStatementType(DBStatementEnumType.COUNT);
 		StringBuilder buff = new StringBuilder();
 		String model = query.get(FieldNames.FIELD_TYPE);
 		ModelSchema schema = RecordFactory.getSchema(model);
@@ -714,6 +714,7 @@ public class StatementUtil {
 
 	public static DBStatementMeta getSelectTemplate(Query query) throws ModelException, FieldException {
 		DBStatementMeta meta = new DBStatementMeta(query);
+		meta.setStatementType(DBStatementEnumType.SELECT);
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		
 		StringBuilder buff = new StringBuilder();
@@ -850,7 +851,7 @@ public class StatementUtil {
 	public static String getQueryString(String selectString, Query query, DBStatementMeta meta){
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
 		String pagePrefix = StatementUtil.getPaginationPrefix(query);
-		String pageSuffix = StatementUtil.getPaginationSuffix(query);
+		String pageSuffix = StatementUtil.getPaginationSuffix(meta, query);
 		// String pageField = getPaginationField(query);
 		String queryClause = getQueryClause(query, meta);
 		String groupClause = query.get(FieldNames.FIELD_GROUP_CLAUSE);
@@ -997,7 +998,7 @@ public class StatementUtil {
 	private static List<String> allowedSortFields = Arrays.asList(new String[] {
 		"random()"
 	});
-	public static String getPaginationSuffix(Query query)
+	public static String getPaginationSuffix(DBStatementMeta meta, Query query)
 	{
 		long startRecord = query.get(FieldNames.FIELD_START_RECORD);
 		int recordCount = query.get(FieldNames.FIELD_RECORD_COUNT);
@@ -1021,7 +1022,9 @@ public class StatementUtil {
 			}
 		}
 		String orderClause = (query != null && order != null && sort != null ? " ORDER BY " + sort + " " + order : "");
-		if(orderClause.length() == 0) {
+		
+		/// Only use the default order clause on select statements
+		if(orderClause.length() == 0 && meta.getStatementType() == DBStatementEnumType.SELECT) {
 			orderClause = getDefaultOrderClause(query.getType(), alias);
 		}
 		if (!isInstructionReadyForPagination(query)) {
