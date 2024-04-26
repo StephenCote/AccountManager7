@@ -2,7 +2,8 @@
 	"name": "system.user",
 	"constraints": ["name, organizationId"],
 	"inherits": [
-		"common.nameId"
+		"common.nameId",
+		"identity.contactInformationExt"
 	],
 	"icon": "verified_user",
 	"label": "User",
@@ -27,18 +28,6 @@
 		}
 	},
 	"fields": [
-		{
-			"name": "contactInformation",
-			"baseModel": "identity.contactInformation",
-			"type": "model",
-			"foreign": true,
-			"access": {
-				"roles": {
-					"read": ["AccountUsersReaders"]
-				}
-			},
-			"shortName": "ci"
-		},
 		{
 			"name": "homeDirectory",
 			"baseModel": "auth.group",

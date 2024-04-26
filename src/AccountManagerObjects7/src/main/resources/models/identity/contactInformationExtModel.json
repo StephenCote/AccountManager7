@@ -1,0 +1,18 @@
+{
+	"name": "identity.contactInformationExt",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "contactInformation",
+			"baseModel": "identity.contactInformation",
+			"type": "model",
+			"foreign": true,
+			"access": {
+				"roles": {
+					"read": ["AccountUsersReaders"]
+				}
+			},
+			"shortName": "ci"
+		}
+	]
+}

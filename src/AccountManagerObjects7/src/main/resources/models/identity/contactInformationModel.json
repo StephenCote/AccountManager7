@@ -9,9 +9,43 @@
 		"common.reference",
 		"common.urn"
 	],
+	"access": {
+		"roles": {
+			"create": [
+				"AccountUsers"
+			],
+			"read": [
+				"SystemAdministrators",
+				"DataAdministrators"
+			],
+			"update": [
+				"AccountAdministrators"
+			],
+			"delete": [
+				"SystemAdministrators",
+				"DataAdministrators"
+			],
+			"admin": [
+				"AccountAdministrators"
+			]
+		},
+		"policies": {
+			"bind": {
+				"objectId": "referenceId",
+				"objectModel": "referenceModel",
+				"description": "Defer to the object identified by 'propertyName' when performing policy evaluations.  This is to allow for ephemeral objects to be authorized and audited in a uniform fashion"
+			}
+		}
+	},
 	"followReference": false,
 	"dedicatedParticipation": true,
-	"query": ["referenceId","referenceType","id"],
+	"query": [
+		"referenceId",
+		"referenceModel",
+		"id",
+		"ownerId",
+		"organizationId"
+	],
 	"fields": [
 		{
 			"name": "contacts",

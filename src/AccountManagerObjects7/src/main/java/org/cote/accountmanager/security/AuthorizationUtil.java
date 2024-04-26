@@ -19,6 +19,7 @@ import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelAccess;
 import org.cote.accountmanager.schema.ModelAccessPolicies;
 import org.cote.accountmanager.schema.ModelAccessPolicyBind;
@@ -116,13 +117,30 @@ public class AuthorizationUtil {
 				.orElse(null)
 		;
 		
-		reader.conditionalPopulate(resource, RecordUtil.getPossibleFields(resource.getModel(), new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID}));
+		reader.conditionalPopulate(resource, RecordUtil.getPossibleFields(resource.getModel(), new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID, FieldNames.FIELD_REFERENCE_ID, FieldNames.FIELD_REFERENCE_TYPE}));
 		
 		if(bind != null) {
 			PolicyResponseType oprr = new PolicyResponseType();
-			String objId = resource.get(bind.getObjectId());
+			FieldSchema fs = ms.getFieldSchema(bind.getObjectId());
+			String objId = null;
+			long lobjId = 0L;
+			if(fs.getType().equals("long")) {
+				lobjId = resource.get(bind.getObjectId());
+			}
+			else {
+				objId = resource.get(bind.getObjectId());
+			}
 			String model = bind.getModel();
-			BaseRecord refObj = IOSystem.getActiveContext().getAccessPoint().findByObjectId(contextUser, model, objId);
+			if(bind.getObjectModel() != null && resource.get(bind.getObjectModel()) != null) {
+				model = resource.get(bind.getObjectModel());
+			}
+			BaseRecord refObj = null;
+			if(model != null && objId != null) {
+				refObj = IOSystem.getActiveContext().getAccessPoint().findByObjectId(contextUser, model, objId);
+			}
+			if(model != null && lobjId > 0L) {
+				refObj = IOSystem.getActiveContext().getAccessPoint().findById(contextUser, model, lobjId);
+			}
 			if(refObj != null) {
 				return canDo(contextUser, policyName, action, actor, token, refObj);
 			}
@@ -139,7 +157,7 @@ public class AuthorizationUtil {
 	public boolean checkEntitlement(BaseRecord actor, BaseRecord permission, BaseRecord object) {
 		
 		if(trace) {
-			logger.info("Check entitlement: " + permission.get(FieldNames.FIELD_NAME) + " " + permission.get(FieldNames.FIELD_TYPE) + " for " + object.getModel() + " " + object.get(FieldNames.FIELD_NAME));
+			logger.info("Check entitlement: " + permission.get(FieldNames.FIELD_NAME) + " " + permission.get(FieldNames.FIELD_TYPE) + " for " + object.getModel());
 		}
 
 		boolean outBool = false;

@@ -5,6 +5,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -243,43 +244,61 @@ public class DBWriter extends MemoryWriter {
 		autoCreate.get(ModelNames.MODEL_PARTICIPATION).addAll(parts);
 		List<FieldType> refList = model.getFields().stream().filter(o -> {
 			FieldSchema fs = schema.getFieldSchema(o.getName());
-			return (fs.isReferenced());
+			boolean refd = false;
+			if(fs.getBaseModel() != null && !fs.getBaseModel().equals(ModelNames.MODEL_FLEX)) {
+				ModelSchema fsm = RecordFactory.getSchema(fs.getBaseModel());
+				if(fsm == null) {
+					logger.error(schema.getName() + "." + o.getName() + "->" + fs.getBaseModel() + " could not be found");
+				}
+				refd = fsm.inherits(ModelNames.MODEL_REFERENCE);
+			}
+			return (fs.isReferenced() || refd);
 
 		}).collect(Collectors.toList());
 		long rid = model.get(FieldNames.FIELD_ID);
-		
 		if(refList.size() > 0) {
 			for(FieldType f : refList) {
+				if(f.getValueType() != FieldEnumType.LIST && f.getValueType() != FieldEnumType.MODEL) {
+					logger.warn("Unhandled reference type: " + f.getValueType().toString());
+					continue;
+				}
+				List<BaseRecord> vals = new ArrayList<>();
 				if(f.getValueType() == FieldEnumType.LIST) {
 					FieldSchema fs = schema.getFieldSchema(f.getName());
-					
-					if(fs.getBaseType().equals(ModelNames.MODEL_MODEL)) {
-						List<BaseRecord> vals = model.get(f.getName());
-						for(BaseRecord erec : vals) {
-							if(!erec.inherits(ModelNames.MODEL_REFERENCE)) {
-								logger.error("Model " + erec.getModel() + " does not inherit from the reference model");
-								continue;
-							}
-							if(FieldUtil.isNullOrEmpty(erec.getModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
-								erec.set(FieldNames.FIELD_REFERENCE_ID, rid);
-								erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getModel());
-								if(erec.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {
-									erec.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
-								}
-								if(!autoCreate.containsKey(erec.getModel())) {
-									autoCreate.put(erec.getModel(), new ArrayList<>());
-								}
-								autoCreate.get(erec.getModel()).add(erec);
-							}
-						}
+					if(!fs.getBaseType().equals(ModelNames.MODEL_MODEL)) {
+						continue;
 					}
-					else {
-						logger.error("**** Handle Referenced Type That Is Not a Model");
-					}
+					vals = model.get(f.getName());
 				}
 				else {
-					logger.error("**** Handle Referenced Type " + f.getValueType().toString());
+					BaseRecord rec = model.get(f.getName());
+					if(rec != null) {
+						vals = Arrays.asList(new BaseRecord[] {rec});
+					}
 				}
+
+				for(BaseRecord erec : vals) {
+					if(!erec.inherits(ModelNames.MODEL_REFERENCE)) {
+						logger.error("Model " + erec.getModel() + " does not inherit from the reference model");
+						continue;
+					}
+					if(FieldUtil.isNullOrEmpty(erec.getModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
+						logger.info("Set referenceId to " + rid);
+						erec.set(FieldNames.FIELD_REFERENCE_ID, rid);
+						erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getModel());
+						if(erec.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {
+							erec.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
+						}
+						if(!autoCreate.containsKey(erec.getModel())) {
+							autoCreate.put(erec.getModel(), new ArrayList<>());
+						}
+						autoCreate.get(erec.getModel()).add(erec);
+					}
+					else {
+						logger.info("Field " + erec.getModel() + ".referenceId is not null or empty");
+					}
+				}
+
 			}
     	}
 	}

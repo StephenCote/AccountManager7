@@ -391,7 +391,12 @@ public abstract class BaseRecord {
    }
    public <T> void setLong(String name, T val) throws ValueException, ModelException, FieldException, ModelNotFoundException {
 	   FieldType f = FieldFactory.longFieldType(name);
-	   updateField(f, val);
+	   if(val instanceof Integer) {
+		   updateField(f, ((Integer)val).longValue());
+	   }
+	   else {
+		   updateField(f, val);
+	   }
    }
    public <T> void setBoolean(String name, T val) throws ValueException, ModelException, FieldException, ModelNotFoundException {
 	   FieldType f = FieldFactory.booleanFieldType(name);
