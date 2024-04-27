@@ -245,12 +245,14 @@ public class DBWriter extends MemoryWriter {
 		List<FieldType> refList = model.getFields().stream().filter(o -> {
 			FieldSchema fs = schema.getFieldSchema(o.getName());
 			boolean refd = false;
-			if(fs.getBaseModel() != null && !fs.getBaseModel().equals(ModelNames.MODEL_FLEX)) {
+			if(fs.getBaseModel() != null && !fs.getBaseModel().equals(ModelNames.MODEL_FLEX) && fs.isForeign()) {
 				ModelSchema fsm = RecordFactory.getSchema(fs.getBaseModel());
-				if(fsm == null) {
-					logger.error(schema.getName() + "." + o.getName() + "->" + fs.getBaseModel() + " could not be found");
+				if(fsm != null && fsm.getIoConstraints().size() == 0) {
+					refd = fsm.inherits(ModelNames.MODEL_REFERENCE);
 				}
-				refd = fsm.inherits(ModelNames.MODEL_REFERENCE);
+				else {
+					//logger.error(schema.getName() + "." + o.getName() + "->" + fs.getBaseModel() + " could not be found");
+				}
 			}
 			return (fs.isReferenced() || refd);
 
@@ -263,8 +265,12 @@ public class DBWriter extends MemoryWriter {
 					continue;
 				}
 				List<BaseRecord> vals = new ArrayList<>();
+				FieldSchema fs = schema.getFieldSchema(f.getName());
+				if(!fs.isForeign()) {
+					continue;
+				}
 				if(f.getValueType() == FieldEnumType.LIST) {
-					FieldSchema fs = schema.getFieldSchema(f.getName());
+					
 					if(!fs.getBaseType().equals(ModelNames.MODEL_MODEL)) {
 						continue;
 					}
@@ -283,7 +289,6 @@ public class DBWriter extends MemoryWriter {
 						continue;
 					}
 					if(FieldUtil.isNullOrEmpty(erec.getModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
-						logger.info("Set referenceId to " + rid);
 						erec.set(FieldNames.FIELD_REFERENCE_ID, rid);
 						erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getModel());
 						if(erec.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {

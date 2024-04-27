@@ -140,13 +140,16 @@ import org.cote.accountmanager.util.RecordUtil;
 					ort = OperationResponseEnumType.SUCCEEDED;
 				}
 				else {
-					logger.warn("OwnerId " + ownerId + " does not match ContextId " + contextId);
+					if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+						logger.warn("OwnerId " + ownerId + " does not match ContextId " + contextId);
+					}
 					ort = OperationResponseEnumType.FAILED;
 				}
 			}
 			else {
-				logger.error("ownerId or contextId were not defined: " + ownerId + ":" + contextId);
-				logger.info(referenceFact.toFullString());
+				if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+					logger.error("ownerId or contextId were not defined: " + ownerId + ":" + contextId);
+				}
 				ort = OperationResponseEnumType.ERROR;
 			}
 
