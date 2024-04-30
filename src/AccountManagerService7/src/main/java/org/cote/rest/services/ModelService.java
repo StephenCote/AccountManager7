@@ -45,6 +45,7 @@ import org.cote.service.util.ServiceUtil;
 public class ModelService {
 	private static final Logger logger = LogManager.getLogger(ModelService.class);
 
+	@RolesAllowed({"user"})
 	@GET
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -59,6 +60,7 @@ public class ModelService {
 		return Response.status(200).entity(rec.toFullString()).build();
 	}
 	
+	@RolesAllowed({"user"})
 	@GET
 	@Path("/{type:[A-Za-z\\.]+}/user/{objectType:[A-Za-z]+}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -72,6 +74,7 @@ public class ModelService {
 		return Response.status(200).entity(rec.toFullString()).build();
 	}
 	
+	@RolesAllowed({"user"})
 	@DELETE
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -106,6 +109,7 @@ public class ModelService {
 		return Response.status(200).entity(deleted).build();
 	}
 	
+	@RolesAllowed({"user"})
 	@PATCH
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -125,6 +129,7 @@ public class ModelService {
 		return Response.status(200).entity(patched).build();
 	}
 	
+	@RolesAllowed({"user"})
 	@POST
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -151,7 +156,7 @@ public class ModelService {
 			else {
 				for(FieldType f : oop.getFields()) {
 					FieldSchema fs = schema.getFieldSchema(f.getName());
-					if(fs.isIdentity()) {
+					if(fs.isIdentity() || fs.getName().equals(FieldNames.FIELD_GROUP_ID) || fs.getName().equals(FieldNames.FIELD_PARENT_ID)) {
 						outFields.add(f.getName());
 					}
 				}
@@ -208,7 +213,7 @@ public class ModelService {
 		return Response.status((rseg == null ? 404 : 200)).entity((rseg != null ? rseg.toFullString() : null)).build();
 	}
 	
-
+	@RolesAllowed({"user"})
 	@POST
 	@Path("/search")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -229,6 +234,7 @@ public class ModelService {
 		return Response.status(200).entity(ops).build();
 	}
 	
+	@RolesAllowed({"user"})
 	@POST
 	@Path("/search/count")
 	@Produces(MediaType.APPLICATION_JSON)

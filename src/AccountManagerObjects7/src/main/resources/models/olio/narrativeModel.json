@@ -1,0 +1,49 @@
+{
+	"name": "olio.narrative",
+	"ioConstraints": ["unknown"],
+	"icon": "category",
+	"label": "Narrative",
+	"fields": [
+		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "fullName",
+			"type": "string"
+		},
+		{
+			"name": "physicalDescription",
+			"type": "string"
+		},
+		{
+			"name": "outfitDescription",
+			"type": "string"
+		},
+		{
+			"name": "armamentDescription",
+			"type": "string"
+		},
+		{
+			"name": "statisticsDescription",
+			"type": "string"
+		},
+		{
+			"name": "alignmentDescription",
+			"type": "string"
+		},
+		{
+			"name": "darkTriadDescription",
+			"type": "string"
+		},
+		{
+			"name": "mbtiDescription",
+			"type": "string"
+		},
+		{
+			"name": "sloanDescription",
+			"type": "string"
+		}
+
+	]
+}

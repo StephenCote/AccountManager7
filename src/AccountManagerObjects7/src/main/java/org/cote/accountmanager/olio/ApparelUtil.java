@@ -25,6 +25,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
@@ -433,6 +434,9 @@ public class ApparelUtil {
 			logger.error(e);
 		}
 	}
+	
+	private static String[] defaultColors = new String[] {"IndianRed","LightCoral","Salmon","DarkSalmon","LightSalmon","Crimson","Red","FireBrick","DarkRed","Pink","LightPink","HotPink","DeepPink","MediumVioletRed","PaleVioletRed","LightSalmon","Coral","Tomato","OrangeRed","DarkOrange","Orange","Gold","Yellow","LightYellow","LemonChiffon","LightGoldenrodYellow","PapayaWhip","Moccasin","PeachPuff","PaleGoldenrod","Khaki","DarkKhaki","Lavender","Thistle","Plum","Violet","Orchid","Fuchsia","Magenta","MediumOrchid","MediumPurple","RebeccaPurple","BlueViolet","DarkViolet","DarkOrchid","DarkMagenta","Purple","Indigo","SlateBlue","DarkSlateBlue","MediumSlateBlue","GreenYellow","Chartreuse","LawnGreen","Lime","LimeGreen","PaleGreen","LightGreen","MediumSpringGreen","SpringGreen","MediumSeaGreen","SeaGreen","ForestGreen","Green","DarkGreen","YellowGreen","OliveDrab","Olive","DarkOliveGreen","MediumAquamarine","DarkSeaGreen","LightSeaGreen","DarkCyan","Teal","Aqua","Cyan","LightCyan","PaleTurquoise","Aquamarine","Turquoise","MediumTurquoise","DarkTurquoise","CadetBlue","SteelBlue","LightSteelBlue","PowderBlue","LightBlue","SkyBlue","LightSkyBlue","DeepSkyBlue","DodgerBlue","CornflowerBlue","MediumSlateBlue","RoyalBlue","Blue","MediumBlue","DarkBlue","Navy","MidnightBlue","Cornsilk","BlanchedAlmond","Bisque","NavajoWhite","Wheat","BurlyWood","Tan","RosyBrown","SandyBrown","Goldenrod","DarkGoldenrod","Peru","Chocolate","SaddleBrown","Sienna","Brown","Maroon","White","Snow","HoneyDew","MintCream","Azure","AliceBlue","GhostWhite","WhiteSmoke","SeaShell","Beige","OldLace","FloralWhite","Ivory","AntiqueWhite","Linen","LavenderBlush","MistyRose","Gainsboro","LightGray","Silver","DarkGray","Gray","DimGray","LightSlateGray","SlateGray","DarkSlateGray","Black"};
+
 	public static void designWearable(OlioContext ctx, BaseRecord wear) {
 
 		String randomColor = null;
@@ -452,10 +456,18 @@ public class ApparelUtil {
 			mats.addAll(nfeats);
 		}
 		else {
-			randomColor = Decks.getRandomColor(ctx.getUser(), ctx.getUniverse());
-			pattern = Decks.getRandomPattern(ctx.getUser(), ctx.getUniverse());
+			if(ctx != null) {
+				Decks.getRandomColor(ctx.getUser(), ctx.getUniverse());
+				pattern = Decks.getRandomPattern(ctx.getUser(), ctx.getUniverse());
+			}
+			else {
+				randomColor = defaultColors[rand.nextInt(defaultColors.length)];
+			}
 		}
-		String compColor = findComplementaryColor(ctx.getUniverse(), randomColor);
+		String compColor = randomColor;
+		if(ctx != null) {
+			findComplementaryColor(ctx.getUniverse(), randomColor);
+		}
 		try {
 			wear.set("color", randomColor);
 			wear.set("complementColor", compColor);
@@ -488,18 +500,41 @@ public class ApparelUtil {
 	}
 
 	public static BaseRecord constructApparel(OlioContext ctx, String gender, String[] wears) {
-		BaseRecord app = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
-		app.setValue("gender", gender);
-		
-		List<BaseRecord> wearList = app.get("wearables");
-		
-		for(String emb : wears) {
-			BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
-			List<BaseRecord> quals = wearRec.get("qualities");
-			quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
-			wearList.add(wearRec);
-			applyEmbeddedWearable(ctx, wearRec, emb);
+		BaseRecord app = null;
+		try {
+			if(ctx != null) {
+				app = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
+			}
+			else {
+	
+				app = RecordFactory.newInstance(ModelNames.MODEL_APPAREL);
+			}
+			app.setValue("gender", gender);
+			
+			List<BaseRecord> wearList = app.get("wearables");
+			
+			for(String emb : wears) {
+				BaseRecord wearRec = null;
+				if(ctx != null) {
+					wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
+				}
+				else {
+					wearRec = RecordFactory.newInstance(ModelNames.MODEL_WEARABLE);
+				}
+				List<BaseRecord> quals = wearRec.get("qualities");
+				if(ctx != null) {
+					quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
+				}
+				else {
+					quals.add(RecordFactory.newInstance(ModelNames.MODEL_QUALITY));
+				}
+				wearList.add(wearRec);
+				applyEmbeddedWearable(ctx, wearRec, emb);
+			}
+		} catch (FieldException | ModelNotFoundException e) {
+			logger.error(e);
 		}
+
 		designApparel(app);
 		return app;
 
@@ -573,7 +608,6 @@ public class ApparelUtil {
 		applyEmbeddedWearable(ctx, rec, cpref + embType);
 	}
 	private static void applyEmbeddedWearable(OlioContext ctx, BaseRecord rec, String embType) {
-		long patternDir = ctx.getUniverse().get("patterns.id");
 		String gender = rec.get("gender");
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";

@@ -3,8 +3,10 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -23,6 +25,14 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.AlignmentEnumType;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.CharacterUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -36,8 +46,67 @@ import org.junit.Test;
 public class TestNestedStructures extends BaseTest {
 
 	@Test
-	public void TestPersonSubstruct() {
+	public void TestComplexPerson() {
+		
+		logger.info("Test Complex Person");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Nested Structures");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String path = "~/Dooter Peeps - " + UUID.randomUUID().toString();
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList("path", path);
+		try {
+			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			a1.set("firstName", "Jay");
+			a1.set("middleName", "Kippy");
+			a1.set("lastName", "Smith");
+			a1.set("name", "Jay Kippy Smith");
+			a1.set("instinct", ioContext.getFactory().newInstance(ModelNames.MODEL_INSTINCT, testUser1, null, plist));
+			a1.set("statistics", ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
+			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
+			a1.set("state", ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
+			a1.set("store", ioContext.getFactory().newInstance(ModelNames.MODEL_STORE, testUser1, null, plist));
+			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
+			a1.set("age", (new Random()).nextInt(7, 70));
+			a1.set("alignment", OlioUtil.getRandomAlignment());
+			
+			StatisticsUtil.rollStatistics(a1.get("statistics"), (int)a1.get("age"));
+			ProfileUtil.rollPersonality(a1.get("personality"));
+			a1.set("race", CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
 
+			CharacterUtil.setStyleByRace(a1);
+			List<BaseRecord> apps = a1.get("store.apparel");
+			BaseRecord app = ApparelUtil.randomApparel(null, a1);
+			app.set("name", "Primary Apparel");
+			apps.add(app);
+			
+			BaseRecord ca1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, a1);
+			assertNotNull("Char Person was null", ca1);
+			
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_NAME, a1.get("name"));
+			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
+			assertNotNull("Rec is null", rec);
+			
+			PersonalityProfile pp = ProfileUtil.getProfile(null, rec);
+			assertNotNull("Profile is null", pp);
+
+			BaseRecord nar = NarrativeUtil.getNarrative(pp);
+			assertNotNull("Narrative is null", nar);
+			logger.info(nar.toFullString());
+
+		}
+		catch(NullPointerException | ClassCastException | StackOverflowError | FieldException | ValueException | ModelNotFoundException | FactoryException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		
+	}
+	
+	@Test
+	public void TestPersonSubstruct() {
+		logger.info("Test Person Substruct");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Nested Structures");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -48,7 +117,7 @@ public class TestNestedStructures extends BaseTest {
 			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set(FieldNames.FIELD_NAME, "Dooter");
 			BaseRecord ca1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, a1);
-			assertNotNull("Char Person was null");
+			assertNotNull("Char Person was null", ca1);
 
 			BaseRecord pt1 = ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, null);
 			pt1.set(FieldNames.FIELD_GROUP_PATH, dir.get(FieldNames.FIELD_PATH));
@@ -72,6 +141,7 @@ public class TestNestedStructures extends BaseTest {
 	
 	@Test
 	public void TestPersonConstruct() {
+		logger.info("Test Person Construct");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Nested Structures");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());

@@ -115,7 +115,7 @@ public class ThreatUtil {
 		/// Find animals in the current and adjacent cells
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(ctx, zoo, state.get("currentLocation"));
 		List<AnimalProfile> tpop = new ArrayList<>();
-		Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(ctx, zpop);
+		Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(zpop);
 		for(AnimalProfile ap : amap.values()) {
 			// boolean toxic = isToxic(ap.getRecord());
 			ThreatEnumType tet = evaluateAggressive(ap, pp, ThreatEnumType.ANIMAL_THREAT, ThreatEnumType.ANIMAL_TARGET);

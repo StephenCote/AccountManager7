@@ -153,7 +153,7 @@ SLOAN Notation
 			return getProfile(octx, person);
 		}
 		PersonalityProfile prof = profiles.get(id);
-		updateProfile(octx.getWorld(), person, prof);
+		updateProfile((octx != null ? octx.getWorld() : null), person, prof);
 		profiles.put(id,  prof);
 		return prof;
 	}
@@ -165,10 +165,10 @@ SLOAN Notation
 			return null;
 		}
 		if(!animalProfiles.containsKey(id)) {
-			return getAnimalProfile(octx, animal);
+			return getAnimalProfile(animal);
 		}
 		AnimalProfile prof = animalProfiles.get(id);
-		updateAnimalProfile(octx.getWorld(), animal, prof);
+		updateAnimalProfile(animal, prof);
 		animalProfiles.put(id,  prof);
 		return prof;
 	}
@@ -242,10 +242,10 @@ SLOAN Notation
 		return map;
 	}
 	
-	public static Map<BaseRecord, AnimalProfile> getAnimalProfileMap(OlioContext octx, List<BaseRecord> animals){
+	public static Map<BaseRecord, AnimalProfile> getAnimalProfileMap(List<BaseRecord> animals){
 		Map<BaseRecord, AnimalProfile> map = new HashMap<>();
 		for(BaseRecord per : animals) {
-			map.put(per, getAnimalProfile(octx, per));
+			map.put(per, getAnimalProfile(per));
 		}
 		return map;
 	}
@@ -271,7 +271,7 @@ SLOAN Notation
 		return prof;
 	}
 	
-	public static AnimalProfile getAnimalProfile(OlioContext octx, BaseRecord animal) {
+	public static AnimalProfile getAnimalProfile(BaseRecord animal) {
 		
 		long id = animal.get(FieldNames.FIELD_ID);
 		if(id <= 0L) {
@@ -283,7 +283,7 @@ SLOAN Notation
 			return animalProfiles.get(id);
 		}
 		
-		AnimalProfile prof = analyzeAnimal(octx, animal);
+		AnimalProfile prof = analyzeAnimal(animal);
 		
 		if(prof != null) {
 			animalProfiles.put(id, prof);
@@ -302,25 +302,25 @@ SLOAN Notation
 		IOSystem.getActiveContext().getReader().populate(stats);
 	}
 	
-	protected static AnimalProfile analyzeAnimal(OlioContext octx, BaseRecord animal) {
+	protected static AnimalProfile analyzeAnimal(BaseRecord animal) {
 		checkPopulation(animal);
-		AnimalProfile prof = createAnimalProfile(octx.getWorld(), animal);
+		AnimalProfile prof = createAnimalProfile(animal);
 		return prof;
 	}
 	
 	protected static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
 		checkPopulation(person);
-		IOSystem.getActiveContext().getReader().populate(person, new String[] {"personality"});
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {"statistics"});
 		BaseRecord per = person.get("personality");
 		IOSystem.getActiveContext().getReader().populate(per);
-		PersonalityProfile prof = createProfile(octx.getWorld(), person);
+		PersonalityProfile prof = createProfile((octx != null ? octx.getWorld() : null), person);
 		return prof;
 	}
 	
-	protected static AnimalProfile createAnimalProfile(BaseRecord world, BaseRecord animal) {
+	protected static AnimalProfile createAnimalProfile(BaseRecord animal) {
 		AnimalProfile prof = new AnimalProfile();
 		prof.setId(animal.get(FieldNames.FIELD_ID));
-		updateAnimalProfile(world, animal, prof);
+		updateAnimalProfile(animal, prof);
 		return prof;
 	}
 	
@@ -330,7 +330,7 @@ SLOAN Notation
 		updateProfile(world, person, prof);
 		return prof;
 	}
-	protected static void updateAnimalProfile(BaseRecord world, BaseRecord animal, AnimalProfile prof) {
+	protected static void updateAnimalProfile(BaseRecord animal, AnimalProfile prof) {
 		prof.setName(animal.get(FieldNames.FIELD_NAME));
 		prof.setRecord(animal);
 		prof.setGender(animal.get("gender"));
@@ -379,14 +379,15 @@ SLOAN Notation
 
 	}
 	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {
-		updateAnimalProfile(world, person, prof);
+		updateAnimalProfile(person, prof);
 
 		List<BaseRecord> parts = person.get("partners");
 		List<BaseRecord> deps = person.get("dependents");
 		prof.setMarried(parts.size() > 0);
 		prof.setChildren(deps.size() > 0);
-
-		prof.setEvents(Arrays.asList(EventUtil.getEvents(world, person, new String[]{"actors", "participants", "observers", "influencers"}, EventEnumType.UNKNOWN)));
+		if(world != null) {
+			prof.setEvents(Arrays.asList(EventUtil.getEvents(world, person, new String[]{"actors", "participants", "observers", "influencers"}, EventEnumType.UNKNOWN)));
+		}
 		Optional<BaseRecord> dopt = prof.getEvents().stream().filter(e -> EventEnumType.DIVORCE.toString().equals(((String)e.get(FieldNames.FIELD_TYPE)).toUpperCase())).findFirst();
 		if(dopt.isPresent()) {
 			prof.setDivorced(true);

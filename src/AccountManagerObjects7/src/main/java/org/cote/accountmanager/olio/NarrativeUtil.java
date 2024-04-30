@@ -1,6 +1,7 @@
 package org.cote.accountmanager.olio;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -9,12 +10,17 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.OCEANUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
@@ -32,37 +38,29 @@ public class NarrativeUtil {
 	}
 
 	public static String getDarkTriadDescription(PersonalityProfile prof) {
-		//StringBuilder desc = new StringBuilder();
+		StringBuilder desc = new StringBuilder();
 		
 		StringBuilder desc2 = new StringBuilder();
-		/*
+		
+		String gender = prof.getGender();
+		String pro = ("male".equals(gender) ? "He" : "She");
 		if(prof.isMachiavellian()) {
-			desc.append("is machiavellian and may be callous, lack morality, and/or are motivated by self-interest");
+			desc.append("may be callous, lack morality, or be motivated by self-interest");
 		}
 		
 		if(prof.isNarcissist()) {
-			if(desc.length() > 0) desc.append("; ");
-			desc.append("is narcissistic and may show grandiosity, entitlement, dominance, and/or superiority");
+			if(desc.length() > 0) desc.append(", ");
+			desc.append("may show grandiosity, entitlement, dominance, or superiority");
 		}
 		if(prof.isPsychopath()) {
-			if(desc.length() > 0) desc.append("; ");
-			desc.append("is a psychopath and may show low levels of empathy and high levels of impulsivity and thrill-seeking");
+			if(desc.length() > 0) desc.append(", and");
+			desc.append("may show low levels of empathy and high levels of impulsivity and thrill-seeking");
 		}
-		*/
-		String gender = prof.getGender();
-		String pro = ("male".equals(gender) ? "he" : "she");
-		/// prof.getRecord().get("firstName")
-		desc2.append("Personality-wise, " + pro + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()));
+		desc2.append(pro + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()));
 		desc2.append(".");
-		// desc2.append(" (" + prof.getDarkTriadKey() + ").");
-		/*
 		if(desc.length() > 0) {
-			desc2.append(desc.toString() + ".");
+			desc2.append(" " + pro + " " + desc.toString() + ".");
 		}
-		else {
-			desc2.append("does not reflect dark traits.");
-		}
-		*/
 		return desc2.toString();
 	}
 	public static String getRaceDescription(List<String> races) {
@@ -74,14 +72,14 @@ public class NarrativeUtil {
 		}
 		return desc.toString();
 	}
-	public static String describeArmament(OlioContext ctx, BaseRecord person) {
+	public static String describeArmament(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
-		List<BaseRecord> items = ((List<BaseRecord>)person.get("store.items")).stream().filter(w -> ("weapon".equals(w.get("category")) || "armor".equals(w.get("category")))).collect(Collectors.toList());
+		List<BaseRecord> items = ((List<BaseRecord>)pp.getRecord().get("store.items")).stream().filter(w -> ("weapon".equals(w.get("category")) || "armor".equals(w.get("category")))).collect(Collectors.toList());
 		if(items.size() == 0) {
-			buff.append("is unarmed");
+			buff.append("unarmed");
 		}
 		else {
-			buff.append("is armed with");
+			buff.append("armed with");
 			String andl = "";
 			//for(BaseRecord w: items) {
 			for(int i = 0; i < items.size(); i++) {
@@ -97,16 +95,16 @@ public class NarrativeUtil {
 		return buff.toString();
 	}
 
-	public static String describeOutfit(OlioContext ctx, BaseRecord person) {
-		return describeOutfit(ctx, person, false);
+	public static String describeOutfit(PersonalityProfile pp) {
+		return describeOutfit(pp, false);
 	}
-	public static String describeOutfit(OlioContext ctx, BaseRecord person, boolean includeOuterArms) {
+	public static String describeOutfit(PersonalityProfile pp, boolean includeOuterArms) {
 			
 	
 		StringBuilder buff = new StringBuilder();
-		List<BaseRecord> appl = person.get("store.apparel");
+		List<BaseRecord> appl = pp.getRecord().get("store.apparel");
 		if(appl.size() == 0) {
-			buff.append("is naked");
+			buff.append("naked");
 		}
 		else {
 			BaseRecord app = null;
@@ -119,7 +117,7 @@ public class NarrativeUtil {
 			}
 			List<BaseRecord> wearl = app.get("wearables");
 			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
-			buff.append("is wearing");
+			buff.append("wearing");
 			String andl = "";
 			// for(BaseRecord w: wearl) {
 			for(int i = 0; i < wearl.size(); i++) {
@@ -560,12 +558,55 @@ public class NarrativeUtil {
 		
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
-		buff.append(" " + cpro + " " + describeOutfit(ctx, person, includeOuterArms) + ".");
+		buff.append(" " + cpro + " " + describeOutfit(pp, includeOuterArms) + ".");
 		if(includeOuterArms) {
-			buff.append(" " + cpro + " " + describeArmament(ctx, person) + ".");
+			buff.append(" " + cpro + " " + describeArmament(pp) + ".");
 		}
 		return buff.toString();
 	}
+	
+	public static String describeStatistics(PersonalityProfile pp) {
+		StringBuilder buff = new StringBuilder();
+		buff.append(getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + " and " + getIsPrettyEndurable(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", " + getIsPrettyLucky(pp) + ", and is " + getLooksPrettyUgly(pp) + " looking.");
+		return buff.toString();
+	}
+	
+	public static BaseRecord getNarrative(PersonalityProfile pp) {
+		BaseRecord nar = null;
+		try {
+			nar = RecordFactory.newInstance(ModelNames.MODEL_NARRATIVE);
+			nar.set("name", pp.getRecord().get("firstName"));
+			nar.set("fullName", pp.getRecord().get("name"));
+			nar.set("physicalDescription", describePhysical(pp));
+			nar.set("outfitDescription", describeOutfit(pp));
+			nar.set("armamentDescription", describeArmament(pp));
+			nar.set("statisticsDescription", describeStatistics(pp));
+			nar.set("alignmentDescription", getActsLikeSatan(pp));
+			nar.set("darkTriadDescription", getDarkTriadDescription(pp));
+			nar.set("mbtiDescription", pp.getMbti().getDescription());
+			nar.set("sloanDescription", pp.getSloanDescription());
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+		return nar;
+		
+	}
+	public static String describePhysical(PersonalityProfile pp) {
+		StringBuilder buff = new StringBuilder();
+
+		int age = pp.getAge();
+
+		String hairColor = pp.getRecord().get("hairColor");
+		String hairStyle = pp.getRecord().get("hairStyle");
+		String eyeColor = pp.getRecord().get("eyeColor");
+		
+		String gender = pp.getGender();
+		
+		String raceDesc = getRaceDescription(pp.getRace());
+		buff.append(age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + " with " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
+		return buff.toString();
+	}
+	
 	public static String getIsPrettyMagic(PersonalityProfile prof) {
 		
 		String desc = "indescribable";
@@ -589,7 +630,6 @@ public class NarrativeUtil {
 			desc = "is an extremely gifted wizard";
 		}
 		else {
-			// desc = "pulchritudinous"
 			desc = "is a sorceror supreme";
 		}
 		return desc;
@@ -650,6 +690,69 @@ public class NarrativeUtil {
 		}
 		return desc;
 	}
+
+	public static String getHighScale7(HighEnumType lvl, List<String> scale) {
+		String desc = "indescribable";
+		int score = -1;
+		if(scale.size() != 7) {
+			logger.error("Expected a seven point scale");
+			return desc;
+		}
+		if(HighEnumType.compare(lvl, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			score = 0;
+		}
+		else if(HighEnumType.compare(lvl, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			score = 1;
+		}
+		else if(HighEnumType.compare(lvl, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			score = 2;
+		}
+		else if(HighEnumType.compare(lvl, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			score = 3;
+		}
+		else if(HighEnumType.compare(lvl, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			score = 4;
+		}
+		else if(HighEnumType.compare(lvl, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			score = 5;
+		}
+		else {
+			score = 6;
+		}
+		if(score >= 0 && score < scale.size()) {
+			return scale.get(score);
+		}
+		return desc;
+	}
+	private static List<String> lucky7 = Arrays.asList(new String[] {
+		"is catastrophically unlucky",
+		"is severely unlucky",
+		"is moderately unlucky",
+		"is mildly unlucky",
+		"is a little bit lucky",
+		"is very lucky",
+		"is extraordinarily lucky"
+	});
+
+	public static String getIsPrettyLucky(PersonalityProfile prof) {
+		return getHighScale7(prof.getLuck(), lucky7);
+	}
+	
+	private static List<String> physEd7 = Arrays.asList(new String[] {
+		"is a couch potato",
+		"can walk without getting winded",
+		"could run a 5K race",
+		"is a half-marathoner",
+		"is an marathoner",
+		"is a triathelete",
+		"is an ultra-marathoner"
+	});	
+	public static String getIsPrettyEndurable(PersonalityProfile prof) {
+		return getHighScale7(prof.getPhysicalEndurance(), physEd7);
+	}
+	
+	
+	
 	public static String getOthersActLikeSatan(AlignmentEnumType align) {
 		String desc = "indescribable";
 		switch(align) {
@@ -687,41 +790,35 @@ public class NarrativeUtil {
 	}
 	public static String getActsLikeSatan(PersonalityProfile prof) {
 		String desc = "indescribable";
+		String gender = prof.getGender();
+		String pos = ("male".equals(gender) ? "his" : "her");
+		
 		switch(prof.getAlignment()) {
 			case CHAOTICEVIL:
-				// desc = "like Charles Manson or William Gacy";
-				desc = "has no respect for rules, people's lives, or anything except their own selfish and cruel desire";
+				desc = "has no respect for rules, people's lives, or anything except " + pos + " own selfish and cruel desire";
 				break;
 			case NEUTRALEVIL:
-				//desc = "like Stalin or Mao";
-				desc = "is selfish, will turn on their own allies, and will harm others if it's a benefit";
+				desc = "is selfish, will turn on " + pos + " own allies, and will harm others if it's a benefit";
 				break;
 			case LAWFULEVIL:
-				//desc = "like Hitler";
-				desc = "sees well-ordered systems as necessary to fulfill their personal needs and desires";
+				desc = "sees well-ordered systems as necessary to fulfill " + pos + " personal needs and desires";
 				break;
 			case CHAOTICNEUTRAL:
-				//desc = "like Blackbeard or Tyler Durden";
-				desc = "follows their own heart, shirks rules and traditions, and their freedom comes before good or evil";
+				desc = "follows " + pos + " own heart, shirks rules and traditions, and " + pos + " freedom comes before good or evil";
 				break;
 			case NEUTRAL:
-				// desc = "like Machiavelli";
 				desc = "does not identify as being good or evil";
 				break;
 			case LAWFULNEUTRAL:
-				//desc = "like Louis XIV or James Bond";
-				desc = "strongly believes in lawful concepts such as honor, in addition to their own personal code";
+				desc = "strongly believes in lawful concepts such as honor, in addition to " + pos + " own personal code";
 				break;
 			case CHAOTICGOOD:
-				//desc = "like Thomas Jefferson or Deadpool";
 				desc = "does what is needed to bring about change for the good, and dislikes bureaucracy";
 				break;
 			case NEUTRALGOOD:
-				//desc = "like Galadriel or Gandhi";
 				desc = "acts altruistically with regard for law, rules, and traditions";
 				break;
 			case LAWFULGOOD:
-				//desc = "like Lincoln or Captain America";
 				desc = "always acts with honor and a sense of duty";
 				break;
 			default:

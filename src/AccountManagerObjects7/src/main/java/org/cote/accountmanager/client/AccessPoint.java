@@ -460,7 +460,7 @@ public class AccessPoint {
 		PolicyResponseType prr = null;
 		
 		
-		if(query.getRequest().size() == 0) {
+		if(query.getRequest().size() == 0 && ((boolean)query.get(FieldNames.FIELD_LIMIT_FIELDS)) == true) {
 			query.setRequest(RecordUtil.getCommonFields(query.getType()));
 		}
 		// logger.info(query.key());
