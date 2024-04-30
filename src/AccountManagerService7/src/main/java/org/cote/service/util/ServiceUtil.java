@@ -10,13 +10,19 @@ import javax.servlet.http.HttpServletRequest;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.data.security.UserPrincipal;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.OrderEnumType;
 
 
 
@@ -29,6 +35,15 @@ public class ServiceUtil {
 	public static QueryResult generateListQueryResponse(String type, String objectId, String name, String[] fields, long startIndex, int recordCount, HttpServletRequest request) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		Query q = QueryUtil.buildQuery(user, type, objectId, name, startIndex, recordCount);
+		ModelSchema ms = RecordFactory.getSchema(type);
+		if(ms.hasField(FieldNames.FIELD_NAME)) {
+			try {
+				q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+				q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
 		if(q == null) {
 			logger.error("Invalid query object for " + type + " " + objectId);
 			return null;	

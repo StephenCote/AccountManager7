@@ -116,6 +116,9 @@
 			"virtual": true,
 			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
 			"description": "Potential for otherworldly perceptions and manipulations",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
 			"priority": 30
 			
 		},
@@ -125,6 +128,9 @@
 			"virtual": true,
 			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
 			"description": "Propensity to innovate/discover/understand fundamental natural elements",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
 			"priority": 30
 		},
 		{
@@ -132,6 +138,9 @@
 			"type": "int",
 			"virtual": true,
 			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
 			"priority": 0
 		},
 		{
@@ -140,7 +149,7 @@
 			"virtual": true,
 			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
 			"minValue": 0,
-			"maxValue": 100,
+			"maxValue": 20,
 			"validateRange": true,
 			"priority": 0
 		},
@@ -177,7 +186,7 @@
 			"virtual": true,
 			"provider": "org.cote.accountmanager.olio.StatisticsProvider",
 			"minValue": 0,
-			"maxValue": 100,
+			"maxValue": 20,
 			"validateRange": true,
 			"priority": 10
 		}

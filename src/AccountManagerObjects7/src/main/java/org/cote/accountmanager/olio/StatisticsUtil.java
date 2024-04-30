@@ -109,7 +109,7 @@ public class StatisticsUtil {
 	public static int getAverage(BaseRecord model, String[] fields) {
 		int val = 0;
 		int avg = 0;
-		IOSystem.getActiveContext().getReader().populate(model, fields);
+		// IOSystem.getActiveContext().getReader().populate(model, fields);
 		for(String f : fields) {
 			if(model.hasField(f)) {
 				val += (int)model.get(f);
@@ -128,7 +128,7 @@ public class StatisticsUtil {
 	public static double getDblAverage(BaseRecord model, String[] fields) {
 		double val = 0;
 		double avg = 0;
-		IOSystem.getActiveContext().getReader().populate(model, fields);
+		// IOSystem.getActiveContext().getReader().populate(model, fields);
 		for(String f : fields) {
 			if(model.hasField(f)) {
 				val += (double)model.get(f);
