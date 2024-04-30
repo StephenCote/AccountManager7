@@ -36,6 +36,41 @@ import org.junit.Test;
 public class TestNestedStructures extends BaseTest {
 
 	@Test
+	public void TestPersonSubstruct() {
+
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Nested Structures");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String path = "~/Dooter Peeps - " + UUID.randomUUID().toString();
+		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList("path", path);
+		try {
+			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			a1.set(FieldNames.FIELD_NAME, "Dooter");
+			BaseRecord ca1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, a1);
+			assertNotNull("Char Person was null");
+
+			BaseRecord pt1 = ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, null);
+			pt1.set(FieldNames.FIELD_GROUP_PATH, dir.get(FieldNames.FIELD_PATH));
+			
+			BaseRecord p1 = ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, pt1, null);
+			// p1.set(FieldNames.FIELD_GROUP_PATH, dir.get(FieldNames.FIELD_PATH));
+			logger.info(p1.toFullString());
+			BaseRecord cp1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, p1);
+			assertNotNull("Personality was null", cp1);
+			ca1.set("personality", cp1);
+			
+			BaseRecord up1 = IOSystem.getActiveContext().getAccessPoint().update(testUser1, cp1);
+			assertNotNull("Failed to update", up1);
+		}
+		catch(ClassCastException | StackOverflowError | FieldException | ValueException | ModelNotFoundException | FactoryException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		
+	}
+	
+	@Test
 	public void TestPersonConstruct() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Nested Structures");
 		Factory mf = ioContext.getFactory();

@@ -119,7 +119,7 @@
 				</dependencies>
 
 				<configuration>
-					<skipTests>true</skipTests>
+					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI --module-path=${compiler.dir} --upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar ${argLine}</argLine>
 
 					<includes>
@@ -127,11 +127,13 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestOlio.java</exclude>
+						<exclude>**/TestNestedStructure.java</exclude>
 						-->
-						<exclude>**/TestQdrant.java</exclude>
+						
 						
 						<!-- Repeatable Set -->
+						<exclude>**/TestOlio.java</exclude>
+						<exclude>**/TestQdrant.java</exclude>
 						<exclude>**/TestCondensedModel.java</exclude>
 						<exclude>**/TestBulkOperation.java</exclude>	
 						<exclude>**/TestNoise.java</exclude>
