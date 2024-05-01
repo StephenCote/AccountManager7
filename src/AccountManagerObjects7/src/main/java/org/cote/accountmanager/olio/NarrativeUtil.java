@@ -74,6 +74,9 @@ public class NarrativeUtil {
 	}
 	public static String describeArmament(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
+		if(pp.getRecord().get("store.items")  == null) {
+			return buff.toString();
+		}
 		List<BaseRecord> items = ((List<BaseRecord>)pp.getRecord().get("store.items")).stream().filter(w -> ("weapon".equals(w.get("category")) || "armor".equals(w.get("category")))).collect(Collectors.toList());
 		if(items.size() == 0) {
 			buff.append("unarmed");
@@ -103,7 +106,7 @@ public class NarrativeUtil {
 	
 		StringBuilder buff = new StringBuilder();
 		List<BaseRecord> appl = pp.getRecord().get("store.apparel");
-		if(appl.size() == 0) {
+		if(appl == null || appl.size() == 0) {
 			buff.append("naked");
 		}
 		else {

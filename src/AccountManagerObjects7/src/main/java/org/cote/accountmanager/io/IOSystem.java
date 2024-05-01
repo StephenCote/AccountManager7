@@ -132,7 +132,7 @@ public class IOSystem {
 			writer = IOFactory.getWriter(ioType, dbUtil.getDataSource());
 			search = IOFactory.getSearch(reader);
 		}
-		logger.info("Initialize context");
+		// logger.info("Initialize context");
 		activeContext = new IOContext(ioType, reader, writer, search);
 		activeContext.setIndexManager(fim);
 		activeContext.setDbUtil(dbUtil);

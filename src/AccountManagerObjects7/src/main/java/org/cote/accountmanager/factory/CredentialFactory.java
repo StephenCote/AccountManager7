@@ -105,7 +105,7 @@ public class CredentialFactory extends FactoryBase {
 					byte[] credHash = rec.get(FieldNames.FIELD_CREDENTIAL);
 					byte[] checkHash = CryptoUtil.getDigest(pwd.getBytes(), rec.get(FieldNames.FIELD_HASH_FIELD_SALT));
 					if(Arrays.areEqual(credHash, checkHash)) {
-						logger.info("Password hash matches");
+						// logger.info("Password hash matches");
 						vet = VerificationEnumType.VERIFIED;
 					}
 					else {

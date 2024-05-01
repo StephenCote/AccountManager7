@@ -335,48 +335,52 @@ SLOAN Notation
 		prof.setRecord(animal);
 		prof.setGender(animal.get("gender"));
 		prof.setAge(animal.get("age"));
-		prof.setAlive(animal.get("state.alive"));
+		if(animal.get("state") != null) {
+			prof.setAlive(animal.get("state.alive"));
+		}
 		prof.setAlignment(AlignmentEnumType.valueOf(animal.get(FieldNames.FIELD_ALIGNMENT)));
 		BaseRecord inst = animal.get("instinct");
-		prof.setSleep(InstinctEnumType.valueOf((double)inst.get("sleep")));
-		prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
-		prof.setFlight(InstinctEnumType.valueOf((double)inst.get("flight")));
-		prof.setFeed(InstinctEnumType.valueOf((double)inst.get("feed")));
-		prof.setDrink(InstinctEnumType.valueOf((double)inst.get("drink")));
-		prof.setMate(InstinctEnumType.valueOf((double)inst.get("mate")));
-		prof.setHerd(InstinctEnumType.valueOf((double)inst.get("herd")));
-		prof.setHygiene(InstinctEnumType.valueOf((double)inst.get("hygiene")));
-		prof.setCooperate(InstinctEnumType.valueOf((double)inst.get("cooperate")));
-		prof.setResist(InstinctEnumType.valueOf((double)inst.get("resist")));
-		prof.setAdapt(InstinctEnumType.valueOf((double)inst.get("adapt")));
-		prof.setLaugh(InstinctEnumType.valueOf((double)inst.get("laugh")));
-		prof.setCry(InstinctEnumType.valueOf((double)inst.get("cry")));
-		prof.setProtect(InstinctEnumType.valueOf((double)inst.get("protect")));
-		
+		if(inst != null) {
+			prof.setSleep(InstinctEnumType.valueOf((double)inst.get("sleep")));
+			prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
+			prof.setFlight(InstinctEnumType.valueOf((double)inst.get("flight")));
+			prof.setFeed(InstinctEnumType.valueOf((double)inst.get("feed")));
+			prof.setDrink(InstinctEnumType.valueOf((double)inst.get("drink")));
+			prof.setMate(InstinctEnumType.valueOf((double)inst.get("mate")));
+			prof.setHerd(InstinctEnumType.valueOf((double)inst.get("herd")));
+			prof.setHygiene(InstinctEnumType.valueOf((double)inst.get("hygiene")));
+			prof.setCooperate(InstinctEnumType.valueOf((double)inst.get("cooperate")));
+			prof.setResist(InstinctEnumType.valueOf((double)inst.get("resist")));
+			prof.setAdapt(InstinctEnumType.valueOf((double)inst.get("adapt")));
+			prof.setLaugh(InstinctEnumType.valueOf((double)inst.get("laugh")));
+			prof.setCry(InstinctEnumType.valueOf((double)inst.get("cry")));
+			prof.setProtect(InstinctEnumType.valueOf((double)inst.get("protect")));
+		}
 		BaseRecord stats = animal.get("statistics");
-		double d1 = 100.0;
-		prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get("physicalStrength")*5)/d1));
-		prof.setPhysicalEndurance(HighEnumType.valueOf(((int)stats.get("physicalEndurance")*5)/d1));
-		prof.setManualDexterity(HighEnumType.valueOf(((int)stats.get("manualDexterity")*5)/d1));
-		prof.setAgility(HighEnumType.valueOf(((int)stats.get("agility")*5)/d1));
-		prof.setSpeed(HighEnumType.valueOf(((int)stats.get("speed")*5)/d1));
-		prof.setMentalStrength(HighEnumType.valueOf(((int)stats.get("mentalStrength")*5)/d1));
-		
-		prof.setMentalEndurance(HighEnumType.valueOf(((int)stats.get("mentalEndurance")*5)/d1));
-		prof.setIntelligence(HighEnumType.valueOf(((int)stats.get("intelligence")*5)/d1));
-		prof.setCharisma(HighEnumType.valueOf(((int)stats.get("charisma")*5)/d1));
-		prof.setCreativity(HighEnumType.valueOf(((int)stats.get("creativity")*5)/d1));
-		prof.setSpirituality(HighEnumType.valueOf(((int)stats.get("spirituality")*5)/d1));
-		prof.setWisdom(HighEnumType.valueOf(((int)stats.get("wisdom")*5)/d1));
-		prof.setHealth(HighEnumType.valueOf(((int)stats.get("health")*5)/d1));
-		prof.setMaximumHealth(HighEnumType.valueOf(((int)stats.get("maximumHealth")*5)/d1));
-		prof.setSave(HighEnumType.valueOf((double)stats.get("save")));
-		prof.setReaction(HighEnumType.valueOf(((int)stats.get("reaction")*5)/d1));
-		prof.setScience(HighEnumType.valueOf(((int)stats.get("science")*5)/d1));
-		prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
-		prof.setLuck(HighEnumType.valueOf(((int)stats.get("luck")*5)/d1));
-		prof.setPerception(HighEnumType.valueOf(((int)stats.get("perception")*5)/d1));
-
+		if(stats != null) {
+			double d1 = 100.0;
+			prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get("physicalStrength")*5)/d1));
+			prof.setPhysicalEndurance(HighEnumType.valueOf(((int)stats.get("physicalEndurance")*5)/d1));
+			prof.setManualDexterity(HighEnumType.valueOf(((int)stats.get("manualDexterity")*5)/d1));
+			prof.setAgility(HighEnumType.valueOf(((int)stats.get("agility")*5)/d1));
+			prof.setSpeed(HighEnumType.valueOf(((int)stats.get("speed")*5)/d1));
+			prof.setMentalStrength(HighEnumType.valueOf(((int)stats.get("mentalStrength")*5)/d1));
+			
+			prof.setMentalEndurance(HighEnumType.valueOf(((int)stats.get("mentalEndurance")*5)/d1));
+			prof.setIntelligence(HighEnumType.valueOf(((int)stats.get("intelligence")*5)/d1));
+			prof.setCharisma(HighEnumType.valueOf(((int)stats.get("charisma")*5)/d1));
+			prof.setCreativity(HighEnumType.valueOf(((int)stats.get("creativity")*5)/d1));
+			prof.setSpirituality(HighEnumType.valueOf(((int)stats.get("spirituality")*5)/d1));
+			prof.setWisdom(HighEnumType.valueOf(((int)stats.get("wisdom")*5)/d1));
+			prof.setHealth(HighEnumType.valueOf(((int)stats.get("health")*5)/d1));
+			prof.setMaximumHealth(HighEnumType.valueOf(((int)stats.get("maximumHealth")*5)/d1));
+			prof.setSave(HighEnumType.valueOf((double)stats.get("save")));
+			prof.setReaction(HighEnumType.valueOf(((int)stats.get("reaction")*5)/d1));
+			prof.setScience(HighEnumType.valueOf(((int)stats.get("science")*5)/d1));
+			prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
+			prof.setLuck(HighEnumType.valueOf(((int)stats.get("luck")*5)/d1));
+			prof.setPerception(HighEnumType.valueOf(((int)stats.get("perception")*5)/d1));
+		}
 	}
 	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {
 		updateAnimalProfile(person, prof);
@@ -429,20 +433,33 @@ SLOAN Notation
 		/// do they have clothes?
 		BaseRecord store = person.get("store");
 		BaseRecord cit = person.get(FieldNames.FIELD_CONTACT_INFORMATION);
-		List<BaseRecord> apparel = store.get("apparel");
-		if(apparel.size() == 0) {
-			prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.CLOTHING);
-		}
-		
-		List<BaseRecord> items = store.get("items");
-		List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
-		if(water.size() == 0) {
-			prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.WATER);
-		}
-		
-		List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get("category"))).collect(Collectors.toList());
-		if(food.size() == 0) {
-			prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.FOOD);
+		if(store != null) {
+			List<BaseRecord> apparel = store.get("apparel");
+			if(apparel.size() == 0) {
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.CLOTHING);
+			}
+			
+			List<BaseRecord> items = store.get("items");
+			List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
+			if(water.size() == 0) {
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.WATER);
+			}
+			
+			List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get("category"))).collect(Collectors.toList());
+			if(food.size() == 0) {
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.FOOD);
+			}
+			
+			//// simple calculation - if the person has nothing
+			if(items.size() == 0) {
+				prof.getSafetyNeeds().add(SafetyNeeds.RESOURCES);
+			}
+			
+			List<BaseRecord> locs = store.get("locations");
+			if(locs.size() == 0) {
+				prof.getSafetyNeeds().add(SafetyNeeds.PROPERTY);
+			}
+
 		}
 		if(cit != null) {
 			List<BaseRecord> addrl = cit.get("addresses");
@@ -483,20 +500,13 @@ SLOAN Notation
 		//// Employment calculation - use scheduled activity count
 		prof.getSafetyNeeds().add(SafetyNeeds.EMPLOYMENT);
 		
-		//// simple calculation - if the person has nothing
-		if(items.size() == 0) {
-			prof.getSafetyNeeds().add(SafetyNeeds.RESOURCES);
-		}
-		
-		List<BaseRecord> locs = store.get("locations");
-		if(locs.size() == 0) {
-			prof.getSafetyNeeds().add(SafetyNeeds.PROPERTY);
-		}
 		
 		BaseRecord state = person.get("state");
-		double health = state.get("health");
-		if(health < 0.25) {
-			prof.getSafetyNeeds().add(SafetyNeeds.HEALTH);
+		if(state != null) {
+			double health = state.get("health");
+			if(health < 0.25) {
+				prof.getSafetyNeeds().add(SafetyNeeds.HEALTH);
+			}
 		}
 		
 		/// TODO: Initial esteem calculations

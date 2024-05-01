@@ -7,6 +7,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.Sloan;
@@ -32,9 +33,11 @@ public class PersonalityProvider  implements IProvider {
 			return;
 		}
 		if(lfield.getName().equals("sloanKey")) {
+			IOSystem.getActiveContext().getReader().populate(model, ProfileUtil.PERSONALITY_FIELDS);
 			model.set(lfield.getName(), SloanUtil.getSloanKey(model));
 		}
 		else if(lfield.getName().equals("sloanCardinal")) {
+			IOSystem.getActiveContext().getReader().populate(model, ProfileUtil.PERSONALITY_FIELDS);
 			model.set(lfield.getName(), SloanUtil.getSloanCardinal(model));
 		}
 		else if(lfield.getName().equals("mbtiKey")) {
@@ -47,6 +50,7 @@ public class PersonalityProvider  implements IProvider {
 			}
 		}
 		else if(lfield.getName().equals("darkTriadKey")) {
+			IOSystem.getActiveContext().getReader().populate(model, ProfileUtil.DARK_PERSONALITY_FIELDS);
 			model.set(lfield.getName(), DarkTriadUtil.getDarkTriadKey(model));
 		}
 	}

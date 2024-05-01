@@ -10,6 +10,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.provider.IProvider;
 import org.cote.accountmanager.record.BaseRecord;
@@ -24,25 +25,36 @@ public class StatisticsProvider  implements IProvider {
 		/// Nothing to do
 	}
 
+	private String[] willpowerAttributes = new String[] {"mentalEndurance", "mentalStrength"};
+	private String[] magicAttributes = new String[] {"willpower", "wisdom", "creativity", "spirituality"};
+	private String[] scienceAttributes = new String[] {"intelligence", "wisdom", "creativity"};
+	private String[] reactionAttributes = new String[] {"agility", "speed", "wisdom", "perception"};
+	private String[] maxHealthAttributes = new String[] {"physicalStrength", "physicalEndurance", "mentalStrength", "mentalEndurance", "charisma"};
+	private String[] saveAttributes = new String[] {"willpower", "health", "physicalStrength"};
 	
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) throws ModelException, FieldException, ValueException, ModelNotFoundException {
 		if(!RecordOperation.READ.equals(operation) && !RecordOperation.INSPECT.equals(operation)) {
 			return;
 		}
 		if(lfield.getName().equals("willpower")) {
-			StatisticsUtil.computeAverage(model, lfield, new String[] {"mentalEndurance", "mentalStrength"});
+			IOSystem.getActiveContext().getReader().populate(model, willpowerAttributes);
+			StatisticsUtil.computeAverage(model, lfield, willpowerAttributes);
 		}
 		else if(lfield.getName().equals("magic")) {
-			StatisticsUtil.computeAverage(model, lfield, new String[] {"willpower", "wisdom", "creativity", "spirituality"});
+			IOSystem.getActiveContext().getReader().populate(model, magicAttributes);
+			StatisticsUtil.computeAverage(model, lfield, magicAttributes);
 		}
 		else if(lfield.getName().equals("science")) {
-			StatisticsUtil.computeAverage(model, lfield, new String[] {"intelligence", "wisdom", "creativity"});
+			IOSystem.getActiveContext().getReader().populate(model, scienceAttributes);
+			StatisticsUtil.computeAverage(model, lfield, scienceAttributes);
 		}
 		else if(lfield.getName().equals("reaction")) {
-			StatisticsUtil.computeAverage(model, lfield, new String[] {"agility", "speed", "wisdom", "perception"});
+			IOSystem.getActiveContext().getReader().populate(model, reactionAttributes);
+			StatisticsUtil.computeAverage(model, lfield, reactionAttributes);
 		}
 		else if(lfield.getName().equals("maximumHealth")) {
-			StatisticsUtil.computeAverage(model, lfield, new String[] {"physicalStrength", "physicalEndurance", "mentalStrength", "mentalEndurance", "charisma"});
+			IOSystem.getActiveContext().getReader().populate(model, maxHealthAttributes);
+			StatisticsUtil.computeAverage(model, lfield, maxHealthAttributes);
 			int maxHealth = model.get("maximumHealth");
 			int health = model.get("health");
 			if(health < 0) {
@@ -50,7 +62,8 @@ public class StatisticsProvider  implements IProvider {
 			}
 		}
 		else if(lfield.getName().equals("save")) {
-			int avg = StatisticsUtil.getAverage(model, new String[] {"willpower", "health", "physicalStrength"});
+			IOSystem.getActiveContext().getReader().populate(model, saveAttributes);
+			int avg = StatisticsUtil.getAverage(model, saveAttributes);
 			double val = (avg * 5)/100;
 			DecimalFormat df = new DecimalFormat("#.#");
 			df.setRoundingMode(RoundingMode.HALF_EVEN);
