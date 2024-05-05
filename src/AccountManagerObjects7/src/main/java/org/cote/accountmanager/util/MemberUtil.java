@@ -280,6 +280,12 @@ public class MemberUtil implements IMember {
 		catch(Exception e) {
 			logger.error(e);
 		}
+		
+		/// Clear any cache for both object and actor
+		///
+		CacheUtil.clearCache(object);
+		CacheUtil.clearCache(actor);
+		
 		if(res != null && res.getCount() > 0) {
 			if(!enable) {
 				try {
