@@ -151,7 +151,7 @@ public class EvolutionUtil {
 					List<BaseRecord> partners = per.get("partners");
 					List<BaseRecord> dep1 = per.get("dependents");
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
-					BaseRecord baby = CharacterUtil.randomPerson(ctx.getUser(), ctx.getWorld(), (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get("lastName"));
+					BaseRecord baby = CharacterUtil.randomPerson(ctx, (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get("lastName"));
 					StatisticsUtil.rollStatistics(baby.get("statistics"), 0);
 					baby.set("birthDate", now);
 					// queueAdd(queue, baby);

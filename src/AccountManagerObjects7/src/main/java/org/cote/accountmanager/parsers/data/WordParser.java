@@ -21,6 +21,8 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.AlignmentEnumType;
+import org.cote.accountmanager.olio.ColorUtil;
+import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.parsers.GenericParser;
 import org.cote.accountmanager.parsers.ParseConfiguration;
 import org.cote.accountmanager.parsers.ParseMap;
@@ -87,6 +89,25 @@ public class WordParser {
 		cfg.setInterceptor(new DataInterceptor());
 		return cfg;
 	}
+
+	public static ParseConfiguration newWebColorParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
+		logger.info("New Web Color Resource Parse Configuration");
+		
+		List<ParseMap> map = new ArrayList<>();
+		map.add(new ParseMap("name", 0));
+		map.add(new ParseMap("hex", 1, new LowercaseInterceptor()));
+		map.add(new ParseMap(null, 2, new DecimalColorInterceptor()));
+
+		ParseConfiguration cfg = new ParseConfiguration();
+		cfg.setModel(ModelNames.MODEL_COLOR);
+		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote('"').setTrim(true).build());
+		cfg.setFields(map.toArray(new ParseMap[0]));
+		cfg.setFilePath(basePath);
+		cfg.setGroupPath(groupPath);
+		cfg.setMaxCount(maxLines);
+		cfg.setOwner(user);
+		return cfg;
+	}
 	
 	public static ParseConfiguration newColorParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
 		logger.info("New Color Parse Configuration");
@@ -97,7 +118,7 @@ public class WordParser {
 		map.add(new ParseMap("hex", 2));
 		map.add(new ParseMap("red", 3));
 		map.add(new ParseMap("green", 4));
-		map.add(new ParseMap("blue", 5));
+		map.add(new ParseMap("blue", 5, new HSLInterceptor()));
 
 		ParseConfiguration cfg = new ParseConfiguration();
 		cfg.setModel(ModelNames.MODEL_COLOR);
@@ -111,7 +132,7 @@ public class WordParser {
 	}
 	
 	public static ParseConfiguration newPatternParseConfiguration(BaseRecord user, String groupPath, String basePath, int maxLines) {
-		logger.info("New Color Parse Configuration");
+		logger.info("New Pattern Parse Configuration");
 		
 		List<ParseMap> map = new ArrayList<>();
 		map.add(new ParseMap("name", 0));
@@ -176,27 +197,19 @@ public class WordParser {
 	
 	public static int importFile(ParseConfiguration cfg) {
 		
-		long start = System.currentTimeMillis();
 		List<BaseRecord> recs = GenericParser.parseFile(cfg, new DataParseWriter());
-		long stop = System.currentTimeMillis();
-		/*
-		if(recs.size() > 0) {
-			logger.info(recs.get(0).toFullString());
-		}
-		*/
 		return recs.size();
 	}
 
 	public static int loadSurnames(BaseRecord user, String groupPath, String basePath, boolean reset) {
 		
-		// logger.info("Load word information into " + groupPath);
 		int count = countCleanupWords(user, ModelNames.MODEL_CENSUS_WORD, groupPath, reset);
 		if(count == 0) {
 			ParseConfiguration cfg = newSurnameParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
 		}
 		else {
-			// logger.info(count + " records have already been loaded.");
+			logger.info(count + " records have already been loaded.");
 		}
 		return count;
 	}
@@ -205,8 +218,26 @@ public class WordParser {
 		
 		int count = countCleanupWords(user, ModelNames.MODEL_COLOR, groupPath, reset);
 		if(count == 0) {
+			/// Loading from embedded color resource vs. external CSV
+			/*
 			ParseConfiguration cfg = newColorParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
+			*/
+			ParameterList plist = ParameterList.newParameterList("path", groupPath);
+			List<BaseRecord> newCol = new ArrayList<>();
+			List<BaseRecord> colTemp = ColorUtil.getDefaultColors();
+			// logger.info("Loading " + colTemp.size() + " colors");
+			try {
+				for(BaseRecord tmp : colTemp) {
+					BaseRecord nrec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_COLOR, user, tmp, plist);
+					newCol.add(nrec);
+				}
+				count = IOSystem.getActiveContext().getRecordUtil().createRecords(newCol.toArray(new BaseRecord[0]));
+			}
+			catch(FactoryException e) {
+				logger.error(e);
+			}
+			
 		}
 		return count;
 	}

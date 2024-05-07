@@ -74,7 +74,7 @@ public class TestNestedStructures extends BaseTest {
 			ProfileUtil.rollPersonality(a1.get("personality"));
 			a1.set("race", CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
 
-			CharacterUtil.setStyleByRace(a1);
+			CharacterUtil.setStyleByRace(null, a1);
 			List<BaseRecord> apps = a1.get("store.apparel");
 			BaseRecord app = ApparelUtil.randomApparel(null, a1);
 			app.set("name", "Primary Apparel");

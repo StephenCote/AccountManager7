@@ -19,6 +19,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.ErrorUtil;
 
 public class StatisticsUtil {
 	public static final Logger logger = LogManager.getLogger(StatisticsUtil.class);
@@ -88,6 +89,7 @@ public class StatisticsUtil {
 	}
 	
 	public static void computeAverage(BaseRecord model, FieldSchema field, String[] fields) throws ValueException, FieldException, ModelNotFoundException {
+		// IOSystem.getActiveContext().getReader().populate(model, fields);
 		model.set(field.getName(), getAverage(model, fields));
 	}
 	public static int getMaximumInt(BaseRecord model, String[] fields) {
@@ -115,7 +117,8 @@ public class StatisticsUtil {
 				val += (int)model.get(f);
 			}
 			else {
-				logger.error("Field is missing: " + model.getModel() + "." + f);
+				logger.error("(getAverage) Field is missing: " + model.getModel() + "." + f);
+				//ErrorUtil.printStackTrace();
 			}
 		}
 		if(val > 0) {
@@ -134,7 +137,7 @@ public class StatisticsUtil {
 				val += (double)model.get(f);
 			}
 			else {
-				logger.error("Field is missing: " + model.getModel() + "." + f);
+				logger.error("(getDblAverage) Field is missing: " + model.getModel() + "." + f);
 			}
 		}
 		if(val > 0) {

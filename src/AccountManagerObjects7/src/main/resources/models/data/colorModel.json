@@ -14,7 +14,7 @@
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"query": [
-		"name, hex, groupId"
+		"name", "hex", "groupId"
 	],
 	"fields": [
 		{
@@ -39,6 +39,18 @@
 		{
 			"name": "blue",
 			"type": "int"
+		},
+		{
+			"name": "hue",
+			"type": "double"
+		},
+		{
+			"name": "saturation",
+			"type": "double"
+		},
+		{
+			"name": "lightness",
+			"type": "double"
 		}
 	]
 }

@@ -52,15 +52,17 @@ public class CharacterUtil {
 		Date cday = epoch.get("eventEnd");
 		return (int)(Math.abs(cday.getTime() - bday.getTime()) / OlioUtil.YEAR);
 	}
-	
-	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world) {
-		return randomPerson(user, world, null, null, null, null, null, null);
+	/*
+	public static BaseRecord randomPerson(OlioContext ctx, BaseRecord user) {
+		return randomPerson(ctx, user, null, null, null, null, null, null);
 	}
-	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world, String preferredLastName) {
-		return randomPerson(user, world, preferredLastName, ZonedDateTime.now(), null, null, null, null);
+	*/
+	public static BaseRecord randomPerson(OlioContext ctx, String preferredLastName) {
+		return randomPerson(ctx, preferredLastName, ZonedDateTime.now(), null, null, null, null);
 	}
-	public static BaseRecord randomPerson(BaseRecord user, BaseRecord world, String preferredLastName, ZonedDateTime inceptionDate, String[] mnames, String[] fnames, String[] snames, String[] tnames) {
-
+	public static BaseRecord randomPerson(OlioContext ctx, String preferredLastName, ZonedDateTime inceptionDate, String[] mnames, String[] fnames, String[] snames, String[] tnames) {
+		BaseRecord user = ctx.getUser();
+		BaseRecord world = ctx.getWorld();
 		BaseRecord parWorld = world.get("basis");
 		if(parWorld == null) {
 			logger.error("A basis world is required");
@@ -112,7 +114,7 @@ public class CharacterUtil {
 			String gen = isMale ? "male":"female";
 			person.set("gender", gen);
 			person.set("race", randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
-			setStyleByRace(person);
+			setStyleByRace(ctx, person);
 			
 			Query fnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
 			fnq.field("gender", gen.substring(0, 1).toUpperCase());
@@ -230,20 +232,20 @@ public class CharacterUtil {
 	/// white, black, gray not included
 	///
 	private static final String[] natHairColors = new String[] {
-		"blond",
-		"dark blond",
-		"medium brown",
-		"dark brown",
-		"reddish-brown",
-		"red"
+		"#faf0be",
+		"#f4a460",
+		"#996515",
+		"#654321",
+		"#a52a2a",
+		"#ff0000"
 	};
 	private static final String[] natEyeColors = new String[] {
-		"brown",
-		"amber",
-		"hazel",
-		"green",
-		"blue",
-		"gray"
+		"#a52a2a",
+		"#bc8f8f",
+		"#8e7618",
+		"#008000",
+		"#0000ff",
+		"#808080"
 	};
 	private static final String[] femaleHairStyles = new String[] {
 		"pixie cut", "bob", "medium length", "shoulder length", "long", "short", "bun", "ponytail", "pigtails", "curly", "dreadlocks", "mohawk", "long wavy", "plaits", "ringlets", "shaved", "bald", "tangled"	
@@ -252,7 +254,7 @@ public class CharacterUtil {
 		"pixie cut", "shoulder length", "short", "dreadlocks", "mohawk", "shaved", "bald", "ponytail", "messy"
 	};
 
-	public static void setStyleByRace(BaseRecord person) throws FieldException, ValueException, ModelNotFoundException {
+	public static void setStyleByRace(OlioContext ctx, BaseRecord person) throws FieldException, ValueException, ModelNotFoundException {
 		String gender = person.get("gender");
 		List<String> rets = person.get("race");
 		if(rets.size() == 0) {
@@ -273,38 +275,42 @@ public class CharacterUtil {
 			case B:
 			case C:
 			case D:
-				eyeColor = "brown";
-				hairColor = "black";
+				eyeColor = "#a52a2a";
+				hairColor = "#000000";
 				break;
 			case E:
 				eyeColor = natEyeColors[rand.nextInt(natEyeColors.length)];
 				hairColor = natHairColors[rand.nextInt(natHairColors.length)];
 				break;
 			case R:
-				eyeColor = "gray";
-				hairColor = "silver";
+				eyeColor = "#808080";
+				hairColor = "#c0c0c0";
 				break;
 			case V:
-				eyeColor = "red";
-				hairColor = "white";
+				eyeColor = "#ff0000";
+				hairColor = "#ffffff";
 				break;
 			case W:
-				eyeColor = "green";
-				hairColor = "green";
+				eyeColor = "#00ff00";
+				hairColor = "#00ff00";
 				break;
 			case X:
 			case Y:
 				eyeColor = natEyeColors[rand.nextInt(natEyeColors.length)];
 				hairColor = natHairColors[rand.nextInt(natHairColors.length)];
 			case Z:
-				eyeColor = "blue";
-				hairColor = "silver";
+				eyeColor = "#0000ff";
+				hairColor = "#c0c0c0";
 				hairStyle = "pixie cut";
 				break;
 		}
-		person.set("eyeColor", eyeColor);
+		if((long)person.get(FieldNames.FIELD_OWNER_ID) == 0L) {
+			logger.warn("Invalid owner");
+			logger.warn(person.toFullString());
+		}
+		person.set("eyeColor", ColorUtil.getDefaultColor(ctx, person.get(FieldNames.FIELD_OWNER_ID), eyeColor));
 		person.set("hairStyle", hairStyle);
-		person.set("hairColor", hairColor);
+		person.set("hairColor", ColorUtil.getDefaultColor(ctx, person.get(FieldNames.FIELD_OWNER_ID), hairColor));
 
 	}
 	public static List<RaceEnumType> randomRaceType(){

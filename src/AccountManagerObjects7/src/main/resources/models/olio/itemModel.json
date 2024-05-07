@@ -33,6 +33,30 @@
 			"shortName": "quan"
 		},
 		{
+			"name": "pattern",
+			"baseModel": "data.data",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "color",
+			"type": "model",
+			"baseModel": "data.color",
+			"foreign": true
+		},
+		{
+			"name": "complementColor",
+			"type": "model",
+			"baseModel": "data.color",
+			"foreign": true
+		},
+		{
+			"name": "accentColor",
+			"type": "model",
+			"baseModel": "data.color",
+			"foreign": true
+		},
+		{
 			"name": "age",
 			"type": "int"
 		},

@@ -147,18 +147,17 @@ public class OlioContext {
 			locations = GeoLocationUtil.getRegionLocations(this);
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
 			initialized = true;
-			//if(currentEpoch == null) {
-				Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
-				eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
-				eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-				BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
-				for(BaseRecord evt : evts) {
-					// logger.info("Planning " + evt.get(FieldNames.FIELD_NAME));
-					for(IOlioContextRule rule : config.getContextRules()) {
-						rule.generateRegion(this, rootEvent, evt);
-					}
+
+			Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
+			eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+			eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
+			BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
+			for(BaseRecord evt : evts) {
+				for(IOlioContextRule rule : config.getContextRules()) {
+					rule.generateRegion(this, rootEvent, evt);
 				}
-			//}
+			}
+
 			long stop = System.currentTimeMillis();
 			logger.info("... Olio Context Initialized in " + (stop - start) + "ms");
 		}

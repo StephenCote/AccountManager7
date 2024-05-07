@@ -17,6 +17,8 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
 import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
@@ -28,6 +30,7 @@ import org.cote.accountmanager.personality.Sloan;
 import org.cote.accountmanager.personality.SloanUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.LocationEnumType;
 
@@ -126,7 +129,52 @@ SLOAN Notation
 	 * Physiological needs (air, water, food, shelter, sleep, clothing, reproduction)
 	 */
 
-
+	/// NOTE: The baserecord should be fully populated (query without limit) before invoking getProfile
+	/// Otherwise, invoking populate on the incomplete models can result in errors or false-alarms when computing some statistics  
+	public static PersonalityProfile getProfile(OlioContext octx, BaseRecord person) {
+		
+		long id = person.get(FieldNames.FIELD_ID);
+		if(id <= 0L) {
+			logger.error("Invalid identifier");
+			return null;
+		}
+		
+		if(profiles.containsKey(id)) {
+			return profiles.get(id);
+		}
+		
+		PersonalityProfile prof = analyzePersonality(octx, person);
+		
+		if(prof != null) {
+			profiles.put(id, prof);
+		}
+		
+		return prof;
+	}
+	
+	/// NOTE: The baserecord should be fully populated (query without limit) before invoking getProfile
+	/// Otherwise, invoking populate on the incomplete models can result in errors or false-alarms when computing some statistics  
+	public static AnimalProfile getAnimalProfile(BaseRecord animal) {
+		
+		long id = animal.get(FieldNames.FIELD_ID);
+		if(id <= 0L) {
+			logger.error("Invalid identifier");
+			return null;
+		}
+		
+		if(animalProfiles.containsKey(id)) {
+			return animalProfiles.get(id);
+		}
+		
+		AnimalProfile prof = analyzeAnimal(animal);
+		
+		if(prof != null) {
+			animalProfiles.put(id, prof);
+		}
+		
+		return prof;
+	}
+	
 	public static void rollPersonality(BaseRecord rec) {
 		DecimalFormat df = new DecimalFormat("#.##");
 		df.setRoundingMode(RoundingMode.HALF_EVEN);
@@ -250,69 +298,58 @@ SLOAN Notation
 		return map;
 	}
 	
-	public static PersonalityProfile getProfile(OlioContext octx, BaseRecord person) {
-		
-		long id = person.get(FieldNames.FIELD_ID);
-		if(id <= 0L) {
-			logger.error("Invalid identifier");
-			return null;
-		}
-		
-		if(profiles.containsKey(id)) {
-			return profiles.get(id);
-		}
-		
-		PersonalityProfile prof = analyzePersonality(octx, person);
-		
-		if(prof != null) {
-			profiles.put(id, prof);
-		}
-		
-		return prof;
-	}
+
 	
-	public static AnimalProfile getAnimalProfile(BaseRecord animal) {
-		
-		long id = animal.get(FieldNames.FIELD_ID);
-		if(id <= 0L) {
-			logger.error("Invalid identifier");
-			return null;
+	private static BaseRecord getFullRecord(BaseRecord src, String[] fieldNames) {
+		Query q = null;
+		if(src.hasField(FieldNames.FIELD_ID)) {
+			q = QueryUtil.createQuery(src.getModel(), FieldNames.FIELD_ID, src.get(FieldNames.FIELD_ID));;
 		}
-		
-		if(animalProfiles.containsKey(id)) {
-			return animalProfiles.get(id);
+		else if(src.hasField(FieldNames.FIELD_OBJECT_ID)) {
+			q = QueryUtil.createQuery(src.getModel(), FieldNames.FIELD_OBJECT_ID, src.get(FieldNames.FIELD_OBJECT_ID));;
 		}
-		
-		AnimalProfile prof = analyzeAnimal(animal);
-		
-		if(prof != null) {
-			animalProfiles.put(id, prof);
+		else {
+			logger.error("Record missing identifier");
+			return src;
 		}
-		
-		return prof;
+		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		if(fieldNames != null && fieldNames.length > 0) {
+			q.setRequest(fieldNames);
+		}
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
-	
+
 	private static void checkPopulation(BaseRecord animal) {
-		IOSystem.getActiveContext().getReader().populate(animal, new String[] {"statistics", "instinct", "store"});
+		
+		/*
+		IOSystem.getActiveContext().getReader().populate(animal, new String[] {"id", "groupId", "statistics", "instinct", "store"}, false);
+		
+		logger.info(animal.toFullString());
+		
 		BaseRecord stats = animal.get("statistics");
 		BaseRecord inst = animal.get("instinct");
 		BaseRecord sto = animal.get("store");
+		
 		IOSystem.getActiveContext().getReader().populate(inst);
 		IOSystem.getActiveContext().getReader().populate(sto);
 		IOSystem.getActiveContext().getReader().populate(stats);
+		*/
+		
 	}
 	
 	protected static AnimalProfile analyzeAnimal(BaseRecord animal) {
-		checkPopulation(animal);
+		//checkPopulation(animal);
 		AnimalProfile prof = createAnimalProfile(animal);
 		return prof;
 	}
 	
 	protected static PersonalityProfile analyzePersonality(OlioContext octx, BaseRecord person) {
+		/*
 		checkPopulation(person);
-		IOSystem.getActiveContext().getReader().populate(person, new String[] {"statistics"});
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {"id", "groupId", "personality"}, false);
 		BaseRecord per = person.get("personality");
 		IOSystem.getActiveContext().getReader().populate(per);
+		*/
 		PersonalityProfile prof = createProfile((octx != null ? octx.getWorld() : null), person);
 		return prof;
 	}

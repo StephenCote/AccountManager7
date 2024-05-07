@@ -10,6 +10,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -17,6 +18,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
@@ -25,9 +27,13 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -47,7 +53,20 @@ public class ApparelUtil {
 		jewelryTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/jewelry.json"), String[].class);
 		fabricTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/fabrics.json"), String[].class);
 	}
-	private static String[] jewelryColors = {"Black", "Gold (Metallic)", "Old Gold", "Pale Gold", "Pale Silver", "Silver", "Platinum", "Rose Gold", "Titanium"};
+	private static String[] jewelryColors = new String[] {
+		/// Gold
+		"#d4af37",
+		/// Rose Gold,
+		"#b76e79",
+		/// Silver,
+		"#c0c0c0",
+		/// Platinum
+		"#e5e4e2",
+		/// Titanium
+		"#eee600"
+	};
+	
+	//{"Black", "Gold (Metallic)", "Old Gold", "Pale Gold", "Pale Silver", "Silver", "Platinum", "Rose Gold", "Titanium"};
 	private static String[] jewels = {"diamond", "ruby", "emerald", "sapphire", "pearl"};
 	private static String jewrlLoc = "brow|hair|chest|breast|toe|ankle|wrist|neck|groin|tricep|nose|ear|eye|waist|belly";
 	private static String garnLoc = "head|brow|hair|chest|breast|toe|ankle|wrist|hand|finger|neck|groin|bicep|tricep|face|nose|ear|eye|waist|belly";
@@ -55,8 +74,6 @@ public class ApparelUtil {
 	private static String jpref = "jewelry:";
 	
 	private static SecureRandom rand = new SecureRandom();
-	
-	private static Map<String, String> colorComplements = new HashMap<>();
 	
 	public static String[] getFabricTypes() {
 		return fabricTypes;
@@ -108,9 +125,9 @@ public class ApparelUtil {
 				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
 				List<BaseRecord> quals = wearRec.get("qualities");
 				quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
-				ApparelUtil.embedWearable(ctx, wearRec, ApparelUtil.randomWearable(WearLevelEnumType.OUTER, p, null));
+				ApparelUtil.embedWearable(ctx, 0L, wearRec, ApparelUtil.randomWearable(WearLevelEnumType.OUTER, p, null));
 				ApparelUtil.applyEmbeddedFabric(wearRec, ApparelUtil.randomFabric(WearLevelEnumType.OUTER, null));
-				ApparelUtil.designWearable(ctx, wearRec);
+				ApparelUtil.designWearable(ctx, 0L, wearRec);
 				wears.add(wearRec);
 			}
 		}
@@ -351,54 +368,11 @@ public class ApparelUtil {
 		return ranType;
 	}
 	*/
-	public static String findComplementaryColor(BaseRecord world, String colorName) {
-		if(colorComplements.containsKey(colorName)) {
-			return colorComplements.get(colorName);
-		}
-		long groupId = world.get("colors.id");
-		String outColor = null;
-		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
-		String tableName = dbUtil.getTableName(ModelNames.MODEL_COLOR);
-		/// A random offset between 0 and 10 is given to add a little variety
-		/// An adjustment of 10% is added to give a little more variety
-		///
-		String sql = "SELECT C1.name as color, sqrt((power(C1.red - C2.red,2) *1.1) + (power(C1.green - C2.green,2) *1.1) "
-			+ "+ (power(C1.blue - C2.blue,2) *1.1)) as dist, C2.name as complement FROM "
-			+ tableName + " C1 "
-			+ "CROSS JOIN " + tableName + " C2 "
-			+ "WHERE C1.name = ? "
-			+ "AND NOT C2.name = 'Black' "
-			+ " AND NOT C2.name = 'White' "
-			+ " AND C1.groupId = ? AND C2.groupId = ? LIMIT 1 OFFSET ?"
-		;
-		try (Connection con = dbUtil.getDataSource().getConnection(); PreparedStatement statement = con.prepareStatement(sql)){
-
-			statement.setString(1, colorName);
-			statement.setLong(2, groupId);
-			statement.setLong(3, groupId);
-			statement.setInt(4, rand.nextInt(10));
-			
-			ResultSet rset = statement.executeQuery();
-			if(rset.next()) {
-				outColor = rset.getString("complement");
-			}
-			rset.close();
-			
-		} catch (NullPointerException | SQLException e) {
-			logger.error(e);
-			if(sql != null) {
-				logger.error(JSONUtil.exportObject(sql));
-			}
-		}
-		if(outColor != null) {
-			colorComplements.put(colorName, outColor);
-		}
-		return outColor;
-	}
+	
 	private static void alignPatternAndColors(List<BaseRecord> wears, double complementRatio, double patternRatio) {
 		BaseRecord primPatt = null;
-		String primCol = null;
-		String secCol = null;
+		BaseRecord primCol = null;
+		BaseRecord secCol = null;
 		String fabric = null;
 		try {
 			for(BaseRecord rec : wears) {
@@ -435,16 +409,14 @@ public class ApparelUtil {
 		}
 	}
 	
-	private static String[] defaultColors = new String[] {"IndianRed","LightCoral","Salmon","DarkSalmon","LightSalmon","Crimson","Red","FireBrick","DarkRed","Pink","LightPink","HotPink","DeepPink","MediumVioletRed","PaleVioletRed","LightSalmon","Coral","Tomato","OrangeRed","DarkOrange","Orange","Gold","Yellow","LightYellow","LemonChiffon","LightGoldenrodYellow","PapayaWhip","Moccasin","PeachPuff","PaleGoldenrod","Khaki","DarkKhaki","Lavender","Thistle","Plum","Violet","Orchid","Fuchsia","Magenta","MediumOrchid","MediumPurple","RebeccaPurple","BlueViolet","DarkViolet","DarkOrchid","DarkMagenta","Purple","Indigo","SlateBlue","DarkSlateBlue","MediumSlateBlue","GreenYellow","Chartreuse","LawnGreen","Lime","LimeGreen","PaleGreen","LightGreen","MediumSpringGreen","SpringGreen","MediumSeaGreen","SeaGreen","ForestGreen","Green","DarkGreen","YellowGreen","OliveDrab","Olive","DarkOliveGreen","MediumAquamarine","DarkSeaGreen","LightSeaGreen","DarkCyan","Teal","Aqua","Cyan","LightCyan","PaleTurquoise","Aquamarine","Turquoise","MediumTurquoise","DarkTurquoise","CadetBlue","SteelBlue","LightSteelBlue","PowderBlue","LightBlue","SkyBlue","LightSkyBlue","DeepSkyBlue","DodgerBlue","CornflowerBlue","MediumSlateBlue","RoyalBlue","Blue","MediumBlue","DarkBlue","Navy","MidnightBlue","Cornsilk","BlanchedAlmond","Bisque","NavajoWhite","Wheat","BurlyWood","Tan","RosyBrown","SandyBrown","Goldenrod","DarkGoldenrod","Peru","Chocolate","SaddleBrown","Sienna","Brown","Maroon","White","Snow","HoneyDew","MintCream","Azure","AliceBlue","GhostWhite","WhiteSmoke","SeaShell","Beige","OldLace","FloralWhite","Ivory","AntiqueWhite","Linen","LavenderBlush","MistyRose","Gainsboro","LightGray","Silver","DarkGray","Gray","DimGray","LightSlateGray","SlateGray","DarkSlateGray","Black"};
-
-	public static void designWearable(OlioContext ctx, BaseRecord wear) {
-
-		String randomColor = null;
+	protected static void designWearable(OlioContext ctx, long ownerId, BaseRecord wear) {
+		BaseRecord randomColor = null;
 		List<String> nfeats = new ArrayList<>();
 		BaseRecord pattern = null;
 		String cat = wear.get("category");
+
 		if(cat != null && cat.equals("jewelry")) {
-			randomColor = jewelryColors[rand.nextInt(jewelryColors.length)];
+			randomColor = ColorUtil.getDefaultColor(ctx, ownerId, jewelryColors[rand.nextInt(jewelryColors.length)]);
 			int randJ = rand.nextInt(100);
 			if(randJ > 65) {
 				nfeats.add(jewels[rand.nextInt(jewels.length)]);
@@ -457,16 +429,16 @@ public class ApparelUtil {
 		}
 		else {
 			if(ctx != null) {
-				Decks.getRandomColor(ctx.getUser(), ctx.getUniverse());
+				randomColor = Decks.getRandomColor(ctx.getUser(), ctx.getUniverse());
 				pattern = Decks.getRandomPattern(ctx.getUser(), ctx.getUniverse());
 			}
 			else {
-				randomColor = defaultColors[rand.nextInt(defaultColors.length)];
+				randomColor = ColorUtil.getDefaultColor(ctx, ownerId, ColorUtil.getRandomDefaultColor());
 			}
 		}
-		String compColor = randomColor;
-		if(ctx != null) {
-			findComplementaryColor(ctx.getUniverse(), randomColor);
+		BaseRecord compColor = randomColor;
+		if(ctx != null && randomColor != null) {
+			compColor = ColorUtil.findComplementaryColor(ctx.getUniverse(), randomColor.get("hex"));
 		}
 		try {
 			wear.set("color", randomColor);
@@ -485,21 +457,21 @@ public class ApparelUtil {
 		alignPatternAndColors(suit, 0.6, 0.7);
 	}
 
-	public static BaseRecord constructApparel(OlioContext ctx, BaseRecord person, String[] names) {
-		return constructApparel(ctx, (String)person.get("gender"), getEmbeddedOutfit(names, (String)person.get("gender")));
+	public static BaseRecord constructApparel(OlioContext ctx, long ownerId, BaseRecord person, String[] names) {
+		return constructApparel(ctx, ownerId, (String)person.get("gender"), getEmbeddedOutfit(names, (String)person.get("gender")));
 	}
 
 	
 	public static BaseRecord randomApparel(OlioContext ctx, BaseRecord person) {
-		return randomApparel(ctx, (String)person.get("gender"));
+		return randomApparel(ctx, person.get(FieldNames.FIELD_OWNER_ID), (String)person.get("gender"));
 	}
 	
-	public static BaseRecord randomApparel(OlioContext ctx, String gender) {
+	public static BaseRecord randomApparel(OlioContext ctx, long ownerId, String gender) {
 		String [] wears = randomOutfit(WearLevelEnumType.BASE, WearLevelEnumType.ACCESSORY, gender, .35);
-		return constructApparel(ctx, gender, wears);
+		return constructApparel(ctx, ownerId, gender, wears);
 	}
 
-	public static BaseRecord constructApparel(OlioContext ctx, String gender, String[] wears) {
+	private static BaseRecord constructApparel(OlioContext ctx, long ownerId, String gender, String[] wears) {
 		BaseRecord app = null;
 		try {
 			if(ctx != null) {
@@ -529,7 +501,7 @@ public class ApparelUtil {
 					quals.add(RecordFactory.newInstance(ModelNames.MODEL_QUALITY));
 				}
 				wearList.add(wearRec);
-				applyEmbeddedWearable(ctx, wearRec, emb);
+				applyEmbeddedWearable(ctx, ownerId, wearRec, emb);
 			}
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
@@ -540,6 +512,7 @@ public class ApparelUtil {
 
 	}
 	
+	/*
 	protected static String randomClothingType(String gender, String type) {
 		String outType = null;
 		String pref = cpref;
@@ -561,9 +534,10 @@ public class ApparelUtil {
 		}
 		return (pref + outType);
 	}
+	*/
 	
 	
-	
+	/*
 	protected static void applyRandomWearable(OlioContext ctx, BaseRecord rec) {
 		String type = rec.get(FieldNames.FIELD_TYPE);
 		String gender = rec.get("gender");
@@ -572,6 +546,7 @@ public class ApparelUtil {
 		String randType = randomClothingType(gender, type);
 		applyEmbeddedWearable(ctx, rec, randType);
 	}
+	*/
 	
 	/// name - level - gender - opacity - elastic - glossy - smooth - def - water - heat - insul
 	public static String randomFabric(WearLevelEnumType level, String gender) {
@@ -604,10 +579,10 @@ public class ApparelUtil {
 
 
 
-	public static void embedWearable(OlioContext ctx, BaseRecord rec, String embType) {
-		applyEmbeddedWearable(ctx, rec, cpref + embType);
+	private static void embedWearable(OlioContext ctx, long ownerId, BaseRecord rec, String embType) {
+		applyEmbeddedWearable(ctx, ownerId, rec, cpref + embType);
 	}
-	private static void applyEmbeddedWearable(OlioContext ctx, BaseRecord rec, String embType) {
+	private static void applyEmbeddedWearable(OlioContext ctx, long ownerId, BaseRecord rec, String embType) {
 		String gender = rec.get("gender");
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";
@@ -616,7 +591,7 @@ public class ApparelUtil {
 			String ttype = tmeta[0];
 			
 			rec.set("category", ttype);
-			designWearable(ctx, rec);
+			designWearable(ctx, ownerId, rec);
 
 			rec.set(FieldNames.FIELD_TYPE, tmeta[1]);
 			rec.set(FieldNames.FIELD_NAME, tmeta[1]);

@@ -109,8 +109,13 @@ public class GenericParser {
 					}
 					ParseMap field = fields[i];
 					
-					FieldType ft = obj.getField(field.getFieldName());
-					FieldSchema fs = ms.getFieldSchema(ft.getName());
+					FieldType ft = null;
+					
+					FieldSchema fs = null;
+					if(field.getFieldName() != null) {
+						ft = obj.getField(field.getFieldName());
+						fs = ms.getFieldSchema(ft.getName());
+					}
 					String rval = null;
 					if(field.getColumnIndex() >= 0) {
 						rval = record.get(field.getColumnIndex());
@@ -129,7 +134,7 @@ public class GenericParser {
 						rval = field.getInterceptor().filterField(cfg, record, field, obj, fs, ft, rval);
 					}
 					
-					if(rval != null) {
+					if(rval != null && ft != null) {
 						switch(ft.getValueType()) {
 							case BLOB:
 								/// Let blob be handled by any interceptor

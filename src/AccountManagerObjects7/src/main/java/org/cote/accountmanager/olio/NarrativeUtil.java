@@ -2,6 +2,8 @@ package org.cote.accountmanager.olio;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -144,7 +146,8 @@ public class NarrativeUtil {
 					continue;
 				}
 				
-				String col = (w.get("color") != null ? " " + ((String)w.get("color")).toLowerCase() : "");
+				String col = getColor(w, "color");
+				// (w.get("color.name") != null ? " " + ((String)w.get("color.name")).toLowerCase() : "");
 				if(col != null) {
 					col = col.replaceAll("\\([^()]*\\)", "");
 				}
@@ -531,6 +534,21 @@ public class NarrativeUtil {
 		}
 		return desc;
 	}
+	private static String getColor(BaseRecord rec, String field) {
+		BaseRecord col = rec.get(field);
+		String clr = null;
+		if(col != null && col.hasField(FieldNames.FIELD_NAME)) {
+			clr = col.get(FieldNames.FIELD_NAME);
+			clr = clr.toLowerCase().replaceAll("\\([^()]*\\)", "");
+			/*
+			int idx = clr.indexOf('(');
+			if(idx > -1) {
+				clr = clr.substring(0, idx);
+			}
+			*/
+		}
+		return clr;
+	}
 	public static String describe(OlioContext ctx, BaseRecord person) {
 		return describe(ctx, person, false);
 	}
@@ -542,9 +560,9 @@ public class NarrativeUtil {
 		String fname = person.get("firstName");
 		int age = person.get("age");
 
-		String hairColor = person.get("hairColor");
+		String hairColor = getColor(person, "hairColor");
 		String hairStyle = person.get("hairStyle");
-		String eyeColor = person.get("eyeColor");
+		String eyeColor =  getColor(person, "eyeColor");
 		
 		String gender = person.get("gender");
 		String pro = ("male".equals(gender) ? "he" : "she");
@@ -599,9 +617,9 @@ public class NarrativeUtil {
 
 		int age = pp.getAge();
 
-		String hairColor = pp.getRecord().get("hairColor");
+		String hairColor =  getColor(pp.getRecord(), "hairColor");
 		String hairStyle = pp.getRecord().get("hairStyle");
-		String eyeColor = pp.getRecord().get("eyeColor");
+		String eyeColor =  getColor(pp.getRecord(), "eyeColor");
 		
 		String gender = pp.getGender();
 		
@@ -881,9 +899,9 @@ public class NarrativeUtil {
 		int age = pov.get("age");
 		
 		
-		String hairColor = pov.get("hairColor");
+		String hairColor =  getColor(pov, "hairColor");
 		String hairStyle = pov.get("hairStyle");
-		String eyeColor = pov.get("eyeColor");
+		String eyeColor =  getColor(pov, "eyeColor");
 		
 		String gender = pov.get("gender");
 		String pro = ("male".equals(gender) ? "he" : "she");

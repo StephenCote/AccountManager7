@@ -20,22 +20,7 @@
 			"type": "string",
 			"maxLength": 24
 		},
-		{
-			"name": "pattern",
-			"baseModel": "data.data",
-			"type": "model",
-			"foreign": true
-		},
-		{
-			"name": "color",
-			"type": "string",
-			"maxLength": 64
-		},
-		{
-			"name": "complementColor",
-			"type": "string",
-			"maxLength": 64
-		},
+		
 		{
 			"name": "attachment",
 			"type": "string",

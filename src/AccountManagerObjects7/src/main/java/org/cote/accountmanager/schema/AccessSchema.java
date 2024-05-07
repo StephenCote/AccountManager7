@@ -39,9 +39,16 @@ public class AccessSchema {
 			"Account", "User", "Person"
 		};
 
+	public static final String SYSTEM_PERMISSION_CREATE = "Create";
+	public static final String SYSTEM_PERMISSION_READ = "Read";
+	public static final String SYSTEM_PERMISSION_UPDATE = "Update";
+	public static final String SYSTEM_PERMISSION_DELETE = "Delete";
+	public static final String SYSTEM_PERMISSION_EXECUTE = "Execute";
+	
 	public static final String[] SYSTEM_PERMISSION_NAMES = new String[] {
-		"Create", "Read", "Update", "Delete", "Execute"
+		SYSTEM_PERMISSION_CREATE, SYSTEM_PERMISSION_READ, SYSTEM_PERMISSION_UPDATE, SYSTEM_PERMISSION_DELETE, SYSTEM_PERMISSION_EXECUTE
 	};
+	
 	public static final String[] SYSTEM_PERMISSION_TYPES = new String[] {
 		"Data", "Group", "Role", "Permission", "Account", "User", "Person", "Object", "Application"
 	};

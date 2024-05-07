@@ -16,6 +16,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
@@ -26,15 +27,22 @@ import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.RoleEnumType;
+import org.cote.accountmanager.util.LibraryUtil;
 
 public class WorldUtil {
 	public static final Logger logger = LogManager.getLogger(WorldUtil.class);
 	
     private static SecureRandom rand = new SecureRandom();
+    
+    /// TODO: Use the OlioContextConfiguration
+    protected static boolean useSharedLibrary = true;
     
     
 	public static BaseRecord getWorld(BaseRecord user, String groupPath, String worldName) {
@@ -64,6 +72,15 @@ public class WorldUtil {
 				BaseRecord world = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_WORLD, user, null, plist);
 				world.set("features", Arrays.asList(features));
 				world.set("basis", basis);
+				if(useSharedLibrary) {
+					world.set("colors", LibraryUtil.getCreateSharedLibrary(user, "colors", true));
+					world.set("occupations", LibraryUtil.getCreateSharedLibrary(user, "occupations", true));
+					world.set("dictionary", LibraryUtil.getCreateSharedLibrary(user, "dictionary", true));
+					world.set("words", LibraryUtil.getCreateSharedLibrary(user, "words", true));
+					world.set("names", LibraryUtil.getCreateSharedLibrary(user, "names", true));
+					world.set("surnames", LibraryUtil.getCreateSharedLibrary(user, "surnames", true));
+					world.set("patterns", LibraryUtil.getCreateSharedLibrary(user, "patterns", true));
+				}
 				IOSystem.getActiveContext().getAccessPoint().create(user, world);
 				// rec = getWorld(user, groupPath, worldName);
 				rec = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
@@ -92,7 +109,7 @@ public class WorldUtil {
 		BaseRecord occDir = world.get("occupations");
 		IOSystem.getActiveContext().getReader().populate(occDir);
 
-		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, reset);
+		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, (!useSharedLibrary && reset));
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
 
 	}
@@ -124,10 +141,10 @@ public class WorldUtil {
 		String groupPath = dictDir.get(FieldNames.FIELD_PATH);
 		String wnetPath = basePath;
 		
-		WordNetParser.loadAdverbs(user, groupPath, wnetPath, 0, reset);
-		WordNetParser.loadAdjectives(user, groupPath, wnetPath, 0, reset);
-		WordNetParser.loadNouns(user, groupPath, wnetPath, 0, reset);
-		WordNetParser.loadVerbs(user, groupPath, wnetPath, 0, reset);
+		WordNetParser.loadAdverbs(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
+		WordNetParser.loadAdjectives(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
+		WordNetParser.loadNouns(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
+		WordNetParser.loadVerbs(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
 		return IOSystem.getActiveContext().getSearch().count(WordNetParser.getQuery(user, null, groupPath));
 	}
 	private static int loadNames(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -137,7 +154,7 @@ public class WorldUtil {
 		
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
 
-		WordParser.loadNames(user, groupPath, basePath, reset);
+		WordParser.loadNames(user, groupPath, basePath, (!useSharedLibrary && reset));
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, groupPath));
 	}
 	private static int loadColors(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -147,7 +164,7 @@ public class WorldUtil {
 		
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
-		WordParser.loadColors(user, groupPath, basePath, reset);
+		WordParser.loadColors(user, groupPath, basePath, (!useSharedLibrary && reset));
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
 	}
 	private static int loadPatterns(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -157,7 +174,7 @@ public class WorldUtil {
 		
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
-		WordParser.loadPatterns(user, groupPath, basePath, reset);
+		WordParser.loadPatterns(user, groupPath, basePath, (!useSharedLibrary && reset));
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_DATA, groupPath));
 	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -175,7 +192,7 @@ public class WorldUtil {
 		BaseRecord nameDir = world.get("surnames");
 		IOSystem.getActiveContext().getReader().populate(nameDir);
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
-		WordParser.loadSurnames(user, groupPath, basePath, reset);
+		WordParser.loadSurnames(user, groupPath, basePath, (!useSharedLibrary && reset));
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
 
@@ -372,7 +389,7 @@ public class WorldUtil {
 				// logger.info("Creating population of " + popCount);
 
 				for(int i = 0; i < popCount; i++){
-					BaseRecord person = CharacterUtil.randomPerson(ctx.getUser(), ctx.getWorld(), null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
+					BaseRecord person = CharacterUtil.randomPerson(ctx, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
 					AddressUtil.simpleAddressPerson(ctx, location, person);
 					/// AddressUtil.addressPerson(user, world, person, location);
 					int alignment = AlignmentEnumType.getAlignmentScore(person);

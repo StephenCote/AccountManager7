@@ -51,6 +51,7 @@ public class OrganizationContext {
 	private KeyStore keyStore = null;
 	private KeyStore trustStore = null;
 	private CryptoBean organizationCipher = null;
+
 	private VaultBean vault = null;
 	
 	public OrganizationContext(IOContext ctx) {

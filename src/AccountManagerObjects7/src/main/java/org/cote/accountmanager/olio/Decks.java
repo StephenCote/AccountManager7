@@ -32,7 +32,7 @@ public class Decks {
 	private static int patternDeckSize = 100;
 	private static BaseRecord[] patternDeck = new BaseRecord[0];
 	private static int colorDeckSize = 100;
-	private static String[] colorDeck = new String[0];
+	private static BaseRecord[] colorDeck = new BaseRecord[0];
 
 	
 	
@@ -66,25 +66,43 @@ public class Decks {
 		}
 		return pattern;
 	}
-	public static String getRandomColor(BaseRecord user, BaseRecord world) {
+	public static BaseRecord getRandomColor(BaseRecord user, BaseRecord world) {
 		if(colorDeck.length == 0) {
 			shuffleColorDeck(user, world);
 		}
-		String color = null;
+		BaseRecord color = null;
 		if(colorDeck.length > 0) {
 			color = colorDeck[rand.nextInt(colorDeck.length)];
 		}
 		return color;
 	}
 	private static void shuffleColorDeck(BaseRecord user, BaseRecord world) {
-		String[] cols = OlioUtil.getRandomOlioValues(user, world, "color", colorDeckSize);
+		BaseRecord[] cols = getRandomColors(user, world, colorDeckSize);
 		if(useSimpleColors) {
-			List<String> colors = Arrays.asList(cols);
-			colorDeck = colors.stream().filter(s -> s != null && !s.matches("\\s+")).collect(Collectors.toList()).toArray(new String[0]);
+			List<BaseRecord> colors = Arrays.asList(cols);
+			colorDeck = colors.stream().filter(s -> s != null && s.get(FieldNames.FIELD_NAME) != null && !((String)s.get(FieldNames.FIELD_NAME)).matches("\\s+")).collect(Collectors.toList()).toArray(new BaseRecord[0]);
 		}
 		else {
 			colorDeck = cols;
 		}
+	}
+	
+	protected static BaseRecord getRandomColors(BaseRecord user, BaseRecord world) {
+		BaseRecord[] outVal = getRandomColors(user, world, 1);
+		if(outVal.length > 0) {
+			return outVal[0];
+		}
+
+		return null;
+	} 
+	protected static BaseRecord[] getRandomColors(BaseRecord user, BaseRecord world, int count) {
+		BaseRecord[] outVal = new BaseRecord[0];
+		long groupId = world.get("colors.id");
+		if(groupId <= 0L) {
+			logger.warn("Invalid group id: " + groupId);
+			return outVal;
+		}
+		return OlioUtil.randomSelections(user, QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, groupId), count);
 	}
 
 	private static void shuffleOccupationsDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {

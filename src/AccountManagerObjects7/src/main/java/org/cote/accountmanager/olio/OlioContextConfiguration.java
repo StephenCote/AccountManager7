@@ -23,6 +23,9 @@ public class OlioContextConfiguration {
 	private List<IOlioContextRule> contextRules = new ArrayList<>();
 	private List<IOlioEvolveRule> evolutionRules = new ArrayList<>();
 	private boolean fastDataCheck = true;
+	private boolean useSharedLibraries = true;
+	
+
 	public OlioContextConfiguration() {
 		
 	}
@@ -49,6 +52,14 @@ public class OlioContextConfiguration {
 		this.resetWorld = resetWorld;
 		this.baseLocationCount = locationCount;
 		this.basePopulationCount = populationCount;
+	}
+	
+	public boolean isUseSharedLibraries() {
+		return useSharedLibraries;
+	}
+
+	public void setUseSharedLibraries(boolean useSharedLibraries) {
+		this.useSharedLibraries = useSharedLibraries;
 	}
 
 	public boolean isFastDataCheck() {

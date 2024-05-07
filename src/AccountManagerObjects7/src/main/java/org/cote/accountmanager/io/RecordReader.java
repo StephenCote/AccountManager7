@@ -114,14 +114,20 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 	public void populate(BaseRecord rec, String[] requestFields) {
 		populate(rec, requestFields, 1);
 	}
+	public void populate(BaseRecord rec, String[] requestFields, boolean limit) {
+		populate(rec, requestFields, 1, limit);
+	}
+
 	public void populate(BaseRecord rec, int foreignDepth) {
 		populate(rec, new String[0], foreignDepth);
 	}
 	
 	/// NOTE: Requesting a field will cause that field to be re-read, which will be an IO hit on large datasets
 	/// Use conditionalPopulate to perform an pre-check
-	
 	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth) {
+		populate(rec, requestFields, foreignDepth, true);
+	}
+	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth, boolean limit) {
 		if(rec == null || !RecordUtil.isIdentityRecord(rec)) {
 			return;
 		}
@@ -147,7 +153,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 					if(IOSystem.getActiveContext().getIoType() == RecordIO.FILE) {
 						CacheUtil.clearCache(rec);
 					}
-					final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields);
+					final BaseRecord frec = IOSystem.getActiveContext().getRecordUtil().findByRecord(null, rec, requestFields, limit);
 
 					if(frec != null) {
 						frec.getFields().forEach(f -> {
@@ -176,7 +182,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 									// logger.warn("Skip populate: " + f.getName());
 								}
 
-								if((f.getValueType() == FieldEnumType.MODEL || f.getValueType() == FieldEnumType.LIST) && foreignDepth > 0) {
+								if((f.getValueType() == FieldEnumType.MODEL || f.getValueType() == FieldEnumType.LIST) && foreignDepth > 0 && limit == true) {
 									
 									
 									if(f.getValueType() == FieldEnumType.MODEL) {

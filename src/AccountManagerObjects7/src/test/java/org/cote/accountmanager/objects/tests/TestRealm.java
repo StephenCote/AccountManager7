@@ -1,0 +1,117 @@
+package org.cote.accountmanager.objects.tests;
+
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import java.util.Arrays;
+
+import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioContextConfiguration;
+import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.WorldUtil;
+import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
+import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
+import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
+import org.cote.accountmanager.olio.rules.IOlioContextRule;
+import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.rules.Increment24HourRule;
+import org.cote.accountmanager.olio.rules.LocationPlannerRule;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.LibraryUtil;
+import org.junit.Test;
+
+public class TestRealm extends BaseTest {
+	
+	private String universeName = "Universe 3";
+	private String worldName = "World 3";
+	private String worldPath = "~/Worlds";
+
+	
+	@Test
+	public void TestRealm() {
+		logger.info("Test Realm");
+		AuditUtil.setLogToConsole(false);
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord testUser2 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser2", testOrgContext.getOrganizationId());
+		
+		BaseRecord dir = LibraryUtil.getCreateSharedLibrary(testUser1, "authZTest", true);
+		boolean canRead = IOSystem.getActiveContext().getAuthorizationUtil().canRead(testUser1, testUser1, dir).getType() == PolicyResponseEnumType.PERMIT;
+		boolean canUp = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(testUser1, testUser1, dir).getType() == PolicyResponseEnumType.PERMIT;
+		assertTrue("Expected to be able to read", canRead);
+		assertTrue("Expected to be able to update", canUp);
+		
+
+		BaseRecord cdir = LibraryUtil.getCreateSharedLibrary(testUser1, "colors", true);
+		//BaseRecord[] recs = OlioUtil.randomSelections(testUser1, QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, cdir.get(FieldNames.FIELD_ID)), 30);
+		
+		//assertTrue("Expected some records", recs.length > 0);
+		ioContext.getAccessPoint().setPermitBulkContainerApproval(true);
+		OlioContextConfiguration cfg = new OlioContextConfiguration(
+			testUser1,
+			testProperties.getProperty("test.datagen.path"),
+			worldPath,
+			universeName,
+			worldName,
+			new String[] {},
+			2,
+			50,
+			true,
+			true
+		);
+	
+		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
+		///
+		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
+			new GridSquareLocationInitializationRule(),
+			new LocationPlannerRule(),
+			new GenericItemDataLoadRule()
+		}));
+		
+		// Increment24HourRule incRule = new Increment24HourRule();
+		// incRule.setIncrementType(TimeEnumType.HOUR);
+		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
+			new Increment24HourRule(),
+			new HierarchicalNeedsRule()
+		}));
+
+		OlioContext octx = new OlioContext(cfg);
+		octx.initialize();
+		assertNotNull("Root location is null", octx.getRootLocation());
+		
+		
+		/*
+		OlioContext octx = new OlioContext(cfg);
+
+		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
+		octx.initialize();
+		assertNotNull("Root location is null", octx.getRootLocation());
+		
+		BaseRecord evt = octx.startOrContinueEpoch();
+		assertNotNull("Epoch is null", evt);
+		BaseRecord[] locs = octx.getLocations();
+		for(BaseRecord lrec : locs) {
+			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
+			assertNotNull("Location epoch is null", levt);
+			BaseRecord cevt = octx.startOrContinueIncrement();
+			try {
+				octx.evaluateIncrement();
+			}
+			catch(Exception e) {
+				e.printStackTrace();
+			}
+		}
+		*/
+
+	}
+}

@@ -186,7 +186,10 @@ public class OlioUtil {
 		return null;
 	}
 	public static String[] randomSelectionNames(BaseRecord user, Query query, int count) {
-		return Arrays.asList(randomSelections(user, query, count)).stream().map(f -> f.get(FieldNames.FIELD_NAME)).collect(Collectors.toList()).toArray(new String[0]);
+		return randomSelection(user, query, FieldNames.FIELD_NAME, count);
+	}
+	public static String[] randomSelection(BaseRecord user, Query query, String fieldName, int count) {
+		return Arrays.asList(randomSelections(user, query, count)).stream().map(f -> f.get(fieldName)).collect(Collectors.toList()).toArray(new String[0]);
 	}
 	public static BaseRecord randomSelection(BaseRecord user, Query query) {
 		BaseRecord[] recs = randomSelections(user, query, 1);
@@ -231,32 +234,8 @@ public class OlioUtil {
         return cls.getEnumConstants()[x];
     }
     
-	protected static String getRandomOlioValue(BaseRecord user, BaseRecord world, String fieldName) {
-		String[] outVal = getRandomOlioValues(user, world, fieldName, 1);
-		if(outVal.length > 0) {
-			return outVal[0];
-		}
 
-		return null;
-	} 
-	protected static String[] getRandomOlioValues(BaseRecord user, BaseRecord world, String fieldName, int count) {
-		String[] outVal = new String[0];
-		long groupId = world.get("colors.id");
-		if(groupId <= 0L) {
-			logger.warn("Invalid group id: " + groupId);
-			return outVal;
-		}
-		switch(fieldName) {
-			case "color":
-				outVal = OlioUtil.randomSelectionNames(user, QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, groupId), count);
-				break;
-			default:
-				logger.warn("Unhandled type: " + fieldName);
-				break;
-		}
-		return outVal;
-	}
-	
+	/*
 	protected static void applyRandomOlioValues(BaseRecord user, BaseRecord world, BaseRecord record) {
 		record.getFields().forEach(f -> {
 			try {
@@ -272,7 +251,7 @@ public class OlioUtil {
 			}
 		});
 	}
-	
+	*/
 
 	/*
 	public static BaseRecord newQuality(BaseRecord user, String groupPath) {
@@ -419,6 +398,31 @@ public class OlioUtil {
 		//q.setCache(false);
 		return new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
+	
+	protected static <T> BaseRecord getCreateDirectoryObject(BaseRecord user, String modelName, String name, T type, BaseRecord group, BaseRecord template) {
+		Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, name);
+		if(type != null) {
+			q.field(FieldNames.FIELD_TYPE, type);
+		}
+		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if(rec == null) {
+			ParameterList plist = ParameterList.newParameterList("path", group.get("path"));
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			try {
+				rec = IOSystem.getActiveContext().getFactory().newInstance(modelName, user, template, plist);
+				if(type != null) {
+					rec.set(FieldNames.FIELD_TYPE, type);
+				}
+				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+			}
+			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		return rec;
+	}
+	
 	protected static BaseRecord getCreateTag(OlioContext ctx, String name, String type) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_TAG, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("tagsGroup.id"));
 		q.field(FieldNames.FIELD_NAME, name);
@@ -437,8 +441,8 @@ public class OlioUtil {
 			}
 		}
 		return rec;
-		
 	}
+
 	protected static BaseRecord getCreateTrait(OlioContext ctx, String name, TraitEnumType type) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("traits.id"));
 		q.field(FieldNames.FIELD_NAME, name);
@@ -458,7 +462,7 @@ public class OlioUtil {
 		}
 		return rec;
 		
-	}	
+	}
 	protected static BaseRecord getCreateSkill(OlioContext ctx, String name) {
 		return getCreateTrait(ctx, name, TraitEnumType.SKILL);
 	}
