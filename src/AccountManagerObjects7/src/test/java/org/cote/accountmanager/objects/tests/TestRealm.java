@@ -66,8 +66,8 @@ public class TestRealm extends BaseTest {
 			new String[] {},
 			2,
 			50,
-			true,
-			true
+			false,
+			false
 		);
 	
 		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
@@ -112,6 +112,8 @@ public class TestRealm extends BaseTest {
 			}
 		}
 		*/
+		AuditUtil.setLogToConsole(true);
+		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
 
 	}
 }

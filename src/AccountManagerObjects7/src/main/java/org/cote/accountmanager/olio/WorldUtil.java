@@ -206,6 +206,9 @@ public class WorldUtil {
 			return;
 		}
 		logger.info("Checking world data ...");
+		if(reset) {
+			logger.warn("TODO: Fix bug when using 'reset' for different datasets in the same group and model type, such as 'wordnet' where all the word types use the same model and groupid");
+		}
 		int locs = loadLocations(user, world, basePath + "/location", reset);
 		// logger.info("Locations: " + locs);
 		int dict = loadDictionary(user, world, basePath + "/wn3.1.dict/dict", reset);
