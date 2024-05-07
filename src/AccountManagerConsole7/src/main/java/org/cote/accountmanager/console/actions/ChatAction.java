@@ -148,7 +148,7 @@ public class ChatAction extends CommonAction implements IAction{
 			if(char1 != null) {
 				if(cmd.hasOption("outfit")) {
 					String[] outfit = cmd.getOptionValue("outfit").split(",");
-					BaseRecord apparel = ApparelUtil.constructApparel(octx, char1, outfit);
+					BaseRecord apparel = ApparelUtil.constructApparel(octx, 0L, char1, outfit);
 					IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
 					BaseRecord store = char1.get("store");
 					List<BaseRecord> appl = store.get("apparel");
