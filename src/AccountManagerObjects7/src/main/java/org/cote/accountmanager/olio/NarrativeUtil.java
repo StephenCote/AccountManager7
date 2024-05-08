@@ -169,7 +169,7 @@ public class NarrativeUtil {
 					shins = " shiny";
 				}
 
-				buff.append(andl + shins + opacs + col + (describePatterns ? pat : "") + fab + " " + name);
+				buff.append(andl + shins + opacs + " " + col + (describePatterns ? pat : "") + fab + " " + name);
 				//andl = ", and";
 				andl = "," + (i == wearl.size() - 2 ? " and" : "");
 			}

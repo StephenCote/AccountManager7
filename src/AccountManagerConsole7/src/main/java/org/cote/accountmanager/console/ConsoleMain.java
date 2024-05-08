@@ -92,6 +92,8 @@ public class ConsoleMain {
 		options.addOption("reset", false, "Generic bit to indicate a value reset");
 		options.addOption("resetPassword", false, "Reset user password");
 		options.addOption("inspect", false, "Generic bit");
+		options.addOption("color", false, "Generic bit");
+		options.addOption("pattern", false, "Generic bit");
 		options.addOption("name", true, "Generic placeholder");
 		options.addOption("update", false, "Generic bit to indicate a value update");
 		

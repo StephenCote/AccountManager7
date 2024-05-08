@@ -102,7 +102,7 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord cevt = null;
 		if(cmd.hasOption("olio")) {
 
-			octx = getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
+			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
 			epoch = octx.startOrContinueEpoch();
 			BaseRecord[] locs = octx.getLocations();
 			for(BaseRecord lrec : locs) {
@@ -257,90 +257,6 @@ public class ChatAction extends CommonAction implements IAction{
 			chat.chatConsole(req);
 		}
 		
-	}
-	
-
-
-
-	
-	
-	private static OlioContext getGridContext(BaseRecord user, String dataPath, String universeName, String worldName, boolean resetWorld) {
-		AuditUtil.setLogToConsole(false);
-		IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
-
-		OlioContextConfiguration cfg = new OlioContextConfiguration(
-				user,
-				dataPath,
-				"~/Worlds",
-				universeName,
-				worldName,
-				new String[] {},
-				1,
-				50,
-				resetWorld,
-				false
-			);
-		
-			/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
-			///
-			cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
-				new GridSquareLocationInitializationRule(),
-				new LocationPlannerRule(),
-				new GenericItemDataLoadRule()
-			}));
-			
-			// Increment24HourRule incRule = new Increment24HourRule();
-			// incRule.setIncrementType(TimeEnumType.HOUR);
-			cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
-				new Increment24HourRule(),
-				new HierarchicalNeedsRule()
-			}));
-			OlioContext octx = new OlioContext(cfg);
-
-			logger.info("Initialize olio context - Grid");
-			octx.initialize();
-			
-			AuditUtil.setLogToConsole(true);
-			IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(false);
-			
-			return octx;
-	}
-	private static OlioContext getArenaContext(BaseRecord user, String dataPath, String universeName, String worldName, boolean resetWorld) {
-		/// Currently using the 'Arena' setup with minimal locations and small, outfitted squads
-		///
-		AuditUtil.setLogToConsole(false);
-		IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
-		OlioContextConfiguration cfg = new OlioContextConfiguration(
-			user,
-			dataPath,
-			"~/Worlds",
-			universeName,
-			worldName,
-			new String[] {},
-			1,
-			50,
-			resetWorld,
-			false
-		);
-	
-		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
-		///
-		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
-			new ArenaInitializationRule(),
-			new GenericItemDataLoadRule()
-		}));
-		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
-				new ArenaEvolveRule()
-			}));
-		OlioContext octx = new OlioContext(cfg);
-
-		logger.info("Initialize olio context - Arena");
-		octx.initialize();
-		
-		AuditUtil.setLogToConsole(true);
-		IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(false);
-		
-		return octx;
 	}
 	
 }
