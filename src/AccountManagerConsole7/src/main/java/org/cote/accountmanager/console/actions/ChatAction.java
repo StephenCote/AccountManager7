@@ -72,7 +72,6 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("chat2", false, "Start chat console");
 		options.addOption("outfit", true, "Create outfit");
 		options.addOption("olio", false, "Load the Olio Context");
-		options.addOption("list", false, "Generic bit to list values");
 		options.addOption("party", false, "Generic bit to restrict parties");
 		options.addOption("show", false, "Generic bit");
 		options.addOption("prompt", true, "Chat prompt");

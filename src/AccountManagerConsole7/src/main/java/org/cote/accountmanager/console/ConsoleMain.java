@@ -96,6 +96,9 @@ public class ConsoleMain {
 		options.addOption("pattern", false, "Generic bit");
 		options.addOption("name", true, "Generic placeholder");
 		options.addOption("update", false, "Generic bit to indicate a value update");
+		options.addOption("list", false, "Generic bit to list values");
+		options.addOption("filter", true, "Generic placeholder to filter lists");
+
 		
 		adminAction.addOptions(options);
 		adminAction.setProperties(properties);

@@ -13,6 +13,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class PatchAction extends CommonAction implements IAction {
 
@@ -30,10 +31,16 @@ public class PatchAction extends CommonAction implements IAction {
 				OlioContext octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
 				BaseRecord dir = octx.getWorld().get("colors");
 				Query q = QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+				String filter = cmd.getOptionValue("filter");
+				if(filter != null) {
+					q.field(FieldNames.FIELD_NAME, ComparatorEnumType.LIKE, filter);
+				}
+
 				q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, "hex"});
 				QueryResult qr = IOSystem.getActiveContext().getAccessPoint().list(user, q);
 				for(BaseRecord r : qr.getResults()) {
-					System.out.println("{id:" + r.get(FieldNames.FIELD_ID) + ", name: \"" + r.get(FieldNames.FIELD_NAME) + "\", hex:\"" + r.get("hex") + "\"}");
+					String name = r.get(FieldNames.FIELD_NAME);
+					System.out.println("{id:" + r.get(FieldNames.FIELD_ID) + ", name: \"" + name + "\", hex:\"" + r.get("hex") + "\"}");
 				}
 			}
 		}
