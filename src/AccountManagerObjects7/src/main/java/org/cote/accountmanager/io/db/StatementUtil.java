@@ -26,9 +26,11 @@ import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
 import org.cote.accountmanager.io.QueryUtil;
@@ -1312,7 +1314,7 @@ public class StatementUtil {
 		}
 	}
 
-	protected static void populateRecord(DBStatementMeta meta, ResultSet rset, BaseRecord record) throws FieldException, ValueException, ModelNotFoundException, SQLException {
+	protected static void populateRecord(DBStatementMeta meta, ResultSet rset, BaseRecord record) throws FieldException, ValueException, ModelNotFoundException, SQLException, ReaderException {
 		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		int subCount = 0;
 		Map<String, FieldType> flexCols = new HashMap<>();
@@ -1452,8 +1454,13 @@ public class StatementUtil {
 			else {
 			
 				String colStr = rset.getString(col);
-				if(colStr != null) { 
+				if(colStr != null) {
 					crec = JSONUtil.importObject(colStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+					
+					if(crec != null) {
+						(new MemoryReader()).read(crec);
+					}
+					
 					haveId = true;
 				}
 				else {
