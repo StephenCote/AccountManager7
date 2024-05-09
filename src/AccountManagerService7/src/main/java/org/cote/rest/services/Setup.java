@@ -27,7 +27,6 @@ import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
-import org.cote.rest.config.RestServiceConfig;
 
 @Path("/setup")
 public class Setup {

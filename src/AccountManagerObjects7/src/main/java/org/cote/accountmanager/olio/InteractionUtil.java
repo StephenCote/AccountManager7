@@ -1,10 +1,7 @@
 package org.cote.accountmanager.olio;
 
-import java.math.RoundingMode;
 import java.security.SecureRandom;
-import java.text.DecimalFormat;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -16,11 +13,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
-import org.cote.accountmanager.olio.personality.DarkTriadUtil;
-import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
-import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
-import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;

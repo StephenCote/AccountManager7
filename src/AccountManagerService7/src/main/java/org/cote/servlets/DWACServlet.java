@@ -11,8 +11,8 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.util.MediaUtil;
 import org.cote.accountmanager.util.MediaOptions;
+import org.cote.accountmanager.util.MediaUtil;
 
 
 public class DWACServlet extends HttpServlet {

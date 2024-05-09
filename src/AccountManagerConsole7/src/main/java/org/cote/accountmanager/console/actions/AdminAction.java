@@ -2,8 +2,6 @@ package org.cote.accountmanager.console.actions;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Options;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.factory.Factory;

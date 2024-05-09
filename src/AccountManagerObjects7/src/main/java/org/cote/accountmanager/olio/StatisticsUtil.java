@@ -3,9 +3,7 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -13,13 +11,9 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.util.ErrorUtil;
 
 public class StatisticsUtil {
 	public static final Logger logger = LogManager.getLogger(StatisticsUtil.class);

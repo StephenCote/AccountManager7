@@ -1,7 +1,5 @@
 package org.cote.accountmanager.console.actions;
 
-import java.util.List;
-
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Options;
 import org.cote.accountmanager.io.IOSystem;

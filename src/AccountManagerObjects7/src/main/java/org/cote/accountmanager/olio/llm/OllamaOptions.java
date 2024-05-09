@@ -1,8 +1,5 @@
 package org.cote.accountmanager.olio.llm;
 
-import java.util.Arrays;
-import java.util.List;
-
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public class OllamaOptions {

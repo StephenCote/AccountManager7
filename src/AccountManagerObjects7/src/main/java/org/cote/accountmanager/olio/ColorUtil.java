@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio;
 
-import java.awt.Color;
 import java.security.SecureRandom;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

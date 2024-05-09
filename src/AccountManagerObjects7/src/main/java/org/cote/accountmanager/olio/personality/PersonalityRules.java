@@ -2,9 +2,6 @@ package org.cote.accountmanager.olio.personality;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.olio.OutcomeEnumType;
-import org.cote.accountmanager.olio.PersonalityProfile;
-import org.cote.accountmanager.olio.ReasonEnumType;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.record.BaseRecord;
 

@@ -1,7 +1,7 @@
 package org.cote.sockets;
 
 import java.security.Principal;
-import javax.security.auth.Subject;
+
 import javax.websocket.HandshakeResponse;
 import javax.websocket.server.HandshakeRequest;
 import javax.websocket.server.ServerEndpointConfig;

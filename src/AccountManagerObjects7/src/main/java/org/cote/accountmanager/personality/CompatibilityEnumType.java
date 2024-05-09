@@ -3,7 +3,6 @@ package org.cote.accountmanager.personality;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.cote.accountmanager.olio.VeryEnumType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public enum CompatibilityEnumType{

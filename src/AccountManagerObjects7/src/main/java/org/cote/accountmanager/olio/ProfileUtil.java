@@ -30,7 +30,6 @@ import org.cote.accountmanager.personality.Sloan;
 import org.cote.accountmanager.personality.SloanUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.LocationEnumType;
 

@@ -23,7 +23,6 @@
  *******************************************************************************/
 package org.cote.rest.config;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
@@ -44,7 +43,6 @@ import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.record.RecordIO;
-import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.util.JSONUtil;

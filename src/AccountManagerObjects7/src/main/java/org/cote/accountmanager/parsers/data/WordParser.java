@@ -22,7 +22,6 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.ColorUtil;
-import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.parsers.GenericParser;
 import org.cote.accountmanager.parsers.ParseConfiguration;
 import org.cote.accountmanager.parsers.ParseMap;
