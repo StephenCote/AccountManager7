@@ -2,6 +2,10 @@ package org.cote.accountmanager.util;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -18,7 +22,7 @@ public class LibraryUtil {
 	private static String[] readOnly = new String[] {AccessSchema.SYSTEM_PERMISSION_READ};
 	private static String[] readCreateUpdate = new String[] {AccessSchema.SYSTEM_PERMISSION_CREATE, AccessSchema.SYSTEM_PERMISSION_READ, AccessSchema.SYSTEM_PERMISSION_UPDATE};
 	public static BaseRecord getCreateSharedLibrary(BaseRecord user, String name, boolean enableCRU) {
-		return getCreateSharedGroup(user, "/lib/" + name, (enableCRU ? readCreateUpdate : readOnly), new String[] {PermissionEnumType.GROUP.toString(), PermissionEnumType.DATA.toString()});
+		return getCreateSharedGroup(user, "/Library/" + name, (enableCRU ? readCreateUpdate : readOnly), new String[] {PermissionEnumType.GROUP.toString(), PermissionEnumType.DATA.toString()});
 	}
 	
 	public static BaseRecord getCreateSharedGroup(BaseRecord user, String path, String[] permissions, String[] types) {
@@ -33,6 +37,11 @@ public class LibraryUtil {
 			return dir;
 		}
 		dir = ctx.getPathUtil().makePath(octx.getAdminUser(), ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), octx.getOrganizationId());
+		try {
+			ctx.getRecordUtil().createRecord(AttributeUtil.addAttribute(dir, "shared", true));
+		} catch (ModelException | FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
 		BaseRecord usersRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS, RoleEnumType.USER.toString(), octx.getOrganizationId());
 		for(String perm : permissions) {
 			for(String type : types) {

@@ -6,6 +6,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.util.ComputeUtil;
 
 public class RollUtil {
 	public static final Logger logger = LogManager.getLogger(RollUtil.class);
@@ -138,7 +139,7 @@ public class RollUtil {
 		return rollStat20(rec, "charisma");
 	}
 	public static RollEnumType rollCounterCharisma(BaseRecord rec) {
-		return rollStat20(StatisticsUtil.getAverage(rec, new String[] {"charisma", "intelligence"}));
+		return rollStat20(ComputeUtil.getAverage(rec, new String[] {"charisma", "intelligence"}));
 	}
 
 	/*

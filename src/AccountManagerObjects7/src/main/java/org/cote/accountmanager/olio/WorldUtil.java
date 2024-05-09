@@ -73,13 +73,13 @@ public class WorldUtil {
 				world.set("features", Arrays.asList(features));
 				world.set("basis", basis);
 				if(useSharedLibrary) {
-					world.set("colors", LibraryUtil.getCreateSharedLibrary(user, "colors", true));
-					world.set("occupations", LibraryUtil.getCreateSharedLibrary(user, "occupations", true));
-					world.set("dictionary", LibraryUtil.getCreateSharedLibrary(user, "dictionary", true));
-					world.set("words", LibraryUtil.getCreateSharedLibrary(user, "words", true));
-					world.set("names", LibraryUtil.getCreateSharedLibrary(user, "names", true));
-					world.set("surnames", LibraryUtil.getCreateSharedLibrary(user, "surnames", true));
-					world.set("patterns", LibraryUtil.getCreateSharedLibrary(user, "patterns", true));
+					world.set("colors", LibraryUtil.getCreateSharedLibrary(user, "Colors", true));
+					world.set("occupations", LibraryUtil.getCreateSharedLibrary(user, "Occupations", true));
+					world.set("dictionary", LibraryUtil.getCreateSharedLibrary(user, "Dictionary", true));
+					world.set("words", LibraryUtil.getCreateSharedLibrary(user, "Words", true));
+					world.set("names", LibraryUtil.getCreateSharedLibrary(user, "Names", true));
+					world.set("surnames", LibraryUtil.getCreateSharedLibrary(user, "Surnames", true));
+					world.set("patterns", LibraryUtil.getCreateSharedLibrary(user, "Patterns", true));
 				}
 				IOSystem.getActiveContext().getAccessPoint().create(user, world);
 				// rec = getWorld(user, groupPath, worldName);
@@ -109,7 +109,7 @@ public class WorldUtil {
 		BaseRecord occDir = world.get("occupations");
 		IOSystem.getActiveContext().getReader().populate(occDir);
 
-		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, (!useSharedLibrary && reset));
+		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, reset);
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, occDir.get(FieldNames.FIELD_PATH)));
 
 	}
@@ -129,6 +129,9 @@ public class WorldUtil {
 		if(features.length > 0) {
 			GeoParser.loadInfo(user, locDir.get(FieldNames.FIELD_PATH), basePath, features, reset);
 		}
+		else if(reset) {
+			GeoParser.countCleanupLocation(user, locDir.get(FieldNames.FIELD_PATH), null, null, reset);
+		}
 		return IOSystem.getActiveContext().getSearch().count(GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID)));
 
 	}
@@ -141,10 +144,10 @@ public class WorldUtil {
 		String groupPath = dictDir.get(FieldNames.FIELD_PATH);
 		String wnetPath = basePath;
 		
-		WordNetParser.loadAdverbs(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
-		WordNetParser.loadAdjectives(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
-		WordNetParser.loadNouns(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
-		WordNetParser.loadVerbs(user, groupPath, wnetPath, 0, (!useSharedLibrary && reset));
+		WordNetParser.loadAdverbs(user, groupPath, wnetPath, 0, reset);
+		WordNetParser.loadAdjectives(user, groupPath, wnetPath, 0, reset);
+		WordNetParser.loadNouns(user, groupPath, wnetPath, 0, reset);
+		WordNetParser.loadVerbs(user, groupPath, wnetPath, 0, reset);
 		return IOSystem.getActiveContext().getSearch().count(WordNetParser.getQuery(user, null, groupPath));
 	}
 	private static int loadNames(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -154,7 +157,7 @@ public class WorldUtil {
 		
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
 
-		WordParser.loadNames(user, groupPath, basePath, (!useSharedLibrary && reset));
+		WordParser.loadNames(user, groupPath, basePath, reset);
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_WORD, groupPath));
 	}
 	private static int loadColors(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -164,7 +167,7 @@ public class WorldUtil {
 		
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
-		WordParser.loadColors(user, groupPath, basePath, (!useSharedLibrary && reset));
+		WordParser.loadColors(user, groupPath, basePath, reset);
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_COLOR, groupPath));
 	}
 	private static int loadPatterns(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -174,7 +177,7 @@ public class WorldUtil {
 		
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
 
-		WordParser.loadPatterns(user, groupPath, basePath, (!useSharedLibrary && reset));
+		WordParser.loadPatterns(user, groupPath, basePath, reset);
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_DATA, groupPath));
 	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
@@ -192,7 +195,7 @@ public class WorldUtil {
 		BaseRecord nameDir = world.get("surnames");
 		IOSystem.getActiveContext().getReader().populate(nameDir);
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
-		WordParser.loadSurnames(user, groupPath, basePath, (!useSharedLibrary && reset));
+		WordParser.loadSurnames(user, groupPath, basePath, reset);
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
 
@@ -203,27 +206,29 @@ public class WorldUtil {
 		String basePath = ctx.getConfig().getDataPath();
 		boolean reset = ctx.getConfig().isResetUniverse();
 		if(!reset && ctx.getConfig().isFastDataCheck() && fastDataCheck(user, world)) {
+			logger.warn("Fast Data Check");
 			return;
 		}
 		logger.info("Checking world data ...");
 		if(reset) {
 			logger.warn("TODO: Fix bug when using 'reset' for different datasets in the same group and model type, such as 'wordnet' where all the word types use the same model and groupid");
 		}
+		/// data.geoLocation
 		int locs = loadLocations(user, world, basePath + "/location", reset);
-		// logger.info("Locations: " + locs);
-		int dict = loadDictionary(user, world, basePath + "/wn3.1.dict/dict", reset);
-		// logger.info("Dictionary words: " + dict);
-		int occs = loadOccupations(user, world, basePath + "/occupations/noc_2021_version_1.0_-_elements.csv", reset);
-		// logger.info("Occupations: " + occs);
-		int names = loadNames(user, world, basePath + "/names/yob2022.txt", reset);
+		/// data.wordNet
+		int dict = loadDictionary(user, world, basePath + "/wn3.1.dict/dict", (useSharedLibrary == false && reset));
+		/// data.word
+		int occs = loadOccupations(user, world, basePath + "/occupations/noc_2021_version_1.0_-_elements.csv", (useSharedLibrary == false && reset));
+		/// data.word
+		int names = loadNames(user, world, basePath + "/names/yob2022.txt", (useSharedLibrary == false && reset));
 		// logger.info("Names: " + names);
-		int surnames = loadSurnames(user, world, basePath + "/surnames/Names_2010Census.csv", reset);
+		int surnames = loadSurnames(user, world, basePath + "/surnames/Names_2010Census.csv", (useSharedLibrary == false && reset));
 		// logger.info("Surnames: " + surnames);
 		int traits = loadTraits(user, world, basePath, reset);
 		// logger.info("Traits: " + traits);
-		int colors = loadColors(user, world, basePath + "/colors.csv", reset);
+		int colors = loadColors(user, world, basePath + "/colors.csv", (useSharedLibrary == false && reset));
 		// logger.info("Colors: " + colors);
-		int patterns = loadPatterns(user, world, basePath + "/patterns/patterns.csv", reset);
+		int patterns = loadPatterns(user, world, basePath + "/patterns/patterns.csv", (useSharedLibrary == false && reset));
 		// logger.info("Patterns: " + patterns);
 	}
 
@@ -473,17 +478,21 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_GROUP, (long)world.get("population.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ADDRESS, (long)world.get("addresses.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CONTACT, (long)world.get("contacts.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD_NET, (long)world.get("dictionary.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("words.id"), orgId);
+		
+		if(!useSharedLibrary) {
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD_NET, (long)world.get("dictionary.id"), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("words.id"), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("names.id"), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get("surnames.id"), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("occupations.id"), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_COLOR, (long)world.get("colors.id"), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_DATA, (long)world.get("patterns.id"), orgId);
+		}
+		
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_TRAIT, (long)world.get("traits.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("names.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get("surnames.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("occupations.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_COLOR, (long)world.get("colors.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_QUALITY, (long)world.get("qualities.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_WEARABLE, (long)world.get("wearables.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_APPAREL, (long)world.get("apparel.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_DATA, (long)world.get("patterns.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATISTICS, (long)world.get("statistics.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INSTINCT, (long)world.get("instincts.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_BEHAVIOR, (long)world.get("behaviors.id"), orgId);
@@ -501,6 +510,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_REALM, (long)world.get("realmsGroup.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INVENTORY_ENTRY, (long)world.get("inventories.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
+		
 		RecordFactory.cleanupOrphans(null);
 		long stop = System.currentTimeMillis();
 		logger.info("Cleaned up world in " + (stop - start) + "ms");

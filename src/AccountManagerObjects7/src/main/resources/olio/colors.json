@@ -210,17 +210,6 @@
 		"code": "antique_white"
 	},
 	{
-		"name": "Ao (English)",
-		"hex": "#008000",
-		"red": 0,
-		"green": 128,
-		"blue": 0,
-		"hue": 0,
-		"saturation": 0,
-		"lightness": 0,
-		"code": "ao_english"
-	},
-	{
 		"name": "Apple Green",
 		"hex": "#8db600",
 		"red": 141,
@@ -5907,17 +5896,7 @@
 		"lightness": 0.8,
 		"code": "ochre"
 	},
-	{
-		"name": "Office Green",
-		"hex": "#008000",
-		"red": 0,
-		"green": 128,
-		"blue": 0,
-		"hue": 0,
-		"saturation": 0,
-		"lightness": 0,
-		"code": "office_green"
-	},
+
 	{
 		"name": "Old Gold",
 		"hex": "#cfb53b",

@@ -56,7 +56,8 @@ public class GeoParser {
 	public static int countCleanupLocation(BaseRecord user, String groupPath, String geoType, String isoCode, boolean resetCountryInfo) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query lq = getQuery(geoType, isoCode, dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		
+		/// Don't cache the count result 
+		lq.setCache(false);
 		int count = IOSystem.getActiveContext().getAccessPoint().count(user, lq);
 		if(count > 0 && resetCountryInfo) {
 			logger.info("Cleaning up " + count + " " + geoType + " records in " + groupPath);

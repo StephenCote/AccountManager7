@@ -4,11 +4,22 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.InteractionUtil;
+import org.cote.accountmanager.olio.ItemUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
@@ -89,29 +100,46 @@ public class TestRealm extends BaseTest {
 		octx.initialize();
 		assertNotNull("Root location is null", octx.getRootLocation());
 		
-		
-		/*
-		OlioContext octx = new OlioContext(cfg);
 
-		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
-		octx.initialize();
-		assertNotNull("Root location is null", octx.getRootLocation());
-		
+
 		BaseRecord evt = octx.startOrContinueEpoch();
 		assertNotNull("Epoch is null", evt);
 		BaseRecord[] locs = octx.getLocations();
 		for(BaseRecord lrec : locs) {
+			
+			/// Depending on the staging rule, the population may not yet be dressed or have possessions
+			///
+			ApparelUtil.outfitAndStage(octx, null, octx.getPopulation(lrec));
+			ItemUtil.showerWithMoney(octx, octx.getPopulation(lrec));
+			octx.processQueue();
+			
 			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
 			assertNotNull("Location epoch is null", levt);
 			BaseRecord cevt = octx.startOrContinueIncrement();
-			try {
-				octx.evaluateIncrement();
-			}
-			catch(Exception e) {
-				e.printStackTrace();
+			octx.evaluateIncrement();
+		}
+
+		BaseRecord[] realms = octx.getRealms();
+		assertTrue("Expected at least one realm", realms.length > 0);
+		BaseRecord popGrp = realms[0].get("population");
+		assertNotNull("Expected a population group", popGrp);
+
+		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(octx, popGrp);
+		assertTrue("Expected a population", pop.size() > 0);
+
+		BaseRecord per1 = pop.get((new Random()).nextInt(pop.size()));
+		BaseRecord per2 = pop.get((new Random()).nextInt(pop.size()));
+		BaseRecord inter = null;
+		for(int i = 0; i < 10; i++) {
+			inter = InteractionUtil.randomInteraction(octx, per1, per2);
+			if(inter != null) {
+				break;
 			}
 		}
-		*/
+		logger.info(NarrativeUtil.describe(octx, per1));
+		logger.info(NarrativeUtil.describe(octx, per2));
+		logger.info(NarrativeUtil.describeInteraction(inter));
+		
 		AuditUtil.setLogToConsole(true);
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
 

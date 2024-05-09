@@ -6,6 +6,7 @@ import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.provider.ComputeEnumType;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -69,6 +70,8 @@ public class FieldSchema {
 
 	private List<String> rules = new ArrayList<>();
 	private List<Object> limit = new ArrayList<>();
+	private List<String> fields = new ArrayList<>();
+	private ComputeEnumType compute = ComputeEnumType.UNKNOWN;
 	
 	private boolean encrypt = false;
 	
@@ -77,6 +80,22 @@ public class FieldSchema {
 	
 	public FieldSchema() {
 		
+	}
+
+	public List<String> getFields() {
+		return fields;
+	}
+
+	public void setFields(List<String> fields) {
+		this.fields = fields;
+	}
+
+	public ComputeEnumType getCompute() {
+		return compute;
+	}
+
+	public void setCompute(ComputeEnumType compute) {
+		this.compute = compute;
 	}
 
 	public String getShortName() {

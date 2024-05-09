@@ -116,7 +116,6 @@ public class OlioContext {
 				return;
 			}
 			IOSystem.getActiveContext().getReader().populate(universe, 2);
-			/// WorldUtil.loadWorldData(config.getUser(), universe, config.getDataPath(), config.isResetUniverse());
 			WorldUtil.loadWorldData(this);
 			
 			world = WorldUtil.getCreateWorld(config.getUser(), universe, config.getWorldPath(), config.getWorldName(), new String[0]);
@@ -128,7 +127,7 @@ public class OlioContext {
 				WorldUtil.cleanupWorld(config.getUser(), world);
 			}
 			IOSystem.getActiveContext().getReader().populate(world, 2);
-			
+			CacheUtil.clearCache();
 			config.getContextRules().forEach(r -> {
 				r.pregenerate(this);
 			});

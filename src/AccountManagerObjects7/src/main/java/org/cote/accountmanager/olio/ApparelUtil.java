@@ -33,6 +33,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.ComputeUtil;
 import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -662,14 +663,14 @@ public class ApparelUtil {
 			else {
 				logger.warn("Unhandled model for fab type: " + rec.getModel());
 			}
-			StatisticsUtil.addDouble(qual, "opacity", Double.parseDouble(tmat[3]));
-			StatisticsUtil.addDouble(qual, "elasticity", Double.parseDouble(tmat[4]));
-			StatisticsUtil.addDouble(qual, "glossiness", Double.parseDouble(tmat[5]));
-			StatisticsUtil.addDouble(qual, "smoothness", Double.parseDouble(tmat[6]));
-			StatisticsUtil.addDouble(qual, "defensive", Double.parseDouble(tmat[7]));
-			StatisticsUtil.addDouble(qual, "waterresistance", Double.parseDouble(tmat[8]));
-			StatisticsUtil.addDouble(qual, "heatresistance", Double.parseDouble(tmat[9]));
-			StatisticsUtil.addDouble(qual, "insulation", Double.parseDouble(tmat[10]));
+			ComputeUtil.addDouble(qual, "opacity", Double.parseDouble(tmat[3]));
+			ComputeUtil.addDouble(qual, "elasticity", Double.parseDouble(tmat[4]));
+			ComputeUtil.addDouble(qual, "glossiness", Double.parseDouble(tmat[5]));
+			ComputeUtil.addDouble(qual, "smoothness", Double.parseDouble(tmat[6]));
+			ComputeUtil.addDouble(qual, "defensive", Double.parseDouble(tmat[7]));
+			ComputeUtil.addDouble(qual, "waterresistance", Double.parseDouble(tmat[8]));
+			ComputeUtil.addDouble(qual, "heatresistance", Double.parseDouble(tmat[9]));
+			ComputeUtil.addDouble(qual, "insulation", Double.parseDouble(tmat[10]));
 		} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			logger.error(emb);

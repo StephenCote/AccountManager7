@@ -185,7 +185,7 @@ public class WordParser {
 	public static int countCleanupWords(BaseRecord user, String model, String groupPath, boolean resetCountryInfo) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query lq = QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		
+		lq.setCache(false);
 		int count = IOSystem.getActiveContext().getAccessPoint().count(user, lq);
 		if(count > 0 && resetCountryInfo) {
 			logger.info("Cleaning up " + count + " records in " + groupPath);

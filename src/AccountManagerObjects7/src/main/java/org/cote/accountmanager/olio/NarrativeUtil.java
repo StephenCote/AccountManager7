@@ -179,6 +179,10 @@ public class NarrativeUtil {
 	}
 	
 	public static String describeInteraction(BaseRecord inter) {
+		if(inter == null) {
+			logger.warn("Null interaction");
+			return "Nothing happened.";
+		}
 		String aname = inter.get("actor.firstName");
 		InteractionEnumType type = inter.getEnum("type");
 		AlignmentEnumType aalign = inter.getEnum("actorAlignment");
@@ -579,9 +583,9 @@ public class NarrativeUtil {
 		
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
-		buff.append(" " + cpro + " " + describeOutfit(pp, includeOuterArms) + ".");
+		buff.append(" " + cpro + " is " + describeOutfit(pp, includeOuterArms) + ".");
 		if(includeOuterArms) {
-			buff.append(" " + cpro + " " + describeArmament(pp) + ".");
+			buff.append(" " + cpro + " is " + describeArmament(pp) + ".");
 		}
 		return buff.toString();
 	}

@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.util.ComputeUtil;
 
 public class DarkTriadUtil {
 	public static final Logger logger = LogManager.getLogger(DarkTriadUtil.class);
@@ -68,15 +69,15 @@ public class DarkTriadUtil {
 
 	public static int getDeceptionCounterStatistic(BaseRecord record) {
 		BaseRecord stat = record.get("statistics");
-		int cs = StatisticsUtil.getAverage(stat, new String[] {"perception", "wisdom", "mentalEndurance"});
+		int cs = ComputeUtil.getAverage(stat, new String[] {"perception", "wisdom", "mentalEndurance"});
 		return cs;
 		//if(cs > 0) return cs / 2;
 		//return 0;
 	}
 	public static int getDeceptionStatistic(BaseRecord record) {
 		BaseRecord stat = record.get("statistics");
-		int ci = StatisticsUtil.getMaximumInt(stat, new String[] {"charisma", "intelligence"});
-		int cp = StatisticsUtil.getMinimumInt(stat, new String[] {"creativity", "perception"});
+		int ci = ComputeUtil.getMaximumInt(stat, new String[] {"charisma", "intelligence"});
+		int cp = ComputeUtil.getMinimumInt(stat, new String[] {"creativity", "perception"});
 		int cv = ci + cp;
 		if(cv > 0) {
 			return cv / 2;
@@ -95,13 +96,13 @@ public class DarkTriadUtil {
 		return RollUtil.rollStat1(rec.get("personality.narcissism"));
 	}
 	public static RollEnumType rollCounterNarcissism(BaseRecord rec) {
-		return RollUtil.rollStat20(StatisticsUtil.getAverage(rec.get("statistics"), new String[] {"spirituality", "willpower"}));
+		return RollUtil.rollStat20(ComputeUtil.getAverage(rec.get("statistics"), new String[] {"spirituality", "willpower"}));
 	}
 	public static RollEnumType rollPsychopathy(BaseRecord rec) {
 		return RollUtil.rollStat1(rec.get("personality.psychopathy"));
 	}
 	public static RollEnumType rollCounterPsychopathy(BaseRecord rec) {
-		return RollUtil.rollStat1(StatisticsUtil.getDblAverage(rec.get("personality"), new String[] {"conscientiousness", "agreeableness"}));
+		return RollUtil.rollStat1(ComputeUtil.getDblAverage(rec.get("personality"), new String[] {"conscientiousness", "agreeableness"}));
 	}
 	public static OutcomeEnumType ruleDarkTriad(BaseRecord interaction, PersonalityProfile actor, PersonalityProfile interactor) {
 		OutcomeEnumType actorOutcome = OutcomeEnumType.EQUILIBRIUM;
