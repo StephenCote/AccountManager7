@@ -32,7 +32,25 @@ public class NarrativeUtil {
 	
 	private static SecureRandom rand = new SecureRandom();
 	private static boolean describePatterns = true;
+	private static boolean describeFabrics = true;
+	private static boolean describeApparelColors = true;
 	
+	public static boolean isDescribeApparelColors() {
+		return describeApparelColors;
+	}
+
+	public static void setDescribeApparelColors(boolean describeApparelColors) {
+		NarrativeUtil.describeApparelColors = describeApparelColors;
+	}
+
+	public static boolean isDescribeFabrics() {
+		return describeFabrics;
+	}
+
+	public static void setDescribeFabrics(boolean describeFabrics) {
+		NarrativeUtil.describeFabrics = describeFabrics;
+	}
+
 	public static boolean isDescribePatterns() {
 		return describePatterns;
 	}
@@ -71,7 +89,7 @@ public class NarrativeUtil {
 			desc.append("may show grandiosity, entitlement, dominance, or superiority");
 		}
 		if(prof.isPsychopath()) {
-			if(desc.length() > 0) desc.append(", and");
+			if(desc.length() > 0) desc.append(", and ");
 			desc.append("may show low levels of empathy and high levels of impulsivity and thrill-seeking");
 		}
 		desc2.append(pro + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()));
@@ -185,7 +203,7 @@ public class NarrativeUtil {
 					shins = " shiny";
 				}
 
-				buff.append(andl + shins + opacs + " " + col + (describePatterns ? pat : "") + fab + " " + name);
+				buff.append(andl + shins + opacs + " " + (describeApparelColors ? col : "") + (describePatterns ? pat : "") + (describeFabrics ? fab : "") + " " + name);
 				//andl = ", and";
 				andl = "," + (i == wearl.size() - 2 ? " and" : "");
 			}

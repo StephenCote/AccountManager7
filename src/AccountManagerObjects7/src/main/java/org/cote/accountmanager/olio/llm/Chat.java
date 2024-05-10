@@ -40,7 +40,6 @@ public class Chat {
 	protected IOContext ioContext = null;
 	// protected OrganizationContext orgContext = null;
 	// protected String organizationPath = "/Development";
-
 	
 	public static final Logger logger = LogManager.getLogger(Chat.class);
 	private String ollamaServer = "http://localhost:11434";
@@ -58,6 +57,8 @@ public class Chat {
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
 	private boolean randomSetting = false;
+	private boolean includeScene = false;
+	private ESRBEnumType rating = ESRBEnumType.E;
 	
 	private String llmSystemPrompt = """
 You play the role of an assistant named Siren.
@@ -66,6 +67,22 @@ Begin conversationally.
 	
 	public Chat(BaseRecord user) {
 		this.user = user;
+	}
+	
+	public ESRBEnumType getRating() {
+		return rating;
+	}
+
+	public void setRating(ESRBEnumType rating) {
+		this.rating = rating;
+	}
+
+	public boolean isIncludeScene() {
+		return includeScene;
+	}
+
+	public void setIncludeScene(boolean includeScene) {
+		this.includeScene = includeScene;
 	}
 
 	public boolean isRandomSetting() {
@@ -322,13 +339,24 @@ Begin conversationally.
 	private Pattern interactDesc = Pattern.compile("\\$\\{interaction.description\\}");
 
 	private Pattern userPrompt = Pattern.compile("\\$\\{userPrompt\\}");
-
+	private Pattern scene = Pattern.compile("\\$\\{scene\\}"); 
+	private Pattern setting = Pattern.compile("\\$\\{setting\\}");
+	private Pattern ratingPat = Pattern.compile("\\$\\{rating\\}");
+	private Pattern ratingDesc = Pattern.compile("\\$\\{ratingDesc\\}");
+	private Pattern ratingRestrict = Pattern.compile("\\$\\{ratingRestrict\\}");
 	public String getChatPromptTemplate(OlioContext ctx, String templ, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		
 		PersonalityProfile sysProf = ProfileUtil.getProfile(ctx, systemChar);
 		PersonalityProfile usrProf = ProfileUtil.getProfile(ctx, userChar);
 		ProfileComparison profComp = new ProfileComparison(ctx, sysProf, usrProf);
 		
+		templ = scene.matcher(templ).replaceAll(includeScene ? "Scene: \\${profile.ageCompat} \\${profile.romanceCompat} \\${profile.raceCompat} \\${profile.leader} \\${interaction.description}" : "");
+		if(!randomSetting) {
+			templ = setting.matcher(templ).replaceAll("Setting: In this land, people generally ${event.alignment}. ${system.firstName} and ${user.firstName} are currently located in ${location.terrains}. ${population.people} ${population.animals}");
+		}
+		templ = ratingPat.matcher(templ).replaceAll(rating.toString());
+		templ = ratingDesc.matcher(templ).replaceAll(ESRBEnumType.getESRBDescription(rating));
+		templ = ratingRestrict.matcher(templ).replaceAll(ESRBEnumType.getESRBRestriction(rating));
 		templ = userFirstName.matcher(templ).replaceAll((String)userChar.get("firstName"));
 		templ = systemFirstName.matcher(templ).replaceAll((String)systemChar.get("firstName"));
 		templ = userFullName.matcher(templ).replaceAll((String)userChar.get("name"));
@@ -357,18 +385,20 @@ Begin conversationally.
 		
 		BaseRecord cell = userChar.get("state.currentLocation");
 		if(randomSetting) {
-			templ = locationTerrains.matcher(templ).replaceAll(NarrativeUtil.getRandomSetting());
+			templ = setting.matcher(templ).replaceAll("The setting is: " + NarrativeUtil.getRandomSetting());
 		}
-		else if(cell != null) {
-			List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
-			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
-			Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
-			String tdesc = "an expanse of " + tet.toString().toLowerCase();
-			if(stets.size() > 0) {
-				tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
+		else {
+			if(cell != null) {
+				List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
+				TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+				Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+				String tdesc = "an expanse of " + tet.toString().toLowerCase();
+				if(stets.size() > 0) {
+					tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
+				}
+				templ = locationTerrains.matcher(templ).replaceAll(tdesc);	
+				templ = locationTerrain.matcher(templ).replaceAll(tet.toString().toLowerCase());
 			}
-			templ = locationTerrains.matcher(templ).replaceAll(tdesc);	
-			templ = locationTerrain.matcher(templ).replaceAll(tet.toString().toLowerCase());
 		}
 		String pdesc = "";
 		AlignmentEnumType align = AlignmentEnumType.NEUTRAL;
@@ -433,11 +463,11 @@ Begin conversationally.
 		return templ.trim();
 	}
 	
-	public String getSystemChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.system.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
+	public String getSystemChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.system.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
-	public String getUserChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.user.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
+	public String getUserChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.user.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
 	public OllamaRequest getChatPrompt(OlioContext octx, String defPrompt, String iPrompt, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction) {
 		
@@ -445,10 +475,10 @@ Begin conversationally.
 		OllamaRequest req = newRequest(getModel());
 		
 		if(systemChar != null && userChar != null) {
-			setLlmSystemPrompt(getSystemChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
+			setLlmSystemPrompt(getSystemChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 			req = newRequest(getModel());
 			setPruneSkip(2);
-			newMessage(req, getUserChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
+			newMessage(req, getUserChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 		}
 		
 		OllamaOptions opts = new OllamaOptions();

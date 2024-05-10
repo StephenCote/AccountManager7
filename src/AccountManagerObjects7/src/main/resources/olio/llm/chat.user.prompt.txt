@@ -1,3 +1,0 @@
-Write a one to four paragraph detailed introduction from the point of view of ${system.firstName}.
-Do not write for ${user.firstName}, wait for me to respond.
-${userPrompt}

@@ -1,0 +1,4 @@
+${setting}
+${scene}
+${userPrompt}
+Write a one to four paragraph detailed introduction from the point of view of ${system.firstName}.

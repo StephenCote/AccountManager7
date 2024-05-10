@@ -16,6 +16,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -40,13 +41,16 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("olio", false, "Load the Olio Context");
 		options.addOption("party", false, "Generic bit to restrict parties");
 		options.addOption("show", false, "Generic bit");
+		options.addOption("detailed", false, "Generic bit used to enable pattern and fabric descriptions of clothes.");
 		options.addOption("setting", false, "Generic bit to create a random setting instead of the character's context location");
+		options.addOption("scene", false, "Generic bit to include a basic scene guidance (including any interaction)");
 		options.addOption("prompt", true, "Chat prompt");
 		options.addOption("iprompt", true, "Chat prompt for interactions");
 		options.addOption("model", true, "Generic name for a model");
-		options.addOption("interact", false, "Generic bit");
+		options.addOption("interact", false, "Generic bit to create a random interaction between two characters.  The -scene option must be also enabled.");
 		options.addOption("character1", true, "Name of character");
 		options.addOption("character2", true, "Name of character");
+		options.addOption("rating", true, "ESRB rating guidance for generated content (E, E10, T, M)");
 	}
 	@Override
 	public void handleCommand(CommandLine cmd) {
@@ -67,7 +71,9 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord evt = null;
 		BaseRecord cevt = null;
 		if(cmd.hasOption("olio")) {
-
+			// NarrativeUtil.setDescribeApparelColors(cmd.hasOption("detailed"));
+			NarrativeUtil.setDescribePatterns(cmd.hasOption("detailed"));
+			NarrativeUtil.setDescribeFabrics(cmd.hasOption("detailed"));
 			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
 			epoch = octx.startOrContinueEpoch();
 			BaseRecord[] locs = octx.getLocations();
@@ -196,15 +202,23 @@ public class ChatAction extends CommonAction implements IAction{
 		}
 		if(cmd.hasOption("chat2")) {
 			Chat chat = new Chat(user);
+			chat.setIncludeScene(cmd.hasOption("scene"));
+			if(cmd.hasOption("rating")) {
+				chat.setRating(ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
+			}
 			if(cmd.hasOption("setting")) {
 				chat.setRandomSetting(true);
 			}
-			logger.info(chat.getSystemChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-			logger.info(chat.getUserChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
+			logger.info(chat.getSystemChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
+			logger.info(chat.getUserChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
 		}
 		
 		if(cmd.hasOption("chat")) {
 			Chat chat = new Chat(user);
+			chat.setIncludeScene(cmd.hasOption("scene"));
+			if(cmd.hasOption("rating")) {
+				chat.setRating(ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
+			}
 			if(cmd.hasOption("setting")) {
 				chat.setRandomSetting(true);
 			}
