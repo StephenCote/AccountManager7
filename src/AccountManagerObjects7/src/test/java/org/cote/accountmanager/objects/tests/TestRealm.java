@@ -100,8 +100,6 @@ public class TestRealm extends BaseTest {
 		octx.initialize();
 		assertNotNull("Root location is null", octx.getRootLocation());
 		
-
-
 		BaseRecord evt = octx.startOrContinueEpoch();
 		assertNotNull("Epoch is null", evt);
 		BaseRecord[] locs = octx.getLocations();

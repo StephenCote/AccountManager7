@@ -1,10 +1,12 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -23,10 +25,13 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
+import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
 public class NarrativeUtil {
 	public static final Logger logger = LogManager.getLogger(NarrativeUtil.class);
 	
+	private static SecureRandom rand = new SecureRandom();
 	private static boolean describePatterns = true;
 	
 	public static boolean isDescribePatterns() {
@@ -37,6 +42,20 @@ public class NarrativeUtil {
 		NarrativeUtil.describePatterns = describePatterns;
 	}
 
+	private static String[] settings = new String[0];
+	public static String[] getSettings() {
+		if(settings.length == 0) {
+			settings = JSONUtil.importObject(ResourceUtil.getResource("olio/settings.json"), String[].class);
+		}
+		return settings;
+	}
+	public static String getRandomSetting() {
+		String[] aset = getSettings();
+		String[] sets = aset[rand.nextInt(aset.length)].split("\\|");
+		return sets[0] + ", circa " + sets[1] + ".";
+	}
+	
+	
 	public static String getDarkTriadDescription(PersonalityProfile prof) {
 		StringBuilder desc = new StringBuilder();
 		

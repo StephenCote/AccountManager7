@@ -11,6 +11,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
@@ -19,6 +20,8 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.RandomLocationInitializationRule;
 import org.cote.accountmanager.parsers.data.WordParser;
@@ -51,6 +54,7 @@ public class WorldUtil {
 			logger.error(e);
 		}
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	
 	}
 
 	public static BaseRecord getCreateWorld(BaseRecord user, String groupPath, String worldName, String[] features) {
@@ -202,13 +206,10 @@ public class WorldUtil {
 		String basePath = ctx.getConfig().getDataPath();
 		boolean reset = ctx.getConfig().isResetUniverse();
 		if(!reset && ctx.getConfig().isFastDataCheck() && fastDataCheck(user, world)) {
-			logger.warn("Fast Data Check");
 			return;
 		}
 		logger.info("Checking world data ...");
-		if(reset) {
-			logger.warn("TODO: Fix bug when using 'reset' for different datasets in the same group and model type, such as 'wordnet' where all the word types use the same model and groupid");
-		}
+
 		/// data.geoLocation
 		int locs = loadLocations(user, world, basePath + "/location", reset);
 		/// data.wordNet
@@ -532,7 +533,7 @@ public class WorldUtil {
 		return deleted;
 	}
 	
-
+/*
 	public static List<BaseRecord> getPopulation(BaseRecord user, BaseRecord world, BaseRecord location){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 		BaseRecord popGrp = getLocationGroup(user, world, location, "Population");
@@ -546,11 +547,11 @@ public class WorldUtil {
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
-		q.setCache(false);
+		// q.setCache(false);
 		
 		return new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
-	
+*/	
 	public static BaseRecord getLocationGroup(BaseRecord user, BaseRecord world, BaseRecord location, String name) {
 		List<BaseRecord> grps = getWorldGroups(user, world);
 		BaseRecord ogrp = null;

@@ -40,6 +40,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("olio", false, "Load the Olio Context");
 		options.addOption("party", false, "Generic bit to restrict parties");
 		options.addOption("show", false, "Generic bit");
+		options.addOption("setting", false, "Generic bit to create a random setting instead of the character's context location");
 		options.addOption("prompt", true, "Chat prompt");
 		options.addOption("iprompt", true, "Chat prompt for interactions");
 		options.addOption("model", true, "Generic name for a model");
@@ -195,12 +196,18 @@ public class ChatAction extends CommonAction implements IAction{
 		}
 		if(cmd.hasOption("chat2")) {
 			Chat chat = new Chat(user);
+			if(cmd.hasOption("setting")) {
+				chat.setRandomSetting(true);
+			}
 			logger.info(chat.getSystemChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
 			logger.info(chat.getUserChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
 		}
 		
 		if(cmd.hasOption("chat")) {
 			Chat chat = new Chat(user);
+			if(cmd.hasOption("setting")) {
+				chat.setRandomSetting(true);
+			}
 			String model = "llama2-uncensored:7b-chat-q8_0";
 			//String model = "zephyr-local";
 			//String model = "blue-orchid";

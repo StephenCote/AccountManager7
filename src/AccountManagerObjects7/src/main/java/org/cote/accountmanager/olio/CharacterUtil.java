@@ -278,6 +278,7 @@ public class CharacterUtil {
 				eyeColor = "#a52a2a";
 				hairColor = "#000000";
 				break;
+			case S:
 			case E:
 				eyeColor = natEyeColors[rand.nextInt(natEyeColors.length)];
 				hairColor = natHairColors[rand.nextInt(natHairColors.length)];

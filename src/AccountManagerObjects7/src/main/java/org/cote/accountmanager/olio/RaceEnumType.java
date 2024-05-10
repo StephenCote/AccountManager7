@@ -10,6 +10,7 @@ public enum RaceEnumType {
 	D("Native Hawaiian or other Pacific Islander"),
 	E("White"),
 	R("Robot"),
+	S("Succubus"),
 	U("Unknown"),
 	V("Vampire"),
 	W("Exraterrestrial"),

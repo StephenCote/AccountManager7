@@ -1255,7 +1255,7 @@
 		"code": "cadmium_yellow"
 	},
 	{
-		"name": "Café Au Lait",
+		"name": "Cafe Au Lait",
 		"hex": "#a67b5b",
 		"red": 166,
 		"green": 123,
@@ -1266,7 +1266,7 @@
 		"code": "caf_au_lait"
 	},
 	{
-		"name": "Café Noir",
+		"name": "Cafe Noir",
 		"hex": "#4b3621",
 		"red": 75,
 		"green": 54,
@@ -8527,7 +8527,7 @@
 		"code": "telemagenta"
 	},
 	{
-		"name": "Tenné (Tawny)",
+		"name": "Tenne (Tawny)",
 		"hex": "#cd5700",
 		"red": 205,
 		"green": 87,

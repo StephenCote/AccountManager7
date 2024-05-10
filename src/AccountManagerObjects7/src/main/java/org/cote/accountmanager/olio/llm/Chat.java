@@ -57,6 +57,7 @@ public class Chat {
 	
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
+	private boolean randomSetting = false;
 	
 	private String llmSystemPrompt = """
 You play the role of an assistant named Siren.
@@ -65,6 +66,14 @@ Begin conversationally.
 	
 	public Chat(BaseRecord user) {
 		this.user = user;
+	}
+
+	public boolean isRandomSetting() {
+		return randomSetting;
+	}
+
+	public void setRandomSetting(boolean randomSetting) {
+		this.randomSetting = randomSetting;
 	}
 
 	public String getOllamaServer() {
@@ -347,7 +356,10 @@ Begin conversationally.
 		templ = profileRomanceCompat.matcher(templ).replaceAll("Romantically, " + romCompat + ".");
 		
 		BaseRecord cell = userChar.get("state.currentLocation");
-		if(cell != null) {
+		if(randomSetting) {
+			templ = locationTerrains.matcher(templ).replaceAll(NarrativeUtil.getRandomSetting());
+		}
+		else if(cell != null) {
 			List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
 			Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
@@ -357,8 +369,6 @@ Begin conversationally.
 			}
 			templ = locationTerrains.matcher(templ).replaceAll(tdesc);	
 			templ = locationTerrain.matcher(templ).replaceAll(tet.toString().toLowerCase());
-
-			
 		}
 		String pdesc = "";
 		AlignmentEnumType align = AlignmentEnumType.NEUTRAL;
