@@ -18,7 +18,7 @@ public enum ESRBEnumType {
     private static Map<String, ESRBEnumType> esrbMap = new HashMap<>();
     private static Map<ESRBEnumType, String> esrbDesc = new HashMap<>();
     private static Map<ESRBEnumType, String> esrbRestriction = new HashMap<>();
-    
+    private static Map<ESRBEnumType, String> esrbMpaMap = new HashMap<>();
     /// Restrictions from https://en.wikipedia.org/wiki/Video_game_content_rating_system
     private static String whiteRestrict = "Suitable for all ages / Aimed at young audiences / Exempt / Not rated / No applicable rating.";
     private static String yellowRestrict = "Parental guidance is suggested for designated age range.";
@@ -30,7 +30,12 @@ public enum ESRBEnumType {
         for (ESRBEnumType esrb : ESRBEnumType.values()) {
             esrbMap.put(esrb.val, esrb);
         }
-        
+        esrbMpaMap.put(E, "G");
+        esrbMpaMap.put(E10, "PG");
+        esrbMpaMap.put(T, "PG-13");
+        esrbMpaMap.put(M, "R-17");
+        esrbMpaMap.put(AO, "X");
+        esrbMpaMap.put(RC, "XXX (Banned)");
         esrbRestriction.put(E, whiteRestrict);
         esrbRestriction.put(E10, purpleRestrict);
         esrbRestriction.put(T, purpleRestrict);
@@ -44,7 +49,7 @@ public enum ESRBEnumType {
         esrbDesc.put(T, "Content is generally suitable for ages 13 and up. May contain violence, suggestive themes, crude humor, minimal blood, simulated gambling and/or infrequent use of strong language.");
         esrbDesc.put(M, "Content is generally suitable for ages 17 and up. May contain intense violence, blood and gore, sexual content and/or strong language.");
         esrbDesc.put(AO, "Content suitable only for adults ages 18 and up. May include prolonged scenes of intense violence, graphic sexual content and/or gambling with real currency.");
-        esrbDesc.put(RC, "Content refused classification and is unsuitable or illegal for any age, and/or is banned. May include prolonged scenes of intense violence, graphic sexual content, drug consumption, and/or gambling with real currency in direct violation of current law.");
+        esrbDesc.put(RC, "Content suitable only for adults ages 18 and up, and may be illegal or banned. May include prolonged scenes of intense violence, graphic sexual content, drug consumption, and/or gambling with real currency in direct violation of current law.");
     }
 
     private ESRBEnumType(final String val) {
@@ -53,10 +58,17 @@ public enum ESRBEnumType {
     public static String getESRBRestriction(ESRBEnumType e) {
     	return esrbRestriction.get(e);
     }
+    public static String getESRBMPA(ESRBEnumType e) {
+    	return esrbMpaMap.get(e);
+    }
 
     public static String getESRBDescription(ESRBEnumType e) {
     	return esrbDesc.get(e);
     }
+    public static String getESRBName(ESRBEnumType e) {
+    	return e.val;
+    }
+
     public static String valueOf(ESRBEnumType ret) {
         return ret.val;
     }

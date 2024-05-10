@@ -59,7 +59,8 @@ public class Chat {
 	private boolean randomSetting = false;
 	private boolean includeScene = false;
 	private ESRBEnumType rating = ESRBEnumType.E;
-	
+	private int remind = 0;
+	private String annotation = null;
 	private String llmSystemPrompt = """
 You play the role of an assistant named Siren.
 Begin conversationally.
@@ -69,6 +70,22 @@ Begin conversationally.
 		this.user = user;
 	}
 	
+	public String getAnnotation() {
+		return annotation;
+	}
+
+	public void setAnnotation(String annotation) {
+		this.annotation = annotation;
+	}
+
+	public int isRemind() {
+		return remind;
+	}
+
+	public void setRemind(int remind) {
+		this.remind = remind;
+	}
+
 	public ESRBEnumType getRating() {
 		return rating;
 	}
@@ -203,6 +220,10 @@ Begin conversationally.
 					}
 					continue;
 				}
+				if(line.equals("/remind")) {
+					addReminder(req);
+					continue;
+				}
 				if(line.equals("/save")) {
 					System.out.println("Saving ...");
 					FileUtil.emitFile("./" + saveName, JSONUtil.exportObject(req));
@@ -219,6 +240,9 @@ Begin conversationally.
 				// System.out.println("'" + line + "'");
 				
 				if(chatMode) {
+					if(remind > 0 && annotation != null && (req.getMessages().size() % remind == 0)) {
+						addReminder(req);
+					}
 					newMessage(req, line);
 				}
 				else {
@@ -237,7 +261,12 @@ Begin conversationally.
 			logger.error(e.getMessage());
 		} 
 	}
-	
+	private void addReminder(OllamaRequest req) {
+		OllamaMessage msg = new OllamaMessage();
+		msg.setRole("user");
+		msg.setContent(annotation);
+		req.getMessages().add(msg);
+	}
 	private void handleResponse(OllamaRequest req, OllamaResponse rep) {
 		if(includeContextHistory) {
 			req.setContext(rep.getContext());
@@ -304,7 +333,7 @@ Begin conversationally.
 			req.getMessages().addAll(msgs);
 		}
 	}
-	
+
 	public OllamaMessage newMessage(OllamaRequest req, String message) {
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole("user");
@@ -342,21 +371,32 @@ Begin conversationally.
 	private Pattern scene = Pattern.compile("\\$\\{scene\\}"); 
 	private Pattern setting = Pattern.compile("\\$\\{setting\\}");
 	private Pattern ratingPat = Pattern.compile("\\$\\{rating\\}");
+	private Pattern ratingName = Pattern.compile("\\$\\{ratingName\\}");
+	private Pattern ratingMpa = Pattern.compile("\\$\\{ratingMpa\\}");
 	private Pattern ratingDesc = Pattern.compile("\\$\\{ratingDesc\\}");
 	private Pattern ratingRestrict = Pattern.compile("\\$\\{ratingRestrict\\}");
+	private Pattern annotateSupplement = Pattern.compile("\\$\\{annotateSupplement\\}");
 	public String getChatPromptTemplate(OlioContext ctx, String templ, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		
 		PersonalityProfile sysProf = ProfileUtil.getProfile(ctx, systemChar);
 		PersonalityProfile usrProf = ProfileUtil.getProfile(ctx, userChar);
 		ProfileComparison profComp = new ProfileComparison(ctx, sysProf, usrProf);
 		
+		String asupp = "";
+		if(sysProf.getRace().contains("S") || sysProf.getRace().contains("V") || sysProf.getRace().contains("R") || sysProf.getRace().contains("W") || sysProf.getRace().contains("X") || sysProf.getRace().contains("Y") || sysProf.getRace().contains("Z")) {
+			asupp = " Remember you are not entirely human.";
+		}
+		templ = annotateSupplement.matcher(templ).replaceAll(asupp);
+		
 		templ = scene.matcher(templ).replaceAll(includeScene ? "Scene: \\${profile.ageCompat} \\${profile.romanceCompat} \\${profile.raceCompat} \\${profile.leader} \\${interaction.description}" : "");
 		if(!randomSetting) {
 			templ = setting.matcher(templ).replaceAll("Setting: In this land, people generally ${event.alignment}. ${system.firstName} and ${user.firstName} are currently located in ${location.terrains}. ${population.people} ${population.animals}");
 		}
+		templ = ratingName.matcher(templ).replaceAll(ESRBEnumType.getESRBName(rating));
 		templ = ratingPat.matcher(templ).replaceAll(rating.toString());
 		templ = ratingDesc.matcher(templ).replaceAll(ESRBEnumType.getESRBDescription(rating));
 		templ = ratingRestrict.matcher(templ).replaceAll(ESRBEnumType.getESRBRestriction(rating));
+		templ = ratingMpa.matcher(templ).replaceAll(ESRBEnumType.getESRBMPA(rating));
 		templ = userFirstName.matcher(templ).replaceAll((String)userChar.get("firstName"));
 		templ = systemFirstName.matcher(templ).replaceAll((String)systemChar.get("firstName"));
 		templ = userFullName.matcher(templ).replaceAll((String)userChar.get("name"));
@@ -469,6 +509,10 @@ Begin conversationally.
 	public String getUserChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.user.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
+	public String getAnnotateChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.annotate.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
+	}
+
 	public OllamaRequest getChatPrompt(OlioContext octx, String defPrompt, String iPrompt, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction) {
 		
 		setLlmSystemPrompt(defPrompt);
@@ -479,6 +523,7 @@ Begin conversationally.
 			req = newRequest(getModel());
 			setPruneSkip(2);
 			newMessage(req, getUserChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
+			setAnnotation(getAnnotateChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 		}
 		
 		OllamaOptions opts = new OllamaOptions();

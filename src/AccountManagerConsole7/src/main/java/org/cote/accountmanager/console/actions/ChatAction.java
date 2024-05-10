@@ -50,6 +50,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("interact", false, "Generic bit to create a random interaction between two characters.  The -scene option must be also enabled.");
 		options.addOption("character1", true, "Name of character");
 		options.addOption("character2", true, "Name of character");
+		options.addOption("remind", true, "Bit indicating to include instruction reminders every n exchanges");
 		options.addOption("rating", true, "ESRB rating guidance for generated content (E, E10, T, M)");
 	}
 	@Override
@@ -211,11 +212,15 @@ public class ChatAction extends CommonAction implements IAction{
 			}
 			logger.info(chat.getSystemChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
 			logger.info(chat.getUserChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
+			logger.info(chat.getAnnotateChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
 		}
 		
 		if(cmd.hasOption("chat")) {
 			Chat chat = new Chat(user);
 			chat.setIncludeScene(cmd.hasOption("scene"));
+			if(cmd.hasOption("remind")) {
+				chat.setRemind(Integer.parseInt(cmd.getOptionValue("remind")));
+			}
 			if(cmd.hasOption("rating")) {
 				chat.setRating(ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
 			}
