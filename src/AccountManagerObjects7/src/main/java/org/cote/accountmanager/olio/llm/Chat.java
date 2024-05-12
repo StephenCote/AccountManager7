@@ -184,6 +184,25 @@ Begin conversationally.
 	public void chatConsole(){
 		chatConsole(newRequest(model));
 	}
+	public void continueChat(OllamaRequest req, String message){
+		OllamaResponse lastRep = null;		
+		if(req.getMessages().size() > 0) {
+			logger.info("Initializing ...");
+			lastRep = chat(req);
+			if(lastRep != null) {
+				handleResponse(req, lastRep);
+			}
+		}
+		if(remind > 0 && annotation != null && (req.getMessages().size() % remind == 0)) {
+			addReminder(req);
+		}
+		newMessage(req, message);
+		lastRep = chat(req);
+		if(lastRep != null) {
+			handleResponse(req, lastRep);
+		}
+	}
+	
 	public void chatConsole(OllamaRequest req){
 		BufferedReader is = new BufferedReader(new InputStreamReader(System.in));
 		try{
@@ -385,6 +404,16 @@ Begin conversationally.
 		String asupp = "";
 		if(sysProf.getRace().contains("S") || sysProf.getRace().contains("V") || sysProf.getRace().contains("R") || sysProf.getRace().contains("W") || sysProf.getRace().contains("X") || sysProf.getRace().contains("Y") || sysProf.getRace().contains("Z")) {
 			asupp = " Remember you are not entirely human.";
+			if(sysProf.getRace().contains("V")) {
+				asupp = " You are undead and must drink the blood of living people to survive.";
+			}
+			if(sysProf.getRace().contains("R")) {
+				asupp = " You are at least partially a robot and require a source of power to survive.";
+			}
+			if(sysProf.getRace().contains("S")) {
+				asupp = " You are infused with a lascivious spirit and must have intimate contact to survive.";
+			}
+
 		}
 		templ = annotateSupplement.matcher(templ).replaceAll(asupp);
 		

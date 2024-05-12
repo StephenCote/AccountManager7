@@ -102,56 +102,57 @@ public class OlioContext {
 			if(config == null || initialized) {
 				return;
 			}
-			/*
-			if(config.getFeatures() == null || config.getFeatures().length == 0) {
-				logger.error("Invalid features list");
-				return;
-			}
-			*/
 			long start = System.currentTimeMillis();
-	
+			logger.info("Get/Create Universe ...");
 			universe = WorldUtil.getCreateWorld(config.getUser(), config.getWorldPath(), config.getUniverseName(), config.getFeatures());
 			if(universe == null) {
 				logger.error("Failed to load universe " + config.getUniverseName());
 				return;
 			}
+			logger.info("Populate Universe ...");
 			IOSystem.getActiveContext().getReader().populate(universe, 2);
+			logger.info("Load World Data ...");
 			WorldUtil.loadWorldData(this);
-			
+			logger.info("Get/Create World ...");
 			world = WorldUtil.getCreateWorld(config.getUser(), universe, config.getWorldPath(), config.getWorldName(), new String[0]);
 			if(world == null) {
 				logger.error("Failed to load world " + config.getWorldName());
 				return;
 			}
 			if(config.isResetWorld()) {
+				logger.info("Reset World ...");
 				WorldUtil.cleanupWorld(config.getUser(), world);
 			}
+			logger.info("Populate World ...");
 			IOSystem.getActiveContext().getReader().populate(world, 2);
-			CacheUtil.clearCache();
+			//CacheUtil.clearCache();
+			logger.info("Pregenerate ...");
 			config.getContextRules().forEach(r -> {
 				r.pregenerate(this);
 			});
-			
+			logger.info("Generate World Region ...");
 			BaseRecord rootEvent = WorldUtil.generateRegion(this);
 			if(rootEvent == null) {
 				logger.error("Failed to find or create a new region");
 				return;
 			}
-			
+			logger.info("Postgenerate ...");
 			config.getContextRules().forEach(r -> {
 				r.postgenerate(this);
 			});
-			
+			logger.info("Obtain Epoch ...");
 			currentEpoch = EventUtil.getLastEpochEvent(this);
 			locations = GeoLocationUtil.getRegionLocations(this);
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
 			initialized = true;
 
+			
 			Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
 			eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 			eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 			BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
 			for(BaseRecord evt : evts) {
+				logger.info("Generate Region ...");
 				for(IOlioContextRule rule : config.getContextRules()) {
 					rule.generateRegion(this, rootEvent, evt);
 				}

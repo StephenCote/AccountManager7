@@ -59,7 +59,7 @@ public class ChatService {
 			Chat chat = getChat(user, chatReq.getRating(), key);
 			chat.continueChat(req, chatReq.getMessage());
 		}
-		Response.status(200).entity(req).build();
+		return Response.status(200).entity(req).build();
 	}
 	
 	private HashMap<String, OllamaRequest> reqMap = new HashMap<>();
@@ -123,6 +123,8 @@ public class ChatService {
 
 		OllamaRequest req = chat.getChatPrompt(octx, prompt, null, evt, cevt, char1, char2, inter);
 		reqMap.put(key, req);
+		octx.processQueue();
+		octx.clearCache();
 		/// chat.continueChat(req, null);
 		return req;
 	}

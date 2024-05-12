@@ -49,6 +49,11 @@
 		<param-value>c:/projects/data/am7</param-value>
 	</context-param>
 	<context-param>
+		<description>Data Generator Path</description>
+		<param-name>datagen.path</param-name>
+		<param-value>c:/projects/DataGenerator</param-value>
+	</context-param>
+	<context-param>
 		<description>Vault Path</description>
 		<param-name>vault.path</param-name>
 		<param-value>c:/projects/vault/</param-value>
