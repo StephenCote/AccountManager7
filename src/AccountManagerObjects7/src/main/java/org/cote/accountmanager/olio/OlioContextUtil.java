@@ -1,12 +1,10 @@
-package org.cote.accountmanager.console.actions;
+package org.cote.accountmanager.olio;
 
 import java.util.Arrays;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.olio.OlioContext;
-import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.rules.ArenaEvolveRule;
 import org.cote.accountmanager.olio.rules.ArenaInitializationRule;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
