@@ -53,7 +53,6 @@ public class Chat {
 	private String model = "dolphin-mistral";
 	//private String model = "blue-orchid";
 	private String saveName = "chat.save";
-	
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
 	private boolean randomSetting = false;
@@ -61,6 +60,8 @@ public class Chat {
 	private ESRBEnumType rating = ESRBEnumType.E;
 	private int remind = 0;
 	private String annotation = null;
+	private String assist = null;
+	private boolean useAssist = false;
 	private String llmSystemPrompt = """
 You play the role of an assistant named Siren.
 Begin conversationally.
@@ -70,6 +71,24 @@ Begin conversationally.
 		this.user = user;
 	}
 	
+
+
+	public String getAssist() {
+		return assist;
+	}
+
+	public void setAssist(String assist) {
+		this.assist = assist;
+	}
+
+	public boolean isUseAssist() {
+		return useAssist;
+	}
+
+	public void setUseAssist(boolean useAssist) {
+		this.useAssist = useAssist;
+	}
+
 	public String getAnnotation() {
 		return annotation;
 	}
@@ -354,8 +373,11 @@ Begin conversationally.
 	}
 
 	public OllamaMessage newMessage(OllamaRequest req, String message) {
+		return newMessage(req, message, "user");
+	}
+	public OllamaMessage newMessage(OllamaRequest req, String message, String role) {
 		OllamaMessage msg = new OllamaMessage();
-		msg.setRole("user");
+		msg.setRole(role);
 		msg.setContent(message);
 
 		req.getMessages().add(msg);
@@ -377,6 +399,9 @@ Begin conversationally.
 
 	private Pattern userCharDesc = Pattern.compile("\\$\\{user.characterDesc\\}");
 	private Pattern systemCharDesc = Pattern.compile("\\$\\{system.characterDesc\\}");
+	private Pattern userCharDescLight = Pattern.compile("\\$\\{user.characterDescLight\\}");
+	private Pattern systemCharDescLight = Pattern.compile("\\$\\{system.characterDescLight\\}");
+
 	private Pattern profileAgeCompat = Pattern.compile("\\$\\{profile.ageCompat\\}");
 	private Pattern profileRomanceCompat = Pattern.compile("\\$\\{profile.romanceCompat\\}");
 	private Pattern profileRaceCompat = Pattern.compile("\\$\\{profile.raceCompat\\}");
@@ -396,6 +421,9 @@ Begin conversationally.
 	private Pattern ratingRestrict = Pattern.compile("\\$\\{ratingRestrict\\}");
 	private Pattern annotateSupplement = Pattern.compile("\\$\\{annotateSupplement\\}");
 	public String getChatPromptTemplate(OlioContext ctx, String templ, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, templ, epoch, evt, systemChar, userChar, interaction, iPrompt, false);
+	}
+	public String getChatPromptTemplate(OlioContext ctx, String templ, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt, boolean firstPerson) {
 		
 		PersonalityProfile sysProf = ProfileUtil.getProfile(ctx, systemChar);
 		PersonalityProfile usrProf = ProfileUtil.getProfile(ctx, userChar);
@@ -403,15 +431,21 @@ Begin conversationally.
 		
 		String asupp = "";
 		if(sysProf.getRace().contains("S") || sysProf.getRace().contains("V") || sysProf.getRace().contains("R") || sysProf.getRace().contains("W") || sysProf.getRace().contains("X") || sysProf.getRace().contains("Y") || sysProf.getRace().contains("Z")) {
-			asupp = " Remember you are not entirely human.";
+			String uper = "You are";
+			if(firstPerson) {
+				uper = "I am";
+			}
+
+			asupp = " " + uper + " not entirely human.";
+
 			if(sysProf.getRace().contains("V")) {
-				asupp = " You are undead and must drink the blood of living people to survive.";
+				asupp = " " + uper + " undead and must drink the blood of living people to survive.";
 			}
 			if(sysProf.getRace().contains("R")) {
-				asupp = " You are at least partially a robot and require a source of power to survive.";
+				asupp = " " + uper + " at least partially a robot and require a source of power to survive.";
 			}
 			if(sysProf.getRace().contains("S")) {
-				asupp = " You are infused with a lascivious spirit and must have intimate contact to survive.";
+				asupp = " " + uper + " infused with a lascivious spirit and must have intimate contact to survive.";
 			}
 
 		}
@@ -433,6 +467,10 @@ Begin conversationally.
 
 		templ = userCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, userChar));
 		templ = systemCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, systemChar));
+		
+		templ = userCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, userChar, false, false));
+		templ = systemCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, systemChar, false, false));
+
 		
 		String ageCompat = "about the same age";
 		if(profComp.doesAgeCrossBoundary()) {
@@ -532,27 +570,58 @@ Begin conversationally.
 		return templ.trim();
 	}
 	
+
+	public String getSystemChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.system.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
+	}
+	public String getUserChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.user.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
+	}
+	
 	public String getSystemChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.system.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
 	public String getUserChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.user.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
-	public String getAnnotateChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.annotate.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
+	public String getAnnotateChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.annotate.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
 
-	public OllamaRequest getChatPrompt(OlioContext octx, String defPrompt, String iPrompt, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction) {
+	public String getAssistChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.assistant.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt, true);
+	}
+
+	
+	public OllamaRequest getChatPrompt(OlioContext octx, String defPrompt, String iPrompt, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, boolean rpg) {
 		
 		setLlmSystemPrompt(defPrompt);
 		OllamaRequest req = newRequest(getModel());
 		
 		if(systemChar != null && userChar != null) {
-			setLlmSystemPrompt(getSystemChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
+			String sysTemp = null;
+			String userTemp = null;
+			String assist = null;
+			if(useAssist) {
+				assist = getAssistChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
+			}
+			if(rpg) {
+				sysTemp = getSystemChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
+				userTemp = getUserChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
+			}
+			else {
+				sysTemp = getSystemChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
+				userTemp = getUserChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
+			}
+			setLlmSystemPrompt(sysTemp);
 			req = newRequest(getModel());
 			setPruneSkip(2);
-			newMessage(req, getUserChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
-			setAnnotation(getAnnotateChatRpgPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
+			newMessage(req, userTemp);
+			if(useAssist && assist != null && assist.length() > 0) {
+				newMessage(req, assist, "assistant");
+			}
+			setAnnotation(getAnnotateChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
+			// setAssist(getAssistChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 		}
 		
 		OllamaOptions opts = new OllamaOptions();

@@ -588,9 +588,9 @@ public class NarrativeUtil {
 		return clr;
 	}
 	public static String describe(OlioContext ctx, BaseRecord person) {
-		return describe(ctx, person, false);
+		return describe(ctx, person, true, false);
 	}
-	public static String describe(OlioContext ctx, BaseRecord person, boolean includeOuterArms) {
+	public static String describe(OlioContext ctx, BaseRecord person, boolean includeApparel, boolean includeOuterArms) {
 		StringBuilder buff = new StringBuilder();
 		PersonalityProfile pp = ProfileUtil.getProfile(ctx, person);
 
@@ -617,10 +617,13 @@ public class NarrativeUtil {
 		
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
-		buff.append(" " + cpro + " is " + describeOutfit(pp, includeOuterArms) + ".");
-		if(includeOuterArms) {
-			buff.append(" " + cpro + " is " + describeArmament(pp) + ".");
+		if(includeApparel) {
+			buff.append(" " + cpro + " is " + describeOutfit(pp, includeOuterArms) + ".");
+			if(includeOuterArms) {
+				buff.append(" " + cpro + " is " + describeArmament(pp) + ".");
+			}
 		}
+		
 		return buff.toString();
 	}
 	
