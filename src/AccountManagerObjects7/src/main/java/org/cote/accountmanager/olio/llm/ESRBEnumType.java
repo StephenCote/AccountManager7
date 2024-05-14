@@ -17,6 +17,7 @@ public enum ESRBEnumType {
 
     private static Map<String, ESRBEnumType> esrbMap = new HashMap<>();
     private static Map<ESRBEnumType, String> esrbDesc = new HashMap<>();
+    private static Map<ESRBEnumType, String> esrbShortDesc = new HashMap<>();
     private static Map<ESRBEnumType, String> esrbRestriction = new HashMap<>();
     private static Map<ESRBEnumType, String> esrbMpaMap = new HashMap<>();
     /// Restrictions from https://en.wikipedia.org/wiki/Video_game_content_rating_system
@@ -50,6 +51,12 @@ public enum ESRBEnumType {
         esrbDesc.put(M, "Content is generally suitable for ages 17 and up. May contain intense violence, blood and gore, sexual content and/or strong language.");
         esrbDesc.put(AO, "Content suitable only for adults ages 18 and up. May include prolonged scenes of intense violence, graphic sexual content and/or gambling with real currency.");
         esrbDesc.put(RC, "Content suitable only for adults ages 18 and up, and may be illegal or banned. May include prolonged scenes of intense violence, graphic sexual content, drug consumption, and/or gambling with real currency in direct violation of current law.");
+        esrbShortDesc.put(E,"All ages, minimal violence.");
+        esrbShortDesc.put(E10, "More violence, mild language.");
+        esrbShortDesc.put(T, "Violence, suggestive themes, mild blood, language.");
+        esrbShortDesc.put(M, "Intense violence, gore, sexual content, strong language.");
+        esrbShortDesc.put(AO, "Graphic violence, sexual content.");
+        esrbShortDesc.put(RC, "Unrated or banned. Graphic violence, sexual content.");
     }
 
     private ESRBEnumType(final String val) {
@@ -61,7 +68,9 @@ public enum ESRBEnumType {
     public static String getESRBMPA(ESRBEnumType e) {
     	return esrbMpaMap.get(e);
     }
-
+    public static String getESRBShortDescription(ESRBEnumType e) {
+    	return esrbShortDesc.get(e);
+    }
     public static String getESRBDescription(ESRBEnumType e) {
     	return esrbDesc.get(e);
     }

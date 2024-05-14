@@ -121,7 +121,7 @@ public class ChatService {
 
 		String prompt = "You are assistant, a superhelpful friend to all.";
 
-		OllamaRequest req = chat.getChatPrompt(octx, prompt, null, evt, cevt, char1, char2, inter);
+		OllamaRequest req = chat.getChatPrompt(octx, prompt, null, evt, cevt, char1, char2, inter, true);
 		reqMap.put(key, req);
 		octx.processQueue();
 		octx.clearCache();

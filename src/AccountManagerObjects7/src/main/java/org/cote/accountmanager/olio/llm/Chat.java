@@ -457,7 +457,7 @@ Begin conversationally.
 		}
 		templ = ratingName.matcher(templ).replaceAll(ESRBEnumType.getESRBName(rating));
 		templ = ratingPat.matcher(templ).replaceAll(rating.toString());
-		templ = ratingDesc.matcher(templ).replaceAll(ESRBEnumType.getESRBDescription(rating));
+		templ = ratingDesc.matcher(templ).replaceAll(ESRBEnumType.getESRBShortDescription(rating));
 		templ = ratingRestrict.matcher(templ).replaceAll(ESRBEnumType.getESRBRestriction(rating));
 		templ = ratingMpa.matcher(templ).replaceAll(ESRBEnumType.getESRBMPA(rating));
 		templ = userFirstName.matcher(templ).replaceAll((String)userChar.get("firstName"));
