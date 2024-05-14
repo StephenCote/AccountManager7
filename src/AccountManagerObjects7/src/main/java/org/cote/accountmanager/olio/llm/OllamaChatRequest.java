@@ -1,13 +1,43 @@
 package org.cote.accountmanager.olio.llm;
 
+import java.util.UUID;
+
+/// OllamaChatRequest used for proxied API connections
+///
 public class OllamaChatRequest {
+	private String uid = null;
 	private ESRBEnumType rating = ESRBEnumType.E;
 	private String systemCharacter = null;
 	private String userCharacter = null;
 	private String message = null;
-	
+	private boolean assist = false;
+	private String model = null;
 	public OllamaChatRequest() {
 		
+	}
+
+	public String getModel() {
+		return model;
+	}
+
+	public void setModel(String model) {
+		this.model = model;
+	}
+
+	public String getUid() {
+		return uid;
+	}
+
+	public void setUid(String uid) {
+		this.uid = uid;
+	}
+
+	public boolean isAssist() {
+		return assist;
+	}
+
+	public void setAssist(boolean assist) {
+		this.assist = assist;
 	}
 
 	public ESRBEnumType getRating() {

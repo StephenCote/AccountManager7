@@ -203,8 +203,10 @@ Begin conversationally.
 	public void chatConsole(){
 		chatConsole(newRequest(model));
 	}
+	
 	public void continueChat(OllamaRequest req, String message){
-		OllamaResponse lastRep = null;		
+		OllamaResponse lastRep = null;	
+		/*
 		if(req.getMessages().size() > 0) {
 			logger.info("Initializing ...");
 			lastRep = chat(req);
@@ -212,10 +214,13 @@ Begin conversationally.
 				handleResponse(req, lastRep);
 			}
 		}
-		if(remind > 0 && annotation != null && (req.getMessages().size() % remind == 0)) {
+		*/
+		if(remind > 0 && annotation != null && req.getMessages().size() > 5 && (req.getMessages().size() % remind == 0)) {
 			addReminder(req);
 		}
-		newMessage(req, message);
+		if(message != null) {
+			newMessage(req, message);
+		}
 		lastRep = chat(req);
 		if(lastRep != null) {
 			handleResponse(req, lastRep);
