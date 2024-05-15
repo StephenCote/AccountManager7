@@ -241,7 +241,7 @@ public class ChatAction extends CommonAction implements IAction{
 				chat.setRandomSetting(true);
 			}
 			//String model = "llama3:8b-text-q5_1";
-			String model = "llama3";
+			String model = "dolphin-llama3";
 			//String model = "llama2-uncensored:7b-chat-q8_0";
 			//String model = "zephyr-local";
 			//String model = "blue-orchid";

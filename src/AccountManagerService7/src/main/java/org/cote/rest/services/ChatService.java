@@ -280,7 +280,7 @@ public class ChatService {
 
 		String prompt = "You are assistant, a superhelpful friend to all.";
 
-		OllamaRequest req = chat.getChatPrompt(octx, prompt, null, evt, cevt, char1, char2, inter, true);
+		OllamaRequest req = chat.getChatPrompt(octx, prompt, null, evt, cevt, char1, char2, inter, false);
 		reqMap.put(key, req);
 		octx.processQueue();
 		octx.clearCache();
@@ -298,7 +298,7 @@ public class ChatService {
 		chat.setIncludeScene(true);
 		chat.setUseAssist(assist);
 		if(model == null || model.length() == 0) {
-			model = "llama3";
+			model = "dolphin-llama3";
 		}
 		chat.setModel(model);
 		
