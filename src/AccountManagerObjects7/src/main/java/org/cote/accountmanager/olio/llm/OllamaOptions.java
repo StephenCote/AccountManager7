@@ -16,21 +16,23 @@ public class OllamaOptions {
 	
 	@JsonProperty("top_p")
 	private double topP = 0.9;
+
+	@JsonProperty("typical_p")
+	private double typicalP = 0.85;
+
+	
 	/*
 	@JsonProperty("tfs_z")
 	private double tfsZ = 0.5;
 	
-	@JsonProperty("typical_p")
-	private double typicalP = 0.7;
-
 	@JsonProperty("repeat_last_n")
 	private int repeatLastN = 33;
 	*/
 	private double temperature = 0.9;
-	/*
+	
 	@JsonProperty("repeat_penalty")
 	private double repeatPenalty = 1.2;
-
+	/*
 	@JsonProperty("mirostat")
 	private int mirostat = 1;
 
@@ -88,6 +90,14 @@ public class OllamaOptions {
 		
 	}
 
+	public double getRepeatPenalty() {
+		return repeatPenalty;
+	}
+
+	public void setRepeatPenalty(double repeatPenalty) {
+		this.repeatPenalty = repeatPenalty;
+	}
+
 	public int getTopK() {
 		return topK;
 	}
@@ -126,6 +136,14 @@ public class OllamaOptions {
 
 	public void setNumGpu(int numGpu) {
 		this.numGpu = numGpu;
+	}
+
+	public double getTypicalP() {
+		return typicalP;
+	}
+
+	public void setTypicalP(double typicalP) {
+		this.typicalP = typicalP;
 	}
 
 	

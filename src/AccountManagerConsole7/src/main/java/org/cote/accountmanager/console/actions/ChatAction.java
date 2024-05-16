@@ -55,6 +55,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("remind", true, "Bit indicating to include instruction reminders every n exchanges");
 		options.addOption("rating", true, "ESRB rating guidance for generated content (E, E10, T, M)");
 		options.addOption("rpg", false, "Bit indicating to use the RPG prompt template");
+		options.addOption("nlp", false, "Bit indicating to use NLP in text generation to reinforce immersion");
 		options.addOption("assist", false, "Bit indicating to add additional guidance to the assistant");
 	}
 	@Override
@@ -230,6 +231,7 @@ public class ChatAction extends CommonAction implements IAction{
 		if(cmd.hasOption("chat")) {
 			Chat chat = new Chat(user);
 			chat.setUseAssist(cmd.hasOption("assist"));
+			chat.setUseNLP(cmd.hasOption("nlp"));
 			chat.setIncludeScene(cmd.hasOption("scene"));
 			if(cmd.hasOption("remind")) {
 				chat.setRemind(Integer.parseInt(cmd.getOptionValue("remind")));

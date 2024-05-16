@@ -11,9 +11,18 @@ public class OllamaChatRequest {
 	private String userCharacter = null;
 	private String message = null;
 	private boolean assist = false;
+	private boolean useNLP = false;
 	private String model = null;
 	public OllamaChatRequest() {
 		
+	}
+
+	public boolean isUseNLP() {
+		return useNLP;
+	}
+
+	public void setUseNLP(boolean useNLP) {
+		this.useNLP = useNLP;
 	}
 
 	public String getModel() {

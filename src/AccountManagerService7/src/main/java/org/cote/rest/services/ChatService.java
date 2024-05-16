@@ -43,6 +43,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
@@ -59,8 +60,9 @@ public class ChatService {
 	private static HashMap<String, OllamaRequest> reqMap = new HashMap<>();
 	private static HashMap<String, Chat> chatMap = new HashMap<>();
 	private static HashMap<String, BaseRecord> charMap = new HashMap<>();
-	private static HashMap<String, OlioContext> contextMap = new HashMap();
-	private static HashMap<String, List<BaseRecord>> popMap = new HashMap();
+	private static HashMap<String, OlioContext> contextMap = new HashMap<>();
+	private static HashMap<String, List<BaseRecord>> popMap = new HashMap<>();
+	private static HashMap<String, BaseRecord> dataMap = new HashMap<>();
 	
 	@RolesAllowed({"admin","user"})
 	@POST
@@ -79,6 +81,7 @@ public class ChatService {
 		}
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		String key = user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter() + "-" + chatReq.getUserCharacter();
+		dataMap.remove(key);
 		reqMap.remove(key);
 		chatMap.remove(key);
 		charMap.remove(user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter());
@@ -144,7 +147,7 @@ public class ChatService {
 		logger.info(JSONUtil.exportObject(req));
 		// if(chatReq.getMessage() != null) {
 			String key = user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter() + "-" + chatReq.getUserCharacter();
-			Chat chat = getChat(user, chatReq.getRating(), chatReq.isAssist(), chatReq.getModel(), key);
+			Chat chat = getChat(user, chatReq, key);
 			chat.continueChat(req, chatReq.getMessage());
 		// }
 		OllamaChatResponse creq = getChatResponse(req, chatReq);
@@ -220,12 +223,24 @@ public class ChatService {
 		}
 		return chart;
 	}
+	
+	private OllamaRequest getCreateRequestRecord(BaseRecord user, OllamaChatRequest creq) {
+		String key = user.get(FieldNames.FIELD_NAME) + "-" + creq.getSystemCharacter() + "-" + creq.getUserCharacter();
+		OllamaRequest req = null;
+		if(dataMap.containsKey(key)) {
+			req = JSONUtil.importObject(new String((byte[])dataMap.get(key).get(FieldNames.FIELD_BYTE_STORE)), OllamaRequest.class);
+		}
+		BaseRecord dir = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP, user.get("homeDirectory.path") + "/Chats", GroupEnumType.DATA.toString());
+		/// TODO
+		return null;
+	}
+	
 	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
 		String systemName = creq.getSystemCharacter();
 		String userName = creq.getUserCharacter();
 		ESRBEnumType rating = creq.getRating();
 		String key = user.get(FieldNames.FIELD_NAME) + "-" + systemName + "-" + userName;
-		logger.info("Chat: " + key + " " + (reqMap.containsKey(key) ? "continues":"begins"));
+		//logger.info("Chat: " + key + " " + (reqMap.containsKey(key) ? "continues":"begins"));
 		if(reqMap.containsKey(key)) {
 			return reqMap.get(key);
 		}
@@ -276,7 +291,7 @@ public class ChatService {
 			}
 			IOSystem.getActiveContext().getRecordUtil().createRecord(inter);
 		}
-		Chat chat = getChat(user, rating, creq.isAssist(), creq.getModel(), key);
+		Chat chat = getChat(user, creq, key);
 
 		String prompt = "You are assistant, a superhelpful friend to all.";
 
@@ -288,15 +303,17 @@ public class ChatService {
 		return req;
 	}
 	
-	private Chat getChat(BaseRecord user, ESRBEnumType rating, boolean assist, String model, String key) {
+	private Chat getChat(BaseRecord user, OllamaChatRequest req, String key) {
 		if(chatMap.containsKey(key)) {
 			return chatMap.get(key);
 		}
 		Chat chat = new Chat(user);
-		chat.setRating(rating);
+		chat.setRating(req.getRating());
 		chat.setRandomSetting(true);
 		chat.setIncludeScene(true);
-		chat.setUseAssist(assist);
+		chat.setUseAssist(req.isAssist());
+		chat.setUseNLP(req.isUseNLP());
+		String model = req.getModel();
 		if(model == null || model.length() == 0) {
 			model = "dolphin-llama3";
 		}
