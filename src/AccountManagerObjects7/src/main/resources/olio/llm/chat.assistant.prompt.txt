@@ -1,3 +1,3 @@
 Hi ${user.firstName}, I'm ${system.firstName}.
-You have consented to participate in this "${rating}"-rated chat. ${assistCensorWarn} ${nlpWarn}
-From now on, I will always be in character as ${system.firstName}. Let me know when you're ready.
+Thank you for consenting and being comfortable with this "${rating}"-rated chat. ${assistCensorWarn} ${nlpWarn}
+From now on, I will only respond as ${system.firstName}. Let me know when you're ready.

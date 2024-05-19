@@ -11,6 +11,7 @@ public class OllamaResponse{
 	private List<Integer> context = new ArrayList<>();
 	private long total_duration = 0L;
 	private long load_duration = 0L;
+	private String done_reason = null;
 	private int prompt_eval_count = 0;
 	private long prompt_eval_duration = 0L;
 	private int eval_count = 0;
@@ -20,6 +21,14 @@ public class OllamaResponse{
 		
 	}
 	
+	public String getDone_reason() {
+		return done_reason;
+	}
+
+	public void setDone_reason(String done_reason) {
+		this.done_reason = done_reason;
+	}
+
 	public OllamaMessage getMessage() {
 		return message;
 	}
