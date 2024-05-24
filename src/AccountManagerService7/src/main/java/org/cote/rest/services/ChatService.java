@@ -1,5 +1,6 @@
 package org.cote.rest.services;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -37,6 +38,7 @@ import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaChatRequest;
 import org.cote.accountmanager.olio.llm.OllamaChatResponse;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
+import org.cote.accountmanager.olio.llm.PromptConfiguration;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -44,7 +46,9 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"admin","user"})
@@ -144,7 +148,7 @@ public class ChatService {
 		
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		OllamaRequest req = getOllamaRequest(user, chatReq);
-		logger.info(JSONUtil.exportObject(req));
+		///logger.info(JSONUtil.exportObject(req));
 		// if(chatReq.getMessage() != null) {
 			String key = user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter() + "-" + chatReq.getUserCharacter();
 			Chat chat = getChat(user, chatReq, key);
@@ -307,7 +311,20 @@ public class ChatService {
 		if(chatMap.containsKey(key)) {
 			return chatMap.get(key);
 		}
+		PromptConfiguration pc = null;
+		if(req.getUserPrompt() != null) {
+			pc = JSONUtil.importObject(getCreateUserPrompt(user, req.getUserPrompt()), PromptConfiguration.class);
+		}
+		else {
+			pc = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/chat.config.json"), PromptConfiguration.class);
+		}
+		if(pc == null) {
+			logger.error("Failed to load prompt configuration");
+			return null;
+		}
+
 		Chat chat = new Chat(user);
+		chat.setPromptConfig(pc);
 		chat.setRating(req.getRating());
 		chat.setRandomSetting(true);
 		chat.setIncludeScene(true);
@@ -322,6 +339,37 @@ public class ChatService {
 		chatMap.put(key, chat);
 		return chat;
 	
+	}
+	
+	private String getCreateUserPrompt(BaseRecord user, String name) {
+		BaseRecord dat = getCreatePromptData(user, name);
+		IOSystem.getActiveContext().getReader().populate(dat, new String[] {FieldNames.FIELD_BYTE_STORE});
+		return new String((byte[])dat.get(FieldNames.FIELD_BYTE_STORE));
+	}
+	
+	private BaseRecord getCreatePromptData(BaseRecord user, String name) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord dat = IOSystem.getActiveContext().getRecordUtil().getRecord(user, ModelNames.MODEL_DATA, name, 0L, (long)dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(dat == null) {
+			dat = newPromptData(user, name, ResourceUtil.getResource("olio/llm/chat.config.json"));
+			IOSystem.getActiveContext().getRecordUtil().createRecord(dat);
+		}
+		return dat;
+	}
+	private BaseRecord newPromptData(BaseRecord user, String name, String data) {
+		BaseRecord rec = null;
+		boolean error = false;
+		try {
+			rec = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, rec, name, "~/chat", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			rec.set(FieldNames.FIELD_CONTENT_TYPE, "application/json");
+			rec.set(FieldNames.FIELD_BYTE_STORE, data.getBytes(StandardCharsets.UTF_8));
+		} catch (Exception e) {
+			logger.error(e);
+			
+			error = true;
+		}
+		return rec;
 	}
 
 }

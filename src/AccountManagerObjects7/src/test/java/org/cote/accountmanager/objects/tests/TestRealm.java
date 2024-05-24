@@ -23,7 +23,12 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.RaceEnumType;
 import org.cote.accountmanager.olio.WorldUtil;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.PromptConfiguration;
+import org.cote.accountmanager.olio.llm.PromptRaceConfiguration;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
@@ -36,7 +41,9 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.LibraryUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
 
 public class TestRealm extends BaseTest {
@@ -45,7 +52,116 @@ public class TestRealm extends BaseTest {
 	private String worldName = "World 3";
 	private String worldPath = "~/Worlds";
 
+	@Test
+	public void TestChatConfig() {
+		logger.info("Test Realm");
+		AuditUtil.setLogToConsole(false);
 	
+		PromptConfiguration pc = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/chat.config.json"), PromptConfiguration.class);
+		assertNotNull("Prompt config was null", pc);
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		
+		ioContext.getAccessPoint().setPermitBulkContainerApproval(true);
+		OlioContextConfiguration cfg = new OlioContextConfiguration(
+			testUser1,
+			testProperties.getProperty("test.datagen.path"),
+			worldPath,
+			universeName,
+			worldName,
+			new String[] {},
+			2,
+			50,
+			false,
+			false
+		);
+	
+		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
+		///
+		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
+			new GridSquareLocationInitializationRule(),
+			new LocationPlannerRule(),
+			new GenericItemDataLoadRule()
+		}));
+		
+		// Increment24HourRule incRule = new Increment24HourRule();
+		// incRule.setIncrementType(TimeEnumType.HOUR);
+		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
+			new Increment24HourRule(),
+			new HierarchicalNeedsRule()
+		}));
+
+		OlioContext octx = new OlioContext(cfg);
+		octx.initialize();
+		assertNotNull("Root location is null", octx.getRootLocation());
+		
+		BaseRecord evt = octx.startOrContinueEpoch();
+		BaseRecord levt = null;
+		BaseRecord cevt = null;
+		assertNotNull("Epoch is null", evt);
+		BaseRecord[] locs = octx.getLocations();
+		for(BaseRecord lrec : locs) {
+			
+			/// Depending on the staging rule, the population may not yet be dressed or have possessions
+			///
+			ApparelUtil.outfitAndStage(octx, null, octx.getPopulation(lrec));
+			ItemUtil.showerWithMoney(octx, octx.getPopulation(lrec));
+			octx.processQueue();
+			
+			levt = octx.startOrContinueLocationEpoch(lrec);
+			assertNotNull("Location epoch is null", levt);
+			cevt = octx.startOrContinueIncrement();
+			octx.evaluateIncrement();
+		}
+
+		BaseRecord[] realms = octx.getRealms();
+		assertTrue("Expected at least one realm", realms.length > 0);
+		BaseRecord popGrp = realms[0].get("population");
+		assertNotNull("Expected a population group", popGrp);
+
+		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(octx, popGrp);
+		assertTrue("Expected a population", pop.size() > 0);
+
+		BaseRecord per1 = pop.get((new Random()).nextInt(pop.size()));
+		BaseRecord per2 = pop.get((new Random()).nextInt(pop.size()));
+		BaseRecord inter = null;
+		for(int i = 0; i < 10; i++) {
+			inter = InteractionUtil.randomInteraction(octx, per1, per2);
+			if(inter != null) {
+				logger.info(NarrativeUtil.describeInteraction(inter));
+			}
+		}
+
+		/*
+		Chat chat = new Chat(testUser1);
+		chat.setPromptConfig(pc);
+		chat.setUseNLP(true);
+		chat.setUseAssist(true);
+		chat.setRating(ESRBEnumType.AO);
+		String templ = null;
+		String atempl = null;
+		String utempl = null;
+		try {
+			templ = chat.getSystemChatPromptTemplate(octx, levt, cevt, per1, per2, inter, null);
+			atempl = chat.getAssistChatPromptTemplate(octx, levt, cevt, per1, per2, inter, null);
+			utempl = chat.getUserChatPromptTemplate(octx, levt, cevt, per1, per2, inter, null);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		logger.info(templ);
+		logger.info(atempl);
+		logger.info(utempl);
+		AuditUtil.setLogToConsole(true);
+		*/
+		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
+		
+	}
+	
+	/*
 	@Test
 	public void TestRealm() {
 		logger.info("Test Realm");
@@ -142,4 +258,5 @@ public class TestRealm extends BaseTest {
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
 
 	}
+	*/
 }

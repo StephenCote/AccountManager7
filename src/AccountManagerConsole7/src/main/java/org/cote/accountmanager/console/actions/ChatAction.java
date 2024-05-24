@@ -1,5 +1,6 @@
 package org.cote.accountmanager.console.actions;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -19,12 +20,16 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
+import org.cote.accountmanager.olio.llm.PromptConfiguration;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.FileUtil;
+import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
 public class ChatAction extends CommonAction implements IAction{
 	public static final Logger logger = LogManager.getLogger(ChatAction.class);
@@ -47,6 +52,8 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("setting", false, "Generic bit to create a random setting instead of the character's context location");
 		options.addOption("scene", false, "Generic bit to include a basic scene guidance (including any interaction)");
 		options.addOption("prompt", true, "Chat prompt");
+		options.addOption("promptConfig", true, "Prompt configuration file");
+		options.addOption("userPromptConfig", true, "Name of user's prompt configuration file - default will be used to create it if it doesn't exist.");
 		options.addOption("iprompt", true, "Chat prompt for interactions");
 		options.addOption("model", true, "Generic name for a model");
 		options.addOption("interact", false, "Generic bit to create a random interaction between two characters.  The -scene option must be also enabled.");
@@ -230,20 +237,36 @@ public class ChatAction extends CommonAction implements IAction{
 		
 		if(cmd.hasOption("chat")) {
 			Chat chat = new Chat(user);
+			chat.setIncludeScene(true);
+			chat.setRandomSetting(true);
+			PromptConfiguration pc = null;
+			if(cmd.hasOption("userPromptConfig")) {
+				pc = JSONUtil.importObject(getCreateUserPrompt(user, cmd.getOptionValue("userPromptConfig")), PromptConfiguration.class);
+			}
+			else if(cmd.hasOption("promptConfig")) {
+				pc = JSONUtil.importObject(FileUtil.getFileAsString(cmd.getOptionValue("promptConfig")), PromptConfiguration.class);
+			}
+			else {
+				pc = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/chat.config.json"), PromptConfiguration.class);
+			}
+			chat.setPromptConfig(pc);
 			chat.setUseAssist(cmd.hasOption("assist"));
 			chat.setUseNLP(cmd.hasOption("nlp"));
-			chat.setIncludeScene(cmd.hasOption("scene"));
 			if(cmd.hasOption("remind")) {
 				chat.setRemind(Integer.parseInt(cmd.getOptionValue("remind")));
 			}
 			if(cmd.hasOption("rating")) {
 				chat.setRating(ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
 			}
+			/*
+			chat.setIncludeScene(cmd.hasOption("scene"));
 			if(cmd.hasOption("setting")) {
 				chat.setRandomSetting(true);
 			}
+			*/
 			//String model = "llama3:8b-text-q5_1";
 			String model = "dolphin-llama3";
+			//String model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
 			//String model = "llama2-uncensored:7b-chat-q8_0";
 			//String model = "zephyr-local";
 			//String model = "blue-orchid";
@@ -265,6 +288,37 @@ public class ChatAction extends CommonAction implements IAction{
 			chat.chatConsole(req);
 		}
 		
+	}
+	
+	public String getCreateUserPrompt(BaseRecord user, String name) {
+		BaseRecord dat = getCreatePromptData(user, name);
+		IOSystem.getActiveContext().getReader().populate(dat, new String[] {FieldNames.FIELD_BYTE_STORE});
+		return new String((byte[])dat.get(FieldNames.FIELD_BYTE_STORE));
+	}
+	
+	protected BaseRecord getCreatePromptData(BaseRecord user, String name) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord dat = IOSystem.getActiveContext().getRecordUtil().getRecord(user, ModelNames.MODEL_DATA, name, 0L, (long)dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(dat == null) {
+			dat = newPromptData(user, name, ResourceUtil.getResource("olio/llm/chat.config.json"));
+			IOSystem.getActiveContext().getRecordUtil().createRecord(dat);
+		}
+		return dat;
+	}
+	protected BaseRecord newPromptData(BaseRecord user, String name, String data) {
+		BaseRecord rec = null;
+		boolean error = false;
+		try {
+			rec = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, rec, name, "~/chat", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			rec.set(FieldNames.FIELD_CONTENT_TYPE, "application/json");
+			rec.set(FieldNames.FIELD_BYTE_STORE, data.getBytes(StandardCharsets.UTF_8));
+		} catch (Exception e) {
+			logger.error(e);
+			
+			error = true;
+		}
+		return rec;
 	}
 	
 }

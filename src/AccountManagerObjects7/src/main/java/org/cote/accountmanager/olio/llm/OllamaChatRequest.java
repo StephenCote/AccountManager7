@@ -13,8 +13,17 @@ public class OllamaChatRequest {
 	private boolean assist = false;
 	private boolean useNLP = false;
 	private String model = null;
+	private String userPrompt = null;
 	public OllamaChatRequest() {
 		
+	}
+
+	public String getUserPrompt() {
+		return userPrompt;
+	}
+
+	public void setUserPrompt(String userPrompt) {
+		this.userPrompt = userPrompt;
 	}
 
 	public boolean isUseNLP() {

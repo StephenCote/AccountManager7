@@ -120,7 +120,7 @@ public class InteractionUtil {
 		return ret;
 	}
 	*/
-	
+	/*
 	public static ReasonEnumType guessReasonXXX(OlioContext ctx, PersonalityProfile prof1, AlignmentEnumType align, InteractionEnumType interType, CharacterRoleEnumType role, PersonalityProfile prof2) {
 		ReasonEnumType ret = ReasonEnumType.UNKNOWN;
 		ProfileComparison pcomp = new ProfileComparison(ctx, prof1, prof2);
@@ -186,7 +186,7 @@ public class InteractionUtil {
 		
 		return ret;
 	}
-	
+	*/
 	public static List<InteractionEnumType> getInteractionsByAlignment(AlignmentEnumType align) {
 		List<InteractionEnumType> inters = new ArrayList<>();
 		if(AlignmentEnumType.compare(align, AlignmentEnumType.CHAOTICNEUTRAL, ComparatorEnumType.LESS_THAN)) {
@@ -271,6 +271,7 @@ public class InteractionUtil {
 
 		ProfileComparison pcomp = new ProfileComparison(ctx, prof1, prof2);
 		CompatibilityEnumType rcet = pcomp.getRomanticCompatibility();
+		boolean brcet = CompatibilityEnumType.compare(rcet, CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 
 		AlignmentEnumType actorAlign = AlignmentEnumType.margin(contextAlign, prof1.getAlignment());
 		AlignmentEnumType interactorAlign = AlignmentEnumType.margin(contextAlign, prof2.getAlignment());
@@ -300,7 +301,7 @@ public class InteractionUtil {
 						&& are != ReasonEnumType.SENSUALITY
 						&& (are != ReasonEnumType.INSTINCT || "mate".equals(ainst))
 					)
-					|| CompatibilityEnumType.compare(rcet, CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+					|| brcet
 				){
 					actorReasons.add(are);
 				}
@@ -333,7 +334,7 @@ public class InteractionUtil {
 						&& are != ReasonEnumType.SENSUALITY
 						&& (are != ReasonEnumType.INSTINCT || "mate".equals(iinst))
 					)
-					|| CompatibilityEnumType.compare(rcet, CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)
+					|| brcet
 				){
 					iactorReasons.add(are);
 				}
