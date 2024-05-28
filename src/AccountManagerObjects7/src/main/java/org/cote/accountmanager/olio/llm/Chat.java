@@ -440,6 +440,7 @@ Begin conversationally.
 	private Pattern interactDesc = Pattern.compile("\\$\\{interaction.description\\}");
 
 	private Pattern userASG = Pattern.compile("\\$\\{user.asg\\}");
+	private Pattern systemASG = Pattern.compile("\\$\\{system.asg\\}");
 	private Pattern userCPPro = Pattern.compile("\\$\\{user.capPPro\\}");
 	private Pattern userCPro = Pattern.compile("\\$\\{user.capPro\\}");
 	private Pattern userPrompt = Pattern.compile("\\$\\{userPrompt\\}");
@@ -459,7 +460,7 @@ Begin conversationally.
 	private Pattern firstSecondToBe = Pattern.compile("\\$\\{firstSecondToBe\\}");
 	
 	public String composeTemplate(List<String> list) {
-		return Matcher.quoteReplacement(list.stream().collect(Collectors.joining("\r\n")));
+		return Matcher.quoteReplacement(list.stream().collect(Collectors.joining(" ")));
 	}
 	
 	public String getChatPromptTemplate(OlioContext ctx, String templ, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
@@ -544,12 +545,21 @@ Begin conversationally.
 			upro = "she";
 		}
 
-		String jobDesc = "";
+		String ujobDesc = "";
 		List<String> utrades = userChar.get("trades");
 		if(utrades.size() > 0) {
-			jobDesc =" " + utrades.get(0).toLowerCase();
+			ujobDesc =" " + utrades.get(0).toLowerCase();
 		}
-		templ = userASG.matcher(templ).replaceAll(userChar.get("age") + " year old " + ugen + jobDesc);
+		
+		String sgen = systemChar.get("gender");
+		String sjobDesc = "";
+		List<String> strades = systemChar.get("trades");
+		if(strades.size() > 0) {
+			sjobDesc =" " + strades.get(0).toLowerCase();
+		}		
+		
+		templ = systemASG.matcher(templ).replaceAll(systemChar.get("age") + " year old " + sgen + sjobDesc);
+		templ = userASG.matcher(templ).replaceAll(userChar.get("age") + " year old " + ugen + ujobDesc);
 		templ = userCPro.matcher(templ).replaceAll(ucppro);
 		templ = userCPPro.matcher(templ).replaceAll(ucppro);
 		templ = ratingName.matcher(templ).replaceAll(ESRBEnumType.getESRBName(rating));
@@ -723,6 +733,9 @@ Begin conversationally.
 			setAnnotation(getAnnotateChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 			// setAssist(getAssistChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 		}
+		else {
+			logger.warn("Either system or user characters were null - Defaulting to standard chat interface");
+		}
 		
 		OllamaOptions opts = new OllamaOptions();
 		opts.setNumGpu(32);
@@ -733,16 +746,16 @@ Begin conversationally.
 		opts.setTopK(0);
 		*/
 		
-		/*
+		
 		opts.setTemperature(0.8);
 		opts.setTopP(0.95);
 		opts.setTopK(30);
-		*/
 		
+		/*
 		opts.setTemperature(1.0);
 		opts.setTopP(0.6);
 		opts.setTopK(35);
-		
+		*/
 		opts.setRepeatPenalty(1.2);
 		
 		req.setOptions(opts);

@@ -46,7 +46,7 @@ public class OlioContext {
 	private BaseRecord currentIncrement = null;
 	private Map<Long, List<BaseRecord>> populationMap = new ConcurrentHashMap<>();
 	private Map<Long, Map<String,List<BaseRecord>>> demographicMap = new ConcurrentHashMap<>();
-	private Map<String, List<BaseRecord>> queue = new HashMap<>();
+	private Map<String, List<BaseRecord>> queue = new ConcurrentHashMap<>();
 	
 	private List<BaseRecord> realms = new ArrayList<>();
 	
