@@ -401,7 +401,7 @@ SLOAN Notation
 			prof.setAgility(HighEnumType.valueOf(((int)stats.get("agility")*5)/d1));
 			prof.setSpeed(HighEnumType.valueOf(((int)stats.get("speed")*5)/d1));
 			prof.setMentalStrength(HighEnumType.valueOf(((int)stats.get("mentalStrength")*5)/d1));
-			
+			prof.setAthleticism(HighEnumType.valueOf(((int)stats.get("athleticism")*5)/d1));
 			prof.setMentalEndurance(HighEnumType.valueOf(((int)stats.get("mentalEndurance")*5)/d1));
 			prof.setIntelligence(HighEnumType.valueOf(((int)stats.get("intelligence")*5)/d1));
 			prof.setCharisma(HighEnumType.valueOf(((int)stats.get("charisma")*5)/d1));

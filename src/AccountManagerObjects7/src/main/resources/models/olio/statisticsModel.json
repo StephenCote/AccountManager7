@@ -111,6 +111,19 @@
 			"validateRange": true
 		},
 		{
+			"name": "athleticism",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.provider.ComputeProvider",
+			"compute": "AVG",
+			"fields": ["physicalStrength", "physicalEndurance", "agility", "speed", "mentalEndurance"],
+			"description": "Potential for otherworldly perceptions and manipulations",
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
+			"priority": 30
+		},
+		{
 			"name": "magic",
 			"type": "int",
 			"virtual": true,

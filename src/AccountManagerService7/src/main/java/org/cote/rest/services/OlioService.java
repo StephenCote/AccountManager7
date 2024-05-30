@@ -1,5 +1,6 @@
 package org.cote.rest.services;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
@@ -28,6 +29,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
+import org.cote.accountmanager.olio.EthnicityEnumType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
@@ -72,7 +74,7 @@ public class OlioService {
 			StatisticsUtil.rollStatistics(a1.get("statistics"), (int)a1.get("age"));
 			ProfileUtil.rollPersonality(a1.get("personality"));
 			a1.set("race", CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
-	
+			a1.set("ethnicity", Arrays.asList(new String[] {EthnicityEnumType.ZERO.toString()}));
 			CharacterUtil.setStyleByRace(null, a1);
 			List<BaseRecord> apps = a1.get("store.apparel");
 			BaseRecord app = ApparelUtil.randomApparel(null, a1);

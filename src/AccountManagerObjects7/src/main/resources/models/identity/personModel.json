@@ -14,7 +14,20 @@
 			"name": "race",
 			"type": "list",
 			"baseType": "string",
-			"shortName": "rac"
+			"shortName": "rac",
+			"maxLength": 32
+		},
+		{
+			"name": "ethnicity",
+			"type": "list",
+			"baseType": "string",
+			"shortName": "eth"
+		},
+		{
+			"name": "otherEthnicity",
+			"type": "string",
+			"shortName": "oeth",
+			"maxLength": 32
 		},
 		{
 			"name": "firstName",

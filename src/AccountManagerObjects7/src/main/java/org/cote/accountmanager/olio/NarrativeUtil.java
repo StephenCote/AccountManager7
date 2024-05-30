@@ -99,6 +99,19 @@ public class NarrativeUtil {
 		}
 		return desc2.toString();
 	}
+	public static String getEthnicityDescription(List<String> eths, String other) {
+		if(other != null && other.length() > 0) {
+			return other;
+		}
+		StringBuilder desc = new StringBuilder();
+		
+		for(String rc: eths) {
+			EthnicityEnumType ret = EthnicityEnumType.valueOf(rc);
+			if(desc.length() > 0) desc.append(" and ");
+			desc.append(EthnicityEnumType.valueOf(ret));
+		}
+		return desc.toString();
+	}
 	public static String getRaceDescription(List<String> races) {
 		StringBuilder desc = new StringBuilder();
 		for(String rc: races) {
@@ -461,6 +474,119 @@ public class NarrativeUtil {
 		}
 		return desc;
 	}
+	
+	public static String getInteractionGerund(InteractionEnumType type) {
+		String desc = "loitering";
+		switch(type) {
+			case ACCOMMODATE:
+				desc = "helping";
+				break;
+			case ALLY:
+				desc = "forming alliances";
+				break;
+			case BARTER:
+				desc = "trading";
+				break;
+			case BEFRIEND:
+				desc = "making friends";
+				break;
+			case BETRAY:
+				desc = "double crossing";
+				break;
+			case BREAK_UP:
+				desc = "ending a relationship";
+				break;
+			case COERCE:
+				desc = "coercing";
+				break;
+			case COMBAT:
+				desc = "fighting";
+				break;
+			case COMMERCE:
+				desc = "commercing";
+				break;
+			case COMMUNICATE:
+				desc = "communicating";
+				break;
+			case COMPETE:
+				desc = "competing";
+				break;
+			case CONFLICT:
+				desc = "enflaming conflict";
+				break;
+			case CONGREGATE:
+				desc = "gathering together";
+				break;
+			case COOPERATE:
+				desc = "cooperating with others";
+				break;
+			case CORRESPOND:
+				desc = "communicating";
+				break;
+			case CRITICIZE:
+				desc = "criticizing";
+				break;
+			case DATE:
+				desc = "dating";
+				break;
+			case DEBATE:
+				desc = "arguing";
+				break;
+			case DEFEND:
+				desc = "protecting themself";
+				break;
+			case ENTERTAIN:
+				desc = "entertaining";
+				break;
+			case EXCHANGE:
+				desc = "trading";
+				break;
+			case EXPRESS_GRATITUDE:
+				desc = "giving thanks";
+				break;
+			case EXPRESS_INDIFFERENCE:
+				desc = "being indifferent";
+				break;
+			case INTIMATE:
+				desc = "being intimate";
+				break;
+			case MENTOR:
+				desc = "teaching";
+				break;
+			case NEGOTIATE:
+				desc = "negotiating";
+				break;
+			case OPPOSE:
+				desc = "opposing something";
+				break;
+			case PEER_PRESSURE:
+				desc = "pressuring others";
+				break;
+			case RECREATE:
+				desc = "vacationing";
+				break;
+			case RELATE:
+				desc = "building a relationship";
+				break;
+			case ROMANCE:
+				desc = "romancing";
+				break;
+			case SHUN:
+				desc = "ostracizing";
+				break;
+			case SEPARATE:
+				desc ="separating people";
+				break;
+			case SOCIALIZE:
+				desc = "socializing";
+				break;
+			case THREATEN:
+				desc = "threating";
+				break;
+		}
+		return desc;
+	}
+	
 	public static String getInteractionDescription(InteractionEnumType type) {
 		String desc = "loiter with";
 		switch(type) {
@@ -587,6 +713,126 @@ public class NarrativeUtil {
 		}
 		return clr;
 	}
+	
+	/// Originally based on https://www.geeksforgeeks.org/convert-number-to-words/
+	///
+	private static String getNumberName(long n)
+    {
+        long limit = 1000000000000L, t = 0;
+ 
+        // If zero return zero
+        if (n == 0)
+            return ("Zero");
+ 
+        String multiplier[] = {"", "Trillion", "Billion", "Million", "Thousand" };
+        String oneToTwenty[] = { "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"};
+        String tens[] = { "", "Twenty", "Thirty", "Forty",   "Fifty",  "Sixty", "Seventy", "Eighty", "Ninety" };
+ 
+        if (n < 20L) {
+            return (oneToTwenty[(int)n]);
+        }
+
+        String answer = "";
+        for (long i = n; i > 0; i %= limit, limit /= 1000) {
+            long curr_hun = i / limit;
+            while (curr_hun == 0) {
+                i %= limit;
+                limit /= 1000;
+                curr_hun = i / limit;
+                ++t;
+            }
+            if (curr_hun > 99) {
+                answer += (oneToTwenty[(int)curr_hun / 100] + " Hundred ");
+            }
+            curr_hun = curr_hun % 100;
+ 
+            if (curr_hun > 0 && curr_hun < 20) {
+                answer += (oneToTwenty[(int)curr_hun] + " ");
+            }
+            else if (curr_hun % 10 == 0 && curr_hun != 0) {
+                answer += (tens[(int)curr_hun / 10 - 1] + " ");
+            }
+            else if (curr_hun > 20 && curr_hun < 100) {
+                answer += (tens[(int)curr_hun / 10 - 1] + " " + oneToTwenty[(int)curr_hun % 10] + " ");
+            }
+            if (t < 4) {
+                answer += (multiplier[(int)++t] + " ");
+            }
+        }
+        return (answer);
+    }
+	
+	public static String getSDPrompt(OlioContext ctx, BaseRecord person, boolean randomSetting) {
+		StringBuilder buff = new StringBuilder();
+		
+		PersonalityProfile pp = ProfileUtil.getProfile(ctx, person);
+		int age = pp.getAge();
+		String ageName = getNumberName(age);
+		
+		String gender = person.get("gender");
+		String pro = ("male".equals(gender) ? "he" : "she");
+		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
+		boolean isMale = gender.equals("male");
+		String mof = isMale ? "man" : "woman";
+		if(age < Rules.MAXIMUM_CHILD_AGE) {
+			mof = (isMale ? "boy" : "girl") + " child";
+		}
+		else if(age <= Rules.MINIMUM_ADULT_AGE) {
+			mof = "teenaged " + (isMale ? "boy" : "girl");
+		}
+		int m = Rules.MINIMUM_ADULT_AGE;
+		buff.append("8k highly detailed professional photograph ((highest quality)) ((ultra realistic)) ((full body))");
+		
+		buff.append(" of a " + getLooksPrettyUgly(pp) + " " + getIsPrettyAthletic(pp));
+		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
+		
+		String raceDesc = getRaceDescription(pp.getRace());
+		buff.append(raceDesc.length() > 0 ? " (" + raceDesc.toLowerCase() + ")" : "");
+
+		String ethDesc = getEthnicityDescription(pp.getEthnicity(), pp.getOtherEthnicity());
+		buff.append(ethDesc.length() > 0 ? " (" + ethDesc.toLowerCase() + ")" : "");
+
+		buff.append(" (" + mof.toLowerCase() + "))");
+		
+		String hairColor = getColor(person, "hairColor");
+		String hairStyle = person.get("hairStyle");
+		String eyeColor =  getColor(person, "eyeColor");
+		
+		buff.append(" with ((" + hairStyle + ") (" + hairColor + " hair)) and (" + eyeColor + " eyes).");
+		buff.append(" " + cpro + " is " + describeOutfit(pp, false) + ".");
+		BaseRecord cell = person.get("state.currentLocation");
+		
+		String ujobDesc = "";
+		List<String> utrades = person.get("trades");
+		if(utrades.size() > 0) {
+			ujobDesc =" " + utrades.get(0).toLowerCase();
+		}
+		String[] verbs = new String[] {"running in", "walking in", "sitting in", "talking in", "dancing in", "working in", "playing in", "sleeping in", "bathing in", "dressing in", "swimming in", "skiing in"};
+		String verb = verbs[rand.nextInt(verbs.length)];
+		if(rand.nextDouble() >= 0.5) {
+			verb = getInteractionGerund(OlioUtil.getRandomInteraction()) + " in";
+		}
+		String pref = " " + cpro + " is (" + (ujobDesc.length() > 0 ? "a " + ujobDesc + " " : "") + "(" + verb + ")) ";
+		if(randomSetting) {
+			buff.append(pref + " " + NarrativeUtil.getRandomSetting());
+		}
+		else {
+			if(cell != null) {
+				List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
+				TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+				Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+				String tdesc = "an expanse of " + tet.toString().toLowerCase();
+				if(stets.size() > 0) {
+					tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
+				}
+				buff.append(pref + tdesc);
+			}
+		}
+		//woman (eighteen year old:1.5) (18 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat, (carrying a (Winchester rifle)) (riding a horse across the (Oklahoma (tall grass prairie))). She has (wide hips:1.5), (narrow waist:1.5). 
+		buff.append(" Sharp focus, ultra sharp image. Natural light only.  <lora:add-detail-xl:1> <lora:xl_more_art-full_v1:1.2>");
+		return buff.toString();
+	}
+	
 	public static String describe(OlioContext ctx, BaseRecord person) {
 		return describe(ctx, person, true, false);
 	}
@@ -610,7 +856,7 @@ public class NarrativeUtil {
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get("race"));
-		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
 		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
 		buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
 		buff.append(" " + getDarkTriadDescription(pp));
@@ -726,6 +972,33 @@ public class NarrativeUtil {
 		return desc;
 	}
 	
+	public static String getIsPrettyAthletic(PersonalityProfile prof) {
+		String desc = "indescribable";
+		HighEnumType charm = prof.getAthleticism();
+		if(HighEnumType.compare(charm, HighEnumType.DIMINISHED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "frail";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.MODEST, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "weak";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.FAIR, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "in-shape";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.ELEVATED, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "athletic";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "marathoner";
+		}
+		else if(HighEnumType.compare(charm, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
+			desc = "trimarathoner";
+		}
+		else {
+			desc = "olympian";
+		}
+		return desc;
+	}
+	
 	public static String getIsPrettyRipped(PersonalityProfile prof) {
 		String desc = "indescribable";
 		HighEnumType charm = prof.getPhysicalStrength();
@@ -742,10 +1015,10 @@ public class NarrativeUtil {
 			desc = "athletic";
 		}
 		else if(HighEnumType.compare(charm, HighEnumType.STRONG, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
-			desc = "olympian";
+			desc = "carved in stone";
 		}
 		else if(HighEnumType.compare(charm, HighEnumType.EXTENSIVE, ComparatorEnumType.LESS_THAN_OR_EQUALS)) {
-			desc = "carved in stone";
+			desc = "olympian";
 		}
 		else {
 			desc = "an Adonis";

@@ -34,6 +34,7 @@ public class AnimalProfile {
 	private HighEnumType science = HighEnumType.DISREGARDED;
 	private HighEnumType reaction = HighEnumType.DISREGARDED;
 	private HighEnumType save = HighEnumType.DISREGARDED;
+	private HighEnumType athleticism = HighEnumType.DISREGARDED;
 	private HighEnumType magic = HighEnumType.DISREGARDED;
 	private HighEnumType health = HighEnumType.DISREGARDED;
 	private HighEnumType maximumHealth = HighEnumType.DISREGARDED;
@@ -331,6 +332,14 @@ public class AnimalProfile {
 
 	public void setSpeed(HighEnumType speed) {
 		this.speed = speed;
+	}
+
+	public HighEnumType getAthleticism() {
+		return athleticism;
+	}
+
+	public void setAthleticism(HighEnumType athleticism) {
+		this.athleticism = athleticism;
 	}
 
 	public HighEnumType getMentalStrength() {

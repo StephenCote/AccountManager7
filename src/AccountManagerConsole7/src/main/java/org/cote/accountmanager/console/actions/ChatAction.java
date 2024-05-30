@@ -48,6 +48,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("olio", false, "Load the Olio Context");
 		options.addOption("party", false, "Generic bit to restrict parties");
 		options.addOption("show", false, "Generic bit");
+		options.addOption("showSD", false, "Generic bit to show stable-diffusion prompt");
 		options.addOption("detailed", false, "Generic bit used to enable pattern and fabric descriptions of clothes.");
 		options.addOption("setting", false, "Generic bit to create a random setting instead of the character's context location");
 		options.addOption("scene", false, "Generic bit to include a basic scene guidance (including any interaction)");
@@ -178,6 +179,10 @@ public class ChatAction extends CommonAction implements IAction{
 					logger.info("Describe " + char1.get(FieldNames.FIELD_NAME));;
 					logger.info(NarrativeUtil.describe(octx, char1));
 				}
+				if(cmd.hasOption("showSD")) {
+					logger.info("Stable Diffusion Prompt for " + char1.get(FieldNames.FIELD_NAME));;
+					logger.info(NarrativeUtil.getSDPrompt(octx, char1, cmd.hasOption("setting")));
+				}
 				if(cmd.hasOption("inspect")) {
 					logger.info(char1.toFullString());
 				}
@@ -185,6 +190,9 @@ public class ChatAction extends CommonAction implements IAction{
 			if(char2 != null) {
 				if(cmd.hasOption("show")) {
 					logger.info(NarrativeUtil.describe(octx, char2));
+				}
+				if(cmd.hasOption("showSD")) {
+					logger.info(NarrativeUtil.getSDPrompt(octx, char2, cmd.hasOption("setting")));
 				}
 				if(cmd.hasOption("inspect")) {
 					logger.info(char2.toFullString());
@@ -266,8 +274,8 @@ public class ChatAction extends CommonAction implements IAction{
 			*/
 			//String model = "llama3:8b-text-q5_1";
 			//String model = "dolphin-llama3";
-			String model = "llama2-uncensored:7b-chat-q8_0";
-			//String model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
+			//String model = "llama2-uncensored:7b-chat-q8_0";
+			String model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
 			//String model = "llama2-uncensored:7b-chat-q8_0";
 			//String model = "zephyr-local";
 			//String model = "blue-orchid";

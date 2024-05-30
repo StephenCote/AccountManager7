@@ -77,6 +77,14 @@ public class PersonalityProfile extends AnimalProfile {
 		return getRecord().get("race");
 	}
 	
+	public List<String> getEthnicity(){
+		return getRecord().get("ethnicity");
+	}
+	
+	public String getOtherEthnicity(){
+		return getRecord().get("otherEthnicity");
+	}
+	
 	public boolean isNarcissist() {
 		return VeryEnumType.compare(narcissist, VeryEnumType.SOMEWHAT, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}
