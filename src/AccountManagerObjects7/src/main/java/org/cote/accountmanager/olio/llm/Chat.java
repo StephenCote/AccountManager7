@@ -51,7 +51,7 @@ public class Chat {
 	private boolean includeMessageHistory = chatMode;
 	private boolean includeContextHistory = !chatMode;
 	private boolean enablePrune = false;
-	private int tokenLength = 2048;
+	private int tokenLength = 1536;
 	//private String model = "llama2-uncensored:7b-chat-q8_0";
 	private String model = "dolphin-mistral";
 	//private String model = "blue-orchid";
@@ -75,6 +75,14 @@ Begin conversationally.
 		this.user = user;
 	}
 	
+	public boolean isEnablePrune() {
+		return enablePrune;
+	}
+
+	public void setEnablePrune(boolean enablePrune) {
+		this.enablePrune = enablePrune;
+	}
+
 	public PromptConfiguration getPromptConfig() {
 		return promptConfig;
 	}

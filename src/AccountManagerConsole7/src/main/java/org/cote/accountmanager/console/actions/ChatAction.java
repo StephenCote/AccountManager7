@@ -53,6 +53,8 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("setting", false, "Generic bit to create a random setting instead of the character's context location");
 		options.addOption("scene", false, "Generic bit to include a basic scene guidance (including any interaction)");
 		options.addOption("prompt", true, "Chat prompt");
+		options.addOption("prune", false, "Bit indicating to auto-prune conversation threads.");
+		
 		options.addOption("promptConfig", true, "Prompt configuration file");
 		options.addOption("userPromptConfig", true, "Name of user's prompt configuration file - default will be used to create it if it doesn't exist.");
 		options.addOption("iprompt", true, "Chat prompt for interactions");
@@ -245,6 +247,7 @@ public class ChatAction extends CommonAction implements IAction{
 		
 		if(cmd.hasOption("chat")) {
 			Chat chat = new Chat(user);
+			chat.setEnablePrune(cmd.hasOption("prune"));
 			chat.setIncludeScene(true);
 			chat.setRandomSetting(true);
 			PromptConfiguration pc = null;
