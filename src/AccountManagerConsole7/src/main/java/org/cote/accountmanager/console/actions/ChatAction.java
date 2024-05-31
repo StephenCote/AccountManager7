@@ -50,7 +50,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("show", false, "Generic bit");
 		options.addOption("showSD", false, "Generic bit to show stable-diffusion prompt");
 		options.addOption("detailed", false, "Generic bit used to enable pattern and fabric descriptions of clothes.");
-		options.addOption("setting", false, "Generic bit to create a random setting instead of the character's context location");
+		options.addOption("setting", true, "Generic bit to create a random setting instead of the character's context location");
 		options.addOption("scene", false, "Generic bit to include a basic scene guidance (including any interaction)");
 		options.addOption("prompt", true, "Chat prompt");
 		options.addOption("prune", false, "Bit indicating to auto-prune conversation threads.");
@@ -183,7 +183,7 @@ public class ChatAction extends CommonAction implements IAction{
 				}
 				if(cmd.hasOption("showSD")) {
 					logger.info("Stable Diffusion Prompt for " + char1.get(FieldNames.FIELD_NAME));;
-					logger.info(NarrativeUtil.getSDPrompt(octx, char1, cmd.hasOption("setting")));
+					logger.info(NarrativeUtil.getSDPrompt(octx, char1, cmd.getOptionValue("setting")));
 				}
 				if(cmd.hasOption("inspect")) {
 					logger.info(char1.toFullString());
@@ -194,7 +194,7 @@ public class ChatAction extends CommonAction implements IAction{
 					logger.info(NarrativeUtil.describe(octx, char2));
 				}
 				if(cmd.hasOption("showSD")) {
-					logger.info(NarrativeUtil.getSDPrompt(octx, char2, cmd.hasOption("setting")));
+					logger.info(NarrativeUtil.getSDPrompt(octx, char2, cmd.getOptionValue("setting")));
 				}
 				if(cmd.hasOption("inspect")) {
 					logger.info(char2.toFullString());
@@ -231,7 +231,7 @@ public class ChatAction extends CommonAction implements IAction{
 				chat.setRating(ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
 			}
 			if(cmd.hasOption("setting")) {
-				chat.setRandomSetting(true);
+				chat.setSettingStr(cmd.getOptionValue("setting"));
 			}
 			if(cmd.hasOption("rpg")) {
 				logger.info(chat.getSystemChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
@@ -249,7 +249,9 @@ public class ChatAction extends CommonAction implements IAction{
 			Chat chat = new Chat(user);
 			chat.setEnablePrune(cmd.hasOption("prune"));
 			chat.setIncludeScene(true);
-			chat.setRandomSetting(true);
+			if(cmd.hasOption("setting")) {
+				chat.setSettingStr(cmd.getOptionValue("setting"));
+			}
 			PromptConfiguration pc = null;
 			if(cmd.hasOption("userPromptConfig")) {
 				pc = JSONUtil.importObject(getCreateUserPrompt(user, cmd.getOptionValue("userPromptConfig")), PromptConfiguration.class);

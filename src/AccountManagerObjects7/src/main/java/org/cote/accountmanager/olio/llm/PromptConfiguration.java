@@ -10,12 +10,14 @@ public class PromptConfiguration {
 	private List<String> system = new ArrayList<>();
 	private List<String> systemCensorWarning = new ArrayList<>();
 	private List<String> systemNlp = new ArrayList<>();
+	private List<String> systemAnalyze = new ArrayList<>();
 	
 	private List<String> assistant = new ArrayList<>();
 	private List<String> assistantNlp = new ArrayList<>();
 	private List<String> assistantCensorWarning = new ArrayList<>();
 	
 	private List<String> user = new ArrayList<>();
+	private List<String> userAnalyze = new ArrayList<>();
 	private List<String> scene = new ArrayList<>();
 	private List<String> setting = new ArrayList<>();
 	private List<PromptRaceConfiguration> races = new ArrayList<>();
@@ -25,6 +27,22 @@ public class PromptConfiguration {
 	
 	public PromptConfiguration() {
 		
+	}
+
+	public List<String> getSystemAnalyze() {
+		return systemAnalyze;
+	}
+
+	public void setSystemAnalyze(List<String> systemAnalyze) {
+		this.systemAnalyze = systemAnalyze;
+	}
+
+	public List<String> getUserAnalyze() {
+		return userAnalyze;
+	}
+
+	public void setUserAnalyze(List<String> userAnalyze) {
+		this.userAnalyze = userAnalyze;
 	}
 
 	public List<String> getSystem() {

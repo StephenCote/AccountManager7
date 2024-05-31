@@ -762,7 +762,7 @@ public class NarrativeUtil {
         return (answer);
     }
 	
-	public static String getSDPrompt(OlioContext ctx, BaseRecord person, boolean randomSetting) {
+	public static String getSDPrompt(OlioContext ctx, BaseRecord person, String setting) {
 		StringBuilder buff = new StringBuilder();
 		
 		PersonalityProfile pp = ProfileUtil.getProfile(ctx, person);
@@ -813,8 +813,11 @@ public class NarrativeUtil {
 			verb = getInteractionGerund(OlioUtil.getRandomInteraction()) + " in";
 		}
 		String pref = " " + cpro + " is (" + (ujobDesc.length() > 0 ? "a " + ujobDesc + " " : "") + "(" + verb + ")) ";
-		if(randomSetting) {
-			buff.append(pref + " " + NarrativeUtil.getRandomSetting());
+		if(setting != null && setting.length() > 0) {
+			if(setting.equalsIgnoreCase("random")) {
+				setting = NarrativeUtil.getRandomSetting();
+			}
+			buff.append(pref + " " + setting);
 		}
 		else {
 			if(cell != null) {

@@ -3,7 +3,7 @@ package org.cote.accountmanager.olio.llm;
 import java.util.ArrayList;
 import java.util.List;
 
-public class OllamaRequest{
+public class OllamaRequest {
 	private String model = null;
 	private String prompt = null;
 	private String system = null;
@@ -11,10 +11,17 @@ public class OllamaRequest{
 	private List<Integer> context = new ArrayList<>();
 	private List<OllamaMessage> messages = new ArrayList<>();
 	private OllamaOptions options = null;
+	
 	public OllamaRequest() {
 		
 	}
 	
+	/*
+	 @Override
+	 public Object clone() throws CloneNotSupportedException {
+		 return super.clone();
+	 }
+	*/
 	public OllamaOptions getOptions() {
 		return options;
 	}

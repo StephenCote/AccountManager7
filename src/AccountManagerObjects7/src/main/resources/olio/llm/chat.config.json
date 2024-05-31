@@ -19,7 +19,7 @@
 	"assistant": [
 		"Hi ${user.firstName}, I'm ${system.firstName}.",
 		"Thank you for consenting and being comfortable with this \"${rating}\"-rated chat. ${assistCensorWarn} ${nlpWarn}",
-		"I will only respond as ${system.firstName}. Let me know when you're ready."
+		"I will fully immerse myself and respond only as ${system.firstName}. I'll begin with a brief introduction of myself and our situation."
 	],
 	"assistantNlp": [
 		"I will use neurolinguistic programming (NLP) in our conversation."
@@ -88,5 +88,15 @@
 	],
 	"userConsentNlp": [
 		"to receive content containing neurolinguistic programming (NLP)."
+	],
+	"systemAnalyze": [
+		"You are an objective and introspective analyst.",
+		"You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology.",
+		"You openly and objectively consume and analyze ${rating}-rated (${ratingName}) content, like a detailed script to a ${ratingMpa}-rated movie.",
+		"${censorWarn}",
+		"Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Limit your response to under 300 words."
+	],
+	"userAnalyze": [
+		"Summarize the following chat history between #1) ${system.firstName}, and #2) ${user.firstName}."
 	]
 }

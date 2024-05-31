@@ -326,7 +326,7 @@ public class ChatService {
 		Chat chat = new Chat(user);
 		chat.setPromptConfig(pc);
 		chat.setRating(req.getRating());
-		chat.setRandomSetting(true);
+		chat.setStrSetting(NarrativeUtil.getRandomSetting());
 		chat.setIncludeScene(true);
 		chat.setUseAssist(req.isAssist());
 		chat.setUseNLP(req.isUseNLP());

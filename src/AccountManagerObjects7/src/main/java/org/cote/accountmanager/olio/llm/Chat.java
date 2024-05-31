@@ -51,19 +51,23 @@ public class Chat {
 	private boolean includeMessageHistory = chatMode;
 	private boolean includeContextHistory = !chatMode;
 	private boolean enablePrune = false;
-	private int tokenLength = 1536;
+	private int tokenLength = 2048;
 	//private String model = "llama2-uncensored:7b-chat-q8_0";
 	private String model = "dolphin-mistral";
 	//private String model = "blue-orchid";
 	private String saveName = "chat.save";
+	private String analyzeName = "analyze.save";
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
-	private boolean randomSetting = false;
+	//private boolean randomSetting = false;
+	private String settingStr = null;
 	private boolean includeScene = false;
 	private ESRBEnumType rating = ESRBEnumType.E;
 	private int remind = 0;
 	private String annotation = null;
 	private String assist = null;
+	private String systemAnalyze = null;
+	private String userAnalyze = null;
 	private boolean useAssist = false;
 	private boolean useNLP = false;
 	private String llmSystemPrompt = """
@@ -75,6 +79,14 @@ Begin conversationally.
 		this.user = user;
 	}
 	
+	public String getSettingStr() {
+		return settingStr;
+	}
+
+	public void setSettingStr(String settingStr) {
+		this.settingStr = settingStr;
+	}
+
 	public boolean isEnablePrune() {
 		return enablePrune;
 	}
@@ -146,7 +158,7 @@ Begin conversationally.
 	public void setIncludeScene(boolean includeScene) {
 		this.includeScene = includeScene;
 	}
-
+/*
 	public boolean isRandomSetting() {
 		return randomSetting;
 	}
@@ -154,7 +166,7 @@ Begin conversationally.
 	public void setRandomSetting(boolean randomSetting) {
 		this.randomSetting = randomSetting;
 	}
-
+*/
 	public String getOllamaServer() {
 		return ollamaServer;
 	}
@@ -252,7 +264,72 @@ Begin conversationally.
 			handleResponse(req, lastRep, false);
 		}
 	}
+	private String getFormattedChatHistory(OllamaRequest req) {
+		StringBuilder buff = new StringBuilder();
+		//for(OllamaMessage msg : req.getMessages()) {
+		for(int i = (pruneSkip + 1); i < req.getMessages().size(); i++) {
+			if(buff.length() > 0) buff.append("\r\n");
+
+			OllamaMessage msg = req.getMessages().get(i);
+			String cont = msg.getContent();
+			if(cont != null && cont.startsWith("(KeyFrame")) {
+				continue;
+			}
+			String charPos = "#1";
+			if(msg.getRole().equals("user")) {
+				charPos = "#2";
+			}
+			buff.append("(" + charPos + "): ");
+			buff.append(cont);
+		}
+		return buff.toString();
+	}
 	
+	public OllamaRequest getAnalyzePrompt(OllamaRequest req, String command) {
+		
+		if(command == null || command.length() == 0) {
+			if(userAnalyze != null && userAnalyze.length() > 0) {
+				command = userAnalyze;
+			}
+			else {
+				command = "Summarize the following chat history.";
+			}
+		}
+		
+		OllamaRequest areq = new OllamaRequest();
+		areq.setModel(req.getModel());
+		areq.setOptions(req.getOptions());
+		OllamaMessage sysMsg = new OllamaMessage();
+		sysMsg.setRole("system");
+		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Limit your response to under 300 words.";
+		if(systemAnalyze != null && systemAnalyze.length() > 0) {
+			sys = systemAnalyze;
+		}
+		sysMsg.setContent(sys);
+		areq.getMessages().add(sysMsg);
+		OllamaMessage anMsg = new OllamaMessage();
+		anMsg.setRole("user");
+
+		anMsg.setContent(command);
+		areq.getMessages().add(anMsg);
+		
+		anMsg = new OllamaMessage();
+		anMsg.setRole("user");
+		anMsg.setContent(getFormattedChatHistory(req));
+		areq.getMessages().add(anMsg);
+
+		return areq;
+	}
+	
+	public String analyze(OllamaRequest req, String command) {
+		String resp = null;
+		OllamaResponse oresp = chat(getAnalyzePrompt(req, command));
+		if(oresp != null && oresp.getMessage() != null) {
+			resp = oresp.getMessage().getContent();
+		}
+		return resp;
+	}
+
 	public void chatConsole(OllamaRequest req){
 		BufferedReader is = new BufferedReader(new InputStreamReader(System.in));
 		try{
@@ -274,6 +351,10 @@ Begin conversationally.
 				}
 				if(line.equals("/new")) {
 					req = newRequest(model);
+					continue;
+				}
+				if(line.startsWith("/analyze")) {
+					logger.info(analyze(req, line.substring(8).trim()));
 					continue;
 				}
 				if(line.equals("/prune")) {
@@ -335,6 +416,16 @@ Begin conversationally.
 			logger.error(e.getMessage());
 		} 
 	}
+	
+	private void addKeyFrame(OllamaRequest req) {
+		OllamaMessage msg = new OllamaMessage();
+		msg.setRole("assistant");
+		msg.setContent("(KeyFrame: " + analyze(req, annotation) + ")");
+		List<OllamaMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame")).collect(Collectors.toList());
+		msgs.add(msg);
+		req.setMessages(msgs);
+	}
+	
 	private void addReminder(OllamaRequest req) {
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole("user");
@@ -390,21 +481,31 @@ Begin conversationally.
 		/// Skip the first message used to set any context prompt
 		///
 		for(int i = pruneSkip; i < req.getMessages().size(); i++) {
-			curLength += req.getMessages().get(i).getContent().split("\\W+").length;
+			OllamaMessage msg = req.getMessages().get(i);
+			if(msg.isPruned()) continue;
+			if(msg.getContent() != null) {
+				curLength += msg.getContent().split("\\W+").length;
+			}
 			if(curLength >= tokenLength) {
-				System.out.println("Prune prior to " + i + " of " + req.getMessages().size() + " / Token Size = " + curLength);
+				System.out.println("Prune from " + pruneSkip + " prior to " + i + " of " + req.getMessages().size() + " / Token Size = " + curLength);
 				marker = i - 1;
 				break;
 			}
 		}
 		if(force) {
-			System.out.println("Found " + curLength + " tokens");
+			System.out.println("Found " + curLength + " tokens. " + (marker > -1 ? "Will":"Won't") + " prune.");
 		}
 		if(marker > -1) {
+			for(int i = pruneSkip; i <= marker; i++) {
+				req.getMessages().get(i).setPruned(true);
+			}
+			addKeyFrame(req);
+			/*
 			List<OllamaMessage> msgs = Arrays.asList(Arrays.copyOfRange(req.getMessages().toArray(new OllamaMessage[0]), marker, req.getMessages().size()));
 			req.getMessages().clear();
 			req.getMessages().add(ctxMsg);
 			req.getMessages().addAll(msgs);
+			*/
 		}
 	}
 
@@ -415,14 +516,26 @@ Begin conversationally.
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole(role);
 		msg.setContent(message);
-
-		req.getMessages().add(msg);
+		
 		prune(req, false);
+		req.getMessages().add(msg);
+
 		return msg;
 	}
 	
+	public OllamaRequest getPrunedRequest(OllamaRequest inReq) {
+		OllamaRequest outReq = new OllamaRequest();
+		outReq.setContext(inReq.getContext());
+		outReq.setModel(inReq.getModel());
+		outReq.setOptions(inReq.getOptions());
+		outReq.setPrompt(inReq.getPrompt());
+		outReq.setSystem(inReq.getSystem());
+		outReq.getMessages().addAll(inReq.getMessages().stream().filter(m -> (m.isPruned()==false)).collect(Collectors.toList()));
+		return outReq;
+	}
+
 	public OllamaResponse chat(OllamaRequest req) {
-		return ClientUtil.post(OllamaResponse.class, ClientUtil.getResource(ollamaServer + "/api/" + (chatMode ? "chat" : "generate")), req, MediaType.APPLICATION_JSON_TYPE);
+		return ClientUtil.post(OllamaResponse.class, ClientUtil.getResource(ollamaServer + "/api/" + (chatMode ? "chat" : "generate")), getPrunedRequest(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
 	private Pattern locationName = Pattern.compile("\\$\\{location.name\\}");
@@ -507,7 +620,7 @@ Begin conversationally.
 			scenel = promptConfig.getScene().stream().collect(Collectors.joining("\r\n"));
 		}
 		templ = scene.matcher(templ).replaceAll(scenel);
-		if(!randomSetting) {
+		if(settingStr == null || settingStr.length() == 0) {
 			templ = setting.matcher(templ).replaceAll(composeTemplate(promptConfig.getSetting()));
 		}
 		
@@ -606,8 +719,12 @@ Begin conversationally.
 		templ = profileRomanceCompat.matcher(templ).replaceAll("Romantically, " + romCompat + ".");
 		
 		BaseRecord cell = userChar.get("state.currentLocation");
-		if(randomSetting) {
-			templ = setting.matcher(templ).replaceAll("The setting is: " + NarrativeUtil.getRandomSetting());
+		if(settingStr != null && settingStr.length() > 0) {
+			String ss = settingStr;
+			if(ss.equalsIgnoreCase("random")) {
+				ss = NarrativeUtil.getRandomSetting();
+			}
+			templ = setting.matcher(templ).replaceAll("The setting is: " + ss);
 		}
 		else {
 			if(cell != null) {
@@ -710,6 +827,14 @@ Begin conversationally.
 		return getChatPromptTemplate(ctx, promptConfig.getAssistant().stream().collect(Collectors.joining("\r\n")), epoch, evt, systemChar, userChar, interaction, iPrompt, true);
 	}
 
+	public String getSystemAnalyzeTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, promptConfig.getSystemAnalyze().stream().collect(Collectors.joining("\r\n")), epoch, evt, systemChar, userChar, interaction, iPrompt, true);
+	}
+
+	public String getUserAnalyzeTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
+		return getChatPromptTemplate(ctx, promptConfig.getUserAnalyze().stream().collect(Collectors.joining("\r\n")), epoch, evt, systemChar, userChar, interaction, iPrompt, true);
+	}
+
 	
 	public OllamaRequest getChatPrompt(OlioContext octx, String defPrompt, String iPrompt, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, boolean rpg) {
 		
@@ -720,6 +845,10 @@ Begin conversationally.
 			String sysTemp = null;
 			String userTemp = null;
 			String assist = null;
+
+			userAnalyze = getUserAnalyzeTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
+			systemAnalyze = getUserAnalyzeTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
+			
 			if(useAssist) {
 				assist = getAssistChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt);
 			}
@@ -754,16 +883,16 @@ Begin conversationally.
 		opts.setTopK(0);
 		*/
 		
-		
+		/*
 		opts.setTemperature(0.8);
 		opts.setTopP(0.95);
 		opts.setTopK(30);
+		*/
 		
-		/*
 		opts.setTemperature(1.0);
 		opts.setTopP(0.6);
 		opts.setTopK(35);
-		*/
+		
 		opts.setRepeatPenalty(1.2);
 		
 		req.setOptions(opts);

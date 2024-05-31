@@ -139,7 +139,7 @@ public class RollUtil {
 		return rollStat20(rec, "charisma");
 	}
 	public static RollEnumType rollCounterCharisma(BaseRecord rec) {
-		return rollStat20(ComputeUtil.getAverage(rec, new String[] {"charisma", "intelligence"}));
+		return rollStat20(ComputeUtil.getAverage(rec.get("statistics"), new String[] {"charisma", "intelligence"}));
 	}
 
 	/*
