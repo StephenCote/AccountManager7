@@ -7,6 +7,8 @@ import org.cote.accountmanager.olio.RaceEnumType;
 
 public class PromptConfiguration {
 
+	private String name = null;
+	
 	private List<String> system = new ArrayList<>();
 	private List<String> systemCensorWarning = new ArrayList<>();
 	private List<String> systemNlp = new ArrayList<>();
@@ -27,6 +29,14 @@ public class PromptConfiguration {
 	
 	public PromptConfiguration() {
 		
+	}
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
 	}
 
 	public List<String> getSystemAnalyze() {

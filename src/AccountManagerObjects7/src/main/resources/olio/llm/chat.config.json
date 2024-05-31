@@ -78,6 +78,12 @@
 			"race": [
 				"${firstSecondToBe} infused with a lascivious spirit."
 			]
+		},
+		{
+			"raceType": "L",
+			"race": [
+				"${firstSecondToBe} is a dyed in the wool lunatic and fiend."
+			]
 		}
 	],
 	"userConsentPrefix": [

@@ -9,6 +9,7 @@ public enum RaceEnumType {
 	C("Black or African American"),
 	D("Native Hawaiian or other Pacific Islander"),
 	E("White"),
+	L("Lunatic"),
 	R("Robot"),
 	S("Succubus"),
 	U("Unknown"),

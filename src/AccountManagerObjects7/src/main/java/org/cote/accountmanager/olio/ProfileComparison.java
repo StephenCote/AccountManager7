@@ -68,13 +68,13 @@ public class ProfileComparison {
 			/// TODO: Need to encapsulate this type of rule into something more data-driven and configurable
 			///
 			else if(
-				(race1.size() == 1 && race1.contains("alien")) || (race2.size() == 1 && race2.contains("alien"))
+				(race1.size() == 1 && race1.contains(RaceEnumType.W.toString())) || (race2.size() == 1 && race2.contains(RaceEnumType.W.toString()))
 				||
-				(race1.size() == 1 && race1.contains("vampire")) || (race2.size() == 1 && race2.contains("vampire"))
+				(race1.size() == 1 && race1.contains(RaceEnumType.V.toString())) || (race2.size() == 1 && race2.contains(RaceEnumType.V.toString()))
 				||
-				(race1.size() == 1 && race1.contains("succubus")) || (race2.size() == 1 && race2.contains("succubus"))
+				(race1.size() == 1 && race1.contains(RaceEnumType.S.toString())) || (race2.size() == 1 && race2.contains(RaceEnumType.S.toString()))
 				||
-				(race1.size() == 1 && race1.contains("robot")) || (race2.size() == 1 && race2.contains("robot"))
+				(race1.size() == 1 && race1.contains(RaceEnumType.R.toString())) || (race2.size() == 1 && race2.contains(RaceEnumType.R.toString()))
 			){
 				cet = CompatibilityEnumType.NOT_IDEAL;
 			}

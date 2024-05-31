@@ -264,10 +264,11 @@ Begin conversationally.
 			handleResponse(req, lastRep, false);
 		}
 	}
-	private String getFormattedChatHistory(OllamaRequest req) {
+	private String getFormattedChatHistory(OllamaRequest req, boolean full) {
 		StringBuilder buff = new StringBuilder();
 		//for(OllamaMessage msg : req.getMessages()) {
-		for(int i = (pruneSkip + 1); i < req.getMessages().size(); i++) {
+		//for(int i = (pruneSkip + 1); i < req.getMessages().size(); i++) {
+		for(int i = (full ? 0 : (pruneSkip + 1)); i < req.getMessages().size(); i++) {
 			if(buff.length() > 0) buff.append("\r\n");
 
 			OllamaMessage msg = req.getMessages().get(i);
@@ -285,7 +286,7 @@ Begin conversationally.
 		return buff.toString();
 	}
 	
-	public OllamaRequest getAnalyzePrompt(OllamaRequest req, String command) {
+	public OllamaRequest getAnalyzePrompt(OllamaRequest req, String command, boolean full) {
 		
 		if(command == null || command.length() == 0) {
 			if(userAnalyze != null && userAnalyze.length() > 0) {
@@ -315,15 +316,15 @@ Begin conversationally.
 		
 		anMsg = new OllamaMessage();
 		anMsg.setRole("user");
-		anMsg.setContent(getFormattedChatHistory(req));
+		anMsg.setContent(getFormattedChatHistory(req, full));
 		areq.getMessages().add(anMsg);
 
 		return areq;
 	}
 	
-	public String analyze(OllamaRequest req, String command) {
+	public String analyze(OllamaRequest req, String command, boolean full) {
 		String resp = null;
-		OllamaResponse oresp = chat(getAnalyzePrompt(req, command));
+		OllamaResponse oresp = chat(getAnalyzePrompt(req, command, full));
 		if(oresp != null && oresp.getMessage() != null) {
 			resp = oresp.getMessage().getContent();
 		}
@@ -353,10 +354,15 @@ Begin conversationally.
 					req = newRequest(model);
 					continue;
 				}
-				if(line.startsWith("/analyze")) {
-					logger.info(analyze(req, line.substring(8).trim()));
+				if(line.startsWith("/analyzeAll")) {
+					logger.info(analyze(req, line.substring(8).trim(), true));
 					continue;
 				}
+				if(line.startsWith("/analyze")) {
+					logger.info(analyze(req, line.substring(8).trim(), false));
+					continue;
+				}
+
 				if(line.equals("/prune")) {
 					prune(req, true);
 					continue;
@@ -420,7 +426,7 @@ Begin conversationally.
 	private void addKeyFrame(OllamaRequest req) {
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole("assistant");
-		msg.setContent("(KeyFrame: " + analyze(req, annotation) + ")");
+		msg.setContent("(KeyFrame: " + analyze(req, annotation, false) + ")");
 		List<OllamaMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame")).collect(Collectors.toList());
 		msgs.add(msg);
 		req.setMessages(msgs);
@@ -487,7 +493,7 @@ Begin conversationally.
 				curLength += msg.getContent().split("\\W+").length;
 			}
 			if(curLength >= tokenLength) {
-				System.out.println("Prune from " + pruneSkip + " prior to " + i + " of " + req.getMessages().size() + " / Token Size = " + curLength);
+				System.out.println("(Prune from " + pruneSkip + " prior to " + i + " of " + req.getMessages().size() + " / Token Size = " + curLength + ")");
 				marker = i - 1;
 				break;
 			}
@@ -499,6 +505,7 @@ Begin conversationally.
 			for(int i = pruneSkip; i <= marker; i++) {
 				req.getMessages().get(i).setPruned(true);
 			}
+			System.out.println("(Adding key frame)");
 			addKeyFrame(req);
 			/*
 			List<OllamaMessage> msgs = Arrays.asList(Arrays.copyOfRange(req.getMessages().toArray(new OllamaMessage[0]), marker, req.getMessages().size()));
@@ -564,6 +571,8 @@ Begin conversationally.
 	private Pattern systemASG = Pattern.compile("\\$\\{system.asg\\}");
 	private Pattern userCPPro = Pattern.compile("\\$\\{user.capPPro\\}");
 	private Pattern userCPro = Pattern.compile("\\$\\{user.capPro\\}");
+	private Pattern userPro = Pattern.compile("\\$\\{user.pro\\}");
+	private Pattern userPPro = Pattern.compile("\\$\\{user.ppro\\}");
 	private Pattern userPrompt = Pattern.compile("\\$\\{userPrompt\\}");
 	private Pattern scene = Pattern.compile("\\$\\{scene\\}"); 
 	private Pattern nlpPat = Pattern.compile("\\$\\{nlp\\}");
@@ -575,6 +584,8 @@ Begin conversationally.
 	private Pattern ratingDesc = Pattern.compile("\\$\\{ratingDesc\\}");
 	private Pattern ratingRestrict = Pattern.compile("\\$\\{ratingRestrict\\}");
 	private Pattern annotateSupplement = Pattern.compile("\\$\\{annotateSupplement\\}");
+	private Pattern userRace = Pattern.compile("\\$\\{user.race\\}");
+	private Pattern systemRace = Pattern.compile("\\$\\{system.race\\}");
 	private Pattern censorWarn = Pattern.compile("\\$\\{censorWarn\\}");
 	private Pattern userConsent = Pattern.compile("\\$\\{user.consent\\}");
 	private Pattern assistCensorWarn = Pattern.compile("\\$\\{assistCensorWarn\\}");
@@ -599,13 +610,24 @@ Begin conversationally.
 		ProfileComparison profComp = new ProfileComparison(ctx, sysProf, usrProf);
 		
 		String asupp = "";
-		if(sysProf.getRace().contains("S") || sysProf.getRace().contains("V") || sysProf.getRace().contains("R") || sysProf.getRace().contains("W") || sysProf.getRace().contains("X") || sysProf.getRace().contains("Y") || sysProf.getRace().contains("Z")) {
-			
+		String srace = "";
+		String urace = "";
+		
+		if(sysProf.getRace().contains("L") || sysProf.getRace().contains("S") || sysProf.getRace().contains("V") || sysProf.getRace().contains("R") || sysProf.getRace().contains("W") || sysProf.getRace().contains("X") || sysProf.getRace().contains("Y") || sysProf.getRace().contains("Z")) {
 			Optional<PromptRaceConfiguration> osupp = promptConfig.getRaces().stream().filter(r -> sysProf.getRace().contains(r.getRaceType().toString())).findFirst();
 			if(osupp.isPresent()) {
-				asupp = composeTemplate(osupp.get().getRace());
+				srace = composeTemplate(osupp.get().getRace());
 			}
 		}
+
+		if(usrProf.getRace().contains("L") || usrProf.getRace().contains("S") || usrProf.getRace().contains("V") || usrProf.getRace().contains("R") || usrProf.getRace().contains("W") || usrProf.getRace().contains("X") || usrProf.getRace().contains("Y") || usrProf.getRace().contains("Z")) {
+			Optional<PromptRaceConfiguration> osupp = promptConfig.getRaces().stream().filter(r -> usrProf.getRace().contains(r.getRaceType().toString())).findFirst();
+			if(osupp.isPresent()) {
+				urace = composeTemplate(osupp.get().getRace());
+			}
+		}
+		templ = userRace.matcher(templ).replaceAll(urace);
+		templ = systemRace.matcher(templ).replaceAll(srace);
 		templ = annotateSupplement.matcher(templ).replaceAll(Matcher.quoteReplacement(asupp));
 		templ = firstSecondToBe.matcher(templ).replaceAll(firstPerson ? "I am" : "You are");
 
@@ -682,6 +704,8 @@ Begin conversationally.
 		templ = systemASG.matcher(templ).replaceAll(systemChar.get("age") + " year old " + sgen + sjobDesc);
 		templ = userASG.matcher(templ).replaceAll(userChar.get("age") + " year old " + ugen + ujobDesc);
 		templ = userCPro.matcher(templ).replaceAll(ucppro);
+		templ = userPro.matcher(templ).replaceAll(upro);
+		templ = userPPro.matcher(templ).replaceAll(uppro);
 		templ = userCPPro.matcher(templ).replaceAll(ucppro);
 		templ = ratingName.matcher(templ).replaceAll(ESRBEnumType.getESRBName(rating));
 		templ = ratingPat.matcher(templ).replaceAll(rating.toString());
@@ -804,26 +828,23 @@ Begin conversationally.
 	
 
 	public String getSystemChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		//String templ = (promptConfig != null ? promptConfig.getSystem().stream().collect(Collectors.joining("\r\n")) : ResourceUtil.getResource("olio/llm/chat.system.prompt.txt"));
 		return getChatPromptTemplate(ctx, promptConfig.getSystem().stream().collect(Collectors.joining("\r\n")), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
 	public String getUserChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		//String templ = (promptConfig != null ? promptConfig.getUser().stream().collect(Collectors.joining("\r\n")) : ResourceUtil.getResource("olio/llm/chat.user.prompt.txt"));
-		return getChatPromptTemplate(ctx, promptConfig.getUser().stream().collect(Collectors.joining("\r\n")), epoch, evt, systemChar, userChar, interaction, iPrompt);
+		return getChatPromptTemplate(ctx, promptConfig.getUser().stream().collect(Collectors.joining("\r\n")), epoch, evt, systemChar, userChar, interaction, iPrompt, true);
 	}
 	
 	public String getSystemChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.system.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
 	public String getUserChatRpgPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.user.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
+		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.user.rpg.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt, true);
 	}
 	public String getAnnotateChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
 		return getChatPromptTemplate(ctx, ResourceUtil.getResource("olio/llm/chat.annotate.prompt.txt"), epoch, evt, systemChar, userChar, interaction, iPrompt);
 	}
 
 	public String getAssistChatPromptTemplate(OlioContext ctx, BaseRecord epoch, BaseRecord evt, BaseRecord systemChar, BaseRecord userChar, BaseRecord interaction, String iPrompt) {
-		// String templ = (promptConfig != null ? promptConfig.getAssistant().stream().collect(Collectors.joining("\r\n")) : ResourceUtil.getResource("olio/llm/chat.assistant.prompt.txt"));
 		return getChatPromptTemplate(ctx, promptConfig.getAssistant().stream().collect(Collectors.joining("\r\n")), epoch, evt, systemChar, userChar, interaction, iPrompt, true);
 	}
 
@@ -876,7 +897,7 @@ Begin conversationally.
 		
 		OllamaOptions opts = new OllamaOptions();
 		opts.setNumGpu(32);
-		opts.setNumCtx(8192);
+		opts.setNumCtx(4096);
 		/*
 		opts.setTemperature(1);
 		opts.setTopP(1);
