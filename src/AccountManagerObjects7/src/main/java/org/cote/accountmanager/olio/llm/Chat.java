@@ -52,6 +52,7 @@ public class Chat {
 	private boolean includeContextHistory = !chatMode;
 	private boolean enablePrune = false;
 	private int tokenLength = 2048;
+	private int tokenBuffer = 756;
 	//private String model = "llama2-uncensored:7b-chat-q8_0";
 	private String model = "dolphin-mistral";
 	//private String model = "blue-orchid";
@@ -426,7 +427,7 @@ Begin conversationally.
 	private void addKeyFrame(OllamaRequest req) {
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole("assistant");
-		msg.setContent("(KeyFrame: " + analyze(req, annotation, false) + ")");
+		msg.setContent("(KeyFrame: (" + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated content) " + analyze(req, annotation, true) + ")");
 		List<OllamaMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame")).collect(Collectors.toList());
 		msgs.add(msg);
 		req.setMessages(msgs);
@@ -480,29 +481,49 @@ Begin conversationally.
 			return;
 		}
 		OllamaMessage ctxMsg = req.getMessages().get(0);
-
-		int curLength = ctxMsg.getContent().split("\\W+").length;
+		/// Including the system prompt
+		///
+		
+		int curLength = 0;
+		//ctxMsg.getContent().split("\\W+").length;
+		//logger.info("Sys prompt length: " + curLength);
 		int marker = -1;
-
+		int markerAhead = -1;
 		/// Skip the first message used to set any context prompt
 		///
-		for(int i = pruneSkip; i < req.getMessages().size(); i++) {
+		/// pruneSkip
+		for(int i = 0; i < req.getMessages().size(); i++) {
 			OllamaMessage msg = req.getMessages().get(i);
 			if(msg.isPruned()) continue;
 			if(msg.getContent() != null) {
 				curLength += msg.getContent().split("\\W+").length;
 			}
-			if(curLength >= tokenLength) {
+			// logger.info("Tokens: " + curLength);
+			if(i < pruneSkip) {
+				continue;
+			}
+			else if(i == pruneSkip) {
+				// logger.info("Front load: " + curLength);
+			}
+			if(marker == -1 && curLength >= tokenLength) {
 				System.out.println("(Prune from " + pruneSkip + " prior to " + i + " of " + req.getMessages().size() + " / Token Size = " + curLength + ")");
 				marker = i - 1;
-				break;
+				//break;
 			}
+			if(markerAhead == -1 && curLength >= (tokenLength + tokenBuffer)) {
+				System.out.println("(Prune buffer from " + pruneSkip + " prior to " + i + " of " + req.getMessages().size() + " / Token Size = " + curLength + ")");
+				markerAhead = i - 1;
+				//break;
+			}
+
 		}
 		if(force) {
 			System.out.println("Found " + curLength + " tokens. " + (marker > -1 ? "Will":"Won't") + " prune.");
 		}
 		if(marker > -1) {
-			for(int i = pruneSkip; i <= marker; i++) {
+			
+			int im = Math.max(marker, markerAhead);
+			for(int i = pruneSkip; i <= im; i++) {
 				req.getMessages().get(i).setPruned(true);
 			}
 			System.out.println("(Adding key frame)");
@@ -799,13 +820,12 @@ Begin conversationally.
 		boolean isLeaderContest = false;
 		String contest = "I";
 		
+		leadDesc = outLead.getRecord().get("firstName") + " is the leader.";
 		if(outLead.getId() == sysProf.getId()) {
-			leadDesc = "You are the leader.";
 			isLeaderContest = GroupDynamicUtil.contestLeadership(ctx, null, Arrays.asList(usrProf), sysProf).size() > 0;
 		}
 		else {
-			leadDesc = "I am the leader.";
-			contest = "You";
+			contest = outLead.getRecord().get("firstName");
 			isLeaderContest = GroupDynamicUtil.contestLeadership(ctx, null, Arrays.asList(sysProf), usrProf).size() > 0;
 		}
 		if(isLeaderContest) {
@@ -884,6 +904,9 @@ Begin conversationally.
 			setLlmSystemPrompt(sysTemp);
 			req = newRequest(getModel());
 			setPruneSkip(2);
+			if(useAssist) {
+				setPruneSkip(3);
+			}
 			newMessage(req, userTemp);
 			if(useAssist && assist != null && assist.length() > 0) {
 				newMessage(req, assist, "assistant");
@@ -909,11 +932,15 @@ Begin conversationally.
 		opts.setTopP(0.95);
 		opts.setTopK(30);
 		*/
-		
+		/*
 		opts.setTemperature(1.0);
 		opts.setTopP(0.6);
 		opts.setTopK(35);
-		
+		*/
+		opts.setTemperature(0.75);
+		opts.setTopP(0.85);
+		opts.setTopK(15);
+
 		opts.setRepeatPenalty(1.2);
 		
 		req.setOptions(opts);
