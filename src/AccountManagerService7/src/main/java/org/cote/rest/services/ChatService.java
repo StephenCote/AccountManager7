@@ -332,7 +332,8 @@ public class ChatService {
 		chat.setUseNLP(req.isUseNLP());
 		String model = req.getModel();
 		if(model == null || model.length() == 0) {
-			model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
+			//model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
+			model = "dolphin-llama3:8b-256k-v2.9-q5_1";
 			//model = "llama2-uncensored:7b-chat-q8_0";
 		}
 		chat.setModel(model);

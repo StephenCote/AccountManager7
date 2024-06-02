@@ -765,11 +765,10 @@ Begin conversationally.
 		
 		BaseRecord cell = userChar.get("state.currentLocation");
 		if(settingStr != null && settingStr.length() > 0) {
-			String ss = settingStr;
-			if(ss.equalsIgnoreCase("random")) {
-				ss = NarrativeUtil.getRandomSetting();
+			if(settingStr.equalsIgnoreCase("random")) {
+				settingStr = NarrativeUtil.getRandomSetting();
 			}
-			templ = setting.matcher(templ).replaceAll("The setting is: " + ss);
+			templ = setting.matcher(templ).replaceAll("The setting is: " + settingStr);
 		}
 		else {
 			if(cell != null) {
@@ -927,21 +926,22 @@ Begin conversationally.
 		opts.setTopK(0);
 		*/
 		
-		/*
+		
 		opts.setTemperature(0.8);
 		opts.setTopP(0.95);
 		opts.setTopK(30);
-		*/
+		
 		/*
 		opts.setTemperature(1.0);
 		opts.setTopP(0.6);
 		opts.setTopK(35);
 		*/
-		opts.setTemperature(0.75);
-		opts.setTopP(0.85);
-		opts.setTopK(15);
-
-		opts.setRepeatPenalty(1.2);
+		/*
+		opts.setTemperature(0.55);
+		opts.setTopP(0.55);
+		opts.setTopK(45);
+		*/
+		opts.setRepeatPenalty(1.1);
 		
 		req.setOptions(opts);
 
