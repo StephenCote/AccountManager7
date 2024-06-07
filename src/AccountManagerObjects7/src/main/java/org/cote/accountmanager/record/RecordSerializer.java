@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.FieldTypes;
 import org.cote.accountmanager.schema.ModelNames;
@@ -29,6 +30,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	private boolean filterVirtual = false;
 	private boolean filterForeign = true;
 	private boolean filterEphemeral = false;
+	private boolean decompressByteStore = false;
 	private boolean condenseModelDeclarations = true;
 	private boolean condenseDeclarations = false;
 	private boolean stopCondensing = false;
@@ -38,7 +40,15 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 
     }
 
-    public boolean isCondenseFields() {
+    public boolean isDecompressByteStore() {
+		return decompressByteStore;
+	}
+
+	public void setDecompressByteStore(boolean decompressByteStore) {
+		this.decompressByteStore = decompressByteStore;
+	}
+
+	public boolean isCondenseFields() {
 		return condenseFields;
 	}
 
@@ -104,6 +114,17 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 
        		jgen.writeStringField((condenseFields ? RecordFactory.JSON_MODEL_SHORT_KEY : RecordFactory.JSON_MODEL_KEY), value.getModel());
         }
+        boolean decompress = false;
+        if(
+        	decompressByteStore
+        	&& value.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)
+        	&& value.hasField(FieldNames.FIELD_BYTE_STORE)
+        	&& value.hasField(FieldNames.FIELD_COMPRESSION_TYPE)
+        	&& value.hasField(FieldNames.FIELD_ENCIPHERED)
+        	&& value.hasField(FieldNames.FIELD_VAULTED)
+        ) {
+        	decompress = true;
+        }
         for(FieldType f: value.getFields()) {
         	FieldSchema lft = ltype.getFieldSchema(f.getName());
         	if(
@@ -129,6 +150,9 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
         		case ENUM:
 	        		if(f.getValue() != null) {
 	        			String lowVal = f.getValue();
+	        			if(decompress && f.getName().equals(FieldNames.FIELD_COMPRESSION_TYPE)) {
+	        				lowVal = "none";
+	        			}
 	        			if(!lowVal.equals("UNKNOWN")) {
 	        				jgen.writeStringField(getName(lft), lowVal.toLowerCase());
 	        			}
@@ -170,6 +194,11 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        	case BLOB:
 	        		byte[] data = f.getValue();
 	        		if(data != null && data.length > 0) {
+	        			if(decompress && f.getName().equals(FieldNames.FIELD_BYTE_STORE)) {
+	        				/// invoke from the model to decompress and/or decrypt the bytestore
+	        				///
+	        				data = value.get(f.getName());
+	        			}
 	        			jgen.writeBinaryField(getName(lft), data);
 	        		}
 	        		break;
