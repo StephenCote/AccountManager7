@@ -50,9 +50,13 @@ public class ConsoleMain {
 		options.addOption("color", false, "Generic bit");
 		options.addOption("pattern", false, "Generic bit");
 		options.addOption("name", true, "Generic placeholder");
+		options.addOption("path", true, "Generic placeholder");
+		options.addOption("delete", false, "Generic placeholder");
 		options.addOption("update", false, "Generic bit to indicate a value update");
 		options.addOption("list", false, "Generic bit to list values");
 		options.addOption("filter", true, "Generic placeholder to filter lists");
+		options.addOption("import", false, "Generic bit");
+		options.addOption("export", false, "Generic bit");
 
 		
 		adminAction.addOptions(options);

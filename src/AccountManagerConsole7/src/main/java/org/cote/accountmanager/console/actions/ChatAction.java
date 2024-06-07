@@ -100,6 +100,56 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord inter = null;
 		BaseRecord evt = null;
 		BaseRecord cevt = null;
+		
+		if(cmd.hasOption("import") && cmd.hasOption("path")) {
+			if(cmd.hasOption("chatConfig") && cmd.hasOption("promptConfig") && cmd.hasOption("session")) {
+				logger.info("Import session " + cmd.getOptionValue("path"));
+				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+				OllamaRequest req = JSONUtil.importObject(FileUtil.getFileAsString(cmd.getOptionValue("path")), OllamaRequest.class);
+				ChatUtil.saveSession(user, req, ChatUtil.getSessionName(user, cfg, prompt, cmd.getOptionValue("session")));
+			}
+			else if(cmd.hasOption("chatConfig")) {
+				logger.info("Import chat config " + cmd.getOptionValue("path"));
+				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+				String patch = FileUtil.getFileAsString(cmd.getOptionValue("path"));
+				ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_CHAT_CONFIG, patch), cfg);
+			}
+			else if(cmd.hasOption("promptConfig")) {
+				logger.info("Import prompt config " + cmd.getOptionValue("path"));
+				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+				String patch = FileUtil.getFileAsString(cmd.getOptionValue("path"));
+				ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_PROMPT_CONFIG, patch), prompt);
+			}
+		}
+		
+		if(cmd.hasOption("delete")) {
+			if(cmd.hasOption("chatConfig") && cmd.hasOption("promptConfig") && cmd.hasOption("session")) {
+				logger.info("Delete session " + cmd.getOptionValue("session"));
+				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+				BaseRecord chat = ChatUtil.getSessionData(user, ChatUtil.getSessionName(user, cfg, prompt, cmd.getOptionValue("session")));
+				if(chat != null) {
+					IOSystem.getActiveContext().getAccessPoint().delete(user, chat);
+				}
+			}
+			else if(cmd.hasOption("chatConfig")) {
+				logger.info("Delete chat config " + cmd.getOptionValue("chatConfig"));
+				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+				if(cfg != null) {
+					IOSystem.getActiveContext().getAccessPoint().delete(user, cfg);
+				}
+			}
+			else if(cmd.hasOption("promptConfig")) {
+				logger.info("Delete prompt config " + cmd.getOptionValue("promptConfig"));
+				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+				if(prompt != null) {
+					IOSystem.getActiveContext().getAccessPoint().delete(user, prompt);
+				}
+
+			}
+		}
+		
 		if(cmd.hasOption("olio")) {
 			// NarrativeUtil.setDescribeApparelColors(cmd.hasOption("detailed"));
 			NarrativeUtil.setDescribePatterns(cmd.hasOption("detailed"));
@@ -263,7 +313,6 @@ public class ChatAction extends CommonAction implements IAction{
 					cfg.set("userNarrative", NarrativeUtil.getNarrative(octx, char2, cmd.getOptionValue("setting")));
 					NarrativeUtil.describePopulation(octx, cfg);
 					cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
-					logger.info(cfg.toString());
 				
 				}
 				catch(ModelNotFoundException | FieldException | ValueException e) {
@@ -273,7 +322,25 @@ public class ChatAction extends CommonAction implements IAction{
 			
 
 		}
-
+		if(cmd.hasOption("export") && cmd.hasOption("path")) {
+			if(cmd.hasOption("chatConfig") && cmd.hasOption("promptConfig") && cmd.hasOption("session")) {
+				logger.info("Export chat request " + cmd.getOptionValue("session") + " to "+ cmd.getOptionValue("path"));
+				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+				OllamaRequest req = ChatUtil.getSession(user, ChatUtil.getSessionName(user, cfg, prompt, cmd.getOptionValue("session")));
+				FileUtil.emitFile(cmd.getOptionValue("path"), JSONUtil.exportObject(req));
+			}
+			else if(cmd.hasOption("chatConfig")) {
+				logger.info("Export chat config " + cmd.getOptionValue("chatConfig") + " to "+ cmd.getOptionValue("path"));
+				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+				FileUtil.emitFile(cmd.getOptionValue("path"), cfg.toFullString());
+			}
+			else if(cmd.hasOption("promptConfig")) {
+				logger.info("Export prompt config " + cmd.getOptionValue("promptConfig") + " to "+ cmd.getOptionValue("path"));
+				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+				FileUtil.emitFile(cmd.getOptionValue("path"), prompt.toFullString());
+			}
+		}
 		
 		if(cmd.hasOption("chat")) {
 			
