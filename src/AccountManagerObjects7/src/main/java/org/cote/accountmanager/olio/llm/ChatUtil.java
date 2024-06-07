@@ -51,14 +51,17 @@ public class ChatUtil {
 		return upd;
 	}
 	
-	public static BaseRecord getSessionData(BaseRecord user, String sessionName) {
-		
+	public static Query getSessionDataQuery(BaseRecord user, String sessionName) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_NAME, sessionName);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		return q;
+	}
+	
+	public static BaseRecord getSessionData(BaseRecord user, String sessionName) {
 		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_BYTE_STORE});
-		return IOSystem.getActiveContext().getSearch().findRecord(q);
+		return IOSystem.getActiveContext().getSearch().findRecord(getSessionDataQuery(user, sessionName));
 	}
 	public static OllamaRequest getSession(BaseRecord user, String sessionName) {
 		
