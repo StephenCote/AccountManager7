@@ -48,7 +48,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		if( (now - cacheRefreshed) > maximumCacheAgeMS
 			|| cache.size() > maximumCacheSize
 		){
-			logger.info("Clearing search cache");
+			logger.debug("Clearing search cache");
 			cacheRefreshed = now;
 			cache.clear();
 		}

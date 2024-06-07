@@ -12,6 +12,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 
@@ -50,8 +51,7 @@ public class DirectoryFactory extends FactoryBase {
 			
 			}
 			else {
-				logger.error(newRecord.getModel() + " factory error: Failed to initialize ownership");
-				logger.error(newRecord.toFullString());
+				// logger.warn(newRecord.getModel() + " factory warning: Cannot initialize ownership");
 			}
 
 		}
