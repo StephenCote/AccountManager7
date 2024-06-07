@@ -503,7 +503,7 @@ public class StatementUtil {
 						return (
 							(rfields.size() == 0 || rfields.contains(f.getName()))
 							&&
-							(!fs.isForeign() || (!model.equals(fs.getBaseModel()) && !ModelNames.MODEL_SELF.equals(fs.getBaseModel())))
+							(!fs.isForeign() || (!model.equals(fs.getBaseModel()) && !ModelNames.MODEL_SELF.equals(fs.getBaseModel())) && !ModelNames.MODEL_FLEX.equals(fs.getBaseModel()))
 							&&
 							!fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())
 							
