@@ -10,6 +10,9 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.schema.FieldNames;
@@ -17,6 +20,8 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.FieldTypes;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.CompressionEnumType;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.core.JsonGenerator;
@@ -97,6 +102,18 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		return f.getName();
 	}
 	
+	private boolean canDecompress(BaseRecord model) {
+        return(
+        	decompressByteStore
+    		&& model != null
+        	&& model.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)
+        	&& model.hasField(FieldNames.FIELD_BYTE_STORE)
+        	&& model.hasField(FieldNames.FIELD_COMPRESSION_TYPE)
+        	&& model.hasField(FieldNames.FIELD_ENCIPHERED)
+        	&& model.hasField(FieldNames.FIELD_VAULTED)
+        );
+	}
+	
 	@Override
     public void serialize(BaseRecord value, JsonGenerator jgen, SerializerProvider provider) throws IOException, JsonProcessingException {
     	ModelSchema ltype = RecordFactory.getSchema(value.getModel());
@@ -114,17 +131,12 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 
        		jgen.writeStringField((condenseFields ? RecordFactory.JSON_MODEL_SHORT_KEY : RecordFactory.JSON_MODEL_KEY), value.getModel());
         }
-        boolean decompress = false;
-        if(
-        	decompressByteStore
-        	&& value.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)
-        	&& value.hasField(FieldNames.FIELD_BYTE_STORE)
-        	&& value.hasField(FieldNames.FIELD_COMPRESSION_TYPE)
-        	&& value.hasField(FieldNames.FIELD_ENCIPHERED)
-        	&& value.hasField(FieldNames.FIELD_VAULTED)
-        ) {
-        	decompress = true;
+        
+        if(canDecompress(value)) {
+			/// Invoke a read on the byte store to cause it to decompress/decrypt
+			value.get(FieldNames.FIELD_BYTE_STORE);
         }
+        
         for(FieldType f: value.getFields()) {
         	FieldSchema lft = ltype.getFieldSchema(f.getName());
         	if(
@@ -150,9 +162,6 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
         		case ENUM:
 	        		if(f.getValue() != null) {
 	        			String lowVal = f.getValue();
-	        			if(decompress && f.getName().equals(FieldNames.FIELD_COMPRESSION_TYPE)) {
-	        				lowVal = "none";
-	        			}
 	        			if(!lowVal.equals("UNKNOWN")) {
 	        				jgen.writeStringField(getName(lft), lowVal.toLowerCase());
 	        			}
@@ -194,11 +203,6 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        	case BLOB:
 	        		byte[] data = f.getValue();
 	        		if(data != null && data.length > 0) {
-	        			if(decompress && f.getName().equals(FieldNames.FIELD_BYTE_STORE)) {
-	        				/// invoke from the model to decompress and/or decrypt the bytestore
-	        				///
-	        				data = value.get(f.getName());
-	        			}
 	        			jgen.writeBinaryField(getName(lft), data);
 	        		}
 	        		break;
@@ -334,7 +338,14 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        					BaseRecord o2 = (BaseRecord)mval;
 	        					Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
 	        					List<String> ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
-	        					jgen.writeObjectField(f.getName(), o2.copyRecord(ol.toArray(new String[0])));
+	        					BaseRecord o3 = o2.copyRecord(ol.toArray(new String[0]));
+	        					
+	        					if(canDecompress(o3)) {
+	        						/// Invoke a read on the byte store to cause it to decompress/decrypt
+	        						o3.get(FieldNames.FIELD_BYTE_STORE);
+	        					}
+	        					
+	        					jgen.writeObjectField(f.getName(), o3);
 	        				}
 	        				else {
 	        					jgen.writeObjectField(getName(lft), mval);

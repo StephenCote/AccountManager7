@@ -1350,7 +1350,7 @@ public class StatementUtil {
 					record.set(col, rset.getTimestamp(colName));
 					break;
 				case BLOB:
-					record.set(col, rset.getBytes(colName));
+					record.getField(colName).setValue(rset.getBytes(colName));
 					break;
 				case LIST:
 					String ser = rset.getString(colName);
