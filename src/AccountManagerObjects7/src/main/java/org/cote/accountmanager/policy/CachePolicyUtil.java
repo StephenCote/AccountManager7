@@ -151,7 +151,7 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 			|| resourceCache.size() > maximumCacheSize
 			|| actorCache.size() > maximumCacheSize
 		){
-			logger.info("Clearing policy cache");
+			logger.debug("Clearing policy cache");
 			cacheRefreshed = now;
 			responseCache.clear();
 			actorCache.clear();

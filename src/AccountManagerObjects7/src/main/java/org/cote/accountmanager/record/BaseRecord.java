@@ -28,6 +28,7 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
@@ -74,7 +75,6 @@ public abstract class BaseRecord {
 	}
 	
 	public <T> T toConcrete() {
-		T obj = null;
 		String useName = model.substring(model.lastIndexOf(".") + 1);
 		String clsName = RecordFactory.GENERATED_PACKAGE_NAME + "." + useName.substring(0, 1).toUpperCase() + useName.substring(1) + "Type";
 
@@ -167,7 +167,7 @@ public abstract class BaseRecord {
 			ModelSchema ms = RecordFactory.getSchema(model);
 			FieldSchema fs = ms.getFieldSchema(embedded[0]);
 			if(fs == null) {
-				logger.error("Schema is null for " + embedded[0]);
+				ErrorUtil.printStackTrace();
 				return false;
 			}
 			if(fs.getBaseModel() == null) {

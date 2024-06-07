@@ -1,0 +1,88 @@
+{
+	"name": "olio.llm.promptConfig",
+	"inherits": ["data.directory", "common.description", "common.alignment"],
+	"group": "Chat",
+	"icon": "chat",
+	"label": "Prompt Configuration",
+	"fields": [
+		{
+			"name": "system",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "systemCensorWarning",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "systemNlp",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "systemAnalyze",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "assistant",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "assistantNlp",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "assistantCensorWarning",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "user",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "userAnalyze",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "scene",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "setting",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "userConsentPrefix",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "userConsentRating",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "userConsentNlp",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "races",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.promptRaceConfig"
+		}
+	]
+}
+
+
+	

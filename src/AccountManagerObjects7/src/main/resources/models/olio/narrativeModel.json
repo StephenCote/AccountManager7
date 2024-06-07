@@ -43,6 +43,10 @@
 		{
 			"name": "sloanDescription",
 			"type": "string"
+		},
+		{
+			"name": "sdPrompt",
+			"type": "string"
 		}
 
 	]

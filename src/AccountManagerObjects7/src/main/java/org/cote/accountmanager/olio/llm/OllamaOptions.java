@@ -20,13 +20,13 @@ public class OllamaOptions {
 	@JsonProperty("typical_p")
 	private double typicalP = 0.85;
 
-	
+	@JsonProperty("repeat_last_n")
+	private int repeatLastN = 64;
 	/*
 	@JsonProperty("tfs_z")
 	private double tfsZ = 0.5;
 	
-	@JsonProperty("repeat_last_n")
-	private int repeatLastN = 33;
+
 	*/
 	private double temperature = 0.9;
 	
@@ -144,6 +144,14 @@ public class OllamaOptions {
 
 	public void setTypicalP(double typicalP) {
 		this.typicalP = typicalP;
+	}
+
+	public int getRepeatLastN() {
+		return repeatLastN;
+	}
+
+	public void setRepeatLastN(int repeatLastN) {
+		this.repeatLastN = repeatLastN;
 	}
 
 	

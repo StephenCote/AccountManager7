@@ -1,1 +1,0 @@
-(Reminder: Content and dialogue should have up to an ESRP rating of "${rating}" (like a "${ratingMpa}"-rated movie). ${annotateSupplement})

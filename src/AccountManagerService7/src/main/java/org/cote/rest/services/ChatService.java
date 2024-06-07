@@ -34,6 +34,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatBAK;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaChatRequest;
 import org.cote.accountmanager.olio.llm.OllamaChatResponse;
@@ -62,7 +63,7 @@ public class ChatService {
 	
 	private static Set<String> chatTrack = new HashSet<>();
 	private static HashMap<String, OllamaRequest> reqMap = new HashMap<>();
-	private static HashMap<String, Chat> chatMap = new HashMap<>();
+	private static HashMap<String, ChatBAK> chatMap = new HashMap<>();
 	private static HashMap<String, BaseRecord> charMap = new HashMap<>();
 	private static HashMap<String, OlioContext> contextMap = new HashMap<>();
 	private static HashMap<String, List<BaseRecord>> popMap = new HashMap<>();
@@ -151,7 +152,7 @@ public class ChatService {
 		///logger.info(JSONUtil.exportObject(req));
 		// if(chatReq.getMessage() != null) {
 			String key = user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter() + "-" + chatReq.getUserCharacter();
-			Chat chat = getChat(user, chatReq, key);
+			ChatBAK chat = getChat(user, chatReq, key);
 			chat.continueChat(req, chatReq.getMessage());
 		// }
 		OllamaChatResponse creq = getChatResponse(req, chatReq);
@@ -295,7 +296,7 @@ public class ChatService {
 			}
 			IOSystem.getActiveContext().getRecordUtil().createRecord(inter);
 		}
-		Chat chat = getChat(user, creq, key);
+		ChatBAK chat = getChat(user, creq, key);
 
 		String prompt = "You are assistant, a superhelpful friend to all.";
 
@@ -307,7 +308,7 @@ public class ChatService {
 		return req;
 	}
 	
-	private Chat getChat(BaseRecord user, OllamaChatRequest req, String key) {
+	private ChatBAK getChat(BaseRecord user, OllamaChatRequest req, String key) {
 		if(chatMap.containsKey(key)) {
 			return chatMap.get(key);
 		}
@@ -323,17 +324,17 @@ public class ChatService {
 			return null;
 		}
 
-		Chat chat = new Chat(user);
+		ChatBAK chat = new ChatBAK(user);
 		chat.setPromptConfig(pc);
 		chat.setRating(req.getRating());
-		chat.setStrSetting(NarrativeUtil.getRandomSetting());
+		chat.setSettingStr(NarrativeUtil.getRandomSetting());
 		chat.setIncludeScene(true);
 		chat.setUseAssist(req.isAssist());
 		chat.setUseNLP(req.isUseNLP());
 		String model = req.getModel();
 		if(model == null || model.length() == 0) {
 			//model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
-			model = "dolphin-llama3:8b-256k-v2.9-q5_1";
+			model = "dolphin-llama3:latest";
 			//model = "llama2-uncensored:7b-chat-q8_0";
 		}
 		chat.setModel(model);

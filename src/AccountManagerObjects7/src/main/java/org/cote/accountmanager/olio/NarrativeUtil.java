@@ -14,6 +14,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -763,9 +764,11 @@ public class NarrativeUtil {
     }
 	
 	public static String getSDPrompt(OlioContext ctx, BaseRecord person, String setting) {
+		return getSDPrompt(ctx, ProfileUtil.getProfile(ctx, person), person, setting);
+	}
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting) {
 		StringBuilder buff = new StringBuilder();
 		
-		PersonalityProfile pp = ProfileUtil.getProfile(ctx, person);
 		int age = pp.getAge();
 		String ageName = getNumberName(age);
 		
@@ -883,6 +886,13 @@ public class NarrativeUtil {
 	}
 	
 	public static BaseRecord getNarrative(PersonalityProfile pp) {
+		return getNarrative(null, pp, null);
+	}
+	public static BaseRecord getNarrative(OlioContext ctx, BaseRecord person, String setting) {
+		return getNarrative(ctx, ProfileUtil.getProfile(ctx, person), setting);
+	}
+	public static BaseRecord getNarrative(OlioContext ctx, PersonalityProfile pp, String setting) {
+			
 		BaseRecord nar = null;
 		try {
 			nar = RecordFactory.newInstance(ModelNames.MODEL_NARRATIVE);
@@ -896,6 +906,7 @@ public class NarrativeUtil {
 			nar.set("darkTriadDescription", getDarkTriadDescription(pp));
 			nar.set("mbtiDescription", pp.getMbti().getDescription());
 			nar.set("sloanDescription", pp.getSloanDescription());
+			nar.set("sdPrompt", getSDPrompt(null, pp, pp.getRecord(), (setting != null && !setting.equals("random") ? setting : getRandomSetting())));;
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}
@@ -1297,6 +1308,56 @@ public class NarrativeUtil {
 		}
 		
 		return buff.toString();
+	}
+	
+	public static String getTerrain(OlioContext ctx, BaseRecord person) {
+		String tdesc = null;
+		BaseRecord cell = person.get("state.currentLocation");
+		if(cell != null) {
+			List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+			Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+			tdesc = "an expanse of " + tet.toString().toLowerCase();
+			if(stets.size() > 0) {
+				tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
+			}
+		}
+		return tdesc;
+	}
+	public static void describePopulation(OlioContext ctx, BaseRecord chatConfig) {
+		String pdesc = "";
+		BaseRecord user = chatConfig.get("userCharacter");
+		BaseRecord systemUser = chatConfig.get("systemCharacter");
+		BaseRecord cell = user.get("state.currentLocation");
+		AlignmentEnumType align = AlignmentEnumType.NEUTRAL;
+		BaseRecord evt = chatConfig.get("event");
+
+		if(evt != null) {
+
+			BaseRecord realm = ctx.getRealm(evt.get("location"));
+			if(realm == null) {
+				logger.error("Failed to find realm");
+			}
+
+			List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
+			String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
+			List<Long> gids = Arrays.asList(new Long[] {user.get(FieldNames.FIELD_ID), systemUser.get(FieldNames.FIELD_ID)});
+			List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(evt.get("location")), cell);
+			pdesc = "No one seems to be nearby.";
+			if(fpop.size() > 0) {
+				pdesc = "There are " + fpop.size() +" strangers nearby.";
+			}
+
+			String adesc = "No animals seem to be nearby.";
+			if(anames.length() > 0) {
+				adesc ="Some animals are close, including " + anames + ".";
+			}
+			
+			chatConfig.setValue("populationDescription", pdesc);
+			chatConfig.setValue("animalDescription", adesc);
+			
+		}
+
 	}
 	
 }

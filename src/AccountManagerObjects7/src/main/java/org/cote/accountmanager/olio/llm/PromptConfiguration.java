@@ -3,8 +3,6 @@ package org.cote.accountmanager.olio.llm;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.cote.accountmanager.olio.RaceEnumType;
-
 public class PromptConfiguration {
 
 	private String name = null;

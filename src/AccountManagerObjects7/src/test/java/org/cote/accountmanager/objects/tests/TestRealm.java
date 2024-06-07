@@ -6,17 +6,26 @@ import static org.junit.Assert.assertTrue;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
+import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
@@ -24,11 +33,14 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.RaceEnumType;
+import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
 import org.cote.accountmanager.olio.llm.PromptRaceConfiguration;
+import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
@@ -37,9 +49,12 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.LibraryUtil;
@@ -51,9 +66,8 @@ public class TestRealm extends BaseTest {
 	private String universeName = "Universe 3";
 	private String worldName = "World 3";
 	private String worldPath = "~/Worlds";
-
-	@Test
-	public void TestChatConfig() {
+	
+	public void TestRealm() {
 		logger.info("Test Realm");
 		AuditUtil.setLogToConsole(false);
 	
@@ -134,29 +148,6 @@ public class TestRealm extends BaseTest {
 			}
 		}
 
-		/*
-		Chat chat = new Chat(testUser1);
-		chat.setPromptConfig(pc);
-		chat.setUseNLP(true);
-		chat.setUseAssist(true);
-		chat.setRating(ESRBEnumType.AO);
-		String templ = null;
-		String atempl = null;
-		String utempl = null;
-		try {
-			templ = chat.getSystemChatPromptTemplate(octx, levt, cevt, per1, per2, inter, null);
-			atempl = chat.getAssistChatPromptTemplate(octx, levt, cevt, per1, per2, inter, null);
-			utempl = chat.getUserChatPromptTemplate(octx, levt, cevt, per1, per2, inter, null);
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		logger.info(templ);
-		logger.info(atempl);
-		logger.info(utempl);
-		AuditUtil.setLogToConsole(true);
-		*/
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
 		
 	}

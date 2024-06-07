@@ -4,12 +4,19 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Options;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
@@ -18,12 +25,16 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatBAK;
+import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -44,6 +55,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("person", true, "Person");
 		options.addOption("chat", false, "Start chat console");
 		options.addOption("chat2", false, "Start chat console");
+		options.addOption("session", true, "Name of a session to use with a chat conversation");
 		options.addOption("outfit", true, "Create outfit");
 		options.addOption("olio", false, "Load the Olio Context");
 		options.addOption("party", false, "Generic bit to restrict parties");
@@ -55,16 +67,17 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("prompt", true, "Chat prompt");
 		options.addOption("prune", false, "Bit indicating to auto-prune conversation threads.");
 		
-		options.addOption("promptConfig", true, "Prompt configuration file");
-		options.addOption("userPromptConfig", true, "Name of user's prompt configuration file - default will be used to create it if it doesn't exist.");
+		//options.addOption("promptConfig", true, "Prompt configuration file");
+		options.addOption("chatConfig", true, "Chat configuration");
+		options.addOption("promptConfig", true, "Name of user's prompt configuration file - default will be used to create it if it doesn't exist.");
 		options.addOption("iprompt", true, "Chat prompt for interactions");
 		options.addOption("model", true, "Generic name for a model");
 		options.addOption("interact", false, "Generic bit to create a random interaction between two characters.  The -scene option must be also enabled.");
 		options.addOption("character1", true, "Name of character");
 		options.addOption("character2", true, "Name of character");
-		options.addOption("remind", true, "Bit indicating to include instruction reminders every n exchanges");
+		//options.addOption("remind", true, "Bit indicating to include instruction reminders every n exchanges");
 		options.addOption("rating", true, "ESRB rating guidance for generated content (E, E10, T, M)");
-		options.addOption("rpg", false, "Bit indicating to use the RPG prompt template");
+		//options.addOption("rpg", false, "Bit indicating to use the RPG prompt template");
 		options.addOption("nlp", false, "Bit indicating to use NLP in text generation to reinforce immersion");
 		options.addOption("assist", false, "Bit indicating to add additional guidance to the assistant");
 	}
@@ -83,6 +96,7 @@ public class ChatAction extends CommonAction implements IAction{
 		// List<BaseRecord> party2 = new ArrayList<>();
 		BaseRecord char1 = null;
 		BaseRecord char2 = null;
+		List<BaseRecord> inters = new ArrayList<>();
 		BaseRecord inter = null;
 		BaseRecord evt = null;
 		BaseRecord cevt = null;
@@ -207,11 +221,13 @@ public class ChatAction extends CommonAction implements IAction{
 					CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(char1.get("personality.mbtiKey"), char2.get("personality.mbtiKey"));
 					logger.info(char1.get("firstName") + " has " + mbtiCompat.toString() + " compatability with " + char2.get("firstName"));
 				}
+				
 				if(cmd.hasOption("interact")) {
 					for(int i = 0; i < 10; i++) {
 						inter = InteractionUtil.randomInteraction(octx, char1, char2);
 						if(inter != null) {
-							break;
+							inters.add(inter);
+							//break;
 						}
 					}
 					IOSystem.getActiveContext().getRecordUtil().createRecord(inter);
@@ -222,118 +238,79 @@ public class ChatAction extends CommonAction implements IAction{
 				}
 			}
 			
+			if(cmd.hasOption("chatConfig")) {
+				logger.info("Configure chat");
+				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+				
+				try {
+					cfg.set("event", cevt);
+					cfg.set("assist", cmd.hasOption("assist"));
+					cfg.set("useNLP", cmd.hasOption("nlp"));
+					cfg.set("setting", cmd.getOptionValue("setting"));
+					cfg.set("includeScene", cmd.hasOption("scene"));
+					cfg.set("prune", cmd.hasOption("prune"));
+					if(cmd.hasOption("rating")) {
+						cfg.set("rating", ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
+					}
+					cfg.set("llmModel", cmd.getOptionValue("model"));
+					if(char1 != null && char2 != null) {
+						cfg.set("systemCharacter", char1);
+						cfg.set("userCharacter", char2);
+						cfg.set("interactions", inters);
+					}
+					cfg.set("terrain", NarrativeUtil.getTerrain(octx, char2));
+					cfg.set("systemNarrative", NarrativeUtil.getNarrative(octx, char1, cmd.getOptionValue("setting")));
+					cfg.set("userNarrative", NarrativeUtil.getNarrative(octx, char2, cmd.getOptionValue("setting")));
+					NarrativeUtil.describePopulation(octx, cfg);
+					cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
+					logger.info(cfg.toString());
+				
+				}
+				catch(ModelNotFoundException | FieldException | ValueException e) {
+					logger.error(e);
+				}
+			}
+			
 
 		}
-		if(cmd.hasOption("chat2")) {
-			Chat chat = new Chat(user);
-			chat.setIncludeScene(cmd.hasOption("scene"));
-			if(cmd.hasOption("rating")) {
-				chat.setRating(ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
-			}
-			if(cmd.hasOption("setting")) {
-				chat.setSettingStr(cmd.getOptionValue("setting"));
-			}
-			if(cmd.hasOption("rpg")) {
-				logger.info(chat.getSystemChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-				logger.info(chat.getUserChatRpgPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-				logger.info(chat.getAnnotateChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-			}
-			else {
-				logger.info(chat.getSystemChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-				logger.info(chat.getUserChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-				logger.info(chat.getAnnotateChatPromptTemplate(octx, evt, cevt, char1, char2, inter, cmd.getOptionValue("iprompt")));
-			}
-		}
+
 		
 		if(cmd.hasOption("chat")) {
-			Chat chat = new Chat(user);
-			chat.setEnablePrune(cmd.hasOption("prune"));
-			chat.setIncludeScene(true);
-			if(cmd.hasOption("setting")) {
-				chat.setSettingStr(cmd.getOptionValue("setting"));
-			}
-			PromptConfiguration pc = null;
-			if(cmd.hasOption("userPromptConfig")) {
-				pc = JSONUtil.importObject(getCreateUserPrompt(user, cmd.getOptionValue("userPromptConfig")), PromptConfiguration.class);
-			}
-			else if(cmd.hasOption("promptConfig")) {
-				pc = JSONUtil.importObject(FileUtil.getFileAsString(cmd.getOptionValue("promptConfig")), PromptConfiguration.class);
-			}
-			else {
-				pc = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/chat.config.json"), PromptConfiguration.class);
-			}
-			chat.setPromptConfig(pc);
-			chat.setUseAssist(cmd.hasOption("assist"));
-			chat.setUseNLP(cmd.hasOption("nlp"));
-			if(cmd.hasOption("remind")) {
-				chat.setRemind(Integer.parseInt(cmd.getOptionValue("remind")));
-			}
-			if(cmd.hasOption("rating")) {
-				chat.setRating(ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
-			}
-			/*
-			chat.setIncludeScene(cmd.hasOption("scene"));
-			if(cmd.hasOption("setting")) {
-				chat.setRandomSetting(true);
-			}
-			*/
+			
+			BaseRecord promptConfig = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+
+			Chat chat = new Chat(user, chatConfig, promptConfig);
+			chat.setSessionName(cmd.getOptionValue("session"));
 			//String model = "llama3:8b-text-q5_1";
 			//String model = "dolphin-llama3";
 			//String model = "llama2-uncensored:7b-chat-q8_0";
 			//String model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
-			String model = "dolphin-llama3:8b-256k-v2.9-q5_1";
+			//String model = "dolphin-llama3:8b-256k-v2.9-q5_1";
+			//String model = "mistral:7b-instruct-q6_K";
+			//String model = "dolphin-llama3:8b-256k-v2.9-q5_1";
 			//String model = "llama2-uncensored:7b-chat-q8_0";
 			//String model = "zephyr-local";
 			//String model = "blue-orchid";
 			//String model = "dolphin-mistral";
-			if(cmd.hasOption("model")) {
-				model = cmd.getOptionValue("model");
+
+			OllamaRequest req = null;
+			if(cmd.hasOption("session")) {
+				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, cmd.getOptionValue("session"));
+				OllamaRequest oreq = ChatUtil.getSession(user, sessionName);
+				if(oreq != null) {
+					req = oreq;
+				}
 			}
-			String prompt = "You are assistant, a superhelpful friend to all.";
-			String iprompt = null;
-			if(cmd.hasOption("prompt")) {
-				prompt = cmd.getOptionValue("prompt");
+			if(req == null) {
+				req = chat.getChatPrompt();
 			}
-			if(cmd.hasOption("iprompt")) {
-				iprompt = cmd.getOptionValue("iprompt");
-			}
-			chat.setModel(model);
-			OllamaRequest req = chat.getChatPrompt(octx, prompt, iprompt, evt, cevt, char1, char2, inter, cmd.hasOption("rpg"));
 			// logger.info(char2.toFullString());
 			chat.chatConsole(req);
 		}
 		
 	}
 	
-	public String getCreateUserPrompt(BaseRecord user, String name) {
-		BaseRecord dat = getCreatePromptData(user, name);
-		IOSystem.getActiveContext().getReader().populate(dat, new String[] {FieldNames.FIELD_BYTE_STORE});
-		return new String((byte[])dat.get(FieldNames.FIELD_BYTE_STORE));
-	}
 	
-	protected BaseRecord getCreatePromptData(BaseRecord user, String name) {
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		BaseRecord dat = IOSystem.getActiveContext().getRecordUtil().getRecord(user, ModelNames.MODEL_DATA, name, 0L, (long)dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		if(dat == null) {
-			dat = newPromptData(user, name, ResourceUtil.getResource("olio/llm/chat.config.json"));
-			IOSystem.getActiveContext().getRecordUtil().createRecord(dat);
-		}
-		return dat;
-	}
-	protected BaseRecord newPromptData(BaseRecord user, String name, String data) {
-		BaseRecord rec = null;
-		boolean error = false;
-		try {
-			rec = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
-			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, rec, name, "~/chat", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			rec.set(FieldNames.FIELD_CONTENT_TYPE, "application/json");
-			rec.set(FieldNames.FIELD_BYTE_STORE, data.getBytes(StandardCharsets.UTF_8));
-		} catch (Exception e) {
-			logger.error(e);
-			
-			error = true;
-		}
-		return rec;
-	}
 	
 }

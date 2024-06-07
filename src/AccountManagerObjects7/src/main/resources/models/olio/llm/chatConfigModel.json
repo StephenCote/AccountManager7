@@ -1,0 +1,103 @@
+{
+	"name": "olio.llm.chatConfig",
+	"inherits": ["data.directory", "common.description", "common.alignment"],
+	"group": "Chat",
+	"icon": "chat",
+	"label": "Chat Configuration",
+	"fields": [
+		{
+			"name": "rating",
+			"baseClass": "org.cote.accountmanager.olio.llm.ESRBEnumType",
+			"type": "enum",
+			"maxLength": 2,
+			"default": "E"
+		},
+		{
+			"name": "systemCharacter",
+			"type": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true
+		},
+		{
+			"name": "systemNarrative",
+			"type": "model",
+			"baseModel": "olio.narrative"
+		},
+		{
+			"name": "userCharacter",
+			"type": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true
+		},
+		{
+			"name": "userNarrative",
+			"type": "model",
+			"baseModel": "olio.narrative"
+		},
+
+		{
+			"name": "interactions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.interaction",
+			"foreign": true,
+			"participantModel": "chatConfig.interaction"
+		},
+		{
+			"name": "event",
+			"type": "model",
+			"baseModel": "olio.event",
+			"foreign": true
+		},
+		{
+			"name": "assist",
+			"type": "boolean"
+		},
+		{
+			"name": "useNLP",
+			"type": "boolean"
+		},
+		{
+			"name": "prune",
+			"type": "boolean"
+		},
+		{
+			"name": "scene",
+			"type": "string"
+		},
+		{
+			"name": "terrain",
+			"type": "string"
+		},
+		{
+			"name": "populationDescription",
+			"type": "string"
+		},
+		{
+			"name": "animalDescription",
+			"type": "string"
+		},
+		{
+			"name": "includeScene",
+			"type": "boolean"
+		},
+		{
+			"name": "setting",
+			"type": "string",
+			"default": "random"
+		},
+		{
+			"name": "llmModel",
+			"type": "string",
+			"default": "dolphin-llama3"
+		},
+		{
+			"name": "userPrompt",
+			"type": "string"
+		}
+
+	]
+}
+
+
+

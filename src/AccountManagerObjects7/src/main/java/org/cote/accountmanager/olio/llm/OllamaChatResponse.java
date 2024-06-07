@@ -2,7 +2,6 @@ package org.cote.accountmanager.olio.llm;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 /// OllamaChatResponse used for proxied API connections
 ///
