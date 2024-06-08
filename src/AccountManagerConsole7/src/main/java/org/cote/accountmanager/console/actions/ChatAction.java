@@ -65,6 +65,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("setting", true, "Generic bit to create a random setting instead of the character's context location");
 		options.addOption("scene", false, "Generic bit to include a basic scene guidance (including any interaction)");
 		options.addOption("prompt", true, "Chat prompt");
+		options.addOption("duel", true, "Dualing chat prompts (-dual #)");
 		options.addOption("prune", false, "Bit indicating to auto-prune conversation threads.");
 		
 		//options.addOption("promptConfig", true, "Prompt configuration file");
@@ -349,17 +350,6 @@ public class ChatAction extends CommonAction implements IAction{
 
 			Chat chat = new Chat(user, chatConfig, promptConfig);
 			chat.setSessionName(cmd.getOptionValue("session"));
-			//String model = "llama3:8b-text-q5_1";
-			//String model = "dolphin-llama3";
-			//String model = "llama2-uncensored:7b-chat-q8_0";
-			//String model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
-			//String model = "dolphin-llama3:8b-256k-v2.9-q5_1";
-			//String model = "mistral:7b-instruct-q6_K";
-			//String model = "dolphin-llama3:8b-256k-v2.9-q5_1";
-			//String model = "llama2-uncensored:7b-chat-q8_0";
-			//String model = "zephyr-local";
-			//String model = "blue-orchid";
-			//String model = "dolphin-mistral";
 
 			OllamaRequest req = null;
 			if(cmd.hasOption("session")) {
@@ -372,8 +362,45 @@ public class ChatAction extends CommonAction implements IAction{
 			if(req == null) {
 				req = chat.getChatPrompt();
 			}
-			// logger.info(char2.toFullString());
 			chat.chatConsole(req);
+		}
+		
+		if(cmd.hasOption("duel")) {
+			int iter = Integer.parseInt(cmd.getOptionValue("duel"));
+			BaseRecord promptConfig = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+			BaseRecord chatConfig2 = chatConfig.copyRecord();
+			chatConfig2.setValue("systemCharacter", chatConfig.get("userCharacter"));
+			chatConfig2.setValue("systemNarrative", chatConfig.get("userNarrative"));
+			chatConfig2.setValue("userNarrative", chatConfig.get("systemNarrative"));
+			chatConfig2.setValue("userCharacter", chatConfig.get("systemCharacter"));
+			String setting = chatConfig.get("setting");
+			if(setting != null && setting.equals("random")) {
+				setting = NarrativeUtil.getRandomSetting();
+				chatConfig.setValue("setting", setting);
+				chatConfig2.setValue("setting", setting);
+			}
+			Chat chat = new Chat(user, chatConfig, promptConfig);
+			chat.setSessionName(cmd.getOptionValue("session"));
+			Chat chat2 = new Chat(user, chatConfig2, promptConfig);
+			OllamaRequest req1 = chat.getChatPrompt();
+			OllamaRequest req2 = chat.getChatPrompt();
+			String message1 = null;
+			String message2 = null;
+			logger.info("Chat Duel: " + chatConfig.get("systemCharacter.firstName") + " vs " + chatConfig.get("userCharacter.firstName"));
+			for(int i = 0; i < iter; i++) {
+				chat.continueChat(req1, message1);
+				message2 = req1.getMessages().get(req1.getMessages().size() - 1).getContent();
+				System.out.println(chatConfig.get("systemCharacter.firstName") + " - " + message2);
+				if(message1 == null) {
+					/// Prime the second chat first
+					chat2.continueChat(req2, null);	
+				}
+				chat2.continueChat(req2, message2);
+				message1 = req2.getMessages().get(req2.getMessages().size() - 1).getContent();
+				System.out.println(chatConfig.get("userCharacter.firstName") + " - " + message1);
+			}
+
 		}
 		
 	}
