@@ -151,10 +151,11 @@ public class ChatAction extends CommonAction implements IAction{
 			}
 		}
 		
+		NarrativeUtil.setDescribeApparelColors(cmd.hasOption("detailed"));
+		NarrativeUtil.setDescribePatterns(cmd.hasOption("detailed"));
+		NarrativeUtil.setDescribeFabrics(cmd.hasOption("detailed"));
+		
 		if(cmd.hasOption("olio")) {
-			// NarrativeUtil.setDescribeApparelColors(cmd.hasOption("detailed"));
-			NarrativeUtil.setDescribePatterns(cmd.hasOption("detailed"));
-			NarrativeUtil.setDescribeFabrics(cmd.hasOption("detailed"));
 			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
 			epoch = octx.startOrContinueEpoch();
 			BaseRecord[] locs = octx.getLocations();
