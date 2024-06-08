@@ -384,7 +384,7 @@ public class ChatAction extends CommonAction implements IAction{
 			chat.setSessionName(cmd.getOptionValue("session"));
 			Chat chat2 = new Chat(user, chatConfig2, promptConfig);
 			OllamaRequest req1 = chat.getChatPrompt();
-			OllamaRequest req2 = chat.getChatPrompt();
+			OllamaRequest req2 = chat2.getChatPrompt();
 			String message1 = null;
 			String message2 = null;
 			logger.info("Chat Duel: " + chatConfig.get("systemCharacter.firstName") + " vs " + chatConfig.get("userCharacter.firstName"));
