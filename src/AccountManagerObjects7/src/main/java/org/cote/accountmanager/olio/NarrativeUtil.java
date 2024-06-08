@@ -840,9 +840,9 @@ public class NarrativeUtil {
 	}
 	
 	public static String describe(OlioContext ctx, BaseRecord person) {
-		return describe(ctx, person, true, false);
+		return describe(ctx, person, true, true, false);
 	}
-	public static String describe(OlioContext ctx, BaseRecord person, boolean includeApparel, boolean includeOuterArms) {
+	public static String describe(OlioContext ctx, BaseRecord person, boolean includeApparel, boolean includePersonality, boolean includeOuterArms) {
 		StringBuilder buff = new StringBuilder();
 		PersonalityProfile pp = ProfileUtil.getProfile(ctx, person);
 
@@ -863,9 +863,11 @@ public class NarrativeUtil {
 		
 		String raceDesc = getRaceDescription(person.get("race"));
 		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
-		buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
-		buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
-		buff.append(" " + getDarkTriadDescription(pp));
+		if(includePersonality) {
+			buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
+			buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
+			buff.append(" " + getDarkTriadDescription(pp));
+		}
 		
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		// buff.append(" " + cpro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");

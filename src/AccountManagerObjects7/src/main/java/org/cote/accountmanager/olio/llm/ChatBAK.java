@@ -767,8 +767,8 @@ Begin conversationally.
 		templ = userCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, userChar));
 		templ = systemCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, systemChar));
 		
-		templ = userCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, userChar, false, false));
-		templ = systemCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, systemChar, false, false));
+		templ = userCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, userChar, false, false, false));
+		templ = systemCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(ctx, systemChar, false, false, false));
 
 		
 		String ageCompat = "about the same age";

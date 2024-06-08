@@ -40,6 +40,8 @@ public class PromptUtil {
 	private static Pattern systemCharDesc = Pattern.compile("\\$\\{system.characterDesc\\}");
 	private static Pattern userCharDescLight = Pattern.compile("\\$\\{user.characterDescLight\\}");
 	private static Pattern systemCharDescLight = Pattern.compile("\\$\\{system.characterDescLight\\}");
+	private static Pattern userCharDescPublic = Pattern.compile("\\$\\{user.characterDescPublic\\}");
+	private static Pattern systemCharDescPublic = Pattern.compile("\\$\\{system.characterDescPublic\\}");
 
 	private static Pattern profileAgeCompat = Pattern.compile("\\$\\{profile.ageCompat\\}");
 	private static Pattern profileRomanceCompat = Pattern.compile("\\$\\{profile.romanceCompat\\}");
@@ -247,8 +249,12 @@ public class PromptUtil {
 		templ = userCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(null, userChar));
 		templ = systemCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(null, systemChar));
 		
-		templ = userCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(null, userChar, false, false));
-		templ = systemCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(null, systemChar, false, false));
+		templ = userCharDescPublic.matcher(templ).replaceAll(NarrativeUtil.describe(null, userChar, true, false, false));
+		templ = systemCharDescPublic.matcher(templ).replaceAll(NarrativeUtil.describe(null, systemChar, true, false, false));
+		
+		templ = userCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(null, userChar, false, false, false));
+		templ = systemCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(null, systemChar, false, false, false));
+
 
 		
 		String ageCompat = "about the same age";
