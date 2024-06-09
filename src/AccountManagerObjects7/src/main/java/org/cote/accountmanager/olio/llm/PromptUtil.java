@@ -80,6 +80,7 @@ public class PromptUtil {
 	private static Pattern userConsent = Pattern.compile("\\$\\{user.consent\\}");
 	private static Pattern assistCensorWarn = Pattern.compile("\\$\\{assistCensorWarn\\}");
 	private static Pattern firstSecondToBe = Pattern.compile("\\$\\{firstSecondToBe\\}");
+	private static Pattern firstSecondName = Pattern.compile("\\$\\{firstSecondName\\}");
 	
 	public static String composeTemplate(List<String> list) {
 		return Matcher.quoteReplacement(list.stream().collect(Collectors.joining(" ")));
@@ -141,6 +142,7 @@ public class PromptUtil {
 		templ = systemRace.matcher(templ).replaceAll(srace);
 		templ = annotateSupplement.matcher(templ).replaceAll(Matcher.quoteReplacement(asupp));
 		templ = firstSecondToBe.matcher(templ).replaceAll(firstPerson ? "I am" : "You are");
+		templ = firstSecondName.matcher(templ).replaceAll((String)(firstPerson ? systemChar.get("firstName") : userChar.get("firstName")));
 
 		String scenel = "";
 		if((boolean)chatConfig.get("includeScene")) {
