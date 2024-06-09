@@ -57,6 +57,7 @@ public class ConsoleMain {
 		options.addOption("filter", true, "Generic placeholder to filter lists");
 		options.addOption("import", false, "Generic bit");
 		options.addOption("export", false, "Generic bit");
+		options.addOption("debug", false, "Generic bit");
 
 		
 		adminAction.addOptions(options);

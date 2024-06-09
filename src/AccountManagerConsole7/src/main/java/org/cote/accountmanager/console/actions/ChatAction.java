@@ -386,6 +386,12 @@ public class ChatAction extends CommonAction implements IAction{
 			Chat chat2 = new Chat(user, chatConfig2, promptConfig);
 			OllamaRequest req1 = chat.getChatPrompt();
 			OllamaRequest req2 = chat2.getChatPrompt();
+			if(cmd.hasOption("debug")) {
+				logger.info(chatConfig.get("systemCharacter.firstName") + ":");
+				logger.info(JSONUtil.exportObject(req1));
+				logger.info(chatConfig2.get("systemCharacter.firstName") + ":");
+				logger.info(JSONUtil.exportObject(req2));
+			}
 			String message1 = null;
 			String message2 = null;
 			logger.info("Chat Duel: " + chatConfig.get("systemCharacter.firstName") + " vs " + chatConfig.get("userCharacter.firstName"));
