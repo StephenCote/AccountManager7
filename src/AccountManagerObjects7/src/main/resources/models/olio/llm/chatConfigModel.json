@@ -94,6 +94,24 @@
 		{
 			"name": "userPrompt",
 			"type": "string"
+		},
+		{
+			"name": "universeName",
+			"type": "string",
+			"description": "Name of any olio universe related to the characters or interactions."
+		},
+		{
+			"name": "worldName",
+			"type": "string",
+			"description": "Name of any olio world related to the characters or interactions."
+		},
+		{
+			"name": "startMode",
+			"type": "string",
+			"maxLength": "16",
+			"description": "Variant used to control how a chat begins",
+			"limit": ["user", "system", "none"],
+			"default": "none"
 		}
 
 	]

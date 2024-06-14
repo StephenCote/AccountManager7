@@ -1,8 +1,15 @@
 {
 	"name": "olio.narrative",
-	"ioConstraints": ["unknown"],
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight"
+	],
+	"query": ["id", "groupId"],
 	"icon": "category",
 	"label": "Narrative",
+	"group": "Narratives",
+	"dedicatedParticipation": true,
 	"fields": [
 		{
 			"name": "name",
@@ -47,6 +54,18 @@
 		{
 			"name": "sdPrompt",
 			"type": "string"
+		},
+		{
+			"name": "sdNegativePrompt",
+			"type": "string"
+		},
+		{
+			"name": "images",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.data",
+			"foreign": true,
+			"participantModel": "narrative.image"
 		}
 
 	]

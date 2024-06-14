@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -11,10 +12,12 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -763,10 +766,25 @@ public class NarrativeUtil {
         return (answer);
     }
 	
+	public static String getSDNegativePrompt(BaseRecord person) {
+
+		List<RaceEnumType> fraces = new ArrayList<>(Arrays.asList(new RaceEnumType[] {RaceEnumType.A, RaceEnumType.B, RaceEnumType.C, RaceEnumType.D, RaceEnumType.E}));
+		List<String> rs = person.get("race");
+		
+		for(String r : rs) {
+			fraces.remove(RaceEnumType.valueOf(r));
+		}
+		String negRaces = fraces.stream().map(r -> (RaceEnumType.valueOf(r) + " people")).collect(Collectors.joining(", "));
+		return "Washed out colors, lifeless, illogical, wonky, boring, bland, ugly, disgusting, uncanny, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, fugly, mutated, distorted, melting, cropped, disproportionate, weird, wonky, low quality, compressed, muddy colors, overexposed, bland, censored, mosaic, ugliness, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, old, masculine, (busty:1.3), extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face, " + negRaces + ", negativeXL_D";
+
+	}
 	public static String getSDPrompt(OlioContext ctx, BaseRecord person, String setting) {
 		return getSDPrompt(ctx, ProfileUtil.getProfile(ctx, person), person, setting);
 	}
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting) {
+		return getSDPrompt(ctx, pp, person, setting, "professional photograph");
+	}
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting, String pictureType) {
 		StringBuilder buff = new StringBuilder();
 		
 		int age = pp.getAge();
@@ -784,7 +802,7 @@ public class NarrativeUtil {
 			mof = "teenaged " + (isMale ? "boy" : "girl");
 		}
 		int m = Rules.MINIMUM_ADULT_AGE;
-		buff.append("8k highly detailed professional photograph ((highest quality)) ((ultra realistic)) ((full body))");
+		buff.append("8k highly detailed " + pictureType + " ((highest quality)) ((ultra realistic)) ((full body))");
 		
 		buff.append(" of a " + getLooksPrettyUgly(pp) + " " + getIsPrettyAthletic(pp));
 		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
@@ -887,6 +905,23 @@ public class NarrativeUtil {
 		return buff.toString();
 	}
 	
+	public static List<BaseRecord> getCreateNarrative(OlioContext ctx, List<BaseRecord> population, String setting) {
+		List<BaseRecord> nar = new ArrayList<>();
+		for(BaseRecord p: population) {
+			BaseRecord narrative = p.get("narrative");
+			if(narrative == null) {
+				narrative = getNarrative(ctx, p, setting);
+				IOSystem.getActiveContext().getRecordUtil().createRecord(narrative);
+				p.setValue("narrative", narrative);
+				ctx.queueUpdate(p, new String[] {FieldNames.FIELD_ID, "narrative"});
+			}
+			nar.add(narrative);
+		}
+		ctx.processQueue();
+		return nar;
+		
+	}
+	
 	public static BaseRecord getNarrative(PersonalityProfile pp) {
 		return getNarrative(null, pp, null);
 	}
@@ -897,7 +932,17 @@ public class NarrativeUtil {
 			
 		BaseRecord nar = null;
 		try {
-			nar = RecordFactory.newInstance(ModelNames.MODEL_NARRATIVE);
+			if(ctx == null) {
+				nar = RecordFactory.newInstance(ModelNames.MODEL_NARRATIVE);
+			}
+			else {
+				try {
+					nar = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NARRATIVE, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("narratives.path")));
+				} catch (FactoryException e) {
+					logger.error(e);
+					return null;
+				}
+			}
 			nar.set("name", pp.getRecord().get("firstName"));
 			nar.set("fullName", pp.getRecord().get("name"));
 			nar.set("physicalDescription", describePhysical(pp));
@@ -909,6 +954,7 @@ public class NarrativeUtil {
 			nar.set("mbtiDescription", pp.getMbti().getDescription());
 			nar.set("sloanDescription", pp.getSloanDescription());
 			nar.set("sdPrompt", getSDPrompt(null, pp, pp.getRecord(), (setting != null && !setting.equals("random") ? setting : getRandomSetting())));;
+			nar.set("sdNegativePrompt", getSDNegativePrompt(pp.getRecord()));
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

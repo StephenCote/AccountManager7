@@ -60,7 +60,23 @@ public class ClientUtil {
 		return client;
 	}
 	
-	
+	public static <T> T postJSON(Class<T> cls, WebTarget resource, String jsonText, MediaType responseType){
+		Response response = getRequestBuilder(resource).accept(responseType).post(Entity.json(jsonText));
+
+		T outObj = null;
+		if(response != null) {
+			if(response.getStatus() == 200){
+				outObj = response.readEntity(cls);
+			}
+			else {
+				logger.warn("Received response: " + response.getStatus());
+			}
+		}
+		else {
+			logger.warn("Null response");
+		}
+		return outObj;
+	}
 	public static <T> T post(Class<T> cls, WebTarget resource, Object object, MediaType responseType){
 		Response response = getRequestBuilder(resource).accept(responseType).post(Entity.entity(object, MediaType.APPLICATION_JSON_TYPE));
 

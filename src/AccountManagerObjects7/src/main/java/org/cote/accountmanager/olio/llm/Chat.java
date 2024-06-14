@@ -313,7 +313,7 @@ Begin conversationally.
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole("assistant");
 		ESRBEnumType rating = chatConfig.getEnum("rating");
-		msg.setContent("(KeyFrame: (" + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated content) " + analyze(req, null, true) + ")");
+		msg.setContent("(KeyFrame: (" + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated content) " + analyze(req, null, false) + ")");
 		List<OllamaMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame")).collect(Collectors.toList());
 		msgs.add(msg);
 		req.setMessages(msgs);

@@ -79,6 +79,7 @@ public class PromptUtil {
 	private static Pattern censorWarn = Pattern.compile("\\$\\{censorWarn\\}");
 	private static Pattern userConsent = Pattern.compile("\\$\\{user.consent\\}");
 	private static Pattern assistCensorWarn = Pattern.compile("\\$\\{assistCensorWarn\\}");
+	private static Pattern firstSecondWho = Pattern.compile("\\$\\{firstSecondWho\\}");
 	private static Pattern firstSecondToBe = Pattern.compile("\\$\\{firstSecondToBe\\}");
 	private static Pattern firstSecondName = Pattern.compile("\\$\\{firstSecondName\\}");
 	
@@ -141,6 +142,11 @@ public class PromptUtil {
 		templ = userRace.matcher(templ).replaceAll(urace);
 		templ = systemRace.matcher(templ).replaceAll(srace);
 		templ = annotateSupplement.matcher(templ).replaceAll(Matcher.quoteReplacement(asupp));
+		String whoStart = "I'll start:";
+		if(!"system".equals(chatConfig.get("startMode"))) {
+			whoStart = "You start.";
+		}
+		templ = firstSecondWho.matcher(templ).replaceAll(whoStart);
 		templ = firstSecondToBe.matcher(templ).replaceAll(firstPerson ? "I am" : "You are");
 		templ = firstSecondName.matcher(templ).replaceAll((String)(firstPerson ? systemChar.get("firstName") : userChar.get("firstName")));
 

@@ -63,7 +63,12 @@
 			"shortName": "inst"
 		},
 
-
+		{
+			"name": "narrative",
+			"type": "model",
+			"baseModel": "olio.narrative",
+			"foreign": true
+		},
 		{
 			"name": "state",
 			"type": "model",

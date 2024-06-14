@@ -2,6 +2,7 @@ package org.cote.accountmanager.console.actions;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,6 +31,7 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -48,6 +50,7 @@ public class ChatAction extends CommonAction implements IAction{
 		
 	}
 	public void addOptions(Options options) {
+		options.addOption("reimage", true, "Bit to regenerate SD images");
 		options.addOption("wearable", true, "Wearables");
 		options.addOption("qualities", true, "Qualities");
 		options.addOption("statistics", true, "Statistics");
@@ -101,6 +104,13 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord inter = null;
 		BaseRecord evt = null;
 		BaseRecord cevt = null;
+		String genSet = null;
+		if(cmd.hasOption("setting") && cmd.hasOption("reimage")) {
+			genSet = cmd.getOptionValue("setting");
+			if(genSet.equals("random")) {
+				genSet = NarrativeUtil.getRandomSetting();
+			}
+		}
 		
 		if(cmd.hasOption("import") && cmd.hasOption("path")) {
 			if(cmd.hasOption("chatConfig") && cmd.hasOption("promptConfig") && cmd.hasOption("session")) {
@@ -154,9 +164,10 @@ public class ChatAction extends CommonAction implements IAction{
 		NarrativeUtil.setDescribeApparelColors(cmd.hasOption("detailed"));
 		NarrativeUtil.setDescribePatterns(cmd.hasOption("detailed"));
 		NarrativeUtil.setDescribeFabrics(cmd.hasOption("detailed"));
-		
+		String universeName = "My Grid Universe";
+		String worldName = "My Grid World";
 		if(cmd.hasOption("olio")) {
-			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
+			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), universeName, worldName, cmd.hasOption("reset"));
 			epoch = octx.startOrContinueEpoch();
 			BaseRecord[] locs = octx.getLocations();
 			for(BaseRecord lrec : locs) {
@@ -180,6 +191,9 @@ public class ChatAction extends CommonAction implements IAction{
 			}
 			
 			if(cmd.hasOption("list")) {
+				if(cmd.hasOption("reimage")) {
+					generateSDImages(octx, pop, genSet, Integer.parseInt(cmd.getOptionValue("reimage")));
+				}
 				for(BaseRecord p: pop) {
 					logger.info(NarrativeUtil.describe(octx, p));
 				}
@@ -200,6 +214,7 @@ public class ChatAction extends CommonAction implements IAction{
 			
 			
 			if(char1 != null) {
+
 				if(cmd.hasOption("outfit")) {
 					String[] outfit = cmd.getOptionValue("outfit").split(",");
 					BaseRecord apparel = ApparelUtil.constructApparel(octx, 0L, char1, outfit);
@@ -243,6 +258,11 @@ public class ChatAction extends CommonAction implements IAction{
 
 
 				}
+				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
+					/// Need to overwrite the 'narrative', not just add another one
+					char1.setValue("narrative", null);
+					generateSDImages(octx, Arrays.asList(char1), genSet, Integer.parseInt(cmd.getOptionValue("reimage")));
+				}
 				if(cmd.hasOption("show")) {
 					logger.info("Describe " + char1.get(FieldNames.FIELD_NAME));;
 					logger.info(NarrativeUtil.describe(octx, char1));
@@ -256,6 +276,11 @@ public class ChatAction extends CommonAction implements IAction{
 				}
 			}
 			if(char2 != null) {
+				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
+					/// Need to overwrite the 'narrative', not just add another one
+					char1.setValue("narrative", null);
+					generateSDImages(octx, Arrays.asList(char2), genSet, Integer.parseInt(cmd.getOptionValue("reimage")));
+				}
 				if(cmd.hasOption("show")) {
 					logger.info(NarrativeUtil.describe(octx, char2));
 				}
@@ -296,6 +321,9 @@ public class ChatAction extends CommonAction implements IAction{
 				
 				try {
 					cfg.set("event", cevt);
+					cfg.set("universeName", universeName);
+					cfg.set("worldName", worldName);
+					cfg.set("startMode", "system");
 					cfg.set("assist", cmd.hasOption("assist"));
 					cfg.set("useNLP", cmd.hasOption("nlp"));
 					cfg.set("setting", cmd.getOptionValue("setting"));
@@ -309,12 +337,18 @@ public class ChatAction extends CommonAction implements IAction{
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);
 						cfg.set("interactions", inters);
+						if(cmd.hasOption("reimage")) {
+							char1.setValue("narrative", null);
+							char2.setValue("narrative", null);
+							generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), Integer.parseInt(cmd.getOptionValue("reimage")));
+						}
 					}
 					cfg.set("terrain", NarrativeUtil.getTerrain(octx, char2));
-					cfg.set("systemNarrative", NarrativeUtil.getNarrative(octx, char1, cmd.getOptionValue("setting")));
-					cfg.set("userNarrative", NarrativeUtil.getNarrative(octx, char2, cmd.getOptionValue("setting")));
+					// cfg.set("systemNarrative", NarrativeUtil.getNarrative(octx, char1, cmd.getOptionValue("setting")));
+					// cfg.set("userNarrative", NarrativeUtil.getNarrative(octx, char2, cmd.getOptionValue("setting")));
 					NarrativeUtil.describePopulation(octx, cfg);
 					cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
+
 				
 				}
 				catch(ModelNotFoundException | FieldException | ValueException e) {
@@ -372,9 +406,10 @@ public class ChatAction extends CommonAction implements IAction{
 			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 			BaseRecord chatConfig2 = chatConfig.copyRecord();
 			chatConfig2.setValue("systemCharacter", chatConfig.get("userCharacter"));
-			chatConfig2.setValue("systemNarrative", chatConfig.get("userNarrative"));
-			chatConfig2.setValue("userNarrative", chatConfig.get("systemNarrative"));
+			//chatConfig2.setValue("systemNarrative", chatConfig.get("userNarrative"));
+			//chatConfig2.setValue("userNarrative", chatConfig.get("systemNarrative"));
 			chatConfig2.setValue("userCharacter", chatConfig.get("systemCharacter"));
+			chatConfig2.setValue("startMode", "user");
 			String setting = chatConfig.get("setting");
 			if(setting != null && setting.equals("random")) {
 				setting = NarrativeUtil.getRandomSetting();
@@ -397,19 +432,54 @@ public class ChatAction extends CommonAction implements IAction{
 			logger.info("Chat Duel: " + chatConfig.get("systemCharacter.firstName") + " vs " + chatConfig.get("userCharacter.firstName"));
 			for(int i = 0; i < iter; i++) {
 				chat.continueChat(req1, message1);
+
+				if(cmd.hasOption("debug")) {
+					FileUtil.emitFile("./chat1.save", JSONUtil.exportObject(req1));
+				}
+				
 				message2 = req1.getMessages().get(req1.getMessages().size() - 1).getContent();
 				System.out.println(chatConfig.get("systemCharacter.firstName") + " - " + message2);
+				/*
 				if(message1 == null) {
-					/// Prime the second chat first
 					chat2.continueChat(req2, null);	
 				}
+				*/
 				chat2.continueChat(req2, message2);
+				if(cmd.hasOption("debug")) {
+					FileUtil.emitFile("./chat2.save", JSONUtil.exportObject(req2));
+				}
+
 				message1 = req2.getMessages().get(req2.getMessages().size() - 1).getContent();
 				System.out.println(chatConfig.get("userCharacter.firstName") + " - " + message1);
+				
 			}
 
 		}
 		
+	}
+	
+	private void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, int batchSize) {
+		SDUtil sdu = new SDUtil();
+		if(setting != null && setting.equals("random")) {
+			setting = NarrativeUtil.getRandomSetting();
+		}
+		for(BaseRecord per : pop) {
+			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), setting);
+			BaseRecord nar = nars.get(0);
+			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
+			List<BaseRecord> images = nar.get("images");
+			if(images.size() == 0) {
+				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", null, "professional portrait", 50, batchSize);
+				
+				for(BaseRecord b1 : bl) {
+					IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
+					// FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
+				}
+				
+	
+			}
+		}
+		octx.processQueue();
 	}
 	
 	

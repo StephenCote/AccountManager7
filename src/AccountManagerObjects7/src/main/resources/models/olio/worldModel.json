@@ -198,6 +198,12 @@
 		"foreign": true
 	},
 	{
+		"name": "narratives",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "tagsGroup",
 		"baseModel": "auth.group",
 		"type": "model",
