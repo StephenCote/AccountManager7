@@ -908,12 +908,18 @@ public class NarrativeUtil {
 	public static List<BaseRecord> getCreateNarrative(OlioContext ctx, List<BaseRecord> population, String setting) {
 		List<BaseRecord> nar = new ArrayList<>();
 		for(BaseRecord p: population) {
-			BaseRecord narrative = p.get("narrative");
-			if(narrative == null) {
-				narrative = getNarrative(ctx, p, setting);
+			BaseRecord onarrative = p.get("narrative");
+			BaseRecord narrative = getNarrative(ctx, p, setting);
+		
+			//	
+			if(onarrative == null) {
 				IOSystem.getActiveContext().getRecordUtil().createRecord(narrative);
 				p.setValue("narrative", narrative);
 				ctx.queueUpdate(p, new String[] {FieldNames.FIELD_ID, "narrative"});
+			}
+			else {
+				IOSystem.getActiveContext().getRecordUtil().patch(narrative.copyDeidentifiedRecord(), onarrative);
+				narrative = onarrative;
 			}
 			nar.add(narrative);
 		}

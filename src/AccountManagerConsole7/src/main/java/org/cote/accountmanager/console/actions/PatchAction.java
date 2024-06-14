@@ -48,7 +48,7 @@ public class PatchAction extends CommonAction implements IAction {
 			if(targ != null) {
 				BaseRecord src = RecordFactory.importRecord(cmd.getOptionValue("model"), cmd.getOptionValue("patch"));
 				if(src != null) {
-					ActionUtil.patch(src, targ);
+					IOSystem.getActiveContext().getRecordUtil().patch(src, targ);
 				}
 			}
 		}

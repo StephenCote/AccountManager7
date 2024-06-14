@@ -42,6 +42,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
 public class ChatAction extends CommonAction implements IAction{
@@ -51,11 +52,13 @@ public class ChatAction extends CommonAction implements IAction{
 	}
 	public void addOptions(Options options) {
 		options.addOption("reimage", true, "Bit to regenerate SD images");
+		options.addOption("hires", false, "Bit to generate a higher resolution SD image");
 		options.addOption("wearable", true, "Wearables");
 		options.addOption("qualities", true, "Qualities");
 		options.addOption("statistics", true, "Statistics");
 		options.addOption("personality", true, "Personality");
 		options.addOption("person", true, "Person");
+		options.addOption("seed", true, "Seed to be used for SD images");
 		options.addOption("chat", false, "Start chat console");
 		options.addOption("chat2", false, "Start chat console");
 		options.addOption("session", true, "Name of a session to use with a chat conversation");
@@ -105,6 +108,10 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord evt = null;
 		BaseRecord cevt = null;
 		String genSet = null;
+		int seed = 0;
+		if(cmd.hasOption("seed")) {
+			seed = Integer.parseInt(cmd.getOptionValue("seed"));
+		}
 		if(cmd.hasOption("setting") && cmd.hasOption("reimage")) {
 			genSet = cmd.getOptionValue("setting");
 			if(genSet.equals("random")) {
@@ -124,13 +131,13 @@ public class ChatAction extends CommonAction implements IAction{
 				logger.info("Import chat config " + cmd.getOptionValue("path"));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 				String patch = FileUtil.getFileAsString(cmd.getOptionValue("path"));
-				ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_CHAT_CONFIG, patch), cfg);
+				IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAT_CONFIG, patch), cfg);
 			}
 			else if(cmd.hasOption("promptConfig")) {
 				logger.info("Import prompt config " + cmd.getOptionValue("path"));
 				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
 				String patch = FileUtil.getFileAsString(cmd.getOptionValue("path"));
-				ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_PROMPT_CONFIG, patch), prompt);
+				IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PROMPT_CONFIG, patch), prompt);
 			}
 		}
 		
@@ -192,7 +199,7 @@ public class ChatAction extends CommonAction implements IAction{
 			
 			if(cmd.hasOption("list")) {
 				if(cmd.hasOption("reimage")) {
-					generateSDImages(octx, pop, genSet, Integer.parseInt(cmd.getOptionValue("reimage")));
+					generateSDImages(octx, pop, genSet, Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
 				for(BaseRecord p: pop) {
 					logger.info(NarrativeUtil.describe(octx, p));
@@ -232,7 +239,7 @@ public class ChatAction extends CommonAction implements IAction{
 					if(cmd.hasOption("wearable") && cmd.hasOption("name")) {
 						BaseRecord item = ItemUtil.findStoredItemByName(char1, cmd.getOptionValue("name"));
 						if(item != null) {
-							ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_WEARABLE, cmd.getOptionValue("wearable")), item);		
+							IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_WEARABLE, cmd.getOptionValue("wearable")), item);		
 						}
 					}
 					if(cmd.hasOption("qualities") && cmd.hasOption("name")) {
@@ -240,28 +247,28 @@ public class ChatAction extends CommonAction implements IAction{
 						if(item != null) {
 							List<BaseRecord> qs = item.get("qualities");
 							if(qs.size() > 0) {
-								ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_QUALITY, cmd.getOptionValue("qualities")), qs.get(0));		
+								IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_QUALITY, cmd.getOptionValue("qualities")), qs.get(0));		
 							}
 						}
 					}
 					if(cmd.hasOption("statistics")) {
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-						ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_STATISTICS, cmd.getOptionValue("statistics")), char1.get("statistics"), true);
+						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_STATISTICS, cmd.getOptionValue("statistics")), char1.get("statistics"), true);
 					}
 					if(cmd.hasOption("personality")) {
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-						ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, cmd.getOptionValue("personality")), char1.get("personality"), true);
+						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, cmd.getOptionValue("personality")), char1.get("personality"), true);
 					}
 					if(cmd.hasOption("person")) {
-						ActionUtil.patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_PERSON, cmd.getOptionValue("person")), char1);
+						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_PERSON, cmd.getOptionValue("person")), char1);
 					}
 
 
 				}
 				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
 					/// Need to overwrite the 'narrative', not just add another one
-					char1.setValue("narrative", null);
-					generateSDImages(octx, Arrays.asList(char1), genSet, Integer.parseInt(cmd.getOptionValue("reimage")));
+					//char1.setValue("narrative", null);
+					generateSDImages(octx, Arrays.asList(char1), genSet, Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
 				if(cmd.hasOption("show")) {
 					logger.info("Describe " + char1.get(FieldNames.FIELD_NAME));;
@@ -270,6 +277,7 @@ public class ChatAction extends CommonAction implements IAction{
 				if(cmd.hasOption("showSD")) {
 					logger.info("Stable Diffusion Prompt for " + char1.get(FieldNames.FIELD_NAME));;
 					logger.info(NarrativeUtil.getSDPrompt(octx, char1, cmd.getOptionValue("setting")));
+					logger.info(NarrativeUtil.getSDNegativePrompt(char1));
 				}
 				if(cmd.hasOption("inspect")) {
 					logger.info(char1.toFullString());
@@ -278,14 +286,15 @@ public class ChatAction extends CommonAction implements IAction{
 			if(char2 != null) {
 				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
 					/// Need to overwrite the 'narrative', not just add another one
-					char1.setValue("narrative", null);
-					generateSDImages(octx, Arrays.asList(char2), genSet, Integer.parseInt(cmd.getOptionValue("reimage")));
+					//char2.setValue("narrative", null);
+					generateSDImages(octx, Arrays.asList(char2), genSet, Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
 				if(cmd.hasOption("show")) {
 					logger.info(NarrativeUtil.describe(octx, char2));
 				}
 				if(cmd.hasOption("showSD")) {
 					logger.info(NarrativeUtil.getSDPrompt(octx, char2, cmd.getOptionValue("setting")));
+					logger.info(NarrativeUtil.getSDNegativePrompt(char2));
 				}
 				if(cmd.hasOption("inspect")) {
 					logger.info(char2.toFullString());
@@ -338,9 +347,9 @@ public class ChatAction extends CommonAction implements IAction{
 						cfg.set("userCharacter", char2);
 						cfg.set("interactions", inters);
 						if(cmd.hasOption("reimage")) {
-							char1.setValue("narrative", null);
-							char2.setValue("narrative", null);
-							generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), Integer.parseInt(cmd.getOptionValue("reimage")));
+							// char1.setValue("narrative", null);
+							// char2.setValue("narrative", null);
+							generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 						}
 					}
 					cfg.set("terrain", NarrativeUtil.getTerrain(octx, char2));
@@ -458,7 +467,7 @@ public class ChatAction extends CommonAction implements IAction{
 		
 	}
 	
-	private void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, int batchSize) {
+	private void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, int batchSize, boolean export, boolean hires, int seed) {
 		SDUtil sdu = new SDUtil();
 		if(setting != null && setting.equals("random")) {
 			setting = NarrativeUtil.getRandomSetting();
@@ -467,17 +476,19 @@ public class ChatAction extends CommonAction implements IAction{
 			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), setting);
 			BaseRecord nar = nars.get(0);
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
-			List<BaseRecord> images = nar.get("images");
-			if(images.size() == 0) {
-				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", null, "professional portrait", 50, batchSize);
+			//List<BaseRecord> images = nar.get("images");
+			//if(images.size() == 0) {
+				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", null, "professional portrait", 50, batchSize, hires, seed);
 				
 				for(BaseRecord b1 : bl) {
 					IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
-					// FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
-				}
+					if(export) {
+						FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
 				
+					}
+				}
 	
-			}
+			//}
 		}
 		octx.processQueue();
 	}

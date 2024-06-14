@@ -266,7 +266,7 @@ public class DBWriter extends MemoryWriter {
 				}
 				List<BaseRecord> vals = new ArrayList<>();
 				FieldSchema fs = schema.getFieldSchema(f.getName());
-				if(!fs.isForeign()) {
+				if(!fs.isForeign() && !fs.isReferenced()) {
 					continue;
 				}
 				if(f.getValueType() == FieldEnumType.LIST) {

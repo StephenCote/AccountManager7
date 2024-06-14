@@ -61,6 +61,38 @@ public class RecordUtil {
 		this.search = context.getSearch();
 		this.pathUtil = context.getPathUtil();
 	}
+	
+	public void patch(BaseRecord src, BaseRecord targ) {
+		patch(src, targ, false);
+	}
+	public void patch(BaseRecord src, BaseRecord targ, boolean full) {
+		if(src != null && targ != null) {
+			List<String> upf =new ArrayList<>();
+			for(FieldType f: src.getFields()) {
+				//FieldType sf = targ.getField(f.getName());
+				try {
+					//sf.setValue(f.getValue());
+					targ.set(f.getName(), f.getValue());
+					upf.add(f.getName());
+				} catch (ValueException | FieldException | ModelNotFoundException e) {
+					logger.error(e);
+					e.printStackTrace();
+				}
+			}
+			if(upf.size() > 0) {
+				upf.add(FieldNames.FIELD_ID);
+				upf.add(FieldNames.FIELD_OWNER_ID);
+				upf.add(FieldNames.FIELD_ORGANIZATION_ID);
+				if(updateRecord((full ? targ : targ.copyRecord(upf.toArray(new String[0]))))) {
+					logger.info("Patched " + targ.get(FieldNames.FIELD_OBJECT_ID) + " " + (full ? "object" :  upf.stream().collect(Collectors.joining(", "))));
+				}
+				else {
+					logger.warn("Failed to patch " + targ.get(FieldNames.FIELD_OBJECT_ID) + " " + (full ? "object" : upf.stream().collect(Collectors.joining(", "))));
+				}
+			}
+			 
+		}
+	}
 
 	public static String toFilteredJSONString(BaseRecord rec) {
 		sortFields(rec);

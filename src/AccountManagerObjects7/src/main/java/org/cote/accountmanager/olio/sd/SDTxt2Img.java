@@ -9,7 +9,7 @@ public class SDTxt2Img {
 	private Integer[] all_subseeds = new Integer[0];
 	private String[] all_prompts = new String[0];
 	private String[] all_negative_prompts = new String[0];
-	private Object alwayson_scripts = null;
+	//private Object alwayson_scripts = null;
 	private int batch_size = 1;
 	private int batch_count = 1;
 	private int cfg_scale = 7;
@@ -17,7 +17,7 @@ public class SDTxt2Img {
 	private double denoising_strength = 0;
     private boolean disable_extra_networks = false;
     private boolean do_not_save_grid = false;
-
+    private SDAlwaysOnScripts alwayson_scripts = null;
 	private boolean do_not_save_samples = false;
 	private boolean enable_hr = false;
 	private int eta = 0;
@@ -53,7 +53,7 @@ public class SDTxt2Img {
 	 */
 	private String prompt = null;
 	private String refiner_checkpoint = null;
-    private int refiner_switch_at = 0;
+    private double refiner_switch_at = 0;
 
 	private boolean restore_faces = false;
 	private int s_churn = 0;
@@ -84,6 +84,14 @@ public class SDTxt2Img {
 	
 	public SDTxt2Img() {
 		
+	}
+
+	public SDAlwaysOnScripts getAlwayson_scripts() {
+		return alwayson_scripts;
+	}
+
+	public void setAlwayson_scripts(SDAlwaysOnScripts alwayson_scripts) {
+		this.alwayson_scripts = alwayson_scripts;
 	}
 
 	public int getBatch_count() {
@@ -138,9 +146,6 @@ public class SDTxt2Img {
 		return all_seeds;
 	}
 
-	public Object getAlwayson_scripts() {
-		return alwayson_scripts;
-	}
 
 	public int getBatch_size() {
 		return batch_size;
@@ -243,7 +248,7 @@ public class SDTxt2Img {
 		return refiner_checkpoint;
 	}
 
-	public int getRefiner_switch_at() {
+	public double getRefiner_switch_at() {
 		return refiner_switch_at;
 	}
 
@@ -371,9 +376,6 @@ public class SDTxt2Img {
 		this.all_seeds = all_seeds;
 	}
 
-	public void setAlwayson_scripts(Object alwayson_scripts) {
-		this.alwayson_scripts = alwayson_scripts;
-	}
 
 	public void setBatch_size(int batch_size) {
 		this.batch_size = batch_size;
@@ -504,7 +506,7 @@ public class SDTxt2Img {
 		this.refiner_checkpoint = refiner_checkpoint;
 	}
 
-	public void setRefiner_switch_at(int refiner_switch_at) {
+	public void setRefiner_switch_at(double refiner_switch_at) {
 		this.refiner_switch_at = refiner_switch_at;
 	}
 
