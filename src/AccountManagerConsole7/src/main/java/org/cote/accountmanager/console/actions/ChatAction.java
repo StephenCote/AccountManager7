@@ -478,7 +478,7 @@ public class ChatAction extends CommonAction implements IAction{
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 			//List<BaseRecord> images = nar.get("images");
 			//if(images.size() == 0) {
-				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", null, "professional portrait", 50, batchSize, hires, seed);
+				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", setting, "professional portrait", 50, batchSize, hires, seed);
 				
 				for(BaseRecord b1 : bl) {
 					IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
