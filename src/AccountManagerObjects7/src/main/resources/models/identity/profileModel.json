@@ -1,0 +1,44 @@
+{
+	"name": "identity.profile",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.description",
+		"common.groupExt",
+		"common.baseLight"
+	],
+	"icon": "person",
+	"label": "Profile",
+	"group": "Profiles",
+	"dedicatedParticipation": true,
+	"fields": [
+		{
+			"name": "album",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "data.data",
+			"foreign": true,
+			"participantModel": "profile.album"
+		},
+		{
+			"name": "portrait",
+			"type": "model",
+			"baseModel": "data.data",
+			"foreign": true
+		},
+		{
+			"name": "contentTitle",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "contentSubTitle",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "pseudonym",
+			"type": "string",
+			"maxLength": 128
+		}
+	]
+}

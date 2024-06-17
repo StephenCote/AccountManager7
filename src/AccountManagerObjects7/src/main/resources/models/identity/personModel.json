@@ -151,6 +151,12 @@
 			"baseModel": "identity.behavior",
 			"foreign": true,
 			"shortName": "beh"
+		},
+		{
+			"name": "profile",
+			"type": "model",
+			"baseModel": "identity.profile",
+			"foreign": true
 		}
 	]
 }

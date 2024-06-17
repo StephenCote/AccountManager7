@@ -222,5 +222,11 @@
 		"baseType": "model",
 		"baseModel": "olio.realm",
 		"foreign": true
+	},
+	{
+		"name": "profiles",
+		"type": "model",
+		"baseModel": "auth.group",
+		"foreign": true
 	}
 ]}

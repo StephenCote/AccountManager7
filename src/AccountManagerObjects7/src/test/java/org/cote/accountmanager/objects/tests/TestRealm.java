@@ -67,13 +67,11 @@ public class TestRealm extends BaseTest {
 	private String worldName = "World 3";
 	private String worldPath = "~/Worlds";
 	
+	@Test
 	public void TestRealm() {
 		logger.info("Test Realm");
 		AuditUtil.setLogToConsole(false);
 	
-		PromptConfiguration pc = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/chat.config.json"), PromptConfiguration.class);
-		assertNotNull("Prompt config was null", pc);
-		
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());

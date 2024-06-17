@@ -505,6 +505,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INVENTORY_ENTRY, (long)world.get("inventories.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_NARRATIVE, (long)world.get("narratives.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_PROFILE, (long)world.get("profiles.id"), orgId);
 		
 		RecordFactory.cleanupOrphans(null);
 		long stop = System.currentTimeMillis();

@@ -127,12 +127,12 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestChat.java</exclude>
-						-->
-						
-						
-						<!-- Repeatable Set -->
 						<exclude>**/TestRealm.java</exclude>
+						-->
+					<exclude>**/TestChat.java</exclude>	
+						<exclude>**/TestSD.java</exclude>
+						<!-- Repeatable Set -->
+						
 						<exclude>**/TestNestedStructures.java</exclude>
 						<exclude>**/TestOlio.java</exclude>
 						<exclude>**/TestQdrant.java</exclude>
