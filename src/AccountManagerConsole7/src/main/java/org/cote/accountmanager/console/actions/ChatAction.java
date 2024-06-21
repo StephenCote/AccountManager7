@@ -1,6 +1,7 @@
 package org.cote.accountmanager.console.actions;
 
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -52,13 +53,15 @@ public class ChatAction extends CommonAction implements IAction{
 	}
 	public void addOptions(Options options) {
 		options.addOption("reimage", true, "Bit to regenerate SD images");
+		options.addOption("style", true, "Bit used to adjust style elements, such as image generation style");
+		options.addOption("bodyStyle", true, "Bit used to adjust image generation style for body camera");
 		options.addOption("hires", false, "Bit to generate a higher resolution SD image");
+		options.addOption("seed", true, "Seed to be used for SD images");
 		options.addOption("wearable", true, "Wearables");
 		options.addOption("qualities", true, "Qualities");
 		options.addOption("statistics", true, "Statistics");
 		options.addOption("personality", true, "Personality");
 		options.addOption("person", true, "Person");
-		options.addOption("seed", true, "Seed to be used for SD images");
 		options.addOption("chat", false, "Start chat console");
 		options.addOption("chat2", false, "Start chat console");
 		options.addOption("session", true, "Name of a session to use with a chat conversation");
@@ -109,6 +112,7 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord cevt = null;
 		String genSet = null;
 		int seed = 0;
+		SDUtil sdu = new SDUtil();
 		if(cmd.hasOption("seed")) {
 			seed = Integer.parseInt(cmd.getOptionValue("seed"));
 		}
@@ -199,7 +203,7 @@ public class ChatAction extends CommonAction implements IAction{
 			
 			if(cmd.hasOption("list")) {
 				if(cmd.hasOption("reimage")) {
-					generateSDImages(octx, pop, genSet, Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					sdu.generateSDImages(octx, pop, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
 				for(BaseRecord p: pop) {
 					logger.info(NarrativeUtil.describe(octx, p));
@@ -268,7 +272,7 @@ public class ChatAction extends CommonAction implements IAction{
 				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
 					/// Need to overwrite the 'narrative', not just add another one
 					//char1.setValue("narrative", null);
-					generateSDImages(octx, Arrays.asList(char1), genSet, Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					sdu.generateSDImages(octx, Arrays.asList(char1), genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
 				if(cmd.hasOption("show")) {
 					logger.info("Describe " + char1.get(FieldNames.FIELD_NAME));;
@@ -287,7 +291,7 @@ public class ChatAction extends CommonAction implements IAction{
 				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
 					/// Need to overwrite the 'narrative', not just add another one
 					//char2.setValue("narrative", null);
-					generateSDImages(octx, Arrays.asList(char2), genSet, Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					sdu.generateSDImages(octx, Arrays.asList(char2), genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
 				if(cmd.hasOption("show")) {
 					logger.info(NarrativeUtil.describe(octx, char2));
@@ -349,7 +353,7 @@ public class ChatAction extends CommonAction implements IAction{
 						if(cmd.hasOption("reimage")) {
 							// char1.setValue("narrative", null);
 							// char2.setValue("narrative", null);
-							generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+							sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 						}
 					}
 					cfg.set("terrain", NarrativeUtil.getTerrain(octx, char2));
@@ -467,31 +471,7 @@ public class ChatAction extends CommonAction implements IAction{
 		
 	}
 	
-	private void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, int batchSize, boolean export, boolean hires, int seed) {
-		SDUtil sdu = new SDUtil();
-		if(setting != null && setting.equals("random")) {
-			setting = NarrativeUtil.getRandomSetting();
-		}
-		for(BaseRecord per : pop) {
-			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), setting);
-			BaseRecord nar = nars.get(0);
-			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
-			//List<BaseRecord> images = nar.get("images");
-			//if(images.size() == 0) {
-				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", setting, "professional portrait", 50, batchSize, hires, seed);
-				
-				for(BaseRecord b1 : bl) {
-					IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
-					if(export) {
-						FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
-				
-					}
-				}
-	
-			//}
-		}
-		octx.processQueue();
-	}
+
 	
 	
 	

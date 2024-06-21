@@ -1,5 +1,10 @@
 package org.cote.accountmanager.console.actions;
 
+import java.sql.Connection;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Options;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -11,9 +16,13 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConnectionEnumType;
 import org.cote.accountmanager.schema.type.CredentialEnumType;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
@@ -32,6 +41,7 @@ public class AdminAction extends CommonAction implements IAction {
 		options.addOption("adminPassword",true,"AccountManager admin password");
 		options.addOption("addUser", false, "Add a new user");
 		options.addOption("setup", false, "Setup AM7");
+		options.addOption("cleanup", false, "Run cleanup routines");
 	}
 
 	@Override
@@ -99,6 +109,28 @@ public class AdminAction extends CommonAction implements IAction {
 				else {
 					logger.warn("Failed to find admin user in " + cmd.getOptionValue("organization"));
 				}
+			}
+		}
+		if(cmd.hasOption("cleanup")) {
+			logger.info("Cleaning up orphans ...");
+			RecordFactory.cleanupOrphans(null);
+			if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
+				DBUtil util = IOSystem.getActiveContext().getDbUtil();
+				
+				try (Connection con = util.getDataSource().getConnection();
+				   	Statement st = con.createStatement();
+				){
+					if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+						logger.info("Vacuuming ...");
+
+						st.execute("vacuum(full, analyze, verbose);");
+						
+					}
+					
+				}
+				catch (SQLException e) {
+					logger.error(e);
+			    }
 			}
 		}
 	}

@@ -145,6 +145,18 @@ public class StatementUtil {
 				if(!ms.hasField(FieldNames.FIELD_ID)) {
 					continue;
 				}
+				
+				/// TODO: Need to cleanup orphaned participants using a custom participantModel definition
+				/*
+				List<String> pmods = new ArrayList<>();
+				pmods.add(smodel);
+				for(FieldSchema f: ms.getFields()) {
+					if(f.getParticipantModel() != null) {
+						
+					}
+				}
+				*/
+				
 				String table = IOSystem.getActiveContext().getDbUtil().getTableName(smodel);
 				String partTable = IOSystem.getActiveContext().getDbUtil().getTableName(ms, ModelNames.MODEL_PARTICIPATION);
 				StringBuilder sql = new StringBuilder();
@@ -511,6 +523,7 @@ public class StatementUtil {
 					}
 					).collect(Collectors.toList());
 				}
+
 			}
 			else {
 				// logger.warn("Query for " + model + " is open ended and may cause recursion");
@@ -630,15 +643,10 @@ public class StatementUtil {
 			throw new FieldException("**** Unhandled inner query: " + util.getConnectionType().toString());
 		}
 
-		subQuery.setRequest(fields.toArray(new String[0]));
+		//subQuery.setRequest(fields.toArray(new String[0]));
+		subQuery.setRequest(msfields.stream().map(f -> f.getName()).collect(Collectors.toList()).toArray(new String[0]));
 		List<BaseRecord> queries = query.get(FieldNames.FIELD_QUERIES);
 		queries.add(subQuery);
-		
-		/*
-		if(model.equals(ModelNames.MODEL_PERSON)) {
-			logger.info(buff.toString());
-		}
-		*/
 
 		return buff.toString();
 	}

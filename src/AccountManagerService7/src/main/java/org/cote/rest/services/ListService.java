@@ -46,7 +46,11 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
@@ -264,7 +268,7 @@ public class ListService {
 		else {
 			logger.error("Failed to read " + type + " " + objectId);
 		}
-		return Response.status(200).entity(JSONUtil.exportObject(rec, RecordSerializerConfig.getUnfilteredModule())).build();
+		return Response.status(200).entity(JSONUtil.exportObject(rec, RecordSerializerConfig.getForeignUnfilteredModule())).build();
 	}
 	
 	@RolesAllowed({"user"})
@@ -272,9 +276,8 @@ public class ListService {
 	@Path("/{objectId:[0-9A-Za-z\\-]+}/{startIndex:[\\d]+}/{count:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response listObjects(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("startIndex") long startIndex, @PathParam("count") int recordCount, @Context HttpServletRequest request){
-
 		QueryResult qr = ServiceUtil.generateListQueryResponse(type, objectId, null, startIndex, recordCount, request);
-		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getUnfilteredModule())).build();
+		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getForeignUnfilteredModule())).build();
 	}
 
 	@RolesAllowed({"user"})
@@ -282,9 +285,8 @@ public class ListService {
 	@Path("/{objectId:[0-9A-Za-z\\-]+}/{fields:[0-9A-Za-z\\-,]+}/{startIndex:[\\d]+}/{count:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response listObjectsWithFields(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("fields") String fields, @PathParam("startIndex") long startIndex, @PathParam("count") int recordCount, @Context HttpServletRequest request){
-
 		QueryResult qr = ServiceUtil.generateListQueryResponse(type, objectId, null, fields.split(","), startIndex, recordCount, request);
-		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getUnfilteredModule())).build();
+		return Response.status((qr == null ? 500 : 200)).entity(JSONUtil.exportObject((qr != null ? qr.getResults() : null), RecordSerializerConfig.getForeignUnfilteredModule())).build();
 	}
 
 	

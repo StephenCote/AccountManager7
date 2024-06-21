@@ -106,7 +106,9 @@ public class ChatUtil {
 		}
 		return dat;
 	}
-	
+	public static BaseRecord getDefaultPrompt() {
+		return JSONUtil.importObject(ResourceUtil.getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+	}
 	public static BaseRecord getCreatePromptConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, name);
@@ -115,7 +117,7 @@ public class ChatUtil {
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 				
 		if(dat == null) {
-			BaseRecord template = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+			BaseRecord template = getDefaultPrompt();
 			dat = newPromptConfig(user, name, template);
 			dat = IOSystem.getActiveContext().getAccessPoint().create(user, dat);
 		}

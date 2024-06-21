@@ -8,6 +8,7 @@
 	"icon": "note",
 	"label": "Character Person",
 	"dedicatedParticipation": true,
+	"query": ["profile"],
 	"fields": [
 		{
 			"name": "eyeColor",

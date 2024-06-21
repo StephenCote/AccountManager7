@@ -159,19 +159,19 @@ public class NarrativeUtil {
 	
 		StringBuilder buff = new StringBuilder();
 		List<BaseRecord> appl = pp.getRecord().get("store.apparel");
-		if(appl == null || appl.size() == 0) {
-			buff.append("naked");
-		}
-		else {
-			BaseRecord app = null;
+		BaseRecord app = null;
+		List<BaseRecord> wearl = new ArrayList<>();
+		if(appl != null && appl.size() > 0) {
 			Optional<BaseRecord> oapp = appl.stream().filter(a -> ((boolean)a.get("inuse"))).findFirst();
 			if(oapp.isPresent()) {
 				app = oapp.get();
+				wearl = ((List<BaseRecord>)app.get("wearables")).stream().filter(a -> ((boolean)a.get("inuse"))).collect(Collectors.toList());
 			}
-			else {
-				app = appl.get(0);
-			}
-			List<BaseRecord> wearl = app.get("wearables");
+		}
+		if(app == null || wearl.size() == 0) {
+			buff.append("naked/nude, wearing no clothes");
+		}
+		else {
 			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
 			buff.append("wearing");
 			String andl = "";
@@ -782,9 +782,9 @@ public class NarrativeUtil {
 		return getSDPrompt(ctx, ProfileUtil.getProfile(ctx, person), person, setting);
 	}
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting) {
-		return getSDPrompt(ctx, pp, person, setting, "professional photograph");
+		return getSDPrompt(ctx, pp, person, setting, "professional photograph", "full body");
 	}
-	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting, String pictureType) {
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting, String pictureType, String bodyType) {
 		StringBuilder buff = new StringBuilder();
 		
 		int age = pp.getAge();
@@ -802,7 +802,7 @@ public class NarrativeUtil {
 			mof = "teenaged " + (isMale ? "boy" : "girl");
 		}
 		int m = Rules.MINIMUM_ADULT_AGE;
-		buff.append("8k highly detailed " + pictureType + " ((highest quality)) ((ultra realistic)) ((full body))");
+		buff.append("8k highly detailed ((" + pictureType + ")) ((highest quality)) ((ultra realistic)) ((" + bodyType + "))");
 		
 		buff.append(" of a " + getLooksPrettyUgly(pp) + " " + getIsPrettyAthletic(pp));
 		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
@@ -820,7 +820,7 @@ public class NarrativeUtil {
 		String eyeColor =  getColor(person, "eyeColor");
 		
 		buff.append(" with ((" + hairStyle + ") (" + hairColor + " hair)) and (" + eyeColor + " eyes).");
-		buff.append(" " + cpro + " is " + describeOutfit(pp, false) + ".");
+		buff.append(" " + cpro + " is (((" + describeOutfit(pp, false) + "))).");
 		BaseRecord cell = person.get("state.currentLocation");
 		
 		String ujobDesc = "";

@@ -19,10 +19,13 @@ import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.SearchBase;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
 
 public class DBSearch extends SearchBase {
@@ -39,10 +42,10 @@ public class DBSearch extends SearchBase {
 		int count = 0;
 
 		/// Copy the query as it's likely reused to build paginated lists,
-		/// And then drop any sort key since it's not needed on the count
+		/// And then drop any sort key and request fields since it's not needed on the count
 		final Query query = new Query(iquery.copyRecord());
 		query.releaseKey();
-		
+		query.setRequest(new String[] {FieldNames.FIELD_ID});
 		DBStatementMeta sql = null;
 		
 		try (Connection con = reader.getDataSource().getConnection()){
@@ -61,6 +64,7 @@ public class DBSearch extends SearchBase {
 			
 		} catch (NullPointerException | ModelException | FieldException | DatabaseException | SQLException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
+			e.printStackTrace();
 			if(sql != null) {
 				logger.error(JSONUtil.exportObject(sql));
 			}
@@ -80,7 +84,6 @@ public class DBSearch extends SearchBase {
 		List<BaseRecord> recs = new ArrayList<>();
 		DBStatementMeta sql = null;
 		MemoryReader memReader = new MemoryReader();
-		
 		if(query.hasQueryField(FieldNames.FIELD_ORGANIZATION_ID) && query.getQueryFields().size() == 1 && query.getJoins().size() == 0) {
 			String type = query.get(FieldNames.FIELD_TYPE);
 			if(!ModelNames.MODEL_MODEL_SCHEMA.equals(type)) {
@@ -111,6 +114,7 @@ public class DBSearch extends SearchBase {
 				else {
 					memReader.read(rec);
 				}
+				deepRead(model, rec);
 				recs.add(rec);
 			}
 			
@@ -138,6 +142,34 @@ public class DBSearch extends SearchBase {
 		}
 		
 		return res;
+	}
+	
+	private void deepRead(String model, BaseRecord rec) {
+		MemoryReader mr = new MemoryReader();
+		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+		for(FieldType f : rec.getFields()) {
+			FieldSchema fs = ms.getFieldSchema(f.getName());
+			if(fs.getBaseModel() != null) {
+				List<BaseRecord> srec = new ArrayList<>();
+				if(fs.getType().equals("model")) {
+					srec.add(rec.get(f.getName()));
+				}
+				else if (fs.getType().equals("list")) {
+					srec = new ArrayList<>(rec.get(f.getName()));
+				}
+				for(BaseRecord c : srec) {
+					if(c != null) {
+						try {
+							mr.read(c);
+						} catch (ReaderException e) {
+							logger.warn(e.getMessage());
+							
+						}
+						deepRead(fs.getBaseModel(), c);
+					}
+				}
+			}
+		}
 	}
 	
 

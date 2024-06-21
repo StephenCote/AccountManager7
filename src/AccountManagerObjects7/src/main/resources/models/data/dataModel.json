@@ -13,7 +13,7 @@
 	"dedicatedParticipation": true,
 	"sortField": "name",
 	"sortOrder": "ASCENDING",
-	"query": ["contentType"],
+	"query": ["contentType", "organizationId"],
 	"fields": [
 		{
 			"name": "dimensions",

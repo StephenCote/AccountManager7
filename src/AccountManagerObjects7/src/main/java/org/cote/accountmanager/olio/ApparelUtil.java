@@ -78,8 +78,12 @@ public class ApparelUtil {
 			List<String> upf = new ArrayList<>();
 			if(appl.size() == 0) {
 				BaseRecord app = ApparelUtil.randomApparel(ctx, p);
+				app.setValue("inuse", true);
 				List<BaseRecord> wears = app.get("wearables");
 				wears.addAll(ApparelUtil.randomArmor(ctx));
+				wears.forEach(w -> {
+					w.setValue("inuse", true);
+				});
 				IOSystem.getActiveContext().getRecordUtil().createRecord(app);
 				appl.add(app);
 				ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), sto, "apparel", app));

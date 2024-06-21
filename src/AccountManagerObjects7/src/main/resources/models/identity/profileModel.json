@@ -6,6 +6,12 @@
 		"common.groupExt",
 		"common.baseLight"
 	],
+	"query": [
+		"id",
+		"objectId",
+		"groupId",
+		"portrait"
+	  ],
 	"icon": "person",
 	"label": "Profile",
 	"group": "Profiles",

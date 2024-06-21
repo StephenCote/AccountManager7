@@ -26,6 +26,8 @@ import javax.ws.rs.core.Response;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
@@ -35,6 +37,7 @@ import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatBAK;
+import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaChatRequest;
 import org.cote.accountmanager.olio.llm.OllamaChatResponse;
@@ -63,11 +66,19 @@ public class ChatService {
 	
 	private static Set<String> chatTrack = new HashSet<>();
 	private static HashMap<String, OllamaRequest> reqMap = new HashMap<>();
-	private static HashMap<String, ChatBAK> chatMap = new HashMap<>();
-	private static HashMap<String, BaseRecord> charMap = new HashMap<>();
-	private static HashMap<String, OlioContext> contextMap = new HashMap<>();
-	private static HashMap<String, List<BaseRecord>> popMap = new HashMap<>();
-	private static HashMap<String, BaseRecord> dataMap = new HashMap<>();
+	private static HashMap<String, Chat> chatMap = new HashMap<>();
+	//private static HashMap<String, BaseRecord> charMap = new HashMap<>();
+	private static HashMap<String, BaseRecord> configMap = new HashMap<>();
+	//private static HashMap<String, List<BaseRecord>> popMap = new HashMap<>();
+	//private static HashMap<String, BaseRecord> dataMap = new HashMap<>();
+	
+	private String getKey(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, OllamaChatRequest request) {
+		String sess = "";
+		if(request.getSessionName() != null && request.getSessionName().length() > 0) {
+			sess = "-" + request.getSessionName();
+		}
+		return user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("name") + "-" + promptConfig.get("name") + sess;
+	}
 	
 	@RolesAllowed({"admin","user"})
 	@POST
@@ -85,12 +96,21 @@ public class ChatService {
 			return Response.status(404).entity(null).build();
 		}
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		String key = user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter() + "-" + chatReq.getUserCharacter();
-		dataMap.remove(key);
-		reqMap.remove(key);
-		chatMap.remove(key);
-		charMap.remove(user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter());
-		charMap.remove(user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getUserCharacter());
+		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
+		if(chatConfig != null && promptConfig != null) {
+	
+			String key = getKey(user, chatConfig, promptConfig, chatReq);
+			//dataMap.remove(key);
+			reqMap.remove(key);
+			chatMap.remove(key);
+			configMap.remove(chatConfig.get("objectId"));
+			configMap.remove(promptConfig.get("objectId"));
+			/*
+			charMap.remove(user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter());
+			charMap.remove(user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getUserCharacter());
+			*/
+		}
 		return Response.status(200).entity(true).build();
 	}
 	
@@ -110,15 +130,33 @@ public class ChatService {
 			logger.warn("Uid already used in a chat");
 			return Response.status(404).entity(null).build();
 		}
+		OllamaChatResponse crep = null;
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		String key = user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter() + "-" + chatReq.getUserCharacter();
-		OllamaChatResponse crep = new OllamaChatResponse();
-		if(reqMap.containsKey(key)) {
-			crep = getChatResponse(reqMap.get(key), chatReq);
+		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
+		if(chatConfig != null && promptConfig != null) {
+			String key = getKey(user, chatConfig, promptConfig, chatReq);
+			crep = new OllamaChatResponse();
+			if(reqMap.containsKey(key)) {
+				crep = getChatResponse(user, reqMap.get(key), chatReq);
+			}
 		}
+		else {
+			logger.error("Invalid chat or prompt configuration");
+		}
+		
 		return Response.status((crep != null ? 200 : 404)).entity(crep).build();
 	}
 	
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/prompt")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response getSystemPrompt(@PathParam("name") String name, @Context HttpServletRequest request){
+		return Response.status(200).entity(ChatUtil.getDefaultPrompt().toFullString()).build();
+	}
+	
+	/*
 	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/character/{name:[\\.A-Za-z\\s]+}")
@@ -129,12 +167,56 @@ public class ChatService {
 		
 		return Response.status((chart != null ? 200 : 404)).entity((chart != null ? chart.toFullString() : null)).build();
 	}
+	*/
+	
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/config/prompt/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response getPromptConfig(@PathParam("name") String name, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord cfg = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, null, name);
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+	}
+	
+	private BaseRecord getConfig(BaseRecord user, String modelName, String objectId, String name) {
+		if(objectId != null && configMap.containsKey(objectId)) {
+			return configMap.get(objectId);
+		}
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord cfg = null;
+		if(dir != null) {
+			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			if(name != null) {
+				q.field(FieldNames.FIELD_NAME, name);
+			}
+			if(objectId != null) {
+				q.field(FieldNames.FIELD_OBJECT_ID, objectId);
+			}
+			q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+			cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+			if(objectId != null && cfg != null) {
+				configMap.put(objectId, cfg);
+			}
+		}
+		return cfg;
+	}
+	
+	@RolesAllowed({"admin","user"})
+	@GET
+	@Path("/config/chat/{name:[\\.A-Za-z0-9%\\s]+}")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response getChatConfig(@PathParam("name") String name, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord cfg = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, null, name);
+		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
+	}
+	
 	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/text")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chatRPG(String json, @Context HttpServletRequest request){
-		// logger.info("Chat Request:");
 		// logger.info(json);
 		OllamaChatRequest chatReq = JSONUtil.importObject(json, OllamaChatRequest.class);
 		if(chatReq.getUid() == null) {
@@ -148,32 +230,38 @@ public class ChatService {
 		chatTrack.add(chatReq.getUid());
 		
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		
 		OllamaRequest req = getOllamaRequest(user, chatReq);
+		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
 		///logger.info(JSONUtil.exportObject(req));
 		// if(chatReq.getMessage() != null) {
-			String key = user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter() + "-" + chatReq.getUserCharacter();
-			ChatBAK chat = getChat(user, chatReq, key);
+			//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("systemCharacter.name") + "-" + chatConfig.get("userCharacter.name");
+			String key = getKey(user, chatConfig, promptConfig, chatReq); 
+			logger.info("Chat request: " + key);
+			Chat chat = getChat(user, chatReq, key);
 			chat.continueChat(req, chatReq.getMessage());
 		// }
-		OllamaChatResponse creq = getChatResponse(req, chatReq);
+		OllamaChatResponse creq = getChatResponse(user, req, chatReq);
 		// logger.info("Chat Response:");
 		// logger.info((creq != null ? JSONUtil.exportObject(creq) : null));
 		
 		return Response.status((creq != null ? 200 : 404)).entity(creq).build();
 	}
 	
-	private OllamaChatResponse getChatResponse(OllamaRequest req, OllamaChatRequest creq) {
+	private OllamaChatResponse getChatResponse(BaseRecord user, OllamaRequest req, OllamaChatRequest creq) {
 		if(req == null || creq == null) {
 			return null;
 		}
+		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
 		OllamaChatResponse rep = new OllamaChatResponse();
 		rep.setUid(creq.getUid());
-		rep.setModel(creq.getModel());
+		rep.setModel(chatConfig.get("llmModel"));
 		/// Current template structure for chat and rpg defines prompt and initial user message
 		/// Skip prompt, and skip initial user comment
 		int startIndex = 2;
 		/// With assist enabled, an initial assistant message is included, so skip that as well
-		if(creq.isAssist()) {
+		if((boolean)chatConfig.get("assist")) {
 			startIndex++;
 		}
 		for(int i = startIndex; i < req.getMessages().size(); i++) {
@@ -181,29 +269,18 @@ public class ChatService {
 		}
 		return rep;
 	}
-	
-	private OlioContext getOlioContext(BaseRecord user) {
-		String key = user.get(FieldNames.FIELD_NAME);
-		if(contextMap.containsKey(key)) {
-			return contextMap.get(key);
-		}
-		OlioContext octx = OlioContextUtil.getGridContext(user, context.getInitParameter("datagen.path"), "My Grid Universe", "My Grid World", false);
-		if(octx != null) {
-			contextMap.put(key, octx);
-		}
-		return octx;
-	}
+	/*
 	private BaseRecord getCharacter(BaseRecord user, String name) {
 		String uname = user.get(FieldNames.FIELD_NAME);
 		String key = uname + "-" + name;
 		
-		if(charMap.containsKey(key)) {
+		if(chatMap.containsKey(key)) {
 			return charMap.get(key);
 		}
 		BaseRecord chart = null;
 		List<BaseRecord> pop = new ArrayList<>();
 		if(!popMap.containsKey(uname)) {
-			OlioContext octx = getOlioContext(user);
+			OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 			octx.startOrContinueEpoch();
 			BaseRecord[] locs = octx.getLocations();
 			for(BaseRecord lrec : locs) {
@@ -228,18 +305,40 @@ public class ChatService {
 		}
 		return chart;
 	}
-	
-	private OllamaRequest getCreateRequestRecord(BaseRecord user, OllamaChatRequest creq) {
-		String key = user.get(FieldNames.FIELD_NAME) + "-" + creq.getSystemCharacter() + "-" + creq.getUserCharacter();
+	*/
+	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
 		OllamaRequest req = null;
-		if(dataMap.containsKey(key)) {
-			req = JSONUtil.importObject(new String((byte[])dataMap.get(key).get(FieldNames.FIELD_BYTE_STORE)), OllamaRequest.class);
+		Chat chat = null;
+		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
+		String key = getKey(user, chatConfig, promptConfig, creq);
+		//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("name") + "-" + promptConfig.get("name");
+		if(reqMap.containsKey(key)) {
+			return reqMap.get(key);
 		}
-		BaseRecord dir = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP, user.get("homeDirectory.path") + "/Chats", GroupEnumType.DATA.toString());
-		/// TODO
-		return null;
+		if(chatConfig != null && promptConfig != null) {
+
+			if(creq.getSessionName() != null && creq.getSessionName().length() > 0) {
+				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, creq.getSessionName());
+				OllamaRequest oreq = ChatUtil.getSession(user, sessionName);
+				if(oreq != null) {
+					req = oreq;
+				}
+			}
+			if(req == null) {
+				chat = new Chat(user, chatConfig, promptConfig);
+				chat.setSessionName(creq.getSessionName());
+				req = chat.getChatPrompt();
+			}
+			if(req != null) {
+				reqMap.put(key, req);
+			}
+
+		}
+		return req;
 	}
 	
+	/*
 	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
 		String systemName = creq.getSystemCharacter();
 		String userName = creq.getUserCharacter();
@@ -250,7 +349,7 @@ public class ChatService {
 			return reqMap.get(key);
 		}
 		
-		OlioContext octx = getOlioContext(user);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		BaseRecord epoch = null;
 		List<BaseRecord> pop = new ArrayList<>();
 		BaseRecord char1 = null;
@@ -307,7 +406,24 @@ public class ChatService {
 		/// chat.continueChat(req, null);
 		return req;
 	}
-	
+	*/
+	private Chat getChat(BaseRecord user, OllamaChatRequest req, String key) {
+		if(chatMap.containsKey(key)) {
+			return chatMap.get(key);
+		}
+		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, req.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, req.getPromptConfig(), null);
+		Chat chat = null;
+		if(chatConfig != null && promptConfig != null) {
+			chat = new Chat(user, chatConfig, promptConfig);
+			if(req.getSessionName() != null && req.getSessionName().length() > 0) {
+				chat.setSessionName(req.getSessionName());
+			}
+			chatMap.put(key,  chat);
+		}
+		return chat;
+	}
+	/*
 	private ChatBAK getChat(BaseRecord user, OllamaChatRequest req, String key) {
 		if(chatMap.containsKey(key)) {
 			return chatMap.get(key);
@@ -343,7 +459,7 @@ public class ChatService {
 		return chat;
 	
 	}
-	
+	*/
 	private String getCreateUserPrompt(BaseRecord user, String name) {
 		BaseRecord dat = getCreatePromptData(user, name);
 		IOSystem.getActiveContext().getReader().populate(dat, new String[] {FieldNames.FIELD_BYTE_STORE});

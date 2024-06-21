@@ -134,12 +134,15 @@ Begin conversationally.
 			addReminder(req);
 		}
 		*/
-		if(message != null) {
+		if(message != null && message.length() > 0) {
 			newMessage(req, message);
 		}
 		lastRep = chat(req);
 		if(lastRep != null) {
 			handleResponse(req, lastRep, false);
+		}
+		if(sessionName != null) {
+			ChatUtil.saveSession(user, req, sessionName);
 		}
 	}
 	private String getFormattedChatHistory(OllamaRequest req, boolean full) {

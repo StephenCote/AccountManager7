@@ -97,7 +97,7 @@ public class PathProvider implements IProvider {
 
 			}
 			else {
-				logger.debug("Model " + model.getModel() + " does not define " + lfield.getBaseProperty());
+				//logger.warn("Model " + model.getModel() + " does not define " + lfield.getBaseProperty());
 				return;
 			}
 		}

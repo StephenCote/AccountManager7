@@ -48,6 +48,7 @@ import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -58,6 +59,7 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.LibraryUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
 
@@ -69,7 +71,9 @@ public class TestRealm extends BaseTest {
 	
 	@Test
 	public void TestRealm() {
+		
 		logger.info("Test Realm");
+
 		AuditUtil.setLogToConsole(false);
 	
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
@@ -144,6 +148,19 @@ public class TestRealm extends BaseTest {
 			if(inter != null) {
 				logger.info(NarrativeUtil.describeInteraction(inter));
 			}
+		}
+		SDUtil sdu = new SDUtil();
+		sdu.generateSDImages(octx, Arrays.asList(per1), "a park in springtime, circa 1975", "professional photograph", "full body", 1, false, false, -1);
+		
+		BaseRecord popDir = octx.getWorld().get("population");
+		Query q = QueryUtil.buildQuery(testUser1, "olio.charPerson", popDir.get("objectId"), null, 0, 10);
+		q.field("firstName", per1.get("firstName"));
+		BaseRecord[] qr = ioContext.getSearch().findRecords(q);
+		if(qr.length > 0) {
+			logger.info(qr[0].toFullString());
+		}
+		else {
+			logger.error("Failed to find Pop");
 		}
 
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);

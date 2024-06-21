@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.sd;
 
 import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,6 +20,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -33,6 +35,7 @@ public class SDUtil {
 	public static final Logger logger = LogManager.getLogger(SDUtil.class);
 	private String autoserver = "http://localhost:7860";
 	private SecureRandom rand = new SecureRandom();
+	private int steps = 70;
 	
 	public SDResponse txt2img(SDTxt2Img req) {
 		//SDRequest sreq = new SDRequest();
@@ -45,18 +48,66 @@ public class SDUtil {
 		return ClientUtil.postJSON(SDResponse.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), req, MediaType.APPLICATION_JSON_TYPE);
 	}
 	
+	public int getSteps() {
+		return steps;
+	}
+
+	public void setSteps(int steps) {
+		this.steps = steps;
+	}
+
+	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, String style, String bodyStyle, int batchSize, boolean export, boolean hires, int seed) {
+		SDUtil sdu = new SDUtil();
+		SecureRandom rand = new SecureRandom();
+		String useStyle = style;
+		String useBodyStyle = bodyStyle;
+		if(useStyle == null) {
+			useStyle = "professional photograph";
+		}
+		if(setting != null && setting.equals("random")) {
+			setting = NarrativeUtil.getRandomSetting();
+		}
+		for(BaseRecord per : pop) {
+			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), setting);
+			BaseRecord nar = nars.get(0);
+			BaseRecord prof = per.get("profile");
+			
+			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
+			//List<BaseRecord> images = nar.get("images");
+			//if(images.size() == 0) {
+				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", setting, useStyle, useBodyStyle, steps, batchSize, hires, seed);
+			
+				if(bl.size() > 0) {
+					// if(prof.get("portrait") == null) {
+						prof.setValue("portrait", bl.get(rand.nextInt(bl.size())));
+						octx.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
+					//}
+					for(BaseRecord b1 : bl) {
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), prof, "album", b1, null, true);
+						if(export) {
+							FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
+						}
+					}
+				}
+	
+			//}
+		}
+		octx.processQueue();
+	}
+	
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String name) {
 		return createPersonImage(user, person, name, null, "professional portrait", 50, 1);
 	}
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String name, String setting, String pictureType, int steps, int batch) {
-		return createPersonImage(user, person, name, null, "professional portrait", steps, batch, false, 0);
+		return createPersonImage(user, person, name, null, pictureType, "full body", steps, batch, false, 0);
 	}	
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String name, String setting, String pictureType, int steps, int batch, boolean hires, int seed) {
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/GalleryHome/Characters", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String name, String setting, String pictureType, String bodyType, int steps, int batch, boolean hires, int seed) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/GalleryHome/Characters/" + person.get(FieldNames.FIELD_NAME), "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		List<BaseRecord> datas = new ArrayList<>();
 		int rando = Math.abs(rand.nextInt());
 		try {
-			SDTxt2Img s2i = newTxt2Img(person, setting, pictureType, steps);
+			SDTxt2Img s2i = newTxt2Img(person, setting, pictureType, bodyType, steps);
 			s2i.setBatch_size(batch);
 			if(hires) {
 				logger.info("Apply hires/refiner configuration");
@@ -80,7 +131,7 @@ public class SDUtil {
 				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 				if(data == null) {
-					ParameterList clist = ParameterList.newParameterList("path", "~/GalleryHome/Characters");
+					ParameterList clist = ParameterList.newParameterList("path", "~/GalleryHome/Characters/" + person.get(FieldNames.FIELD_NAME));
 					clist.parameter("name", dname);
 					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
 					data.set(FieldNames.FIELD_BYTE_STORE, datab);
@@ -180,9 +231,9 @@ public class SDUtil {
 		
 		
 	}
-	public SDTxt2Img newTxt2Img(BaseRecord person, String setting, String pictureType, int steps) {
+	public SDTxt2Img newTxt2Img(BaseRecord person, String setting, String pictureType, String bodyType, int steps) {
 		SDTxt2Img s2i = new SDTxt2Img();
-		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, setting, pictureType));
+		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, setting, pictureType, bodyType));
 		s2i.setNegative_prompt(NarrativeUtil.getSDNegativePrompt(person));
 		s2i.setSeed(Math.abs(rand.nextInt()));
 		s2i.setSteps(steps);

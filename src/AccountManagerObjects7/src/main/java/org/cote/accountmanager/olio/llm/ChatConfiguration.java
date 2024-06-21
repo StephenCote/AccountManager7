@@ -3,26 +3,11 @@ package org.cote.accountmanager.olio.llm;
 public class ChatConfiguration {
 	
 	private String uid = null;
-	private String name = null;
-	private ESRBEnumType rating = ESRBEnumType.E;
-	private String systemCharacter = null;
-	private String userCharacter = null;
-	private boolean assist = false;
-	private boolean useNLP = false;
-	private String setting = null;
-	private String model = null;
-	private String userPrompt = null;
-	
+	private String chatConfig = null;
+	private String promptConfig = null;
+	private String sessionName = null;
 	public ChatConfiguration() {
 		
-	}
-
-	public String getName() {
-		return name;
-	}
-
-	public void setName(String name) {
-		this.name = name;
 	}
 
 	public String getUid() {
@@ -33,69 +18,31 @@ public class ChatConfiguration {
 		this.uid = uid;
 	}
 
-	public ESRBEnumType getRating() {
-		return rating;
+	public String getChatConfig() {
+		return chatConfig;
 	}
 
-	public void setRating(ESRBEnumType rating) {
-		this.rating = rating;
+	public void setChatConfig(String chatConfig) {
+		this.chatConfig = chatConfig;
 	}
 
-	public String getSystemCharacter() {
-		return systemCharacter;
+	public String getPromptConfig() {
+		return promptConfig;
 	}
 
-	public void setSystemCharacter(String systemCharacter) {
-		this.systemCharacter = systemCharacter;
+	public void setPromptConfig(String promptConfig) {
+		this.promptConfig = promptConfig;
 	}
 
-	public String getUserCharacter() {
-		return userCharacter;
+	public String getSessionName() {
+		return sessionName;
 	}
 
-	public void setUserCharacter(String userCharacter) {
-		this.userCharacter = userCharacter;
+	public void setSessionName(String session) {
+		this.sessionName = session;
 	}
 
-	public boolean isAssist() {
-		return assist;
-	}
-
-	public void setAssist(boolean assist) {
-		this.assist = assist;
-	}
-
-	public boolean isUseNLP() {
-		return useNLP;
-	}
-
-	public void setUseNLP(boolean useNLP) {
-		this.useNLP = useNLP;
-	}
-
-	public String getSetting() {
-		return setting;
-	}
-
-	public void setSetting(String setting) {
-		this.setting = setting;
-	}
-
-	public String getModel() {
-		return model;
-	}
-
-	public void setModel(String model) {
-		this.model = model;
-	}
-
-	public String getUserPrompt() {
-		return userPrompt;
-	}
-
-	public void setUserPrompt(String userPrompt) {
-		this.userPrompt = userPrompt;
-	}
+	
 	
 	
 }

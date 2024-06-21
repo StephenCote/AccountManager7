@@ -5,6 +5,7 @@
 "icon": "folder",
 "label": "Group",
 "dedicatedParticipation": true,
+"query": ["path", "organizationId"],
 "fields": [
 	{
 		"name": "type",
