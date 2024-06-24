@@ -62,7 +62,8 @@ public class OlioService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
-		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "narrative"});
+		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "narrative"});
+		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
 		BaseRecord a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		BaseRecord n1 = null;
 		if(a1 != null) {
@@ -114,11 +115,13 @@ public class OlioService {
 			a1.set("middleName", "Kippy");
 			a1.set("lastName", "Smith");
 			a1.set("name", "Jay Kippy Smith");
+			/*
 			a1.set("instinct", f.newInstance(ModelNames.MODEL_INSTINCT, user, null, null));
 			a1.set("statistics", f.newInstance(ModelNames.MODEL_CHAR_STATISTICS, user, null, null));
 			a1.set("personality", f.newInstance(ModelNames.MODEL_PERSONALITY, user, null, null));
 			a1.set("state", f.newInstance(ModelNames.MODEL_CHAR_STATE, user, null, null));
 			a1.set("store", f.newInstance(ModelNames.MODEL_STORE, user, null, null));
+			*/
 			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());

@@ -8,6 +8,7 @@
 	"icon": "note",
 	"label": "Character Person",
 	"dedicatedParticipation": true,
+	"factory": "org.cote.accountmanager.olio.CharPersonFactory",
 	"query": ["profile"],
 	"fields": [
 		{

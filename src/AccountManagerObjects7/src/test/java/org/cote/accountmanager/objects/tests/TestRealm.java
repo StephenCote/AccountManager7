@@ -149,8 +149,9 @@ public class TestRealm extends BaseTest {
 				logger.info(NarrativeUtil.describeInteraction(inter));
 			}
 		}
-		SDUtil sdu = new SDUtil();
-		sdu.generateSDImages(octx, Arrays.asList(per1), "a park in springtime, circa 1975", "professional photograph", "full body", 1, false, false, -1);
+		
+		// SDUtil sdu = new SDUtil();
+		// sdu.generateSDImages(octx, Arrays.asList(per1), "a park in springtime, circa 1975", "professional photograph", "full body", 1, false, false, -1);
 		
 		BaseRecord popDir = octx.getWorld().get("population");
 		Query q = QueryUtil.buildQuery(testUser1, "olio.charPerson", popDir.get("objectId"), null, 0, 10);
