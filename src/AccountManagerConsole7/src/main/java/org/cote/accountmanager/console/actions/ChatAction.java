@@ -26,12 +26,14 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatBAK;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
+import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -53,6 +55,7 @@ public class ChatAction extends CommonAction implements IAction{
 	}
 	public void addOptions(Options options) {
 		options.addOption("reimage", true, "Bit to regenerate SD images");
+		options.addOption("refigure", true, "Bit to regenerate SD figurines");
 		options.addOption("style", true, "Bit used to adjust style elements, such as image generation style");
 		options.addOption("bodyStyle", true, "Bit used to adjust image generation style for body camera");
 		options.addOption("hires", false, "Bit to generate a higher resolution SD image");
@@ -205,6 +208,9 @@ public class ChatAction extends CommonAction implements IAction{
 				if(cmd.hasOption("reimage")) {
 					sdu.generateSDImages(octx, pop, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
+				if(cmd.hasOption("refigure")) {
+					sdu.generateSDFigurines(octx, pop, Integer.parseInt(cmd.getOptionValue("refigure")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+				}
 				for(BaseRecord p: pop) {
 					logger.info(NarrativeUtil.describe(octx, p));
 				}
@@ -229,6 +235,11 @@ public class ChatAction extends CommonAction implements IAction{
 				if(cmd.hasOption("outfit")) {
 					String[] outfit = cmd.getOptionValue("outfit").split(",");
 					BaseRecord apparel = ApparelUtil.constructApparel(octx, 0L, char1, outfit);
+					apparel.setValue("inuse", true);
+					List<BaseRecord> wearl = apparel.get("wearables");
+					wearl.forEach(w -> {
+						w.setValue("inuse", true);
+					});
 					IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
 					BaseRecord store = char1.get("store");
 					List<BaseRecord> appl = store.get("apparel");
@@ -274,14 +285,22 @@ public class ChatAction extends CommonAction implements IAction{
 					//char1.setValue("narrative", null);
 					sdu.generateSDImages(octx, Arrays.asList(char1), genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 				}
+				if(cmd.hasOption("refigure") && !cmd.hasOption("chatConfig")) {
+					sdu.generateSDFigurines(octx, Arrays.asList(char1), Integer.parseInt(cmd.getOptionValue("refigure")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+				}
 				if(cmd.hasOption("show")) {
 					logger.info("Describe " + char1.get(FieldNames.FIELD_NAME));;
 					logger.info(NarrativeUtil.describe(octx, char1));
 				}
 				if(cmd.hasOption("showSD")) {
-					logger.info("Stable Diffusion Prompt for " + char1.get(FieldNames.FIELD_NAME));;
+					logger.info("Stable Diffusion Prompts for " + char1.get(FieldNames.FIELD_NAME));
+					logger.info("Positive:");
 					logger.info(NarrativeUtil.getSDPrompt(octx, char1, cmd.getOptionValue("setting")));
+					logger.info("Negative");;
 					logger.info(NarrativeUtil.getSDNegativePrompt(char1));
+					logger.info("Figurine:");;
+					logger.info(NarrativeUtil.getSDFigurinePrompt(ProfileUtil.getProfile(octx, char1)));
+
 				}
 				if(cmd.hasOption("inspect")) {
 					logger.info(char1.toFullString());

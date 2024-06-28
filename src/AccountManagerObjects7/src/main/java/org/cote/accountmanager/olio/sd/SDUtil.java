@@ -55,9 +55,40 @@ public class SDUtil {
 	public void setSteps(int steps) {
 		this.steps = steps;
 	}
+	
+	public void generateSDFigurines(OlioContext octx, List<BaseRecord> pop, int batchSize, boolean export, boolean hires, int seed) {
+
+		SecureRandom rand = new SecureRandom();
+		for(BaseRecord per : pop) {
+			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), "random");
+			BaseRecord nar = nars.get(0);
+			BaseRecord prof = per.get("profile");
+			
+			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
+
+				List<BaseRecord> bl = createPersonFigurine(octx.getUser(), per, "Photo Op", steps, batchSize, hires, seed);
+			
+				if(bl.size() > 0) {
+					// if(prof.get("portrait") == null) {
+						prof.setValue("portrait", bl.get(rand.nextInt(bl.size())));
+						octx.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
+					//}
+					for(BaseRecord b1 : bl) {
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), prof, "album", b1, null, true);
+						if(export) {
+							FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
+						}
+					}
+				}
+	
+			//}
+		}
+		octx.processQueue();
+	}
 
 	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, String style, String bodyStyle, int batchSize, boolean export, boolean hires, int seed) {
-		SDUtil sdu = new SDUtil();
+
 		SecureRandom rand = new SecureRandom();
 		String useStyle = style;
 		String useBodyStyle = bodyStyle;
@@ -75,7 +106,7 @@ public class SDUtil {
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 			//List<BaseRecord> images = nar.get("images");
 			//if(images.size() == 0) {
-				List<BaseRecord> bl = sdu.createPersonImage(octx.getUser(), per, "Photo Op", setting, useStyle, useBodyStyle, steps, batchSize, hires, seed);
+				List<BaseRecord> bl = createPersonImage(octx.getUser(), per, "Photo Op", setting, useStyle, useBodyStyle, steps, batchSize, hires, seed);
 			
 				if(bl.size() > 0) {
 					// if(prof.get("portrait") == null) {
@@ -103,16 +134,50 @@ public class SDUtil {
 		return createPersonImage(user, person, name, null, pictureType, "full body", steps, batch, false, 0);
 	}	
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String name, String setting, String pictureType, String bodyType, int steps, int batch, boolean hires, int seed) {
+		SDTxt2Img s2i = newTxt2Img(person, setting, pictureType, bodyType, steps);
+		if(seed > 0) {
+			s2i.setSeed(seed);
+		}
+		s2i.setBatch_size(batch);
+		if(hires) {
+			logger.info("Apply hires/refiner configuration");
+			applyHRRefiner(s2i);
+		}
+		return createPersonImage(user, person, name, s2i, seed);
+
+	}
+	
+	public List<BaseRecord> createPersonFigurine(BaseRecord user, BaseRecord person, String name, int steps, int batch, boolean hires, int seed) {
+		SDTxt2Img s2i = newTxt2Img(person, "random", "professional portrait", "full body", steps);
+		
+		s2i.setPrompt(NarrativeUtil.getSDFigurinePrompt(ProfileUtil.getProfile(null, person)));
+		if(seed > 0) {
+			s2i.setSeed(seed);
+		}
+		s2i.setBatch_size(batch);
+		s2i.setScheduler("Karras");
+		s2i.setSampler_name("DPM++ SDE");
+
+		SDOverrideSettings sos = new SDOverrideSettings();
+		//sos.setSd_model_checkpoint("Juggernaut_X_RunDiffusion_Hyper");
+		sos.setSd_model_checkpoint("dreamshaperXL_v21TurboDPMSDE");		sos.setSd_vae(null);
+		s2i.setOverride_settings(sos);
+		s2i.setOverride_settings_restore_afterwards(true);
+
+		if(hires) {
+			logger.info("Apply hires/refiner configuration");
+			applyHRRefiner(s2i);
+		}
+		return createPersonImage(user, person, name, s2i, seed);
+
+	}
+	
+	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String name, SDTxt2Img s2i, int seed) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/GalleryHome/Characters/" + person.get(FieldNames.FIELD_NAME), "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		List<BaseRecord> datas = new ArrayList<>();
 		int rando = Math.abs(rand.nextInt());
 		try {
-			SDTxt2Img s2i = newTxt2Img(person, setting, pictureType, bodyType, steps);
-			s2i.setBatch_size(batch);
-			if(hires) {
-				logger.info("Apply hires/refiner configuration");
-				applyHRRefiner(s2i);
-			}
+
 			logger.info("Generating image for " + person.get(FieldNames.FIELD_NAME));
 			SDResponse rep = txt2img(s2i);
 

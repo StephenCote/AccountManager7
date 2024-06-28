@@ -770,12 +770,13 @@ public class NarrativeUtil {
 
 		List<RaceEnumType> fraces = new ArrayList<>(Arrays.asList(new RaceEnumType[] {RaceEnumType.A, RaceEnumType.B, RaceEnumType.C, RaceEnumType.D, RaceEnumType.E}));
 		List<String> rs = person.get("race");
-		
+		String gender = person.get("gender");
+		String mod = ("male".equals(gender) ? "feminine" : "masculine");
 		for(String r : rs) {
 			fraces.remove(RaceEnumType.valueOf(r));
 		}
 		String negRaces = fraces.stream().map(r -> (RaceEnumType.valueOf(r) + " people")).collect(Collectors.joining(", "));
-		return "Washed out colors, lifeless, illogical, wonky, boring, bland, ugly, disgusting, uncanny, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, fugly, mutated, distorted, melting, cropped, disproportionate, weird, wonky, low quality, compressed, muddy colors, overexposed, bland, censored, mosaic, ugliness, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, old, masculine, (busty:1.3), extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face, " + negRaces + ", negativeXL_D";
+		return "Washed out colors, illogical, disgusting, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, censored, mosaic, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face, " + negRaces + ",((" + mod + ")), negativeXL_D";
 
 	}
 	public static String getSDPrompt(OlioContext ctx, BaseRecord person, String setting) {
@@ -784,12 +785,11 @@ public class NarrativeUtil {
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting) {
 		return getSDPrompt(ctx, pp, person, setting, "professional photograph", "full body");
 	}
+	
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting, String pictureType, String bodyType) {
 		StringBuilder buff = new StringBuilder();
 		
 		int age = pp.getAge();
-		String ageName = getNumberName(age);
-		
 		String gender = person.get("gender");
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
@@ -804,23 +804,8 @@ public class NarrativeUtil {
 		int m = Rules.MINIMUM_ADULT_AGE;
 		buff.append("8k highly detailed ((" + pictureType + ")) ((highest quality)) ((ultra realistic)) ((" + bodyType + "))");
 		
-		buff.append(" of a " + getLooksPrettyUgly(pp) + " " + getIsPrettyAthletic(pp));
-		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
+		buff.append(" of " + getSDMinPrompt(pp));
 		
-		String raceDesc = getRaceDescription(pp.getRace());
-		buff.append(raceDesc.length() > 0 ? " (" + raceDesc.toLowerCase() + ")" : "");
-
-		String ethDesc = getEthnicityDescription(pp.getEthnicity(), pp.getOtherEthnicity());
-		buff.append(ethDesc.length() > 0 ? " (" + ethDesc.toLowerCase() + ")" : "");
-
-		buff.append(" (" + mof.toLowerCase() + "))");
-		
-		String hairColor = getColor(person, "hairColor");
-		String hairStyle = person.get("hairStyle");
-		String eyeColor =  getColor(person, "eyeColor");
-		
-		buff.append(" with ((" + hairStyle + ") (" + hairColor + " hair)) and (" + eyeColor + " eyes).");
-		buff.append(" " + cpro + " is (((" + describeOutfit(pp, false) + "))).");
 		BaseRecord cell = person.get("state.currentLocation");
 		
 		String ujobDesc = "";
@@ -853,7 +838,49 @@ public class NarrativeUtil {
 			}
 		}
 		//woman (eighteen year old:1.5) (18 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat, (carrying a (Winchester rifle)) (riding a horse across the (Oklahoma (tall grass prairie))). She has (wide hips:1.5), (narrow waist:1.5). 
-		buff.append(" Sharp focus, ultra sharp image. Natural light only.  <lora:add-detail-xl:1> <lora:xl_more_art-full_v1:1.2>");
+		buff.append(" Sharp focus, ultra sharp image. Natural light only.  <lora:add-detail-xl:.5> <lora:xl_more_art-full_v1:1.2>");
+		return buff.toString();
+	}
+	
+	public static String getSDFigurinePrompt(PersonalityProfile pp) {
+		return 	"((isometric model)) ((isometric view)) of ((realistic)) painted game ((figurine on plastic stand) of " + getSDMinPrompt(pp) + " ((white (#FFFFFF) background)), isolated view, one character, <lora:add-detail-xl:.5>  <lora:xl_more_art-full_v1:1.2>";
+	}
+	
+	public static String getSDMinPrompt(PersonalityProfile pp) {
+		StringBuilder buff = new StringBuilder();
+		
+		int age = pp.getAge();
+		
+		String gender = pp.getGender();
+		String pro = ("male".equals(gender) ? "he" : "she");
+		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
+		boolean isMale = gender.equals("male");
+		String mof = isMale ? "man" : "woman";
+		if(age < Rules.MAXIMUM_CHILD_AGE) {
+			mof = (isMale ? "boy" : "girl") + " child";
+		}
+		else if(age <= Rules.MINIMUM_ADULT_AGE) {
+			mof = "teenaged " + (isMale ? "boy" : "girl");
+		}
+
+		buff.append("a " + getLooksPrettyUgly(pp) + " " + getIsPrettyAthletic(pp));
+		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
+		
+		String raceDesc = getRaceDescription(pp.getRace());
+		buff.append(raceDesc.length() > 0 ? " (" + raceDesc.toLowerCase() + ")" : "");
+
+		String ethDesc = getEthnicityDescription(pp.getEthnicity(), pp.getOtherEthnicity());
+		buff.append(ethDesc.length() > 0 ? " (" + ethDesc.toLowerCase() + ")" : "");
+
+		buff.append(" (" + mof.toLowerCase() + "))");
+		
+		String hairColor = getColor(pp.getRecord(), "hairColor");
+		String hairStyle = pp.getRecord().get("hairStyle");
+		String eyeColor =  getColor(pp.getRecord(), "eyeColor");
+		
+		buff.append(" with ((" + hairStyle + ") (" + hairColor + " hair)) and (" + eyeColor + " eyes).");
+		buff.append(" " + cpro + " is (((" + describeOutfit(pp, false) + "))).");
+
 		return buff.toString();
 	}
 	

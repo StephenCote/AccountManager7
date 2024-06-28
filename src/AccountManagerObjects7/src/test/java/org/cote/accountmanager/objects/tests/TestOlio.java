@@ -104,7 +104,7 @@ public class TestOlio extends BaseTest {
 	
 	/// Using MGRS-like coding to subdivide the random maps
 	///
-	/*
+	
 	@Test
 	public void TestGrid() {
 
@@ -160,116 +160,20 @@ public class TestOlio extends BaseTest {
 			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
 			assertNotNull("Location epoch is null", levt);
 			BaseRecord cevt = octx.startOrContinueIncrement();
-			try {
-				octx.evaluateIncrement();
-			}
-			catch(Exception e) {
-				e.printStackTrace();
-			}
+			octx.evaluateIncrement();
+			List<BaseRecord> pop = octx.getPopulation(lrec);
+			assertTrue("Expected a population", pop.size() > 0);
+			BaseRecord realm = octx.getRealm(lrec);
+			assertNotNull("Realm is null", realm);
+			//MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
+			MapUtil.printLocationMap(octx, levt.get(FieldNames.FIELD_LOCATION), realm, pop);
+			MapUtil.printRealmMap(octx, realm);
 		}
 
-	}
-	*/
-	
-	private boolean TestOllamaTags() {
-
-		logger.info("Test Ollama");
-		logger.warn("Note: Currently relies on ollama container running:");
-		logger.warn("docker exec -it ollama ollama run dolphin-mistral");
-		logger.warn("docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama");
-		
-		boolean obool = false;
-		Response rep = ClientUtil.getResponse("http://localhost:11434/api/tags");
-		if(rep.getStatus() == 200) {
-			// JSONObject obj = rep.readEntity(JSONObject.class);
-		     //StringReader stringReader = new StringReader(rep.readEntity(String.class)));
-		     JSONObject obj = new JSONObject(rep.readEntity(String.class));
-			//String objStr = rep.readEntity(String.class);
-			if(obj != null) {
-				obool = true;
-			}
-		}
-		return obool;
 	}
 	
 	
-	private boolean TestOllamaGenerate() {
-		boolean obool = false;
-		String msg = "What is the largest mammal?";
-		logger.info("Test Ollama Generate");
-		OllamaRequest req = new OllamaRequest();
-		req.setModel("dolphin-mistral");
-		req.setPrompt(msg);
-		req.setStream(false);
-		OllamaResponse rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/generate"), req, MediaType.APPLICATION_JSON_TYPE);
-		if(rep != null) {
-			logger.info(rep.getResponse());
-			req.setContext(rep.getContext());
-			req.setPrompt("What is the smallest?");
-			rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/generate"), req, MediaType.APPLICATION_JSON_TYPE);
-			if(rep != null) {
-				logger.info(rep.getResponse());
-			}
-			else {
-				logger.error("Null response");
-			}
-		}
-		return obool;
-	}
 
-	
-	@Test
-	public void TestChat() {
-		logger.info("Test Chat Console");
-
-	}
-	
-	private boolean TestOllamaChat() {
-		logger.info("Test Ollama Chat");
-		boolean obool = false;
-		OllamaRequest req = new OllamaRequest();
-		req.setModel("dolphin-mistral");
-		req.setStream(false);
-		OllamaMessage msg = new OllamaMessage();
-		msg.setRole("user");
-		msg.setContent("My name is Silas McGee.  How are you today?");
-		req.getMessages().add(msg);
-		OllamaResponse rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/chat"), req, MediaType.APPLICATION_JSON_TYPE);
-		if(rep != null) {
-			logger.info(rep.getMessage().getContent());
-			req.getMessages().add(rep.getMessage());
-			OllamaMessage msg2 = new OllamaMessage();
-			msg2.setRole("user");
-			msg2.setContent("I shall call you Bubbles.  What would be a good last name for you, Bubbles?");
-			req.getMessages().add(msg2);
-			rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/chat"), req, MediaType.APPLICATION_JSON_TYPE);
-			if(rep != null) {
-				logger.info(rep.getMessage().getContent());
-			}
-			else {
-				logger.error("Null response");
-			}
-		}
-		else {
-			logger.error("Null response");
-		}
-		return obool;
-	}
-	private String frontMatter = """
-
-	""";
-
-	private boolean TestPromptEng() {
-		OllamaUtil ou = new OllamaUtil();
-		OllamaExchange ex = ou.chat(frontMatter);
-		if(ex.getResponse() != null) {
-			logger.info(ex.getResponse().getMessage().getContent());
-		}
-		else {
-			logger.error("Null response");
-		}
-		return false;
-	}
 
 	private BaseRecord meetAndGreet(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
 		
@@ -305,13 +209,10 @@ public class TestOlio extends BaseTest {
 		*/
 		return interaction;
 	}
-	
+	/*
 	@Test
 	public void TestArena1() {
 		logger.info("Test Olio - Arena");
-		if(!TestOllamaTags()) {
-			return;
-		}
 
 		AuditUtil.setLogToConsole(false);
 
@@ -376,7 +277,7 @@ public class TestOlio extends BaseTest {
 		}
 
 	}
-	
+	*/
 	
 	/*
 	@Test

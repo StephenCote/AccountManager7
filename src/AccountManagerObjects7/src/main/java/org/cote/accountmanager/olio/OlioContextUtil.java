@@ -22,6 +22,9 @@ import org.cote.accountmanager.util.AuditUtil;
 public class OlioContextUtil {
 	public static final Logger logger = LogManager.getLogger(OlioContextUtil.class);
 	private static HashMap<String, OlioContext> contextMap = new HashMap<>();
+	public static void clearCache() {
+		contextMap.clear();
+	}
 	public static OlioContext getOlioContext(BaseRecord user, String dataPath) {
 		String key = user.get(FieldNames.FIELD_NAME);
 		if(contextMap.containsKey(key)) {
