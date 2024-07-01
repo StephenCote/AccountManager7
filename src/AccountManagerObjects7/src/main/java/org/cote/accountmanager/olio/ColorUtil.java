@@ -213,15 +213,17 @@ public class ColorUtil {
 				id = rset.getLong("id");
 			}
 			rset.close();
-
-			if(id > 0L) {
-				outColor = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_COLOR, id);
-			}
 			
-		} catch (NullPointerException | SQLException | ReaderException e) {
+		} catch (NullPointerException | SQLException e) {
 			logger.error(e);
 		}
-
+		if(id > 0L) {
+			try {
+				outColor = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_COLOR, id);
+			} catch (ReaderException e) {
+				logger.error(e);
+			}
+		}
 		if(outColor != null) {
 			colorComplements.put(colorHex, outColor);
 		}

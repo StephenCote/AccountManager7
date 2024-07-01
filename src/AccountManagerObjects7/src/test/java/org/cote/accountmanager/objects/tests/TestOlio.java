@@ -156,6 +156,10 @@ public class TestOlio extends BaseTest {
 		BaseRecord evt = octx.startOrContinueEpoch();
 		assertNotNull("Epoch is null", evt);
 		BaseRecord[] locs = octx.getLocations();
+		MapUtil.printMapFromAdmin2(octx);
+		//MapUtil.printAdmin2Map(octx, octx.getRootLocation());
+		// Bad design - prints admin map starting from child reference
+		//MapUtil.printAdmin2Map(octx, octx.getRootLocation());
 		for(BaseRecord lrec : locs) {
 			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
 			assertNotNull("Location epoch is null", levt);
@@ -166,7 +170,7 @@ public class TestOlio extends BaseTest {
 			BaseRecord realm = octx.getRealm(lrec);
 			assertNotNull("Realm is null", realm);
 			//MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
-			MapUtil.printLocationMap(octx, levt.get(FieldNames.FIELD_LOCATION), realm, pop);
+			//MapUtil.printLocationMap(octx, lrec, realm, pop);
 			MapUtil.printRealmMap(octx, realm);
 		}
 

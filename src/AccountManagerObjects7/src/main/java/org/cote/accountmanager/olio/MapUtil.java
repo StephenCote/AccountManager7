@@ -2,7 +2,9 @@ package org.cote.accountmanager.olio;
 
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Image;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -11,6 +13,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
@@ -30,6 +33,8 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.FileUtil;
+import org.cote.accountmanager.util.GraphicsUtil;
+import org.cote.accountmanager.util.ThumbnailUtil;
 
 /// MapUtil is currently only setup to work with generated GridSquare maps, which use the same model as the GeoLocation data
 /// At the 'admin2' level, each Grid Square is 1 square kilometer
@@ -38,6 +43,8 @@ import org.cote.accountmanager.util.FileUtil;
 public class MapUtil {
 	public static final Logger logger = LogManager.getLogger(MapUtil.class);
 	private static String exportPath = IOFactory.DEFAULT_FILE_BASE + "/.olio/maps"; 
+	private static boolean useTileIcons = true;
+	private static String tilePath = "./media/tiles";
 	public static void printMapFromAdmin2(OlioContext ctx) {
 		/// Find the admin2 location of the first location and map that
 		///
@@ -64,6 +71,7 @@ public class MapUtil {
 		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
 		IOSystem.getActiveContext().getReader().populate(location);
 		List<BaseRecord> locs = new ArrayList<>(Arrays.asList(ctx.getLocations()));
+
 		/// This will look for the locations only in the universe, not the world
 		/// These are the templates, and the context locations will be substituted for these
 		///
@@ -174,6 +182,7 @@ public class MapUtil {
 				g2d.setColor(cc);
 				int cx = x + (ceast * cellWidth);
 				int cy = y + (cnorth * cellHeight);
+
 				// logger.info(x + ", " + y + " " + ceast + ", " + cnorth + " " + cx + ", " + cy + " " + cellWidth + ", " + cellHeight + " " + ctet.toString() + " " + cc.toString());
 				g2d.fillRect(cx, cy, cellWidth, cellHeight);
 				g2d.setColor(Color.DARK_GRAY);
@@ -267,11 +276,23 @@ public class MapUtil {
 			int y = north * 50;
 			
 			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
-			Color c = TerrainEnumType.getColor(tet);
-			g2d.setColor(c);
-			g2d.fillRect(x, y, 50, 50);
-			g2d.setColor(Color.DARK_GRAY);
-			g2d.drawRect(x, y, 50, 50);
+			boolean ico = false;
+			if(useTileIcons) {
+				Image img = getTile(tet, 50, 50);
+				if(img != null) {
+					ico = g2d.drawImage(img, x, y, null);
+				}
+				else {
+					logger.warn("Null image for " + tet.toString());
+				}
+			}
+			if(!ico) {
+				Color c = TerrainEnumType.getColor(tet);
+				g2d.setColor(c);
+				g2d.fillRect(x, y, 50, 50);
+				g2d.setColor(Color.DARK_GRAY);
+				g2d.drawRect(x, y, 50, 50);
+			}
 			long cid = cell.get(FieldNames.FIELD_ID);
 
 			List<BaseRecord> lpop = pop.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
@@ -288,7 +309,6 @@ public class MapUtil {
 						pnorth = pnorth / 2;
 					}
 					g2d.setColor(Color.WHITE);
-					// logger.info("blit " + p.get("state.currentLocation.name") + " " + p.get("state.currentLocation.id") + " ~= " + cid + " " + (x + peast) + ", " + (y + pnorth));
 					g2d.fillOval(x + peast, y + pnorth, 10, 10);
 				}
 			}
@@ -329,4 +349,35 @@ public class MapUtil {
 		}
 
 	}
+	
+	private static Map<String, Image> tileMap = new ConcurrentHashMap<>();
+	private static Image getTile(TerrainEnumType tet, int width, int height) {
+		String key = tet.toString() + "-" + width + "-" + height;
+		if(tileMap.containsKey(key)) {
+			return tileMap.get(key);
+		}
+		byte[] imgData = FileUtil.getFile(tilePath + "/" + tet.toString().toLowerCase() + ".png");
+		if(imgData.length == 0) {
+			logger.error("Failed to find tile for " + tet.toString());
+			tileMap.put(key, null);
+			return null;
+		}
+		byte[] thumbBytes = new byte[0];
+		Image image = null;
+		try {
+			thumbBytes = GraphicsUtil.createThumbnail(imgData, width, height);
+			if(thumbBytes.length > 0) {
+				image = ImageIO.read(new ByteArrayInputStream(thumbBytes));
+			}
+		} catch (IOException e) {
+			logger.error(e);
+		}
+		if(image == null) {
+			logger.error("Failed to create thumbnail for " + tet.toString());
+		}
+		tileMap.put(key, image);
+		return image;
+
+	}
 }
+

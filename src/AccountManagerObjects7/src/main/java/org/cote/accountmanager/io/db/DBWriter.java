@@ -120,16 +120,24 @@ public class DBWriter extends MemoryWriter {
 	    		success = true;
 	    	}
 			st.close();
-			
-			if(deleteForeignReferences && fsql != null && fsql.length() > 0) {
-				Statement fst = con.createStatement();
-				fst.executeUpdate(fsql);
-				fst.close();
-			}
-			
 		} catch (SQLException | DatabaseException e) {
 			logger.error(e);
 	    }
+	    
+		if(deleteForeignReferences) {
+			fsql = StatementUtil.getForeignDeleteTemplate(model);
+			if(fsql != null && fsql.length() > 0) {
+				try (
+					Connection con = dataSource.getConnection();
+					Statement fst = con.createStatement();
+				){
+					fst.executeUpdate(fsql);
+					fst.close();
+				} catch (SQLException e) {
+					logger.error(e);
+			    }
+			}
+		}
 		
 
 		return success;
@@ -173,14 +181,21 @@ public class DBWriter extends MemoryWriter {
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
 
 		DBStatementMeta meta = null;
+    	List<Long> ids = new ArrayList<>();
+    	if(op == RecordOperation.CREATE) {
+    		try {
+    			ids = dbUtil.getNextIds(firstModel.getModel(), models.length);
+    			if(ids.size() != models.length) {
+    				throw new WriterException("Failed to obtain next identifier");
+    			}
+    		}
+    		catch(DatabaseException e) {
+    			logger.error(e);
+    			throw new WriterException(e.getMessage());
+    		}
+	    }
 	    try (Connection con = dataSource.getConnection()){
-	    	List<Long> ids = new ArrayList<>();
-	    	if(op == RecordOperation.CREATE) {
-				ids = dbUtil.getNextIds(firstModel.getModel(), models.length);
-				if(ids.size() != models.length) {
-					throw new WriterException("Failed to obtain next identifier");
-				}
-		    }
+
 			boolean lastCommit = con.getAutoCommit();
 			con.setAutoCommit(false);
 	    	

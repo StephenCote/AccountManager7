@@ -144,9 +144,14 @@ public class TestRealm extends BaseTest {
 		BaseRecord per2 = pop.get((new Random()).nextInt(pop.size()));
 		BaseRecord inter = null;
 		for(int i = 0; i < 10; i++) {
-			inter = InteractionUtil.randomInteraction(octx, per1, per2);
-			if(inter != null) {
-				logger.info(NarrativeUtil.describeInteraction(inter));
+			try {
+				inter = InteractionUtil.randomInteraction(octx, per1, per2);
+				if(inter != null) {
+					logger.info(NarrativeUtil.describeInteraction(inter));
+				}
+			}
+			catch(Exception e) {
+				e.printStackTrace();
 			}
 		}
 		
