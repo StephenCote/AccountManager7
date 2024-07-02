@@ -156,6 +156,7 @@ public class GeoLocationUtil {
 		cq.setLimitFields(false);
 		return IOSystem.getActiveContext().getSearch().findRecord(cq);
 	}
+
 	public static List<BaseRecord> getCells(OlioContext ctx, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
 		if(cellMap.containsKey(id)) {
@@ -198,6 +199,15 @@ public class GeoLocationUtil {
 			);
 		}).collect(Collectors.toList());
 	}
+	
+	public static BaseRecord findAdjacentLocationByGrid(OlioContext ctx, long parentId, int x, int y) {
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, parentId);
+		cq.field("eastings", x);
+		cq.field("northings", y);
+		// cq.setLimitFields(false);
+		return IOSystem.getActiveContext().getSearch().findRecord(cq);
+	}
+	
 	public static BaseRecord findLocationByGrid(List<BaseRecord> locs, int x, int y) {
 		BaseRecord rec = null;
 		Optional<BaseRecord> oloc = locs.stream().filter(r -> 

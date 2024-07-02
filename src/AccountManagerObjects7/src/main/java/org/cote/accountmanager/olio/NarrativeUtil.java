@@ -1360,7 +1360,10 @@ public class NarrativeUtil {
 		String names = group.stream().filter(p -> !fname.equals(p.get("firstName"))).map(p -> ((String)p.get("firstName") + " (" + p.get("age") + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
 		buff.append(" " + pro + " is accompanied by " + names + ".");
 		
-		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(event.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
+		BaseRecord eloc = event.get("location");
+		//IOSystem.getActiveContext().getReader().populate(eloc);
+		//logger.info(eloc.toFullString());
+		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(eloc).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
 		List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
 		String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		if(fpop.size() > 0) {

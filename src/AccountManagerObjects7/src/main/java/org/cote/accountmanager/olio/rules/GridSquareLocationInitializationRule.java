@@ -99,7 +99,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 		cq.field("geoType", "cell");
 		int count = IOSystem.getActiveContext().getSearch().count(cq);
 		if(count > 0) {
-			logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
+			// logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
 			return;
 		}
 		/// logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");

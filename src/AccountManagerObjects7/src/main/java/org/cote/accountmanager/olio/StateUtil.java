@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
@@ -33,25 +34,63 @@ public class StateUtil {
 			if(x < 0) eastings -=1;
 			else if(x > xedge) eastings += 1;
 			if(y < 0) northings -=1;
-			else if(y > xedge) northings += 1;
+			else if(y > yedge) northings += 1;
+			
+			/// Check for cross-feature
 			if(eastings < 0 || eastings > (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) || northings < 0 || northings > (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1)) {
-				logger.info("Cross feature!");
+				// logger.info("Cross feature - " + loc.get(FieldNames.FIELD_NAME) + " to " + eastings + ", " + northings);
+				if(par != null) {
+					int peastings = par.get("eastings");
+					int pnorthings = par.get("northings");
+					long ppar = par.get(FieldNames.FIELD_PARENT_ID);
+					if(ppar == 0L) {
+						logger.warn("Cannot move beyond current region - parentId = 0");
+						return null;
+					}
+					if(eastings < 0 && peastings > 0) {
+						peastings = peastings - 1;
+						eastings = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1);
+					}
+					else if(eastings > (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) && peastings < (Rules.MAP_EXTERIOR_FEATURE_WIDTH - 1)) {
+						peastings = peastings + 1;
+						eastings = 0;
+					}
+					if(northings < 0 && pnorthings > 0) {
+						pnorthings = pnorthings - 1;
+						northings = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1);
+					}
+					else if(northings > (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) && pnorthings <  (Rules.MAP_EXTERIOR_FEATURE_HEIGHT - 1)) {
+						pnorthings = pnorthings + 1;
+						northings = 0;
+					}
+					if(peastings == (int)par.get("eastings") && pnorthings == (int)par.get("northings")) {
+						logger.warn("Didn't actually move");
+					}
+					else {
+						// logger.info("Find adjacent: " + par.get(FieldNames.FIELD_PARENT_ID) + " " + peastings + ", " + pnorthings);
+						BaseRecord padj = GeoLocationUtil.findAdjacentLocationByGrid(ctx, par.get(FieldNames.FIELD_PARENT_ID), peastings, pnorthings);
+						if(padj == null) {
+							logger.error("Failed to find " + par.get(FieldNames.FIELD_PARENT_ID) + " " + peastings + ", " + pnorthings);
+						}
+						else if(!"feature".equals(padj.get("geoType"))) {
+							logger.warn("Handle non-feature parent");
+						}
+						else {
+							(new GridSquareLocationInitializationRule()).prepCells(ctx, padj);
+							List<BaseRecord> pcells = GeoLocationUtil.getCells(ctx, padj);
+							if(pcells.size() == 0) {
+								logger.warn("Failed to find adjacent cells");
+							}
+							else {
+								cell = findCell(cells, eastings, northings);
+							}
+						}
+					}
+				}
 				return null;
 			}
 			else {
-				final int veast = eastings;
-				final int vnorth = northings;
-				Optional<BaseRecord> ocell = cells.stream().filter(c -> {
-					int ceast = c.get("eastings");
-					int cnorth = c.get("northings");
-					return (ceast == veast && cnorth == vnorth);
-				}).findFirst();
-				if(ocell.isPresent()) {
-					cell = ocell.get();
-				}
-				else {
-					logger.error("Couldn't find it at " + veast + ", " + vnorth);
-				}
+				cell = findCell(cells, eastings, northings);
 			}
 		}
 		else {
@@ -61,13 +100,26 @@ public class StateUtil {
 		return cell;
 		
 	}
+	public static BaseRecord findCell(List<BaseRecord> cells, final int east, final int north) {
+		BaseRecord cell = null;
+		Optional<BaseRecord> ocell = cells.stream().filter(c -> {
+			int ceast = c.get("eastings");
+			int cnorth = c.get("northings");
+			return (ceast == east && cnorth == north);
+		}).findFirst();
+		if(ocell.isPresent()) {
+			cell = ocell.get();
+		}
+		else {
+			logger.warn("Couldn't find cell at " + east + ", " + north);
+		}
+		return cell;
+	}
 	public static void move(OlioContext context, BaseRecord state, List<BaseRecord> cells, int x, int y, boolean allowCrossCell, boolean allowCrossFeature) {
 		BaseRecord loc = state.get("currentLocation");
 		if(loc == null) {
 			return;
 		}
-		/// int eastings = loc.get("eastings");
-		/// int northings = loc.get("northings");
 		int xedge = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		int yedge = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		long id = loc.get(FieldNames.FIELD_ID);
@@ -107,6 +159,41 @@ public class StateUtil {
 
 		
 	}
+	
+	
+	public static boolean move(OlioContext context, BaseRecord animal, DirectionEnumType dir) {
+		BaseRecord state = animal.get(FieldNames.FIELD_STATE);
+		if(state == null) {
+			logger.warn("State is null");
+			return false;
+		}
+		BaseRecord loc = state.get("currentLocation");
+		if(loc == null) {
+			logger.warn("Location is null");
+			return false;
+		}
+		List<BaseRecord> cells = GeoLocationUtil.getCells(context, GeoLocationUtil.getParentLocation(context, loc));
+		if(cells.size() == 0) {
+			logger.warn("Failed to find adjacent cells");
+		}
+
+		int x = state.get("currentEast");
+		int y = state.get("currentNorth");
+		
+		int rx = (DirectionEnumType.getX(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + x;
+		int ry = (DirectionEnumType.getY(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + y;
+
+		move(context, state, cells, rx, ry, true, false);
+		
+		BaseRecord nloc = state.get("currentLocation");
+		if(nloc == null) {
+			logger.warn("Failed to move into a new location");
+			return false;
+		}
+		return ((long)nloc.get(FieldNames.FIELD_ID) == (long)loc.get(FieldNames.FIELD_ID));
+		
+	}
+	
 	public static void agitateLocation(OlioContext context, BaseRecord state) {
 		BaseRecord loc = state.get("currentLocation");
 		if(loc == null) {
@@ -143,7 +230,6 @@ public class StateUtil {
 
 		move(context, state, cells, reast, rnorth, true, false);
 		// logger.info("Move from " + east + ", " + north + " to " + state.get("currentEast") + ", " + state.get("currentNorth"));
-		
 	}
 	public static boolean setInitialLocation(OlioContext context, BaseRecord state) {
 		if(state.get("currentLocation") == null) {
@@ -166,7 +252,7 @@ public class StateUtil {
 		return bal;
 	}
 	
-	protected static double getDistance(BaseRecord state1, BaseRecord state2) {
+	public static double getDistance(BaseRecord state1, BaseRecord state2) {
 		BaseRecord loc1 = state1.get("currentLocation");
 		BaseRecord loc2 = state2.get("currentLocation");
 		

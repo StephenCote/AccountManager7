@@ -290,7 +290,7 @@ public class NeedsUtil {
 			logger.error(e);
 		}
 	}
-	protected static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
+	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
 		BaseRecord eloc = event.get("location");
 		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = new HashMap<>();
 		try {

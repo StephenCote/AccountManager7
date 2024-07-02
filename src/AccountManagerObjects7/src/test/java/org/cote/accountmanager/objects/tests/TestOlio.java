@@ -12,8 +12,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -38,17 +40,21 @@ import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.CharacterRoleEnumType;
+import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.ReasonEnumType;
+import org.cote.accountmanager.olio.Rules;
+import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.llm.OllamaExchange;
 import org.cote.accountmanager.olio.llm.OllamaMessage;
@@ -156,10 +162,7 @@ public class TestOlio extends BaseTest {
 		BaseRecord evt = octx.startOrContinueEpoch();
 		assertNotNull("Epoch is null", evt);
 		BaseRecord[] locs = octx.getLocations();
-		MapUtil.printMapFromAdmin2(octx);
-		//MapUtil.printAdmin2Map(octx, octx.getRootLocation());
-		// Bad design - prints admin map starting from child reference
-		//MapUtil.printAdmin2Map(octx, octx.getRootLocation());
+		// MapUtil.printMapFromAdmin2(octx);
 		for(BaseRecord lrec : locs) {
 			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
 			assertNotNull("Location epoch is null", levt);
@@ -169,15 +172,66 @@ public class TestOlio extends BaseTest {
 			assertTrue("Expected a population", pop.size() > 0);
 			BaseRecord realm = octx.getRealm(lrec);
 			assertNotNull("Realm is null", realm);
-			//MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
-			//MapUtil.printLocationMap(octx, lrec, realm, pop);
-			MapUtil.printRealmMap(octx, realm);
+			wanderAround(octx, levt, cevt, realm, pop, pop.get((new Random()).nextInt(pop.size())));
+			// MapUtil.printRealmMap(octx, realm);
 		}
+		
+		MapUtil.printMapFromAdmin2(octx);
 
 	}
 	
-	
+	private void wanderAround(OlioContext ctx, BaseRecord event, BaseRecord increment, BaseRecord realm, List<BaseRecord> pop, BaseRecord per1) {
+		/// Walk northwest for 1Km.
+		DirectionEnumType dir = OlioUtil.randomEnum(DirectionEnumType.class);
+		logger.info("Wander around");
+		//List<BaseRecord> fpop = pop.stream().filter(p -> ((long)p.get(FieldNames.FIELD_ID)) != (long)per1.get(FieldNames.FIELD_ID)).collect(Collectors.toList());
+		//Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
+		
+		BaseRecord state = per1.get("state");
+		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));		
+		logger.info("Wander " + dir.toString().toLowerCase());
+		for(int i = 0; i < 100; i++) {
+			StateUtil.move(ctx, per1, dir);
+			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));
+		}
 
+		List<BaseRecord> fpop = observablePopulation(pop, per1);
+		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
+		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = NeedsUtil.agitate(ctx, realm, increment, map, false);
+		String lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
+		logger.info(lar);
+		
+		dir = OlioUtil.randomEnum(DirectionEnumType.class);
+		logger.info("Wander " + dir.toString().toLowerCase());
+		for(int i = 0; i < 100; i++) {
+			StateUtil.move(ctx, per1, dir);
+			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));
+		}
+		
+		fpop = observablePopulation(pop, per1);
+		map = ProfileUtil.getProfileMap(ctx, fpop);
+		tmap = NeedsUtil.agitate(ctx, realm, increment, map, false);
+		lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
+
+		logger.info(lar);
+
+		ctx.processQueue();
+
+	}
+
+	private List<BaseRecord> observablePopulation(List<BaseRecord> pop, BaseRecord pov){
+		return pop.stream().filter(p -> {
+				double dist = StateUtil.getDistance(pov.get("state"), p.get("state"));
+				int max = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+				// logger.info("Distance: " + dist + "::" + max);
+				boolean filt =(((long)p.get(FieldNames.FIELD_ID)) != (long)pov.get(FieldNames.FIELD_ID)
+				&&
+				dist <= max
+				);
+				return filt;
+			}
+		).collect(Collectors.toList());
+	}
 
 	private BaseRecord meetAndGreet(OlioContext ctx, BaseRecord per1, BaseRecord per2) {
 		
