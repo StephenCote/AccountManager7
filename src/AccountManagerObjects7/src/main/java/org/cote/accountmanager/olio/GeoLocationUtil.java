@@ -45,6 +45,254 @@ public class GeoLocationUtil {
 	public static final DecimalFormat df3 = new DecimalFormat("000");
 
 	private static SecureRandom rand = new SecureRandom();
+	
+	private static int minOpenSpace = 5;
+	private static int maxOpenSpace = 15;
+	/// Not obvious: The 'feature' mapWidth/Height is set to 100x100 square kilometers
+	private static int mapWidth1km = Rules.MAP_EXTERIOR_FEATURE_WIDTH;
+	private static int mapHeight1km = Rules.MAP_EXTERIOR_FEATURE_HEIGHT;
+
+	/// Not obvious: The cellWidth is set to 10x10 in a 1km square means each cell is really 100m x 100m (the multiplier is defined in the rules)
+	///
+	private static int mapCellWidthM = Rules.MAP_EXTERIOR_CELL_WIDTH;
+	private static int mapCellHeightM = Rules.MAP_EXTERIOR_CELL_HEIGHT;
+	
+	private static int maxConnectedRegions = 5;
+	
+    public static int getMapWidth1km() {
+		return mapWidth1km;
+	}
+
+	public static int getMapHeight1km() {
+		return mapHeight1km;
+	}
+
+	public static int getMapCellWidthM() {
+		return mapCellWidthM;
+	}
+
+	public static int getMapCellHeightM() {
+		return mapCellHeightM;
+	}
+
+	public static int prepareMapGrid(OlioContext ctx) {
+    	long id = ctx.getUniverse().get("locations.id");
+    	int count = IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id));
+		if(count > 0) {
+			return count;
+		}
+    	
+    	int iter = 100;
+    	BaseRecord zone = GeoLocationUtil.newLocation(ctx, null, GeoLocationUtil.GZD, iter++);
+    	IOSystem.getActiveContext().getRecordUtil().createRecord(zone);
+
+    	try {
+	    	zone.set("gridZone", GeoLocationUtil.GZD);
+	    	String identH = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+	    	String identV = "ABCDEFGHJKLMNPQRSTUV";
+	    	List<BaseRecord> blocks = new ArrayList<>();
+    		for(int y = 0; y < identV.length(); y++) {
+    			for(int x = 0; x < identH.length(); x++) {
+    				String sx = identH.substring(x,x+1);
+    				String sy = identV.substring(y,y+1);
+    				BaseRecord block = GeoLocationUtil.newLocation(ctx, zone, GeoLocationUtil.GZD + " " + sx + sy, iter++);
+    				block.set("area", (double)mapWidth1km * mapHeight1km);
+    				block.set("gridZone", GeoLocationUtil.GZD);
+    				block.set("kident", sx + sy);
+    				block.set("geoType", "admin2");
+    				
+    				blocks.add(block);
+    				
+    				// block.set("eastings", x * 100);
+    				// block.set("northings", y * 100);
+	    		}
+	    	}
+    		logger.info("Creating " + blocks.size() + " 100ks");
+    		count = IOSystem.getActiveContext().getRecordUtil().createRecords(blocks.toArray(new BaseRecord[0]));
+    		// BaseRecord k100 = blocks.get((new SecureRandom()).nextInt(blocks.size()));
+    		// prepK100(ctx, k100);
+    	}
+    	catch(ModelNotFoundException | FieldException | ValueException e) {
+    		logger.error(e);
+    	}
+    	return count;
+    }
+    
+	public static void checkK100(OlioContext context) {
+		long udir = context.getUniverse().get("locations.id");
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, udir);
+		q.field("geoType", "feature");
+		if(IOSystem.getActiveContext().getSearch().count(q) == 0) {
+			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, udir);
+			q2.field("geoType", "admin2");
+			BaseRecord k100 = OlioUtil.randomSelection(context.getOlioUser(), q2);
+			if(k100 == null) {
+				logger.error("Failed to find a random location!");
+			}
+			else {
+				prepareK100(context, k100);
+			}
+		}
+	}
+	
+    public static int prepareK100(OlioContext ctx, BaseRecord k100) {
+    	long id = k100.get(FieldNames.FIELD_ID);
+    	int count = IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, id));
+    	
+		if(count > 0) {
+			return count;
+		}
+    	int iter = 100;
+    	int mapWidth1km = Rules.MAP_EXTERIOR_FEATURE_WIDTH;
+    	int mapHeight1km = Rules.MAP_EXTERIOR_FEATURE_HEIGHT;
+    	List<BaseRecord> blocks = new ArrayList<>();
+    	BaseRecord[][] grid = new BaseRecord[mapWidth1km][mapHeight1km];
+    	try {
+	    	for(int x = 0; x < mapWidth1km; x++) {
+	    		for(int y = 0; y < mapHeight1km; y++) {
+	    			grid[x][y] = GeoLocationUtil.newLocation(ctx, k100, GeoLocationUtil.GZD + " " + k100.get("kident") + " " + GeoLocationUtil.df2.format(x) + "" + GeoLocationUtil.df2.format(y), iter++);
+	    			grid[x][y].set("area", (double)1000);
+	    			grid[x][y].set("gridZone", GeoLocationUtil.GZD);
+	    			grid[x][y].set("kident", k100.get("kident"));
+	    			grid[x][y].set("eastings", x);
+	    			grid[x][y].set("northings", y);
+	    			/// Null out the type in order to be reset in the connection routine
+	    			///
+	    			grid[x][y].set("geoType", "featureless");
+	    			blocks.add(grid[x][y]);
+	    		}
+	    	}
+	    	// logger.info("Staged " + blocks.size());
+	    	logger.info("Connecting regions");
+	    	connectRegions(grid);
+	    	logger.info("Blasting regions");
+	    	TerrainUtil.blastAndWalk(null, blocks, mapWidth1km, mapHeight1km);
+	    	logger.info("Creating " + blocks.size() + " grid squares for " + k100.get(FieldNames.FIELD_NAME));
+	    	long start = System.currentTimeMillis();
+	    	count = IOSystem.getActiveContext().getRecordUtil().createRecords(blocks.toArray(new BaseRecord[0]));
+	    	long stop = System.currentTimeMillis();
+	    	logger.info("Created " + count + " in " + (stop - start) + "ms");
+    	}
+    	catch(ModelNotFoundException | FieldException | ValueException e) {
+    		logger.error(e);
+    	}
+    	return count;
+    }
+    
+	public static int prepareCells(OlioContext ctx, BaseRecord feature) {
+		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+		IOSystem.getActiveContext().getReader().populate(feature);
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, feature.get(FieldNames.FIELD_ID));
+		cq.field("geoType", "cell");
+		int count = IOSystem.getActiveContext().getSearch().count(cq);
+		if(count > 0) {
+			return count;
+		}
+		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, feature.get(FieldNames.FIELD_GROUP_ID)));
+		List<BaseRecord> cells = new ArrayList<>();
+		try {
+			for(int y = 0; y < mapCellHeightM; y++) {
+				for(int x = 0; x < mapCellWidthM; x++) {
+					int ie = x; //  * 10
+					int in = y; //  * 10
+	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, feature, GeoLocationUtil.GZD + " " + feature.get("kident") + " " + GeoLocationUtil.df2.format((int)feature.get("eastings")) + "" + GeoLocationUtil.df2.format((int)feature.get("northings")) + " " + GeoLocationUtil.df3.format(ie) + "" + GeoLocationUtil.df3.format(in), iter++);
+	    			/// Location util defaults to putting new locations into the universe.  change to the world group
+	    			///
+	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+	    			cell.set("area", (double)10);
+	    			cell.set("gridZone", GeoLocationUtil.GZD);
+	    			cell.set("kident", feature.get("kident"));
+	    			cell.set("eastings", x);
+	    			cell.set("northings", y);
+	    			cell.set("geoType", "cell");
+	    			cells.add(cell);
+				}
+			}
+			TerrainUtil.blastCells(ctx, feature, cells, mapCellWidthM, mapCellHeightM);
+			count = IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		return count;
+	}
+    
+    public static void connectRegions(BaseRecord[][] grid){
+        for(int i = 0; i < maxConnectedRegions; i++){
+        	int rw = rand.nextInt(minOpenSpace, maxOpenSpace);
+        	int rh = rand.nextInt(minOpenSpace, maxOpenSpace);
+            placeRegion(grid, rw, rh, "Region " + (i + 1));
+        }
+    }
+    
+
+    
+    private static Point findSpaceLocation(BaseRecord[][] grid, int w, int h){
+        Point pos = null;
+        int iters = 0;
+        int maxiters = 500;
+        while(pos == null){
+            iters++;
+            if(iters > maxiters){
+                logger.error("Exceeded location attempts");
+                break;
+            }
+            int t = rand.nextInt(1, mapWidth1km);
+            int l = rand.nextInt(1, mapHeight1km);
+            if(l + w >= mapWidth1km) l = mapWidth1km - w - 2;
+            if(t + h >= mapWidth1km) t = mapHeight1km - h - 2;
+
+            boolean collision = false;
+            // logger.info("Scan " + (l - 1) + " to " + (l + w + 1) + " and " + (t - 1) + " to " + (t + h + 1));
+            for(int x = (l - 1); x < (l + w + 1); x++){
+                for(int y = (t - 1); y < (t + h + 1); y++){
+                    if(grid[x] == null || grid[x][y] == null){
+                        logger.error("Cell error at " + x + ", " + y);
+                        collision = true;
+                        break;
+                    }
+                    BaseRecord cell = grid[x][y];
+                    String type = cell.get("geoType");
+                    if(type != null && type.equals("feature")){
+                    	// logger.error("Collided at " + x + ", " + y + " - " + type + " " + cell.get(FieldNames.FIELD_NAME));
+                        collision = true;
+                        break;
+                    }
+                }
+                if(collision) break;
+            }
+            if(!collision){
+                pos = new Point(l, t);
+                break;
+            }
+            else{
+                // logger.warn("Collision detected");
+            }
+        }
+        return pos;
+    }
+    
+    private static void placeRegion(BaseRecord[][] grid, int w, int h, String regionName){
+        Point pos = findSpaceLocation(grid, w, h);
+         if(pos != null){
+            logger.info("Connected regions at " + pos.getX() + ", " + pos.getY());
+            for(int i = pos.getX(); i < pos.getX() + w; i++){
+                for(int b = pos.getY(); b < pos.getY() + h; b++){
+                    try {
+						grid[i][b].set("geoType", "feature");
+						grid[i][b].set("feature", regionName);
+						grid[i][b].set("classification", pos.getX() + "," + pos.getY() + "," + w + "," + h);
+					} catch (FieldException | ValueException | ModelNotFoundException e) {
+						logger.error(e);
+					}
+                }
+            }
+        }
+        else{
+            logger.warn("Failed to place room");
+        }
+
+    }
     
 	public static int getMaximumHeight(List<BaseRecord> locations) {
 		return getMaximumInt(locations, "northings");
@@ -220,7 +468,7 @@ public class GeoLocationUtil {
 		}
 		return rec;
 	}
-
+	
 	public static BaseRecord newLocation(OlioContext ctx, BaseRecord parent, String name, int id) {
 		return newLocation(ctx, parent, name, id, false);
 	}
@@ -232,7 +480,7 @@ public class GeoLocationUtil {
 		ParameterList plist = ParameterList.newParameterList("path", (world ? ctx.getWorld() : ctx.getUniverse()).get("locations.path"));
 		plist.parameter("name", name);
 		try {
-			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getUser(), null, plist);
+			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getOlioUser(), null, plist);
 			rec.set("geographyType", GeographyEnumType.PHYSICAL);
 			if(parent != null) {
 				rec.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
@@ -292,7 +540,7 @@ public class GeoLocationUtil {
 	    return distance;
 	}
 	public static BaseRecord getRootLocation(OlioContext ctx) {
-		return getRootLocation(ctx.getUser(), ctx.getWorld());
+		return getRootLocation(ctx.getOlioUser(), ctx.getWorld());
 	}
 	public static BaseRecord getRootLocation(BaseRecord user, BaseRecord world) {
 		BaseRecord loc = null;
@@ -303,7 +551,7 @@ public class GeoLocationUtil {
 		return loc;
 	}
 	public static BaseRecord[] getRegionLocations(OlioContext ctx) {
-		return getRegionLocations(ctx.getUser(), ctx.getWorld());
+		return getRegionLocations(ctx.getOlioUser(), ctx.getWorld());
 	}
 	public static BaseRecord[] getRegionLocations(BaseRecord user, BaseRecord world) {
 		List<BaseRecord> locs = new ArrayList<>();

@@ -263,7 +263,7 @@ public class OlioUtil {
 				return grps[0];
 			}
 
-			grp = newRegionGroup(context.getUser(), popDir, name);
+			grp = newRegionGroup(context.getOlioUser(), popDir, name);
 		
 			IOSystem.getActiveContext().getRecordUtil().createRecord(grp);
 		}
@@ -426,7 +426,7 @@ public class OlioUtil {
 			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("tagsGroup.path"));
 			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
-				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TAG, ctx.getUser(), null, plist);
+				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TAG, ctx.getOlioUser(), null, plist);
 				rec.set(FieldNames.FIELD_TYPE, type);
 				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 			}
@@ -446,7 +446,7 @@ public class OlioUtil {
 			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("traits.path"));
 			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
-				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TRAIT, ctx.getUser(), null, plist);
+				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TRAIT, ctx.getOlioUser(), null, plist);
 				rec.set(FieldNames.FIELD_TYPE, type);
 				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 			}
@@ -471,7 +471,7 @@ public class OlioUtil {
 		return list(ctx, model, groupName, null, null);
 	}
 	protected static <T> BaseRecord[] list(OlioContext ctx, String model, String groupName, String fieldName, T val) {
-		Query q = getQuery(ctx.getUser(), model, ctx.getWorld().get(groupName + ".path"));
+		Query q = getQuery(ctx.getOlioUser(), model, ctx.getWorld().get(groupName + ".path"));
 		BaseRecord[] recs = new BaseRecord[0];
 
 		try {
@@ -515,7 +515,7 @@ public class OlioUtil {
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			store = IOSystem.getActiveContext().getSearch().findRecord(q);
 			if(store == null) {
-				store = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
+				store = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
 				store.set(FieldNames.FIELD_REFERENCE_TYPE, ref.getModel());
 				store.set(FieldNames.FIELD_REFERENCE_ID, ref.get(FieldNames.FIELD_ID));
 				IOSystem.getActiveContext().getRecordUtil().createRecord(store);

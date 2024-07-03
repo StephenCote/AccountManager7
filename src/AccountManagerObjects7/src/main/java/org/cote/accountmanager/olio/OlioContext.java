@@ -13,7 +13,9 @@ import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
@@ -23,6 +25,9 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
+import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.PermissionEnumType;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class OlioContext {
@@ -35,6 +40,7 @@ public class OlioContext {
 	/// Each epoch currently defaults to 1 year
 	///
 	private BaseRecord currentEpoch = null;
+	
 	private BaseRecord[] locations = new BaseRecord[0];
 	private List<BaseRecord> populationGroups = new ArrayList<>();
 	/// Each location event defaults to 1 year
@@ -43,6 +49,7 @@ public class OlioContext {
 	private BaseRecord currentEvent = null;
 	private BaseRecord currentLocation = null;
 	private BaseRecord currentIncrement = null;
+	
 	private Map<Long, List<BaseRecord>> populationMap = new ConcurrentHashMap<>();
 	private Map<Long, Map<String,List<BaseRecord>>> demographicMap = new ConcurrentHashMap<>();
 	private Map<String, List<BaseRecord>> queue = new ConcurrentHashMap<>();
@@ -54,6 +61,8 @@ public class OlioContext {
 	private ZonedDateTime currentDay = currentTime;
 	private ZonedDateTime currentHour = currentTime;
 	
+	private String olioUserName = "olioUser";
+	private BaseRecord olioUser = null;
 	
 	public OlioContext(OlioContextConfiguration cfg) {
 		this.config = cfg;
@@ -67,6 +76,10 @@ public class OlioContext {
 		}
 		clearQueue();
 		CacheUtil.clearCache();
+	}
+	
+	public BaseRecord getOlioUser() {
+		return olioUser;
 	}
 	public void clearQueue() {
 		queue.clear();
@@ -95,50 +108,138 @@ public class OlioContext {
 	public ZonedDateTime getCurrentHour() {
 		return currentHour;
 	}
+	public BaseRecord getCurrentEpoch() {
+		return currentEpoch;
+	}
+
+	public void setCurrentEpoch(BaseRecord currentEpoch) {
+		this.currentEpoch = currentEpoch;
+	}
+	
+	/*
+	public BaseRecord getUser() {
+		return config.getUser();
+	}
+	*/
+	
+	public OlioContextConfiguration getConfig() {
+		return config;
+	}
+
+	public BaseRecord getWorld() {
+		return world;
+	}
+
+	public BaseRecord getUniverse() {
+		return universe;
+	}
+
+	public boolean isInitialized() {
+		return initialized;
+	}
+	
+	private BaseRecord adminRole = null;
+	private BaseRecord userRole = null;
+	
+	public void configureEnvironment() throws OlioException {
+		if(config == null) {
+			throw new OlioException("Configuration is null");
+		}
+		if(config.getUser() == null) {
+			throw new OlioException("Configuration user is null");
+		}
+
+		OrganizationContext octx = IOSystem.getActiveContext().findOrganizationContext(config.getUser());
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
+		
+		IOContext ioContext = IOSystem.getActiveContext();
+		olioUser = ioContext.getFactory().getCreateUser(octx.getAdminUser(), olioUserName, octx.getOrganizationId());
+		if(olioUser == null) {
+			throw new OlioException("Failed to find olio user");
+		}
+		
+		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		ioContext.getMemberUtil().member(olioUser, adminRole, olioUser, null, true);
+		ioContext.getMemberUtil().member(olioUser, userRole, config.getUser(), null, true);
+		
+		BaseRecord rootDir = ioContext.getPathUtil().makePath(octx.getAdminUser(), ModelNames.MODEL_GROUP, config.getBasePath(), GroupEnumType.DATA.toString(), octx.getOrganizationId());
+		if(rootDir == null) {
+			throw new OlioException("Root directory is null");
+		}
+		
+		
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), olioUser, new BaseRecord[] {rootDir}, new String[] {"Read", "Update", "Create"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		
+		BaseRecord uDir = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP, config.getUniversePath(), GroupEnumType.DATA.toString(), octx.getOrganizationId());
+		if(uDir == null) {
+			throw new OlioException("Universe directory is null");
+		}
+		BaseRecord wDir = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP, config.getWorldPath(), GroupEnumType.DATA.toString(), octx.getOrganizationId());
+		if(wDir == null) {
+			throw new OlioException("World directory is null");
+		}
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), config.getUser(), new BaseRecord[] {rootDir, uDir, wDir}, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+	}
+	
 	public void initialize() {
 		logger.info("Initializing Olio Context ...");
+		
 		try {
-			if(config == null || initialized) {
+			configureEnvironment();
+			if(initialized) {
+				logger.warn("Context is already initialized");
 				return;
 			}
 			long start = System.currentTimeMillis();
 			logger.info("Get/Create Universe ...");
-			universe = WorldUtil.getCreateWorld(config.getUser(), config.getWorldPath(), config.getUniverseName(), config.getFeatures());
+			universe = WorldUtil.getCreateWorld(olioUser, config.getUniversePath(), config.getUniverseName(), config.getFeatures());
 			if(universe == null) {
-				logger.error("Failed to load universe " + config.getUniverseName());
-				return;
+				throw new OlioException("Failed to load universe " + config.getUniverseName());
 			}
-			logger.info("Populate Universe ...");
 			IOSystem.getActiveContext().getReader().populate(universe, 2);
 			logger.info("Load World Data ...");
 			WorldUtil.loadWorldData(this);
+
 			logger.info("Get/Create World ...");
-			world = WorldUtil.getCreateWorld(config.getUser(), universe, config.getWorldPath(), config.getWorldName(), new String[0]);
+			world = WorldUtil.getCreateWorld(olioUser, universe, config.getWorldPath(), config.getWorldName(), new String[0]);
 			if(world == null) {
-				logger.error("Failed to load world " + config.getWorldName());
-				return;
+				throw new OlioException("Failed to load world " + config.getWorldName());
 			}
 			if(config.isResetWorld()) {
 				logger.info("Reset World ...");
-				WorldUtil.cleanupWorld(config.getUser(), world);
+				WorldUtil.cleanupWorld(olioUser, world);
 			}
-			logger.info("Populate World ...");
 			IOSystem.getActiveContext().getReader().populate(world, 2);
-			//CacheUtil.clearCache();
+			
 			logger.info("Pregenerate ...");
 			config.getContextRules().forEach(r -> {
 				r.pregenerate(this);
 			});
+			
 			logger.info("Generate World Region ...");
-			BaseRecord rootEvent = WorldUtil.generateRegion(this);
+			BaseRecord rootEvent = null;
+			for(IOlioContextRule r : config.getContextRules()){
+				BaseRecord evt = r.generate(this);
+				if(evt != null) {
+					rootEvent = evt;
+					break;
+				}
+			};
+
 			if(rootEvent == null) {
-				logger.error("Failed to find or create a new region");
-				return;
+				throw new OlioException("Failed to find or create a new region");
 			}
+
 			logger.info("Postgenerate ...");
 			config.getContextRules().forEach(r -> {
 				r.postgenerate(this);
 			});
+			
+			/*
+
 			logger.info("Obtain Epoch ...");
 			currentEpoch = EventUtil.getLastEpochEvent(this);
 			locations = GeoLocationUtil.getRegionLocations(this);
@@ -156,14 +257,28 @@ public class OlioContext {
 					rule.generateRegion(this, rootEvent, evt);
 				}
 			}
-
+			*/
 			long stop = System.currentTimeMillis();
 			logger.info("... Olio Context Initialized in " + (stop - start) + "ms");
+			
 		}
 		catch(Exception e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
+	}
+	
+	public void queue(BaseRecord obj) {
+		OlioUtil.queueAdd(queue, obj);
+	}
+	public void queueUpdate(BaseRecord obj, String[] fields) {
+		OlioUtil.queueUpdate(queue, obj, fields);
+	}
+	public void processQueue() {
+		queue.forEach((k, v) -> {
+			IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
+		});
+		queue.clear();
 	}
 	
 	public BaseRecord[] getChildEvents() {
@@ -374,18 +489,7 @@ public class OlioContext {
 		}
 	}
 	
-	public void queue(BaseRecord obj) {
-		OlioUtil.queueAdd(queue, obj);
-	}
-	public void queueUpdate(BaseRecord obj, String[] fields) {
-		OlioUtil.queueUpdate(queue, obj, fields);
-	}
-	public void processQueue() {
-		queue.forEach((k, v) -> {
-			IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
-		});
-		queue.clear();
-	}
+
 	
 	public Map<String, List<BaseRecord>> getQueue() {
 		return queue;
@@ -481,6 +585,7 @@ public class OlioContext {
 	public BaseRecord getRootLocation() {
 		 return GeoLocationUtil.getRootLocation(this);
 	}
+	
 	/*
 	public BaseRecord generateEpoch() {
 		return generateEpoch(1);
@@ -494,33 +599,7 @@ public class OlioContext {
 		return currentEpoch;
 	}
 	*/
-	public BaseRecord getCurrentEpoch() {
-		return currentEpoch;
-	}
 
-	public void setCurrentEpoch(BaseRecord currentEpoch) {
-		this.currentEpoch = currentEpoch;
-	}
-
-	public BaseRecord getUser() {
-		return config.getUser();
-	}
-	
-	public OlioContextConfiguration getConfig() {
-		return config;
-	}
-
-	public BaseRecord getWorld() {
-		return world;
-	}
-
-	public BaseRecord getUniverse() {
-		return universe;
-	}
-
-	public boolean isInitialized() {
-		return initialized;
-	}
 	
 	
 	

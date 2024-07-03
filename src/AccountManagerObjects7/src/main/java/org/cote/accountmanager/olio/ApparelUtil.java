@@ -86,13 +86,13 @@ public class ApparelUtil {
 				});
 				IOSystem.getActiveContext().getRecordUtil().createRecord(app);
 				appl.add(app);
-				ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), sto, "apparel", app));
+				ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), sto, "apparel", app));
 			}
 			if(iteml.size() == 0) {
 				List<BaseRecord> arms = ItemUtil.randomArms(ctx);
 				for(BaseRecord a: arms) {
 					IOSystem.getActiveContext().getRecordUtil().createRecord(a);
-					ctx.queue(ParticipationFactory.newParticipation(ctx.getUser(), sto, "items", a));
+					ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), sto, "items", a));
 				}
 				iteml.addAll(arms);
 			}
@@ -114,9 +114,9 @@ public class ApparelUtil {
 			String p = protect[i];
 		
 			if(rand.nextDouble() <= protectOdds[i]) {
-				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
+				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
 				List<BaseRecord> quals = wearRec.get("qualities");
-				quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
+				quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
 				ApparelUtil.embedWearable(ctx, 0L, wearRec, ApparelUtil.randomWearable(WearLevelEnumType.OUTER, p, null));
 				ApparelUtil.applyEmbeddedFabric(wearRec, ApparelUtil.randomFabric(WearLevelEnumType.OUTER, null));
 				ApparelUtil.designWearable(ctx, 0L, wearRec);
@@ -131,7 +131,7 @@ public class ApparelUtil {
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("apparel.path"));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
-			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_APPAREL, ctx.getUser(), null, plist);
+			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_APPAREL, ctx.getOlioUser(), null, plist);
 			rec.set(FieldNames.FIELD_TYPE, type);
 			rec.set("category", cat);
 			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
@@ -421,8 +421,8 @@ public class ApparelUtil {
 		}
 		else {
 			if(ctx != null) {
-				randomColor = Decks.getRandomColor(ctx.getUser(), ctx.getUniverse());
-				pattern = Decks.getRandomPattern(ctx.getUser(), ctx.getUniverse());
+				randomColor = Decks.getRandomColor(ctx.getOlioUser(), ctx.getUniverse());
+				pattern = Decks.getRandomPattern(ctx.getOlioUser(), ctx.getUniverse());
 			}
 			else {
 				randomColor = ColorUtil.getDefaultColor(ctx, ownerId, ColorUtil.getRandomDefaultColor());
@@ -467,7 +467,7 @@ public class ApparelUtil {
 		BaseRecord app = null;
 		try {
 			if(ctx != null) {
-				app = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
+				app = OlioUtil.newGroupRecord(ctx.getOlioUser(), ModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
 			}
 			else {
 	
@@ -480,14 +480,14 @@ public class ApparelUtil {
 			for(String emb : wears) {
 				BaseRecord wearRec = null;
 				if(ctx != null) {
-					wearRec = OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
+					wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), ModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
 				}
 				else {
 					wearRec = RecordFactory.newInstance(ModelNames.MODEL_WEARABLE);
 				}
 				List<BaseRecord> quals = wearRec.get("qualities");
 				if(ctx != null) {
-					quals.add(OlioUtil.newGroupRecord(ctx.getUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
+					quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), ModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
 				}
 				else {
 					quals.add(RecordFactory.newInstance(ModelNames.MODEL_QUALITY));

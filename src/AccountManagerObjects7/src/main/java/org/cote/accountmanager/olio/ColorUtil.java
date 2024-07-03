@@ -127,7 +127,7 @@ public class ColorUtil {
 	private static Double floatToDouble(float f) {
 		return Double.valueOf(Float.valueOf(f).toString()).doubleValue();
 	}
-	
+
 	protected static BaseRecord getDefaultColor(OlioContext ctx, long ownerId, String hex) {
 		
 		if(hex == null || defaultColors == null) {
@@ -142,7 +142,7 @@ public class ColorUtil {
 		BaseRecord group = null;
 		BaseRecord owner = null;
 		if(ctx != null) {
-			owner = ctx.getUser();
+			owner = ctx.getOlioUser();
 			group = ctx.getUniverse().get("colors");
 		}
 		else {

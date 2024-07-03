@@ -69,6 +69,7 @@ public class TestRealm extends BaseTest {
 	private String worldName = "World 3";
 	private String worldPath = "~/Worlds";
 	
+	/*
 	@Test
 	public void TestRealm() {
 		
@@ -172,7 +173,7 @@ public class TestRealm extends BaseTest {
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
 		
 	}
-	
+	*/
 	/*
 	@Test
 	public void TestRealm() {

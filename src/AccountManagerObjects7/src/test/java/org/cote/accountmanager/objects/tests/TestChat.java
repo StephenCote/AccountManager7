@@ -244,7 +244,6 @@ public class TestChat extends BaseTest {
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 			user,
 			testProperties.getProperty("test.datagen.path"),
-			worldPath,
 			universeName,
 			worldName,
 			new String[] {},

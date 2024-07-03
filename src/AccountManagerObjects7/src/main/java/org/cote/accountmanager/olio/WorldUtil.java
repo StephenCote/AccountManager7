@@ -43,6 +43,7 @@ public class WorldUtil {
     
 	public static BaseRecord getWorld(BaseRecord user, String groupPath, String worldName) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_NAME, worldName);
 		try {
@@ -196,9 +197,9 @@ public class WorldUtil {
 		return IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(user, ModelNames.MODEL_CENSUS_WORD, groupPath));
 	}
 
-	// public static void loadWorldData(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
+
 	protected static void loadWorldData(OlioContext ctx) {
-		BaseRecord user = ctx.getUser();
+		BaseRecord user = ctx.getOlioUser();
 		BaseRecord world = ctx.getUniverse();
 		String basePath = ctx.getConfig().getDataPath();
 		boolean reset = ctx.getConfig().isResetUniverse();
@@ -226,241 +227,10 @@ public class WorldUtil {
 		// logger.info("Patterns: " + patterns);
 	}
 
-	
-	protected static BaseRecord generateRegion(OlioContext ctx) {
-		
-		List<BaseRecord> events = new ArrayList<>(); 
-		BaseRecord world = ctx.getWorld();
-		BaseRecord parWorld = world.get("basis");
-		BaseRecord locDir = world.get("locations");
-		BaseRecord eventsDir = world.get("events");
-		if(parWorld == null) {
-			logger.error("A basis world is required");
-			return null;
-		}
-		BaseRecord root = EventUtil.getRootEvent(ctx);
-		if(root != null) {
-			// logger.info("Region is already generated");
-			return root;
-		}
-		
-		logger.info("Generate region ...");
-		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
-		BaseRecord[] locs = new BaseRecord[0];
-		for(IOlioContextRule rule : ctx.getConfig().getContextRules()) {
-			locs = rule.selectLocations(ctx);
-			if(locs != null && locs.length > 0) {
-				break;
-			}
-		}
-		if(locs == null || locs.length == 0) {
-			locs = (new RandomLocationInitializationRule()).selectLocations(ctx);
-		}
-		List<BaseRecord> locations = new ArrayList<>();
-		for(BaseRecord l : locs) {
-			locations.add(OlioUtil.cloneIntoGroup(l, locDir));
-		}
-		if(locations.isEmpty()){
-			logger.error("Expected a positive number of locations");
-			logger.info(locDir.toFullString());
-			return null;
-		}
-		
-		try{
-			
-			int cloc = IOSystem.getActiveContext().getRecordUtil().updateRecords(locations.toArray(new BaseRecord[0]));
-			if(cloc != locations.size()) {
-				logger.error("Failed to create locations");
-				return null;
-			}
-			for(BaseRecord loc: locations) {
 
-				String locName = loc.get(FieldNames.FIELD_NAME);
-				loc.set(FieldNames.FIELD_DESCRIPTION, null);
-				BaseRecord event = null;
 
-				if(root == null) {
-					// logger.info("Construct region: " + locName);
-					ParameterList plist = ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH));
-					root = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
-					root.set(FieldNames.FIELD_NAME, "Construct Region " + locName);
-					root.set(FieldNames.FIELD_LOCATION, loc);
-					root.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-					root.set("eventStart", ctx.getConfig().getBaseInceptionDate());
-					root.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
-					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(root)) {
-						logger.error("Failed to create root event");
-						return null;
-					}
-					event = root;
-				}
-				else {
-					// logger.info("Construct region: " + locName);
-					BaseRecord popEvent = populateRegion(ctx, loc, root, ctx.getConfig().getBasePopulationCount());
-					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
-					events.add(popEvent);
-					event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
-					event.set(FieldNames.FIELD_NAME, "Construct " + locName);
-					event.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
-					
-					for(int b = 0; b < 2; b++) {
-						List<BaseRecord> traits = event.get((b == 0 ? "entryTraits" : "exitTraits"));
-						traits.addAll(Arrays.asList(Decks.getRandomTraits(ctx.getUser(), parWorld, 3)));
-					}
-					event.set(FieldNames.FIELD_LOCATION, loc);
-					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-					event.set("eventStart", ctx.getConfig().getBaseInceptionDate());
-					event.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
 
-					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(event)) {
-						logger.error("Failed to create region event");
-						return null;
-					}
-					events.add(event);
-				}
-			}
 
-		}
-		catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
-			logger.error(e);
-		}
-		if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(root)) {
-			logger.error("Failed to update root event");
-			return null;
-		}
-		return root;
-	}
-
-	/// TODO - drop the superfluous parameters
-	///
-	public static BaseRecord populateRegion(OlioContext ctx, BaseRecord location, BaseRecord rootEvent, int popCount){
-
-		long totalAge = 0L;
-		String locName = location.get(FieldNames.FIELD_NAME);
-		/// logger.info("Populating " + locName + " with " + popCount + " people");
-		long start = System.currentTimeMillis();
-		BaseRecord event = null;
-		BaseRecord parWorld = ctx.getWorld().get("basis");
-		if(parWorld == null) {
-			logger.error("A basis world is required");
-			return null;
-		}
-		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
-		try {
-			BaseRecord popDir = ctx.getWorld().get("population");
-			BaseRecord evtDir = ctx.getWorld().get("events");
-			
-			ParameterList plist = ParameterList.newParameterList("path", evtDir.get(FieldNames.FIELD_PATH));
-			event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
-			event.set(FieldNames.FIELD_LOCATION, location);
-			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
-			event.set(FieldNames.FIELD_NAME, "Populate " + locName);
-			event.set(FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
-			ZonedDateTime inceptionDate = rootEvent.get("eventStart");
-			event.set("eventStart", inceptionDate);
-			event.set("eventEnd", rootEvent.get("eventEnd"));
-
-			List<BaseRecord> grps = event.get(FieldNames.FIELD_GROUPS);
-			BaseRecord popGrp = OlioUtil.newRegionGroup(ctx.getUser(), popDir, locName + " Population");
-			grps.add(popGrp);
-			grps.add(OlioUtil.newRegionGroup(ctx.getUser(), popDir, locName + " Cemetary"));
-			
-			/*
-			for(String name : leaderPopulation){
-				grps.add(newRegionGroup(user, popDir, locName + " " + name + " Leaders"));				
-			}
-			*/
-			
-			IOSystem.getActiveContext().getRecordUtil().updateRecords(grps.toArray(new BaseRecord[0]));
-			
-			event.set(FieldNames.FIELD_GROUPS, grps);
-			List<BaseRecord> actors = event.get("actors");
-			if(popCount == 0){
-				logger.error("Empty population");
-				event.set(FieldNames.FIELD_DESCRIPTION, "Decimated");
-			}
-			else {
-				int totalAbsoluteAlignment = 0;
-				ZonedDateTime now = ZonedDateTime.now();
-
-				Decks.shuffleDecks(ctx.getUser(), parWorld);
-				if(Decks.maleNamesDeck.length == 0 || Decks.femaleNamesDeck.length == 0 || Decks.surnameNamesDeck.length == 0 || Decks.occupationsDeck.length == 0) {
-					logger.error("Empty names");
-				}
-
-				// logger.info("Creating population of " + popCount);
-
-				for(int i = 0; i < popCount; i++){
-					BaseRecord person = CharacterUtil.randomPerson(ctx, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
-					AddressUtil.simpleAddressPerson(ctx, location, person);
-					/// AddressUtil.addressPerson(user, world, person, location);
-					int alignment = AlignmentEnumType.getAlignmentScore(person);
-					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
-					person.set("age", (int)years);
-					
-					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);
-					ProfileUtil.rollPersonality(person.get("personality"));
-					
-					totalAge += years;
-					totalAbsoluteAlignment += (alignment + 4);
-					
-					/*
-					List<BaseRecord> appl = person.get("apparel");
-					appl.add(ApparelUtil.randomApparel(user, world, person));
-					*/
-					actors.add(person);
-				}
-				
-				// logger.info("Bulk loading population");
-				int created = IOSystem.getActiveContext().getRecordUtil().updateRecords(actors.toArray(new BaseRecord[0]));
-				if(created != actors.size()) {
-					logger.error("Created " + created + " but expected " + actors.size() + " records");
-				}
-				// logger.info("Creating event memberships");
-				List<BaseRecord> parts = new ArrayList<>();
-				for(BaseRecord rec : actors) {
-					parts.add(ParticipationFactory.newParticipation(ctx.getUser(), popGrp, null, rec));
-				}
-				IOSystem.getActiveContext().getRecordUtil().updateRecords(parts.toArray(new BaseRecord[0]));
-				int eventAlignment = (totalAbsoluteAlignment / popCount) - 4;
-				if(eventAlignment == 0) {
-					eventAlignment++;
-				}
-				event.set(FieldNames.FIELD_ALIGNMENT, AlignmentEnumType.valueOf(eventAlignment));				
-				/*
-				if(organizePersonManagement){
-					generatePersonOrganization(event.getActors().toArray(new PersonType[0]));
-				}
-				*/
-			}
-			// logger.info("Update event");
-			IOSystem.getActiveContext().getRecordUtil().updateRecord(event);
-
-		} catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
-			logger.error(e);
-		}
-		logger.info("Finished populating " + locName + " in " + (System.currentTimeMillis() - start) + "ms");
-		return event;
-	}
-
-	/*
-	public static boolean isDecimated(BaseRecord loc) {
-		IOSystem.getActiveContext().getReader().populate(loc);
-		boolean dec = false;
-		try {
-			dec = AttributeUtil.getAttributeValue(loc, "decimated", false);
-		} catch (ModelException e) {
-			logger.error(e);
-		}
-		return dec;
-	}
-	*/
-
-	/*
-	public static int cleanupModel(Query q) {
-		
-	}
-	*/
 	public static int cleanupWorld(BaseRecord user, BaseRecord world) {
 		int totalWrites = 0;
 		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);

@@ -7,6 +7,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -29,6 +30,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
+import org.cote.accountmanager.olio.Point;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -46,6 +48,7 @@ public class MapUtil {
 	private static String exportPath = IOFactory.DEFAULT_FILE_BASE + "/.olio/maps"; 
 	private static boolean useTileIcons = true;
 	private static String tilePath = "./media/tiles";
+	
 	public static void printMapFromAdmin2(OlioContext ctx) {
 		/// Find the admin2 location of the first location and map that
 		///
@@ -68,8 +71,7 @@ public class MapUtil {
 	
 	public static void printAdmin2Map(OlioContext ctx, BaseRecord location) {
 		logger.info("Printing admin2 location " + location.get(FieldNames.FIELD_ID) + " " + location.get(FieldNames.FIELD_NAME));
-		// logger.info("NOTE: This currently expects a GridSquare layout");
-		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
+
 		IOSystem.getActiveContext().getReader().populate(location);
 		List<BaseRecord> locs = new ArrayList<>(Arrays.asList(ctx.getLocations()));
 		
@@ -89,10 +91,10 @@ public class MapUtil {
 		/// 
 		BaseRecord[] plocs = IOSystem.getActiveContext().getSearch().findRecords(pq);
 
-		int cellWidth = rule.getMapCellWidthM();
-		int cellHeight = rule.getMapCellWidthM();
+		int cellWidth = GeoLocationUtil.getMapCellWidthM();
+		int cellHeight = GeoLocationUtil.getMapCellWidthM();
 
-		BufferedImage image = new BufferedImage(rule.getMapWidth1km() * cellWidth, rule.getMapHeight1km() * cellHeight, BufferedImage.TYPE_INT_ARGB);
+		BufferedImage image = new BufferedImage(GeoLocationUtil.getMapWidth1km() * cellWidth, GeoLocationUtil.getMapHeight1km() * cellHeight, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g2d = image.createGraphics();
 		for(BaseRecord uloc : plocs) {
 			BaseRecord loc = uloc;
@@ -269,10 +271,8 @@ public class MapUtil {
 	}
 	
 	public static void printLocationMap(OlioContext ctx, BaseRecord location, BaseRecord realm, List<BaseRecord> pop) {
-		// logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
-		// logger.info("NOTE: This currently expects a GridSquare layout");
-		// printDescriptionByFeature(ctx, location, (String)location.get("feature"));
-		GridSquareLocationInitializationRule rule = new GridSquareLocationInitializationRule();
+		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
+
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
 
@@ -289,8 +289,8 @@ public class MapUtil {
 
 		BaseRecord[] cells = IOSystem.getActiveContext().getSearch().findRecords(pq);
 		
-		int cellWidth = rule.getMapCellWidthM() * 50;
-		int cellHeight = rule.getMapCellWidthM() * 50;
+		int cellWidth = GeoLocationUtil.getMapCellWidthM() * 50;
+		int cellHeight = GeoLocationUtil.getMapCellWidthM() * 50;
 
 		BufferedImage image = new BufferedImage(cellWidth, cellHeight, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g2d = image.createGraphics();

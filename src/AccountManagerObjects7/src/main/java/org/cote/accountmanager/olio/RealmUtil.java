@@ -42,17 +42,17 @@ public class RealmUtil {
 		ParameterList plist = ParameterList.newParameterList("path", world.get("realmsGroup.path"));
 		BaseRecord realm = null;
 		try {
-			realm = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_REALM, ctx.getUser(), null, plist);
+			realm = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_REALM, ctx.getOlioUser(), null, plist);
 			realm.set("origin", origin);
 			realm.set("population", ctx.getPopulationGroup(origin, "Population"));
-			realm.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
+			realm.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
 			realm.set(FieldNames.FIELD_NAME, "Realm " + origin.get(FieldNames.FIELD_NAME));
 			List<BaseRecord> locations = realm.get("locations");
 			BaseRecord[] locs = GeoLocationUtil.getLocationsByFeature(origin, origin.get("feature"), 0L);
 			locations.addAll(Arrays.asList(locs));
 			IOSystem.getActiveContext().getRecordUtil().updateRecord(realm);
 			
-			BaseRecord part = ParticipationFactory.newParticipation(ctx.getUser(), ctx.getWorld(), "realms", realm);
+			BaseRecord part = ParticipationFactory.newParticipation(ctx.getOlioUser(), ctx.getWorld(), "realms", realm);
 			IOSystem.getActiveContext().getRecordUtil().updateRecord(part);
 			
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {

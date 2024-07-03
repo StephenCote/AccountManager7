@@ -6,6 +6,7 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.DensityEnumType;
+import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -14,8 +15,6 @@ import org.cote.accountmanager.schema.FieldNames;
 public class LocationPlannerRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(LocationPlannerRule.class);
 	
-
-
 	@Override
 	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
 		BaseRecord location = event.get(FieldNames.FIELD_LOCATION);
@@ -34,7 +33,7 @@ public class LocationPlannerRule implements IOlioContextRule {
 		// logger.info("Planning for " + location.get(FieldNames.FIELD_NAME) + " " + pop.size());	
 		Map<String,List<BaseRecord>> demographicMap = context.getDemographicMap(location);
 		for(BaseRecord p : pop) {
-			OlioUtil.setDemographicMap(context.getUser(), demographicMap, event, p);
+			OlioUtil.setDemographicMap(context.getOlioUser(), demographicMap, event, p);
 		}
 		
 		DensityEnumType dens = DensityEnumType.valueOf(pop.size());
@@ -45,7 +44,7 @@ public class LocationPlannerRule implements IOlioContextRule {
 			enc = standardHamlet;
 		}
 		
-		(new GridSquareLocationInitializationRule()).prepCells(context, location);
+		GeoLocationUtil.prepareCells(context, location);
 		
 	}
 	private String campFire = "Field|Campfire";
@@ -66,6 +65,11 @@ public class LocationPlannerRule implements IOlioContextRule {
 	}
 	@Override
 	public BaseRecord[] selectLocations(OlioContext context) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+	@Override
+	public BaseRecord generate(OlioContext context) {
 		// TODO Auto-generated method stub
 		return null;
 	}

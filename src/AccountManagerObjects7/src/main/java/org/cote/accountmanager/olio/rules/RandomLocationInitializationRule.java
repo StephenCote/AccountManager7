@@ -1,16 +1,29 @@
 package org.cote.accountmanager.olio.rules;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.CharacterUtil;
+import org.cote.accountmanager.olio.Decks;
+import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.EventEnumType;
 
 public class RandomLocationInitializationRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(RandomLocationInitializationRule.class);
@@ -19,12 +32,12 @@ public class RandomLocationInitializationRule implements IOlioContextRule {
 
 	}
 	
+	
 	@Override
 	public void pregenerate(OlioContext context) {
 	
 		
 	}
-
 	
 	/// Select locationCount + 1 (world) locations randomly from the universe.  The first location will be treated as the world location.
 	/// Note: These locations will be copied into the world data
@@ -34,13 +47,13 @@ public class RandomLocationInitializationRule implements IOlioContextRule {
 		List<BaseRecord> locations = new ArrayList<>();
 		Set<String> locSet = new HashSet<>();
 		for(int i = 0; i < (context.getConfig().getBaseLocationCount() + 1); i++) {
-			BaseRecord loc = GeoLocationUtil.randomLocation(context.getUser(), context.getUniverse());
+			BaseRecord loc = GeoLocationUtil.randomLocation(context.getOlioUser(), context.getUniverse());
 			if(loc == null) {
 				logger.error("Failed to find a random location!");
 				return null;
 			}
 			while(loc != null && locSet.contains(loc.get(FieldNames.FIELD_NAME))) {
-				loc = GeoLocationUtil.randomLocation(context.getUser(), context.getUniverse());
+				loc = GeoLocationUtil.randomLocation(context.getOlioUser(), context.getUniverse());
 			}
 			locSet.add(loc.get(FieldNames.FIELD_NAME));
 			locations.add(loc);
@@ -58,6 +71,13 @@ public class RandomLocationInitializationRule implements IOlioContextRule {
 	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
 		// TODO Auto-generated method stub
 		
+	}
+
+
+	@Override
+	public BaseRecord generate(OlioContext context) {
+		// TODO Auto-generated method stub
+		return null;
 	}
 
 	

@@ -9,8 +9,11 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.record.BaseRecord;
 
 public class OlioContextConfiguration {
+
 	private BaseRecord user = null;
 	private String dataPath = null;
+	private String basePath = "/Olio";
+	private String universePath = basePath + "/Universes";
 	private String worldPath = null;
 	private String universeName = null;
 	private String worldName = null;
@@ -33,7 +36,6 @@ public class OlioContextConfiguration {
 	public OlioContextConfiguration(
 		BaseRecord user,
 		String dataPath,
-		String worldPath,
 		String universeName,
 		String worldName,
 		String[] features,
@@ -44,9 +46,9 @@ public class OlioContextConfiguration {
 	) {
 		this.user = user;
 		this.dataPath = dataPath;
-		this.worldPath = worldPath;
 		this.universeName = universeName;
 		this.worldName = worldName;
+		this.worldPath = this.universePath + "/" + universeName + "/Worlds";
 		this.features = features;
 		this.resetUniverse = resetUniverse;
 		this.resetWorld = resetWorld;
@@ -54,6 +56,22 @@ public class OlioContextConfiguration {
 		this.basePopulationCount = populationCount;
 	}
 	
+	public String getBasePath() {
+		return basePath;
+	}
+
+	public void setBasePath(String basePath) {
+		this.basePath = basePath;
+	}
+
+	public String getUniversePath() {
+		return universePath;
+	}
+
+	public void setUniversePath(String universePath) {
+		this.universePath = universePath;
+	}
+
 	public boolean isUseSharedLibraries() {
 		return useSharedLibraries;
 	}

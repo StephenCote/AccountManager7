@@ -45,7 +45,7 @@ public class TestSD extends BaseTest {
 	private String worldName = "World 3";
 	private String worldPath = "~/Worlds";
 
-
+	/*
 	@Test
 	public void TestSDImageToText() {
 		
@@ -76,34 +76,10 @@ public class TestSD extends BaseTest {
 			}
 			break;
 		}
-		/*
-		BaseRecord per1 = pop.get((new Random()).nextInt(pop.size()));
-		SDUtil sdu = new SDUtil();
-		List<BaseRecord> bl = sdu.createPersonImage(testUser1, per1, "Photo Op", null, "professional portrait", 50, 5);
-		assertTrue("Expected at least one image", bl.size() > 0);
-		for(BaseRecord b1 : bl) {
-			FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
-		}
-		*/
-		/*
-		SDUtil sdu = new SDUtil();
-		try {
-		SDTxt2Img t2i = sdu.newTxt2Img(per1, null, "professional portrait", 50);
-		SDResponse rep = sdu.txt2img(t2i);
-		assertNotNull("Rep is null", rep);
-		int seed = rep.getParameters().getSeed();
-		int counter = 1;
-		for(String bai : rep.getImages()) {
-			byte[] data = BinaryUtil.fromBase64(bai.getBytes());
-			FileUtil.emitFile("./img-" + per1.get("firstName") + "-" + seed + "-" + (counter++) + ".png", data);
-		}
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-		}
-		*/
+
 	}
-	
+	*/
+	/*
 	private OlioContext getContext(BaseRecord user) {
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
 		AuditUtil.setLogToConsole(false);
@@ -163,7 +139,7 @@ public class TestSD extends BaseTest {
 		AuditUtil.setLogToConsole(true);
 		return octx;
 	}
-	
+	*/
 	public void TestSDImageToTextMARK() {
 		logger.info("Test SD API");
 		

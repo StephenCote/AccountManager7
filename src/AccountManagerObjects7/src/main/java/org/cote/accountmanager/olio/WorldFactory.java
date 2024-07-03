@@ -40,6 +40,7 @@ public class WorldFactory extends FactoryBase {
 			if(name != null && path != null && contextUser != null) {
 				IPath pu = IOSystem.getActiveContext().getPathUtil();
 				try {
+					// logger.info("Create world: " + path + "/" + name);
 					long orgId = contextUser.get(FieldNames.FIELD_ORGANIZATION_ID);
 					String gtype = GroupEnumType.DATA.toString();
 					String mtype = ModelNames.MODEL_GROUP;

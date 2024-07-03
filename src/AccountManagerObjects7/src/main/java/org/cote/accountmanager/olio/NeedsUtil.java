@@ -166,7 +166,7 @@ public class NeedsUtil {
 		if(action != null) {
 			ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
 			try {
-				actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_RESULT, ctx.getUser(), null, plist);
+				actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
 				actionResult.set("action", action);
 				actionResult.set("builder", builder);
 				actionResult.set("needType", "physiological");

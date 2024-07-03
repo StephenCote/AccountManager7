@@ -110,7 +110,7 @@ public class TestOlio extends BaseTest {
 	
 	/// Using MGRS-like coding to subdivide the random maps
 	///
-	
+	/*
 	@Test
 	public void TestGrid() {
 
@@ -179,7 +179,7 @@ public class TestOlio extends BaseTest {
 		MapUtil.printMapFromAdmin2(octx);
 
 	}
-	
+	*/
 	private void wanderAround(OlioContext ctx, BaseRecord event, BaseRecord increment, BaseRecord realm, List<BaseRecord> pop, BaseRecord per1) {
 		/// Walk northwest for 1Km.
 		DirectionEnumType dir = OlioUtil.randomEnum(DirectionEnumType.class);

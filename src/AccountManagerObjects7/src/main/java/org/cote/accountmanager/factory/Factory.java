@@ -212,21 +212,7 @@ public class Factory {
 		}
 	}
 	private void setCRUEntitlement(BaseRecord adminUser, BaseRecord user, BaseRecord obj, String entType) {
-		String[] ptypes = new String[] {"Read", "Update", "Create"};
-		for(String p : ptypes) {
-			BaseRecord rperm1 = context.getPathUtil().findPath(adminUser, ModelNames.MODEL_PERMISSION, "/" + p, entType, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			if(rperm1 != null) {
-				boolean mem = context.getMemberUtil().member(adminUser, obj, user, rperm1, true);
-				// logger.info("Granting " + user.get(FieldNames.FIELD_NAME) + "/" + p + " to " + obj.get(FieldNames.FIELD_URN));
-				if(!mem) {
-					logger.warn("Failed to set member entitlement: " + p + " " + entType);
-				}
-			}
-			else {
-				logger.error("Failed to find perm " + p);
-			}
-		}
-
+		context.getAuthorizationUtil().setEntitlement(adminUser, user, obj, new String[] {"Read", "Update", "Create"}, entType);
 	}
 	public BaseRecord getCreateUser(BaseRecord adminUser, String name, long organizationId) {
 		BaseRecord group = null;
@@ -258,7 +244,10 @@ public class Factory {
 					rec.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID, group);
 					rec.set(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH, group);
 				}
-				context.getRecordUtil().createRecord(rec, true, true);
+				if(!context.getRecordUtil().createRecord(rec, true, true)) {
+					logger.error("Failed to create user record");
+					return null;
+				}
 				
 				BaseRecord pdir = context.getPathUtil().makePath(adminUser, ModelNames.MODEL_GROUP, "/Persons", "DATA", organizationId);
 				BaseRecord prec = RecordFactory.model(ModelNames.MODEL_PERSON).newInstance();

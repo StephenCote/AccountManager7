@@ -130,7 +130,7 @@ public class EpochUtil {
 		int alignmentScore = AlignmentEnumType.getValue(alignment);
 		//AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
 		if(title == null) {
-			title = EpochUtil.generateEpochTitle(ctx.getUser(), ctx.getUniverse(), alignment);
+			title = EpochUtil.generateEpochTitle(ctx.getOlioUser(), ctx.getUniverse(), alignment);
 		}
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
 		ZonedDateTime startTime = ((ZonedDateTime)lastEpoch.get("eventEnd")).plusDays(1).with(LocalTime.of(0,0,0));
@@ -250,7 +250,7 @@ public class EpochUtil {
 			}
 			else {
 				AlignmentEnumType useAlignment = (rand.nextDouble() < Rules.ODDS_INVERT_ALIGNMENT ? invertedAlignment : alignment);
-				String childTitle = EpochUtil.generateEpochTitle(ctx.getUser(), ctx.getUniverse(), useAlignment);
+				String childTitle = EpochUtil.generateEpochTitle(ctx.getOlioUser(), ctx.getUniverse(), useAlignment);
 				
 				BaseRecord childEpoch = EventUtil.newEvent(ctx, ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ctx.getCurrentEpoch().get("eventStart"));
 				childEpoch.set(FieldNames.FIELD_LOCATION, location);
@@ -356,11 +356,11 @@ public class EpochUtil {
 			int alignmentScore = AlignmentEnumType.getValue(alignment);
 			AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
 			
-			String title = EpochUtil.generateEpochTitle(ctx.getUser(), parWorld, alignment);
+			String title = EpochUtil.generateEpochTitle(ctx.getOlioUser(), parWorld, alignment);
 			
 			ParameterList plist = ParameterList.newParameterList("path", world.get("events.path"));
 			try {
-				epoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
+				epoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 				/// TODO: Need a way to bulk-add hierarchies
 				/// The previous version used a complex method of identifier assignment and rewrite with negative values
 				epoch.set(FieldNames.FIELD_NAME, "Epoch: " + title);
@@ -397,8 +397,8 @@ public class EpochUtil {
 					}
 					else {
 						AlignmentEnumType useAlignment = (rand.nextDouble() < .35 ? invertedAlignment : alignment);
-						String childTitle = EpochUtil.generateEpochTitle(ctx.getUser(), parWorld, useAlignment);
-						BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getUser(), null, plist);
+						String childTitle = EpochUtil.generateEpochTitle(ctx.getOlioUser(), parWorld, useAlignment);
+						BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 						childEpoch.set(FieldNames.FIELD_LOCATION, loc);
 						childEpoch.set(FieldNames.FIELD_NAME, locName + " experienced a " + useAlignment.toString() + " event: " + childTitle);
 						childEpoch.set(FieldNames.FIELD_ALIGNMENT, useAlignment);
@@ -412,7 +412,7 @@ public class EpochUtil {
 						IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
 						ctx.setCurrentEvent(childEpoch);
 						ctx.setCurrentLocation(loc);
-						//EvolutionUtil.evolvePopulation(ctx.getUser(), world, childEpoch, useAlignment, popGrp, increment);
+						//EvolutionUtil.evolvePopulation(ctx.getOlioUser(), world, childEpoch, useAlignment, popGrp, increment);
 						EvolutionUtil.evolvePopulation(ctx);
 						childEpoch.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
 						IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));

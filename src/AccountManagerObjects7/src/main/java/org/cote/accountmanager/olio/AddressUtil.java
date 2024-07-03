@@ -47,9 +47,9 @@ public class AddressUtil {
 				cit.set("contactInformationType", ContactInformationEnumType.PERSON);
 				cit.set(FieldNames.FIELD_REFERENCE_ID, person.get(FieldNames.FIELD_ID));
 				cit.set(FieldNames.FIELD_REFERENCE_TYPE, person.getModel());
-				IOSystem.getActiveContext().getRecordUtil().applyOwnership(ctx.getUser(), cit, ctx.getUser().get(FieldNames.FIELD_ORGANIZATION_ID));
+				IOSystem.getActiveContext().getRecordUtil().applyOwnership(ctx.getOlioUser(), cit, ctx.getOlioUser().get(FieldNames.FIELD_ORGANIZATION_ID));
 				List<BaseRecord> addrs = cit.get("addresses");
-				BaseRecord addr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ADDRESS, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("addresses.path")));
+				BaseRecord addr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ADDRESS, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("addresses.path")));
 				addr.set(FieldNames.FIELD_NAME, UUID.randomUUID().toString());
 				addr.set("location", location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
 				addr.set("locationType", LocationEnumType.OTHER);

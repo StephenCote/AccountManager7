@@ -461,7 +461,7 @@ public class InteractionUtil {
 	
 		ParameterList plist = ParameterList.newParameterList("path", (ctx != null ? ctx.getWorld().get("interactions.path") : null));
 		try {
-			inter = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INTERACTION, (ctx != null ? ctx.getUser() : null), null, plist);
+			inter = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INTERACTION, (ctx != null ? ctx.getOlioUser() : null), null, plist);
 			if(event != null) {
 				inter.set("interactionStart", event.get("eventStart"));
 				inter.set("interactionEnd", event.get("eventEnd"));

@@ -43,7 +43,6 @@ public class OlioContextUtil {
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 				user,
 				dataPath,
-				"~/Worlds",
 				universeName,
 				worldName,
 				new String[] {},
@@ -85,7 +84,6 @@ public class OlioContextUtil {
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 			user,
 			dataPath,
-			"~/Worlds",
 			universeName,
 			worldName,
 			new String[] {},

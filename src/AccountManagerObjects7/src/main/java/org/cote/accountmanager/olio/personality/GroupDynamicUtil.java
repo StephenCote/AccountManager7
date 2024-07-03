@@ -100,7 +100,7 @@ public class GroupDynamicUtil {
 			if(party.size() == 0) {
 				List<BaseRecord> lpop = randomParty(ctx, locationEpoch);
 				for(BaseRecord per : lpop) {
-					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), grp, per, null, true)) {
+					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), grp, per, null, true)) {
 						logger.error("Failed to add member");
 					}
 				}
@@ -131,7 +131,7 @@ public class GroupDynamicUtil {
 			if(party.size() == 0) {
 				List<BaseRecord> lpop = randomParty(ctx, locationEpoch, partySet);
 				for(BaseRecord per : lpop) {
-					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getUser(), grp, per, null, true)) {
+					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), grp, per, null, true)) {
 						logger.error("Failed to add member");
 					}
 				}

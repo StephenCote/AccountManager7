@@ -59,6 +59,29 @@ public class AuthorizationUtil {
 		this.trace = trace;
 	}
 
+	public void setEntitlement(BaseRecord adminUser, BaseRecord user, BaseRecord obj, String[] permNames, String entType) {
+		setEntitlement(adminUser, user, new BaseRecord[] {obj}, permNames, new String[] {entType});
+	}
+	public void setEntitlement(BaseRecord adminUser, BaseRecord user, BaseRecord[] objs, String[] permNames, String[] entTypes) {
+		for(BaseRecord obj : objs) {
+			for(String entType : entTypes) {
+				for(String p : permNames) {
+					BaseRecord rperm1 = IOSystem.getActiveContext().getPathUtil().findPath(adminUser, ModelNames.MODEL_PERMISSION, "/" + p, entType, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+					if(rperm1 != null) {
+						boolean mem = IOSystem.getActiveContext().getMemberUtil().member(adminUser, obj, user, rperm1, true);
+						if(!mem) {
+							logger.warn("Failed to set member entitlement: " + p + " " + entType);
+						}
+					}
+					else {
+						logger.error("Failed to find perm " + p);
+					}
+				}
+			}
+		}
+
+	}
+	
 	public boolean isModelAdministrator(String model, BaseRecord user) {
 		ModelSchema ms = RecordFactory.getSchema(model);
 		boolean isAdmin = false;

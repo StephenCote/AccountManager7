@@ -76,7 +76,7 @@ public class StateUtil {
 							logger.warn("Handle non-feature parent");
 						}
 						else {
-							(new GridSquareLocationInitializationRule()).prepCells(ctx, padj);
+							GeoLocationUtil.prepareCells(ctx, padj);
 							List<BaseRecord> pcells = GeoLocationUtil.getCells(ctx, padj);
 							if(pcells.size() == 0) {
 								logger.warn("Failed to find adjacent cells");

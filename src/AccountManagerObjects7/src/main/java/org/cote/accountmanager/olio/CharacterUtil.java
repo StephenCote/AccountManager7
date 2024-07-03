@@ -19,6 +19,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -26,6 +27,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
 
 
@@ -40,7 +42,7 @@ public class CharacterUtil {
 	}
 	public static int getCurrentAge(OlioContext ctx, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
-		return getAgeAtEpoch(ctx.getUser(), ctx.getCurrentEpoch(), person);
+		return getAgeAtEpoch(ctx.getOlioUser(), ctx.getCurrentEpoch(), person);
 	}
 	public static int getCurrentAge(BaseRecord user, BaseRecord world, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
@@ -52,16 +54,14 @@ public class CharacterUtil {
 		Date cday = epoch.get("eventEnd");
 		return (int)(Math.abs(cday.getTime() - bday.getTime()) / OlioUtil.YEAR);
 	}
-	/*
-	public static BaseRecord randomPerson(OlioContext ctx, BaseRecord user) {
-		return randomPerson(ctx, user, null, null, null, null, null, null);
-	}
-	*/
+
+
+	
 	public static BaseRecord randomPerson(OlioContext ctx, String preferredLastName) {
 		return randomPerson(ctx, preferredLastName, ZonedDateTime.now(), null, null, null, null);
 	}
 	public static BaseRecord randomPerson(OlioContext ctx, String preferredLastName, ZonedDateTime inceptionDate, String[] mnames, String[] fnames, String[] snames, String[] tnames) {
-		BaseRecord user = ctx.getUser();
+		BaseRecord user = ctx.getOlioUser();
 		BaseRecord world = ctx.getWorld();
 		BaseRecord parWorld = world.get("basis");
 		if(parWorld == null) {
@@ -257,7 +257,7 @@ public class CharacterUtil {
 	private static final String[] maleHairStyles = new String[] {
 		"pixie cut", "shoulder length", "short", "dreadlocks", "mohawk", "shaved", "bald", "ponytail", "messy"
 	};
-
+	
 	public static void setStyleByRace(OlioContext ctx, BaseRecord person) throws FieldException, ValueException, ModelNotFoundException {
 		String gender = person.get("gender");
 		List<String> rets = person.get("race");
@@ -354,6 +354,112 @@ public class CharacterUtil {
 		}
 
 		return races;
+	}
+	
+	public static BaseRecord populateRegion(OlioContext ctx, BaseRecord location, BaseRecord rootEvent, int popCount){
+
+		String locName = location.get(FieldNames.FIELD_NAME);
+		long start = System.currentTimeMillis();
+		BaseRecord event = null;
+		BaseRecord parWorld = ctx.getWorld().get("basis");
+		if(parWorld == null) {
+			logger.error("A basis world is required");
+			return null;
+		}
+		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
+		try {
+			BaseRecord popDir = ctx.getWorld().get("population");
+			BaseRecord evtDir = ctx.getWorld().get("events");
+			
+			ParameterList plist = ParameterList.newParameterList("path", evtDir.get(FieldNames.FIELD_PATH));
+			event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
+			event.set(FieldNames.FIELD_LOCATION, location);
+			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
+			event.set(FieldNames.FIELD_NAME, "Populate " + locName);
+			event.set(FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
+			ZonedDateTime inceptionDate = rootEvent.get("eventStart");
+			event.set("eventStart", inceptionDate);
+			event.set("eventEnd", rootEvent.get("eventEnd"));
+
+			List<BaseRecord> grps = event.get(FieldNames.FIELD_GROUPS);
+			BaseRecord popGrp = OlioUtil.newRegionGroup(ctx.getOlioUser(), popDir, locName + " Population");
+			grps.add(popGrp);
+			grps.add(OlioUtil.newRegionGroup(ctx.getOlioUser(), popDir, locName + " Cemetary"));
+			
+			/*
+			for(String name : leaderPopulation){
+				grps.add(newRegionGroup(user, popDir, locName + " " + name + " Leaders"));				
+			}
+			*/
+			
+			IOSystem.getActiveContext().getRecordUtil().updateRecords(grps.toArray(new BaseRecord[0]));
+			
+			event.set(FieldNames.FIELD_GROUPS, grps);
+			List<BaseRecord> actors = event.get("actors");
+			if(popCount == 0){
+				logger.error("Empty population");
+				event.set(FieldNames.FIELD_DESCRIPTION, "Decimated");
+			}
+			else {
+				int totalAbsoluteAlignment = 0;
+				ZonedDateTime now = ZonedDateTime.now();
+
+				Decks.shuffleDecks(ctx.getOlioUser(), parWorld);
+				if(Decks.maleNamesDeck.length == 0 || Decks.femaleNamesDeck.length == 0 || Decks.surnameNamesDeck.length == 0 || Decks.occupationsDeck.length == 0) {
+					logger.error("Empty names");
+				}
+
+				// logger.info("Creating population of " + popCount);
+
+				for(int i = 0; i < popCount; i++){
+					BaseRecord person = CharacterUtil.randomPerson(ctx, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
+					AddressUtil.simpleAddressPerson(ctx, location, person);
+					int alignment = AlignmentEnumType.getAlignmentScore(person);
+					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
+					person.set("age", (int)years);
+					
+					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);
+					ProfileUtil.rollPersonality(person.get("personality"));
+
+					totalAbsoluteAlignment += (alignment + 4);
+					
+					/*
+					List<BaseRecord> appl = person.get("apparel");
+					appl.add(ApparelUtil.randomApparel(user, world, person));
+					*/
+					actors.add(person);
+				}
+				
+				int created = IOSystem.getActiveContext().getRecordUtil().updateRecords(actors.toArray(new BaseRecord[0]));
+				if(created != actors.size()) {
+					logger.error("Created " + created + " but expected " + actors.size() + " records");
+				}
+				
+				/// Add event membership
+				List<BaseRecord> parts = new ArrayList<>();
+				for(BaseRecord rec : actors) {
+					parts.add(ParticipationFactory.newParticipation(ctx.getOlioUser(), popGrp, null, rec));
+				}
+				IOSystem.getActiveContext().getRecordUtil().updateRecords(parts.toArray(new BaseRecord[0]));
+				int eventAlignment = (totalAbsoluteAlignment / popCount) - 4;
+				if(eventAlignment == 0) {
+					eventAlignment++;
+				}
+				event.set(FieldNames.FIELD_ALIGNMENT, AlignmentEnumType.valueOf(eventAlignment));				
+				/*
+				if(organizePersonManagement){
+					generatePersonOrganization(event.getActors().toArray(new PersonType[0]));
+				}
+				*/
+			}
+			// logger.info("Update event");
+			IOSystem.getActiveContext().getRecordUtil().updateRecord(event);
+
+		} catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
+			logger.error(e);
+		}
+		logger.info("Finished populating " + locName + " in " + (System.currentTimeMillis() - start) + "ms");
+		return event;
 	}
 	
 }

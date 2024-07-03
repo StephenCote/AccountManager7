@@ -970,7 +970,7 @@ public class NarrativeUtil {
 			}
 			else {
 				try {
-					nar = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NARRATIVE, ctx.getUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("narratives.path")));
+					nar = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NARRATIVE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("narratives.path")));
 				} catch (FactoryException e) {
 					logger.error(e);
 					return null;

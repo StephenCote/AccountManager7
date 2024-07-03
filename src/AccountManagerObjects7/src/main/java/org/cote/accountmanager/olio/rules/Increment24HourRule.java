@@ -23,6 +23,7 @@ public class Increment24HourRule implements IOlioEvolveRule {
 	public void setIncrementType(TimeEnumType incrementType) {
 		this.incrementType = incrementType;
 	}
+	
 
 	@Override
 	public void startEpoch(OlioContext context, BaseRecord epoch) {
@@ -76,7 +77,7 @@ public class Increment24HourRule implements IOlioEvolveRule {
 
 	@Override
 	public BaseRecord continueIncrement(OlioContext context, BaseRecord locationEpoch) {
-		BaseRecord rec = EventUtil.getLastEvent(context.getUser(), context.getWorld(), locationEpoch.get("location"), EventEnumType.PERIOD, incrementType, ActionResultEnumType.PENDING, false); 
+		BaseRecord rec = EventUtil.getLastEvent(context.getOlioUser(), context.getWorld(), locationEpoch.get("location"), EventEnumType.PERIOD, incrementType, ActionResultEnumType.PENDING, false); 
 		if(rec != null) {
 			return rec;
 		}

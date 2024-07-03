@@ -44,7 +44,7 @@ public class ArenaInitializationRule implements IOlioContextRule {
 	public ArenaInitializationRule() {
 
 	}
-	
+		
 	@Override
 	public void pregenerate(OlioContext context) {
 		long id = context.getUniverse().get("locations.id");
@@ -192,6 +192,12 @@ public class ArenaInitializationRule implements IOlioContextRule {
     	prepField(context, field2);
     	prepField(context, field3);
 		
+	}
+
+	@Override
+	public BaseRecord generate(OlioContext context) {
+		// TODO Auto-generated method stub
+		return null;
 	}
 
 	

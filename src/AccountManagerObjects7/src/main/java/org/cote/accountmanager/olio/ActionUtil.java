@@ -27,8 +27,8 @@ public class ActionUtil {
 	}
 	
 	public static void loadActions(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
-		// int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getUser(), OlioUtil.getQuery(ctx.getUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
+		// int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getOlioUser(), OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
 		if(count == 0) {
 			importActions(ctx);
 			ctx.processQueue();
@@ -44,7 +44,7 @@ public class ActionUtil {
 				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actions.path"));
 				plist.parameter(FieldNames.FIELD_NAME, act.get(FieldNames.FIELD_NAME));
 
-				BaseRecord actr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION, ctx.getUser(), act, plist);
+				BaseRecord actr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION, ctx.getOlioUser(), act, plist);
 				List<BaseRecord> tags = actr.get("tags");
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {

@@ -66,7 +66,7 @@ public class SDUtil {
 			
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 
-				List<BaseRecord> bl = createPersonFigurine(octx.getUser(), per, "Photo Op", steps, batchSize, hires, seed);
+				List<BaseRecord> bl = createPersonFigurine(octx.getOlioUser(), per, "Photo Op", steps, batchSize, hires, seed);
 			
 				if(bl.size() > 0) {
 					// if(prof.get("portrait") == null) {
@@ -74,8 +74,8 @@ public class SDUtil {
 						octx.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
 					//}
 					for(BaseRecord b1 : bl) {
-						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
-						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), prof, "album", b1, null, true);
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), prof, "album", b1, null, true);
 						if(export) {
 							FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
 						}
@@ -106,7 +106,7 @@ public class SDUtil {
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 			//List<BaseRecord> images = nar.get("images");
 			//if(images.size() == 0) {
-				List<BaseRecord> bl = createPersonImage(octx.getUser(), per, "Photo Op", setting, useStyle, useBodyStyle, steps, batchSize, hires, seed);
+				List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, "Photo Op", setting, useStyle, useBodyStyle, steps, batchSize, hires, seed);
 			
 				if(bl.size() > 0) {
 					// if(prof.get("portrait") == null) {
@@ -114,8 +114,8 @@ public class SDUtil {
 						octx.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
 					//}
 					for(BaseRecord b1 : bl) {
-						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), nar, "images", b1, null, true);
-						IOSystem.getActiveContext().getMemberUtil().member(octx.getUser(), prof, "album", b1, null, true);
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
+						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), prof, "album", b1, null, true);
 						if(export) {
 							FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
 						}

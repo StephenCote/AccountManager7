@@ -35,7 +35,7 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 			for(String k: apop.keySet()) {
 				zoo.addAll(apop.get(k));
 				for(BaseRecord ap : apop.get(k)) {
-					BaseRecord part = ParticipationFactory.newParticipation(context.getUser(), realm, "zoo", ap);
+					BaseRecord part = ParticipationFactory.newParticipation(context.getOlioUser(), realm, "zoo", ap);
 					if(part != null) {
 						parts.add(part);
 					}
@@ -45,7 +45,6 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 			context.clearCache();
 		}
 	}
-	
 	
 	@Override
 	public void evaluateIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment) {

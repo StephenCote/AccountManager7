@@ -24,7 +24,7 @@ public class GenericLocationInitializationRule implements IOlioContextRule {
 		this.rootLocationName = rootLocationName;
 		this.locationNames = locationNames;
 	}
-	
+
 	@Override
 	public void pregenerate(OlioContext context) {
 		long id = context.getUniverse().get("locations.id");
@@ -76,6 +76,12 @@ public class GenericLocationInitializationRule implements IOlioContextRule {
 	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
 		// TODO Auto-generated method stub
 		
+	}
+
+	@Override
+	public BaseRecord generate(OlioContext context) {
+		// TODO Auto-generated method stub
+		return null;
 	}
 
 	
