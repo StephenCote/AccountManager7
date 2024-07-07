@@ -21,8 +21,11 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
@@ -63,6 +66,9 @@ public class OlioContext {
 	
 	private String olioUserName = "olioUser";
 	private BaseRecord olioUser = null;
+	private boolean initConfig = false;
+	
+	private boolean trace = false;
 	
 	public OlioContext(OlioContextConfiguration cfg) {
 		this.config = cfg;
@@ -78,6 +84,12 @@ public class OlioContext {
 		CacheUtil.clearCache();
 	}
 	
+	public boolean isTrace() {
+		return trace;
+	}
+	public void setTrace(boolean trace) {
+		this.trace = trace;
+	}
 	public BaseRecord getOlioUser() {
 		return olioUser;
 	}
@@ -141,6 +153,39 @@ public class OlioContext {
 	private BaseRecord adminRole = null;
 	private BaseRecord userRole = null;
 	
+	public void configureWorld(BaseRecord cfgWorld, boolean userWrite) throws OlioException {
+		if(initConfig) {
+			return;
+		}
+		if(cfgWorld == null) {
+			throw new OlioException("World is null");
+		}
+		if(olioUser == null) {
+			throw new OlioException("Olio User is null");
+		}
+		OrganizationContext octx = IOSystem.getActiveContext().findOrganizationContext(config.getUser());
+		if(octx == null) {
+			throw new OlioException("Failed to find organization context");
+		}
+		
+		IOContext ioContext = IOSystem.getActiveContext();
+
+		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_WORLD);
+		for(FieldSchema fs : ms.getFields()) {
+			if(fs.getBaseModel() != null && fs.getBaseModel().equals(ModelNames.MODEL_GROUP) && fs.isForeign()) {
+				BaseRecord group = cfgWorld.get(fs.getName());
+				if(group == null) {
+					throw new OlioException("Group " + fs.getName() + " is null");
+				}
+				String[] rperms = new String[] {"Read"};
+				String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
+				ioContext.getAuthorizationUtil().setEntitlement(olioUser, userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+			}
+		}
+
+	}
 	public void configureEnvironment() throws OlioException {
 		if(config == null) {
 			throw new OlioException("Configuration is null");
@@ -159,7 +204,12 @@ public class OlioContext {
 		if(olioUser == null) {
 			throw new OlioException("Failed to find olio user");
 		}
+		adminRole = ioContext.getPathUtil().findPath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
+		if(adminRole != null) {
+			return;
+		}
 		
+		initConfig = true;
 		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		ioContext.getMemberUtil().member(olioUser, adminRole, olioUser, null, true);
@@ -181,12 +231,13 @@ public class OlioContext {
 		if(wDir == null) {
 			throw new OlioException("World directory is null");
 		}
-		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), config.getUser(), new BaseRecord[] {rootDir, uDir, wDir}, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), userRole, new BaseRecord[] {rootDir, uDir, wDir}, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 	}
 	
 	public void initialize() {
-		logger.info("Initializing Olio Context ...");
-		
+		if(trace) {
+			logger.info("Initializing Olio Context ...");
+		}
 		try {
 			configureEnvironment();
 			if(initialized) {
@@ -194,32 +245,43 @@ public class OlioContext {
 				return;
 			}
 			long start = System.currentTimeMillis();
-			logger.info("Get/Create Universe ...");
+			if(trace) {
+				logger.info("Get/Create Universe ...");
+			}
 			universe = WorldUtil.getCreateWorld(olioUser, config.getUniversePath(), config.getUniverseName(), config.getFeatures());
 			if(universe == null) {
 				throw new OlioException("Failed to load universe " + config.getUniverseName());
 			}
 			IOSystem.getActiveContext().getReader().populate(universe, 2);
-			logger.info("Load World Data ...");
+			configureWorld(universe, false);
+			if(trace) {
+				logger.info("Check/Load World Data ...");
+			}
 			WorldUtil.loadWorldData(this);
-
-			logger.info("Get/Create World ...");
+			if(trace) {
+				logger.info("Get/Create World ...");
+			}
 			world = WorldUtil.getCreateWorld(olioUser, universe, config.getWorldPath(), config.getWorldName(), new String[0]);
 			if(world == null) {
 				throw new OlioException("Failed to load world " + config.getWorldName());
 			}
+			configureWorld(universe, true);
 			if(config.isResetWorld()) {
-				logger.info("Reset World ...");
+				if(trace) {
+					logger.info("Reset World ...");
+				}
 				WorldUtil.cleanupWorld(olioUser, world);
 			}
 			IOSystem.getActiveContext().getReader().populate(world, 2);
-			
-			logger.info("Pregenerate ...");
+			if(trace) {
+				logger.info("Pregenerate ...");
+			}
 			config.getContextRules().forEach(r -> {
 				r.pregenerate(this);
 			});
-			
-			logger.info("Generate World Region ...");
+			if(trace) {
+				logger.info("Get/Create Regions ...");
+			}
 			BaseRecord rootEvent = null;
 			for(IOlioContextRule r : config.getContextRules()){
 				BaseRecord evt = r.generate(this);
@@ -232,34 +294,38 @@ public class OlioContext {
 			if(rootEvent == null) {
 				throw new OlioException("Failed to find or create a new region");
 			}
-
-			logger.info("Postgenerate ...");
+			if(trace) {
+				logger.info("Postgenerate ...");
+			}
 			config.getContextRules().forEach(r -> {
 				r.postgenerate(this);
 			});
-			
-			/*
-
-			logger.info("Obtain Epoch ...");
+			if(trace) {
+				logger.info("Get/Create Epoch ...");
+			}
 			currentEpoch = EventUtil.getLastEpochEvent(this);
 			locations = GeoLocationUtil.getRegionLocations(this);
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
-			initialized = true;
 
+			initialized = true;
 			
 			Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
 			eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 			eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 			BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
+			if(trace) {
+				logger.info("Generate Regions ...");
+			}
 			for(BaseRecord evt : evts) {
-				logger.info("Generate Region ...");
 				for(IOlioContextRule rule : config.getContextRules()) {
 					rule.generateRegion(this, rootEvent, evt);
 				}
 			}
-			*/
-			long stop = System.currentTimeMillis();
-			logger.info("... Olio Context Initialized in " + (stop - start) + "ms");
+			
+			if(trace) {
+				long stop = System.currentTimeMillis();
+				logger.info("... Olio Context Initialized in " + (stop - start) + "ms");
+			}
 			
 		}
 		catch(Exception e) {

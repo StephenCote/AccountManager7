@@ -69,7 +69,7 @@ public class AuthorizationUtil {
 					BaseRecord rperm1 = IOSystem.getActiveContext().getPathUtil().findPath(adminUser, ModelNames.MODEL_PERMISSION, "/" + p, entType, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 					if(rperm1 != null) {
 						boolean mem = IOSystem.getActiveContext().getMemberUtil().member(adminUser, obj, user, rperm1, true);
-						if(!mem) {
+						if(!mem && trace) {
 							logger.warn("Failed to set member entitlement: " + p + " " + entType);
 						}
 					}

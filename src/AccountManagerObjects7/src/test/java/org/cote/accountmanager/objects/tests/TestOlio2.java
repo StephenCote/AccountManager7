@@ -151,10 +151,26 @@ public class TestOlio2 extends BaseTest {
 		}));
 		OlioContext octx = new OlioContext(cfg);
 
-		logger.info("Initialize olio context - Note: This will take a while when first creating a universe");
+		logger.info("Initialize OlioContext");
 		octx.initialize();
+		assertTrue("Expected context to be initialized", octx.isInitialized());
 		
-		
+		BaseRecord[] realms = octx.getRealms();
+		assertTrue("Expected realms", realms.length > 0);
+		BaseRecord evt = octx.startOrContinueEpoch();
+		for(BaseRecord realm : realms) {
+			BaseRecord lrec = realm.get("origin");
+			assertNotNull("Location was null", lrec);
+			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
+			assertNotNull("Location epoch is null", levt);
+			BaseRecord cevt = octx.startOrContinueIncrement();
+			octx.evaluateIncrement();
+			List<BaseRecord> pop = octx.getPopulation(lrec);
+			assertTrue("Expected a population", pop.size() > 0);
+			// wanderAround(octx, levt, cevt, realm, pop, pop.get((new Random()).nextInt(pop.size())));
+			// MapUtil.printRealmMap(octx, realm);
+			
+		}
 		//assertNotNull("Root location is null", octx.getRootLocation());
 		
 

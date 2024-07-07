@@ -138,12 +138,14 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 					event.set("eventStart", ctx.getConfig().getBaseInceptionDate());
 					event.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
-
+					event.set("realm", ctx.getRealm(loc));
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(event)) {
 						logger.error("Failed to create region event");
 						return null;
 					}
 					events.add(event);
+					
+					
 				}
 			}
 
