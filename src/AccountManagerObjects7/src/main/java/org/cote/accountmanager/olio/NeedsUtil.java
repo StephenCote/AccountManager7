@@ -105,20 +105,10 @@ public class NeedsUtil {
 		///
 		List<BaseRecord> inters = increment.get("interactions");
 		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map, false);
-		if(tmap.keySet().size() > 0) {
-			// logger.warn("TODO: Evaluate initial threats into actions");
-			/// Evaluate initial threats into interaction placeholders
-			///
-			tmap.forEach((pp, threats) -> {
-				threats.forEach((tet, al) -> {
-					al.forEach(a -> {
-						BaseRecord inter = InteractionUtil.newInteraction(ctx, InteractionEnumType.THREATEN, increment, a, tet, pp.getRecord());
-						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get("firstName"));
-						inters.add(inter);
-						ctx.queue(inter);
-					});
-				});
-			});
+		List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
+		for(BaseRecord tint : tinters) {
+			inters.add(tint);
+			ctx.queue(tint);
 		}
 		
 		/// Evaluate needs 
@@ -249,7 +239,7 @@ public class NeedsUtil {
 			for(BaseRecord p: pop) {
 				String name = p.get(FieldNames.FIELD_NAME);
 				BaseRecord state = p.get("state");
-				if((boolean)state.get("agitated") == true) {
+				if(!roam && (boolean)state.get("agitated") == true) {
 					continue;
 				}
 				BaseRecord location = state.get("currentLocation");
@@ -263,7 +253,7 @@ public class NeedsUtil {
 						rloc = null;
 					}
 				}
-				StateUtil.agitateLocation(ctx, state);
+				StateUtil.agitateLocation(ctx, p);
 				state.setValue("agitated", true);
 				// logger.info("Agitate " + p.get("name") + " " + location.get("name") + ", " + state.get("currentEast") + ", " + state.get("currentNorth"));
 
@@ -295,7 +285,9 @@ public class NeedsUtil {
 		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = new HashMap<>();
 		try {
 			agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true, roam);
-			for(PersonalityProfile pp: map.values()) {
+			for(BaseRecord p0 : map.keySet()) {
+				PersonalityProfile pp = map.get(p0);
+			//for(PersonalityProfile pp: map.values()) {
 				BaseRecord p = pp.getRecord();
 				String name = p.get(FieldNames.FIELD_NAME);
 				BaseRecord state = p.get("state");
@@ -322,7 +314,7 @@ public class NeedsUtil {
 						if(state.get("currentEvent") != null) {
 							logger.warn("Agitating " + name + " who is currently busy");
 						}
-						Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, p);
+						Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, p0);
 						if(threats.keySet().size() > 0) {
 							tmap.put(pp, threats);
 						}
@@ -333,6 +325,7 @@ public class NeedsUtil {
 		}
 		catch(Exception e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 		return tmap;
 	}

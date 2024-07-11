@@ -21,6 +21,17 @@ public class TerrainUtil {
 	public static final Logger logger = LogManager.getLogger(TerrainUtil.class);
 	private static final SecureRandom rand = new SecureRandom();
 	
+	public static boolean ruleFishOutOfWater(BaseRecord animal, TerrainEnumType tet) {
+		List<String> habitat = animal.get("habitat");
+		boolean tf1 = TerrainEnumType.isTerraFirma(tet);
+		boolean tf2 = false;
+		for(String h : habitat) {
+			tf2 = TerrainEnumType.isTerraFirma(TerrainEnumType.valueOf(h.toUpperCase()));
+			if(tf1 == tf2) break;
+		}
+		return (tf1 != tf2);
+	}
+	
 	public static TerrainEnumType getCommonTerrainType(Map<TerrainEnumType, Double> map){
 		TerrainEnumType otet = TerrainEnumType.UNKNOWN;
 		double max = 0.0;

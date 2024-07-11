@@ -14,11 +14,31 @@ import org.cote.accountmanager.schema.FieldNames;
 public class ThreatUtil {
 	public static final Logger logger = LogManager.getLogger(ThreatUtil.class);
 	
+	public static List<BaseRecord> evaluateThreatMap(OlioContext ctx, Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap, BaseRecord increment){
+		List<BaseRecord> inters = new ArrayList<>();
+		if(tmap.keySet().size() > 0) {
+			// logger.warn("TODO: Evaluate initial threats into actions");
+			/// Evaluate initial threats into interaction placeholders
+			///
+			tmap.forEach((pp, threats) -> {
+				threats.forEach((tet, al) -> {
+					al.forEach(a -> {
+						BaseRecord inter = InteractionUtil.newInteraction(ctx, InteractionEnumType.THREATEN, increment, a, tet, pp.getRecord());
+						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get("firstName"));
+						inters.add(inter);
+						//ctx.queue(inter);
+					});
+				});
+			});
+		}
+		return inters;
+	}
+	
 	public static double distanceRelativity(BaseRecord rec1, BaseRecord rec2) {
 		int maxDist = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		double dist = StateUtil.getDistance(rec1.get("state"), rec2.get("state"));
 		if(dist <= 0) {
-			logger.warn("Zero or negative distance detected");
+			// logger.warn("Zero or negative distance detected");
 			
 		}
 		double perc = 1.0 - (dist / maxDist);

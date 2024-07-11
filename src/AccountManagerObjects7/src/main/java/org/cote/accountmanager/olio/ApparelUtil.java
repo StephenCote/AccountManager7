@@ -100,7 +100,7 @@ public class ApparelUtil {
 			BaseRecord sta = p.get("state");
 			if(cell != null && sta.get("currentLocation") == null) {
 				sta.setValue("currentLocation", cell);
-				StateUtil.agitateLocation(ctx, sta);
+				StateUtil.agitateLocation(ctx, p);
 				ctx.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth"});
 			}
 		}

@@ -74,6 +74,15 @@ public class Rules {
 	/// 20% chance per animal group
 	public static final double ODDS_ANIMAL_GROUP = 0.2;
 	
+	/// 99% chance of not tripping/slowing down
+	public static final double ODDS_MOVEMENT = 0.99;
+	
+	/// 99.999% chance of moving through a natural habitat
+	public static final double ODDS_HABITAT_MOVEMENT = 0.99999;
+
+	/// 50.000% chance of moving through a non-native natural habitat
+	public static final double ODDS_NONHABITAT_MOVEMENT = 0.50;
+	
 	/// General guideline when dropping a small group of animals in a location
 	/// When using the map grid, the location size is a square km
 	///
@@ -91,7 +100,7 @@ public class Rules {
 	public static final int MAXIMUM_OBSERVATION_DISTANCE = 3;
 	
 	public static double getAnimalOdds(TerrainEnumType type) {
-		double typeOdds = Rules.ODDS_ANIMAL_GROUP;
+		double typeOdds = ODDS_ANIMAL_GROUP;
 		switch(type) {
 			case GLACIER:
 				typeOdds -= 0.1;
@@ -154,6 +163,69 @@ public class Rules {
 				break;
 			case CAVE:
 				typeOdds -= 0.05;
+				break;
+		}
+		
+		return typeOdds;
+	}
+	
+	public static double getMovementOdds(TerrainEnumType type) {
+		double typeOdds = ODDS_MOVEMENT;
+		switch(type) {
+			case SHELTER:
+			case INDOORS:
+			case CAVE:
+			case VALLEY:
+			case PLAINS:
+			case GRASS:
+			case SAVANNA:
+			case OASIS:
+			case CLEAR:
+				/// default
+				break;
+
+			case FOREST:
+			case SHORELINE:
+			case TUNDRA:
+			case MARSH:
+			case SWAMP:
+			case POND:
+			case DUNES:
+				typeOdds -= 0.2;
+				break;
+			case GLACIER:
+				typeOdds -= 0.3;
+				break;
+			case JUNGLE:
+			case RIVER:
+				typeOdds -= 0.35;
+				break;
+			case LAKE:
+				typeOdds -= 0.5;
+				break;
+			case OCEAN:
+				typeOdds = 0.05;
+				break;
+			case DESERT:
+				typeOdds -= 0.15;
+				break;
+
+			case STREAM:
+			case HILL:
+				typeOdds -= 0.1;
+				break;
+			case PLATEAU:
+				typeOdds -= 0.05;
+				break;
+			case MOUNTAIN:
+				typeOdds -= 0.3;
+				break;
+			case AIR:
+			case UNDERWATER:
+			case UNKNOWN:
+			case VOID:
+			default:
+				typeOdds = 0.0;
 				break;
 		}
 		

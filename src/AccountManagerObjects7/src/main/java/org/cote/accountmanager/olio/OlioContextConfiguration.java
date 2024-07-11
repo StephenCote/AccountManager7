@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.record.BaseRecord;
 
 public class OlioContextConfiguration {
@@ -25,6 +26,7 @@ public class OlioContextConfiguration {
 	private boolean resetWorld = false;
 	private List<IOlioContextRule> contextRules = new ArrayList<>();
 	private List<IOlioEvolveRule> evolutionRules = new ArrayList<>();
+	private List<IOlioStateRule> stateRules = new ArrayList<>();
 	private boolean fastDataCheck = true;
 	private boolean useSharedLibraries = true;
 	
@@ -86,6 +88,14 @@ public class OlioContextConfiguration {
 
 	public void setFastDataCheck(boolean fastDataCheck) {
 		this.fastDataCheck = fastDataCheck;
+	}
+
+	public List<IOlioStateRule> getStateRules() {
+		return stateRules;
+	}
+
+	public void setStateRules(List<IOlioStateRule> stateRules) {
+		this.stateRules = stateRules;
 	}
 
 	public List<IOlioEvolveRule> getEvolutionRules() {

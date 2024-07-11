@@ -15,6 +15,7 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -37,6 +38,34 @@ public class AnimalUtil {
 	/// Attach an animal population to the specified location.  This should be used for random/surprise encounters, or called from the adjacent paint method
 	/// Note: For 'feature' locations with 'cell' children, the animals need to be spread/painted across the cells
 	///
+	
+	public static void checkAnimalPopulation(OlioContext context, BaseRecord realm, BaseRecord loc) {
+		BaseRecord location = OlioUtil.getFullRecord(loc);
+		/// List<BaseRecord> zoo = realm.get("zoo");
+		long id = loc.get(FieldNames.FIELD_ID);
+		List<BaseRecord> zoo = realm.get("zoo");
+		List<BaseRecord> localZoo = zoo.stream().filter(a -> {
+			BaseRecord ac = a.get("state.currentLocation");
+			return ac != null && ((long)ac.get(FieldNames.FIELD_PARENT_ID)) == id;
+		}).collect(Collectors.toList());
+		
+		if(localZoo.size() == 0) {
+			logger.info("Painting animals");
+			Map<String, List<BaseRecord>> apop = AnimalUtil.paintAnimalPopulation(context, location);
+			List<BaseRecord> parts = new ArrayList<>();
+			for(String k: apop.keySet()) {
+				zoo.addAll(apop.get(k));
+				for(BaseRecord ap : apop.get(k)) {
+					BaseRecord part = ParticipationFactory.newParticipation(context.getOlioUser(), realm, "zoo", ap);
+					if(part != null) {
+						parts.add(part);
+					}
+				}
+			}
+			IOSystem.getActiveContext().getRecordUtil().createRecords(parts.toArray(new BaseRecord[0]));
+			context.clearCache();
+		}
+	}
 	
 	private static List<BaseRecord> attachAnimal(OlioContext ctx, BaseRecord location, List<BaseRecord> animals){
 
@@ -61,7 +90,7 @@ public class AnimalUtil {
 	public static Map<String, List<BaseRecord>> paintAnimalPopulation(OlioContext ctx, BaseRecord location) {
 		String type = location.get("geoType");
 		Map<String, List<BaseRecord>> pap = new ConcurrentHashMap<>();
-		if(type.equals("feature")) {
+		if(type.equals("feature") || type.equals("featureless")) {
 			List<BaseRecord> cells = GeoLocationUtil.getCells(ctx, location);
 			if(cells.size() > 0) {
 				for(BaseRecord c: cells) {

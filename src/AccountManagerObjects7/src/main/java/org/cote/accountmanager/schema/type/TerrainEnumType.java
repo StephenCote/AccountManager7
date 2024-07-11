@@ -121,6 +121,19 @@ public enum TerrainEnumType {
 	    		&& tet != TerrainEnumType.UNDERWATER
 	    	);
 	    }
+	    public static boolean isTerraFirma(TerrainEnumType tet) {
+	    	return (
+	    		tet != TerrainEnumType.UNKNOWN
+	    		&& tet != TerrainEnumType.VOID
+	    		&& tet != TerrainEnumType.AIR
+	    		&& tet != TerrainEnumType.UNDERWATER
+	    		&& tet != TerrainEnumType.STREAM
+	    		&& tet != TerrainEnumType.RIVER
+	    		&& tet != TerrainEnumType.POND
+	    		&& tet != TerrainEnumType.LAKE
+	    		&& tet != TerrainEnumType.OCEAN
+	    	);
+	    }
 	    
 	    private TerrainEnumType(final int val) {
 	    	this.val = val;

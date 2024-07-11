@@ -420,7 +420,7 @@ public class OlioContext {
 			return;
 		}
 		
-		IOSystem.getActiveContext().getReader().populate(realm);
+		IOSystem.getActiveContext().getReader().populate(realm, new String[] {"origin", "currentEpoch", "currentEvent", "currentIncrement"});
 		BaseRecord org = realm.get("origin");
 		if(org == null) {
 			logger.error("Origin is missing");

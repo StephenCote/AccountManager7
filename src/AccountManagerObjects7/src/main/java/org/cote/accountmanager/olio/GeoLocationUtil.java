@@ -178,7 +178,48 @@ public class GeoLocationUtil {
     	}
     	return count;
     }
-    
+    /*
+	public static void prepareGridCells(OlioContext ctx, BaseRecord location) {
+		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+		IOSystem.getActiveContext().getReader().populate(location);
+		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
+		
+		cq.field("geoType", "cell");
+		int count = IOSystem.getActiveContext().getSearch().count(cq);
+		if(count > 0) {
+			logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
+			return;
+		}
+		logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");
+		// logger.info(location.toFullString());
+		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID)));
+		List<BaseRecord> cells = new ArrayList<>();
+		try {
+			for(int y = 0; y < Rules.MAP_EXTERIOR_CELL_HEIGHT; y++) {
+				for(int x = 0; x < Rules.MAP_EXTERIOR_CELL_WIDTH; x++) {
+					int ie = x; //  * 10
+					int in = y; //  * 10
+	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
+	    			/// Location util defaults to putting new locations into the universe.  change to the world group
+	    			///
+	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+	    			cell.set("area", (double)10);
+	    			cell.set("gridZone", GZD);
+	    			cell.set("kident", location.get("kident"));
+	    			cell.set("eastings", x);
+	    			cell.set("northings", y);
+	    			cell.set("geoType", "cell");
+	    			cells.add(cell);
+				}
+			}
+			TerrainUtil.blastCells(ctx, location, cells, Rules.MAP_EXTERIOR_CELL_WIDTH, Rules.MAP_EXTERIOR_CELL_HEIGHT);
+			IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+	}    
+    */
 	public static int prepareCells(OlioContext ctx, BaseRecord feature) {
 		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
 		IOSystem.getActiveContext().getReader().populate(feature);
@@ -188,6 +229,7 @@ public class GeoLocationUtil {
 		if(count > 0) {
 			return count;
 		}
+		//logger.info("Preparing " + feature.get(FieldNames.FIELD_NAME) + " cells in group " + feature.get("groupId"));
 		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, feature.get(FieldNames.FIELD_GROUP_ID)));
 		List<BaseRecord> cells = new ArrayList<>();
 		try {
@@ -294,6 +336,210 @@ public class GeoLocationUtil {
 
     }
     
+    /// findAdjacentCells will spiral out from the specified cell - this is done because a) grid cells are created on demand, and b) findCellToEdgePlusOne will only look as far as one cell into an adjacent region
+
+    public static BaseRecord[][] findAdjacentCells(OlioContext ctx, BaseRecord cell, int radius) {
+    	int diam = (radius * 2) + 1;
+    	BaseRecord[][] gcells = new BaseRecord[diam][diam];
+
+    	BaseRecord lcell = cell;
+
+    	int cx = radius;
+    	int cy = radius;
+    	gcells[cx][cy] = cell;
+    	int max = (diam * diam) - 1;
+    	Map<Long, List<BaseRecord>> cellMap = new HashMap<>();
+    	DirectionEnumType dir = DirectionEnumType.WEST;
+    	for(int i = 0; i < max; i++) {
+    		cx += DirectionEnumType.getX(dir);
+    		cy += DirectionEnumType.getY(dir);
+    		// logger.info(dir.toString() + " " + cx + ", " + cy);
+    		if(cx < 0 || cy < 0 || cx >= diam || cy >= diam) {
+    			logger.error("Index out of bounds: " + cx + ", " + cy);
+    			break;
+    		}
+        	int east = (DirectionEnumType.getX(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + (int)lcell.get("eastings");
+        	int north = (DirectionEnumType.getY(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + (int)lcell.get("northings");
+        	long pid = cell.get("parentId");
+        	if(!cellMap.containsKey(pid)) {
+        		cellMap.put(pid, GeoLocationUtil.getCells(ctx, GeoLocationUtil.getParentLocation(ctx, lcell)));
+        	}
+        	BaseRecord ocell = findCellToEdgePlusOne(ctx, lcell, cellMap.get(pid), east, north, true);
+            /// Currently, this will not correct itself for being on a map border
+        	if(ocell == null) {
+        		logger.warn("Null cell at idx " + cx + ", " + cy + " - coord " + east + ", " + north);
+        		break;
+        	}
+        	lcell = ocell;
+        	gcells[cx][cy] = ocell;
+        	
+        	if(dir == DirectionEnumType.WEST) {
+        		if(cy < (diam -1) && gcells[cx][cy + 1] == null) {
+        			dir = DirectionEnumType.SOUTH;
+        		}
+        	}
+        	else if(dir == DirectionEnumType.SOUTH) {
+        		if(cx < (diam -1) && gcells[cx + 1][cy] == null) {
+        			dir = DirectionEnumType.EAST;
+        		}
+        	}
+        	else if(dir == DirectionEnumType.EAST) {
+        		if(cy > 0 && gcells[cx][cy - 1] == null) {
+        			dir = DirectionEnumType.NORTH;
+        		}
+        	}
+        	else if(dir == DirectionEnumType.NORTH) {
+        		if(cx > 0 && gcells[cx - 1][cy] == null) {
+        			dir = DirectionEnumType.WEST;
+        		}
+        	}
+
+    	}
+  
+    	return gcells;
+    }
+    
+    /// findCell currently only looks 1 more past the edge
+    public static BaseRecord findCellToEdgePlusOne(OlioContext ctx, BaseRecord loc, List<BaseRecord> cells, int x, int y, boolean crossFeature) {
+
+		if(loc == null) {
+			logger.warn("Null current location!");
+		}
+		BaseRecord cell = loc;
+		if(cells.size() == 0) {
+			logger.error("Empty cell list");
+			return null;
+		}
+		BaseRecord par = GeoLocationUtil.getParentLocation(ctx, loc);
+		int xedge = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		int yedge = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		int eastings = loc.get("eastings");
+		int northings = loc.get("northings");
+		/*
+		int px = 0;
+		if(x != 0) {
+			px = Math.abs(x / Rules.MAP_EXTERIOR_CELL_WIDTH);
+		}
+		int py = 0;
+		if(y != 0) {
+			py = Math.abs(y / Rules.MAP_EXTERIOR_CELL_HEIGHT);
+		}
+		*/
+		//logger.info(x + ":" + eastings + ":" + xedge + ", " + y + ":" + northings + ":" + yedge);
+		if(x < 0 || x > xedge || y < 0 || y > yedge){
+			/// cross cell
+			if(x < 0) eastings -= 1;
+			else if(x > xedge) eastings += 1;
+			if(y < 0) northings -= 1;
+			else if(y > yedge) northings += 1;
+			
+			/// Check for cross-feature
+			if(
+				crossFeature
+				&&
+				(eastings < 0 || eastings > (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) || northings < 0 || northings > (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1))
+			) {
+				//logger.info("Cross feature - " + loc.get(FieldNames.FIELD_NAME) + " to " + eastings + ", " + northings);
+				if(par != null) {
+					int peastings = par.get("eastings");
+					int pnorthings = par.get("northings");
+					long ppar = par.get(FieldNames.FIELD_PARENT_ID);
+					if(ppar == 0L) {
+						logger.warn("Cannot move beyond current region - parentId = 0");
+						return null;
+					}
+					if(eastings < 0 && peastings > 0) {
+						peastings = peastings - 1;
+						eastings = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1);
+					}
+					else if(eastings > (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) && peastings < (Rules.MAP_EXTERIOR_FEATURE_WIDTH - 1)) {
+						peastings = peastings + 1;
+						eastings = 0;
+					}
+					if(northings < 0 && pnorthings > 0) {
+						pnorthings = pnorthings - 1;
+						northings = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1);
+					}
+					else if(northings > (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) && pnorthings <  (Rules.MAP_EXTERIOR_FEATURE_HEIGHT - 1)) {
+						pnorthings = pnorthings + 1;
+						northings = 0;
+					}
+					
+					if(peastings == (int)par.get("eastings") && pnorthings == (int)par.get("northings")) {
+						/// Didn't move, hitting the border or otherwise impassable
+						// logger.warn("Didn't actually move: " + eastings + ", " + northings + "::" + peastings + ", " + pnorthings);
+						cell = null;
+					}
+					else {
+						//logger.info("Find adjacent: " + par.get(FieldNames.FIELD_PARENT_ID) + " " + peastings + ", " + pnorthings);
+						BaseRecord padj = GeoLocationUtil.findAdjacentLocationByGrid(ctx, par.get(FieldNames.FIELD_PARENT_ID), peastings, pnorthings);
+						if(padj == null) {
+							logger.error("Failed to find parent " + par.get(FieldNames.FIELD_PARENT_ID) + " " + peastings + ", " + pnorthings);
+						}
+						else {
+							if(!"feature".equals(padj.get("geoType"))) {
+								//logger.warn("Navigating outside of established realm.");
+								/*
+								if("featureless".equals(padj.get("geoType"))) {
+									long ulid = ctx.getUniverse().get("locations.id");
+									long wlid = ctx.getWorld().get("locations.id");
+									long gid = padj.get("groupId");
+									if(gid == ulid) {
+										logger.warn("Cloning location to world from " + gid + "/" + ulid + " to " + wlid);
+										padj = OlioUtil.cloneIntoGroup(padj, ctx.getWorld().get("locations"));
+										IOSystem.getActiveContext().getRecordUtil().createRecord(padj);
+									}
+								}
+								*/
+								
+							}
+
+							GeoLocationUtil.prepareCells(ctx, padj);
+							List<BaseRecord> pcells = GeoLocationUtil.getCells(ctx, padj);
+							if(pcells.size() == 0) {
+								logger.warn("Failed to find adjacent cells");
+							}
+							else {
+								// logger.info("Find adjacent in parent " + padj.get(FieldNames.FIELD_ID) + " with " + cells.size() + " cells at " + eastings + ", " + northings);
+								cell = findCell(pcells, eastings, northings);
+								if(cell == null) {
+									// logger.error("Failed to find adjacent cell");
+								}
+							}
+						}
+					}
+				}
+				else {
+					logger.warn("Parent location is null");
+				}
+			}
+			else {
+				cell = findCell(cells, eastings, northings);
+			}
+		}
+		else {
+			/// return current cell
+			return loc;
+		}
+		return cell;
+		
+	}
+	public static BaseRecord findCell(List<BaseRecord> cells, final int east, final int north) {
+		BaseRecord cell = null;
+		Optional<BaseRecord> ocell = cells.stream().filter(c -> {
+			int ceast = c.get("eastings");
+			int cnorth = c.get("northings");
+			return (ceast == east && cnorth == north);
+		}).findFirst();
+		if(ocell.isPresent()) {
+			cell = ocell.get();
+		}
+		else {
+			// logger.warn("Couldn't find cell at " + east + ", " + north);
+		}
+		return cell;
+	}
+    
 	public static int getMaximumHeight(List<BaseRecord> locations) {
 		return getMaximumInt(locations, "northings");
 	}
@@ -334,47 +580,6 @@ public class GeoLocationUtil {
 			return (zlid > 0 && (zlid == locId || aids.contains(zlid)));
 		}).collect(Collectors.toList());
 	}
-	
-	public static void prepareGridCells(OlioContext ctx, BaseRecord location) {
-		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
-		IOSystem.getActiveContext().getReader().populate(location);
-		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
-		
-		cq.field("geoType", "cell");
-		int count = IOSystem.getActiveContext().getSearch().count(cq);
-		if(count > 0) {
-			logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
-			return;
-		}
-		logger.info("Preparing " + location.get(FieldNames.FIELD_NAME) + " cells");
-		// logger.info(location.toFullString());
-		int iter = 1 + IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID)));
-		List<BaseRecord> cells = new ArrayList<>();
-		try {
-			for(int y = 0; y < Rules.MAP_EXTERIOR_CELL_HEIGHT; y++) {
-				for(int x = 0; x < Rules.MAP_EXTERIOR_CELL_WIDTH; x++) {
-					int ie = x; //  * 10
-					int in = y; //  * 10
-	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
-	    			/// Location util defaults to putting new locations into the universe.  change to the world group
-	    			///
-	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
-	    			cell.set("area", (double)10);
-	    			cell.set("gridZone", GZD);
-	    			cell.set("kident", location.get("kident"));
-	    			cell.set("eastings", x);
-	    			cell.set("northings", y);
-	    			cell.set("geoType", "cell");
-	    			cells.add(cell);
-				}
-			}
-			TerrainUtil.blastCells(ctx, location, cells, Rules.MAP_EXTERIOR_CELL_WIDTH, Rules.MAP_EXTERIOR_CELL_HEIGHT);
-			IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
-		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
-		}
-	}
 
 	
 	public static List<BaseRecord> getAdjacentCells(OlioContext ctx, BaseRecord origin, int distance){
@@ -413,6 +618,7 @@ public class GeoLocationUtil {
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, id);
 		cq.field("geoType", "cell");
+		cq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 		cq.setCache(false);
 		cq.setLimitFields(false);
 		List<BaseRecord> cells = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(cq));

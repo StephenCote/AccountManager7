@@ -70,6 +70,10 @@ public class MapUtil {
 	}
 	
 	public static void printAdmin2Map(OlioContext ctx, BaseRecord location) {
+		if(location == null) {
+			logger.error("Null location");
+			return;
+		}
 		logger.info("Printing admin2 location " + location.get(FieldNames.FIELD_ID) + " " + location.get(FieldNames.FIELD_NAME));
 
 		IOSystem.getActiveContext().getReader().populate(location);
@@ -121,7 +125,7 @@ public class MapUtil {
 				g2d.setColor(c);
 			}
 			boolean ico = false;
-			if(useTileIcons) {
+			if(!blot && useTileIcons) {
 				Image img = getTile(tet, cellWidth, cellHeight);
 				if(img != null) {
 					ico = g2d.drawImage(img, x, y, null);
@@ -151,8 +155,12 @@ public class MapUtil {
 		// logger.info("Printing realm: " + realm.get(FieldNames.FIELD_NAME));
 		// logger.info("NOTE: This currently expects a GridSquare layout");
 		IOSystem.getActiveContext().getReader().populate(realm);
+		IOSystem.getActiveContext().getReader().populate(realm, new String[] {"locations"});
 		List<BaseRecord> locs = realm.get("locations");
-
+		if(locs.size() == 0) {
+			logger.error("Zero locations for realm");
+			return;
+		}
 
 		// int featureWidth = Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		// int featureHeight = Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
@@ -369,6 +377,114 @@ public class MapUtil {
 		g2d.dispose();
 		FileUtil.makePath(exportPath);
 		File outputfile = new File(exportPath + "/map - location - " + location.get(FieldNames.FIELD_NAME) + ".png");
+		try {
+			ImageIO.write(image, "png", outputfile);
+		} catch (IOException e) {
+			logger.error(e);
+		}
+
+	}
+	
+	public static void printPovLocationMap(OlioContext ctx, BaseRecord realm, BaseRecord pov, int radius) {
+
+		BaseRecord location = pov.get("state.currentLocation");
+		if(location == null) {
+			logger.error("Location is null");
+			return;
+		}
+		logger.info("Printing POV location for " + pov.get(FieldNames.FIELD_NAME) + " in " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
+		//List<BaseRecord> cells = GeoLocationUtil.getAdjacentCells(ctx, location, radius);
+		BaseRecord[][] cells = GeoLocationUtil.findAdjacentCells(ctx, location, radius);
+		
+		int diam = ((radius * 2) + 1);
+		int cellWidth = diam * 50;
+		int cellHeight = diam * 50;
+
+		BufferedImage image = new BufferedImage(cellWidth, cellHeight, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g2d = image.createGraphics();
+		
+		List<BaseRecord> zoo = new ArrayList<>();
+		if(realm != null) {
+			zoo = realm.get("zoo");
+		}
+		
+		long plid = pov.get("state.currentLocation.id");
+		//for(BaseRecord cell : cells) {
+		for(int xi = 0; xi < diam; xi++) {
+			for(int yi = 0; yi < diam; yi++) {
+				BaseRecord cell = cells[xi][yi];
+				if(cell == null) {
+					continue;
+				}
+				String ctype = cell.get("geoType");
+				int x = 50 * xi;
+				int y = 50 * yi;
+				
+				TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+				boolean ico = false;
+				if(useTileIcons) {
+					Image img = getTile(tet, 50, 50);
+					if(img != null) {
+						ico = g2d.drawImage(img, x, y, null);
+					}
+				}
+				if(!ico) {
+					Color c = TerrainEnumType.getColor(tet);
+					g2d.setColor(c);
+					g2d.fillRect(x, y, 50, 50);
+					g2d.setColor(Color.DARK_GRAY);
+					g2d.drawRect(x, y, 50, 50);
+				}
+				long cid = cell.get(FieldNames.FIELD_ID);
+	
+				if(plid == cid) {
+	
+					int peast = pov.get("state.currentEast");
+					/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
+					///
+					if(peast > 0) {
+						peast = peast / 2;
+					}
+					int pnorth = pov.get("state.currentNorth");
+					if(pnorth > 0) {
+						pnorth = pnorth / 2;
+					}
+					g2d.setColor(Color.WHITE);
+					g2d.fillOval(x + peast, y + pnorth, 10, 10);
+					
+				}
+				
+				if(realm != null) {
+					List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+					
+					if(zpop.size() > 0) {
+						for(BaseRecord z : zpop) {
+							int peast = z.get("state.currentEast");
+							int pnorth = z.get("state.currentNorth");
+							/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
+							///
+							if(peast > 0) {
+								peast = peast / 2;
+							}
+							if(pnorth > 0) {
+								pnorth = pnorth / 2;
+							}
+
+							g2d.setColor(Color.RED);
+
+							g2d.fillOval(x + peast, y + pnorth, 10, 10);
+
+							//g2d.fillOval(x + 5, y + 5, 10, 10);
+						}
+					}
+				}
+				
+			}
+
+		}
+		g2d.dispose();
+		FileUtil.makePath(exportPath);
+		File outputfile = new File(exportPath + "/map - pov - " + pov.get(FieldNames.FIELD_NAME) + " " + location.get(FieldNames.FIELD_NAME) + ".png");
 		try {
 			ImageIO.write(image, "png", outputfile);
 		} catch (IOException e) {
