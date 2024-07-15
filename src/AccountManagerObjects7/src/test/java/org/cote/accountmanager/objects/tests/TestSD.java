@@ -144,7 +144,7 @@ public class TestSD extends BaseTest {
 		logger.info("Test SD API");
 		
 		logger.info("Test import");
-		String txt = FileUtil.getFileAsString("./samp.json");
+		String txt = FileUtil.getFileAsString("./samp.doesnt.exist.json");
 		assertTrue("Expected data", txt != null && txt.length() > 0);
 
 		SDResponse is = JSONUtil.importObject(txt, SDResponse.class);
@@ -194,7 +194,7 @@ public class TestSD extends BaseTest {
 		SDUtil sdu = new SDUtil();
 		
 		
-		String txt2 = FileUtil.getFileAsString("./samp2.json");
+		String txt2 = FileUtil.getFileAsString("./samp2.doesnt.exist.json");
 		
 		SDTxt2Img is2 = JSONUtil.importObject(txt2, SDTxt2Img.class);
 		assertNotNull("Obj is null", is2);
