@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio;
 
 import java.time.LocalTime;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
 
@@ -25,6 +26,16 @@ import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class EventUtil {
 	public static final Logger logger = LogManager.getLogger(EventUtil.class);
+	
+	public static BaseRecord getEvent(OlioContext ctx, BaseRecord parent, String name, EventEnumType type) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_GROUP_ID, parent.get(FieldNames.FIELD_GROUP_ID));
+		if(type != EventEnumType.UNKNOWN) {
+			q.field(FieldNames.FIELD_TYPE, type);
+		}
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
 	
 	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, EventEnumType eventType) {
 		return getChildEvents(world, parentEvent, null, null, TimeEnumType.UNKNOWN, eventType);
@@ -203,6 +214,19 @@ public class EventUtil {
 			logger.error(e);
 		}
 		return epoch;
+	}
+	public static void addProgressMS(BaseRecord event, long ms) {
+		ZonedDateTime prog = event.get("eventProgress");
+		event.setValue("eventProgress", prog.plus(ms, ChronoUnit.MILLIS));
+	}
+	public static void edgeSecondsUntilEnd(BaseRecord event, long seconds) {
+		ZonedDateTime prog = event.get("eventProgress");
+		try {
+			event.set("eventEnd", prog.plusSeconds(seconds));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
 	}
 	
 	public static void edgeHour(BaseRecord event) {

@@ -97,7 +97,7 @@ public class Rules {
 	/// E.G.: a distance of 3 cells = cell_width * cell multiplier * distance == meters, or 300 meters
 	/// It's up to the implementing rule to look across features
 	///
-	public static final int MAXIMUM_OBSERVATION_DISTANCE = 3;
+	public static final int MAXIMUM_OBSERVATION_DISTANCE = 10;
 	
 	public static double getAnimalOdds(TerrainEnumType type) {
 		double typeOdds = ODDS_ANIMAL_GROUP;

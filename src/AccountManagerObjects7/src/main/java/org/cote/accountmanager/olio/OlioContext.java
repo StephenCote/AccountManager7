@@ -342,6 +342,7 @@ public class OlioContext {
 	}
 	public void processQueue() {
 		queue.forEach((k, v) -> {
+			// logger.info("Process " + k + " " + v.size());
 			IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
 		});
 		queue.clear();

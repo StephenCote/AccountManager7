@@ -554,6 +554,9 @@ public class NarrativeUtil {
 			case INTIMATE:
 				desc = "being intimate";
 				break;
+			case INVESTIGATE:
+				desc = "investigating";
+				break;
 			case MENTOR:
 				desc = "teaching";
 				break;
@@ -665,6 +668,9 @@ public class NarrativeUtil {
 				break;
 			case INTIMATE:
 				desc = "become intimate with";
+				break;
+			case INVESTIGATE:
+				desc = "investigate";
 				break;
 			case MENTOR:
 				desc = "teach or coach";

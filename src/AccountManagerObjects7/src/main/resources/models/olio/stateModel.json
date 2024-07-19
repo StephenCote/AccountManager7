@@ -28,7 +28,7 @@
 			"name": "actions",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "olio.action",
+			"baseModel": "olio.actionResult",
 			"foreign": true
 		},
 		{

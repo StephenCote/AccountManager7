@@ -151,7 +151,35 @@ public class MapUtil {
 
 	}
 
+	private static void paintPopulation(Graphics2D g2d, BaseRecord cell, List<BaseRecord> pop, int x, int y, int tileSize, int spriteSize, Color color) {
+		long cid = cell.get(FieldNames.FIELD_ID);
+
+		List<BaseRecord> lpop = pop.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+		int div = (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) / tileSize;
+		if(lpop.size() > 0) {
+			for(BaseRecord p : lpop) {
+				int peast = p.get("state.currentEast");
+				/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
+				///
+				if(peast > 0) {
+					peast = peast / div;
+				}
+				int pnorth = p.get("state.currentNorth");
+				if(pnorth > 0) {
+					pnorth = pnorth / div;
+				}
+				//logger.info(p.get("state.currentEast") + ", " + p.get("state.currentNorth") + " -> " + cell.get("eastings") + ", " + cell.get("northings") + " -> " + peast + ", " + pnorth + "; " +  " -> " + (x + peast) + ", " + (y + pnorth));
+				// logger.info((x + peast) + ", " + (y + pnorth));
+				g2d.setColor(color);
+				g2d.fillOval(x + peast, y + pnorth, spriteSize, spriteSize);
+			}
+		}
+	}
+	
 	public static void printRealmMap(OlioContext ctx, BaseRecord realm) {
+		printRealmMap(ctx, realm, new ArrayList<>());
+	}
+	public static void printRealmMap(OlioContext ctx, BaseRecord realm, List<BaseRecord> pop) {
 		// logger.info("Printing realm: " + realm.get(FieldNames.FIELD_NAME));
 		// logger.info("NOTE: This currently expects a GridSquare layout");
 		IOSystem.getActiveContext().getReader().populate(realm);
@@ -208,6 +236,7 @@ public class MapUtil {
 			for(BaseRecord cell: cells) {
 				int ceast = cell.get("eastings");
 				int cnorth = cell.get("northings");
+				
 				TerrainEnumType ctet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
 				int cx = x + (ceast * cellWidth);
 				int cy = y + (cnorth * cellHeight);
@@ -227,6 +256,7 @@ public class MapUtil {
 					g2d.setColor(Color.DARK_GRAY);
 					g2d.drawRect(cx, cy, cellWidth, cellHeight);
 				}
+				paintPopulation(g2d, cell, pop, cx, cy, cellWidth, 4, Color.WHITE);
 			}
 			
 			g2d.setColor(Color.DARK_GRAY);

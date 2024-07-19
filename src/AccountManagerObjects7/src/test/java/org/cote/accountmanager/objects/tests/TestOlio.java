@@ -35,7 +35,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
-import org.cote.accountmanager.olio.ActionUtil;
+
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.BuilderUtil;
@@ -56,6 +56,7 @@ import org.cote.accountmanager.olio.ReasonEnumType;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.olio.ThreatEnumType;
+import org.cote.accountmanager.olio.ThreatUtil;
 import org.cote.accountmanager.olio.llm.OllamaExchange;
 import org.cote.accountmanager.olio.llm.OllamaMessage;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
@@ -191,26 +192,26 @@ public class TestOlio extends BaseTest {
 		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));		
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
-			StateUtil.move(ctx, per1, dir);
+			StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));
 		}
 
 		List<BaseRecord> fpop = observablePopulation(pop, per1);
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = NeedsUtil.agitate(ctx, realm, increment, map, false);
+		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
 		String lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
 		logger.info(lar);
 		
 		dir = OlioUtil.randomEnum(DirectionEnumType.class);
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
-			StateUtil.move(ctx, per1, dir);
+			StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));
 		}
 		
 		fpop = observablePopulation(pop, per1);
 		map = ProfileUtil.getProfileMap(ctx, fpop);
-		tmap = NeedsUtil.agitate(ctx, realm, increment, map, false);
+		tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
 		lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
 
 		logger.info(lar);
@@ -221,7 +222,7 @@ public class TestOlio extends BaseTest {
 
 	private List<BaseRecord> observablePopulation(List<BaseRecord> pop, BaseRecord pov){
 		return pop.stream().filter(p -> {
-				double dist = StateUtil.getDistance(pov.get("state"), p.get("state"));
+				double dist = GeoLocationUtil.getDistance(pov.get("state"), p.get("state"));
 				int max = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 				// logger.info("Distance: " + dist + "::" + max);
 				boolean filt =(((long)p.get(FieldNames.FIELD_ID)) != (long)pov.get(FieldNames.FIELD_ID)

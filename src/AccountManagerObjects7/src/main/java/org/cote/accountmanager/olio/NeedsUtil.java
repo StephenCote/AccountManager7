@@ -16,10 +16,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
-import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
+import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -104,7 +101,7 @@ public class NeedsUtil {
 		/// Agitate map, people, animals, and identify initial threats
 		///
 		List<BaseRecord> inters = increment.get("interactions");
-		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = agitate(ctx, realm, increment, map, false);
+		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = getAgitatedThreatMap(ctx, realm, increment, map, false);
 		List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
 		for(BaseRecord tint : tinters) {
 			inters.add(tint);
@@ -132,25 +129,25 @@ public class NeedsUtil {
 
 
 	
-	protected static BaseRecord createActionForNeed(OlioContext ctx, PhysiologicalNeeds need) {
+	protected static BaseRecord createActionForNeed(OlioContext ctx, PhysiologicalNeedsEnumType need) {
 		BaseRecord action = null;
 		BaseRecord builder = null;
 		BaseRecord actionResult = null;
-		if(need == PhysiologicalNeeds.SHELTER) {
+		if(need == PhysiologicalNeedsEnumType.SHELTER) {
 			List<BaseRecord> builders = Arrays.asList(BuilderUtil.getBuilders(ctx)).stream().filter(b -> ((String)b.get("type")).equals("location")).collect(Collectors.toList());
 			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("build")).collect(Collectors.toList());
 			action = actions.get(0);
 			builder = builders.get(random.nextInt(0, builders.size()));
 		}
-		else if(need == PhysiologicalNeeds.FOOD) {
+		else if(need == PhysiologicalNeedsEnumType.FOOD) {
 			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("gather") || ((String)b.get("name")).equals("hunt")).collect(Collectors.toList());
 			action = actions.get(random.nextInt(0, actions.size()));
 		}
-		else if(need == PhysiologicalNeeds.WATER) {
+		else if(need == PhysiologicalNeedsEnumType.WATER) {
 			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("gather")).collect(Collectors.toList());
 			action = actions.get(random.nextInt(0, actions.size()));
 		}
-		else if(need == PhysiologicalNeeds.REPRODUCTION) {
+		else if(need == PhysiologicalNeedsEnumType.REPRODUCTION) {
 			/// 
 		}
 		if(action != null) {
@@ -170,17 +167,17 @@ public class NeedsUtil {
 		return actionResult;
 	}
 	
-	protected static BaseRecord createActionForNeed(OlioContext ctx, SafetyNeeds need) {
+	protected static BaseRecord createActionForNeed(OlioContext ctx, SafetyNeedsEnumType need) {
 		BaseRecord actionResult = null;
 		return actionResult;
 	}
 
-	protected static BaseRecord createActionForNeed(OlioContext ctx, EsteemNeeds need) {
+	protected static BaseRecord createActionForNeed(OlioContext ctx, EsteemNeedsEnumType need) {
 		BaseRecord actionResult = null;
 		return actionResult;
 	}
 
-	protected static BaseRecord createActionForNeed(OlioContext ctx, LoveNeeds need) {
+	protected static BaseRecord createActionForNeed(OlioContext ctx, LoveNeedsEnumType need) {
 		BaseRecord actionResult = null;
 		return actionResult;
 	}
@@ -189,32 +186,29 @@ public class NeedsUtil {
 	protected static List<BaseRecord> evaluateNeeds(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group, Map<BaseRecord, PersonalityProfile> map) {
 		List<BaseRecord> actions = new ArrayList<>();
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
-		List<PhysiologicalNeeds> pneeds = pgp.getPhysiologicalNeedsPriority();
-		for(PhysiologicalNeeds need: pneeds) {
+
+		for(PhysiologicalNeedsEnumType need: pgp.getPhysiologicalNeedsPriority()) {
 			BaseRecord act = createActionForNeed(ctx, need);
 			if(act != null) {
 				actions.add(act);
 			}
 		}
 
-		List<SafetyNeeds> sneeds = pgp.getSafetyNeedsPriority();
-		for(SafetyNeeds need: sneeds) {
+		for(SafetyNeedsEnumType need: pgp.getSafetyNeedsPriority()) {
 			BaseRecord act = createActionForNeed(ctx, need);
 			if(act != null) {
 				actions.add(act);
 			}
 		}
 		
-		List<LoveNeeds> lneeds = pgp.getLoveNeedsPriority();
-		for(LoveNeeds need: lneeds) {
+		for(LoveNeedsEnumType need: pgp.getLoveNeedsPriority()) {
 			BaseRecord act = createActionForNeed(ctx, need);
 			if(act != null) {
 				actions.add(act);
 			}
 		}
 		
-		List<EsteemNeeds> eneeds = pgp.getEsteemNeedsPriority();
-		for(EsteemNeeds need: eneeds) {
+		for(EsteemNeedsEnumType need: pgp.getEsteemNeedsPriority()) {
 			BaseRecord act = createActionForNeed(ctx, need);
 			if(act != null) {
 				actions.add(act);
@@ -270,8 +264,8 @@ public class NeedsUtil {
 					if(!roam) {
 						upf.add("agitated");
 					}
-					upf.add(FieldNames.FIELD_ID);
-					ctx.queue(state.copyRecord(upf.toArray(new String[0])));
+					// upf.add(FieldNames.FIELD_ID);
+					ctx.queueUpdate(state, upf.toArray(new String[0]));
 				}
 			}
 			ctx.processQueue();
@@ -280,54 +274,10 @@ public class NeedsUtil {
 			logger.error(e);
 		}
 	}
-	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> agitate(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
-		BaseRecord eloc = event.get("location");
-		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = new HashMap<>();
-		try {
-			agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true, roam);
-			for(BaseRecord p0 : map.keySet()) {
-				PersonalityProfile pp = map.get(p0);
-			//for(PersonalityProfile pp: map.values()) {
-				BaseRecord p = pp.getRecord();
-				String name = p.get(FieldNames.FIELD_NAME);
-				BaseRecord state = p.get("state");
-				boolean immobile = state.get("immobilized");
-				boolean alive = state.get("alive");
-				boolean awake = state.get("awake");
-				
-				BaseRecord location = state.get("currentLocation");
 
-				long id = location.get(FieldNames.FIELD_ID);
-				String geoType = location.get("geoType");
-				if(geoType.equals("feature")) {
-					logger.warn("Feature placement detected: Move " + name);
-				}
-				else {
-					/// People in current location
-					/*
-					int currLocCount = map.keySet().stream()
-					  .map(c -> c.get("state.currentLocation") != null && ((long)c.get("state.currentLocation.id")) == id ? 1 : 0)
-					  .reduce(0, Integer::sum);
-					*/
-					/// logger.info("Agitate " + name + " in " + location.get(FieldNames.FIELD_NAME));
-					if(alive && awake && !immobile) {
-						if(state.get("currentEvent") != null) {
-							logger.warn("Agitating " + name + " who is currently busy");
-						}
-						Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, p0);
-						if(threats.keySet().size() > 0) {
-							tmap.put(pp, threats);
-						}
-					}
-				}
-			}
-			ctx.processQueue();
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		return tmap;
+	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> getAgitatedThreatMap(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
+		agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true, roam);
+		return ThreatUtil.getThreatMap(ctx, realm, event, map);
 	}
 	
 

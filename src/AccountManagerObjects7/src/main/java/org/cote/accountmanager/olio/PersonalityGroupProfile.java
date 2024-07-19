@@ -5,17 +5,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
 
 public class PersonalityGroupProfile {
 	
-	private Map<PhysiologicalNeeds, Integer> physiologicalNeeds = new HashMap<>();
-	private Map<SafetyNeeds, Integer> safetyNeeds = new HashMap<>();
-	private Map<EsteemNeeds, Integer> esteemNeeds = new HashMap<>();
-	private Map<LoveNeeds, Integer> loveNeeds = new HashMap<>();
+	private Map<PhysiologicalNeedsEnumType, Integer> physiologicalNeeds = new HashMap<>();
+	private Map<SafetyNeedsEnumType, Integer> safetyNeeds = new HashMap<>();
+	private Map<EsteemNeedsEnumType, Integer> esteemNeeds = new HashMap<>();
+	private Map<LoveNeedsEnumType, Integer> loveNeeds = new HashMap<>();
 	
 	private Map<Long, Double> relativeWealth = new HashMap<>();
 	
@@ -23,40 +19,40 @@ public class PersonalityGroupProfile {
 		
 	}
 
-	public List<PhysiologicalNeeds> getPhysiologicalNeedsPriority(){
+	public List<PhysiologicalNeedsEnumType> getPhysiologicalNeedsPriority(){
 		return physiologicalNeeds.entrySet().stream()
-        .sorted(Map.Entry.<PhysiologicalNeeds, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
+        .sorted(Map.Entry.<PhysiologicalNeedsEnumType, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
 	}
 
-	public List<SafetyNeeds> getSafetyNeedsPriority(){
+	public List<SafetyNeedsEnumType> getSafetyNeedsPriority(){
 		return safetyNeeds.entrySet().stream()
-        .sorted(Map.Entry.<SafetyNeeds, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
+        .sorted(Map.Entry.<SafetyNeedsEnumType, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
 	}
 	
-	public List<EsteemNeeds> getEsteemNeedsPriority(){
+	public List<EsteemNeedsEnumType> getEsteemNeedsPriority(){
 		return esteemNeeds.entrySet().stream()
-        .sorted(Map.Entry.<EsteemNeeds, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
+        .sorted(Map.Entry.<EsteemNeedsEnumType, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
 	}
 	
-	public List<LoveNeeds> getLoveNeedsPriority(){
+	public List<LoveNeedsEnumType> getLoveNeedsPriority(){
 		return loveNeeds.entrySet().stream()
-        .sorted(Map.Entry.<LoveNeeds, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
+        .sorted(Map.Entry.<LoveNeedsEnumType, Integer>comparingByValue().reversed()).map(e -> e.getKey()).collect(Collectors.toList());
 	}
 	
 	
-	public Map<PhysiologicalNeeds, Integer> getPhysiologicalNeeds() {
+	public Map<PhysiologicalNeedsEnumType, Integer> getPhysiologicalNeeds() {
 		return physiologicalNeeds;
 	}
 
-	public Map<SafetyNeeds, Integer> getSafetyNeeds() {
+	public Map<SafetyNeedsEnumType, Integer> getSafetyNeeds() {
 		return safetyNeeds;
 	}
 
-	public Map<EsteemNeeds, Integer> getEsteemNeeds() {
+	public Map<EsteemNeedsEnumType, Integer> getEsteemNeeds() {
 		return esteemNeeds;
 	}
 
-	public Map<LoveNeeds, Integer> getLoveNeeds() {
+	public Map<LoveNeedsEnumType, Integer> getLoveNeeds() {
 		return loveNeeds;
 	}
 	

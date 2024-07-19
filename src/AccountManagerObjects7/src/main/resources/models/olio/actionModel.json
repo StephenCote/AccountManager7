@@ -6,6 +6,11 @@
 	"label": "Action",
 	"fields": [
 		{
+			"name": "provider",
+			"type": "string",
+			"description": "Class or script name used to perform a discrete execution of the action"
+		},
+		{
 			"name": "difficulty",
 			"type": "int",
 			"minValue": 0,

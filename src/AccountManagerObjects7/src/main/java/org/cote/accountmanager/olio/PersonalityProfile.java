@@ -34,40 +34,13 @@ public class PersonalityProfile extends AnimalProfile {
 	private VeryEnumType machiavellian = VeryEnumType.DISREGARDED;
 	private VeryEnumType psychopath = VeryEnumType.DISREGARDED;
 	
-	public enum PhysiologicalNeeds {
-		AIR,
-		WATER,
-		FOOD,
-		SHELTER,
-		SLEEP,
-		CLOTHING,
-		REPRODUCTION
-	};
-	private List<PhysiologicalNeeds> physiologicalNeeds = new ArrayList<>();
-	public enum SafetyNeeds {
-		SECURITY,
-		EMPLOYMENT,
-		RESOURCES,
-		HEALTH,
-		PROPERTY
-	};
-	private List<SafetyNeeds> safetyNeeds = new ArrayList<>();
-	public enum LoveNeeds {
-		FRIENDSHIP,
-		INTIMACY,
-		FAMILY,
-		CONNECTION
-	};
-	private List<LoveNeeds> loveNeeds = new ArrayList<>();
-	public enum EsteemNeeds{
-		RESPECT,
-		SELF_ESTEEM,
-		STATUS,
-		RECOGNITION,
-		STRENGTH,
-		FREEDOM
-	};
-	private List<EsteemNeeds> esteemNeeds = new ArrayList<>();
+	private List<PhysiologicalNeedsEnumType> physiologicalNeeds = new ArrayList<>();
+
+	private List<SafetyNeedsEnumType> safetyNeeds = new ArrayList<>();
+
+	private List<LoveNeedsEnumType> loveNeeds = new ArrayList<>();
+
+	private List<EsteemNeedsEnumType> esteemNeeds = new ArrayList<>();
 	
 	public PersonalityProfile() {
 		
@@ -188,19 +161,19 @@ public class PersonalityProfile extends AnimalProfile {
 		this.events = events;
 	}
 	
-	public List<PhysiologicalNeeds> getPhysiologicalNeeds() {
+	public List<PhysiologicalNeedsEnumType> getPhysiologicalNeeds() {
 		return physiologicalNeeds;
 	}
 
-	public List<SafetyNeeds> getSafetyNeeds() {
+	public List<SafetyNeedsEnumType> getSafetyNeeds() {
 		return safetyNeeds;
 	}
 
-	public List<LoveNeeds> getLoveNeeds() {
+	public List<LoveNeedsEnumType> getLoveNeeds() {
 		return loveNeeds;
 	}
 
-	public List<EsteemNeeds> getEsteemNeeds() {
+	public List<EsteemNeedsEnumType> getEsteemNeeds() {
 		return esteemNeeds;
 	}
 

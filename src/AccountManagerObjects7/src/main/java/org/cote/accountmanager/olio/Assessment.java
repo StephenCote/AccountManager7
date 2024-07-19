@@ -9,39 +9,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.LevelEnumType;
 
 public class Assessment {
-	public static enum NeedsEnumType{
-		UNKNOWN
-	};
-	
-	/// Assessments based on hierarchy of needs, plus a few internal and housekeeping items 
-	public static enum AssessmentEnumType{
-		UNKNOWN,
-		/// air, water, food, shelter, sleep, clothing, reproduction
-		PHYSIOLOGICAL,
-		/// personal security, employment, resources, health, property
-		SAFETY,
-		/// friendship, intimacy, family, sense of connection
-		BELONGING, /// Alt: LOVE
-		/// respect, self-esteem, status, recognition, strength, freedom
-		ESTEEM,
-		/// morality, creativity, spontaneity, problem solving, lack of prejudice, acceptance of facts
-		SELF,
-		/// Replenish renewable items
-		REPLENISH,
-		/// Assess a prediction
-		PREDICTION,
-		/// Assess a predilection
-		PREDILECTION
-	 };
 
-	 public static enum AssessedEnumType{
-		UNKNOWN,
-		LOCATION,
-		GROUP,
-		INDIVIDUAL,
-		ENCOUNTER
-	};
-	
 	private AssessedEnumType assessedType = AssessedEnumType.UNKNOWN;
 	private Map<AssessmentEnumType,LevelEnumType> assessment = new HashMap<>();
 	private List<Assessment> assessments = new ArrayList<>();

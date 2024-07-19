@@ -34,20 +34,6 @@ public class ThreatUtil {
 		return inters;
 	}
 	
-	public static double distanceRelativity(BaseRecord rec1, BaseRecord rec2) {
-		int maxDist = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
-		double dist = StateUtil.getDistance(rec1.get("state"), rec2.get("state"));
-		if(dist <= 0) {
-			// logger.warn("Zero or negative distance detected");
-			
-		}
-		double perc = 1.0 - (dist / maxDist);
-		if(perc < 0) perc = 0;
-		return perc;
-	}
-
-
-
 	public static boolean isRelativelyAggressive(AnimalProfile possibleThreat, PersonalityProfile person) {
 
 		boolean isAgg = false;
@@ -57,7 +43,7 @@ public class ThreatUtil {
 		}
 		
 		/// Percentage of distance by (very limited) maximum visibility
-		double dr = distanceRelativity(possibleThreat.getRecord(), person.getRecord());
+		double dr = GeoLocationUtil.distanceRelativity(possibleThreat.getRecord(), person.getRecord());
 
 		/// Is the animal starving
 		boolean starving = InstinctUtil.checkFeedInstinct(possibleThreat, InstinctEnumType.STRONG, dr); 
@@ -125,11 +111,12 @@ public class ThreatUtil {
 		return tet;
 	}
 	
-	public static List<AnimalProfile> evaluateAnimalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, BaseRecord person){
-		BaseRecord state = person.get("state");
+	public static List<AnimalProfile> evaluateAnimalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
+		BaseRecord state = person.getRecord().get("state");
 		// BaseRecord stats = person.get("statistics");
-		PersonalityProfile pp = group.get(person);
+		//PersonalityProfile pp = group.get(person);
 		List<BaseRecord> zoo = realm.get("zoo");
+		// logger.info("Agitate animal threats");
 		NeedsUtil.agitateLocation(ctx, realm, event, zoo, false, true);
 		
 		/// Find animals in the current and adjacent cells
@@ -138,7 +125,7 @@ public class ThreatUtil {
 		Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(zpop);
 		for(AnimalProfile ap : amap.values()) {
 			// boolean toxic = isToxic(ap.getRecord());
-			ThreatEnumType tet = evaluateAggressive(ap, pp, ThreatEnumType.ANIMAL_THREAT, ThreatEnumType.ANIMAL_TARGET);
+			ThreatEnumType tet = evaluateAggressive(ap, person, ThreatEnumType.ANIMAL_THREAT, ThreatEnumType.ANIMAL_TARGET);
 			if(tet != ThreatEnumType.NONE) {
 				tpop.add(ap);
 			}
@@ -147,16 +134,17 @@ public class ThreatUtil {
 	}
 
 	
-	public static List<PersonalityProfile> evaluatePersonalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, BaseRecord person){
-		BaseRecord state = person.get("state");
-		PersonalityProfile pp = group.get(person);
-		long id = person.get(FieldNames.FIELD_ID);
+	public static List<PersonalityProfile> evaluatePersonalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
+		BaseRecord state = person.getRecord().get("state");
+
+		long id = person.getId();
 		
 		/// Exclude the primary party from the general populace for purposes of agitating and assessing threat with the remainder of the population
 		///
 		List<Long> gids = group.keySet().stream().map(r -> ((long)r.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		List<BaseRecord> pop = ctx.getPopulation(event.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList();
 		
+		// logger.info("Agitate person threats");
 		NeedsUtil.agitateLocation(ctx, realm, event, pop, false, true);
 
 		/// Find people in the current and adjacent cells
@@ -169,7 +157,7 @@ public class ThreatUtil {
 				/// skip self
 				continue;
 			}
-			ThreatEnumType tet = evaluateAggressive(ap, pp, ThreatEnumType.PERSONAL_THREAT, ThreatEnumType.PERSONAL_TARGET);
+			ThreatEnumType tet = evaluateAggressive(ap, person, ThreatEnumType.PERSONAL_THREAT, ThreatEnumType.PERSONAL_TARGET);
 			if(tet != ThreatEnumType.NONE) {
 				tpop.add(ap);
 			}
@@ -196,7 +184,7 @@ public class ThreatUtil {
 		return tet;
 	}
 	
-	public static Map<ThreatEnumType,List<BaseRecord>> evaluateImminentThreats(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, BaseRecord person) {
+	public static Map<ThreatEnumType,List<BaseRecord>> evaluateImminentThreats(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person) {
 		Map<ThreatEnumType,List<BaseRecord>> threats = new HashMap<>();
 		
 		List<AnimalProfile> anim = evaluateAnimalThreat(ctx, realm, event, group, person);
@@ -215,5 +203,43 @@ public class ThreatUtil {
 			}
 			map.get(threat).addAll(recs);
 		}
+	}
+	
+	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> getThreatMap(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map) {
+
+		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = new HashMap<>();
+		for(BaseRecord p0 : map.keySet()) {
+			PersonalityProfile pp = map.get(p0);
+			BaseRecord p = pp.getRecord();
+
+			String name = p.get(FieldNames.FIELD_NAME);
+			BaseRecord state = p.get("state");
+			boolean immobile = state.get("immobilized");
+			boolean alive = state.get("alive");
+			boolean awake = state.get("awake");
+			
+			BaseRecord location = state.get("currentLocation");
+			if(location == null) {
+				logger.warn("Location is null for " + p0.get(FieldNames.FIELD_NAME));
+				continue;
+			}
+			String geoType = location.get("geoType");
+			if(geoType.equals("feature")) {
+				logger.warn("Feature placement detected: Move " + name);
+			}
+			else {
+				if(alive && awake && !immobile) {
+					if(state.get("currentEvent") != null) {
+						logger.warn("Agitating " + name + " who is currently busy");
+					}
+					Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, pp);
+					if(threats.keySet().size() > 0) {
+						tmap.put(pp, threats);
+					}
+				}
+			}
+		}
+		ctx.processQueue();
+		return tmap;
 	}
 }

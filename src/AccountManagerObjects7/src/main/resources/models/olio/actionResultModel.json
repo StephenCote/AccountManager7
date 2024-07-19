@@ -48,7 +48,7 @@
 			"baseModel": "$flex",
 			"type": "model",
 			"foreign": true,
-			"foreignType": "interactorType",
+			"foreignType": "actorType",
 			"shortName": "act"
 		},
 		{
@@ -82,7 +82,8 @@
 		},
 		{
 			"name": "needType",
-			"type": "string",
+			"baseClass": "org.cote.accountmanager.olio.AssessmentEnumType",
+			"type": "enum",
 			"maxLength": 32,
 			"description": "Placeholder for the type need the action satisfies"
 		},
@@ -93,12 +94,16 @@
 			"foreign": true
 		},
 		{
-			"name": "startDate",
-			"type": "timestamp"
+			"name": "actionStart",
+			"type": "zonetime"
 		},
 		{
-			"name": "completedDate",
-			"type": "timestamp"
+			"name": "actionProgress",
+			"type": "zonetime"
+		},
+		{
+			"name": "actionEnd",
+			"type": "zonetime"
 		},
 		{
 			"name": "statistics",

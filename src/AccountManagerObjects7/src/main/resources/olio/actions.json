@@ -34,6 +34,15 @@
 		]
 	},
 	{
+		"name": "walkTo",
+		"provider": "org.cote.accountmanager.olio.actions.WalkTo",
+		"counterActions": [
+			"wait"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
 		"counterActions": [
 			"wait",
 			"hunt",

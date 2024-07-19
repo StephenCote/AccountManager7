@@ -417,7 +417,7 @@ public class OlioUtil {
 		return rec;
 	}
 	
-	protected static BaseRecord getCreateTag(OlioContext ctx, String name, String type) {
+	public static BaseRecord getCreateTag(OlioContext ctx, String name, String type) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_TAG, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("tagsGroup.id"));
 		q.field(FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_TYPE, type);
@@ -467,10 +467,10 @@ public class OlioUtil {
 		return getCreateTrait(ctx, name, TraitEnumType.FEATURE);
 	}
 	
-	protected static BaseRecord[] list(OlioContext ctx, String model, String groupName) {
+	public static BaseRecord[] list(OlioContext ctx, String model, String groupName) {
 		return list(ctx, model, groupName, null, null);
 	}
-	protected static <T> BaseRecord[] list(OlioContext ctx, String model, String groupName, String fieldName, T val) {
+	public static <T> BaseRecord[] list(OlioContext ctx, String model, String groupName, String fieldName, T val) {
 		Query q = getQuery(ctx.getOlioUser(), model, ctx.getWorld().get(groupName + ".path"));
 		BaseRecord[] recs = new BaseRecord[0];
 
@@ -545,5 +545,6 @@ public class OlioUtil {
 		List<BaseRecord> tags = rec.get("tags");
 		return tags.stream().filter(t -> tagName.equalsIgnoreCase(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
 	}
+	
 	
 }

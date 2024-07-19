@@ -166,11 +166,14 @@ public class RollUtil {
 
 	}
 	public static RollEnumType rollPerception(BaseRecord rec, BaseRecord targ) {
-		// RollEnumType ret = rollPerception(rec);
-		RollEnumType per = rollPerception(targ);
-		double d = StateUtil.getDistance(rec.get("state"), targ.get("state"));
-		logger.info(rec.get("name") + " is " + d + " meters from " + targ.get("name"));
-		return per;
+
+		double rel = GeoLocationUtil.distanceRelativity(rec, targ);
+		int iperc = rec.get("statistics.perception");
+		double relPerc =  ((double)iperc * rel);
+		int irelp = (int)relPerc;
+		double d = GeoLocationUtil.getDistance(rec.get("state"), targ.get("state"));
+		logger.info("Distance " + d + " relativity " + rel + " / Relative perception: " + relPerc + " of " + rec.get("statistics.perception"));
+		return rollStat20(irelp);
 	}
 	public static ComparatorEnumType compare(double val1, double val2, double val1mod) {
 		return compare(val1 * val1mod, val2);

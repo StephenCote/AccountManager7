@@ -75,6 +75,14 @@ public class GeoLocationUtil {
 		return mapCellHeightM;
 	}
 
+	public static DirectionEnumType randomDirection() {
+		DirectionEnumType dir = OlioUtil.randomEnum(DirectionEnumType.class);
+		while(dir == DirectionEnumType.UNKNOWN) {
+			dir = OlioUtil.randomEnum(DirectionEnumType.class);
+		}
+		return dir;
+	}
+	
 	public static int prepareMapGrid(OlioContext ctx) {
     	long id = ctx.getUniverse().get("locations.id");
     	int count = IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id));
@@ -358,9 +366,14 @@ public class GeoLocationUtil {
     			logger.error("Index out of bounds: " + cx + ", " + cy);
     			break;
     		}
+    		/*
         	int east = (DirectionEnumType.getX(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + (int)lcell.get("eastings");
         	int north = (DirectionEnumType.getY(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + (int)lcell.get("northings");
-        	long pid = cell.get("parentId");
+        	*/
+        	int east = DirectionEnumType.getX(dir) + (int)lcell.get("eastings");
+        	int north = DirectionEnumType.getY(dir) + (int)lcell.get("northings");
+
+    		long pid = cell.get("parentId");
         	if(!cellMap.containsKey(pid)) {
         		cellMap.put(pid, GeoLocationUtil.getCells(ctx, GeoLocationUtil.getParentLocation(ctx, lcell)));
         	}
@@ -400,7 +413,7 @@ public class GeoLocationUtil {
     }
     
     /// findCell currently only looks 1 more past the edge
-    public static BaseRecord findCellToEdgePlusOne(OlioContext ctx, BaseRecord loc, List<BaseRecord> cells, int x, int y, boolean crossFeature) {
+    public static BaseRecord findCellToEdgePlusOne(OlioContext ctx, BaseRecord loc, List<BaseRecord> cells, int stateX, int stateY, boolean crossFeature) {
 
 		if(loc == null) {
 			logger.warn("Null current location!");
@@ -411,27 +424,28 @@ public class GeoLocationUtil {
 			return null;
 		}
 		BaseRecord par = GeoLocationUtil.getParentLocation(ctx, loc);
+		/*
 		int xedge = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		int yedge = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		*/
+		/*
+		int xedge = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1);
+		int yedge = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1);
+		*/
+
+		int xedge = Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		int yedge = Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+
 		int eastings = loc.get("eastings");
 		int northings = loc.get("northings");
-		/*
-		int px = 0;
-		if(x != 0) {
-			px = Math.abs(x / Rules.MAP_EXTERIOR_CELL_WIDTH);
-		}
-		int py = 0;
-		if(y != 0) {
-			py = Math.abs(y / Rules.MAP_EXTERIOR_CELL_HEIGHT);
-		}
-		*/
-		//logger.info(x + ":" + eastings + ":" + xedge + ", " + y + ":" + northings + ":" + yedge);
-		if(x < 0 || x > xedge || y < 0 || y > yedge){
+
+		// If stateX or stateY move outside of the current cell, then find the adjacent cell
+		if(stateX < 0 || stateX >= xedge || stateY < 0 || stateY >= yedge){
 			/// cross cell
-			if(x < 0) eastings -= 1;
-			else if(x > xedge) eastings += 1;
-			if(y < 0) northings -= 1;
-			else if(y > yedge) northings += 1;
+			if(stateX < 0) eastings -= 1;
+			else if(stateX >= xedge) eastings += 1;
+			if(stateY < 0) northings -= 1;
+			else if(stateY >= yedge) northings += 1;
 			
 			/// Check for cross-feature
 			if(
@@ -720,9 +734,13 @@ public class GeoLocationUtil {
 		int y2 = location2.get("northings");
 		return distance(x1, y1, x2, y2);
 	}
+	
+	/// Grid square coordinates are in meters, not lat/long, so the calculation is a slope
+	///
 	public static double distance(int x1, int y1, int x2, int y2) {
 		return Math.sqrt(Math.pow((double)x2 - x1,2) + Math.pow((double)y2 - y1, 2));
 	}
+
 	public static float calculateDistance(BaseRecord location1, BaseRecord location2) {
 		StringBuilder buff = new StringBuilder();
 		buff.append("SELECT SQRT(POW(69.1 * (G1.latitude -  G2.latitude), 2) + POW(69.1 * (G2.longitude - G1.longitude) * COS(G1.latitude / 57.3), 2))");
@@ -816,6 +834,95 @@ public class GeoLocationUtil {
 		//}
 
 		return names.toArray(new String[0]);
+	}
+	
+	public static double getDistance(BaseRecord state1, BaseRecord state2) {
+		Coordinates c1 = getCoordinates(state1);
+		Coordinates c2 = getCoordinates(state2);
+		return GeoLocationUtil.distance(c1.getX(), c1.getY(), c2.getX(), c2.getY());
+	}
+	
+	public static Coordinates getCoordinates(BaseRecord state) {
+		return new Coordinates(getXCoordinate(state), getYCoordinate(state));
+	}
+	
+	public static int getXCoordinate(BaseRecord state) {
+		BaseRecord loc = state.get("currentLocation");
+		if(loc == null) {
+			logger.error("Location is null in distance calculation");
+			return 0;
+		}
+		
+		BaseRecord floc = GeoLocationUtil.getParentLocation(null, loc);
+
+		int eastings = ((int)loc.get("eastings")) * (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+		int feastings = ((int)floc.get("eastings")) * (Rules.MAP_EXTERIOR_FEATURE_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+		int east1 = state.get("currentEast");
+		return (east1 + eastings + feastings);
+
+	}
+	
+	public static int getYCoordinate(BaseRecord state) {
+		BaseRecord loc = state.get("currentLocation");
+		if(loc == null) {
+			logger.error("Location is null in distance calculation");
+			return 0;
+		}
+		
+		BaseRecord floc = GeoLocationUtil.getParentLocation(null, loc);
+
+		int northings = ((int)loc.get("northings")) * (Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+		int fnorthings = ((int)floc.get("northings")) * (Rules.MAP_EXTERIOR_FEATURE_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+		int north = state.get("currentNorth");
+
+		return (north + northings + fnorthings);
+	}
+	
+	/// Based on a 12' (North) 0 vs. Trigometric x+ 0
+	///
+	public static double getAngleBetweenInDegrees(BaseRecord state1, BaseRecord state2) {
+		
+		Coordinates c1 = getCoordinates(state1);
+		Coordinates c2 = getCoordinates(state2);
+		double y = (c2.getY() - c1.getY());
+
+		double x = (c2.getX() - c1.getX());
+		double at2 = Math.atan2(y, x);
+		
+		/// rotate 90 degrees
+		///
+		at2 += 1.5708;
+
+		if (at2 < 0) {
+	    	at2 += (Math.PI * 2);
+	    }
+		
+		logger.info(c1.getX() + ", " + c1.getY() + " :: " + c2.getX() + ", " + c2.getY() + " " + at2);
+		//return at2 * (180 / Math.PI);
+
+	    return Math.toDegrees(at2);
+	}
+	/*
+	 * 		double at2 = Math.atan2(y2 - y1, x2 - x1);
+	     if (at2 < 0) {
+	          at2 += Math.PI * 2;
+	     }
+	     if(meander && rand.nextDouble() > .5) {
+	    	 at2 += (rand.nextDouble() > .5 ? 1 : -1) * rand.nextDouble(1);
+	     }
+	     double deg = Math.toDegrees(at2);
+	 */
+	
+	public static double distanceRelativity(BaseRecord rec1, BaseRecord rec2) {
+		int maxDist = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		double dist = getDistance(rec1.get("state"), rec2.get("state"));
+		if(dist <= 0) {
+			// logger.warn("Zero or negative distance detected");
+			
+		}
+		double perc = 1.0 - (dist / maxDist);
+		if(perc < 0) perc = 0;
+		return perc;
 	}
 
 }

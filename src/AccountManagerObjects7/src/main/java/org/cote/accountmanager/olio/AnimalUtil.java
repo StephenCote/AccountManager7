@@ -63,6 +63,7 @@ public class AnimalUtil {
 				}
 			}
 			IOSystem.getActiveContext().getRecordUtil().createRecords(parts.toArray(new BaseRecord[0]));
+			context.processQueue();
 			context.clearCache();
 		}
 	}
@@ -328,6 +329,21 @@ public class AnimalUtil {
 		}
 
 		return oanims.toArray(new BaseRecord[0]);
+	}
+	
+	public static double sprintMeterLimit(BaseRecord animal) {
+		int speed = animal.get("statistics.athleticism");
+		return Math.abs(((double)speed - 10)/10) * 800.0;
+	}
+	
+	public static double sprintMetersPerSecond(BaseRecord animal) {
+		int speed = animal.get("statistics.speed");
+		return Math.abs(((double)speed - 10)/10) * 10.2;
+	}
+	
+	public static double walkMetersPerSecond(BaseRecord animal) {
+		int speed = animal.get("statistics.speed");
+		return Math.abs(((double)speed - 10)/10) * 1.2;
 	}
 	
 }

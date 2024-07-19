@@ -17,19 +17,29 @@ import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.ErrorUtil;
 
 public class StateUtil {
 	public static final Logger logger = LogManager.getLogger(StateUtil.class);
 	private static final SecureRandom random = new SecureRandom();
 	
-	public static void queueUpdate(OlioContext context, BaseRecord obj) {
+	public static void queueUpdateLocation(OlioContext context, BaseRecord obj) {
 		BaseRecord state = obj;
 		if(!obj.getModel().equals(ModelNames.MODEL_CHAR_STATE)) {
 			state = obj.get(FieldNames.FIELD_STATE);
 		}
 		context.queueUpdate(state, new String[] { "currentLocation", "currentEast", "currentNorth" });
 	}
-	public static boolean move(OlioContext context, BaseRecord animal, DirectionEnumType dir) {
+	
+	/*
+	 * NOTE About State and Cell positions:
+	 * Cells are 100 square meters, parented to 1 square kilometer, and have eastings and northings numbered 0 - 9.
+	 * State.currentEast and currentNorth marks the position in the 100 meter square within the cell, and are numbered 0 - 99.
+	 */
+	
+	
+	/// NOTE: Does not queue update
+	public static boolean moveByOneMeterInCell(OlioContext context, BaseRecord animal, DirectionEnumType dir) {
 		BaseRecord state = animal.get(FieldNames.FIELD_STATE);
 		if(dir == DirectionEnumType.UNKNOWN) {
 			logger.warn("Direction is unknown");
@@ -52,10 +62,12 @@ public class StateUtil {
 
 		int x = state.get("currentEast");
 		int y = state.get("currentNorth");
-		
+		/*
 		int rx = (DirectionEnumType.getX(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + x;
 		int ry = (DirectionEnumType.getY(dir) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + y;
-
+		*/
+		int rx = DirectionEnumType.getX(dir) + x;
+		int ry = DirectionEnumType.getY(dir) + y;
 		moveByOne(context, animal, cells, rx, ry, true, true);
 		
 		BaseRecord nloc = state.get("currentLocation");
@@ -75,7 +87,8 @@ public class StateUtil {
 		
 	}
 	
-	public static void moveByOne(OlioContext context, BaseRecord animal, List<BaseRecord> cells, int x, int y, boolean allowCrossCell, boolean allowCrossFeature) {
+	/// NOTE: Does not queue update
+	private static void moveByOne(OlioContext context, BaseRecord animal, List<BaseRecord> cells, int stateX, int stateY, boolean allowCrossCell, boolean allowCrossFeature) {
 		BaseRecord state = animal.get("state");
 		if(state == null) {
 			return;
@@ -85,10 +98,25 @@ public class StateUtil {
 		if(loc == null) {
 			return;
 		}
+		/*
 		int xedge = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		int yedge = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		*/
+		int xedge = Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		int yedge = Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
+		
 		long id = loc.get(FieldNames.FIELD_ID);
-		BaseRecord node = GeoLocationUtil.findCellToEdgePlusOne(context, state.get("currentLocation"), cells, x, y, allowCrossFeature);
+		/*
+		/// CellX/Y used to test the boundary within the cell, and if it exceeds the boundary, change the location to the adjacent cell, and set the state position to that corresponding edge
+		///
+		int cellX = stateX;
+		int cellY = stateY;
+		
+		if(stateX != 0) cellX = (int)Math.floor((double)cellX)/Rules.MAP_EXTERIOR_CELL_WIDTH;
+		if(stateY != 0) cellY = (int)Math.floor((double)cellY)/Rules.MAP_EXTERIOR_CELL_HEIGHT;
+		*/
+		// logger.info("Find cell: " + stateX + ", " + stateY);
+		BaseRecord node = GeoLocationUtil.findCellToEdgePlusOne(context, state.get("currentLocation"), cells, stateX, stateY, allowCrossFeature);
 		if(node == null) {
 			// logger.warn("Failed to find node at: " + x + ", " + y);
 			/// failed to find node.  don't move.  just bail
@@ -97,42 +125,51 @@ public class StateUtil {
 		}
 		else {
 			long nid = node.get(FieldNames.FIELD_ID);
+			if(!evaluateCanMoveTo(context, animal, node)) {
+				return;
+			}
 			/// different cell
 			if(id != nid) {
 				/// TODO : Currently, every move will cross a cell
-				//logger.info("Cross cell");
+				// logger.info("Cross cell!");
 				if(!allowCrossCell) {
 					return;
 				}
-				if(!evaluateCanMoveTo(context, animal, node)) {
-					return;
-				}
+
 				/// logger.warn("Moving from cell " + id + " to " + nid);
-				if(x < 0) {
-					x = xedge;
+				if(stateX < 0) {
+					stateX = xedge - 1;
 				}
-				else if(x > xedge) {
-					x = 0;
+				else if(stateX >= xedge) {
+					stateX = 0;
 				}
-				if(y < 0) {
-					y = yedge;
+				if(stateY < 0) {
+					stateY = yedge - 1;
 				}
-				else if(y > yedge) {
-					y = 0;
+				else if(stateY >= yedge) {
+					stateY = 0;
 				}
 				state.setValue("currentLocation", node);
 			}
 			else {
-				if(x < 0 || x > xedge || y < 0 || y > yedge) {
-					logger.warn("Banging into border: " + node.get("id") + " " + x + ", " + y);
+				if(stateX < 0 || stateX >= xedge || stateY < 0 || stateY >= yedge) {
+					logger.warn("Banging into border: " + node.get("id") + " " + stateX + ", " + stateY);
 				}
 			}
-			if(y >= 0 && y <= yedge) {
-				state.setValue("currentNorth", y);
+			if(stateY < 0 || stateY >= yedge) {
+				logger.error("Failed to navigate intra-cell north to " + stateX + "::" + xedge + ", " + stateY + "::" + yedge);
 			}
-			if(x >= 0 && x <= xedge) {
-				state.setValue("currentEast", x);
+			if(stateX < 0 || stateX >= xedge) {
+				logger.error("Failed to navigate intra-cell east to " + stateX + "::" + xedge + ", " + stateY + "::" + yedge);
 			}
+
+			if(stateY >= 0 && stateY < yedge) {
+				state.setValue("currentNorth", stateY);
+			}
+			if(stateX >= 0 && stateX < xedge) {
+				state.setValue("currentEast", stateX);
+			}
+			// logger.info("Moved To: " + cellX + "." + stateX + ", " + cellY + "." + stateY);
 			// logger.info("Move " + x + ", " + y);
 			// context.queue(state.copyRecord(new String[] { FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth" }));
 		}
@@ -193,8 +230,13 @@ public class StateUtil {
 			setInitialLocation(context, state);
 			return;
 		}
+		/*
 		int reast = (random.nextInt(-1,1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + east;
 		int rnorth = (random.nextInt(-1,1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + north;
+		*/
+		DirectionEnumType dir = GeoLocationUtil.randomDirection();
+		int reast = DirectionEnumType.getX(dir)  + east;
+		int rnorth = DirectionEnumType.getY(dir) + north;
 
 		moveByOne(context, animal, cells, reast, rnorth, true, false);
 		// logger.info("Move from " + east + ", " + north + " to " + state.get("currentEast") + ", " + state.get("currentNorth"));
@@ -209,8 +251,13 @@ public class StateUtil {
 		boolean bal = false;
 		if(east == -1 || north == -1) {
 			try {
-				state.set("currentEast", random.nextInt(0, Rules.MAP_EXTERIOR_CELL_WIDTH) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
-				state.set("currentNorth", random.nextInt(0, Rules.MAP_EXTERIOR_CELL_HEIGHT) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+				/*
+				state.set("currentEast", random.nextInt(0, Rules.MAP_EXTERIOR_CELL_WIDTH - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+				state.set("currentNorth", random.nextInt(0, Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
+				*/
+				state.set("currentEast", random.nextInt(1, (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER)) - 1);
+				state.set("currentNorth", random.nextInt(1, (Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER)) - 1);
+
 				bal = true;
 			}
 			catch(ModelNotFoundException | FieldException | ValueException e) {
@@ -220,28 +267,11 @@ public class StateUtil {
 		return bal;
 	}
 	
-	public static double getDistance(BaseRecord state1, BaseRecord state2) {
-		BaseRecord loc1 = state1.get("currentLocation");
-		BaseRecord loc2 = state2.get("currentLocation");
-		if(loc1 == null || loc2 == null) {
-			logger.error("Null location");
-			return 0.0;
-		}
-		int eastings1 = ((int)loc1.get("eastings")) * (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
-		int northings1 = ((int)loc1.get("northings")) * (Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
-		int eastings2 = ((int)loc2.get("eastings")) * (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
-		int northings2 = ((int)loc2.get("eastings")) * (Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
-		
-		int x1 = state1.get("currentEast");
-		int y1 = state1.get("currentNorth");
-		int x2 = state2.get("currentEast");
-		int y2 = state2.get("currentNorth");
-		return GeoLocationUtil.distance(x1 + eastings1, y1 + northings1, x2 + eastings2, y2 + northings2);
-	}
+
 	
 	public static List<BaseRecord> observablePopulation(List<BaseRecord> pop, BaseRecord pov){
 		return pop.stream().filter(p -> {
-				double dist = StateUtil.getDistance(pov.get("state"), p.get("state"));
+				double dist = GeoLocationUtil.getDistance(pov.get("state"), p.get("state"));
 				int max = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 				// logger.info("Distance: " + dist + "::" + max);
 				boolean filt =(((long)p.get(FieldNames.FIELD_ID)) != (long)pov.get(FieldNames.FIELD_ID)

@@ -4,11 +4,14 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.awt.Image;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.StringReader;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
@@ -21,6 +24,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import javax.imageio.ImageIO;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
@@ -39,29 +43,36 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
-import org.cote.accountmanager.olio.ActionUtil;
+
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.AssessmentEnumType;
 import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.CharacterRoleEnumType;
 import org.cote.accountmanager.olio.DirectionEnumType;
+import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
+import org.cote.accountmanager.olio.LoveNeedsEnumType;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
+import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.ReasonEnumType;
+import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.ThreatUtil;
+import org.cote.accountmanager.olio.actions.ActionUtil;
+import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.llm.OllamaExchange;
 import org.cote.accountmanager.olio.llm.OllamaMessage;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
@@ -88,12 +99,15 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EffectEnumType;
+import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
+import org.cote.accountmanager.util.GraphicsUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.json.JSONObject;
@@ -112,7 +126,6 @@ public class TestOlio2 extends BaseTest {
 	private String universeName = "Olio Universe";
 	private String worldName = "Olio World";
 
-	
 	/// Using MGRS-like coding to subdivide the random maps
 	///
 	
@@ -166,41 +179,87 @@ public class TestOlio2 extends BaseTest {
 		octx.initialize();
 		assertTrue("Expected context to be initialized", octx.isInitialized());
 		
+		logger.info("Get realms");
 		BaseRecord[] realms = octx.getRealms();
 		assertTrue("Expected realms", realms.length > 0);
+		logger.info("Start/Continue Epoch");
 		BaseRecord evt = octx.startOrContinueEpoch();
 		
 		BaseRecord realm = realms[0];
 		BaseRecord lrec = realm.get("origin");
 		assertNotNull("Location was null", lrec);
 		
+		logger.info("Start/Continue Location Epoch");
 		BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
 		assertNotNull("Location epoch is null", levt);
+		
+		logger.info("Start/Continue Increment");
 		BaseRecord cevt = octx.startOrContinueIncrement();
-		octx.evaluateIncrement();
+		try {
+			octx.evaluateIncrement();
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+			return;
+		}
+		// octx.clearCache();
 		List<BaseRecord> pop = octx.getPopulation(lrec);
 
+		logger.info("Imprint Characters");
 		BaseRecord per1 = getImprintedCharacter(octx, pop, getLaurelPrint());
 		assertNotNull("Person was null", per1);
 		BaseRecord per2 = getImprintedCharacter(octx, pop, getDukePrint());
 		assertNotNull("Person was null", per2);
 		
+		logger.info("Look around");
 		look(octx, realm, pop, cevt, per1);
 		look(octx, realm, pop, cevt, per2);
 
+		logger.info(per1.get("state.id") + " " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
-		MapUtil.printRealmMap(octx, realm);
+		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
 		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms[0].get("origin")));
 		//BaseRecord upar = GeoLocationUtil.getParentLocation(octx, per1.get("state.currentLocation"));
-		MapUtil.printPovLocationMap(octx, realm, per1, 3);
-		MapUtil.printPovLocationMap(octx, realm, per2, 3);
+		// MapUtil.printPovLocationMap(octx, realm, per1, 3);
+		// MapUtil.printPovLocationMap(octx, realm, per2, 3);
 		
 		
 		DirectionEnumType dir = DirectionEnumType.UNKNOWN;
 		while(dir == DirectionEnumType.UNKNOWN) {
 			dir = OlioUtil.randomEnum(DirectionEnumType.class);
 		}
-		StateUtil.move(octx, per1, dir);
+		logger.info("Move " + dir.toString().toLowerCase());
+		StateUtil.moveByOneMeterInCell(octx, per1, dir);
+		StateUtil.queueUpdateLocation(octx, per1);
+		octx.processQueue();
+		
+		lookout(per1, per2);
+		lookout(per2, per1);
+		
+		ZonedDateTime ep = cevt.get("eventProgress");
+		ZonedDateTime ee = cevt.get("eventEnd");
+		long remMin = ep.until(ee, ChronoUnit.MINUTES);
+		logger.info("Minutes remaining: " + remMin);
+		
+		BaseRecord mact = null;
+		try{
+			mact = ActionUtil.getInAction(per1, "walkTo");
+			if(mact != null) {
+				mact.set("type", ActionResultEnumType.INCOMPLETE);
+				octx.queueUpdate(mact, new String[] {"type"});
+			}
+			mact = Actions.beginMoveTo(octx, cevt, per1, per2);
+			assertNotNull("Move action was null", mact);
+			Actions.executeAction(octx, mact);
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		assertNotNull("Move action was null", mact);
+		//logger.info(mact.toFullString());
+		
+		//logger.info(cevt.toFullString());
 		
 		//MapUtil.printLocationMap(octx, upar, realm, pop);
 		/*
@@ -244,17 +303,35 @@ public class TestOlio2 extends BaseTest {
 		//MapUtil.printMapFromAdmin2(octx);
 		
 		//assertNotNull("Root location is null", octx.getRootLocation());
-		
-
 	}
+	
+
+	
+	public void lookout(BaseRecord per1, BaseRecord per2) {
+		double dist = GeoLocationUtil.getDistance(per1.get("state"), per2.get("state"));
+		double time = (dist / AnimalUtil.walkMetersPerSecond(per1)) / 60;
+		double sprintTime = AnimalUtil.sprintMetersPerSecond(per1);
+		double sprintDist = AnimalUtil.sprintMeterLimit(per1);
+		double angle = GeoLocationUtil.getAngleBetweenInDegrees(per1.get("state"), per2.get("state"));
+
+		logger.info("Distance Between: " + per1.get("firstName") + " is " + dist + " meters from " + per2.get("firstName") + " / Angle " + angle + " " + DirectionEnumType.getDirectionFromDegrees(angle));
+		logger.info("Can " + per1.get("firstName") + " see " + per2.get("firstName") + "? " + RollUtil.rollPerception(per1, per2).toString());
+		logger.info("It would take " + per1.get("firstName") + " " + time + " minutes to walk there");
+		logger.info("It would take " + per1.get("firstName") + " " + sprintTime + " seconds to sprint " + sprintDist + " meters");
+	}
+
 	
 	private void look(OlioContext ctx, BaseRecord realm, List<BaseRecord> pop, BaseRecord increment, BaseRecord per) {
 		List<BaseRecord> fpop = StateUtil.observablePopulation(pop, per);
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = NeedsUtil.agitate(ctx, realm, increment, map, false);
-		String lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per, tmap);
-		logger.info(lar);
-
+		try {
+			Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
+			String lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per, tmap);
+			logger.info(lar);
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
 	}
 
 	
@@ -399,7 +476,7 @@ public class TestOlio2 extends BaseTest {
 		Set<Long> walkBack = new HashSet<>();
 		walkBack.add(lid);
 
-		boolean moved = StateUtil.move(ctx,  per1, dir);
+		boolean moved = StateUtil.moveByOneMeterInCell(ctx,  per1, dir);
 		
 		lid = per1.get("state.currentLocation.id");
 		walkBack.add(lid);
@@ -409,14 +486,14 @@ public class TestOlio2 extends BaseTest {
 		
 		long lastLid = lid;
 		for(int i = 0; i < wanderLength; i++) {
-			moved = StateUtil.move(ctx, per1, dir);
+			moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			if(!moved) {
 				logger.warn("Unable to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
 			}
 
 			List<BaseRecord> fpop = StateUtil.observablePopulation(pop, per1);
 			Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-			Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = NeedsUtil.agitate(ctx, realm, increment, map, true);
+			Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
 			List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
 			long lid1 = per1.get("state.currentLocation.id");
 			if(lid1 != lastLid) {
@@ -436,7 +513,7 @@ public class TestOlio2 extends BaseTest {
 		logger.info("Origin: " + sx + ", " + sy + "; #" + lid + ", " + rx + ", " + ry);
 		logger.info("Dest: " + sx1 + ", " + sy1 + "; #" + lid1 + ", " + rx1 + ", " + ry1);
 		
-		StateUtil.queueUpdate(ctx, per1);
+		StateUtil.queueUpdateLocation(ctx, per1);
 		BaseRecord upar = GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation"));
 		AnimalUtil.checkAnimalPopulation(ctx, realm, upar);
 		ctx.processQueue();
@@ -460,7 +537,7 @@ public class TestOlio2 extends BaseTest {
 		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));		
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
-			boolean moved = StateUtil.move(ctx, per1, dir);
+			boolean moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			if(!moved) {
 				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
 			}
@@ -468,7 +545,7 @@ public class TestOlio2 extends BaseTest {
 
 		List<BaseRecord> fpop = StateUtil.observablePopulation(pop, per1);
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = NeedsUtil.agitate(ctx, realm, increment, map, false);
+		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
 		String lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
 		// logger.info(lar);
 		
@@ -478,7 +555,7 @@ public class TestOlio2 extends BaseTest {
 		}
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
-			boolean moved = StateUtil.move(ctx, per1, dir);
+			boolean moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			if(!moved) {
 				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
 			}
@@ -487,12 +564,12 @@ public class TestOlio2 extends BaseTest {
 		
 		fpop = StateUtil.observablePopulation(pop, per1);
 		map = ProfileUtil.getProfileMap(ctx, fpop);
-		tmap = NeedsUtil.agitate(ctx, realm, increment, map, false);
+		tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
 		lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
 
 		logger.info(lar);
 
-		StateUtil.queueUpdate(ctx, state);
+		StateUtil.queueUpdateLocation(ctx, state);
 		ctx.processQueue();
 		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printLocationMap(ctx, GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation")), realm, pop);

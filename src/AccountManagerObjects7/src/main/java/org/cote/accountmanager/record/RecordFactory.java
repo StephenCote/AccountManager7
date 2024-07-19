@@ -104,6 +104,9 @@ public class RecordFactory {
 					instMap.put(cls, inst);
 				}
 			}
+			else {
+				return null;
+			}
 		}
 		return (T)instMap.get(cls);
 	}
@@ -129,7 +132,9 @@ public class RecordFactory {
 		} catch (ClassNotFoundException e) {
 			logger.error(e);
 		}
-		classMap.put(name, cls);
+		if(cls != null) {
+			classMap.put(name, cls);
+		}
 		return cls;
 	}
 	public static void clearCache(String name) {

@@ -28,6 +28,7 @@ public enum InteractionEnumType {
 	EXPRESS_GRATITUDE,
 	EXPRESS_INDIFFERENCE,
 	INTIMATE,
+	INVESTIGATE,
 	MENTOR,
 	NEGOTIATE,
 	NONE,
@@ -47,7 +48,7 @@ public enum InteractionEnumType {
 		
 	});
 	private static List<InteractionEnumType> neutralInteractions = Arrays.asList(new InteractionEnumType[] {
-		COMMERCE, COMPETE, CORRESPOND, DEBATE, DEFEND, EXCHANGE, NEGOTIATE, SOCIALIZE, UNKNOWN, NONE
+		COMMERCE, COMPETE, CORRESPOND, DEBATE, DEFEND, EXCHANGE, INVESTIGATE, NEGOTIATE, SOCIALIZE, UNKNOWN, NONE
 	});
 	private static List<InteractionEnumType> negativeInteractions = Arrays.asList(new InteractionEnumType[] {
 		BREAK_UP, COERCE, COMBAT, CONFLICT, CRITICIZE, EXPRESS_INDIFFERENCE, OPPOSE, PEER_PRESSURE, SHUN, THREATEN

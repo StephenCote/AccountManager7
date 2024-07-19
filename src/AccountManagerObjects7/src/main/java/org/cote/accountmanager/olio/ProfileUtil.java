@@ -19,10 +19,6 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.PersonalityProfile.EsteemNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.LoveNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.PhysiologicalNeeds;
-import org.cote.accountmanager.olio.PersonalityProfile.SafetyNeeds;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.MBTI;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -220,25 +216,25 @@ SLOAN Notation
 		return prof;
 	}
 	
-	protected static int countPhysiologicalNeed(Map<BaseRecord, PersonalityProfile> map, PhysiologicalNeeds need) {
+	protected static int countPhysiologicalNeed(Map<BaseRecord, PersonalityProfile> map, PhysiologicalNeedsEnumType need) {
 		return map.values().stream()
 		  .map(c -> c.getPhysiologicalNeeds().contains(need) ? 1 : 0)
 		  .reduce(0, Integer::sum);
 	}
 
-	protected static int countSafetyNeed(Map<BaseRecord, PersonalityProfile> map, SafetyNeeds need) {
+	protected static int countSafetyNeed(Map<BaseRecord, PersonalityProfile> map, SafetyNeedsEnumType need) {
 		return map.values().stream()
 		  .map(c -> c.getSafetyNeeds().contains(need) ? 1 : 0)
 		  .reduce(0, Integer::sum);
 	}
 	
-	protected static int countEsteemNeed(Map<BaseRecord, PersonalityProfile> map, EsteemNeeds need) {
+	protected static int countEsteemNeed(Map<BaseRecord, PersonalityProfile> map, EsteemNeedsEnumType need) {
 		return map.values().stream()
 		  .map(c -> c.getEsteemNeeds().contains(need) ? 1 : 0)
 		  .reduce(0, Integer::sum);
 	}
 	
-	protected static int countLoveNeed(Map<BaseRecord, PersonalityProfile> map, LoveNeeds need) {
+	protected static int countLoveNeed(Map<BaseRecord, PersonalityProfile> map, LoveNeedsEnumType need) {
 		return map.values().stream()
 		  .map(c -> c.getLoveNeeds().contains(need) ? 1 : 0)
 		  .reduce(0, Integer::sum);
@@ -253,29 +249,29 @@ SLOAN Notation
 	public static PersonalityGroupProfile getGroupProfile(Map<BaseRecord, PersonalityProfile> map){
 		PersonalityGroupProfile pgp = new PersonalityGroupProfile();
 		
-		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.FOOD, countPhysiologicalNeed(map, PhysiologicalNeeds.FOOD));
-		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.WATER, countPhysiologicalNeed(map, PhysiologicalNeeds.WATER));
-		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.REPRODUCTION, countPhysiologicalNeed(map, PhysiologicalNeeds.REPRODUCTION));
-		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.SHELTER, countPhysiologicalNeed(map, PhysiologicalNeeds.SHELTER));
-		pgp.getPhysiologicalNeeds().put(PhysiologicalNeeds.CLOTHING, countPhysiologicalNeed(map, PhysiologicalNeeds.CLOTHING));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeedsEnumType.FOOD, countPhysiologicalNeed(map, PhysiologicalNeedsEnumType.FOOD));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeedsEnumType.WATER, countPhysiologicalNeed(map, PhysiologicalNeedsEnumType.WATER));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeedsEnumType.REPRODUCTION, countPhysiologicalNeed(map, PhysiologicalNeedsEnumType.REPRODUCTION));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeedsEnumType.SHELTER, countPhysiologicalNeed(map, PhysiologicalNeedsEnumType.SHELTER));
+		pgp.getPhysiologicalNeeds().put(PhysiologicalNeedsEnumType.CLOTHING, countPhysiologicalNeed(map, PhysiologicalNeedsEnumType.CLOTHING));
 		
-		pgp.getSafetyNeeds().put(SafetyNeeds.EMPLOYMENT, countSafetyNeed(map, SafetyNeeds.EMPLOYMENT));
-		pgp.getSafetyNeeds().put(SafetyNeeds.HEALTH, countSafetyNeed(map, SafetyNeeds.HEALTH));
-		pgp.getSafetyNeeds().put(SafetyNeeds.PROPERTY, countSafetyNeed(map, SafetyNeeds.PROPERTY));
-		pgp.getSafetyNeeds().put(SafetyNeeds.RESOURCES, countSafetyNeed(map, SafetyNeeds.RESOURCES));
-		pgp.getSafetyNeeds().put(SafetyNeeds.SECURITY, countSafetyNeed(map, SafetyNeeds.SECURITY));
+		pgp.getSafetyNeeds().put(SafetyNeedsEnumType.EMPLOYMENT, countSafetyNeed(map, SafetyNeedsEnumType.EMPLOYMENT));
+		pgp.getSafetyNeeds().put(SafetyNeedsEnumType.HEALTH, countSafetyNeed(map, SafetyNeedsEnumType.HEALTH));
+		pgp.getSafetyNeeds().put(SafetyNeedsEnumType.PROPERTY, countSafetyNeed(map, SafetyNeedsEnumType.PROPERTY));
+		pgp.getSafetyNeeds().put(SafetyNeedsEnumType.RESOURCES, countSafetyNeed(map, SafetyNeedsEnumType.RESOURCES));
+		pgp.getSafetyNeeds().put(SafetyNeedsEnumType.SECURITY, countSafetyNeed(map, SafetyNeedsEnumType.SECURITY));
 		
-		pgp.getLoveNeeds().put(LoveNeeds.CONNECTION, countLoveNeed(map, LoveNeeds.CONNECTION));
-		pgp.getLoveNeeds().put(LoveNeeds.FAMILY, countLoveNeed(map, LoveNeeds.FAMILY));
-		pgp.getLoveNeeds().put(LoveNeeds.FRIENDSHIP, countLoveNeed(map, LoveNeeds.FRIENDSHIP));
-		pgp.getLoveNeeds().put(LoveNeeds.INTIMACY, countLoveNeed(map, LoveNeeds.INTIMACY));
+		pgp.getLoveNeeds().put(LoveNeedsEnumType.CONNECTION, countLoveNeed(map, LoveNeedsEnumType.CONNECTION));
+		pgp.getLoveNeeds().put(LoveNeedsEnumType.FAMILY, countLoveNeed(map, LoveNeedsEnumType.FAMILY));
+		pgp.getLoveNeeds().put(LoveNeedsEnumType.FRIENDSHIP, countLoveNeed(map, LoveNeedsEnumType.FRIENDSHIP));
+		pgp.getLoveNeeds().put(LoveNeedsEnumType.INTIMACY, countLoveNeed(map, LoveNeedsEnumType.INTIMACY));
 		
-		pgp.getEsteemNeeds().put(EsteemNeeds.FREEDOM, countEsteemNeed(map, EsteemNeeds.FREEDOM));
-		pgp.getEsteemNeeds().put(EsteemNeeds.RECOGNITION, countEsteemNeed(map, EsteemNeeds.RECOGNITION));
-		pgp.getEsteemNeeds().put(EsteemNeeds.RESPECT, countEsteemNeed(map, EsteemNeeds.RESPECT));
-		pgp.getEsteemNeeds().put(EsteemNeeds.SELF_ESTEEM, countEsteemNeed(map, EsteemNeeds.SELF_ESTEEM));
-		pgp.getEsteemNeeds().put(EsteemNeeds.STATUS, countEsteemNeed(map, EsteemNeeds.STATUS));
-		pgp.getEsteemNeeds().put(EsteemNeeds.STRENGTH, countEsteemNeed(map, EsteemNeeds.STRENGTH));
+		pgp.getEsteemNeeds().put(EsteemNeedsEnumType.FREEDOM, countEsteemNeed(map, EsteemNeedsEnumType.FREEDOM));
+		pgp.getEsteemNeeds().put(EsteemNeedsEnumType.RECOGNITION, countEsteemNeed(map, EsteemNeedsEnumType.RECOGNITION));
+		pgp.getEsteemNeeds().put(EsteemNeedsEnumType.RESPECT, countEsteemNeed(map, EsteemNeedsEnumType.RESPECT));
+		pgp.getEsteemNeeds().put(EsteemNeedsEnumType.SELF_ESTEEM, countEsteemNeed(map, EsteemNeedsEnumType.SELF_ESTEEM));
+		pgp.getEsteemNeeds().put(EsteemNeedsEnumType.STATUS, countEsteemNeed(map, EsteemNeedsEnumType.STATUS));
+		pgp.getEsteemNeeds().put(EsteemNeedsEnumType.STRENGTH, countEsteemNeed(map, EsteemNeedsEnumType.STRENGTH));
 		
 		countMoney(map, pgp);
 		
@@ -472,28 +468,28 @@ SLOAN Notation
 		if(store != null) {
 			List<BaseRecord> apparel = store.get("apparel");
 			if(apparel.size() == 0) {
-				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.CLOTHING);
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.CLOTHING);
 			}
 			
 			List<BaseRecord> items = store.get("items");
 			List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
 			if(water.size() == 0) {
-				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.WATER);
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.WATER);
 			}
 			
 			List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get("category"))).collect(Collectors.toList());
 			if(food.size() == 0) {
-				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.FOOD);
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.FOOD);
 			}
 			
 			//// simple calculation - if the person has nothing
 			if(items.size() == 0) {
-				prof.getSafetyNeeds().add(SafetyNeeds.RESOURCES);
+				prof.getSafetyNeeds().add(SafetyNeedsEnumType.RESOURCES);
 			}
 			
 			List<BaseRecord> locs = store.get("locations");
 			if(locs.size() == 0) {
-				prof.getSafetyNeeds().add(SafetyNeeds.PROPERTY);
+				prof.getSafetyNeeds().add(SafetyNeedsEnumType.PROPERTY);
 			}
 
 		}
@@ -501,47 +497,47 @@ SLOAN Notation
 			List<BaseRecord> addrl = cit.get("addresses");
 			List<BaseRecord> home = addrl.stream().filter(a -> LocationEnumType.HOME.toString().equals(a.get("locationType"))).collect(Collectors.toList());
 			if(home.size() == 0) {
-				prof.getPhysiologicalNeeds().add(PhysiologicalNeeds.SHELTER);	
+				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.SHELTER);	
 			}
 		}
 		
 		List<BaseRecord> partners = person.get("partners");
 		int marker = 0;
 		if(partners.size() == 0) {
-			prof.getLoveNeeds().add(LoveNeeds.INTIMACY);
+			prof.getLoveNeeds().add(LoveNeedsEnumType.INTIMACY);
 			marker++;
 		}
 
 		List<BaseRecord> siblings = person.get("siblings");
 		List<BaseRecord> dependents = person.get("dependents");
 		if(partners.size() == 0 && siblings.size() == 0 && dependents.size() == 0) {
-			prof.getLoveNeeds().add(LoveNeeds.FAMILY);
+			prof.getLoveNeeds().add(LoveNeedsEnumType.FAMILY);
 			marker++;
 		}
 		
 		List<BaseRecord> social = person.get("socialRing");
 		if(social.size() == 0) {
-			prof.getLoveNeeds().add(LoveNeeds.FRIENDSHIP);
+			prof.getLoveNeeds().add(LoveNeedsEnumType.FRIENDSHIP);
 			marker++;
 		}
 		
 		if(marker == 0) {
-			prof.getLoveNeeds().add(LoveNeeds.CONNECTION);
+			prof.getLoveNeeds().add(LoveNeedsEnumType.CONNECTION);
 		}
 		
 		//// Security calculation
 		//// Finance + Personal
-		prof.getSafetyNeeds().add(SafetyNeeds.SECURITY);
+		prof.getSafetyNeeds().add(SafetyNeedsEnumType.SECURITY);
 		
 		//// Employment calculation - use scheduled activity count
-		prof.getSafetyNeeds().add(SafetyNeeds.EMPLOYMENT);
+		prof.getSafetyNeeds().add(SafetyNeedsEnumType.EMPLOYMENT);
 		
 		
 		BaseRecord state = person.get("state");
 		if(state != null) {
 			double health = state.get("health");
 			if(health < 0.25) {
-				prof.getSafetyNeeds().add(SafetyNeeds.HEALTH);
+				prof.getSafetyNeeds().add(SafetyNeedsEnumType.HEALTH);
 			}
 		}
 		
