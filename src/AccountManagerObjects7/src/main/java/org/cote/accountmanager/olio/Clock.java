@@ -14,6 +14,9 @@ public class Clock {
 	private ZonedDateTime start = null;
 	private ZonedDateTime current = null;
 	private ZonedDateTime end = null;
+	private BaseRecord event = null;
+	private int cycle = 0;
+	
 	public Clock(ZonedDateTime start, ZonedDateTime current, ZonedDateTime end) {
 		this.start = start;
 		this.current = current;
@@ -22,6 +25,13 @@ public class Clock {
 	
 	public Clock(BaseRecord evt) {
 		this(evt.get("eventStart"), evt.get("eventProgress"), evt.get("eventEnd"));
+		this.event = event;
+	}
+	public int getCycle() {
+		return cycle;
+	}
+	public void addCycle() {
+		cycle++;
 	}
 	public void addSeconds(long sec) {
 		current = current.plusSeconds(sec);

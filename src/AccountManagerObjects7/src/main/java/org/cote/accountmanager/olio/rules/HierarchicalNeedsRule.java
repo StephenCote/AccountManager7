@@ -13,6 +13,7 @@ import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.record.BaseRecord;
 
@@ -44,6 +45,11 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 
 		NeedsUtil.recommend(context, locationEpoch, increment, party);
 
+		try {
+			context.overwatchActions();
+		} catch (OverwatchException e) {
+			logger.error(e);
+		}
 	}
 	
 	@Override

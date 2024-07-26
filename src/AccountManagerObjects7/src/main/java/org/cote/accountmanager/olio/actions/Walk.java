@@ -21,38 +21,30 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 
-public class WalkTo implements IAction {
+public class Walk implements IAction {
 	
-	public static final Logger logger = LogManager.getLogger(WalkTo.class);
-	private static double proximateDistance = 1.5;
+	public static final Logger logger = LogManager.getLogger(Walk.class);
+	
 	@Override
 	public void configureAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		// TODO Auto-generated method stub
-		/*
-		BaseRecord targ = getTarget(participants, influencers);
 
-		*/
-		if(interactor == null) {
-			throw new OlioException("Expected a target");
-		}
-		ActionUtil.setDestination(context, actionResult, interactor.get("state"));
-		List<BaseRecord> inters = actionResult.get("interactions");
-		if(inters.size() > 0) {
-			BaseRecord inter = inters.get(0);
-			inter.setValue("type", InteractionEnumType.INVESTIGATE);
-		}
 	}
 	
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		/*
-		BaseRecord targ = getTarget(participants, influencers);
 
-		*/
-		if(interactor == null) {
-			throw new OlioException("Expected a target");
+		BaseRecord params = actionResult.get("parameters");
+		if(params == null) {
+			throw new OlioException("Missing required parameters");
 		}
-		ActionUtil.updateTimeToDistance(actionResult, actor, interactor);
+		
+		double dist = params.get("distance");
+		if(dist == 0.0) {
+			dist = 1.0;
+		}
+		double mps = AnimalUtil.walkMetersPerSecond(actor);
+		long timeSeconds = (long)(dist / mps);
+		ActionUtil.edgeSecondsUntilEnd(actionResult, timeSeconds);
 		context.queueUpdate(actionResult, new String[]{"actionEnd"});
 		return actionResult;
 	}
@@ -64,15 +56,35 @@ public class WalkTo implements IAction {
 	
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		double angle = GeoLocationUtil.getAngleBetweenInDegrees(actor.get("state"), interactor.get("state"));
-		DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(angle);
 		
-		boolean moved = StateUtil.moveByOneMeterInCell(context, actor, dir);
+		
+		BaseRecord params = actionResult.get("parameters");
+		if(params == null) {
+			throw new OlioException("Missing required parameters");
+		}
+		DirectionEnumType dir = params.getEnum("direction");
+		if(dir == DirectionEnumType.UNKNOWN) {
+			throw new OlioException("Direction is unknown");
+		}
+		
+		double dist = params.get("distance");
+		if(dist == 0.0) {
+			dist = 1.0;
+		}
+		boolean moved = false;
+		for(double i = 0; i < dist; i++) {
+			moved = StateUtil.moveByOneMeterInCell(context, actor, dir);
+			if(!moved) {
+				break;
+			}
+		}
 
-		double dist = GeoLocationUtil.getDistance(actor.get("state"), interactor.get("state"));
-		long cost = calculateCostMS(context, actionResult, actor, interactor);
-		//long rem = (long)(dist * cost);
-		//logger.info("Remaining: " + dist + "m / " + rem + "ms");
+		if(moved) {
+			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);
+		}
+		else {
+			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
+		}
 		
 		return moved;
 	}
@@ -84,15 +96,7 @@ public class WalkTo implements IAction {
 
 	@Override
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		// TODO Auto-generated method stub
-		ActionResultEnumType aret = actionResult.get(FieldNames.FIELD_TYPE);
-		//long cost = calculateCostMS(context, actionResult, actor, interactor);
-		double dist = GeoLocationUtil.getDistance(actor.get("state"), interactor.get("state"));
-		if(dist <= proximateDistance) {
-			aret = ActionResultEnumType.COMPLETE;
-		}
-		logger.info("Remaining: " + dist + "m");
-		return aret;
+		return actionResult.get(FieldNames.FIELD_TYPE);
 	}
 
 

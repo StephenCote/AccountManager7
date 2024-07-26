@@ -1,6 +1,25 @@
 [
 	{
 		"model": "olio.action",
+		"name": "walkTo",
+		"provider": "org.cote.accountmanager.olio.actions.WalkTo",
+		"counterActions": [
+			"wait"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
+		"name": "walk",
+		"provider": "org.cote.accountmanager.olio.actions.Walk",
+		"counterActions": [
+			"wait"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
+		"model": "olio.action",
 		"counterActions": [
 			"wait",
 			"gather",
@@ -33,15 +52,7 @@
 			"reaction"
 		]
 	},
-	{
-		"name": "walkTo",
-		"provider": "org.cote.accountmanager.olio.actions.WalkTo",
-		"counterActions": [
-			"wait"
-		],
-		"minimumEnergyCost": 0.1,
-		"minimumTime": 1
-	},
+
 	{
 		"counterActions": [
 			"wait",

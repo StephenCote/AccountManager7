@@ -303,7 +303,7 @@ public class NarrativeUtil {
 	}
 	
 	public static String getRoleDescription(CharacterRoleEnumType type) {
-		String desc = "is hanging around with";
+		String desc = "wants to hang around";
 		switch(type) {
 			case ACQUAINTENCE:
 				desc = "wants to get to know";

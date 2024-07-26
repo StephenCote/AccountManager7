@@ -897,7 +897,7 @@ public class GeoLocationUtil {
 	    	at2 += (Math.PI * 2);
 	    }
 		
-		logger.info(c1.getX() + ", " + c1.getY() + " :: " + c2.getX() + ", " + c2.getY() + " " + at2);
+		// logger.info(c1.getX() + ", " + c1.getY() + " :: " + c2.getX() + ", " + c2.getY() + " " + at2);
 		//return at2 * (180 / Math.PI);
 
 	    return Math.toDegrees(at2);

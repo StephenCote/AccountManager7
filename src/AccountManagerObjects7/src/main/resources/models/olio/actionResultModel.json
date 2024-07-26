@@ -31,6 +31,12 @@
 			"foreign": true
 		},
 		{
+			"name": "parameters",
+			"type": "model",
+			"baseModel": "olio.actionParameters",
+			"followReference": false
+		},
+		{
 			"name": "type",
 			"baseClass": "org.cote.accountmanager.schema.type.ActionResultEnumType",
 			"type": "enum",

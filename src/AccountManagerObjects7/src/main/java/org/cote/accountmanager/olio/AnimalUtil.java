@@ -32,6 +32,7 @@ public class AnimalUtil {
 	
 	private static List<BaseRecord> animalTemplates = new ArrayList<>();
 	private static final SecureRandom random = new SecureRandom();
+	private static int defaultAnimalSpeed = 10;
 	
 	private static final Map<Long, Map<String, List<BaseRecord>>> animalSpread = new ConcurrentHashMap<>();
 	
@@ -342,8 +343,14 @@ public class AnimalUtil {
 	}
 	
 	public static double walkMetersPerSecond(BaseRecord animal) {
-		int speed = animal.get("statistics.speed");
-		return Math.abs(((double)speed - 10)/10) * 1.2;
+		double speed = (double)(int)animal.get("statistics.speed");
+		if(speed <= 0) {
+			logger.warn("Invalid speed for #" + animal.get("id") + " " + animal.get("name") + ": Using default");
+			speed = defaultAnimalSpeed;
+		}
+		/// Average walking speed is 1.2 meters per second
+		// logger.info(animal.get("name") + " speed " + speed + " is " + ((speed/10)*1.2) + "mps");
+		return (speed/10) * 1.2;
 	}
 	
 }

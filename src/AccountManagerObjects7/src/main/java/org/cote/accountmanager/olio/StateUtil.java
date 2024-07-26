@@ -11,6 +11,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
@@ -189,38 +190,38 @@ public class StateUtil {
 	
 
 	
-	public static void agitateLocation(OlioContext context, BaseRecord animal) {
+	public static boolean agitateLocation(OlioContext context, BaseRecord animal) {
 		BaseRecord state = animal.get("state");
 		if(state == null) {
-			return;
+			return false;
 		}
 		
 		BaseRecord loc = state.get("currentLocation");
 		if(loc == null) {
 			logger.warn("Location is null");
-			return;
+			return false;
 		}
 
-		agitateLocation(context, animal, GeoLocationUtil.getCells(context, GeoLocationUtil.getParentLocation(context, loc)));
+		return agitateLocation(context, animal, GeoLocationUtil.getCells(context, GeoLocationUtil.getParentLocation(context, loc)));
 	}
-	public static void agitateLocation(OlioContext context, BaseRecord animal, List<BaseRecord> cells) {
+	public static boolean agitateLocation(OlioContext context, BaseRecord animal, List<BaseRecord> cells) {
 		BaseRecord state = animal.get("state");
 		if(state == null) {
-			return;
+			return false;
 		}
 		
 		BaseRecord loc = state.get("currentLocation");
 		if(loc == null) {
 			logger.warn("Location is null");
-			return;
+			return false;
 		}
 		
 		/// If the state is currently committed to an action, don't agitate it's location
 		///
 		List<BaseRecord> acts = state.get("actions");
 		if(acts.size() > 0) {
-			logger.warn("Don't agitate with current action");
-			return;
+			// logger.warn("Don't agitate with current action: " + animal.get("name"));
+			return false;
 		}
 
 		int east = state.get("currentEast");
@@ -228,17 +229,25 @@ public class StateUtil {
 		if(east == -1 || north == -1) {
 			/// logger.warn("Set initial location");
 			setInitialLocation(context, state);
-			return;
+			return true;
 		}
 		/*
 		int reast = (random.nextInt(-1,1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + east;
 		int rnorth = (random.nextInt(-1,1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) + north;
 		*/
 		DirectionEnumType dir = GeoLocationUtil.randomDirection();
+		try {
+			Actions.beginMove(context, context.getCurrentIncrement(), animal, dir);
+		} catch (OlioException e) {
+			logger.error(e);
+		}
+		/*
 		int reast = DirectionEnumType.getX(dir)  + east;
 		int rnorth = DirectionEnumType.getY(dir) + north;
 
 		moveByOne(context, animal, cells, reast, rnorth, true, false);
+		*/
+		return true;
 		// logger.info("Move from " + east + ", " + north + " to " + state.get("currentEast") + ", " + state.get("currentNorth"));
 	}
 	public static boolean setInitialLocation(OlioContext context, BaseRecord state) {

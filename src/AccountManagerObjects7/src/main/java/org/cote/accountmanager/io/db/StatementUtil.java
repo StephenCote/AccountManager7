@@ -458,7 +458,7 @@ public class StatementUtil {
 			&& !schema.isForeign()
 			&& schema.getFieldType() != FieldEnumType.LIST
 		) {
-			throw new FieldException("Field schema is not a foreign reference or foreign list");
+			throw new FieldException("Field schema " + schema.getName() + " is not a foreign reference or foreign list");
 		}
 		
 		if(schema.getBaseModel() == null) {

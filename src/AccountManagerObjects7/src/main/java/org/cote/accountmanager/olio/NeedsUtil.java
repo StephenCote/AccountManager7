@@ -96,17 +96,19 @@ public class NeedsUtil {
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
 
-		logger.info("Calculating initial recommendation ....");
+		logger.info("Calculating recommendation ....");
 		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
 		/// Agitate map, people, animals, and identify initial threats
 		///
 		List<BaseRecord> inters = increment.get("interactions");
 		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = getAgitatedThreatMap(ctx, realm, increment, map, false);
 		List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
+
 		for(BaseRecord tint : tinters) {
 			inters.add(tint);
 			ctx.queue(tint);
 		}
+		logger.info("Calculating threat interactions ... " + tinters.size());
 		
 		/// Evaluate needs 
 		List<BaseRecord> actions = evaluateNeeds(ctx, locationEpoch, increment, group, map);

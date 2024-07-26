@@ -37,6 +37,7 @@ public class OlioContext {
 	public static final Logger logger = LogManager.getLogger(OlioContext.class);
 	
 	protected OlioContextConfiguration config = null;
+	private Overwatch overwatch = null;
 	protected BaseRecord world = null;
 	protected BaseRecord universe = null;
 	private boolean initialized = false;
@@ -69,10 +70,20 @@ public class OlioContext {
 	private boolean initConfig = false;
 	
 	private boolean trace = false;
+	private Clock clock = null;
 	
 	public OlioContext(OlioContextConfiguration cfg) {
 		this.config = cfg;
+		this.overwatch = new Overwatch(this);
 	}
+	
+	public void overwatchActions() throws OverwatchException {
+		overwatch.process();
+	}
+	public Overwatch getOverwatch() {
+		return overwatch;
+	}
+
 	public void clearCache() {
 		populationMap.clear();
 		demographicMap.clear();
@@ -304,6 +315,8 @@ public class OlioContext {
 				logger.info("Get/Create Epoch ...");
 			}
 			currentEpoch = EventUtil.getLastEpochEvent(this);
+			//clock = new Clock(currentEpoch);
+			
 			locations = GeoLocationUtil.getRegionLocations(this);
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
 

@@ -115,15 +115,15 @@ public class ActionUtil {
 		state.setValue("currentEast", targState.get("currentEast"));
 	}
 	
-	public static BaseRecord newActionResult(OlioContext ctx, String actionName, AssessmentEnumType needType, String needName) {
+	public static BaseRecord newActionResult(OlioContext ctx, String actionName) {
 		BaseRecord act = ActionUtil.getAction(ctx, actionName);
 		if(act == null) {
 			logger.error("Null action");
 			return null;
 		}
-		return newActionResult(ctx, act, needType, needName, null);
+		return newActionResult(ctx, act, newActionParameters(AssessmentEnumType.UNKNOWN, null, actionName), null);
 	}
-	public static BaseRecord newActionResult(OlioContext ctx, BaseRecord action, AssessmentEnumType needType, String needName, BaseRecord interaction) {
+	public static BaseRecord newActionResult(OlioContext ctx, BaseRecord action, BaseRecord params, BaseRecord interaction) {
 
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
 		BaseRecord actionResult = null;
@@ -131,8 +131,9 @@ public class ActionUtil {
 			actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
 			actionResult.set("action", action);
 			actionResult.set("builder", null);
-			actionResult.set("needType", AssessmentEnumType.LOVE);
-			actionResult.set("need", needName);
+			actionResult.set("needType", params.get("needType"));
+			actionResult.set("need", params.get("needName"));
+			actionResult.set("parameters", params);
 			actionResult.set(FieldNames.FIELD_TYPE, ActionResultEnumType.PENDING);
 			if(interaction != null) {
 				List<BaseRecord> iacts = actionResult.get("interactions");
@@ -142,6 +143,21 @@ public class ActionUtil {
 			logger.error(e);
 		}
 		return actionResult;
+	}
+	
+	public static BaseRecord newActionParameters(AssessmentEnumType needType, String needName, String actionName) {
+
+		BaseRecord actionParams = null;
+		try {
+			actionParams = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_PARAMETERS);
+			actionParams.set("actionName", actionName);
+			actionParams.set("needType", needType);
+			actionParams.set("needName", needName);
+
+		} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
+			logger.error(e);
+		}
+		return actionParams;
 	}
 	
 	public static void loadActions(OlioContext ctx) {

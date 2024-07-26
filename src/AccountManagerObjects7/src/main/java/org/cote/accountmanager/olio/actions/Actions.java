@@ -12,6 +12,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.AssessmentEnumType;
+import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionEnumType;
@@ -20,6 +21,7 @@ import org.cote.accountmanager.olio.LoveNeedsEnumType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.Overwatch.OverwatchEnumType;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -80,7 +82,7 @@ public class Actions {
 		actions.add(actionResult);
 		*/
 	}
-	protected static IAction getActionProvider(OlioContext ctx, String actionName) throws OlioException {
+	public static IAction getActionProvider(OlioContext ctx, String actionName) throws OlioException {
 
 		BaseRecord act = ActionUtil.getAction(ctx, actionName);
 		if(act == null) {
@@ -89,7 +91,7 @@ public class Actions {
 		return getActionProvider(ctx, act);
 	}
 	
-	protected static IAction getActionProvider(OlioContext ctx, BaseRecord act) throws OlioException {
+	public static IAction getActionProvider(OlioContext ctx, BaseRecord act) throws OlioException {
 		if(act == null) {
 			throw new OlioException("Action is null");
 		}
@@ -109,16 +111,20 @@ public class Actions {
 		return actProv;
 	}
 	
-	public static BaseRecord beginAction(OlioContext context, BaseRecord event, String actionName, AssessmentEnumType needType, String needName, BaseRecord actor, BaseRecord interactor) throws OlioException {
+	public static BaseRecord beginAction(OlioContext context, BaseRecord event, String actionName, BaseRecord actor, BaseRecord interactor) throws OlioException {
+		return beginAction(context, event, ActionUtil.newActionParameters(AssessmentEnumType.UNKNOWN, null, actionName), actor, interactor);
+	}
+	public static BaseRecord beginAction(OlioContext context, BaseRecord event, BaseRecord params, BaseRecord actor, BaseRecord interactor) throws OlioException {
+		
 		BaseRecord iact = null;
 		if(interactor != null) {
 			iact = InteractionUtil.newInteraction(context, InteractionEnumType.UNKNOWN, null, actor, ThreatEnumType.NONE, interactor);
 		}
-		return beginAction(context, event, actionName, needType, needName, actor, interactor, iact);
+		return beginAction(context, event, params, actor, interactor, iact);
 	}
-	public static BaseRecord beginAction(OlioContext context, BaseRecord event, String actionName, AssessmentEnumType needType, String needName, BaseRecord actor, BaseRecord interactor, BaseRecord interaction) throws OlioException {
+	public static BaseRecord beginAction(OlioContext context, BaseRecord event, BaseRecord params, BaseRecord actor, BaseRecord interactor, BaseRecord interaction) throws OlioException {
 			
-		
+		String actionName = params.get("actionName");
 		BaseRecord cact = ActionUtil.getInAction(actor, actionName);
 		if(cact != null) {
 			logger.warn(actor.get(FieldNames.FIELD_NAME) + " is already in the middle of a '" + actionName + "' action.  Current action must be completed or abandoned.");
@@ -131,7 +137,7 @@ public class Actions {
 		}
 		IAction act = getActionProvider(context, actionName);
 
-		BaseRecord actr = ActionUtil.newActionResult(context, action, needType, needName, interaction);
+		BaseRecord actr = ActionUtil.newActionResult(context, action, params, interaction);
 		if(actr == null) {
 			throw new OlioException("Failed to create action result for " + actionName);
 		}
@@ -154,6 +160,8 @@ public class Actions {
 		updateState(context, actr, actor);
 
 		context.processQueue();
+		
+		context.getOverwatch().watch(OverwatchEnumType.ACTION, new BaseRecord[] {actr});
 		
 		return actr;
 	}
@@ -183,22 +191,32 @@ public class Actions {
 		if(action == null) {
 			throw new OlioException("Invalid action: " + actName);
 		}
-		List<BaseRecord> inters = actionResult.get("interactions");
-		if(inters.size() > 0) {
-			logger.info(NarrativeUtil.describeInteraction(inters.get(0)));
-		}
 		
+		boolean narrate = actionResult.get("parameters.narrate");
+		
+		if(narrate) {
+			List<BaseRecord> inters = actionResult.get("interactions");
+			if(inters.size() > 0) {
+				logger.info(NarrativeUtil.describeInteraction(inters.get(0)));
+			}
+		}
 		ActionUtil.addProgressMS(actionResult, action.calculateCostMS(context, actionResult, actor, interactor));
 		context.queueUpdate(actionResult, new String[] {"actionProgress"});
 		
-		logger.info("Execute action: " + actName);
-		boolean outBool = action.executeAction(context, actionResult, actor, interactor);
+		//logger.info("Execute action: " + actName);
+		return action.executeAction(context, actionResult, actor, interactor);
 		
-		return outBool;
 	}
 
+	public static BaseRecord beginMove(OlioContext ctx, BaseRecord evt, BaseRecord per1, DirectionEnumType dir) throws OlioException {
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "walk");
+		params.setValue("direction", dir);
+		return beginAction(ctx, evt, params, per1, null);
+	}
+	
 	public static BaseRecord beginMoveTo(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2) throws OlioException {
-		return beginAction(ctx, evt, "walkTo", AssessmentEnumType.LOVE, LoveNeedsEnumType.FRIENDSHIP.toString().toLowerCase(), per1, per2);
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "walkTo");
+		return beginAction(ctx, evt, params, per1, per2);
 	}
 
 

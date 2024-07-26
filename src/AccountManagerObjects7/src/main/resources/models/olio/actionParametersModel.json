@@ -1,0 +1,41 @@
+{
+	"name": "olio.actionParameters",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+			{
+			"name": "actionName",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "direction",
+			"baseClass": "org.cote.accountmanager.olio.DirectionEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
+			"name": "narrate",
+			"type": "boolean"
+		},
+		{
+			"name": "distance",
+			"type": "double",
+			"default": 0.0
+		},
+		{
+			"name": "needName",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "needType",
+			"baseClass": "org.cote.accountmanager.olio.AssessmentEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "UNKNOWN"
+		}
+
+	]
+}
