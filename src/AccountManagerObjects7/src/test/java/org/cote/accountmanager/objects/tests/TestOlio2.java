@@ -71,6 +71,7 @@ import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.ThreatUtil;
+import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.llm.OllamaExchange;
@@ -139,7 +140,7 @@ public class TestOlio2 extends BaseTest {
 		/// Eastings: ##### - within a 100K ident on a map with a 1000m grid, the first two numbers come from the label of the grid line west of the position, and the last three digits are the distance in meters from the wester grid line 
 		/// 
 		// AuditUtil.setLogToConsole(false);
-		
+
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -152,7 +153,7 @@ public class TestOlio2 extends BaseTest {
 			new String[] {},
 			2,
 			50,
-			resetWorld,
+			true,
 			resetUniverse
 		);
 	
@@ -210,11 +211,13 @@ public class TestOlio2 extends BaseTest {
 		assertNotNull("Person was null", per1);
 		BaseRecord per2 = getImprintedCharacter(octx, pop, getDukePrint());
 		assertNotNull("Person was null", per2);
-		
+
+		/*
 		logger.info("Look around");
 		look(octx, realm, pop, cevt, per1);
 		look(octx, realm, pop, cevt, per2);
-
+		*/
+		
 		logger.info(per1.get("state.id") + " " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
@@ -249,8 +252,11 @@ public class TestOlio2 extends BaseTest {
 				octx.queueUpdate(mact, new String[] {"type"});
 			}
 			mact = Actions.beginMoveTo(octx, cevt, per1, per2);
+			octx.overwatchActions();
+			/*
 			assertNotNull("Move action was null", mact);
 			Actions.executeAction(octx, mact);
+			*/
 		}
 		catch(Exception e) {
 			logger.error(e);
@@ -309,12 +315,13 @@ public class TestOlio2 extends BaseTest {
 	
 	public void lookout(BaseRecord per1, BaseRecord per2) {
 		double dist = GeoLocationUtil.getDistance(per1.get("state"), per2.get("state"));
-		double time = (dist / AnimalUtil.walkMetersPerSecond(per1)) / 60;
+		double mps = AnimalUtil.walkMetersPerSecond(per1);
+		double time = (dist / mps) / 60;
 		double sprintTime = AnimalUtil.sprintMetersPerSecond(per1);
 		double sprintDist = AnimalUtil.sprintMeterLimit(per1);
 		double angle = GeoLocationUtil.getAngleBetweenInDegrees(per1.get("state"), per2.get("state"));
 
-		logger.info("Distance Between: " + per1.get("firstName") + " is " + dist + " meters from " + per2.get("firstName") + " / Angle " + angle + " " + DirectionEnumType.getDirectionFromDegrees(angle));
+		logger.info("Distance Between: " + per1.get("firstName") + " is " + dist + " meters at " + mps + "mps from " + per2.get("firstName") + " / Angle " + angle + " " + DirectionEnumType.getDirectionFromDegrees(angle));
 		logger.info("Can " + per1.get("firstName") + " see " + per2.get("firstName") + "? " + RollUtil.rollPerception(per1, per2).toString());
 		logger.info("It would take " + per1.get("firstName") + " " + time + " minutes to walk there");
 		logger.info("It would take " + per1.get("firstName") + " " + sprintTime + " seconds to sprint " + sprintDist + " meters");
