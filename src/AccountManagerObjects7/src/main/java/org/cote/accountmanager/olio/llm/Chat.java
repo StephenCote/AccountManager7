@@ -15,7 +15,6 @@ import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
-import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
@@ -42,7 +41,7 @@ public class Chat {
 	private String analyzeName = "analyze.save";
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
-
+	private boolean formatOutput = false;
 	private boolean includeScene = false;
 
 	private String llmSystemPrompt = """
@@ -56,6 +55,14 @@ Begin conversationally.
 		this.promptConfig = promptConfig;
 	}
 	
+	public boolean isFormatOutput() {
+		return formatOutput;
+	}
+
+	public void setFormatOutput(boolean formatOutput) {
+		this.formatOutput = formatOutput;
+	}
+
 	public void setSessionName(String sessionName) {
 		this.sessionName = (sessionName != null ? ChatUtil.getSessionName(user, chatConfig, promptConfig, sessionName) : null);
 	}
@@ -241,7 +248,7 @@ Begin conversationally.
 					continue;
 				}
 				if(line.startsWith("/analyzeAll")) {
-					logger.info(analyze(req, line.substring(8).trim(), true));
+					logger.info(analyze(req, line.substring(11).trim(), true));
 					continue;
 				}
 				if(line.startsWith("/analyze")) {
@@ -342,11 +349,18 @@ Begin conversationally.
 			String cont = rep.getMessage().getContent();
 			if(emitResponse && cont != null) {
 				cont = cont.trim().replaceAll("^assistant[:]*\s*", "");
-				System.out.println(cont);
+				System.out.println(formatOutput(cont));
 			}
 		}
 	}
-	
+
+	private String formatOutput(String input) {
+		if(!formatOutput) {
+			return input;
+		}
+		String output = input.replace('’', '\'');
+		return output;
+	}
 	public OllamaRequest newRequest(String model) {
 		OllamaRequest req = new OllamaRequest();
 		req.setModel(model);

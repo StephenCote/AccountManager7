@@ -33,6 +33,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -202,6 +203,7 @@ public class RecordFactory {
 		BaseRecord lbmb = looseBaseModels.get(model);
 		FieldType ft = lbmb.getField(field);
 		if(ft == null) {
+			ErrorUtil.printStackTrace();
 			throw new FieldException("newFieldInstance: Field " + field + " was not found on model " + model);
 		}
 		return newFieldInstance(ft);
@@ -230,7 +232,7 @@ public class RecordFactory {
 			looseImports.put(name, rawModels.get(name));
 			return rawModels.get(name);
 		}
-		String file = ResourceUtil.getModelResource(name);
+		String file = ResourceUtil.getInstance().getModelResource(name);
 		if(file != null) {
 			looseImports.put(name, file);
 		}
@@ -415,7 +417,7 @@ public class RecordFactory {
 		schemas.remove(name);
 		rawModels.remove(name);
 		
-		ResourceUtil.releaseModelResource(name);
+		ResourceUtil.getInstance().releaseModelResource(name);
 	}
 	
 	public static void deleteOrganization(long orgId) {
@@ -525,7 +527,7 @@ public class RecordFactory {
 	public static ModelSchema getCustomSchemaFromResource(String name, String resourceName) {
 		ModelSchema ms = getIOSchema(name);
 		if(ms == null) {
-			String schema = ResourceUtil.getModelResource(resourceName);
+			String schema = ResourceUtil.getInstance().getModelResource(resourceName);
 			if(schema != null) {
 				ms = importSchemaFromUser(name, schema);
 			}

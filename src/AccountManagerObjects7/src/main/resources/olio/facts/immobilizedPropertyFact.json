@@ -1,0 +1,8 @@
+{
+	"urn": "resource.olio.fact.immobilizedProperty",
+	"name": "Immobilized Property",
+	"propertyName": "immobilized",
+	"value": true,
+	"valueType": "boolean",
+	"type": "property"
+}

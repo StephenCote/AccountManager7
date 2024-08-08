@@ -1,8 +1,5 @@
 package org.cote.accountmanager.olio.sd;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class SDResponse {
 	private String[] images = new String[0];
 	private SDTxt2Img parameters = null;

@@ -3,9 +3,9 @@
 	"inherits": ["common.attributeList", "policy.score", "common.description"],
 	"fields": [
 		{
-			"name": "message",
-			"type": "string",
-			"maxLength": 255
+			"name": "messages",
+			"type": "list",
+			"baseType": "string"
 		},
 		{
 			"name": "ruleChain",

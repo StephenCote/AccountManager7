@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio.actions;
 
-import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -8,16 +7,10 @@ import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.AssessmentEnumType;
 import org.cote.accountmanager.olio.DirectionEnumType;
-import org.cote.accountmanager.olio.EventUtil;
-import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.InteractionUtil;
-import org.cote.accountmanager.olio.LoveNeedsEnumType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
@@ -26,8 +19,6 @@ import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.EventEnumType;
 
 public class Actions {
 	public static final Logger logger = LogManager.getLogger(Actions.class);

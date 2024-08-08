@@ -77,7 +77,7 @@ public class SchemaUtil {
 	private static List<Class<? extends Enum<?>>> enumList = Arrays.asList(FieldEnumType.class, SystemPermissionEnumType.class, AccountEnumType.class, AccountStatusEnumType.class, ActionEnumType.class, ApprovalEnumType.class, ApprovalResponseEnumType.class, ApproverEnumType.class, AuthenticationResponseEnumType.class, ComparatorEnumType.class, CompressionEnumType.class, ConditionEnumType.class, ConnectionEnumType.class, ContactEnumType.class, ContactInformationEnumType.class, ControlActionEnumType.class, ControlEnumType.class, CredentialEnumType.class, EffectEnumType.class, FactEnumType.class, FunctionEnumType.class, GroupEnumType.class, LevelEnumType.class, LocationEnumType.class, OperationEnumType.class, OperationResponseEnumType.class, OrderEnumType.class, OrganizationEnumType.class, PatternEnumType.class, PermissionEnumType.class, PolicyRequestEnumType.class, PolicyResponseEnumType.class, QueryEnumType.class, ResponseEnumType.class, RoleEnumType.class, RuleEnumType.class, SpoolBucketEnumType.class, SpoolNameEnumType.class, SpoolStatusEnumType.class, SqlDataEnumType.class, StatisticsEnumType.class, StreamEnumType.class, TagEnumType.class, UserEnumType.class, UserStatusEnumType.class, ValidationEnumType.class, ValueEnumType.class, VerificationEnumType.class);
 	
 	private static String getModel(String name) {
-		return ResourceUtil.getModelResource(name);
+		return ResourceUtil.getInstance().getModelResource(name);
 	}
 	
 	private static void loadModel(String name) {
@@ -157,7 +157,7 @@ public class SchemaUtil {
 				if(buff.length() > 1) {
 					buff.append(",\n");
 				}
-				buff.append(ResourceUtil.getValidationRuleResource(s));
+				buff.append(ResourceUtil.getInstance().getValidationRuleResource(s));
 			}
 			buff.append("]\n");
 			validationRuleBuffer = "\"validationRules\": " + buff.toString();

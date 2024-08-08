@@ -21,6 +21,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.policy.operation.IOperation;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -393,8 +394,9 @@ public class PolicyEvaluator {
 	}
 	private OperationResponseEnumType evaluateForFact(BaseRecord prt, BaseRecord prr, BaseRecord pattern, BaseRecord fact, BaseRecord matchFact) throws FieldException, ValueException, ModelNotFoundException, ModelException {
 		OperationResponseEnumType outResponse;
-		String mData = futil.getMatchFactValue(prt, prr, fact, matchFact);
-		if(mData != null) {
+		FieldType fData = futil.getMatchFactValue(prt, prr, fact, matchFact);
+		if(fData != null && fData.getValue() != null) {
+			String mData = fData.getValue();
 			BaseRecord attr = RecordFactory.model(ModelNames.MODEL_ATTRIBUTE).newInstance();
 			attr.set(FieldNames.FIELD_NAME,  matchFact.get(FieldNames.FIELD_NAME));
 			attr.setString(FieldNames.FIELD_VALUE,  mData);
@@ -417,9 +419,11 @@ public class PolicyEvaluator {
 	private OperationResponseEnumType evaluateExpression(BaseRecord prt,BaseRecord prr, BaseRecord pattern, BaseRecord fact, BaseRecord matchFact) throws FieldException, ValueException, ModelNotFoundException {
 		OperationResponseEnumType outResponse;
 		
-		String chkData = futil.getFactValue(prt, prr, fact, matchFact);
-		String mData = futil.getMatchFactValue(prt, prr,fact, matchFact);
-		ComparatorEnumType comp = pattern.get(FieldNames.FIELD_COMPARATOR);
+		// String chkData = futil.getFactValue(prt, prr, fact, matchFact);
+		// String mData = futil.getMatchFactValue(prt, prr,fact, matchFact);
+		FieldType chkData = futil.getFactValue(prt, prr, fact, matchFact);
+		FieldType mData = futil.getMatchFactValue(prt, prr, fact, matchFact);
+		ComparatorEnumType comp = pattern.getEnum(FieldNames.FIELD_COMPARATOR);
 		if(RuleUtil.compareValue(chkData, comp, mData)) outResponse = OperationResponseEnumType.SUCCEEDED;
 		else outResponse = OperationResponseEnumType.FAILED;
 		return outResponse;

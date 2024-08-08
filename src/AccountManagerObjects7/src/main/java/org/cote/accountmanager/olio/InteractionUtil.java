@@ -29,7 +29,7 @@ public class InteractionUtil {
 
 	public static List<BaseRecord> getInteractionTemplates(){
 		if(interactionTemplates.size() == 0) {
-			interactionTemplates = JSONUtil.getList(ResourceUtil.getResource("olio/interactions.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+			interactionTemplates = JSONUtil.getList(ResourceUtil.getInstance().getResource("olio/interactions.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		}
 		return interactionTemplates;
 	}

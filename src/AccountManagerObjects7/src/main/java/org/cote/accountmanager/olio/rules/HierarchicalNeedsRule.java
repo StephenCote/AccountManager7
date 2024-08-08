@@ -1,18 +1,13 @@
 package org.cote.accountmanager.olio.rules;
 
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.factory.ParticipationFactory;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
-import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.record.BaseRecord;

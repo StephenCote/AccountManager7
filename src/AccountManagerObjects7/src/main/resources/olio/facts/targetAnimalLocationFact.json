@@ -1,0 +1,20 @@
+{
+	"name": "Target Animal Location",
+	"urn": "resource.policy.fact.targetAnimalLocation",
+	"type": "parameter",
+	"parameters": [
+		{
+			"name": "targetLocation",
+			"valueType": "model",
+			"valueModel": "data.geoLocation",
+			"value": null
+		},
+		{
+			"name": "animalActor",
+			"valueType": "model",
+			"valueModel": "olio.animal",
+			"value": null
+		}
+	
+	]
+}

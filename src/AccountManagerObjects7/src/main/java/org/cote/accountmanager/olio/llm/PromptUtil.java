@@ -16,7 +16,6 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileComparison;
 import org.cote.accountmanager.olio.ProfileUtil;
-import org.cote.accountmanager.olio.RaceEnumType;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;

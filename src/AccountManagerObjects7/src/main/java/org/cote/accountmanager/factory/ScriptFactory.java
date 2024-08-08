@@ -44,7 +44,7 @@ public class ScriptFactory extends BaseFactory {
 		super(modelFactory, schema);
 		logger.info("Initialize script factory");
 		if(schema.getFactory().startsWith("resource:")) {
-			setupScriptSource(ResourceUtil.getResource(schema.getFactory().replace("resource:", "")));
+			setupScriptSource(ResourceUtil.getInstance().getResource(schema.getFactory().replace("resource:", "")));
 		}
 	}
 	

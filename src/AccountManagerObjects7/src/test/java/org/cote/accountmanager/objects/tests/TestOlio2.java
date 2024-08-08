@@ -43,7 +43,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
-
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
@@ -207,9 +207,9 @@ public class TestOlio2 extends BaseTest {
 		List<BaseRecord> pop = octx.getPopulation(lrec);
 
 		logger.info("Imprint Characters");
-		BaseRecord per1 = getImprintedCharacter(octx, pop, getLaurelPrint());
+		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getLaurelPrint());
 		assertNotNull("Person was null", per1);
-		BaseRecord per2 = getImprintedCharacter(octx, pop, getDukePrint());
+		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
 
 		/*
@@ -236,8 +236,8 @@ public class TestOlio2 extends BaseTest {
 		StateUtil.queueUpdateLocation(octx, per1);
 		octx.processQueue();
 		
-		lookout(per1, per2);
-		lookout(per2, per1);
+		OlioTestUtil.lookout(per1, per2);
+		OlioTestUtil.lookout(per2, per1);
 		
 		ZonedDateTime ep = cevt.get("eventProgress");
 		ZonedDateTime ee = cevt.get("eventEnd");
@@ -313,275 +313,8 @@ public class TestOlio2 extends BaseTest {
 	
 
 	
-	public void lookout(BaseRecord per1, BaseRecord per2) {
-		double dist = GeoLocationUtil.getDistance(per1.get("state"), per2.get("state"));
-		double mps = AnimalUtil.walkMetersPerSecond(per1);
-		double time = (dist / mps) / 60;
-		double sprintTime = AnimalUtil.sprintMetersPerSecond(per1);
-		double sprintDist = AnimalUtil.sprintMeterLimit(per1);
-		double angle = GeoLocationUtil.getAngleBetweenInDegrees(per1.get("state"), per2.get("state"));
-
-		logger.info("Distance Between: " + per1.get("firstName") + " is " + dist + " meters at " + mps + "mps from " + per2.get("firstName") + " / Angle " + angle + " " + DirectionEnumType.getDirectionFromDegrees(angle));
-		logger.info("Can " + per1.get("firstName") + " see " + per2.get("firstName") + "? " + RollUtil.rollPerception(per1, per2).toString());
-		logger.info("It would take " + per1.get("firstName") + " " + time + " minutes to walk there");
-		logger.info("It would take " + per1.get("firstName") + " " + sprintTime + " seconds to sprint " + sprintDist + " meters");
-	}
-
-	
-	private void look(OlioContext ctx, BaseRecord realm, List<BaseRecord> pop, BaseRecord increment, BaseRecord per) {
-		List<BaseRecord> fpop = StateUtil.observablePopulation(pop, per);
-		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-		try {
-			Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
-			String lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per, tmap);
-			logger.info(lar);
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-		}
-	}
-
-	
-	private BaseRecord getImprintedCharacter(OlioContext ctx, List<BaseRecord> pop, CharacterPrint print) {
-		Optional<BaseRecord> oper = pop.stream().filter(p -> print.getName().equals(p.get(FieldNames.FIELD_NAME))).findFirst();
-		if(oper.isPresent()) {
-			return oper.get();
-		}
-		List<BaseRecord> glist = pop.stream().filter(p -> print.getGender().equals(p.get("gender"))).collect(Collectors.toList());
-		if(glist.size() == 0) {
-			logger.error("Failed to find a gendered population");
-			return null;
-		}
-		BaseRecord temp = glist.get((new Random()).nextInt(glist.size()));
-		if(print.getOutfit() != null) {
-			String[] outfit = print.getOutfit().split(",");
-			BaseRecord apparel = ApparelUtil.constructApparel(ctx, 0L, temp, outfit);
-			apparel.setValue("inuse", true);
-			List<BaseRecord> wearl = apparel.get("wearables");
-			wearl.forEach(w -> {
-				w.setValue("inuse", true);
-			});
-			IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
-			BaseRecord store = temp.get("store");
-			List<BaseRecord> appl = store.get("apparel");
-			for(BaseRecord a : appl) {
-				IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, "apparel", a, null, false);
-			}
-			appl.clear();
-			appl.add(apparel);
-			IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, "apparel", apparel, null, true);
-		}
 
 
-
-		if(print.getStatistics() != null) {
-			/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_STATISTICS, print.getStatistics()), temp.get("statistics"), true);
-		}
-		if(print.getPersonality() != null) {
-			/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, print.getPersonality()), temp.get("personality"), true);
-		}
-		if(print.getPerson() != null) {
-			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_PERSON, print.getPerson()), temp);
-		}
-		
-		return temp;
-	}
-
-	private CharacterPrint getLaurelPrint() {
-		CharacterPrint cp = new CharacterPrint("Laurel Kelsey Carrera");
-		cp.setGender("female");
-		cp.setPerson("{firstName: \"Laurel\", middleName: \"Kelsey\", lastName: \"Carrera\", name: \"Laurel Kelsey Carrera\", age: 21, hairColor: {id:181}, hairStyle: \"long and tangled\", eyeColor:{id: 291}, alignment:\"CHAOTICGOOD\",race:[\"E\"],ethnicity:[\"NINE\"],trades:[\"enchantress\"]}");
-		cp.setStatistics("{physicalStrength:7,physicalEndurance:12,manualDexterity:15,agility:17,mentalStrength:18,mentalEndurance:16, intelligence:15,wisdom:17,perception:15,creativity:18,spirituality:18,charisma:19}");
-		cp.setOutfit("camisole,underwear,thigh-high heeled boots,amulet,jewelry:piercing:7:f:ear");
-		cp.setPersonality("{machiavellianism:0.75}");
-		return cp;
-	}
-	
-	private CharacterPrint getDukePrint() {
-		CharacterPrint cp = new CharacterPrint("Duke Abraham Washington");
-		cp.setPerson("{firstName: \"Duke\", middleName: \"Abraham\", lastName: \"Washington\", name: \"Duke Abraham Washington\", alignment:\"CHAOTICEVIL\",race:[\"E\", \"L\"],trades:[\"serial killer\"]}");
-		cp.setStatistics("{physicalStrength:17,agility:17,intelligence:18,perception:19,charisma:12}");
-		cp.setPersonality("{psychopathy:0.9,narcissism:0.65}");
-		return cp;
-	}
-	
-	class CharacterPrint{
-		private String name = null;
-		private String gender = "male";
-		private String outfit = null;
-		private String person = null;
-		private String statistics = null;
-		private String personality = null;
-		public CharacterPrint(String name) {
-			this.name = name; 
-		}
-		
-		public String getGender() {
-			return gender;
-		}
-
-		public void setGender(String gender) {
-			this.gender = gender;
-		}
-
-		public String getOutfit() {
-			return outfit;
-		}
-		public void setOutfit(String outfit) {
-			this.outfit = outfit;
-		}
-		public String getPerson() {
-			return person;
-		}
-		public void setPerson(String person) {
-			this.person = person;
-		}
-		public String getStatistics() {
-			return statistics;
-		}
-		public void setStatistics(String statistics) {
-			this.statistics = statistics;
-		}
-		public String getPersonality() {
-			return personality;
-		}
-		public void setPersonality(String personality) {
-			this.personality = personality;
-		}
-		public String getName() {
-			return name;
-		}
-		
-	}
-	
-	private int wanderLength = 300;
-	private void wanderAmok(OlioContext ctx, BaseRecord event, BaseRecord increment, BaseRecord realm, List<BaseRecord> pop, BaseRecord per1) {
-		/// Walk in random direction for 20Km (1km == (CellWidth * 10, or FeatureWidth/Height) * CellMultiplier - If the multiplier is 10, then the smallest distance of 1 is 10 meters, or, 100 is 1Km.) 
-		assertNotNull("Person location is null", per1.get("state.currentLocation"));
-		
-		/// Move person back into a random cell in the realm origin
-		BaseRecord org = realm.get("origin");
-		List<BaseRecord> ocells = GeoLocationUtil.getCells(ctx, org);
-		
-		DirectionEnumType dir = DirectionEnumType.UNKNOWN;
-		while(dir == DirectionEnumType.UNKNOWN) {
-			dir = OlioUtil.randomEnum(DirectionEnumType.class);
-		}
-		logger.info(per1.get(FieldNames.FIELD_NAME) + " is wandering amok " + dir.toString().toLowerCase());
-		BaseRecord state = per1.get("state");
-		state.setValue("currentLocation", ocells.get((new Random()).nextInt(ocells.size())));
-		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
-		
-		int sx = per1.get("state.currentEast");
-		int sy = per1.get("state.currentNorth");
-		int rx = per1.get("state.currentLocation.eastings");
-		int ry = per1.get("state.currentLocation.northings");
-		
-		long lid = per1.get("state.currentLocation.id");
-		Set<Long> walkBack = new HashSet<>();
-		walkBack.add(lid);
-
-		boolean moved = StateUtil.moveByOneMeterInCell(ctx,  per1, dir);
-		
-		lid = per1.get("state.currentLocation.id");
-		walkBack.add(lid);
-		if(!moved) {
-			logger.warn("Unable to move that way");
-		}
-		
-		long lastLid = lid;
-		for(int i = 0; i < wanderLength; i++) {
-			moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
-			if(!moved) {
-				logger.warn("Unable to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
-			}
-
-			List<BaseRecord> fpop = StateUtil.observablePopulation(pop, per1);
-			Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-			Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
-			List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
-			long lid1 = per1.get("state.currentLocation.id");
-			if(lid1 != lastLid) {
-				assertFalse("Walked back from " + lastLid + " to " + lid1, walkBack.contains(lid1));
-				lastLid = lid1;
-				walkBack.add(lid1);
-			}
-		
-		}
-		
-		int sx1 = per1.get("state.currentEast");
-		int sy1 = per1.get("state.currentNorth");
-		int rx1 = per1.get("state.currentLocation.eastings");
-		int ry1 = per1.get("state.currentLocation.northings");
-		long lid1 = per1.get("state.currentLocation.id");
-
-		logger.info("Origin: " + sx + ", " + sy + "; #" + lid + ", " + rx + ", " + ry);
-		logger.info("Dest: " + sx1 + ", " + sy1 + "; #" + lid1 + ", " + rx1 + ", " + ry1);
-		
-		StateUtil.queueUpdateLocation(ctx, per1);
-		BaseRecord upar = GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation"));
-		AnimalUtil.checkAnimalPopulation(ctx, realm, upar);
-		ctx.processQueue();
-		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
-		MapUtil.printPovLocationMap(ctx, realm, per1, 3);
-		MapUtil.printLocationMap(ctx, upar, realm, pop);
-
-	}
-	
-	private void wanderAimlessly(OlioContext ctx, BaseRecord event, BaseRecord increment, BaseRecord realm, List<BaseRecord> pop, BaseRecord per1) {
-		/// Walk northwest for 1Km.
-		DirectionEnumType dir = DirectionEnumType.UNKNOWN;
-		while(dir == DirectionEnumType.UNKNOWN) {
-			dir = OlioUtil.randomEnum(DirectionEnumType.class);
-		}
-		logger.info(per1.get(FieldNames.FIELD_NAME) + " is wandering around");
-		//List<BaseRecord> fpop = pop.stream().filter(p -> ((long)p.get(FieldNames.FIELD_ID)) != (long)per1.get(FieldNames.FIELD_ID)).collect(Collectors.toList());
-		//Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-		
-		BaseRecord state = per1.get("state");
-		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));		
-		logger.info("Wander " + dir.toString().toLowerCase());
-		for(int i = 0; i < 100; i++) {
-			boolean moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
-			if(!moved) {
-				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
-			}
-		}
-
-		List<BaseRecord> fpop = StateUtil.observablePopulation(pop, per1);
-		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
-		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
-		String lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
-		// logger.info(lar);
-		
-		dir = DirectionEnumType.UNKNOWN;
-		while(dir == DirectionEnumType.UNKNOWN) {
-			dir = OlioUtil.randomEnum(DirectionEnumType.class);
-		}
-		logger.info("Wander " + dir.toString().toLowerCase());
-		for(int i = 0; i < 100; i++) {
-			boolean moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
-			if(!moved) {
-				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
-			}
-
-		}
-		
-		fpop = StateUtil.observablePopulation(pop, per1);
-		map = ProfileUtil.getProfileMap(ctx, fpop);
-		tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
-		lar  = NarrativeUtil.lookaround(ctx, realm, increment, increment, fpop, per1, tmap);
-
-		logger.info(lar);
-
-		StateUtil.queueUpdateLocation(ctx, state);
-		ctx.processQueue();
-		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
-		MapUtil.printLocationMap(ctx, GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation")), realm, pop);
-
-	}
 	
 
 	

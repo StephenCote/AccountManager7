@@ -238,7 +238,7 @@ public class AnimalUtil {
 	
 	protected static BaseRecord[] importAnimals(OlioContext ctx) {
 		// logger.info("Import default animal configuration");
-		String[] anims = JSONUtil.importObject(ResourceUtil.getResource("olio/animals.json"), String[].class);
+		String[] anims = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/animals.json"), String[].class);
 		List<BaseRecord> oanims = new ArrayList<>();
 		try {
 			

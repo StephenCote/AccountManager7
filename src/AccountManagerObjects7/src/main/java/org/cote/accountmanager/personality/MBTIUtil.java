@@ -29,7 +29,7 @@ public class MBTIUtil {
 	}
 	public static Map<String, MBTI> getMBTIDef(){
 		if(mbtiDef.keySet().size() == 0) {
-			String[] mbtiJson = JSONUtil.importObject(ResourceUtil.getResource("olio/mbti.json"), String[].class);
+			String[] mbtiJson = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/mbti.json"), String[].class);
 			for(String s: mbtiJson) {
 				String[] pairs = s.split("\\|");
 				mbtiDef.put(pairs[0], new MBTI(pairs[0], pairs[1], pairs[2], pairs[3]));

@@ -3,7 +3,6 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -66,7 +65,7 @@ public class NarrativeUtil {
 	private static String[] settings = new String[0];
 	public static String[] getSettings() {
 		if(settings.length == 0) {
-			settings = JSONUtil.importObject(ResourceUtil.getResource("olio/settings.json"), String[].class);
+			settings = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/settings.json"), String[].class);
 		}
 		return settings;
 	}

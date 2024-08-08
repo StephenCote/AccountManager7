@@ -164,6 +164,24 @@ public class OlioContext {
 	private BaseRecord adminRole = null;
 	private BaseRecord userRole = null;
 	
+	public boolean enroleReader(BaseRecord user) {
+		return enrole(user, userRole);
+	}
+	public boolean enroleAdmin(BaseRecord user) {
+		return enrole(user, adminRole);
+	}
+	protected boolean enrole(BaseRecord user, BaseRecord role) {
+		boolean enabled = false;
+		if(!IOSystem.getActiveContext().getMemberUtil().isMember(user, role,  null)) {
+			enabled = IOSystem.getActiveContext().getMemberUtil().member(olioUser, role, user, null, true);
+		}
+		else {
+			enabled = true;
+		}
+		return enabled;
+
+	}
+	
 	public void configureWorld(BaseRecord cfgWorld, boolean userWrite) throws OlioException {
 		if(initConfig) {
 			return;
@@ -193,6 +211,7 @@ public class OlioContext {
 				String[] rperms = new String[] {"Read"};
 				String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
 				ioContext.getAuthorizationUtil().setEntitlement(olioUser, userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+				ioContext.getAuthorizationUtil().setEntitlement(olioUser, adminRole, new BaseRecord[] {group}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 			}
 		}
 
@@ -276,7 +295,7 @@ public class OlioContext {
 			if(world == null) {
 				throw new OlioException("Failed to load world " + config.getWorldName());
 			}
-			configureWorld(universe, true);
+			configureWorld(world, true);
 			if(config.isResetWorld()) {
 				if(trace) {
 					logger.info("Reset World ...");

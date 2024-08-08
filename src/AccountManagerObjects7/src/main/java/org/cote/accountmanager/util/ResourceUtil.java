@@ -14,51 +14,65 @@ public class ResourceUtil {
 	public static final Logger logger = LogManager.getLogger(ResourceUtil.class);
 	
 	private static Map<String, String> cache = new ConcurrentHashMap<>();
-	public static String RESOURCE_PREFIX = "";
+	public String resourcePrefix = "";
+	
+	private static ResourceUtil _instance = null;
+	public ResourceUtil() {
+		
+	}
+	public void setResourcePrefix(String pref) {
+		resourcePrefix = pref;
+	}
+	public static ResourceUtil getInstance() {
+		if(_instance == null) {
+			_instance = new ResourceUtil();
+		}
+		return _instance;
+	}
 	
 	public static void clearCache() {
 		cache.clear();
 	}
 	
-	public static String getCategoryResource(String name) {
-		return getResource(RESOURCE_PREFIX + "categories/" + name + "Category.json");
+	public String getCategoryResource(String name) {
+		return getResource(resourcePrefix + "categories/" + name + "Category.json");
 	}
 	
-	public static void releaseModelResource(String name) {
+	public void releaseModelResource(String name) {
 		cache.remove(name.replaceAll("\\.", "/"));
 	}
 	
-	public static String getModelResource(String name) {
+	public String getModelResource(String name) {
 		String namePath = name.replaceAll("\\.", "/");
-		return getResource(RESOURCE_PREFIX + "models/" + namePath + "Model.json");
+		return getResource(resourcePrefix + "models/" + namePath + "Model.json");
 	}
-	public static String getFunctionResource(String name) {
-		return getResource(RESOURCE_PREFIX + "functions/" + name + "Function.js");
+	public String getFunctionResource(String name) {
+		return getResource(resourcePrefix + "functions/" + name + "Function.js");
 	}
-	public static String getFunctionResourceObject(String name) {
-		return getResource(RESOURCE_PREFIX + "functions/" + name + "Function.json");
+	public String getFunctionResourceObject(String name) {
+		return getResource(resourcePrefix + "functions/" + name + "Function.json");
 	}
-	public static String getScriptResourceObject(String name) {
-		String rec = BinaryUtil.toBase64Str(getResource(RESOURCE_PREFIX + "functions/javascript/" + name + "Function.js"));
+	public String getScriptResourceObject(String name) {
+		String rec = BinaryUtil.toBase64Str(getResource(resourcePrefix + "functions/javascript/" + name + "Function.js"));
 		return "{\"dataBytesStore\": \"" + rec + "\"}";
 	}
 	
-	public static String getFactResource(String name) {
-		return getResource(RESOURCE_PREFIX + "facts/" + name + "Fact.json");
+	public String getFactResource(String name) {
+		return getResource(resourcePrefix + "facts/" + name + "Fact.json");
 	}
-	public static String getPatternResource(String name) {
-		return getResource(RESOURCE_PREFIX + "patterns/" + name + "Pattern.json");
+	public String getPatternResource(String name) {
+		return getResource(resourcePrefix + "patterns/" + name + "Pattern.json");
 	}
-	public static String getRuleResource(String name) {
-		return getResource(RESOURCE_PREFIX + "rules/" + name + "Rule.json");
+	public String getRuleResource(String name) {
+		return getResource(resourcePrefix + "rules/" + name + "Rule.json");
 	}
-	public static String getValidationRuleResource(String name) {
-		return getResource(RESOURCE_PREFIX + "validationRules/" + name + "Rule.json");
+	public String getValidationRuleResource(String name) {
+		return getResource(resourcePrefix + "validationRules/" + name + "Rule.json");
 	}
-	public static String getPolicyResource(String name) {
-		return getResource(RESOURCE_PREFIX + "policies/" + name + "Policy.json");
+	public String getPolicyResource(String name) {
+		return getResource(resourcePrefix + "policies/" + name + "Policy.json");
 	}
-	public static String getResource(String path) {
+	public String getResource(String path) {
 		if(cache.containsKey(path)) {
 			return cache.get(path);
 		}

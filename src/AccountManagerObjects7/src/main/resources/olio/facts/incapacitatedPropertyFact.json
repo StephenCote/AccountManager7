@@ -1,0 +1,8 @@
+{
+	"urn": "resource.olio.fact.incapacitatedProperty",
+	"name": "Incapacitated Property",
+	"propertyName": "incapacitated",
+	"value": true,
+	"valueType": "boolean",
+	"type": "property"
+}

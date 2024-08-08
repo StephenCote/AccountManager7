@@ -32,15 +32,11 @@ public class PolicyResponseType extends LooseRecord {
 		setFieldList(rec.getFields());
 		setFieldMap(rec.getFieldMap());
 	}
-	public String getMessage() {
-		return get("message");
+	public List<String> getMessages() {
+		return get("messages");
 	}
-	public void setMessage(String message) {
-		try {
-			set("message", message);
-		} catch (FieldException | ModelNotFoundException | ValueException e) {
-			logger.error(e);
-		}
+	public void addMessage(String message) {
+		getMessages().add(message);
 	}
 	public List<String> getPatternChain() {
 		return get("patternChain");

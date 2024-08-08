@@ -1,0 +1,11 @@
+{
+	"urn": "resource.olio.pattern.movementOdds",
+	"type": "operation",
+	"name": "Movement Odds Pattern",
+	"operation": {
+		"type": "internal",
+		"operation": "org.cote.accountmanager.olio.operation.CalculateMovementOddsOperation"
+	},
+	"fact": "${fact.targetAnimalLocation}",
+	"match": "${fact.terminator}"
+}

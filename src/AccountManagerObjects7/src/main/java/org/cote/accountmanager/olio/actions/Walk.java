@@ -1,18 +1,11 @@
 package org.cote.accountmanager.olio.actions;
 
-import java.time.ZonedDateTime;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.AnimalUtil;
-import org.cote.accountmanager.olio.AssessmentEnumType;
 import org.cote.accountmanager.olio.DirectionEnumType;
-import org.cote.accountmanager.olio.EventUtil;
-import org.cote.accountmanager.olio.GeoLocationUtil;
-import org.cote.accountmanager.olio.InteractionEnumType;
-import org.cote.accountmanager.olio.LoveNeedsEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.StateUtil;
@@ -97,6 +90,13 @@ public class Walk implements IAction {
 	@Override
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		return actionResult.get(FieldNames.FIELD_TYPE);
+	}
+
+	@Override
+	public List<BaseRecord> definePolicyFactParameters(OlioContext context, BaseRecord actionResult, BaseRecord actor,
+			BaseRecord interactor) throws OlioException {
+		// TODO Auto-generated method stub
+		return null;
 	}
 
 

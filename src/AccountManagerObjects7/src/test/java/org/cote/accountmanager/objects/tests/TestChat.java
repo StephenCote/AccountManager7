@@ -102,7 +102,7 @@ public class TestChat extends BaseTest {
 		assertNotNull(cfg);
 		assertNotNull(pcfg);
 		
-		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		assertNotNull("Imported object was null", ipcfg);
 		
 	}
@@ -160,7 +160,7 @@ public class TestChat extends BaseTest {
 
 		BaseRecord pcfg = null;
 		BaseRecord opcfg = null;
-		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 
 		try {
 			pcfg = ioContext.getFactory().newInstance(ModelNames.MODEL_PROMPT_CONFIG, user, ipcfg, plist);

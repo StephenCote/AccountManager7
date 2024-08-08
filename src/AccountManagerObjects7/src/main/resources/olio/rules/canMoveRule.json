@@ -1,0 +1,11 @@
+{
+	"urn": "resource.olio.policy.rule.canMove",
+	"type": "permit",
+	"condition": "all",
+	"name": "Can Resource Move", 
+	"patterns": [
+		"${pattern.mobile}",
+		"${pattern.capacitated}",
+		"${pattern.movementOdds}"
+	]
+}

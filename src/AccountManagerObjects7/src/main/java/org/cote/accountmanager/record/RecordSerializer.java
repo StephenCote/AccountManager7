@@ -10,9 +10,6 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.schema.FieldNames;
@@ -20,8 +17,6 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.FieldTypes;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.schema.type.CompressionEnumType;
-import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.core.JsonGenerator;

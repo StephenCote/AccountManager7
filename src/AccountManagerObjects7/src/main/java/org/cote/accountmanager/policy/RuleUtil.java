@@ -7,7 +7,9 @@ import java.util.regex.Pattern;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.util.FieldUtil;
 
 
 public class RuleUtil {
@@ -21,6 +23,26 @@ public class RuleUtil {
 		patterns.put(pattern, p);
 		return p;
 	}
+	
+	public static boolean compareValue(FieldType chkData, ComparatorEnumType comparator, FieldType compData){
+		if(chkData == null || compData == null) {
+			logger.warn((chkData == null ? "Left" : "Right") + "-hand FieldType was null");
+			return false;
+		}
+		int comp = FieldUtil.compareTo(chkData, compData);
+		return (
+			(comp == -1 && (comparator == ComparatorEnumType.LESS_THAN || comparator == ComparatorEnumType.LESS_THAN_OR_EQUALS))
+			||
+			(comp == 0 && (comparator == ComparatorEnumType.LESS_THAN_OR_EQUALS || comparator == ComparatorEnumType.EQUALS || comparator == ComparatorEnumType.GREATER_THAN_OR_EQUALS))
+			||
+			(comp != 0 && comparator == ComparatorEnumType.NOT_EQUALS)
+			||
+			(comp == 1 && (comparator == ComparatorEnumType.GREATER_THAN || comparator == ComparatorEnumType.GREATER_THAN_OR_EQUALS))
+		);
+
+	}
+	
+	/*
 	public static boolean compareValue(String chkData, ComparatorEnumType comparator, String compData){
 		boolean outBool = false;
 		
@@ -83,5 +105,6 @@ public class RuleUtil {
 		}
 		return outBool;
 	}
+	*/
 	
 }

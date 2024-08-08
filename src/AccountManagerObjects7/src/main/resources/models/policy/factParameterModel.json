@@ -1,0 +1,38 @@
+{
+"name": "policy.factParameter",
+"ioConstraints": ["unknown"],
+"fields": [
+
+	{
+		"name": "name",
+		"type": "string",
+		"maxLength": 32
+	},
+	{
+		"name": "value",
+		"type": "flex",
+		"valueType": "valueType"
+	},
+	{
+		"name": "valueType",
+		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
+		"type": "enum",
+		"maxLength": 16,
+		"default": "UNKNOWN"
+	},
+	{
+		"name": "valueModel",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "match",
+		"type": "boolean",
+		"description": "Bit to differentiate the parameter between a fact and match fact."
+	},
+	{
+		"name": "class",
+		"type": "string",
+		"maxLength": 128
+	}
+]}

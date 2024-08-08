@@ -1,0 +1,11 @@
+{
+	"model": "policy.policy",
+	"urn": "resource.policy.olio.canMove",
+	"enabled": true,
+	"condition": "all",
+	"name": "Can Resource Move",
+	"decisionAge": 0,
+	"rules": [
+		"${rule.canMove}"
+	]
+}

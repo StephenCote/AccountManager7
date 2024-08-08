@@ -12,6 +12,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -47,6 +48,27 @@ public class FactType extends LooseRecord {
 	public String getFactDataType() {
 		return get("factDataType");
 	}
+	
+	public String getPropertName() {
+		return get("propertyName");
+	}
+	public void setPropertyName(String name) {
+		setValue("propertyName", name);
+	}
+	public <T> T getValue(){
+		return get("value");
+	}
+	public <T> void setValue(T value) {
+		setValue("value", value);
+	}
+	
+	public FieldEnumType getValueType() {
+		return getEnum("valueType");
+	}
+	public void setValueType(FieldEnumType type) {
+		setValue("valueType", type);
+	}
+	
 	public void setFactDataType(String factDataType) {
 		try {
 			set("factDataType", factDataType);

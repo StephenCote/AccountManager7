@@ -25,6 +25,7 @@ package org.cote.accountmanager.policy;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -39,6 +40,9 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
+import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.model.field.FieldFactory;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
@@ -61,6 +65,35 @@ public class FactUtil {
 		this.search = search;
 		//path = IOSystem.getActiveContext().getPathUtil();
 			//IOFactory.getPathUtil(reader);
+	}
+	
+	public static BaseRecord getParameter(BaseRecord fact, String name) {
+		List<BaseRecord> fparams = fact.get("parameters");
+		return getParameter(fparams, name);
+	}
+	
+	public static BaseRecord getParameter(List<BaseRecord> factParams, String name) {
+		Optional<BaseRecord> param = factParams.stream().filter(p -> name.equals(p.get(FieldNames.FIELD_NAME))).findFirst();
+		return (param.isPresent() ? param.get() : null);
+	}
+	public static BaseRecord getParameterValue(BaseRecord fact, String name) {
+		List<BaseRecord> fparams = fact.get("parameters");
+		return getParameterValue(fparams, name);
+	}
+	public static <T> T getParameterValue(List<BaseRecord> factParams, String name) {
+		T obj = null;
+		BaseRecord parm = getParameter(factParams, name);
+		if(parm != null) {
+			obj = parm.get("value");
+			if(obj == null) {
+				logger.warn("Null value for parameter: " + name);
+				logger.warn(parm.toFullString());
+			}
+		}
+		else {
+			logger.warn("Null parameter: " + name);
+		}
+		return obj;
 	}
 
 	public void setFactReference(BaseRecord contextUser, BaseRecord sourceFact, BaseRecord matchFact) throws FieldException, ValueException, ModelNotFoundException{
@@ -96,8 +129,9 @@ public class FactUtil {
 		}
 		return attrVal;
 	}
-	public String getFactValue(BaseRecord prt, BaseRecord prr, BaseRecord sourceFact, BaseRecord matchFact) throws FieldException, ValueException, ModelNotFoundException{
-		String outVal = null;
+	public FieldType getFactValue(BaseRecord prt, BaseRecord prr, BaseRecord sourceFact, BaseRecord matchFact) throws FieldException, ValueException, ModelNotFoundException{
+		FieldType outVal = null;
+		//String outVal = null;
 		/// Fact value is driven by a combination of what the source fact has and what  the matchFact expects
 		/// The source fact provides context, and the match fact provides specificity
 		///
@@ -106,32 +140,56 @@ public class FactUtil {
 		switch(fet){
 			case STATIC:
 			case FUNCTION:
-				outVal = sourceFact.get("factData");
+				//outVal = sourceFact.get("factData");
+				outVal = FieldFactory.fieldByType(FieldEnumType.STRING, "fact", sourceFact.get("factData"));
+				break;
+			case PROPERTY:
+				
+				String prop = matchFact.get("propertyName");
+				if(sourceFact.getEnum("valueType") == FieldEnumType.MODEL) {
+					BaseRecord srec = sourceFact.get("factReference");
+					if(prop != null && srec != null) {
+						//outVal = srec.get(prop);
+						outVal = FieldFactory.fieldByType(matchFact.getEnum("valueType"), "fact", srec.get(prop));
+					}
+					else {
+						logger.warn("Property (" + prop + ") or factReference (" + srec + ") was null");
+						logger.warn(sourceFact.toFullString());
+					}
+				}
+				else {
+					logger.warn("Unhandled valueType: " + sourceFact.get("valueType"));
+				}
 				break;
 			case ATTRIBUTE:
-				outVal = getFactAttributeValue(contextUser, sourceFact, matchFact);
+				outVal = FieldFactory.fieldByType(FieldEnumType.STRING, "fact", getFactAttributeValue(contextUser, sourceFact, matchFact));
 				break;
 			default:
-				logger.error("Unhandled fact type: " + fet);
+				logger.error("Unhandled source fact type: " + fet);
 				break;
 		}
 		return outVal;
 	}
-	public String getMatchFactValue(BaseRecord prt, BaseRecord prr, BaseRecord sourceFact, BaseRecord matchFact){
-		String outVal = null;
+	public FieldType getMatchFactValue(BaseRecord prt, BaseRecord prr, BaseRecord sourceFact, BaseRecord matchFact){
+		//String outVal = null;
+		FieldType outVal = null;
 		FactEnumType fet = FactEnumType.valueOf(matchFact.get(FieldNames.FIELD_TYPE));
 		switch(fet){
 			/// Note: The match of an attribute fact is presently the static value
 			/// This is because the source type got cross-purposed to parameter
+			case PROPERTY:
+				outVal = FieldFactory.fieldByType(matchFact.getEnum("valueType"), "fact", matchFact.get("value"));
+				break;
 			case ATTRIBUTE:
 			case STATIC:
-				outVal = matchFact.get("factData");
+				//outVal = matchFact.get("factData");
+				outVal = FieldFactory.fieldByType(FieldEnumType.STRING, "fact", matchFact.get("factData"));
 				break;
 			case FUNCTION:
-				outVal = evaluateFunctionFact(String.class, prt, prr, sourceFact, matchFact);
+				outVal = FieldFactory.fieldByType(FieldEnumType.STRING, "fact", evaluateFunctionFact(String.class, prt, prr, sourceFact, matchFact));
 				break;
 			default:
-				logger.error("Unhandled fact type: " + fet);
+				logger.error("Unhandled match fact type: " + fet);
 				break;
 		}
 		return outVal;
@@ -181,7 +239,7 @@ public class FactUtil {
 			if((funcdata == null || funcdata.length == 0) && surl != null && surl.length() > 0) {
 				if(surl.startsWith("resource:")) {
 					surl = surl.replace("resource:", "");
-					String recData = ResourceUtil.getResource(surl);
+					String recData = ResourceUtil.getInstance().getResource(surl);
 					if(recData != null) {
 						funcdata = recData.getBytes();
 					}

@@ -37,9 +37,9 @@ public class ApparelUtil {
 	private static String[] jewelryTypes = new String[0];
 	private static String[] fabricTypes = new String[0];
 	static {
-		clothingTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/clothing.json"), String[].class);
-		jewelryTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/jewelry.json"), String[].class);
-		fabricTypes = JSONUtil.importObject(ResourceUtil.getResource("olio/fabrics.json"), String[].class);
+		clothingTypes = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/clothing.json"), String[].class);
+		jewelryTypes = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/jewelry.json"), String[].class);
+		fabricTypes = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/fabrics.json"), String[].class);
 	}
 	private static String[] jewelryColors = new String[] {
 		/// Gold
@@ -729,7 +729,7 @@ public class ApparelUtil {
 	/*
 	public static String getOlioResource(BaseRecord user, BaseRecord world, String apparelBase, String gender) {
 
-		String appStr = replaceTokens(ResourceUtil.getResource(apparelBase));
+		String appStr = replaceTokens(ResourceUtil.getInstance().getResource(apparelBase));
 		Matcher m = parameterTokenPattern.matcher(appStr);
 		int idx = 0;
 		StringBuilder rep = new StringBuilder();
@@ -747,7 +747,7 @@ public class ApparelUtil {
 				parms = null;
 			}
 			else {
-				resStr = ResourceUtil.getResource("./olio/" + type + "/" + wear + ".json");
+				resStr = ResourceUtil.getInstance().getResource("./olio/" + type + "/" + wear + ".json");
 			}
 			String wearx = replaceTokens(resStr);
 			String repStr = "null";

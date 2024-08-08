@@ -7,7 +7,6 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -15,7 +14,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
@@ -29,15 +27,12 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
-import org.cote.accountmanager.olio.Point;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.GraphicsUtil;
-import org.cote.accountmanager.util.ThumbnailUtil;
 
 /// MapUtil is currently only setup to work with generated GridSquare maps, which use the same model as the GeoLocation data
 /// At the 'admin2' level, each Grid Square is 1 square kilometer

@@ -9,10 +9,12 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.rules.ArenaEvolveRule;
 import org.cote.accountmanager.olio.rules.ArenaInitializationRule;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
+import org.cote.accountmanager.olio.rules.GenericStateRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.record.BaseRecord;
@@ -66,6 +68,12 @@ public class OlioContextUtil {
 				new Increment24HourRule(),
 				new HierarchicalNeedsRule()
 			}));
+			
+			cfg.getStateRules().addAll(Arrays.asList(new IOlioStateRule[] {
+				new GenericStateRule()	
+			}));
+			
+			
 			OlioContext octx = new OlioContext(cfg);
 
 			logger.info("Initialize olio context - Grid");

@@ -46,15 +46,15 @@ public class ValidationUtil {
 		return pattern;
 	}
 	public static String getScriptDataObject(String ruleName) {
-		String rec = ResourceUtil.getScriptResourceObject(ruleName);
+		String rec = ResourceUtil.getInstance().getScriptResourceObject(ruleName);
 		return getResource(ruleName, rec, ruleTokenPattern);
 	}	
 	public static String getResourceFunction(String ruleName) {
-		String rec = ResourceUtil.getFunctionResourceObject(ruleName);
+		String rec = ResourceUtil.getInstance().getFunctionResourceObject(ruleName);
 		return getResource(ruleName, rec, ruleTokenPattern);
 	}	
 	public static String getResourceRule(String ruleName) {
-		String rec = ResourceUtil.getValidationRuleResource(ruleName);
+		String rec = ResourceUtil.getInstance().getValidationRuleResource(ruleName);
 		return getResource(ruleName, rec, ruleTokenPattern);
 	}
 	private static String getResource(String name, String rec, Pattern pat) {

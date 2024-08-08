@@ -1,8 +1,5 @@
 package org.cote.accountmanager.olio.sd;
 
-import java.util.ArrayList;
-import java.util.List;
-
 public class SDTxt2Img {
 	
 	private Integer[] all_seeds = new Integer[0];

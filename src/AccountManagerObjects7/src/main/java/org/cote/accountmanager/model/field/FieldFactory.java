@@ -117,8 +117,9 @@ public class FieldFactory {
 				type.setValue(value);
 			}
 		} catch (Exception e) {
-			logger.error("Error with " + typen.toString() + " " + name);
+			logger.error("Error with " + typen.toString() + " " + name + " value '" + value + "'");
 			logger.error(e);
+			e.printStackTrace();
 		}
 		return type;
 	}

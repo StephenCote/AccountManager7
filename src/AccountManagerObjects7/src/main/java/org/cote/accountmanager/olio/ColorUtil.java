@@ -30,7 +30,7 @@ public class ColorUtil {
 	private static SecureRandom rand = new SecureRandom();
 	private static List<BaseRecord> defaultColors = new ArrayList<>();
 	static {
-		defaultColors = JSONUtil.getList(ResourceUtil.getResource("olio/colors.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		defaultColors = JSONUtil.getList(ResourceUtil.getInstance().getResource("olio/colors.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 	}
 	
 	/// TODO - these hashes need to be replaced

@@ -162,6 +162,15 @@ public class PolicyUtil {
 		
 	}
 	
+	public static boolean isPermit(BaseRecord prt) {
+		return (prt != null && prt.getEnum("type") == PolicyResponseEnumType.PERMIT);
+	}
+	
+	public static void addResponseMessage(BaseRecord prt, String msg) {
+		List<String> messages = prt.get("messages");
+		messages.add(msg);
+	}
+	
 	public boolean getPolicyResponseExpired(BaseRecord policyResponse) {
 		boolean outBool = true;
 		if(policyResponse == null) {
@@ -412,7 +421,10 @@ public class PolicyUtil {
 	
 	public List<BaseRecord> getSchemaRules(BaseRecord actor, SystemPermissionEnumType spet, BaseRecord object){
 		List<BaseRecord> rules = new ArrayList<>();
-
+		if(object == null) {
+			return rules;
+		}
+		
 		/// Look through the supplied object schema
 		/// If it's foreign, or defines a modelAccess, then create a rule that includes a modelAccess pattern for that specific role or permission
 		ModelSchema schema = RecordFactory.getSchema(object.getModel());
@@ -453,7 +465,7 @@ public class PolicyUtil {
 					}
 				}
 				if(patterns.size() > 0) {
-					String ruleTemplate = ResourceUtil.getRuleResource("genericOr");
+					String ruleTemplate = ResourceUtil.getInstance().getRuleResource("genericOr");
 					BaseRecord rule = JSONUtil.importObject(ruleTemplate, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 					List<BaseRecord> rpats = rule.get(FieldNames.FIELD_PATTERNS);
 					rpats.addAll(patterns);
@@ -462,7 +474,7 @@ public class PolicyUtil {
 			}
 			else {
 				if(trace) {
-					logger.warn("Don't add because " + spet.toString() + " " + fs.getName() + " = " + fs.isForeign() + " / " + roles.size() + " / " + f.isNullOrEmpty(object.getModel()));
+					// logger.warn("Ignore sub-schema rule because " + spet.toString() + " " + fs.getName() + " = " + fs.isForeign() + " / " + roles.size() + " / " + f.isNullOrEmpty(object.getModel()));
 				}
 			}
 		}
@@ -495,10 +507,10 @@ public class PolicyUtil {
 		}
 		return roles;
 	}
-	public BaseRecord getModelAccessPattern(BaseRecord actor, String roleName) {
-		String accessPattern = ResourceUtil.getPatternResource("modelAccess");
+	private BaseRecord getModelAccessPattern(BaseRecord actor, String roleName) {
+		String accessPattern = ResourceUtil.getInstance().getPatternResource("modelAccess");
 
-		accessPattern = applyResourcePattern(factResourceExp, ResourceType.FACT, accessPattern);
+		accessPattern = applyResourcePattern(ResourceUtil.getInstance(), factResourceExp, ResourceType.FACT, accessPattern);
 		if(!roleName.startsWith("/")) {
 			roleName = "/" + roleName;
 		}
@@ -515,6 +527,9 @@ public class PolicyUtil {
 	}
 	public List<BaseRecord> getModelAccessPatternList(BaseRecord actor, SystemPermissionEnumType spet, BaseRecord object) {
 		List<BaseRecord> patterns = new ArrayList<>();
+		if(object == null) {
+			return patterns;
+		}
 		ModelSchema schema = RecordFactory.getSchema(object.getModel());
 		List<String> roles = getSchemaRoles(schema.getAccess(), spet);
 		if(roles.size() > 0) {
@@ -530,7 +545,7 @@ public class PolicyUtil {
 		return patterns;
 	}
 	
-	private String applyResourcePattern(Pattern p, ResourceType recType, String content) {
+	private String applyResourcePattern(ResourceUtil resourceUtil, Pattern p, ResourceType recType, String content) {
 		String outStr = content;
 		Matcher f = p.matcher(outStr);
 		while(f.find()) {
@@ -538,13 +553,13 @@ public class PolicyUtil {
 				String recName = f.group(1);
 				String str = null;
 				if(recType == ResourceType.FACT) {
-					str = ResourceUtil.getFactResource(recName);
+					str = resourceUtil.getFactResource(recName);
 				}
 				else if(recType == ResourceType.PATTERN) {
-					str = ResourceUtil.getPatternResource(recName);
+					str = resourceUtil.getPatternResource(recName);
 				}
 				else if(recType == ResourceType.RULE) {
-					str = ResourceUtil.getRuleResource(recName);
+					str = resourceUtil.getRuleResource(recName);
 				}
 				if(str == null) {
 					str = "${error}";
@@ -598,13 +613,14 @@ public class PolicyUtil {
 	}
 	
 	private String applyActorPattern(String contents, BaseRecord actor) {
-		Matcher m = actorExp.matcher(contents);
-		String actUrn = actor.get(FieldNames.FIELD_URN);
-		String outStr = m.replaceAll(actUrn);
-		
-		m = actorTypeExp.matcher(outStr);
-		outStr = m.replaceAll(actor.getModel());
-
+		String outStr = contents;
+		if(actor.hasField(FieldNames.FIELD_URN)) {
+			Matcher m1 = actorExp.matcher(contents);
+			String actUrn = actor.get(FieldNames.FIELD_URN);
+			outStr = m1.replaceAll(actUrn);
+		}
+		Matcher m2 = actorTypeExp.matcher(outStr);
+		outStr = m2.replaceAll(actor.getModel());
 		
 		return outStr;
 	}
@@ -615,33 +631,37 @@ public class PolicyUtil {
 		
 		m = resourceUrnExp.matcher(outStr);
 		String recUrn = null;
-		if(resource.hasField(FieldNames.FIELD_URN)) {
-			recUrn = resource.get(FieldNames.FIELD_URN);
-		}
-		else if(resource.hasField(FieldNames.FIELD_ID) && ((long)resource.get(FieldNames.FIELD_ID)) > 0L) {
-			recUrn = Long.toString(resource.get(FieldNames.FIELD_ID));
+		if(resource != null) {
+			if(resource.hasField(FieldNames.FIELD_URN)) {
+				recUrn = resource.get(FieldNames.FIELD_URN);
+			}
+			else if(resource.hasField(FieldNames.FIELD_ID) && ((long)resource.get(FieldNames.FIELD_ID)) > 0L) {
+				recUrn = Long.toString(resource.get(FieldNames.FIELD_ID));
+			}
 		}
 		outStr = m.replaceAll((recUrn != null ? recUrn : ""));
 		
 		m = resourceTypeExp.matcher(outStr);
-		outStr = m.replaceAll(resource.getModel());
+		outStr = m.replaceAll((resource != null ? resource.getModel() : ""));
 		
 		return outStr;
 
 	}
-	
 	public String getPolicyBase(String resourceName) {
+		return getPolicyBase(ResourceUtil.getInstance(), resourceName);
+	}
+	public String getPolicyBase(ResourceUtil resourceUtil, String resourceName) {
 		if(policyBaseMap.containsKey(resourceName)) {
 			return policyBaseMap.get(resourceName);
 		}
 		
-		String policyBase = ResourceUtil.getPolicyResource(resourceName);
+		String policyBase = resourceUtil.getPolicyResource(resourceName);
 		if(policyBase == null) {
 			return null;
 		}
-		policyBase = applyResourcePattern(ruleResourceExp, ResourceType.RULE, policyBase);
-		policyBase = applyResourcePattern(patternResourceExp, ResourceType.PATTERN, policyBase);
-		policyBase = applyResourcePattern(factResourceExp, ResourceType.FACT, policyBase);
+		policyBase = applyResourcePattern(resourceUtil, ruleResourceExp, ResourceType.RULE, policyBase);
+		policyBase = applyResourcePattern(resourceUtil, patternResourceExp, ResourceType.PATTERN, policyBase);
+		policyBase = applyResourcePattern(resourceUtil, factResourceExp, ResourceType.FACT, policyBase);
 		
 		policyBaseMap.put(resourceName, policyBase);
 		
@@ -651,8 +671,11 @@ public class PolicyUtil {
 	/// Note: actor is for object types other than the contextUser, including other users, persons, and accounts.
 	///
 	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
-
-		String policyBase = getPolicyBase(name);
+		return getResourcePolicy(ResourceUtil.getInstance(), name, actor, token, resource);
+	}
+	
+	public BaseRecord getResourcePolicy(ResourceUtil resourceUtil, String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
+		String policyBase = getPolicyBase(resourceUtil, name);
 		BaseRecord rec = null;
 		if(policyBase == null) {
 			logger.error("Invalid policy resource name: " + name);
@@ -675,7 +698,7 @@ public class PolicyUtil {
 		boolean removeGroupUrn = true;
 		boolean removeParentUrn = false;
 		
-		if(g.find()) {
+		if(resource != null && g.find()) {
 			if(resource.inherits(ModelNames.MODEL_DIRECTORY)) {
 				BaseRecord grp = null;
 				if(resource.hasField(FieldNames.FIELD_GROUP_PATH) && resource.get(FieldNames.FIELD_GROUP_PATH) != null) {
@@ -703,7 +726,7 @@ public class PolicyUtil {
 		
 		Matcher p = resourceParentUrnExp.matcher(policyBase);
 		
-		if(p.find()) {
+		if(resource != null && p.find()) {
 			if(resource.inherits(ModelNames.MODEL_PARENT)) {
 	
 				BaseRecord par = null;
@@ -772,9 +795,9 @@ public class PolicyUtil {
 	}
 	
 	public BaseRecord getInferredOwnerPolicyFunction() {
-		PolicyType record = JSONUtil.importObject(ResourceUtil.getPolicyResource("ownerFunction"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
+		PolicyType record = JSONUtil.importObject(ResourceUtil.getInstance().getPolicyResource("ownerFunction"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
 		FactType match = record.getRules().get(0).getPatterns().get(0).getMatch();
-		String policyFunction = ResourceUtil.getFunctionResource("ownerPolicy");
+		String policyFunction = ResourceUtil.getInstance().getFunctionResource("ownerPolicy");
 		if(policyFunction == null) {
 			logger.error("Failed to load ownerPolicyFunction.js");
 		}
@@ -785,14 +808,14 @@ public class PolicyUtil {
 	}
 
 	public BaseRecord getReadPolicy(String urn) {
-		PolicyType record = JSONUtil.importObject(ResourceUtil.getPolicyResource("readObject"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
+		PolicyType record = JSONUtil.importObject(ResourceUtil.getInstance().getPolicyResource("readObject"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
 		FactType match = record.getRules().get(0).getPatterns().get(0).getMatch();
 		match.setSourceUrn(urn);
 		return record;
 	}
 
 	public BaseRecord getAdminPolicy(String urn) {
-		PolicyType record = JSONUtil.importObject(ResourceUtil.getPolicyResource("adminRole"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
+		PolicyType record = JSONUtil.importObject(ResourceUtil.getInstance().getPolicyResource("adminRole"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
 		FactType match = record.getRules().get(0).getPatterns().get(0).getMatch();
 		match.setSourceUrn(urn);
 		return record;
@@ -818,6 +841,9 @@ public class PolicyUtil {
 	
 	private boolean filterFact(BaseRecord fact, boolean removeGroupUrn, boolean removeParentUrn, boolean removeToken) {
 		boolean outBool = true;
+		if(fact == null) {
+			return outBool;
+		}
 		if(fact.hasField(FieldNames.FIELD_SOURCE_URN)) {
 			String fsurn = fact.get(FieldNames.FIELD_SOURCE_URN);
 			if(

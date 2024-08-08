@@ -75,19 +75,27 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 	@Override
 	public BaseRecord getResourcePolicy(String name, BaseRecord actor, String token, BaseRecord resource) throws ReaderException {
 		String recId = null;
-		if(resource.hasField(FieldNames.FIELD_URN)) {
-			recId = resource.get(FieldNames.FIELD_URN);
-		}
-		if(recId == null) {
-			recId = resource.hash();
+		if(resource != null) {
+			if(resource.hasField(FieldNames.FIELD_URN)) {
+				recId = resource.get(FieldNames.FIELD_URN);
+			}
+			if(recId == null) {
+				recId = resource.hash();
+			}
 		}
 		String key = name + "-" + actor.get(FieldNames.FIELD_URN)+ "-" + token + "-" + recId;
 		String hash = CryptoUtil.getDigestAsString(key);
 		if(!policyCache.containsKey(hash)) {
-			PolicyType pol = super.getResourcePolicy(name, actor, token, resource).toConcrete();
-			policyCache.put(hash, pol);
-			if(isTrace()) {
-				logger.info("Cache resource policy for " + key);
+			BaseRecord opol = super.getResourcePolicy(name, actor, token, resource);
+			if(opol != null) {
+				PolicyType pol = opol.toConcrete();
+				policyCache.put(hash, pol);
+				if(isTrace()) {
+					logger.info("Cache resource policy for " + key);
+				}
+			}
+			else {
+				logger.error("Policy " + name + " is null");
 			}
 		}
 		else {

@@ -25,7 +25,7 @@ public static final Logger logger = LogManager.getLogger(CategoryUtil.class);
 	}
 	
 	public static String getResourceCategory(String ruleName) {
-		String rec = ResourceUtil.getCategoryResource(ruleName);
+		String rec = ResourceUtil.getInstance().getCategoryResource(ruleName);
 		if(rec == null) {
 			logger.error("Failed to load category: " + ruleName);
 			return null;

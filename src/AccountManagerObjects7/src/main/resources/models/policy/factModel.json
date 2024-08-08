@@ -16,6 +16,35 @@
 		"type": "string"
 	},
 	{
+		"name": "propertyName",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "parameters",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "policy.factParameter"
+	},
+	{
+		"name": "value",
+		"type": "flex",
+		"valueType": "valueType",
+		"ephemeral": true
+	},
+	{
+		"name": "valueType",
+		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
+		"type": "enum",
+		"maxLength": 16,
+		"default": "UNKNOWN"
+	},
+	{
+		"name": "class",
+		"type": "string",
+		"maxLength": 128
+	},
+	{
 		"name": "factDataType",
 		"type": "string",
 		"maxLength": 32

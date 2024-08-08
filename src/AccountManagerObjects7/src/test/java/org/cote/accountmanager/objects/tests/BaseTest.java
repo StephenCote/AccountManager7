@@ -179,10 +179,10 @@ public class BaseTest {
 	}
 
 	protected BaseRecord getInferredOwnerPolicyFunction() {
-		PolicyType record = JSONUtil.importObject(ResourceUtil.getPolicyResource("ownerFunction"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
+		PolicyType record = JSONUtil.importObject(ResourceUtil.getInstance().getPolicyResource("ownerFunction"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()).toConcrete();
 		FactType match = record.getRules().get(0).getPatterns().get(0).getMatch();
 		//match.setSourceData(ownerPolicyFunction.getBytes());
-		String policyFunction = ResourceUtil.getFunctionResource("ownerPolicy");
+		String policyFunction = ResourceUtil.getInstance().getFunctionResource("ownerPolicy");
 		if(policyFunction == null) {
 			logger.error("Failed to load ownerPolicyFunction.js");
 		}

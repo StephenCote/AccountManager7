@@ -1,0 +1,9 @@
+{
+	"model": "policy.pattern",
+	"urn": "resource.olio.pattern.capacitated",
+	"type": "expression",
+	"comparator": "not_equals",
+	"name": "Model Access Role Pattern",
+	"fact": "${fact.state}",
+	"match": "${fact.incapacitatedProperty}"
+}

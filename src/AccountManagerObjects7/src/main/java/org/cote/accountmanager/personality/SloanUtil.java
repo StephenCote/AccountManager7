@@ -30,7 +30,7 @@ public class SloanUtil {
 	
 	public static Map<String, Sloan> getSloanDef() {
 		if(sloanDef.keySet().size() == 0) {
-			String[] sloanJson = JSONUtil.importObject(ResourceUtil.getResource("olio/sloan.json"), String[].class);
+			String[] sloanJson = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/sloan.json"), String[].class);
 			for(String s: sloanJson) {
 				String[] pairs = s.split("\\|");
 				String dis = "";

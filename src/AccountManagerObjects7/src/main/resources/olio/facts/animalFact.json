@@ -1,0 +1,7 @@
+{
+	"name": "Animal",
+	"urn": "resource.policy.fact.animal",
+	"type": "parameter",
+	"valueType": "MODEL",
+	"modelType": "olio.animal"
+}

@@ -170,7 +170,7 @@ public class ActionUtil {
 	}
 	protected static BaseRecord[] importActions(OlioContext ctx) {
 		// logger.info("Import default action configuration");
-		List<BaseRecord> acts = JSONUtil.getList(ResourceUtil.getResource("olio/actions.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		List<BaseRecord> acts = JSONUtil.getList(ResourceUtil.getInstance().getResource("olio/actions.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		List<BaseRecord> oacts = new ArrayList<>();
 		try {
 			

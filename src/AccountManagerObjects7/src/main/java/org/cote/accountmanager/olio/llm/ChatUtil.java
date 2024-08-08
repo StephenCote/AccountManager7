@@ -1,8 +1,5 @@
 package org.cote.accountmanager.olio.llm;
 
-import java.nio.charset.StandardCharsets;
-import java.util.UUID;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -18,8 +15,6 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.util.ByteModelUtil;
-import org.cote.accountmanager.util.CryptoUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -107,7 +102,7 @@ public class ChatUtil {
 		return dat;
 	}
 	public static BaseRecord getDefaultPrompt() {
-		return JSONUtil.importObject(ResourceUtil.getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		return JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 	}
 	public static BaseRecord getCreatePromptConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));

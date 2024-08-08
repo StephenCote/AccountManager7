@@ -163,6 +163,14 @@ public class PolicyDefinitionUtil {
 			parmFact.set(FieldNames.FIELD_SOURCE_DATA_TYPE, fact.get(FieldNames.FIELD_SOURCE_DATA_TYPE));
 			parmFact.set(FieldNames.FIELD_SOURCE_URN, fact.get(FieldNames.FIELD_SOURCE_URN));
 			parmFact.set(FieldNames.FIELD_SOURCE_URL, fact.get(FieldNames.FIELD_SOURCE_URL));
+			parmFact.set("valueType", fact.get("valueType"));
+			parmFact.set("propertyName", fact.get("propertyName"));
+			parmFact.set("parameters", fact.get("parameters"));
+			/// TODO: Fix needing a null check before trying to copy a flex field via set
+			///
+			if(fact.hasField("value")) {
+				parmFact.set("value", fact.get("value"));
+			}
 			PatternEnumType ptype = PatternEnumType.valueOf(pattern.get(FieldNames.FIELD_TYPE));
 			String pfmtype = pattern.get(FieldNames.FIELD_FACT_FIELD_MODEL_TYPE);
 			if (ptype == PatternEnumType.VERIFICATION && ModelNames.MODEL_DATA.equals(pfmtype)) {
