@@ -42,6 +42,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
@@ -201,6 +202,12 @@ public class ChatAction extends CommonAction implements IAction{
 					ItemUtil.showerWithMoney(octx, pop);
 					octx.processQueue();
 				}
+			}
+			
+			BaseRecord olioAdminRole = IOSystem.getActiveContext().getPathUtil().makePath(octx.getOlioUser(), ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			if(!IOSystem.getActiveContext().getMemberUtil().isMember(user, olioAdminRole,  null)) {
+				boolean enabled = IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), olioAdminRole, user, null, true);
+				logger.info("Configuring user for olio world access: " + enabled);
 			}
 			
 			if(cmd.hasOption("list")) {
@@ -415,6 +422,7 @@ public class ChatAction extends CommonAction implements IAction{
 			BaseRecord chatConfig = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 
 			Chat chat = new Chat(user, chatConfig, promptConfig);
+			chat.setFormatOutput(true);
 			chat.setSessionName(cmd.getOptionValue("session"));
 
 			OllamaRequest req = null;
@@ -448,8 +456,10 @@ public class ChatAction extends CommonAction implements IAction{
 				chatConfig2.setValue("setting", setting);
 			}
 			Chat chat = new Chat(user, chatConfig, promptConfig);
+			chat.setFormatOutput(true);
 			chat.setSessionName(cmd.getOptionValue("session"));
 			Chat chat2 = new Chat(user, chatConfig2, promptConfig);
+			chat2.setFormatOutput(true);
 			OllamaRequest req1 = chat.getChatPrompt();
 			OllamaRequest req2 = chat2.getChatPrompt();
 			if(cmd.hasOption("debug")) {
