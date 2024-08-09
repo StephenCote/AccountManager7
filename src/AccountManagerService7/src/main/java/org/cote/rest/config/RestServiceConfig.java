@@ -121,7 +121,7 @@ public class RestServiceConfig extends ResourceConfig{
 			logger.info("Initializing Account Manager");
 			
 			String path = context.getInitParameter("store.path");
-			ResourceUtil.RESOURCE_PREFIX = "";
+
 			IOFactory.DEFAULT_FILE_BASE = path;
 			IOFactory.addPermittedPath(path + "/.streams");
 			String dsName = context.getInitParameter("database.dsname");
