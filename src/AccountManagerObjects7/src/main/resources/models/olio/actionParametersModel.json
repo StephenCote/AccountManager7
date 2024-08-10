@@ -16,6 +16,12 @@
 			"maxLength": 32
 		},
 		{
+			"name": "wearLevel",
+			"baseClass": "org.cote.accountmanager.olio.WearLevelEnumType",
+			"type": "enum",
+			"maxLength": 32
+		},
+		{
 			"name": "narrate",
 			"type": "boolean"
 		},

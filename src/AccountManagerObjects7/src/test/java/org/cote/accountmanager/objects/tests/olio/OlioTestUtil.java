@@ -4,6 +4,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -11,10 +12,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -22,6 +27,8 @@ import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
+import org.cote.accountmanager.olio.InteractionUtil;
+import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
@@ -33,6 +40,8 @@ import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.ThreatUtil;
+import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericStateRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
@@ -344,6 +353,60 @@ public class OlioTestUtil {
 		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printLocationMap(ctx, GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation")), realm, pop);
 
+	}
+	
+	public static BaseRecord getRandmChatConfig(OlioContext octx, BaseRecord user, BaseRecord per1, BaseRecord per2) {
+		octx.enroleAdmin(user);
+		
+		BaseRecord cfg = ChatUtil.getCreateChatConfig(user, "Chat - " + UUID.randomUUID().toString());
+		
+		try {
+			BaseRecord inter = null;
+			List<BaseRecord> inters = new ArrayList<>();
+			for(int i = 0; i < 10; i++) {
+				inter = InteractionUtil.randomInteraction(octx, per1, per2);
+				if(inter != null) {
+					inters.add(inter);
+				}
+			}
+			IOSystem.getActiveContext().getRecordUtil().createRecords(inters.toArray(new BaseRecord[0]));
+			
+			cfg.set("event", octx.getCurrentIncrement());
+			cfg.set("universeName", octx.getUniverse().get("name"));
+			cfg.set("worldName", octx.getWorld().get("name"));
+			cfg.set("startMode", "system");
+			cfg.set("assist", true);
+			cfg.set("useNLP", true);
+			cfg.set("setting", "random");
+			cfg.set("includeScene", false);
+			cfg.set("prune", true);
+			cfg.set("rating", ESRBEnumType.E);
+
+			cfg.set("llmModel", "fim-local");
+			cfg.set("systemCharacter", per2);
+			cfg.set("userCharacter", per1);
+			cfg.set("interactions", inters);
+			cfg.set("terrain", NarrativeUtil.getTerrain(octx, per1));
+			NarrativeUtil.describePopulation(octx, cfg);
+			// IOSystem.getActiveContext().getPolicyUtil().setTrace(true);
+			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
+			assertNotNull("Config was null", cfg);
+			// IOSystem.getActiveContext().getPolicyUtil().setTrace(false);
+		}
+		catch(StackOverflowError | ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return cfg;
+	}
+	
+	public static void outfitAndStage(OlioContext ctx) {
+		BaseRecord[] locs = ctx.getLocations();
+		for(BaseRecord lrec : locs) {
+			ApparelUtil.outfitAndStage(ctx, null, ctx.getPopulation(lrec));
+			ItemUtil.showerWithMoney(ctx, ctx.getPopulation(lrec));
+		}
+		ctx.processQueue();
 	}
 }
 

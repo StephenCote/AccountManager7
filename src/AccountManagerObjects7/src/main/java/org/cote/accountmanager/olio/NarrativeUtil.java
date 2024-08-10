@@ -124,6 +124,51 @@ public class NarrativeUtil {
 		}
 		return desc.toString();
 	}
+	
+	public static List<String> describeVisibleTarget(BaseRecord targ, boolean all){
+		List<String> desc = new ArrayList<>();
+		boolean alive = targ.get("state.alive");
+		
+		if(targ.getModel().equals(ModelNames.MODEL_CHAR_PERSON)) {
+			int age = targ.get("age");
+			String gender = targ.get("gender");
+			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get("race")));
+			desc.add("Age: " + age);
+			desc.add("Gender: " + gender);
+			desc.add("Eyes: " + targ.get("eyeColor.name"));
+			desc.add("Hair: " + targ.get("hairStyle") + " " + targ.get("hairColor.name"));
+			List<BaseRecord> wearl = ApparelUtil.getWearing(targ);
+			WearLevelEnumType wet = WearLevelEnumType.UNKNOWN;
+			if(wearl.size() == 0) {
+				desc.add("Wear: Naked");
+			}
+
+			for(BaseRecord w : wearl) {
+				WearLevelEnumType wel = w.getEnum("level");
+				if(wet == WearLevelEnumType.UNKNOWN) {
+					wet = wel;
+				}
+				if(!all && WearLevelEnumType.valueOf(wel) < WearLevelEnumType.valueOf(WearLevelEnumType.SUIT)) {
+					logger.warn("Stop looking at " + wel.toString());
+					break;
+				}
+				/*
+				if(!all && wet != wel && WearLevelEnumType.valueOf(wel) < WearLevelEnumType.valueOf(WearLevelEnumType.SUIT)) {
+					logger.warn("Stop looking at " + wel.toString());
+					break;
+				}
+				*/
+				desc.add("Wear: " + NarrativeUtil.describeWearable(w));
+			}
+
+		}
+		else if(targ.getModel().equals(ModelNames.MODEL_ANIMAL)) {
+			desc.add((alive ? "" : "Dead ") + targ.get(FieldNames.FIELD_NAME));
+		}
+		
+		return desc;
+	}
+	
 	public static String describeArmament(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
 		if(pp.getRecord().get("store.items")  == null) {
@@ -153,74 +198,70 @@ public class NarrativeUtil {
 	public static String describeOutfit(PersonalityProfile pp) {
 		return describeOutfit(pp, false);
 	}
+
+	public static String describeWearable(BaseRecord w) {
+		StringBuilder buff = new StringBuilder();
+
+		BaseRecord q = null;
+		List<BaseRecord> qs = w.get("qualities");
+		if(qs.size() > 0) {
+			q = qs.get(0);
+		}
+		double opac = 1.0;
+		double shin = 0.0;
+		double smoo = 0.0;
+		if(q != null) {
+			opac = q.get("opacity");
+			shin = q.get("glossiness");
+			smoo = q.get("smoothness");
+		}
+		
+		String col = getColor(w, "color");
+		// (w.get("color.name") != null ? " " + ((String)w.get("color.name")).toLowerCase() : "");
+		if(col != null) {
+			col = col.replaceAll("\\([^()]*\\)", "");
+		}
+		String pat = (w.get("pattern.name") != null ? " " + ((String)w.get("pattern.name")).toLowerCase().replace(" pattern", "") : "");
+		String fab = (w.get("fabric") != null ? " " + ((String)w.get("fabric")).toLowerCase() : "");
+		List<String> locs = w.get("location");
+		String loc = (locs.size() > 0 ? " " + locs.get(0) : "");
+		String name = w.get("name");
+		if(name.contains("pierc")) {
+			name = "pierced" + loc + " ring";
+			pat = "";
+		}
+		String opacs = "";
+		if(opac > 0.0 && opac <= 0.25) {
+			opacs = " see-through";
+		}
+		String shins = "";
+		if(shin >= 0.7) {
+			shins = " shiny";
+		}
+
+		buff.append(shins + opacs + " " + (describeApparelColors ? col : "") + (describePatterns ? pat : "") + (describeFabrics ? fab : "") + " " + name);
+
+		return buff.toString();
+	}
 	public static String describeOutfit(PersonalityProfile pp, boolean includeOuterArms) {
 			
-	
 		StringBuilder buff = new StringBuilder();
-		List<BaseRecord> appl = pp.getRecord().get("store.apparel");
-		BaseRecord app = null;
-		List<BaseRecord> wearl = new ArrayList<>();
-		if(appl != null && appl.size() > 0) {
-			Optional<BaseRecord> oapp = appl.stream().filter(a -> ((boolean)a.get("inuse"))).findFirst();
-			if(oapp.isPresent()) {
-				app = oapp.get();
-				wearl = ((List<BaseRecord>)app.get("wearables")).stream().filter(a -> ((boolean)a.get("inuse"))).collect(Collectors.toList());
-			}
-		}
-		if(app == null || wearl.size() == 0) {
+		List<BaseRecord> wearl = ApparelUtil.getWearing(pp.getRecord());
+		if(wearl.size() == 0) {
 			buff.append("naked/nude, wearing no clothes");
 		}
 		else {
-			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
 			buff.append("wearing");
 			String andl = "";
 			// for(BaseRecord w: wearl) {
 			for(int i = 0; i < wearl.size(); i++) {
 				BaseRecord w = wearl.get(i);
-				BaseRecord q = null;
-				List<BaseRecord> qs = w.get("qualities");
-				if(qs.size() > 0) {
-					q = qs.get(0);
-				}
-				double opac = 1.0;
-				double shin = 0.0;
-				double smoo = 0.0;
-				if(q != null) {
-					opac = q.get("opacity");
-					shin = q.get("glossiness");
-					smoo = q.get("smoothness");
-				}
 				WearLevelEnumType lvle = w.getEnum("level");
 				int lvl = WearLevelEnumType.valueOf(lvle);
 				if(!includeOuterArms && lvl >= WearLevelEnumType.valueOf(WearLevelEnumType.OUTER)) {
 					continue;
 				}
-				
-				String col = getColor(w, "color");
-				// (w.get("color.name") != null ? " " + ((String)w.get("color.name")).toLowerCase() : "");
-				if(col != null) {
-					col = col.replaceAll("\\([^()]*\\)", "");
-				}
-				String pat = (w.get("pattern.name") != null ? " " + ((String)w.get("pattern.name")).toLowerCase().replace(" pattern", "") : "");
-				String fab = (w.get("fabric") != null ? " " + ((String)w.get("fabric")).toLowerCase() : "");
-				List<String> locs = w.get("location");
-				String loc = (locs.size() > 0 ? " " + locs.get(0) : "");
-				String name = w.get("name");
-				if(name.contains("pierc")) {
-					name = "pierced" + loc + " ring";
-					pat = "";
-				}
-				String opacs = "";
-				if(opac > 0.0 && opac <= 0.25) {
-					opacs = " see-through";
-				}
-				String shins = "";
-				if(shin >= 0.7) {
-					shins = " shiny";
-				}
-
-				buff.append(andl + shins + opacs + " " + (describeApparelColors ? col : "") + (describePatterns ? pat : "") + (describeFabrics ? fab : "") + " " + name);
-				//andl = ", and";
+				buff.append(andl + describeWearable(w));
 				andl = "," + (i == wearl.size() - 2 ? " and" : "");
 			}
 		}

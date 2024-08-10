@@ -3,7 +3,9 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -62,6 +64,27 @@ public class ApparelUtil {
 	private static String jpref = "jewelry:";
 	
 	private static SecureRandom rand = new SecureRandom();
+	public static BaseRecord getWearingApparel(BaseRecord per) {
+		BaseRecord app = null;
+		List<BaseRecord> appl = per.get("store.apparel");
+		if(appl != null && appl.size() > 0) {
+			Optional<BaseRecord> oapp = appl.stream().filter(a -> ((boolean)a.get("inuse"))).findFirst();
+			if(oapp.isPresent()) {
+				app = oapp.get();
+			}
+		}
+		return app;
+	}
+	public static List<BaseRecord> getWearing(BaseRecord per){
+		BaseRecord app = getWearingApparel(per);
+		List<BaseRecord> wearl = new ArrayList<>();
+		if(app != null) {
+			wearl = ((List<BaseRecord>)app.get("wearables")).stream().filter(a -> ((boolean)a.get("inuse"))).collect(Collectors.toList());
+			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
+			Collections.reverse(wearl);
+		}
+		return wearl;
+	}
 	
 	public static String[] getFabricTypes() {
 		return fabricTypes;

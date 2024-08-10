@@ -19,6 +19,33 @@
 		"minimumTime": 1
 	},
 	{
+		"name": "dress",
+		"provider": "org.cote.accountmanager.olio.actions.Dress",
+		"counterActions": [
+			"undress"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
+		"name": "undress",
+		"provider": "org.cote.accountmanager.olio.actions.Undress",
+		"counterActions": [
+			"dress"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
+		"name": "peek",
+		"provider": "org.cote.accountmanager.olio.actions.Peek",
+		"counterActions": [
+			"wait"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
 		"model": "olio.action",
 		"counterActions": [
 			"wait",

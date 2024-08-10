@@ -912,7 +912,16 @@ public class GeoLocationUtil {
 	     }
 	     double deg = Math.toDegrees(at2);
 	 */
-	
+	public static double contactRelativity(BaseRecord rec1, BaseRecord rec2) {
+		int maxDist = Rules.MAXIMUM_CONTACT_DISTANCE;
+		double dist = getDistance(rec1.get("state"), rec2.get("state"));
+		if(dist <= 0) {
+			// logger.warn("Zero or negative distance detected");
+		}
+		double perc = 1.0 - (dist / maxDist);
+		if(perc < 0) perc = 0;
+		return perc;
+	}	
 	public static double distanceRelativity(BaseRecord rec1, BaseRecord rec2) {
 		int maxDist = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		double dist = getDistance(rec1.get("state"), rec2.get("state"));

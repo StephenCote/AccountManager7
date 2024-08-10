@@ -262,6 +262,8 @@ public class Overwatch {
 				// logger.warn("Follow-up failed action: " + (String)actionResult.get("action.name"));
 			}
 			
+			Actions.concludeAction(context, actionResult, actor, iactor);
+			
 			
 		} catch (OlioException e) {
 			logger.error(e);

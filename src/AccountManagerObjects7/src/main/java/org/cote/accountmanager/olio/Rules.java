@@ -99,6 +99,9 @@ public class Rules {
 	///
 	public static final int MAXIMUM_OBSERVATION_DISTANCE = 10;
 	
+	/// Maximum distance in meters a character/animal may contact another character/animal without further aid.
+	public static final int MAXIMUM_CONTACT_DISTANCE = 5;
+	
 	public static double getAnimalOdds(TerrainEnumType type) {
 		double typeOdds = ODDS_ANIMAL_GROUP;
 		switch(type) {

@@ -16,17 +16,16 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.Overwatch.OverwatchEnumType;
 import org.cote.accountmanager.olio.ThreatEnumType;
+import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.type.ActionResultEnumType;
 
 public class Actions {
 	public static final Logger logger = LogManager.getLogger(Actions.class);
 	
 	private static Map<String, IAction> actionMap = new HashMap<>();
-	static {
-		// actionMap.put("move", new MoveTo());
-	}
 	
 	protected static String getActionEventName(String actionName, BaseRecord actor, BaseRecord interactor) {
 		StringBuilder nameBuff = new StringBuilder();
@@ -49,13 +48,7 @@ public class Actions {
 	
 	public static void updateState(OlioContext context, BaseRecord actionResult, BaseRecord actor) {
 		BaseRecord state = actor.get("state");
-		/*
-		if(state.get("currentEvent") != null) {
-			logger.warn("Overwriting current event");
-		}
-		state.setValue("currentEvent", event);
-		context.queueUpdate(state, new String[] {"currentEvent"});
-		*/
+
 		List<BaseRecord> actions = state.get("actions");
 		if(actions.size() > 0) {
 			logger.warn("Overwriting current actions?");
@@ -66,12 +59,7 @@ public class Actions {
 		}
 		IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, "actions", actionResult, null, true);
 		actions.add(actionResult);
-		
-		/*
-		IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), event, "actions", actionResult, null, true);
-		actions = event.get("actions");
-		actions.add(actionResult);
-		*/
+
 	}
 	public static IAction getActionProvider(OlioContext ctx, String actionName) throws OlioException {
 
@@ -100,6 +88,11 @@ public class Actions {
 			throw new OlioException("Failed to find provider for " + actionName);
 		}
 		return actProv;
+	}
+	
+	public static BaseRecord beginAction(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, AssessmentEnumType assessType, String actionName) throws OlioException {
+		BaseRecord params = ActionUtil.newActionParameters(assessType, null, actionName);
+		return beginAction(ctx, evt, params, per1, per2);
 	}
 	
 	public static BaseRecord beginAction(OlioContext context, BaseRecord event, String actionName, BaseRecord actor, BaseRecord interactor) throws OlioException {
@@ -198,6 +191,27 @@ public class Actions {
 		return action.executeAction(context, actionResult, actor, interactor);
 		
 	}
+	
+	public static ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
+		String actName = actionResult.get("action.name");
+		if(actName == null) {
+			throw new OlioException("Unknown action name");
+		}
+		IAction action = getActionProvider(context, actName);
+		if(action == null) {
+			throw new OlioException("Invalid action: " + actName);
+		}
+		
+		ActionResultEnumType aet = action.concludeAction(context, actionResult, actor, interactor);
+		
+		if(aet != ActionResultEnumType.IN_PROGRESS && aet != ActionResultEnumType.PENDING) {
+			actionResult.setValue("actionEnd", actionResult.get("actionProgress"));
+		}
+		context.queueUpdate(actionResult, new String[] {"actionEnd", "actionProgress", "type"});
+
+		return aet;
+		
+	}
 
 	public static BaseRecord beginMove(OlioContext ctx, BaseRecord evt, BaseRecord per1, DirectionEnumType dir) throws OlioException {
 		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "walk");
@@ -206,8 +220,23 @@ public class Actions {
 	}
 	
 	public static BaseRecord beginMoveTo(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2) throws OlioException {
-		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "walkTo");
+		return beginAction(ctx, evt, per1, per2, AssessmentEnumType.CURIOSITY, "walkTo");
+	}
+	
+	public static BaseRecord beginDress(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, WearLevelEnumType level) throws OlioException {
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "dress");
+		params.setValue("wearLevel", level);
 		return beginAction(ctx, evt, params, per1, per2);
+	}
+
+	public static BaseRecord beginUndress(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, WearLevelEnumType level) throws OlioException {
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "undress");
+		params.setValue("wearLevel", level);
+		return beginAction(ctx, evt, params, per1, per2);
+	}
+
+	public static BaseRecord beginPeek(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2) throws OlioException {
+		return beginAction(ctx, evt, per1, per2, AssessmentEnumType.CURIOSITY, "peek");
 	}
 
 

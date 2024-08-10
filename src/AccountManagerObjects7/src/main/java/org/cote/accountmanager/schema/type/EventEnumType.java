@@ -45,6 +45,7 @@ import javax.xml.bind.annotation.XmlType;
 public enum EventEnumType {
 
     UNKNOWN,
+    OBSERVE,
     PERIOD,
     INCEPT,
     GRADUATE,
@@ -57,6 +58,8 @@ public enum EventEnumType {
     STABLIZE,
     DESTABILIZE,
     TRANSFER,
+    UTILIZE,
+    DISCONTINUE,
     EGRESS,
     IMMIGRATE,
     BIRTH,

@@ -148,6 +148,11 @@
 			"foreign": true,
 			"participantModel": "actionResult.interaction",
 			"shortName": "ias"
+		},
+		{
+			"name": "results",
+			"type": "list",
+			"baseType": "string"
 		}
 
 	]

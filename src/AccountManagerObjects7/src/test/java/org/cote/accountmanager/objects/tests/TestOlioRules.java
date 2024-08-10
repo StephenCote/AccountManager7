@@ -32,6 +32,7 @@ import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioPolicyUtil;
 import org.cote.accountmanager.olio.OverwatchException;
+import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.llm.ChatUtil;
@@ -65,7 +66,7 @@ public class TestOlioRules extends BaseTest {
 		// OlioTestUtil.setResetWorld(true);
 		// OlioTestUtil.setResetUniverse(true);
 		OlioContext octx = OlioTestUtil.getContext(testOrgContext, dataPath);
-		
+		OlioTestUtil.outfitAndStage(octx);
 		BaseRecord lrec = octx.getLocations()[0];
 		List<BaseRecord> pop = octx.getPopulation(lrec);
 		
@@ -74,49 +75,34 @@ public class TestOlioRules extends BaseTest {
 		assertNotNull("Person was null", per1);
 		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
-		
-		octx.enroleAdmin(testUser1);
-		
-		BaseRecord cfg = ChatUtil.getCreateChatConfig(testUser1, "Chat - " + UUID.randomUUID().toString());
-		
-		try {
-			BaseRecord inter = null;
-			List<BaseRecord> inters = new ArrayList<>();
-			for(int i = 0; i < 10; i++) {
-				inter = InteractionUtil.randomInteraction(octx, per1, per2);
-				if(inter != null) {
-					inters.add(inter);
-				}
-			}
-			IOSystem.getActiveContext().getRecordUtil().createRecords(inters.toArray(new BaseRecord[0]));
-			
-			cfg.set("event", octx.getCurrentIncrement());
-			cfg.set("universeName", octx.getUniverse().get("name"));
-			cfg.set("worldName", octx.getWorld().get("name"));
-			cfg.set("startMode", "system");
-			cfg.set("assist", true);
-			cfg.set("useNLP", true);
-			cfg.set("setting", "random");
-			cfg.set("includeScene", false);
-			cfg.set("prune", true);
-			cfg.set("rating", ESRBEnumType.RC);
 
-			cfg.set("llmModel", "fim-local");
-			cfg.set("systemCharacter", per2);
-			cfg.set("userCharacter", per1);
-			cfg.set("interactions", inters);
-			cfg.set("terrain", NarrativeUtil.getTerrain(octx, per1));
-			NarrativeUtil.describePopulation(octx, cfg);
-			// IOSystem.getActiveContext().getPolicyUtil().setTrace(true);
-			cfg = IOSystem.getActiveContext().getAccessPoint().update(testUser1, cfg);
-			assertNotNull("Config was null", cfg);
-			// IOSystem.getActiveContext().getPolicyUtil().setTrace(false);
-		}
-		catch(StackOverflowError | ModelNotFoundException | FieldException | ValueException e) {
-			logger.error(e);
+		BaseRecord pact = null;
+		try {
+			/*
+			pact = ActionUtil.getInAction(per1, "peek");
+			if(pact != null) {
+				pact.setValue("type", ActionResultEnumType.INCOMPLETE);
+				octx.queueUpdate(pact, new String[] {"type"});
+			}
+			*/
+			pact = Actions.beginPeek(octx, octx.getCurrentIncrement(), per1, per1);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+			
+			pact = Actions.beginUndress(octx, octx.getCurrentIncrement(), per1, null, WearLevelEnumType.BASE);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+
+			pact = Actions.beginDress(octx, octx.getCurrentIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+
+			
+		} catch (StackOverflowError | OlioException | OverwatchException  e) {
+			logger.info(e);
 			e.printStackTrace();
 		}
-		
+		octx.processQueue();
 		/*
 		BaseRecord mact = null;
 		try {

@@ -165,6 +165,19 @@ public class RollUtil {
 		return (sval >= sval2);
 
 	}
+	
+	public static RollEnumType rollContact(BaseRecord rec, BaseRecord targ) {
+
+		double rel = GeoLocationUtil.getDistance(rec, targ);
+		int iavg = ((int)rec.get("statistics.agility") + (int)rec.get("statistics.speed"))/2;
+
+		double relPerc =  ((double)iavg * rel);
+		int irelp = (int)relPerc;
+		double d = GeoLocationUtil.getDistance(rec.get("state"), targ.get("state"));
+		logger.info("Contact " + d + " relativity " + rel + " / Relative reach: " + relPerc + " of " + iavg);
+		return rollStat20(irelp);
+	}
+	
 	public static RollEnumType rollPerception(BaseRecord rec, BaseRecord targ) {
 
 		double rel = GeoLocationUtil.distanceRelativity(rec, targ);

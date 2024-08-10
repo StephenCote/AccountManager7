@@ -80,7 +80,7 @@ public class WalkTo implements IAction {
 	@Override
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		// TODO Auto-generated method stub
-		ActionResultEnumType aret = actionResult.get(FieldNames.FIELD_TYPE);
+		ActionResultEnumType aret = actionResult.getEnum(FieldNames.FIELD_TYPE);
 		//long cost = calculateCostMS(context, actionResult, actor, interactor);
 		double dist = GeoLocationUtil.getDistance(actor.get("state"), interactor.get("state"));
 		if(dist <= proximateDistance) {
@@ -95,6 +95,13 @@ public class WalkTo implements IAction {
 			BaseRecord interactor) throws OlioException {
 		// TODO Auto-generated method stub
 		return null;
+	}
+
+	@Override
+	public boolean counterAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor)
+			throws OlioException {
+		// TODO Auto-generated method stub
+		return false;
 	}
 
 
