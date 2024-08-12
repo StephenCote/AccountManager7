@@ -79,6 +79,10 @@ public class ActionUtil {
 		ZonedDateTime prog = actionResult.get("actionProgress");
 		actionResult.setValue("actionProgress", prog.plus(ms, ChronoUnit.MILLIS));
 	}
+	public static void addProgressSeconds(BaseRecord actionResult, int seconds) {
+		ZonedDateTime prog = actionResult.get("actionProgress");
+		actionResult.setValue("actionProgress", prog.plus(seconds, ChronoUnit.SECONDS));
+	}
 	
 	public static void edgeSecondsUntilEnd(BaseRecord actionResult, long seconds) {
 		ZonedDateTime prog = actionResult.get("actionProgress");

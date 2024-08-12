@@ -26,6 +26,12 @@
 			"type": "boolean"
 		},
 		{
+			"name": "duration",
+			"type": "int",
+			"default": 0,
+			"description": "Number of seconds to perform a timed action."
+		},
+		{
 			"name": "distance",
 			"type": "double",
 			"default": 0.0

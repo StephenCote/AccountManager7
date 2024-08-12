@@ -215,6 +215,7 @@ public class ThreatUtil {
 			String name = p.get(FieldNames.FIELD_NAME);
 			BaseRecord state = p.get("state");
 			boolean immobile = state.get("immobilized");
+			boolean incap = state.get("incapacitated");
 			boolean alive = state.get("alive");
 			boolean awake = state.get("awake");
 			
@@ -228,7 +229,7 @@ public class ThreatUtil {
 				logger.warn("Feature placement detected: Move " + name);
 			}
 			else {
-				if(alive && awake && !immobile) {
+				if(alive && awake && !immobile && !incap) {
 					if(state.get("currentEvent") != null) {
 						logger.warn("Agitating " + name + " who is currently busy");
 					}

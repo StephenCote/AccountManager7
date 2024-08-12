@@ -17,13 +17,14 @@ public class RollUtil {
 	}
 	public static double modifyForMobility(BaseRecord rec, double val) {
 		boolean immobile = rec.get("state.immobilized");
+		boolean incap = rec.get("state.incapacitated");
 		boolean awake = rec.get("state.awake");
 		double reaction = rec.get("statistics.reaction");
 		if(!awake) {
 			val += (20 - reaction);
 		}
-		if(immobile) {
-			val = 15;
+		if(immobile || incap) {
+			val = 18;
 		}
 		return minMax(val);
 	}

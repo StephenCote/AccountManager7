@@ -37,6 +37,27 @@
 		"minimumTime": 1
 	},
 	{
+		"name": "sleep",
+		"provider": "org.cote.accountmanager.olio.actions.Sleep",
+		"counterActions": [
+			"wake"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1,
+		"maximumTime": 28800
+	},
+	{
+		"name": "wake",
+		"provider": "org.cote.accountmanager.olio.actions.Wake",
+		"counterActions": [
+			"sleep"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 10,
+		"maximumTime": 60
+	},
+
+	{
 		"name": "peek",
 		"provider": "org.cote.accountmanager.olio.actions.Peek",
 		"counterActions": [
@@ -220,18 +241,6 @@
 	},
 	{
 		"name": "wander"
-	},
-	{
-		"name": "sleep",
-		"counterActions": [
-			"wake"
-		]
-	},
-	{
-		"name": "wake",
-		"counterActions": [
-			"sleep"
-		]
 	},
 	{
 		"name": "eat"
