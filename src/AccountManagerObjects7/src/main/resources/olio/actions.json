@@ -19,6 +19,33 @@
 		"minimumTime": 1
 	},
 	{
+		"name": "transfer",
+		"provider": "org.cote.accountmanager.olio.actions.Transfer",
+		"counterActions": [
+			"Take"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
+		"name": "take",
+		"provider": "org.cote.accountmanager.olio.actions.Take",
+		"counterActions": [
+			"GiveTo"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
+		"name": "consume",
+		"provider": "org.cote.accountmanager.olio.actions.Consume",
+		"counterActions": [
+			"wait"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
+	{
 		"name": "dress",
 		"provider": "org.cote.accountmanager.olio.actions.Dress",
 		"counterActions": [
@@ -59,12 +86,43 @@
 
 	{
 		"name": "peek",
-		"provider": "org.cote.accountmanager.olio.actions.Peek",
 		"counterActions": [
 			"wait"
 		],
 		"minimumEnergyCost": 0.1,
 		"minimumTime": 1
+	},
+	{
+		"name": "gather",
+		"provider": "org.cote.accountmanager.olio.actions.Gather",
+		"counterActions": [
+			"wait",
+			"hunt",
+			"flee"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 3600,
+		"positiveInstincts": [
+			"herd",
+			"cooperate",
+			"adapt"
+		],
+		"positivePersonality": [
+			"openness",
+			"conscientiousness",
+			"extraversion"
+		],
+		"positiveStates": [
+			"health",
+			"energy"
+		],
+		"positiveStatistics": [
+			"physicalEndurance",
+			"mentalStrength",
+			"dexterity",
+			"wisdom",
+			"science"
+		]
 	},
 	{
 		"model": "olio.action",
@@ -101,37 +159,7 @@
 		]
 	},
 
-	{
-		"counterActions": [
-			"wait",
-			"hunt",
-			"flee"
-		],
-		"minimumEnergyCost": 0.1,
-		"minimumTime": 3600,
-		"name": "gather",
-		"positiveInstincts": [
-			"herd",
-			"cooperate",
-			"adapt"
-		],
-		"positivePersonality": [
-			"openness",
-			"conscientiousness",
-			"extraversion"
-		],
-		"positiveStates": [
-			"health",
-			"energy"
-		],
-		"positiveStatistics": [
-			"physicalEndurance",
-			"mentalStrength",
-			"dexterity",
-			"wisdom",
-			"science"
-		]
-	},
+	
 	{
 		"minimumTime": 60,
 		"name": "wait",
@@ -241,12 +269,6 @@
 	},
 	{
 		"name": "wander"
-	},
-	{
-		"name": "eat"
-	},
-	{
-		"name": "drink"
 	},
 	{
 		"name": "socialize"

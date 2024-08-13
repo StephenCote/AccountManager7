@@ -10,6 +10,7 @@ import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -19,7 +20,7 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 public class WalkTo implements IAction {
 	
 	public static final Logger logger = LogManager.getLogger(WalkTo.class);
-	private static double proximateDistance = 1.5;
+	
 	@Override
 	public void configureAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		// TODO Auto-generated method stub
@@ -77,7 +78,7 @@ public class WalkTo implements IAction {
 
 		ActionResultEnumType aret = actionResult.getEnum(FieldNames.FIELD_TYPE);
 		double dist = GeoLocationUtil.getDistance(actor.get("state"), interactor.get("state"));
-		if(dist <= proximateDistance) {
+		if(dist <= Rules.PROXIMATE_CONTACT_DISTANCE) {
 			aret = ActionResultEnumType.COMPLETE;
 			actionResult.setValue(FieldNames.FIELD_TYPE, aret);
 		}

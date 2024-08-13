@@ -4,11 +4,23 @@
 		"unknown"
 	],
 	"fields": [
-			{
+		{
 			"name": "actionName",
 			"type": "string",
 			"maxLength": 64
 		},
+		{
+			"name": "itemName",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "itemModel",
+			"type": "string",
+			"maxLength": 64,
+			"default": "olio.item"
+		},
+
 		{
 			"name": "direction",
 			"baseClass": "org.cote.accountmanager.olio.DirectionEnumType",
@@ -30,6 +42,12 @@
 			"type": "int",
 			"default": 0,
 			"description": "Number of seconds to perform a timed action."
+		},
+		{
+			"name": "quantity",
+			"type": "int",
+			"default": 0,
+			"description": "Placeholder of quantity to be used in conduct of the action."
 		},
 		{
 			"name": "distance",
