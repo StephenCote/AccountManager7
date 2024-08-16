@@ -1169,6 +1169,11 @@ public class StatementUtil {
 					FieldSchema fs = schema.getFieldSchema(field.get(FieldNames.FIELD_NAME));
 					FieldEnumType ffet = FieldEnumType.valueOf(fs.getType().toUpperCase());
 					switch(ffet) {
+						case ENUM:
+							//List<String> useValStr = Stream.of(packVal).map(s -> "'" + s + "'").collect(Collectors.toList());
+							//array = useValStr.toArray(new String[0]);
+							break;
+						case MODEL:
 						case LONG:
 							List<Long> useValLong = Stream.of(packVal).map(Long::valueOf).collect(Collectors.toList());
 							array = useValLong.toArray(new Long[0]);

@@ -37,12 +37,16 @@ public class SqlTypeUtil {
 	public static SqlDataEnumType toSqlType(FieldEnumType fet) {
 		SqlDataEnumType outType = SqlDataEnumType.NULL;
 		switch(fet) {
+			/// Model type assumes to be a database identifier
+			/// Note: This will throw an error if trying to run a query against a domestic (non-foreign) model reference, which would be a varchar search
+			case MODEL:
 			case LONG:
 				outType = SqlDataEnumType.BIGINT;
 				break;
 			case INT:
 				outType = SqlDataEnumType.INTEGER;
 				break;
+			case ENUM:
 			case STRING:
 				outType = SqlDataEnumType.VARCHAR;
 				break;
