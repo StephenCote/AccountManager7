@@ -20,6 +20,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -28,10 +29,14 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
+import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
@@ -74,7 +79,143 @@ public class GeoLocationUtil {
 	public static int getMapCellHeightM() {
 		return mapCellHeightM;
 	}
+	
+	public static void paintPointsOfInterest(OlioContext ctx, List<BaseRecord> cells) {
+		List<BaseRecord> pois = new ArrayList<>();
+		for(BaseRecord cell : cells) {
+			pois.addAll(paintPointsOfInterest(ctx, cell));
+		}
+		if(pois.size() > 0) {
+			IOSystem.getActiveContext().getRecordUtil().createRecords(pois.toArray(new BaseRecord[0]));
+			logger.info("Painted " + pois.size() + " points of interest");
+		}
+	}
+	public static List<BaseRecord> paintPointsOfInterest(OlioContext ctx, BaseRecord cell) {
+		List<BaseRecord> pois = new ArrayList<>();
+		int pcount = countPointsOfInterest(ctx, cell);
+		if(pcount == 0) {
+			TerrainEnumType tet = cell.getEnum("terrainType");
+			List<BaseRecord> builders = BuilderUtil.listBuildersCommonToTerrain(ctx, tet);
+			if(builders.size() == 0) {
+				logger.warn("No builders for " + tet.toString());
+			}
+			if(builders.size() > 0 && rand.nextDouble() <= Rules.POINT_OF_INTEREST_ODDS) {
+				int pc = rand.nextInt(1, Rules.MAXIMUM_POINTS_OF_INTEREST);
+				for(int i = 0; i < pc; i++) {
+					BaseRecord bld = builders.get(rand.nextInt(0, builders.size()));
+					PointOfInterestEnumType poit = PointOfInterestEnumType.RESOURCE;
+					String cat = bld.get("item.category");
+					if(cat != null && cat.equals("food")) {
+						poit = PointOfInterestEnumType.HARVESTABLE;
+					}
+					int x = rand.nextInt(0,10);
+					int y = rand.nextInt(0,10);
+					BaseRecord poi = newPointOfInterest(ctx, poit, cell, bld.get(FieldNames.FIELD_NAME), x, y);
+					poi.setValue("builder", bld);
+					pois.add(poi);
+				}
+			}
+			BuilderUtil.populatePointOfInterestBuilder(ctx, pois);
+			/*
+			if(pois.size() > 0) {
+				IOSystem.getActiveContext().getRecordUtil().createRecords(pois.toArray(new BaseRecord[0]));
+			}
+			*/
+		}
+		else {
+			logger.info("There are already " + pcount + " POIs for cell " + cell.get(FieldNames.FIELD_NAME));
+		}
+		return pois;
+	}
+	
+	public static BaseRecord newPointOfInterest(OlioContext ctx, PointOfInterestEnumType type, BaseRecord cell, String name, int x, int y) {
+		BaseRecord rec = null;
+		if(ctx.getWorld() == null) {
+			return rec;
+		}
+		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("pointsOfInterest.path"));
+		plist.parameter("name", name);
+		try {
+			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
+			rec.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
+			rec.set("type", type);
+			rec.set("location", cell);
+			rec.set("north", y);
+			rec.set("east", x);
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
 
+		return rec;
+		
+	}
+	
+	public static BaseRecord getPointOfInterest(OlioContext ctx, BaseRecord cell, int east, int north) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
+		q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		q.field("east", east);
+		q.field("north", north);
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"});
+		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		return IOSystem.getActiveContext().getSearch().findRecord(q);
+	}
+
+	public static List<BaseRecord> listPointsOfInterest(OlioContext ctx, BaseRecord cell) {
+		return listPointsOfInterest(ctx, Arrays.asList(new BaseRecord[] {cell}));
+	}
+	
+	public static List<BaseRecord> listPointsOfInterest(OlioContext ctx, List<BaseRecord> cells) {
+		return listPointsOfInterest(ctx, cells, new ArrayList<>());
+	}
+	
+	public static List<BaseRecord> listPointsOfInterest(OlioContext ctx, List<BaseRecord> cells, List<PointOfInterestEnumType> pointTypes) {
+		if(cells.size() == 0) {
+			logger.warn("No cells were specified");
+			return new ArrayList<>();
+		}
+		// logger.info("POI GID = " + ctx.getWorld().get("pointsOfInterest.id"));
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
+		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		
+		List<String> ptypes = pointTypes.stream().map(t -> t.toString()).collect(Collectors.toList());
+		if(ptypes.size() > 0) {
+			q.field(FieldNames.FIELD_TYPE, ComparatorEnumType.IN, ptypes.stream().collect(Collectors.joining(",")));	
+		}
+		
+		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
+		q.field(FieldNames.FIELD_LOCATION, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north",  "type"});
+		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		q.setLimitFields(false);
+		//q.setCache(false);
+
+		/*
+		try {
+			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
+			logger.info(meta.getSql());
+		} catch (ModelException | FieldException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		*/
+
+		return new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
+	}
+	
+	public static int countPointsOfInterest(OlioContext ctx, BaseRecord cell) {
+		return countPointsOfInterest(ctx, Arrays.asList(new BaseRecord[] {cell}));
+	}
+	
+	public static int countPointsOfInterest(OlioContext ctx, List<BaseRecord> cells) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
+		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
+		q.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"});
+		q.setCache(false);
+		return IOSystem.getActiveContext().getSearch().count(q);
+	}
+	
 	public static DirectionEnumType randomDirection() {
 		DirectionEnumType dir = OlioUtil.randomEnum(DirectionEnumType.class);
 		while(dir == DirectionEnumType.UNKNOWN) {
@@ -91,11 +232,11 @@ public class GeoLocationUtil {
 		}
     	
     	int iter = 100;
-    	BaseRecord zone = GeoLocationUtil.newLocation(ctx, null, GeoLocationUtil.GZD, iter++);
+    	BaseRecord zone = newLocation(ctx, null, GZD, iter++);
     	IOSystem.getActiveContext().getRecordUtil().createRecord(zone);
 
     	try {
-	    	zone.set("gridZone", GeoLocationUtil.GZD);
+	    	zone.set("gridZone", GZD);
 	    	String identH = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 	    	String identV = "ABCDEFGHJKLMNPQRSTUV";
 	    	List<BaseRecord> blocks = new ArrayList<>();
@@ -103,9 +244,9 @@ public class GeoLocationUtil {
     			for(int x = 0; x < identH.length(); x++) {
     				String sx = identH.substring(x,x+1);
     				String sy = identV.substring(y,y+1);
-    				BaseRecord block = GeoLocationUtil.newLocation(ctx, zone, GeoLocationUtil.GZD + " " + sx + sy, iter++);
+    				BaseRecord block = newLocation(ctx, zone, GZD + " " + sx + sy, iter++);
     				block.set("area", (double)mapWidth1km * mapHeight1km);
-    				block.set("gridZone", GeoLocationUtil.GZD);
+    				block.set("gridZone", GZD);
     				block.set("kident", sx + sy);
     				block.set("geoType", "admin2");
     				
@@ -158,9 +299,9 @@ public class GeoLocationUtil {
     	try {
 	    	for(int x = 0; x < mapWidth1km; x++) {
 	    		for(int y = 0; y < mapHeight1km; y++) {
-	    			grid[x][y] = GeoLocationUtil.newLocation(ctx, k100, GeoLocationUtil.GZD + " " + k100.get("kident") + " " + GeoLocationUtil.df2.format(x) + "" + GeoLocationUtil.df2.format(y), iter++);
+	    			grid[x][y] = newLocation(ctx, k100, GZD + " " + k100.get("kident") + " " + df2.format(x) + "" + df2.format(y), iter++);
 	    			grid[x][y].set("area", (double)1000);
-	    			grid[x][y].set("gridZone", GeoLocationUtil.GZD);
+	    			grid[x][y].set("gridZone", GZD);
 	    			grid[x][y].set("kident", k100.get("kident"));
 	    			grid[x][y].set("eastings", x);
 	    			grid[x][y].set("northings", y);
@@ -245,12 +386,12 @@ public class GeoLocationUtil {
 				for(int x = 0; x < mapCellWidthM; x++) {
 					int ie = x; //  * 10
 					int in = y; //  * 10
-	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, feature, GeoLocationUtil.GZD + " " + feature.get("kident") + " " + GeoLocationUtil.df2.format((int)feature.get("eastings")) + "" + GeoLocationUtil.df2.format((int)feature.get("northings")) + " " + GeoLocationUtil.df3.format(ie) + "" + GeoLocationUtil.df3.format(in), iter++);
+	    			BaseRecord cell = newLocation(ctx, feature, GZD + " " + feature.get("kident") + " " + df2.format((int)feature.get("eastings")) + "" + df2.format((int)feature.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
 	    			/// Location util defaults to putting new locations into the universe.  change to the world group
 	    			///
 	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 	    			cell.set("area", (double)10);
-	    			cell.set("gridZone", GeoLocationUtil.GZD);
+	    			cell.set("gridZone", GZD);
 	    			cell.set("kident", feature.get("kident"));
 	    			cell.set("eastings", x);
 	    			cell.set("northings", y);
@@ -260,6 +401,8 @@ public class GeoLocationUtil {
 			}
 			TerrainUtil.blastCells(ctx, feature, cells, mapCellWidthM, mapCellHeightM);
 			count = IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
+			paintPointsOfInterest(ctx, cells);
+			
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -375,7 +518,7 @@ public class GeoLocationUtil {
 
     		long pid = cell.get("parentId");
         	if(!cellMap.containsKey(pid)) {
-        		cellMap.put(pid, GeoLocationUtil.getCells(ctx, GeoLocationUtil.getParentLocation(ctx, lcell)));
+        		cellMap.put(pid, getCells(ctx, getParentLocation(ctx, lcell)));
         	}
         	BaseRecord ocell = findCellToEdgePlusOne(ctx, lcell, cellMap.get(pid), east, north, true);
             /// Currently, this will not correct itself for being on a map border
@@ -423,7 +566,7 @@ public class GeoLocationUtil {
 			logger.error("Empty cell list");
 			return null;
 		}
-		BaseRecord par = GeoLocationUtil.getParentLocation(ctx, loc);
+		BaseRecord par = getParentLocation(ctx, loc);
 		/*
 		int xedge = (Rules.MAP_EXTERIOR_CELL_WIDTH - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 		int yedge = (Rules.MAP_EXTERIOR_CELL_HEIGHT - 1) * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
@@ -486,7 +629,7 @@ public class GeoLocationUtil {
 					}
 					else {
 						//logger.info("Find adjacent: " + par.get(FieldNames.FIELD_PARENT_ID) + " " + peastings + ", " + pnorthings);
-						BaseRecord padj = GeoLocationUtil.findAdjacentLocationByGrid(ctx, par.get(FieldNames.FIELD_PARENT_ID), peastings, pnorthings);
+						BaseRecord padj = findAdjacentLocationByGrid(ctx, par.get(FieldNames.FIELD_PARENT_ID), peastings, pnorthings);
 						if(padj == null) {
 							logger.error("Failed to find parent " + par.get(FieldNames.FIELD_PARENT_ID) + " " + peastings + ", " + pnorthings);
 						}
@@ -508,8 +651,8 @@ public class GeoLocationUtil {
 								
 							}
 
-							GeoLocationUtil.prepareCells(ctx, padj);
-							List<BaseRecord> pcells = GeoLocationUtil.getCells(ctx, padj);
+							prepareCells(ctx, padj);
+							List<BaseRecord> pcells = getCells(ctx, padj);
 							if(pcells.size() == 0) {
 								logger.warn("Failed to find adjacent cells");
 							}
@@ -586,7 +729,7 @@ public class GeoLocationUtil {
 	
 	public static List<BaseRecord> limitToAdjacent(OlioContext ctx, List<BaseRecord> pop, BaseRecord location){
 		long locId = location.get(FieldNames.FIELD_ID);
-		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, location, Rules.MAXIMUM_OBSERVATION_DISTANCE);
+		List<BaseRecord> acells = getAdjacentCells(ctx, location, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		return pop.stream().filter(zp ->{
 			BaseRecord zloc = zp.get("state.currentLocation");
@@ -610,11 +753,19 @@ public class GeoLocationUtil {
 		int pnorth = north + distance;
 		int nnorth = north - distance;
 		long id = origin.get("id");
+		// logger.info("adj " + id + " " + peast + ", " + pnorth + " " + neast + ", " + nnorth + " from " + cells.size() + " cells");
 		List<BaseRecord> outCells = cells.stream().filter(c -> {
 			long cid = c.get("id");
 			int ceast = c.get("eastings");
 			int cnorth = c.get("northings");
-			return (cid != id && (ceast == peast || ceast == neast || ceast == east) && (cnorth == pnorth || cnorth == nnorth || cnorth == north));
+			return (
+				cid != id
+				&&
+				ceast >= neast && ceast <= peast
+				&&
+				cnorth >= nnorth && cnorth <= pnorth
+			);
+			//return (cid != id && (ceast == peast || ceast == neast || ceast == east) && (cnorth == pnorth || cnorth == nnorth || cnorth == north));
 		}).collect(Collectors.toList());
 		return outCells;
 	}
@@ -836,54 +987,73 @@ public class GeoLocationUtil {
 		return names.toArray(new String[0]);
 	}
 	
-	public static double getDistance(BaseRecord state1, BaseRecord state2) {
-		Coordinates c1 = getCoordinates(state1);
-		Coordinates c2 = getCoordinates(state2);
-		return GeoLocationUtil.distance(c1.getX(), c1.getY(), c2.getX(), c2.getY());
+	public static double getDistanceToState(BaseRecord state1, BaseRecord state2) {
+		Coordinates c1 = getCoordinatesToState(state1);
+		Coordinates c2 = getCoordinatesToState(state2);
+		return distance(c1.getX(), c1.getY(), c2.getX(), c2.getY());
 	}
 	
-	public static Coordinates getCoordinates(BaseRecord state) {
-		return new Coordinates(getXCoordinate(state), getYCoordinate(state));
+	public static double getDistanceToCell(BaseRecord state1, BaseRecord loc1) {
+		Coordinates c1 = getCoordinatesToState(state1);
+		Coordinates c2 = getCoordinatesFromLocation(loc1);
+		return distance(c1.getX(), c1.getY(), c2.getX(), c2.getY());
 	}
 	
-	public static int getXCoordinate(BaseRecord state) {
-		BaseRecord loc = state.get("currentLocation");
+	public static Coordinates getCoordinatesToState(BaseRecord state) {
+		return new Coordinates(getXCoordinateToState(state), getYCoordinateToState(state));
+	}
+	
+	public static Coordinates getCoordinatesFromLocation(BaseRecord loc) {
+		return new Coordinates(getXCoordinate(loc), getYCoordinate(loc));
+	}
+	
+	
+	
+	public static int getXCoordinateToState(BaseRecord state) {
+		return getXCoordinate(state.get("currentLocation")) + (int)state.get("currentEast");
+	}
+
+	public static int getXCoordinate(BaseRecord loc) {
 		if(loc == null) {
 			logger.error("Location is null in distance calculation");
 			return 0;
 		}
 		
-		BaseRecord floc = GeoLocationUtil.getParentLocation(null, loc);
+		BaseRecord floc = getParentLocation(null, loc);
 
 		int eastings = ((int)loc.get("eastings")) * (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
 		int feastings = ((int)floc.get("eastings")) * (Rules.MAP_EXTERIOR_FEATURE_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
-		int east1 = state.get("currentEast");
-		return (east1 + eastings + feastings);
+		return (eastings + feastings);
 
 	}
 	
-	public static int getYCoordinate(BaseRecord state) {
-		BaseRecord loc = state.get("currentLocation");
+	public static int getYCoordinateToState(BaseRecord state) {
+		return getYCoordinate(state.get("currentLocation")) + (int)state.get("currentNorth");
+	}
+	
+	public static int getYCoordinate(BaseRecord loc) {
 		if(loc == null) {
 			logger.error("Location is null in distance calculation");
 			return 0;
 		}
 		
-		BaseRecord floc = GeoLocationUtil.getParentLocation(null, loc);
+		BaseRecord floc = getParentLocation(null, loc);
 
 		int northings = ((int)loc.get("northings")) * (Rules.MAP_EXTERIOR_CELL_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
 		int fnorthings = ((int)floc.get("northings")) * (Rules.MAP_EXTERIOR_FEATURE_HEIGHT * Rules.MAP_EXTERIOR_CELL_MULTIPLIER);
-		int north = state.get("currentNorth");
 
-		return (north + northings + fnorthings);
+		return (northings + fnorthings);
 	}
 	
 	/// Based on a 12' (North) 0 vs. Trigometric x+ 0
 	///
-	public static double getAngleBetweenInDegrees(BaseRecord state1, BaseRecord state2) {
+	public static double getAngleBetweenStatesInDegrees(BaseRecord state1, BaseRecord state2) {
 		
-		Coordinates c1 = getCoordinates(state1);
-		Coordinates c2 = getCoordinates(state2);
+		Coordinates c1 = getCoordinatesToState(state1);
+		Coordinates c2 = getCoordinatesToState(state2);
+		return getAngleBetweenInDegrees(c1, c2);
+	}
+	public static double getAngleBetweenInDegrees(Coordinates c1, Coordinates c2) {
 		double y = (c2.getY() - c1.getY());
 
 		double x = (c2.getX() - c1.getX());
@@ -914,7 +1084,7 @@ public class GeoLocationUtil {
 	 */
 	public static double contactRelativity(BaseRecord rec1, BaseRecord rec2) {
 		int maxDist = Rules.MAXIMUM_CONTACT_DISTANCE;
-		double dist = getDistance(rec1.get("state"), rec2.get("state"));
+		double dist = getDistanceToState(rec1.get("state"), rec2.get("state"));
 		if(dist <= 0) {
 			// logger.warn("Zero or negative distance detected");
 		}
@@ -922,9 +1092,15 @@ public class GeoLocationUtil {
 		if(perc < 0) perc = 0;
 		return perc;
 	}	
-	public static double distanceRelativity(BaseRecord rec1, BaseRecord rec2) {
+	public static double distanceRelativityToState(BaseRecord rec1, BaseRecord rec2) {
+		return distanceRelativity(getDistanceToState(rec1.get("state"), rec2.get("state")));
+	}
+	public static double distanceRelativityToCell(BaseRecord rec1, BaseRecord loc1) {
+		return distanceRelativity(getDistanceToCell(rec1.get("state"), loc1));
+	}
+	public static double distanceRelativity(double dist) {
 		int maxDist = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
-		double dist = getDistance(rec1.get("state"), rec2.get("state"));
+
 		if(dist <= 0) {
 			// logger.warn("Zero or negative distance detected");
 			
@@ -933,5 +1109,6 @@ public class GeoLocationUtil {
 		if(perc < 0) perc = 0;
 		return perc;
 	}
+	
 
 }

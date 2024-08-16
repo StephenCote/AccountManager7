@@ -3,7 +3,7 @@
 		"model": "olio.builder",
 		"materials": [
 			{
-				"name": "sticks"
+				"name": "stick"
 			}
 		],
 		"name": "rudimentary shelter",
@@ -50,7 +50,7 @@
 	{
 		"materials": [
 			{
-				"name": "sticks"
+				"name": "stick"
 			},
 			{
 				"name": "grass"
@@ -79,7 +79,7 @@
 	{
 		"materials": [
 			{
-				"name": "sticks"
+				"name": "stick"
 			},
 			{
 				"name": "leather"
@@ -111,7 +111,7 @@
 		},
 		"materials": [
 			{
-				"name": "sticks"
+				"name": "stick"
 			},
 			{
 				"name": "bone"
@@ -140,7 +140,7 @@
 		},
 		"materials": [
 			{
-				"name": "sticks"
+				"name": "branch"
 			},
 			{
 				"name": "bone"
@@ -195,7 +195,7 @@
 		},
 		"materials": [
 			{
-				"name": "sticks"
+				"name": "stick"
 			},
 			{
 				"name": "leather"
@@ -350,7 +350,7 @@
 		},
 		"materials": [
 			{
-				"name": "stick"
+				"name": "branch"
 			},
 			{
 				"name": "rock"
@@ -499,5 +499,324 @@
 				"name": "rope"
 			}
 		]
+	},
+	{
+		"item": {
+			"name": "filthy root"
+		},
+		"name": "filthy root",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"tundra", "marsh", "swamp", "clear", "dunes", "oasis", "plains", "grass", "savanna", "valley", "jungle", "forest", "hill", "plateau", "mountain"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "food"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "corn"
+		},
+		"name": "corn stalk",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"grass", "clear", "prairie", "valley"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "food"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "mushroom"
+		},
+		"name": "mushroom",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"forest", "swamp", "marsh", "jungle", "hill"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "food"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "wheat"
+		},
+		"name": "wheat stalk",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"grass", "clear", "prairie", "valley", "savanna", "oasis"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "food"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "apple"
+		},
+		"name": "apple tree",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"oasis", "clear", "forest"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "food"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "arctic blueberry"
+		},
+		"name": "arctic blueberry bush",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"materials": [
+			{
+				"name": "arctic blueberry seed"
+			}
+		],
+		"terrain":[
+			"tundra", "mountain"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "food"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "murky water"
+		},
+		"name": "puddle",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"marsh", "swamp", "oasis", "grass", "jungle", "forest", "hill", "plateau", "mountain"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "water"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "alpine water"
+		},
+		"name": "snow melt",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"glacier", "tundra", "mountain"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "water"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "fresh water"
+		},
+		"name": "fresh water",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"glacier", "tundra", "mountain"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "water"
+			}
+		]
+	},
+
+	{
+		"name": "oak tree",
+		"renewable": true,
+		"type": "builder",
+		"tags": [
+			{
+				"name": "tree"
+			},
+			{
+				"name": "wood"
+			}
+		],
+		"terrain":[
+			"plains", "prairie", "hill", "valley", "forest", "hill"
+		],
+		"materials": [
+			{"name": "branch"},
+			{"name": "stick"},
+			{"name": "acorn"}
+		]
+	},
+
+	{
+		"name": "ocean shoreline",
+		"renewable": true,
+		"type": "builder",
+		"tags": [
+			{
+				"name": "seashore"
+			}
+		],
+		"terrain":[
+			"seashore", "ocean"
+		],
+		"materials": [
+			{"name": "pearl"},
+			{"name": "seashell"},
+			{"name": "garnet"},
+			{"name": "moonstone"},
+			{"name": "jasper"},
+			{"name": "agate"},
+			{"name": "quartz"}
+		]
+	},
+	{
+		"name": "mud",
+		"renewable": true,
+		"type": "builder",
+		"tags": [
+			{
+				"name": "mud"
+			}
+		],
+		"terrain":[
+			"swamp", "prairie", "marsh", "plains", "valley", "pond", "stream"
+		],
+		"materials": [
+			{"name": "mud"}
+		]
 	}
+
 ]

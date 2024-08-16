@@ -505,7 +505,8 @@ public class OlioUtil {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
-	
+
+	/*
 	public static BaseRecord getCreateRefStore(OlioContext ctx, BaseRecord ref) {
 		BaseRecord store = null;
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_STORE, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("stores.id"));
@@ -526,6 +527,7 @@ public class OlioUtil {
 		}
 		return store;
 	}
+	*/
 	
 	public static BaseRecord cloneIntoGroup(BaseRecord src, BaseRecord dir) {
 		IOSystem.getActiveContext().getReader().populate(src);

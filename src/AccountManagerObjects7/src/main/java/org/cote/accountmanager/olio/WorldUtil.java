@@ -9,6 +9,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
@@ -16,6 +17,8 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
@@ -45,6 +48,7 @@ public class WorldUtil {
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	
 	}
@@ -270,6 +274,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_NARRATIVE, (long)world.get("narratives.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_PROFILE, (long)world.get("profiles.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_POI, (long)world.get("pointsOfInterest.id"), orgId);
 		
 		RecordFactory.cleanupOrphans(null);
 		long stop = System.currentTimeMillis();

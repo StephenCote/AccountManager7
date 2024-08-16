@@ -1,0 +1,73 @@
+{
+	"name": "olio.pointOfInterest",
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight"
+	],
+	"group": "POIs",
+	"icon": "category",
+	"label": "Point of Interest",
+	"dedicatedParticipation": true,
+	"sortField": "name",
+	"sortOrder": "ASCENDING",
+	"query": ["location", "groupId", "organizationId"],
+	"fields": [
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "description",
+			"type": "string",
+			"maxLength": 256
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.olio.PointOfInterestEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "unknown"
+		},
+		{
+			"name": "concealed",
+			"type": "boolean"
+		},
+		{
+			"name": "location",
+			"type": "model",
+			"baseModel": "data.geoLocation",
+			"foreign": true,
+			"followReference": false
+		},
+		{
+			"name": "store",
+			"type": "model",
+			"baseModel": "olio.store",
+			"foreign": true,
+			"participantModel": "poi.store",
+			"shortName": "sto"
+		},
+		{
+			"name": "builder",
+			"type": "model",
+			"baseModel": "olio.builder",
+			"foreign": true,
+			"participantModel": "poi.build",
+			"shortName": "bld"
+		},
+		{
+			"name": "east",
+			"type": "int",
+			"description": "Meters from the western grid line of the location",
+			"default": -1
+		},
+		{
+			"name": "north",
+			"type": "int",
+			"description": "Meters from the northern grid line of the location",
+			"default": -1
+		}
+	]
+}

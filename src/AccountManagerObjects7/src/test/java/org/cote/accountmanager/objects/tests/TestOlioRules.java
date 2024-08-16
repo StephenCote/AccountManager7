@@ -56,7 +56,6 @@ public class TestOlioRules extends BaseTest {
 		logger.info("Test Olio Rules - CanMove");
 		
 
-		
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -65,7 +64,15 @@ public class TestOlioRules extends BaseTest {
 		
 		// OlioTestUtil.setResetWorld(true);
 		// OlioTestUtil.setResetUniverse(true);
-		OlioContext octx = OlioTestUtil.getContext(testOrgContext, dataPath);
+		OlioContext octx = null;
+		try{
+			octx = OlioTestUtil.getContext(testOrgContext, dataPath);
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+		assertNotNull("Context is null", octx);
+
 		OlioTestUtil.outfitAndStage(octx);
 		BaseRecord lrec = octx.getLocations()[0];
 		List<BaseRecord> pop = octx.getPopulation(lrec);
@@ -78,13 +85,17 @@ public class TestOlioRules extends BaseTest {
 
 		BaseRecord pact = null;
 		try {
-			/*
-			pact = ActionUtil.getInAction(per1, "peek");
+			
+			pact = ActionUtil.getInAction(per1, "gather");
 			if(pact != null) {
 				pact.setValue("type", ActionResultEnumType.INCOMPLETE);
 				octx.queueUpdate(pact, new String[] {"type"});
 			}
-			*/
+			
+			pact = Actions.beginGather(octx, octx.getCurrentIncrement(), per1, "water", 3);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+			/*
 			pact = Actions.beginPeek(octx, octx.getCurrentIncrement(), per1, per1);
 			octx.overwatchActions();
 			logger.info(pact.toString());
@@ -96,9 +107,10 @@ public class TestOlioRules extends BaseTest {
 			pact = Actions.beginDress(octx, octx.getCurrentIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
 			octx.overwatchActions();
 			logger.info(pact.toString());
+			*/
 
 			
-		} catch (StackOverflowError | OlioException | OverwatchException  e) {
+		} catch (NumberFormatException | StackOverflowError | OlioException | OverwatchException  e) {
 			logger.info(e);
 			e.printStackTrace();
 		}

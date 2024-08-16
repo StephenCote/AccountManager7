@@ -43,7 +43,7 @@ public class ThreatUtil {
 		}
 		
 		/// Percentage of distance by (very limited) maximum visibility
-		double dr = GeoLocationUtil.distanceRelativity(possibleThreat.getRecord(), person.getRecord());
+		double dr = GeoLocationUtil.distanceRelativityToState(possibleThreat.getRecord(), person.getRecord());
 
 		/// Is the animal starving
 		boolean starving = InstinctUtil.checkFeedInstinct(possibleThreat, InstinctEnumType.STRONG, dr); 

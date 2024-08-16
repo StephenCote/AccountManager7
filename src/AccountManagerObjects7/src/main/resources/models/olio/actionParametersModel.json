@@ -15,6 +15,11 @@
 			"maxLength": 64
 		},
 		{
+			"name": "itemCategory",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
 			"name": "itemModel",
 			"type": "string",
 			"maxLength": 64,

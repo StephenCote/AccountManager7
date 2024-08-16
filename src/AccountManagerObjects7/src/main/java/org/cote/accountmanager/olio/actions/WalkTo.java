@@ -77,7 +77,7 @@ public class WalkTo implements IAction {
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
 		ActionResultEnumType aret = actionResult.getEnum(FieldNames.FIELD_TYPE);
-		double dist = GeoLocationUtil.getDistance(actor.get("state"), interactor.get("state"));
+		double dist = GeoLocationUtil.getDistanceToState(actor.get("state"), interactor.get("state"));
 		if(dist <= Rules.PROXIMATE_CONTACT_DISTANCE) {
 			aret = ActionResultEnumType.COMPLETE;
 			actionResult.setValue(FieldNames.FIELD_TYPE, aret);

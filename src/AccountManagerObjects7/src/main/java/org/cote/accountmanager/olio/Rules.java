@@ -105,6 +105,12 @@ public class Rules {
 	/// Number of meters a character/animal should be from another character/animal in order to interact without further aid.
 	public static final double PROXIMATE_CONTACT_DISTANCE = 1.5; 
 	
+	/// Maximum number of random points of interest per empty cell on initial construction. (Each grid square is 1 square kilometer, each cell is 100 by 100 meters)
+	public static int MAXIMUM_POINTS_OF_INTEREST = 5;
+
+	/// Odds there is at least one point of interest in a 100 square meter cell
+	public static double POINT_OF_INTEREST_ODDS = 0.5;
+	
 	public static double getAnimalOdds(TerrainEnumType type) {
 		double typeOdds = ODDS_ANIMAL_GROUP;
 		switch(type) {

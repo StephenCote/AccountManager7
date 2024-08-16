@@ -169,23 +169,23 @@ public class RollUtil {
 	
 	public static RollEnumType rollContact(BaseRecord rec, BaseRecord targ) {
 
-		double rel = GeoLocationUtil.getDistance(rec, targ);
+		double rel = GeoLocationUtil.getDistanceToState(rec, targ);
 		int iavg = ((int)rec.get("statistics.agility") + (int)rec.get("statistics.speed"))/2;
 
 		double relPerc =  ((double)iavg * rel);
 		int irelp = (int)relPerc;
-		double d = GeoLocationUtil.getDistance(rec.get("state"), targ.get("state"));
+		double d = GeoLocationUtil.getDistanceToState(rec.get("state"), targ.get("state"));
 		logger.info("Contact " + d + " relativity " + rel + " / Relative reach: " + relPerc + " of " + iavg);
 		return rollStat20(irelp);
 	}
 	
 	public static RollEnumType rollPerception(BaseRecord rec, BaseRecord targ) {
 
-		double rel = GeoLocationUtil.distanceRelativity(rec, targ);
+		double rel = GeoLocationUtil.distanceRelativityToState(rec, targ);
 		int iperc = rec.get("statistics.perception");
 		double relPerc =  ((double)iperc * rel);
 		int irelp = (int)relPerc;
-		double d = GeoLocationUtil.getDistance(rec.get("state"), targ.get("state"));
+		double d = GeoLocationUtil.getDistanceToState(rec.get("state"), targ.get("state"));
 		logger.info("Distance " + d + " relativity " + rel + " / Relative perception: " + relPerc + " of " + rec.get("statistics.perception"));
 		return rollStat20(irelp);
 	}

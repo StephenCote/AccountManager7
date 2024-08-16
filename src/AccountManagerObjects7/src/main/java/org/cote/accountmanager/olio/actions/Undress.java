@@ -75,7 +75,7 @@ public class Undress implements IAction {
 			canUndress = true;
 		}
 		else {
-			double dist = GeoLocationUtil.getDistance(actor.get("state"), interactor.get("state"));
+			double dist = GeoLocationUtil.getDistanceToState(actor.get("state"), interactor.get("state"));
 			RollEnumType ret = RollUtil.rollContact(actor, interactor); 
 			canUndress = (ret == RollEnumType.SUCCESS || ret == RollEnumType.NATURAL_SUCCESS);
 			List<String> res = actionResult.get("results");

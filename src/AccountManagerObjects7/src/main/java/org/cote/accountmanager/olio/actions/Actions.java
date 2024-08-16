@@ -212,7 +212,12 @@ public class Actions {
 		return aet;
 		
 	}
-
+	public static BaseRecord beginGather(OlioContext ctx, BaseRecord evt, BaseRecord per1, String itemCategory, int quantity) throws OlioException {
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.PHYSIOLOGICAL, null, "gather");
+		params.setValue("itemCategory", itemCategory);
+		params.setValue("quantity", quantity);
+		return beginAction(ctx, evt, params, per1, null);
+	}
 	public static BaseRecord beginMove(OlioContext ctx, BaseRecord evt, BaseRecord per1, DirectionEnumType dir) throws OlioException {
 		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "walk");
 		params.setValue("direction", dir);

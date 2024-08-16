@@ -17,11 +17,13 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -142,6 +144,7 @@ public class ItemUtil {
 			try {
 				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
 				inv.set("item", i);
+				inv.set("quantity", 1);
 				entries.add(inv);
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
@@ -200,13 +203,16 @@ public class ItemUtil {
 		}
 		return 0;
 	}
-	public static int countItemByCategoryInInventory(OlioContext ctx, BaseRecord rec, String itemCat) {
-		
-		List<BaseRecord> items = getTemplateItems(ctx).stream().filter(i -> {
+	public static List<BaseRecord> getTemplateItemsByCategory(OlioContext ctx, String itemCat){
+		return getTemplateItems(ctx).stream().filter(i -> {
 			String type = i.get("type");
 			String cat = i.get("category");
 			return type != null && type.equals("template") && cat != null && cat.equals(itemCat);
-		}).collect(Collectors.toList());
+		}).collect(Collectors.toList());	
+	}
+	public static int countItemByCategoryInInventory(OlioContext ctx, BaseRecord rec, String itemCat) {
+		
+		List<BaseRecord> items = getTemplateItemsByCategory(ctx, itemCat);
 	
 		int count = 0;
 		for(BaseRecord i : items) {
@@ -373,6 +379,31 @@ public class ItemUtil {
 			logger.error(e);
 		}
 		return item;
+	}
+	
+	public static BaseRecord getCreateRawMaterial(OlioContext ctx, String name, String type, String cat) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("items.id"));
+		q.field(FieldNames.FIELD_NAME, name);
+		if(type != null) {
+			q.field(FieldNames.FIELD_TYPE, type);
+		}
+		if(cat != null) {
+			q.field("category", cat);
+		}
+
+		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if(rec == null) {
+			rec = newItem(ctx, name);
+			try {
+				rec.set(FieldNames.FIELD_TYPE, type);
+				rec.set("category", cat);
+			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+		}
+		return rec;
+		
 	}
 	
 	public static List<BaseRecord> getTemplateBuilders(OlioContext ctx) {

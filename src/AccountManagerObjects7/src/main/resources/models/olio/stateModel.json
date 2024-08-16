@@ -9,6 +9,7 @@
 	"icon": "category",
 	"label": "State",
 	"dedicatedParticipation": true,
+	"query": ["groupId", "organizationId"],
 	"fields": [
 		{
 			"name": "currentEvent",
@@ -67,7 +68,7 @@
 		{
 			"name": "currentNorth",
 			"type": "int",
-			"description": "Meters from the southern grid line of the currentLocation",
+			"description": "Meters from the northern grid line of the currentLocation",
 			"default": -1
 		},
 		{

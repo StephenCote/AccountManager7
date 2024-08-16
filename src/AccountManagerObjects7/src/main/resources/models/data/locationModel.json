@@ -104,7 +104,7 @@
 		{
 			"name": "northings",
 			"type": "int",
-			"description": "Meters from the southrn grid line"
+			"description": "Meters from the northern grid line"
 		}
 	]
 }

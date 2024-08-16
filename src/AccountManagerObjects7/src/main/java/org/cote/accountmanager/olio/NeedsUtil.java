@@ -135,7 +135,7 @@ public class NeedsUtil {
 		BaseRecord builder = null;
 		BaseRecord actionResult = null;
 		if(need == PhysiologicalNeedsEnumType.SHELTER) {
-			List<BaseRecord> builders = Arrays.asList(BuilderUtil.getBuilders(ctx)).stream().filter(b -> ((String)b.get("type")).equals("location")).collect(Collectors.toList());
+			List<BaseRecord> builders = Arrays.asList(BuilderUtil.getBuilders(ctx)).stream().filter(b -> (b.getEnum("type") == BuilderEnumType.LOCATION)).collect(Collectors.toList());
 			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("build")).collect(Collectors.toList());
 			action = actions.get(0);
 			builder = builders.get(random.nextInt(0, builders.size()));

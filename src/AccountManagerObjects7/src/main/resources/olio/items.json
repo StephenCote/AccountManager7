@@ -249,6 +249,106 @@
 	{
 		"category": "water",
 		"description": "Basic water template",
+		"name": "purified water",
+		"perks": [
+			{
+				"name": "Quench"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "water"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "water",
+		"description": "Basic water template",
+		"name": "alpine water",
+		"perks": [
+			{
+				"name": "Quench"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "water"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "water",
+		"description": "Basic water template",
+		"name": "fresh water",
+		"perks": [
+			{
+				"name": "Quench"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "water"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "water",
+		"description": "Basic water template",
+		"name": "pond water",
+		"perks": [
+			{
+				"name": "Quench"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "water"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "water",
+		"description": "Basic water template",
 		"name": "melted snow",
 		"perks": [
 			{
@@ -274,7 +374,133 @@
 	{
 		"category": "food",
 		"description": "Basic food template",
+		"name": "arctic blueberry",
+		"perks": [
+			{
+				"name": "Sate"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "food"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "food",
+		"description": "Basic food template",
 		"name": "filthy root",
+		"perks": [
+			{
+				"name": "Sate"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "food"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "food",
+		"description": "Basic food template",
+		"name": "corn",
+		"perks": [
+			{
+				"name": "Sate"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "food"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "food",
+		"description": "Basic food template",
+		"name": "wheat",
+		"perks": [
+			{
+				"name": "Sate"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "food"
+			}
+		],
+		"type": "template"
+	},
+	{
+		"category": "food",
+		"description": "Basic food template",
+		"name": "apple",
+		"perks": [
+			{
+				"name": "Sate"
+			}
+		],
+		"qualities": [
+			{
+				"skill": 0.1
+			}
+		],
+		"resaleAdjustment": 0.5,
+		"statistics": {
+			"replenishment": 1
+		},
+		"tags": [
+			{
+				"name": "food"
+			}
+		],
+		"type": "template"
+	},
+	
+	{
+		"category": "food",
+		"description": "Basic food template",
+		"name": "mushroom",
 		"perks": [
 			{
 				"name": "Sate"

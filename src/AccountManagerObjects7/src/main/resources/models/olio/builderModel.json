@@ -18,15 +18,15 @@
 	"fields": [
 		{
 			"name": "type",
-			"type": "string",
-			"maxLength": 24,
-			"description": "The type of item this builder produces",
-			"limit": ["item", "builder", "wearable", "apparel", "location"]
+			"baseClass": "org.cote.accountmanager.olio.BuilderEnumType",
+			"type": "enum",
+			"maxLength": 32,
+			"default": "unknown"
 		},
 		{
 			"name": "time",
 			"type": "int",
-			"description": "Time in hours to build this object with mean skill level"
+			"description": "Time in minutes to build this object with mean skill level"
 		},
 		{
 			"name": "schedule",
@@ -79,11 +79,12 @@
 			"name": "skills",
 			"type": "list",
 			"baseType": "model",
-			"baseModel": "data.trait",
-			"participantModel": "builder.skill",
+			"baseModel": "olio.builder",
+			"participantModel": "builder.builder",
 			"foreign": true,
 			"shortName": "sk"
 		},
+
 		{
 			"name": "perks",
 			"type": "list",
@@ -101,6 +102,12 @@
 			"participantModel": "builder.feature",
 			"foreign": true,
 			"shortName": "feat"
+		},
+		{
+			"name": "terrain",
+			"type": "list",
+			"baseType": "string",
+			"description": "Terrain limitations for a particular build.  E.G.: Can't build an igloo in a desert"
 		}
 	]
 }

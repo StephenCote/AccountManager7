@@ -222,7 +222,7 @@ public class TestOlio extends BaseTest {
 
 	private List<BaseRecord> observablePopulation(List<BaseRecord> pop, BaseRecord pov){
 		return pop.stream().filter(p -> {
-				double dist = GeoLocationUtil.getDistance(pov.get("state"), p.get("state"));
+				double dist = GeoLocationUtil.getDistanceToState(pov.get("state"), p.get("state"));
 				int max = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 				// logger.info("Distance: " + dist + "::" + max);
 				boolean filt =(((long)p.get(FieldNames.FIELD_ID)) != (long)pov.get(FieldNames.FIELD_ID)

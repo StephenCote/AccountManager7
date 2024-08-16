@@ -1,7 +1,11 @@
 package org.cote.accountmanager.olio;
 
+import java.security.SecureRandom;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -10,6 +14,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -19,40 +24,79 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
 public class BuilderUtil {
 	public static final Logger logger = LogManager.getLogger(BuilderUtil.class);
+	private static BaseRecord[] builders = new BaseRecord[0];
+	private static String RAW_MATERIAL_CATEGORY = "raw material";
+	private static SecureRandom rand = new SecureRandom();
 	
+	public static List<BaseRecord> listBuildersCommonToTerrain(OlioContext ctx, TerrainEnumType tet){
+		List<BaseRecord> builders = Arrays.asList(getBuilders(ctx));
+		String stet = tet.toString().toLowerCase();
+		return builders.stream().filter(b -> {
+			List<String> tets = b.get("terrain");
+			return tets.contains(stet);
+		}).collect(Collectors.toList());
+	}
+	
+	/// for any builder of type builder, with materials, populate the poi store with an initial set of inventory items for that builder's materials
+	///
 
-	protected static BaseRecord getCreateRawMaterial(OlioContext ctx, String name, String type, String cat) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("items.id"));
-		q.field(FieldNames.FIELD_NAME, name);
-		if(type != null) {
-			q.field(FieldNames.FIELD_TYPE, type);
-		}
-		if(cat != null) {
-			q.field("category", cat);
-		}
+	protected static void populatePointOfInterestBuilder(OlioContext ctx, List<BaseRecord> pois) {
+		// List<BaseRecord> pinv = new ArrayList<>();
 
-		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
-		if(rec == null) {
-			rec = ItemUtil.newItem(ctx, name);
+		for(BaseRecord poi : pois) {
+
+			BaseRecord bld = poi.get("builder");
+			if(bld == null) {
+				continue;
+			}
+
+			BuilderEnumType bet = bld.getEnum(FieldNames.FIELD_TYPE);
+			if(bet != BuilderEnumType.BUILDER) {
+				continue;
+			}
+
+			List<BaseRecord> materials = bld.get("materials");
+
+			BaseRecord store = poi.get("store");
+			List<BaseRecord> inv = store.get("inventory");
 			try {
-				rec.set(FieldNames.FIELD_TYPE, type);
-				rec.set("category", cat);
-			} catch (FieldException | ValueException | ModelNotFoundException e) {
+				for(BaseRecord mat : materials) {
+					String mname = mat.get(FieldNames.FIELD_NAME);
+					Optional<BaseRecord> oive = inv.stream().filter(i -> mname.equals(i.get("item.name"))).findFirst();
+					if(!oive.isPresent()) {
+						//BaseRecord omat = ItemUtil.getCreateRawMaterial(ctx, mat, "template", RAW_MATERIAL_CATEGORY);
+						BaseRecord ive = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path")));
+						ive.setValue("item", mat);
+						ive.setValue("quantity", rand.nextInt(1, 10));
+						//IOSystem.getActiveContext().getRecordUtil().createRecord(ive);
+						// inv.add(ive);
+						// BaseRecord part = ParticipationFactory.newParticipation(ctx.getOlioUser(), store, "inventory", ive);
+						// pinv.add(part);
+					}
+				}
+			}
+			catch(FactoryException e) {
 				logger.error(e);
 			}
-			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 		}
-		return rec;
-		
+		/*
+		if(pinv.size() > 0) {
+			IOSystem.getActiveContext().getRecordUtil().createRecords(pinv.toArray(new BaseRecord[0]));
+		}
+		*/
 	}
-
+	
 	public static BaseRecord[] getBuilders(OlioContext ctx) {
-		return OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders");
+		if(builders.length == 0) {
+			builders = OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders");
+		}
+		return builders;
 	}
 	
 	public static void loadBuilders(OlioContext ctx) {
@@ -75,6 +119,7 @@ public class BuilderUtil {
 				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("builders.path"));
 				plist.parameter(FieldNames.FIELD_NAME, vbld.get(FieldNames.FIELD_NAME));
 				BaseRecord bld = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BUILDER, ctx.getOlioUser(), vbld, plist);
+				// bld.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
 
 				BaseRecord itm = bld.get("item");
 				if(itm != null) {
@@ -108,7 +153,7 @@ public class BuilderUtil {
 				List<BaseRecord> mats = bld.get("materials");
 				List<BaseRecord> imats = new ArrayList<>();
 				for(BaseRecord t: mats) {
-					imats.add(getCreateRawMaterial(ctx, t.get(FieldNames.FIELD_NAME), "template", "raw material"));
+					imats.add(ItemUtil.getCreateRawMaterial(ctx, t.get(FieldNames.FIELD_NAME), "template", RAW_MATERIAL_CATEGORY));
 				}
 				bld.set("materials", imats);
 				

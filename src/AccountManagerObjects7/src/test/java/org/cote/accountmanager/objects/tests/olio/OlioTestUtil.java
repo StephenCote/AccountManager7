@@ -150,7 +150,7 @@ public class OlioTestUtil {
 	}
 	
 	public static void lookout(BaseRecord per1, BaseRecord per2) {
-		double dist = GeoLocationUtil.getDistance(per1.get("state"), per2.get("state"));
+		double dist = GeoLocationUtil.getDistanceToState(per1.get("state"), per2.get("state"));
 		double mps = AnimalUtil.walkMetersPerSecond(per1);
 		double time = (dist / mps) / 60;
 		double sprintTime = AnimalUtil.sprintMetersPerSecond(per1);

@@ -70,7 +70,7 @@ public class ActionUtil {
 	}
 	
 	public static void updateTimeToDistance(BaseRecord actionResult, BaseRecord per1, BaseRecord per2) {
-		double dist = GeoLocationUtil.getDistance(per1.get("state"), per2.get("state"));
+		double dist = GeoLocationUtil.getDistanceToState(per1.get("state"), per2.get("state"));
 		long timeSeconds = (long)(dist / AnimalUtil.walkMetersPerSecond(per1));
 		edgeSecondsUntilEnd(actionResult, timeSeconds);
 	}
