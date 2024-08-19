@@ -90,24 +90,71 @@ public class Gather extends CommonAction implements IAction {
 			logger.info("Scan horizon for other points of interest");
 			pois = GeoLocationUtil.listPointsOfInterest(context, acells, Arrays.asList(new PointOfInterestEnumType[] {PointOfInterestEnumType.RESOURCE, PointOfInterestEnumType.STASH, PointOfInterestEnumType.HARVESTABLE}));	
 		}
+		/// Filter to any category
+		if(itemCategory != null) {
+			int cx = actor.get("state.currentEast");
+			int cy = actor.get("state.currentNorth");
+			
+			pois = pois.stream().filter(p -> {
+				BaseRecord bld = p.get("builder");
+				boolean ret = false;
+				if(bld != null) {
+					List<BaseRecord> tags = bld.get(FieldNames.FIELD_TAGS);
+					ret = tags.stream().filter(t -> itemCategory.equals(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
+				}
+				return ret;
+			}).sorted((p1, p2) -> {
+				int sort = 0;
+				int px1 = p1.get("east");
+				int py1 = p1.get("north");
+				int px2 = p2.get("east");
+				int py2 = p2.get("north");
+				double d1 = GeoLocationUtil.distance(cx, cy, px1, py1);
+				double d2 = GeoLocationUtil.distance(cx, cy, px2, py2);
+				if(d1 < d2) sort = -1;
+				else if(d1 > d2) sort = 1;
+				return sort;
+			}).collect(Collectors.toList());
+		}
+		
 		BaseRecord realm = context.getRealm(context.getCurrentLocation());
 		List<BaseRecord> zoo = realm.get("zoo");
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(context, zoo, cell);
 		List<BaseRecord> dzpop = zpop.stream().filter(a -> (boolean)a.get("state.alive")).collect(Collectors.toList());
 		if(pois.size() == 0 && dzpop.size() == 0) {
-			logger.warn("There are no resource points of interests or dead animals");
+			logger.warn("There are no " + (itemCategory != null ? itemCategory + " " : "") + "resource points of interests or dead animals in this part of " + tet.toString());
+			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
+			return false;
 		}
 		/// Find animals in the current and adjacent cells
+		/*
 		String anames = zpop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		String adesc = "No animals seem to be nearby.";
 		if(anames.length() > 0) {
 			adesc ="Some animals are close, including " + anames + ".";
 		}
-		logger.info("Points of interest: " + pois.size());
+		*/
+		String anames = dzpop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
+		String adesc = "No animal remains are nearby.";
+		if(anames.length() > 0) {
+			adesc ="Some animal remains are close, including " + anames + ".";
+		}
+
+		//logger.info("Points of interest: " + pois.size());
+		/*
 		for(BaseRecord poi : pois) {
 			PointOfInterestEnumType type = poi.getEnum(FieldNames.FIELD_TYPE);
 			BaseRecord bld = poi.get("builder");
-			logger.info(type.toString() + " " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)));
+			logger.info("Point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)));
+		}
+		*/
+		if(pois.size() > 0) {
+			/// Choose nearest poi
+			
+			BaseRecord poi = pois.get(0);
+			PointOfInterestEnumType type = poi.getEnum(FieldNames.FIELD_TYPE);
+			BaseRecord bld = poi.get("builder");
+			logger.info("Gather from point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)));
 		}
 		//logger.info(adesc);
 
