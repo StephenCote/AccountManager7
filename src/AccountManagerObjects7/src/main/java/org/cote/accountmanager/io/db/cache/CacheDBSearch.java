@@ -13,6 +13,7 @@ import org.cote.accountmanager.io.db.DBSearch;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class CacheDBSearch extends DBSearch implements ICache {
@@ -48,7 +49,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		if( (now - cacheRefreshed) > maximumCacheAgeMS
 			|| cache.size() > maximumCacheSize
 		){
-			logger.debug("Clearing search cache");
+			logger.warn("Clearing search cache");
 			cacheRefreshed = now;
 			cache.clear();
 		}
@@ -100,6 +101,16 @@ public class CacheDBSearch extends DBSearch implements ICache {
 					throw new ReaderException("Mismatched result type entering cache: Query for " + qt + " contains " + qrt);
 				}
 				cache.put(hash, res);
+			}
+			else {
+				/*
+				logger.warn("Skip cache: " + query.isCache() + " / " + res.getCount() + " / " + (res == null) + " / " + query.key());
+				logger.warn(query.toFullString());
+				if(res != null) {
+					logger.warn(res.toFullString());
+				}
+				ErrorUtil.printStackTrace();
+				*/
 			}
 			return res;
 

@@ -1,6 +1,7 @@
 {
 	"name": "common.urn",
 	"abstract": true,
+	"hints": ["urn"],
 	"fields": [
 		{
 			"name": "urn",

@@ -34,6 +34,7 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class DBUtil {
@@ -53,7 +54,11 @@ public class DBUtil {
 	private String pgDriver = "org.postgresql.Driver";
 	
 	private static DBUtil instance = null;
-	private static boolean useFieldIndexGuidance = true;
+	
+	/// Field index guidance is a holdover from the initial file-based system used while testing the serializer/deserializer core
+	/// Use 'hints' at the model level vs. the index boolean at the field level
+	///
+	private static boolean useFieldIndexGuidance = false;
 	
 	public static DBUtil getInstance(IOProperties props) {
 		if(instance == null) {
@@ -378,8 +383,8 @@ public class DBUtil {
 			if(line != null) {
 				schemaLines.add(line);
 			}
-
 		}
+
 		for(FieldSchema f : flds) {
 			String line = generateSchemaLine(baseSchema, schema, f);
 			if(line != null) {
@@ -413,6 +418,7 @@ public class DBUtil {
 		String tableName = getTableName(baseSchema, schema.getName());
 		
 		List<String> coll = Arrays.asList(cols.replaceAll(" ",  "").split(","));
+
 		List<String> col2 = new ArrayList<>();
 		List<String> col3 = new ArrayList<>();
 		boolean notIndexable = false;
@@ -453,6 +459,7 @@ public class DBUtil {
 		// String cname = col2.stream().collect(Collectors.joining("_"));
 		String cname = col3.stream().collect(Collectors.joining("_")) + "_" + idxCounter;
 		String cols2 = col2.stream().collect(Collectors.joining(","));
+
 		String ver = schema.getVersion().replace(".", "_");
 		String schemaPref = "";
 		if(baseSchema != null && baseSchema.isDedicatedParticipation() && schema.getName().equals(ModelNames.MODEL_PARTICIPATION)) {

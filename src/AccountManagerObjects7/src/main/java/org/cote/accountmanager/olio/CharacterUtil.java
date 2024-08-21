@@ -379,6 +379,7 @@ public class CharacterUtil {
 			event.set(FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
 			ZonedDateTime inceptionDate = rootEvent.get("eventStart");
 			event.set("eventStart", inceptionDate);
+			event.set("eventProgress", inceptionDate);
 			event.set("eventEnd", rootEvent.get("eventEnd"));
 
 			List<BaseRecord> grps = event.get(FieldNames.FIELD_GROUPS);

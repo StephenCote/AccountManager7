@@ -83,7 +83,15 @@
 		"minimumTime": 10,
 		"maximumTime": 60
 	},
-
+	{
+		"name": "look",
+		"provider": "org.cote.accountmanager.olio.actions.Look",
+		"counterActions": [
+			"wait"
+		],
+		"minimumEnergyCost": 0.1,
+		"minimumTime": 1
+	},
 	{
 		"name": "peek",
 		"provider": "org.cote.accountmanager.olio.actions.Peek",

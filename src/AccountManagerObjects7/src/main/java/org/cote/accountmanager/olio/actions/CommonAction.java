@@ -11,6 +11,12 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 
 public abstract class CommonAction implements IAction {
 
+	protected void edgeEnd(OlioContext ctx, BaseRecord actionResult, int iter) {
+		int minSeconds = actionResult.get("action.minimumTime");
+		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds * iter);
+		ctx.queueUpdate(actionResult, new String[]{"actionEnd"});
+	}
+	
 	@Override
 	public void configureAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 

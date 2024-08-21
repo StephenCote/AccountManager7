@@ -1,19 +1,25 @@
 package org.cote.accountmanager.olio.actions;
 
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.AnimalUtil;
+import org.cote.accountmanager.olio.Coordinates;
+import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.PointOfInterestEnumType;
+import org.cote.accountmanager.olio.PointOfInterestUtil;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -53,13 +59,12 @@ public class Gather extends CommonAction implements IAction {
 			params.setValue("quantity", 1);
 		}
 		
-		int minSeconds = actionResult.get("action.minimumTime");
-		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds * quantity);
-		context.queueUpdate(actionResult, new String[]{"actionEnd"});
-
+		edgeEnd(context, actionResult, quantity);
+		
 		return actionResult;
 	}
 	
+
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
@@ -69,6 +74,13 @@ public class Gather extends CommonAction implements IAction {
 		int quantity = params.get("quantity");
 		
 		boolean gathered = false;
+		
+		List<BaseRecord> dacts = actionResult.get("dependentActions");
+		if(dacts.stream().filter(a -> (a.getEnum("type") == ActionResultEnumType.PENDING || a.getEnum("type") == ActionResultEnumType.IN_PROGRESS)).findFirst().isPresent()) {
+			// logger.info("Gather action waiting on dependent action");
+			return false;
+		}
+		
 
 		BaseRecord cell = actor.get("state.currentLocation");
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(context, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
@@ -85,15 +97,24 @@ public class Gather extends CommonAction implements IAction {
 		/// Look for points of interest with resource or harvestable builders
 		///
 		
-		List<BaseRecord> pois = GeoLocationUtil.listPointsOfInterest(context, Arrays.asList(new BaseRecord[] {cell}), Arrays.asList(new PointOfInterestEnumType[] {PointOfInterestEnumType.RESOURCE, PointOfInterestEnumType.STASH, PointOfInterestEnumType.HARVESTABLE}));
+		List<BaseRecord> pois = PointOfInterestUtil.listPointsOfInterest(context, Arrays.asList(new BaseRecord[] {cell}), Arrays.asList(new PointOfInterestEnumType[] {PointOfInterestEnumType.RESOURCE, PointOfInterestEnumType.STASH, PointOfInterestEnumType.HARVESTABLE}));
 		if(pois.size() == 0) {
-			logger.info("Scan horizon for other points of interest");
-			pois = GeoLocationUtil.listPointsOfInterest(context, acells, Arrays.asList(new PointOfInterestEnumType[] {PointOfInterestEnumType.RESOURCE, PointOfInterestEnumType.STASH, PointOfInterestEnumType.HARVESTABLE}));	
+			// logger.info("Scan horizon for other points of interest");
+			pois = PointOfInterestUtil.listPointsOfInterest(context, acells, Arrays.asList(new PointOfInterestEnumType[] {PointOfInterestEnumType.RESOURCE, PointOfInterestEnumType.STASH, PointOfInterestEnumType.HARVESTABLE}));	
 		}
+		// logger.info("Can see " + pois.size() + " points of interest" + (pois.size() > 0 && itemCategory != null ? ", but are there any with " + itemCategory + "?": ""));
+		/*
+		for(BaseRecord p : pois) {
+			BaseRecord bld = p.get("builder");
+			if(bld != null) {
+				List<BaseRecord> tags = bld.get(FieldNames.FIELD_TAGS);
+				String ts = tags.stream().map(t -> (String)t.get(FieldNames.FIELD_NAME)).collect(Collectors.joining(","));
+				logger.info(bld.get(FieldNames.FIELD_NAME) + " " + ts);
+			}
+		}
+		*/
 		/// Filter to any category
 		if(itemCategory != null) {
-			int cx = actor.get("state.currentEast");
-			int cy = actor.get("state.currentNorth");
 			
 			pois = pois.stream().filter(p -> {
 				BaseRecord bld = p.get("builder");
@@ -103,26 +124,20 @@ public class Gather extends CommonAction implements IAction {
 					ret = tags.stream().filter(t -> itemCategory.equals(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
 				}
 				return ret;
-			}).sorted((p1, p2) -> {
-				int sort = 0;
-				int px1 = p1.get("east");
-				int py1 = p1.get("north");
-				int px2 = p2.get("east");
-				int py2 = p2.get("north");
-				double d1 = GeoLocationUtil.distance(cx, cy, px1, py1);
-				double d2 = GeoLocationUtil.distance(cx, cy, px2, py2);
-				if(d1 < d2) sort = -1;
-				else if(d1 > d2) sort = 1;
-				return sort;
 			}).collect(Collectors.toList());
 		}
-		
+		int cx = actor.get("state.currentEast");
+		int cy = actor.get("state.currentNorth");
+
+		List<String> trace = actionResult.get("trace");
+		pois = GeoLocationUtil.sortByDistance(pois, "east", "north", cx, cy).stream().filter(p -> !trace.contains(p.get(FieldNames.FIELD_OBJECT_ID))).collect(Collectors.toList());
+
 		BaseRecord realm = context.getRealm(context.getCurrentLocation());
 		List<BaseRecord> zoo = realm.get("zoo");
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(context, zoo, cell);
 		List<BaseRecord> dzpop = zpop.stream().filter(a -> (boolean)a.get("state.alive")).collect(Collectors.toList());
 		if(pois.size() == 0 && dzpop.size() == 0) {
-			logger.warn("There are no " + (itemCategory != null ? itemCategory + " " : "") + "resource points of interests or dead animals in this part of " + tet.toString());
+			logger.warn("There are no " + (itemCategory != null ? itemCategory + " " : "") + "resource points of interests or dead animals in this part of " + tet.toString() + " around " + cell.get(FieldNames.FIELD_NAME));
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
 			return false;
 		}
@@ -148,14 +163,84 @@ public class Gather extends CommonAction implements IAction {
 			logger.info("Point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)));
 		}
 		*/
+
+		/*
+		ZonedDateTime ep = actionResult.get("actionStart");
+		ZonedDateTime ee = actionResult.get("actionEnd");
+		long remSec = ep.until(ee, ChronoUnit.SECONDS);
+		logger.info("Seconds ... " + remSec + " from " + ep + " / " + ee);
+		*/
+		
 		if(pois.size() > 0) {
 			/// Choose nearest poi
-			
 			BaseRecord poi = pois.get(0);
+			
+			double dist = GeoLocationUtil.distance(cx, cy, poi.get("east"), poi.get("north"));
 			PointOfInterestEnumType type = poi.getEnum(FieldNames.FIELD_TYPE);
 			BaseRecord bld = poi.get("builder");
-			logger.info("Gather from point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)));
+			
+			if(dist > Rules.PROXIMATE_CONTACT_DISTANCE) {
+				// logger.info("Too far away - " + dist + " meters.  Need to move closer.");
+				DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(GeoLocationUtil.getAngleBetweenInDegrees(new Coordinates(cx, cy), new Coordinates(poi.get("east"), poi.get("north"))));
+				BaseRecord move = Actions.beginMove(context, context.getCurrentIncrement(), actor, dir);
+				move.setValue("state.currentEast", poi.get("east"));
+				move.setValue("state.currentNorth", poi.get("north"));
+				actionResult.setValue("actionEnd", move.get("actionEnd"));
+				
+				edgeEnd(context, actionResult, quantity);
+				
+				Actions.dependAction(context, actionResult, move);
+				return true;
+			}
+
+			List<BaseRecord> inv = poi.get("store.inventory");
+			if(itemCategory != null) {
+				inv = inv.stream().filter(t -> {
+					List<BaseRecord> tags = t.get("item.tags");
+					return tags.stream().filter(it -> itemCategory.equals(it.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
+				}).collect(Collectors.toList());
+				
+			}
+			if(inv.size() > 0) {
+				BaseRecord iinv = inv.get(0);
+				int count = ItemUtil.countItemInInventory(context, poi, (BaseRecord)iinv.get("item"));
+				if(count < quantity || count == 0) {
+					logger.info("Not enough (" + count + " < " + quantity + ") at this location.  Checking again - ");
+					trace.add(poi.get(FieldNames.FIELD_OBJECT_ID));
+					context.queueUpdate(actionResult, new String[] {"trace"});
+				}
+				else {
+					logger.info("Gather from point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)) + " " + dist + " meters away");
+	
+					boolean withdraw = ItemUtil.withdrawItemFromInventory(context, poi, (BaseRecord)iinv.get("item"), quantity);
+					if(withdraw) {
+						int minSeconds = actionResult.get("action.minimumTime");
+						ActionUtil.addProgressSeconds(actionResult, minSeconds * quantity);
+						boolean deposit = ItemUtil.depositItemIntoInventory(context, actor, (BaseRecord)iinv.get("item"), quantity);
+						if(deposit) {
+							logger.info("Gathered " + quantity + " " + iinv.get("item.name"));
+							actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);
+							gathered = true;
+						}
+						else {
+							logger.warn("Failed to store " + quantity + " of " + iinv.get("item.name"));
+							actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
+						}
+					}
+					else {
+						logger.warn("Failed to collect " + quantity + " of " + iinv.get("item.name"));
+						logger.warn(iinv.toFullString());
+						actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
+					}
+				}
+			}
+			else {
+				logger.warn("Nothing to collect");
+				// logger.warn(poi.toFullString());;
+				actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.FAILED);
+			}
 		}
+		
 		//logger.info(adesc);
 
 		return gathered;

@@ -1,6 +1,7 @@
 {
 	"name": "common.objectId",
 	"abstract": true,
+	"hints": ["objectId"],
 	"fields": [
 		{
 			"name": "objectId",

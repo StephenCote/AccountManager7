@@ -29,6 +29,7 @@ import org.cote.accountmanager.util.ResourceUtil;
 
 public class ItemUtil {
 	public static final Logger logger = LogManager.getLogger(ItemUtil.class);
+	private static SecureRandom rand = new SecureRandom();
 	
 	private static List<BaseRecord> itemTemplates = new ArrayList<>();
 	public static List<BaseRecord> getItemTemplates(OlioContext ctx){
@@ -201,7 +202,10 @@ public class ItemUtil {
 		if(oinvItem.isPresent()) {
 			count = oinvItem.get().get("quantity");
 		}
-		return 0;
+		else {
+			// logger.warn("Didn't find item #" + id + " in the inventory");
+		}
+		return count;
 	}
 	public static List<BaseRecord> getTemplateItemsByCategory(OlioContext ctx, String itemCat){
 		return getTemplateItems(ctx).stream().filter(i -> {
@@ -235,6 +239,19 @@ public class ItemUtil {
 		}
 		return 0;
 	}
+	
+	public static void addNewInventory(OlioContext ctx, BaseRecord item,  BaseRecord store, int quantity) throws FactoryException {
+		List<BaseRecord> inv = store.get("inventory");
+		String iname = item.get(FieldNames.FIELD_NAME);
+		Optional<BaseRecord> oive = inv.stream().filter(i -> iname.equals(i.get("item.name"))).findFirst();
+		if(!oive.isPresent()) {
+			BaseRecord ive = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path")));
+			ive.setValue("item", item);
+			ive.setValue("quantity", (quantity < 0 ? rand.nextInt(1, 10) : quantity));
+			inv.add(ive);
+		}
+	}
+	
 	public static boolean depositItemIntoInventory(OlioContext ctx, BaseRecord rec, String itemName, int count) {
 		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> {
 			String type = i.get("type");

@@ -2,7 +2,7 @@
 "name": "system.participation",
 "inherits": ["system.organizationExt", "system.primaryKey"],
 "provider": "org.cote.accountmanager.provider.ParticipationProvider",
-"hints": ["participationId, participationModel", "participantId, participantModel"],
+"hints": ["participationId, participationModel", "participantId, participantModel", "participationId, participationModel, participantId, participantModel"],
 "fields": [
 	{
 		"name": "ownerId",

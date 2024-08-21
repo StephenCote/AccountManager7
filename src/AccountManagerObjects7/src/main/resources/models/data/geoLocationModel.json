@@ -7,7 +7,7 @@
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"dedicatedParticipation": true,
 	"constraints": ["geonameid, altgeonameid, parentId, groupId, organizationId"],
-	"hints": ["geonameid"],
+	"hints": ["geonameid, groupId", "parentId, groupId"],
 	"fields": [
 		{
 			"name": "altName",

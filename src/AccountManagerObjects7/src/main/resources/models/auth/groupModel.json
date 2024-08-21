@@ -2,9 +2,11 @@
 "name": "auth.group",
 "inherits": ["common.nameId", "common.path", "common.parent", "common.description"],
 "constraints": ["name, parentId, organizationId"],
+"hints": ["name, type, parentId"],
 "icon": "folder",
 "label": "Group",
 "dedicatedParticipation": true,
+
 "query": ["path", "organizationId"],
 "fields": [
 	{

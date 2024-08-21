@@ -32,7 +32,6 @@ public class BuilderUtil {
 	public static final Logger logger = LogManager.getLogger(BuilderUtil.class);
 	private static BaseRecord[] builders = new BaseRecord[0];
 	private static String RAW_MATERIAL_CATEGORY = "raw material";
-	private static SecureRandom rand = new SecureRandom();
 	
 	public static List<BaseRecord> listBuildersCommonToTerrain(OlioContext ctx, TerrainEnumType tet){
 		List<BaseRecord> builders = Arrays.asList(getBuilders(ctx));
@@ -41,55 +40,6 @@ public class BuilderUtil {
 			List<String> tets = b.get("terrain");
 			return tets.contains(stet);
 		}).collect(Collectors.toList());
-	}
-	
-	/// for any builder of type builder, with materials, populate the poi store with an initial set of inventory items for that builder's materials
-	///
-
-	protected static void populatePointOfInterestBuilder(OlioContext ctx, List<BaseRecord> pois) {
-		// List<BaseRecord> pinv = new ArrayList<>();
-
-		for(BaseRecord poi : pois) {
-
-			BaseRecord bld = poi.get("builder");
-			if(bld == null) {
-				continue;
-			}
-
-			BuilderEnumType bet = bld.getEnum(FieldNames.FIELD_TYPE);
-			if(bet != BuilderEnumType.BUILDER) {
-				continue;
-			}
-
-			List<BaseRecord> materials = bld.get("materials");
-
-			BaseRecord store = poi.get("store");
-			List<BaseRecord> inv = store.get("inventory");
-			try {
-				for(BaseRecord mat : materials) {
-					String mname = mat.get(FieldNames.FIELD_NAME);
-					Optional<BaseRecord> oive = inv.stream().filter(i -> mname.equals(i.get("item.name"))).findFirst();
-					if(!oive.isPresent()) {
-						//BaseRecord omat = ItemUtil.getCreateRawMaterial(ctx, mat, "template", RAW_MATERIAL_CATEGORY);
-						BaseRecord ive = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path")));
-						ive.setValue("item", mat);
-						ive.setValue("quantity", rand.nextInt(1, 10));
-						//IOSystem.getActiveContext().getRecordUtil().createRecord(ive);
-						// inv.add(ive);
-						// BaseRecord part = ParticipationFactory.newParticipation(ctx.getOlioUser(), store, "inventory", ive);
-						// pinv.add(part);
-					}
-				}
-			}
-			catch(FactoryException e) {
-				logger.error(e);
-			}
-		}
-		/*
-		if(pinv.size() > 0) {
-			IOSystem.getActiveContext().getRecordUtil().createRecords(pinv.toArray(new BaseRecord[0]));
-		}
-		*/
 	}
 	
 	public static BaseRecord[] getBuilders(OlioContext ctx) {

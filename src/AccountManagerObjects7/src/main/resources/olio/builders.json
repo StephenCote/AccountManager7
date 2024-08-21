@@ -731,16 +731,108 @@
 	},
 	{
 		"item": {
-			"name": "fresh water"
+			"name": "purified water"
 		},
-		"name": "fresh water",
+		"name": "solar still",
 		"qualities": [
 			{
 				"skill": 0.15
 			}
 		],
 		"terrain":[
-			"glacier", "tundra", "mountain"
+			"desert", "oasis", "shoreline"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"materials": [
+			{"name": "salt water"}
+		],
+		"time": 2,
+		"type": "item",
+		"tags": [
+			{
+				"name": "water"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "rain water"
+		},
+		"name": "chultun",
+		"description": "A bottle-shaped underground cistern",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"desert", "oasis", "mountain", "plateau", "valley", "plains", "jungle"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"materials": [
+			{"name": "clay"}
+		],
+		"time": 1200,
+		"type": "location",
+		"tags": [
+			{
+				"name": "water"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "murky water"
+		},
+		"name": "seep well",
+		"description": "A bottle-shaped underground cistern",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"forest", "swamp", "jungle", "plains", "marsh"
+		],
+		"renewable": true,
+		"resaleAdjustment": 0.5,
+		"skills": [
+			{
+				"name": "basic survival"
+			}
+		],
+		"time": 60,
+		"type": "fixture",
+		"tags": [
+			{
+				"name": "water"
+			}
+		]
+	},
+	{
+		"item": {
+			"name": "fresh water"
+		},
+		"name": "natural spring",
+		"qualities": [
+			{
+				"skill": 0.15
+			}
+		],
+		"terrain":[
+			"lake", "river"
 		],
 		"renewable": true,
 		"resaleAdjustment": 0.5,
@@ -750,7 +842,7 @@
 			}
 		],
 		"time": 2,
-		"type": "item",
+		"type": "location",
 		"tags": [
 			{
 				"name": "water"
@@ -786,11 +878,11 @@
 		"type": "builder",
 		"tags": [
 			{
-				"name": "seashore"
+				"name": "shoreline"
 			}
 		],
 		"terrain":[
-			"seashore", "ocean"
+			"shoreline", "ocean"
 		],
 		"materials": [
 			{"name": "pearl"},
@@ -799,7 +891,8 @@
 			{"name": "moonstone"},
 			{"name": "jasper"},
 			{"name": "agate"},
-			{"name": "quartz"}
+			{"name": "quartz"},
+			{"name": "salt water"}
 		]
 	},
 	{

@@ -311,6 +311,11 @@ public class QueryUtil {
 			if(organizationId > 0L) {
 				query.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 			}
+			/*
+			if(!ModelNames.MODEL_MODEL_SCHEMA.equals(modelName)) {
+				query.setRequest(RecordUtil.getCommonFields(modelName));
+			}
+			*/
 		} catch (NullPointerException | FactoryException e) {
 			logger.error(e);
 			

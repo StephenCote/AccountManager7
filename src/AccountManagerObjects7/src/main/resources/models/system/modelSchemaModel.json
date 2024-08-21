@@ -2,6 +2,7 @@
 "name": "system.modelSchema",
 "inherits": ["common.nameId"],
 "constraints": ["name, organizationId"],
+"query": ["name", "schema"],
 "fields": [
 	{
 		"name": "schema",

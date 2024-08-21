@@ -6,5 +6,6 @@ public enum BuilderEnumType {
 	WEARABLE,
 	APPAREL,
 	ITEM,
-	LOCATION
+	LOCATION,
+	FIXTURE
 }

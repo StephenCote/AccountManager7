@@ -109,7 +109,7 @@ public class Rules {
 	public static int MAXIMUM_POINTS_OF_INTEREST = 5;
 
 	/// Odds there is at least one point of interest in a 100 square meter cell
-	public static double POINT_OF_INTEREST_ODDS = 0.5;
+	public static double POINT_OF_INTEREST_ODDS = 0.25;
 	
 	public static double getAnimalOdds(TerrainEnumType type) {
 		double typeOdds = ODDS_ANIMAL_GROUP;

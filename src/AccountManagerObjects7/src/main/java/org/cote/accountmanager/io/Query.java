@@ -7,6 +7,8 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -243,5 +245,18 @@ public class Query extends LooseRecord{
 		qqueries.add(qfield);
 
 		return qfield;
+	}
+	
+	public String toSelect() {
+		String sql = null;
+		DBStatementMeta meta = null;
+		try {
+			meta = StatementUtil.getSelectTemplate(this);
+			sql = meta.getSql();
+		} catch (ModelException | FieldException e) {
+			logger.error(e);
+		}
+		
+		return sql;
 	}
 }

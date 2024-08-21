@@ -13,7 +13,7 @@
 	"group": "Builders",
 	"icon": "category",
 	"label": "Builder",
-	"query": ["id", "groupId", "name"],
+	"query": ["id", "groupId", "name", "tags"],
 	"dedicatedParticipation": true,
 	"fields": [
 		{

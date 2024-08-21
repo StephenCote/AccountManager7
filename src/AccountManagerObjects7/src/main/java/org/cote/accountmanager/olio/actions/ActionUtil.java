@@ -85,8 +85,8 @@ public class ActionUtil {
 	}
 	
 	public static void edgeSecondsUntilEnd(BaseRecord actionResult, long seconds) {
-		ZonedDateTime prog = actionResult.get("actionProgress");
-		actionResult.setValue("actionEnd", prog.plusSeconds(seconds));
+		ZonedDateTime end = actionResult.get("actionEnd");
+		actionResult.setValue("actionEnd", end.plusSeconds(seconds));
 	}
 	
 	public static BaseRecord getAction(OlioContext ctx, String name) {

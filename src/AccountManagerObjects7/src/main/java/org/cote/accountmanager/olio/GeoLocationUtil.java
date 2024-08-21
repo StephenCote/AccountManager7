@@ -80,140 +80,20 @@ public class GeoLocationUtil {
 		return mapCellHeightM;
 	}
 	
-	public static void paintPointsOfInterest(OlioContext ctx, List<BaseRecord> cells) {
-		List<BaseRecord> pois = new ArrayList<>();
-		for(BaseRecord cell : cells) {
-			pois.addAll(paintPointsOfInterest(ctx, cell));
-		}
-		if(pois.size() > 0) {
-			IOSystem.getActiveContext().getRecordUtil().createRecords(pois.toArray(new BaseRecord[0]));
-			logger.info("Painted " + pois.size() + " points of interest");
-		}
-	}
-	public static List<BaseRecord> paintPointsOfInterest(OlioContext ctx, BaseRecord cell) {
-		List<BaseRecord> pois = new ArrayList<>();
-		int pcount = countPointsOfInterest(ctx, cell);
-		if(pcount == 0) {
-			TerrainEnumType tet = cell.getEnum("terrainType");
-			List<BaseRecord> builders = BuilderUtil.listBuildersCommonToTerrain(ctx, tet);
-			if(builders.size() == 0) {
-				logger.warn("No builders for " + tet.toString());
-			}
-			if(builders.size() > 0 && rand.nextDouble() <= Rules.POINT_OF_INTEREST_ODDS) {
-				int pc = rand.nextInt(1, Rules.MAXIMUM_POINTS_OF_INTEREST);
-				for(int i = 0; i < pc; i++) {
-					BaseRecord bld = builders.get(rand.nextInt(0, builders.size()));
-					PointOfInterestEnumType poit = PointOfInterestEnumType.RESOURCE;
-					String cat = bld.get("item.category");
-					if(cat != null && cat.equals("food")) {
-						poit = PointOfInterestEnumType.HARVESTABLE;
-					}
-					int x = rand.nextInt(0,10);
-					int y = rand.nextInt(0,10);
-					BaseRecord poi = newPointOfInterest(ctx, poit, cell, bld.get(FieldNames.FIELD_NAME), x, y);
-					poi.setValue("builder", bld);
-					pois.add(poi);
-				}
-			}
-			BuilderUtil.populatePointOfInterestBuilder(ctx, pois);
-			/*
-			if(pois.size() > 0) {
-				IOSystem.getActiveContext().getRecordUtil().createRecords(pois.toArray(new BaseRecord[0]));
-			}
-			*/
-		}
-		else {
-			logger.info("There are already " + pcount + " POIs for cell " + cell.get(FieldNames.FIELD_NAME));
-		}
-		return pois;
-	}
-	
-	public static BaseRecord newPointOfInterest(OlioContext ctx, PointOfInterestEnumType type, BaseRecord cell, String name, int x, int y) {
-		BaseRecord rec = null;
-		if(ctx.getWorld() == null) {
-			return rec;
-		}
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("pointsOfInterest.path"));
-		plist.parameter("name", name);
-		try {
-			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
-			rec.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
-			rec.set("type", type);
-			rec.set("location", cell);
-			rec.set("north", y);
-			rec.set("east", x);
-		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-
-		return rec;
-		
-	}
-	
-	public static BaseRecord getPointOfInterest(OlioContext ctx, BaseRecord cell, int east, int north) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
-		q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		q.field("east", east);
-		q.field("north", north);
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"});
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
-		return IOSystem.getActiveContext().getSearch().findRecord(q);
-	}
-
-	public static List<BaseRecord> listPointsOfInterest(OlioContext ctx, BaseRecord cell) {
-		return listPointsOfInterest(ctx, Arrays.asList(new BaseRecord[] {cell}));
-	}
-	
-	public static List<BaseRecord> listPointsOfInterest(OlioContext ctx, List<BaseRecord> cells) {
-		return listPointsOfInterest(ctx, cells, new ArrayList<>());
-	}
-	
-	public static List<BaseRecord> listPointsOfInterest(OlioContext ctx, List<BaseRecord> cells, List<PointOfInterestEnumType> pointTypes) {
-		if(cells.size() == 0) {
-			logger.warn("No cells were specified");
-			return new ArrayList<>();
-		}
-		// logger.info("POI GID = " + ctx.getWorld().get("pointsOfInterest.id"));
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
-		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		
-		List<String> ptypes = pointTypes.stream().map(t -> t.toString()).collect(Collectors.toList());
-		if(ptypes.size() > 0) {
-			q.field(FieldNames.FIELD_TYPE, ComparatorEnumType.IN, ptypes.stream().collect(Collectors.joining(",")));	
-		}
-		
-		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
-		q.field(FieldNames.FIELD_LOCATION, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north",  "type"});
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
-		q.setLimitFields(false);
-		//q.setCache(false);
-
-		/*
-		try {
-			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
-			logger.info(meta.getSql());
-		} catch (ModelException | FieldException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		*/
-
-		return new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
-	}
-	
-	public static int countPointsOfInterest(OlioContext ctx, BaseRecord cell) {
-		return countPointsOfInterest(ctx, Arrays.asList(new BaseRecord[] {cell}));
-	}
-	
-	public static int countPointsOfInterest(OlioContext ctx, List<BaseRecord> cells) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
-		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
-		q.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"});
-		q.setCache(false);
-		return IOSystem.getActiveContext().getSearch().count(q);
+	public static List<BaseRecord> sortByDistance(List<BaseRecord> list, String fieldX, String fieldY, int origX, int origY)
+	{
+		return list.stream().sorted((p1, p2) -> {
+			int sort = 0;
+			int px1 = p1.get(fieldX);
+			int py1 = p1.get(fieldY);
+			int px2 = p2.get(fieldX);
+			int py2 = p2.get(fieldY);
+			double d1 = GeoLocationUtil.distance(origX, origY, px1, py1);
+			double d2 = GeoLocationUtil.distance(origX, origY, px2, py2);
+			if(d1 < d2) sort = -1;
+			else if(d1 > d2) sort = 1;
+			return sort;
+		}).collect(Collectors.toList());
 	}
 	
 	public static DirectionEnumType randomDirection() {
@@ -401,7 +281,7 @@ public class GeoLocationUtil {
 			}
 			TerrainUtil.blastCells(ctx, feature, cells, mapCellWidthM, mapCellHeightM);
 			count = IOSystem.getActiveContext().getRecordUtil().createRecords(cells.toArray(new BaseRecord[0]));
-			paintPointsOfInterest(ctx, cells);
+			PointOfInterestUtil.paintPointsOfInterest(ctx, cells);
 			
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {

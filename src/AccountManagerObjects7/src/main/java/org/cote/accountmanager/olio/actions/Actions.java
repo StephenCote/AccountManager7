@@ -1,11 +1,14 @@
 package org.cote.accountmanager.olio.actions;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.AssessmentEnumType;
 import org.cote.accountmanager.olio.DirectionEnumType;
@@ -45,18 +48,24 @@ public class Actions {
 
 		return nameBuff.toString();
 	}
-	
-	public static void updateState(OlioContext context, BaseRecord actionResult, BaseRecord actor) {
+	public static void pruneActionState(OlioContext context, BaseRecord actor) {
 		BaseRecord state = actor.get("state");
-
 		List<BaseRecord> actions = state.get("actions");
-		if(actions.size() > 0) {
-			logger.warn("Overwriting current actions?");
-			for(BaseRecord a: actions) {
+		Set<Long> aset = new HashSet<>();
+		for(BaseRecord a: actions) {
+			ActionResultEnumType aet = a.getEnum("type");
+			if(aet != ActionResultEnumType.IN_PROGRESS && aet != ActionResultEnumType.PENDING) {
+				aset.add(a.get(FieldNames.FIELD_ID));
 				IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, "actions", a, null, false);
 			}
-			actions.clear();
 		}
+	}
+	public static void updateState(OlioContext context, BaseRecord actionResult, BaseRecord actor) {
+		
+		pruneActionState(context, actor);
+		
+		BaseRecord state = actor.get("state");
+		List<BaseRecord> actions = state.get("actions");
 		IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, "actions", actionResult, null, true);
 		actions.add(actionResult);
 
@@ -88,6 +97,12 @@ public class Actions {
 			throw new OlioException("Failed to find provider for " + actionName);
 		}
 		return actProv;
+	}
+	
+	public static void dependAction(OlioContext ctx, BaseRecord actionResult1, BaseRecord actionResult2) {
+		List<BaseRecord> dacts = actionResult1.get("dependentActions");
+		dacts.add(actionResult2);
+		ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), actionResult1, "dependentActions", actionResult2));
 	}
 	
 	public static BaseRecord beginAction(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, AssessmentEnumType assessType, String actionName) throws OlioException {
@@ -132,6 +147,8 @@ public class Actions {
 		act.configureAction(context, actr, actor, interactor);
 		if(event != null) {
 			actr.setValue("actionStart", event.get("eventProgress"));
+			actr.setValue("actionProgress", actr.get("actionStart"));
+			actr.setValue("actionEnd", actr.get("actionStart"));
 		}
 		IOSystem.getActiveContext().getRecordUtil().createRecord(actr);
 		String ename = getActionEventName(actionName, actor, interactor);
@@ -242,6 +259,10 @@ public class Actions {
 
 	public static BaseRecord beginPeek(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2) throws OlioException {
 		return beginAction(ctx, evt, per1, per2, AssessmentEnumType.CURIOSITY, "peek");
+	}
+
+	public static BaseRecord beginLook(OlioContext ctx, BaseRecord evt, BaseRecord per1) throws OlioException {
+		return beginAction(ctx, evt, per1, null, AssessmentEnumType.CURIOSITY, "look");
 	}
 
 

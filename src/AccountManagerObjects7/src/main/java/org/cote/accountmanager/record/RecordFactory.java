@@ -35,6 +35,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
 public class RecordFactory {
@@ -292,6 +293,7 @@ public class RecordFactory {
 			OrganizationContext sysOrg = IOSystem.getActiveContext().getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, null);
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_NAME, modelName);
 			q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
+			q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SCHEMA});
 			BaseRecord modelRec = IOSystem.getActiveContext().getSearch().findRecord(q);
 			if(modelRec != null) {
 				if(!modelRec.hasField(FieldNames.FIELD_SCHEMA)) {

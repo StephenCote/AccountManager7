@@ -8,7 +8,7 @@
 			"baseType": "model",
 			"baseModel": "data.tag",
 			"foreign": true,
-			"followReference": false
+			"followReference": true
 		}
 	]
 }

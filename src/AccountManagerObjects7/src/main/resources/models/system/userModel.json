@@ -27,6 +27,7 @@
 			"admin": ["AccountAdministrators"]
 		}
 	},
+	"query": ["name", "homeDirectory"],
 	"fields": [
 		{
 			"name": "homeDirectory",

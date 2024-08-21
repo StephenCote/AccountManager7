@@ -125,7 +125,6 @@
 			"description": "State modifiers from this action",
 			"foreign": true
 		},
-
 		{
 			"name": "instinct",
 			"type": "model",
@@ -141,6 +140,16 @@
 			"foreign": true
 		},
 		{
+			"name": "dependentActions",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.actionResult",
+			"foreign": true,
+			"followReference": false,
+			"participantModel": "actionResult.actionResult",
+			"shortName": "das"
+		},
+		{
 			"name": "interactions",
 			"type": "list",
 			"baseType": "model",
@@ -151,6 +160,11 @@
 		},
 		{
 			"name": "results",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "trace",
 			"type": "list",
 			"baseType": "string"
 		}

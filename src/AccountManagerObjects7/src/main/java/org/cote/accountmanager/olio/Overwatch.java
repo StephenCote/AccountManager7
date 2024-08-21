@@ -63,7 +63,8 @@ public class Overwatch {
 		INTERACTION
 	};
 	
-	private int maximumProcessCount = 100;
+	/// Some actions may result in many small incremental and/or repeating steps, such as moving between two points
+	private int maximumProcessCount = 500;
 	
 	private Clock clock = null;
 	private OlioContext context = null;
@@ -99,7 +100,7 @@ public class Overwatch {
 	}
 
 	public boolean watch(OverwatchEnumType type, BaseRecord[] actionResults) {
-		List<BaseRecord> lar = new ArrayList<>();
+		List<BaseRecord> lar = new CopyOnWriteArrayList<>();
 		for(BaseRecord ar: actionResults) {
 			long id = ar.get(FieldNames.FIELD_ID);
 			if(!isWatched(type, id)) {
@@ -118,8 +119,18 @@ public class Overwatch {
 			prune(k);
 		});
 	}
+	
+	private void prune(OverwatchEnumType type) {
+		if(map.containsKey(type)) {
+			List<BaseRecord> frec = getInProcessActions();
+			List<BaseRecord> rec = new CopyOnWriteArrayList<>();
+			rec.addAll(frec);
+			map.put(type, frec);
+		}
+	}
+	
 	private List<BaseRecord> getInProcessActions() {
-		List<BaseRecord> frec = new ArrayList<>();
+		List<BaseRecord> frec = new CopyOnWriteArrayList<>();
 		if(map.containsKey(OverwatchEnumType.ACTION)) {
 			frec = map.get(OverwatchEnumType.ACTION).stream().filter(r -> {
 				boolean f = true;
@@ -130,29 +141,7 @@ public class Overwatch {
 		}
 		return frec;
 	}
-	private void prune(OverwatchEnumType type) {
-		if(map.containsKey(type)) {
-			/*
-			List<BaseRecord> frec = map.get(type).stream().filter(r -> {
-				boolean f = true;
-				if(type == OverwatchEnumType.ACTION) {
-					ActionResultEnumType atype = r.getEnum(FieldNames.FIELD_TYPE);
-					f = (atype == ActionResultEnumType.IN_PROGRESS || atype == ActionResultEnumType.PENDING);
-				}
-				else {
-					logger.warn("Unhandled: " + type.toString());
-				}
-				return f;
-			}).collect(Collectors.toList());
-			*/
-			List<BaseRecord> frec = getInProcessActions();
-			List<BaseRecord> rec = new CopyOnWriteArrayList<>();
-			rec.addAll(frec);
-			// logger.info("Pruned " + type.toString() + " from " + map.get(type).size() + " to " + frec.size());
-			map.put(type, frec);
-		}
-		
-	}
+
 	public void updateClock() {
 		BaseRecord evt = null;
 		if(context.getCurrentIncrement() != null) {
@@ -218,7 +207,9 @@ public class Overwatch {
 			List<BaseRecord> actionResults = map.get(OverwatchEnumType.ACTION);
 			// logger.info("Processing actions " + actionResults.size() + " actions ...");			
 			try {
-				for(BaseRecord actionResult : actionResults) {
+				//for(BaseRecord actionResult : actionResults) {
+				for(int i = 0; i < actionResults.size(); i++) {
+					BaseRecord actionResult = actionResults.get(i);
 					processAction(actionResult);
 				}
 			}

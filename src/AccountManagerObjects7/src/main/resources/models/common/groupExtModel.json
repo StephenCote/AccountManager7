@@ -1,6 +1,7 @@
 {
 	"name": "common.groupExt",
 	"abstract": true,
+	"query": ["groupId"],
 	"fields": [
 		{
 			"name": "groupId",

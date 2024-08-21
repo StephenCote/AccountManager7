@@ -18,6 +18,10 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBStatementMeta;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
@@ -55,14 +59,13 @@ public class TestOlioRules extends BaseTest {
 		
 		logger.info("Test Olio Rules - CanMove");
 		
-
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		
-		// OlioTestUtil.setResetWorld(true);
+		//OlioTestUtil.setResetWorld(true);
 		// OlioTestUtil.setResetUniverse(true);
 		OlioContext octx = null;
 		try{
@@ -86,15 +89,19 @@ public class TestOlioRules extends BaseTest {
 		BaseRecord pact = null;
 		try {
 			
-			pact = ActionUtil.getInAction(per1, "gather");
+			pact = ActionUtil.getInAction(per1, "look");
 			if(pact != null) {
 				pact.setValue("type", ActionResultEnumType.INCOMPLETE);
 				octx.queueUpdate(pact, new String[] {"type"});
 			}
 			
-			pact = Actions.beginGather(octx, octx.getCurrentIncrement(), per1, "water", 3);
+			pact = Actions.beginLook(octx, octx.getCurrentIncrement(), per1);
 			octx.overwatchActions();
 			logger.info(pact.toString());
+			
+			pact = Actions.beginGather(octx, octx.getCurrentIncrement(), per1, "water", 3);
+			octx.overwatchActions();
+			// logger.info(pact.toString());
 			/*
 			pact = Actions.beginPeek(octx, octx.getCurrentIncrement(), per1, per1);
 			octx.overwatchActions();
@@ -109,8 +116,8 @@ public class TestOlioRules extends BaseTest {
 			logger.info(pact.toString());
 			*/
 
-			
-		} catch (NumberFormatException | StackOverflowError | OlioException | OverwatchException  e) {
+			// NumberFormatException | StackOverflowError | OlioException | Overwatch
+		} catch (Exception  e) {
 			logger.info(e);
 			e.printStackTrace();
 		}

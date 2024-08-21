@@ -112,6 +112,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 					root.set(FieldNames.FIELD_LOCATION, loc);
 					root.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 					root.set("eventStart", ctx.getConfig().getBaseInceptionDate());
+					root.set("eventProgress", ctx.getConfig().getBaseInceptionDate());
 					root.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(root)) {
 						logger.error("Failed to create root event");
@@ -134,6 +135,7 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 					event.set(FieldNames.FIELD_LOCATION, loc);
 					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 					event.set("eventStart", ctx.getConfig().getBaseInceptionDate());
+					event.set("eventProgress", ctx.getConfig().getBaseInceptionDate());
 					event.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
 					event.set("realm", ctx.getRealm(loc));
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(event)) {

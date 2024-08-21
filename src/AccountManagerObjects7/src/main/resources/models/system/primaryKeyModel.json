@@ -1,6 +1,7 @@
 {
 	"name": "system.primaryKey",
 	"abstract": true,
+	"hints": ["id"],
 	"fields": [
 		{
 			"name": "id",

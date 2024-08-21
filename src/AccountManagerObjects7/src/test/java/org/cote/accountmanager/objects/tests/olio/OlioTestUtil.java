@@ -55,6 +55,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.AuditUtil;
 
 public class OlioTestUtil {
 	public static final Logger logger = LogManager.getLogger(OlioTestUtil.class);
@@ -77,6 +78,8 @@ public class OlioTestUtil {
 		Factory mf = IOSystem.getActiveContext().getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(orgCtx.getAdminUser(), "testUser1", orgCtx.getOrganizationId());
 		IOSystem.getActiveContext().getAccessPoint().setPermitBulkContainerApproval(true);
+		AuditUtil.setLogToConsole(false);
+		
 		OlioContextConfiguration cfg = new OlioContextConfiguration(
 			testUser1,
 			dataPath,
@@ -127,6 +130,8 @@ public class OlioTestUtil {
 			BaseRecord cevt = octx.startOrContinueIncrement();
 			octx.evaluateIncrement();
 		}
+		
+		AuditUtil.setLogToConsole(true);
 		
 		return octx;
 	}
