@@ -2,15 +2,12 @@ package org.cote.accountmanager.olio.actions;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
-import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
-import org.cote.accountmanager.schema.type.EventEnumType;
 
 public class Consume extends CommonAction implements IAction {
 	public static final Logger logger = LogManager.getLogger(Consume.class);

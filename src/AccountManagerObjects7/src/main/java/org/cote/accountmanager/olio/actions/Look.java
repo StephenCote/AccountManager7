@@ -11,7 +11,6 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.Coordinates;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
-import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.PointOfInterestEnumType;

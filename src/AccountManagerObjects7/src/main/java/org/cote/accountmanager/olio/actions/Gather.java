@@ -1,21 +1,16 @@
 package org.cote.accountmanager.olio.actions;
 
-import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.Coordinates;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.ItemUtil;
-import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.PointOfInterestEnumType;
@@ -24,7 +19,6 @@ import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
-import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class Gather extends CommonAction implements IAction {

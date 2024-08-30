@@ -10,6 +10,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -24,6 +25,7 @@ public class SloanUtil {
 		}
 		else {
 			logger.warn("Invalid sloan key '" + key + "'");
+			ErrorUtil.printStackTrace();
 		}
 		return null;
 	}

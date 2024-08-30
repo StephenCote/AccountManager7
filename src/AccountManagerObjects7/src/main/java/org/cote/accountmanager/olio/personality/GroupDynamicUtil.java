@@ -83,34 +83,6 @@ public class GroupDynamicUtil {
 		BaseRecord loc = locationEpoch.get("location");
 		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
 		return getCreateParty(ctx, locationEpoch, loc.get(FieldNames.FIELD_NAME) + " Party", new HashSet<>());
-		/*
-		List<BaseRecord> party = new ArrayList<>();
-		BaseRecord loc = locationEpoch.get("location");
-		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
-		String partyName = loc.get(FieldNames.FIELD_NAME) + " Party";
-		BaseRecord grp = null;
-		try {
-			BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
-			grp = OlioUtil.getCreatePopulationGroup(ctx, partyName);
-			if(realm.get("principalGroup") == null) {
-				realm.set("principalGroup", grp);
-				IOSystem.getActiveContext().getRecordUtil().updateRecord(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "principalGroup", FieldNames.FIELD_ORGANIZATION_ID}));
-			}
-			party = OlioUtil.listGroupPopulation(ctx, grp);
-			if(party.size() == 0) {
-				List<BaseRecord> lpop = randomParty(ctx, locationEpoch);
-				for(BaseRecord per : lpop) {
-					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), grp, per, null, true)) {
-						logger.error("Failed to add member");
-					}
-				}
-				party = OlioUtil.listGroupPopulation(ctx, grp);
-			}
-		} catch (FieldException | ValueException | ModelNotFoundException | ReaderException e) {
-			logger.error(e);
-		}
-		return party;
-		*/
 	}
 	
 	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch, String partyName, List<BaseRecord> base){
