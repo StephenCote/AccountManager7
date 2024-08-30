@@ -36,6 +36,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioPolicyUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
@@ -67,30 +68,16 @@ public class TestQueryPlan extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-		q.planMost(true, Arrays.asList(new String[] {
-			FieldNames.FIELD_TAGS,
-			FieldNames.FIELD_ATTRIBUTES,
-			FieldNames.FIELD_CONTROLS,
-			FieldNames.FIELD_OBJECT_ID,
-			FieldNames.FIELD_URN,
-			FieldNames.FIELD_ORGANIZATION_ID,
-			FieldNames.FIELD_ORGANIZATION_PATH,
-			FieldNames.FIELD_GROUP_ID,
-			FieldNames.FIELD_GROUP_PATH,
-			FieldNames.FIELD_BYTE_STORE,
-			FieldNames.FIELD_OWNER_ID,
-			FieldNames.FIELD_SCORE,
-			FieldNames.FIELD_STREAM,
-			FieldNames.FIELD_USERS,
-			FieldNames.FIELD_ACCOUNTS,
-			"items",
-			"socialRing",
-			"dimensions"
-		}));
+		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		q.filterPlan(ModelNames.MODEL_INVENTORY_ENTRY, "apparel");
+		q.filterPlan(ModelNames.MODEL_STORE, "locations");
+
+		OlioUtil.prunePlan(q.plan());
+
 		
 		//QueryPlan qp = q.getPlan("apparel.wearables");
 		//logger.info(qp.toFilteredString());
-		logger.info(q.toSelect());
+		// logger.info(q.toSelect());
 		logger.info(q.plan().toFilteredString());
 		//assertNotNull("Expected to find the query plan", qp);
 		//logger.info(qp.toFullString());

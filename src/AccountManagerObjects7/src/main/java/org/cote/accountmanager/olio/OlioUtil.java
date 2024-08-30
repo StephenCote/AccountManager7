@@ -26,6 +26,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryPlan;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -366,7 +367,7 @@ public class OlioUtil {
 			}
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
-			q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+			planMost(q);
 			q.setCache(false);
 			
 			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
@@ -379,7 +380,7 @@ public class OlioUtil {
 	public static List<BaseRecord> listGroupPopulation(OlioContext ctx, BaseRecord group){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 		q.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
-		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		planMost(q);
 		return new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
 	
@@ -467,7 +468,7 @@ public class OlioUtil {
 		BaseRecord[] recs = new BaseRecord[0];
 
 		try {
-			q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+			planMost(q);
 			if(fieldName != null) {
 				q.field(fieldName, val);
 			}
@@ -484,7 +485,7 @@ public class OlioUtil {
 	
 	public static BaseRecord getFullRecord(BaseRecord rec) {
 		Query q = QueryUtil.createQuery(rec.getModel(), FieldNames.FIELD_ID, rec.get(FieldNames.FIELD_ID));
-		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		planMost(q);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
@@ -513,6 +514,47 @@ public class OlioUtil {
 		return tags.stream().filter(t -> tagName.equalsIgnoreCase(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
 	}
 	
+	public static void planMost(Query q) {
+		q.planMost(true, FULL_PLAN_FILTER);
+		prunePlan(q.plan());
+	}
+
+	/// This is really more of a subtraction experiment with creating deeply nested queries from a given model definition, and then pruning certain branches
+	public static void prunePlan(QueryPlan plan) {
+		List<BaseRecord> cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_INVENTORY_ENTRY, "item");
+		cplans.forEach(cp -> {
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+		});
+
+		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_INVENTORY_ENTRY, "apparel");
+		cplans.forEach(cp -> {
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+		});
+		
+		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, FieldNames.FIELD_STORE);
+		cplans.forEach(cp -> {
+			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, ModelNames.MODEL_STORE, "apparel");
+			ccplans.forEach(ccp -> {
+				QueryPlan.limitPlan(ccp, Arrays.asList(new String[] {"id", "name"}));
+			});
+		});
+		
+		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, "locations");
+		cplans.forEach(cp -> {
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+		});
+		
+		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, "materials");
+		cplans.forEach(cp -> {
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+		});
+
+		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_STORE, "locations");
+		cplans.forEach(cp -> {
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+		});
+	
+	}
 	public static List<String> FULL_PLAN_FILTER = Arrays.asList(new String[] {
 			FieldNames.FIELD_TAGS,
 			FieldNames.FIELD_ATTRIBUTES,
@@ -529,6 +571,20 @@ public class OlioUtil {
 			FieldNames.FIELD_STREAM,
 			FieldNames.FIELD_USERS,
 			FieldNames.FIELD_ACCOUNTS,
+			"schedules",
+			"boundaries",
+			"borders",
+			"childLocations",
+			"positive",
+			"negative",
+			"traits",
+			"entryTraits",
+			"exitTraits",
+			"behavior",
+			"album",
+			"portrait",
+			"pattern",
+			"images",
 			"items",
 			"socialRing",
 			"dimensions"

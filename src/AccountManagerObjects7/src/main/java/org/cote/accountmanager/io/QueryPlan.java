@@ -79,6 +79,57 @@ public class QueryPlan extends LooseRecord {
 		
 	}
 	
+	public void limitPlan(List<String> fieldNames) {
+	}
+	public static void limitPlan(BaseRecord plan, List<String> fieldNames) {
+		List<String> lfields = new ArrayList<>(plan.get(FieldNames.FIELD_FIELDS));
+		for(String f: lfields) {
+			if(!fieldNames.contains(f)) {
+				unplan(plan, f);
+			}
+		}
+	}
+	
+	public void unplan(String fieldName) {
+		unplan(this, fieldName);
+	}
+	
+	public static void unplan(BaseRecord plan, String fieldName) {
+		List<String> planFields = plan.get(FieldNames.FIELD_FIELDS);
+		planFields.remove(fieldName);
+		List<BaseRecord> plans = plan.get("plans");
+		plan.setValue("plans", plans.stream().filter(p -> !fieldName.equals(p.get("fieldName"))).collect(Collectors.toList()));
+	}
+	
+	protected List<BaseRecord> findPlans(String modelName, String fieldName){
+		return findPlans(this, modelName, fieldName);
+	}
+
+	public static List<BaseRecord> findPlans(BaseRecord plan, String modelName, String fieldName){
+		return findPlans(plan, modelName, fieldName, new ArrayList<>());
+	}
+
+	private static List<BaseRecord> findPlans(BaseRecord plan, String modelName, String fieldName, List<BaseRecord> planList){
+		String pmodel = plan.get(FieldNames.FIELD_MODEL_NAME);
+		String pfield = plan.get(FieldNames.FIELD_FIELD_NAME);
+		List<BaseRecord> plans = plan.get("plans");
+		if(pmodel.equals(modelName)) {
+			if(pfield != null && pfield.equals(fieldName)) {
+				planList.add(new QueryPlan(plan));
+			}
+			Optional<BaseRecord> oplan = plans.stream().filter(q -> fieldName.equals(q.get(FieldNames.FIELD_FIELD_NAME))).findFirst();
+			if(oplan.isPresent()) {
+				planList.add(oplan.get());
+			}
+		}
+		plans.forEach(p -> {
+			findPlans(p, modelName, fieldName, planList);
+		});
+		
+		return planList;
+	}
+
+	
 	protected QueryPlan getSubPlan(String fieldName) {
 		if(fieldName.contains(".")) {
 			return getEmbeddedPlan(fieldName);
@@ -124,6 +175,23 @@ public class QueryPlan extends LooseRecord {
 		COMMON,
 		MOST,
 		ID
+	}
+	
+	protected void filterPlan(String model, String fieldName) {
+		filterPlan(this, model, fieldName);
+	}
+	
+	protected static void filterPlan(BaseRecord plan, String model, String fieldName) {
+		String pmodel = plan.get(FieldNames.FIELD_MODEL_NAME);
+		List<String> planFields = plan.get(FieldNames.FIELD_FIELDS);
+		List<BaseRecord> plans = plan.get("plans");
+		if(pmodel.equals(model)) {
+			planFields.remove(fieldName);
+		}
+		plans.forEach(p -> {
+			filterPlan(p, model, fieldName);
+		});
+
 	}
 	
 	protected void planForCommonFields() {

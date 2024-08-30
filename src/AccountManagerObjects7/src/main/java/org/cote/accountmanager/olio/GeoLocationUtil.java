@@ -654,8 +654,7 @@ public class GeoLocationUtil {
 	}
 	public static BaseRecord getParentLocation(OlioContext ctx, BaseRecord location) {
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, location.get(FieldNames.FIELD_PARENT_ID));
-		//cq.setLimitFields(false);
-		cq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(cq);
 		return IOSystem.getActiveContext().getSearch().findRecord(cq);
 	}
 
@@ -669,9 +668,7 @@ public class GeoLocationUtil {
 		cq.field("geoType", "cell");
 		cq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 		cq.setCache(false);
-		//cq.setLimitFields(false);
-		//cq.requestMostFields();
-		cq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(cq);
 		List<BaseRecord> cells = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(cq));
 		if(cells.size() > 0) {
 			cellMap.put(id,  cells);
@@ -685,7 +682,7 @@ public class GeoLocationUtil {
 			pq.field(FieldNames.FIELD_GROUP_ID, groupId);
 		}
 		pq.field("feature", feature);
-		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(pq);
 
 		return IOSystem.getActiveContext().getSearch().findRecords(pq);
 	}

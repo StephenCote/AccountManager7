@@ -90,6 +90,28 @@ public class Query extends LooseRecord{
 		}
 		return fqp;
 	}
+	public void filterPlan(String modelName, String fieldName) {
+		BaseRecord plan = get("plan");
+		if(plan != null) {
+			QueryPlan.filterPlan(plan, modelName, fieldName);
+			setRequest((List<String>)plan.get(FieldNames.FIELD_FIELDS));
+		}
+		else {
+			logger.warn("Query does not define a query plan");
+		}
+	}
+	
+	public List<BaseRecord> findPlans(String modelName, String fieldName){
+		List<BaseRecord> cplans = new ArrayList<>();
+		BaseRecord plan = get("plan");
+		if(plan != null) {
+			cplans = QueryPlan.findPlans(plan, modelName, fieldName);
+		}
+		else {
+			logger.warn("Query does not define a query plan");
+		}
+		return cplans;
+	}
 	
 	public QueryPlan plan(BaseRecord plan) {
 		QueryPlan qp = new QueryPlan(plan);
@@ -115,7 +137,7 @@ public class Query extends LooseRecord{
 		setRequest(qp.getPlanFields());
 		return qp;
 	}
-	
+
 	public QueryPlan plan() {
 		BaseRecord p = get("plan");
 		if(p != null) {

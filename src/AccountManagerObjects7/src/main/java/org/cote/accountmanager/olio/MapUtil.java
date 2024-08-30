@@ -52,7 +52,7 @@ public class MapUtil {
 		BaseRecord loc = locs[0];
 		IOSystem.getActiveContext().getReader().populate(loc);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, loc.get(FieldNames.FIELD_PARENT_ID));
-		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(pq);
 
 		printAdmin2Map(ctx, IOSystem.getActiveContext().getSearch().findRecord(pq));
 		printLocationMaps(ctx);
@@ -74,7 +74,7 @@ public class MapUtil {
 		
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
 		pq.field(FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID));
-		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(pq);
 
 		/// Note: finding based only on parentId will span groups
 		/// 
@@ -271,7 +271,7 @@ public class MapUtil {
 		/// DON'T search by group id because feature level grid squares may still be in the universe group
 		// pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 		pq.field("feature", feature);
-		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(pq);
 
 		BaseRecord[] locations = IOSystem.getActiveContext().getSearch().findRecords(pq);
 		Map<TerrainEnumType, Integer> map = TerrainUtil.getTerrainTypes(Arrays.asList(locations));
@@ -299,7 +299,7 @@ public class MapUtil {
 		/// Note: finding based only on parentId will span groups.  Each location map should be scoped to only the world
 		/// 
 		pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
-		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(pq);
 
 		BaseRecord[] cells = IOSystem.getActiveContext().getSearch().findRecords(pq);
 		

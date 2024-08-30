@@ -63,7 +63,7 @@ public class OlioService {
 		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "narrative"});
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		q.planMost(true);
 		BaseRecord a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		BaseRecord n1 = null;
 		if(a1 != null) {
@@ -89,7 +89,7 @@ public class OlioService {
 		SDUtil sdu = new SDUtil();
 
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		q.planMost(true);
 		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if(a1 != null) {
 			sdu.generateSDImages(octx, Arrays.asList(a1), "random", "professional photograph", "full body", 1, false, hires, -1);

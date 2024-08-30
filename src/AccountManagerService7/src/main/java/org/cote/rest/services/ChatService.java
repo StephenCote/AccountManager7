@@ -192,7 +192,7 @@ public class ChatService {
 			if(objectId != null) {
 				q.field(FieldNames.FIELD_OBJECT_ID, objectId);
 			}
-			q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.planMost(true);
 			cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 			if(objectId != null && cfg != null) {
 				configMap.put(objectId, cfg);

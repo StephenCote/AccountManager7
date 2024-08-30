@@ -121,7 +121,7 @@ public class ItemUtil {
 		Query q = OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
 		q.field("type", "template");
 		q.field(FieldNames.FIELD_NAME, name);
-		q.planMost(false, OlioUtil.FULL_PLAN_FILTER);
+		OlioUtil.planMost(q);
 		q.getRequest().add(FieldNames.FIELD_TAGS);
 
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
