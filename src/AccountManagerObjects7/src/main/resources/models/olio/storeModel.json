@@ -32,7 +32,8 @@
 			"baseType": "model",
 			"baseModel": "olio.item",
 			"foreign": true,
-			"participantModel": "store.item"
+			"participantModel": "store.item",
+			"followReference": false
 		},
 		{
 			"name": "apparel",
@@ -41,14 +42,6 @@
 			"baseModel": "olio.apparel",
 			"foreign": true,
 			"participantModel": "store.apparel"
-		},
-		{
-			"name": "wearables",
-			"type": "list",
-			"baseType": "model",
-			"baseModel": "olio.wearable",
-			"foreign": true,
-			"participantModel": "store.wearable"
 		},
 		{
 			"name": "locations",

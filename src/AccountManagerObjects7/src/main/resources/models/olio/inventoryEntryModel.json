@@ -34,12 +34,6 @@
 			"type": "model",
 			"baseModel": "olio.apparel",
 			"foreign": true
-		},
-		{
-			"name": "wearable",
-			"type": "model",
-			"baseModel": "olio.wearable",
-			"foreign": true
 		}
 	]
 }
