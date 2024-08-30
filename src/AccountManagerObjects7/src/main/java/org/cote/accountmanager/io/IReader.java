@@ -12,9 +12,7 @@ public interface IReader {
 	public void populate(BaseRecord rec);
 	public void populate(BaseRecord rec, int foreignDepth);
 	public void populate(BaseRecord rec, String[] requestFields);
-	public void populate(BaseRecord rec, String[] requestFields, boolean limit);
 	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth);
-	public void populate(BaseRecord rec, String[] requestFields, int foreignDepth, boolean limit);
 	public void repopulate(BaseRecord rec, int foreignDepth);
 	public void close() throws ReaderException;
 	public BaseRecord read(BaseRecord rec) throws ReaderException;

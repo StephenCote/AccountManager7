@@ -20,6 +20,7 @@ public class LocationPlannerRule implements IOlioContextRule {
 		BaseRecord location = event.get(FieldNames.FIELD_LOCATION);
 		if(location == null) {
 			logger.error("Unable to plan without a location");
+			//ErrorUtil.printStackTrace();
 			return;
 		}
 		//logger.info(location.toFullString());

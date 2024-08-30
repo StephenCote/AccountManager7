@@ -6,6 +6,7 @@ public class FieldNames {
 		public static final String FIELD_SUFFIX_FOREIGN_KEY = "_FK";
 	
 		/// Base Fields
+		public static final String FIELD_MODEL_NAME = "modelName";
 		public static final String FIELD_ORGANIZATION_PATH = "organizationPath";
 		public static final String FIELD_ORGANIZATION_ID = "organizationId";
 		public static final String FIELD_URN = "urn";
@@ -65,6 +66,7 @@ public class FieldNames {
 		public static final String FIELD_FACT_FIELD_MODEL_TYPE = FIELD_FACT + "." + FIELD_MODEL_TYPE;
 		public static final String FIELD_SOURCE_URN = "sourceUrn";
 		public static final String FIELD_SOURCE_URL = "sourceUrl";
+		public static final String FIELD_CONTROLS = "controls";
 		
 		public static final String FIELD_SCORE = "score";
 		public static final String FIELD_DECISION_AGE = "decisionAge";

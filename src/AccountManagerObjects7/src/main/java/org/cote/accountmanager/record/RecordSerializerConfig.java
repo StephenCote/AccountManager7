@@ -37,6 +37,7 @@ public class RecordSerializerConfig {
 		RecordSerializer ser = new RecordSerializer();
 		ser.setFilterVirtual(true);
 		ser.setFilterForeign(false);
+		ser.setFilterEphemeral(true);
 		SimpleModule filteredModule = new SimpleModule();
 		filteredModule.addSerializer(LooseRecord.class, ser);
 		return filteredModule;

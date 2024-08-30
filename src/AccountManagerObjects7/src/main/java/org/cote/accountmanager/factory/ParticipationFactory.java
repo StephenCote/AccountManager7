@@ -13,6 +13,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.EffectEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 
 public class ParticipationFactory {
 	public static final Logger logger = LogManager.getLogger(ParticipationFactory.class);
@@ -53,17 +54,24 @@ public class ParticipationFactory {
 	public static BaseRecord newParticipation(BaseRecord owner, BaseRecord partc, String fieldName, BaseRecord partp, EffectEnumType effect, BaseRecord perm) {
 		BaseRecord part1 = null;
 		String partModel = getParticipantModel(partc.getModel(), fieldName, partp.getModel());
+		/*
 		String ppid = partc.get(FieldNames.FIELD_OBJECT_ID);
 		String paid = partp.get(FieldNames.FIELD_OBJECT_ID);
-		if(ppid == null || paid == null) {
+		*/
+		long ppid = partc.get(FieldNames.FIELD_ID);
+		long paid = partp.get(FieldNames.FIELD_ID);
+
+		if(ppid == 0L || paid == 0L) {
 			logger.error("Participation or participant identifiers are not specified");
+			ErrorUtil.printStackTrace();
 			return null;
 		}
 		
 		/// Allow a user to be assigned participation to itself for purposes of assigning individual rights to the user object
 		///
-		else if(ppid.equals(paid) && !partc.getModel().equals(ModelNames.MODEL_USER)) {
-			logger.error("Participation and partipant identifiers should not match: " + partc.getModel() + " " + ppid);
+		//else if(ppid.equals(paid) && !partc.getModel().equals(ModelNames.MODEL_USER)) {
+		else if(ppid == paid && partc.getModel().equals(partp.getModel()) && !partc.getModel().equals(ModelNames.MODEL_USER)) {
+			logger.error("Participation and partipant identifiers should not match: " + partc.getModel() + "/" + partp.getModel() + " " + ppid + "/" + paid);
 			return null;
 		}
 		

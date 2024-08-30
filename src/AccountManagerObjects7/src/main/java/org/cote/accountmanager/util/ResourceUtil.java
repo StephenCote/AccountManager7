@@ -81,6 +81,7 @@ public class ResourceUtil {
 		InputStream srs = ResourceUtil.class.getClassLoader().getResourceAsStream(path);
 		if(srs == null) {
 			logger.warn("Failed to load " + path);
+			ErrorUtil.printStackTrace();
 			return null;
 		}
 		BufferedInputStream is = new BufferedInputStream(srs);

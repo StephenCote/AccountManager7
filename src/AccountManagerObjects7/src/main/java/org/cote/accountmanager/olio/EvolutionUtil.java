@@ -70,14 +70,6 @@ public class EvolutionUtil {
 	// protected static void evolvePopulation(BaseRecord user, BaseRecord world, BaseRecord parentEvent, AlignmentEnumType eventAlignment, BaseRecord population, int increment){
 	protected static void evolvePopulation(OlioContext ctx){
 		try {
-			/*
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-			q.filterParticipation(population, null, ModelNames.MODEL_CHAR_PERSON, null);
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			q.setCache(false);
-			
-			List<BaseRecord> pop = new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
-			*/
 			int increment = 1;
 			if(ctx.getCurrentEvent() == null || ctx.getCurrentLocation() == null) {
 				logger.error("Context is not ready for evolution");

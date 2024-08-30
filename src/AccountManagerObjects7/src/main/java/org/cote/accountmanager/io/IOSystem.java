@@ -40,6 +40,9 @@ public class IOSystem {
 		return open;
 	}
 
+	public static boolean isInitialized() {
+		return (getActiveContext() != null && getActiveContext().isInitialized());
+	}
 
 
 	public static IOContext open(RecordIO ioType) throws SystemException {

@@ -344,6 +344,7 @@ public class OlioContext {
 			Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
 			eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 			eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
+			eq.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 			BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
 			if(trace) {
 				logger.info("Generate Regions ...");
@@ -639,21 +640,6 @@ public class OlioContext {
 	public void setCurrentLocation(BaseRecord currentLocation) {
 		this.currentLocation = currentLocation;
 	}
-
-	public BaseRecord readRandomPerson() {
-		if(!initialized) {
-			return null;
-		}
-		Query qp1 = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, world.get("population.id"));
-		try {
-			qp1.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		
-		return OlioUtil.randomSelection(config.getUser(), qp1);
-	}
-	
 	public boolean validateContext() {
 		if(!initialized) {
 			logger.error("Context is not initialized");
@@ -684,23 +670,5 @@ public class OlioContext {
 	public BaseRecord getRootLocation() {
 		 return GeoLocationUtil.getRootLocation(this);
 	}
-	
-	/*
-	public BaseRecord generateEpoch() {
-		return generateEpoch(1);
-	}
-	public BaseRecord generateEpoch(int count) {
-		if(!initialized) {
-			return null;
-		}
-		// currentEpoch = EpochUtil.generateEpoch(config.getUser(), world, count);
-		currentEpoch = EpochUtil.generateEpoch(this, count);
-		return currentEpoch;
-	}
-	*/
-
-	
-	
-	
 	
 }

@@ -55,10 +55,8 @@ public class StatisticsUtil {
 				total += rstat;
 				rec.set(stat.getName(), (rstat * stat.getMultiplier()));
 			}
-			// logger.info("Allotted: " + total + " / Remainder: " + allotment);
-			if(allotment > 0) {
-				rec.set("potential", allotment);
-			}
+
+			rec.set("potential", (allotment > 0 ? allotment : 0));
 			
 			/// Invoke inspect to perform any calculations on virtual fields
 			///

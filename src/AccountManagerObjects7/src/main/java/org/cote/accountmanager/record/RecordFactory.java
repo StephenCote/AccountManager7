@@ -35,7 +35,6 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
 public class RecordFactory {
@@ -289,7 +288,7 @@ public class RecordFactory {
 	
 	private static ModelSchema getIOSchema(String modelName) {
 		ModelSchema ms = null;
-		if(IOSystem.getActiveContext() != null && IOSystem.getActiveContext().isInitialized()) {
+		if(IOSystem.isInitialized()) {
 			OrganizationContext sysOrg = IOSystem.getActiveContext().getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, null);
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_NAME, modelName);
 			q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
@@ -311,7 +310,7 @@ public class RecordFactory {
 	
 	private static ModelSchema createIOSchema(String name, ModelSchema ims) {
 		
-		if(IOSystem.getActiveContext() == null || !IOSystem.getActiveContext().isInitialized()) {
+		if(!IOSystem.isInitialized()) {
 			logger.error("Active context is not available or initialized");
 			return null;
 		}
