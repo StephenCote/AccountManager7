@@ -152,10 +152,11 @@ public class Query extends LooseRecord{
 		setValue("plan", qp);
 		return qp;
 	}
-	
+	/*
 	public void requestAllFields() {
 		setRequest(RecordUtil.getRequestFields((String)get(FieldNames.FIELD_TYPE)));	
 	}
+	*/
 	public void requestCommonFields() {
 		setRequest(RecordUtil.getCommonFields((String)get(FieldNames.FIELD_TYPE)));
 	}

@@ -531,6 +531,20 @@ public class OlioUtil {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
 		});
 		
+		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_ITEM, null);
+		cplans.forEach(cp -> {
+			List<String> fields = cp.get(FieldNames.FIELD_FIELDS);
+			fields.add(FieldNames.FIELD_TAGS);
+		});
+
+		
+		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, null);
+		cplans.forEach(cp -> {
+			List<String> fields = cp.get(FieldNames.FIELD_FIELDS);
+			fields.add(FieldNames.FIELD_TAGS);
+		});
+
+		
 		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, FieldNames.FIELD_STORE);
 		cplans.forEach(cp -> {
 			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, ModelNames.MODEL_STORE, "apparel");

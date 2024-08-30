@@ -115,7 +115,7 @@ public class TestOlioRules extends BaseTest {
 			
 			pact = Actions.beginGather(octx, octx.getCurrentIncrement(), per1, "water", 3);
 			octx.overwatchActions();
-			// logger.info(pact.toString());
+			logger.info(pact.toString());
 			/*
 			pact = Actions.beginPeek(octx, octx.getCurrentIncrement(), per1, per1);
 			octx.overwatchActions();

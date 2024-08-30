@@ -114,12 +114,14 @@ public class QueryPlan extends LooseRecord {
 		String pfield = plan.get(FieldNames.FIELD_FIELD_NAME);
 		List<BaseRecord> plans = plan.get("plans");
 		if(pmodel.equals(modelName)) {
-			if(pfield != null && pfield.equals(fieldName)) {
+			if((pfield != null && pfield.equals(fieldName)) || fieldName == null) {
 				planList.add(new QueryPlan(plan));
 			}
-			Optional<BaseRecord> oplan = plans.stream().filter(q -> fieldName.equals(q.get(FieldNames.FIELD_FIELD_NAME))).findFirst();
-			if(oplan.isPresent()) {
-				planList.add(oplan.get());
+			if(fieldName != null) {
+				Optional<BaseRecord> oplan = plans.stream().filter(q -> fieldName.equals(q.get(FieldNames.FIELD_FIELD_NAME))).findFirst();
+				if(oplan.isPresent()) {
+					planList.add(oplan.get());
+				}
 			}
 		}
 		plans.forEach(p -> {

@@ -84,14 +84,30 @@ public class RecordUtil {
 				upf.add(FieldNames.FIELD_OWNER_ID);
 				upf.add(FieldNames.FIELD_ORGANIZATION_ID);
 				if(updateRecord((full ? targ : targ.copyRecord(upf.toArray(new String[0]))))) {
-					logger.info("Patched " + targ.get(FieldNames.FIELD_OBJECT_ID) + " " + (full ? "object" :  upf.stream().collect(Collectors.joining(", "))));
+					logger.info("Patched " + getIdentityString(targ) + " " + (full ? "object" :  upf.stream().collect(Collectors.joining(", "))));
 				}
 				else {
-					logger.warn("Failed to patch " + targ.get(FieldNames.FIELD_OBJECT_ID) + " " + (full ? "object" : upf.stream().collect(Collectors.joining(", "))));
+					logger.warn("Failed to patch " + getIdentityString(targ) + " " + (full ? "object" : upf.stream().collect(Collectors.joining(", "))));
 				}
 			}
 			 
 		}
+	}
+	
+	public static String getIdentityString(BaseRecord rec) {
+		String id = null;
+		if(rec.hasField(FieldNames.FIELD_URN)) {
+			id = rec.get(FieldNames.FIELD_URN);
+		}
+		else if(rec.hasField(FieldNames.FIELD_OBJECT_ID)) {
+			id = rec.get(FieldNames.FIELD_OBJECT_ID);
+		}
+		else if(rec.hasField(FieldNames.FIELD_ID)) {
+			id = "#" + Long.toString(rec.get(FieldNames.FIELD_ID));
+		}
+		return id;
+
+
 	}
 
 	public static String toFilteredJSONString(BaseRecord rec) {
