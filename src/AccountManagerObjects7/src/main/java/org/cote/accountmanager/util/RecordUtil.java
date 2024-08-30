@@ -407,19 +407,13 @@ public class RecordUtil {
 		return orec;
 	}
 	public BaseRecord findByRecord(BaseRecord user, BaseRecord rec, String[] fields) {
-	//	return findByRecord(user, rec, fields, true);
-	//}
-	//public BaseRecord findByRecord(BaseRecord user, BaseRecord rec, String[] fields, boolean limit) {
 
 		BaseRecord orec = null;
 		if(!rec.hasField(FieldNames.FIELD_OBJECT_ID) && !rec.hasField(FieldNames.FIELD_ID)) {
-			//logger.warn("Record " + rec.getModel() + " does not include an identity field");
-			// logger.error(rec.toString());
 			return orec;
 		}
 		
 		Query q = new Query(rec.getModel());
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, limit);
 		q.setRequest(fields);
 		if(rec.hasField(FieldNames.FIELD_ID) && ((long)rec.get(FieldNames.FIELD_ID)) > 0L) {
 			q.field(FieldNames.FIELD_ID, ComparatorEnumType.EQUALS, rec.get(FieldNames.FIELD_ID));	

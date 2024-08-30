@@ -40,8 +40,7 @@ public class WorldUtil {
 		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_NAME, worldName);
-		q.requestMostFields();
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		q.planMost(true, Arrays.asList(new String[] {"realms", FieldNames.FIELD_TAGS, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_CONTROLS}));
 
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	

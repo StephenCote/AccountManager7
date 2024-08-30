@@ -123,13 +123,7 @@ public class ItemUtil {
 		q.field(FieldNames.FIELD_NAME, name);
 		q.planMost(false, OlioUtil.FULL_PLAN_FILTER);
 		q.getRequest().add(FieldNames.FIELD_TAGS);
-		/*
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		*/
+
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	

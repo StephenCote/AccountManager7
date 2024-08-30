@@ -480,10 +480,8 @@ public class StatementUtil {
 			participantModel = schema.getParticipantModel();
 		}
 		
-		//boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
 		Query subQuery = new Query(subModel);
 		try {
-			//subQuery.set(FieldNames.FIELD_LIMIT_FIELDS, limit);
 			subQuery.set(FieldNames.FIELD_COUNT, query.get(FieldNames.FIELD_COUNT));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			throw new FieldException(e);

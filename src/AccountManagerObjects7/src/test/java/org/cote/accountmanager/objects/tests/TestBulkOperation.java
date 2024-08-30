@@ -72,11 +72,11 @@ public class TestBulkOperation extends BaseTest {
 			
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, "Person 1");
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.planMost(true);
 			//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES, "partners", "gender"});
 			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
 			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_APPAREL);
-			q2.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.planMost(true);
 			DBStatementMeta meta2 = StatementUtil.getSelectTemplate(q2);
 			// logger.info("Outside io.db: " + meta.getColumns().stream().collect(Collectors.joining(", ")));
 			//logger.info(meta2.getSql());
@@ -134,7 +134,7 @@ public class TestBulkOperation extends BaseTest {
 
 			
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, a1.get(FieldNames.FIELD_ID));
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.planMost(true);
 
 			// DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
 			//logger.info(meta.getSql());

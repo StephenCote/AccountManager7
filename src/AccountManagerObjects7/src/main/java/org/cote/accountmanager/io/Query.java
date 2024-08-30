@@ -160,15 +160,7 @@ public class Query extends LooseRecord{
 		}
 		setRequestRange(startRecord, recordCount);
 	}
-	/*
-	public void setLimitFields(boolean limit) {
-		try {
-			set(FieldNames.FIELD_LIMIT_FIELDS, limit);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-	}
-	*/
+
 	public void setCache(boolean cache) {
 		try {
 			set(FieldNames.FIELD_CACHE, cache);

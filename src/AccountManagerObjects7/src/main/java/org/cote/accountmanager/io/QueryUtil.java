@@ -78,7 +78,7 @@ public class QueryUtil {
 	public synchronized static String key(BaseRecord query) {
 		String type = query.get(FieldNames.FIELD_TYPE);
 		String order = query.get(FieldNames.FIELD_ORDER);
-		//boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
+
 		String sortBy = query.get(FieldNames.FIELD_SORT_FIELD);
 		if(sortBy == null) {
 			sortBy = FieldNames.FIELD_ID;

@@ -686,14 +686,7 @@ public class GeoLocationUtil {
 		}
 		pq.field("feature", feature);
 		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		/*
-		pq.requestMostFields();
-		try {
-			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		*/
+
 		return IOSystem.getActiveContext().getSearch().findRecords(pq);
 	}
 

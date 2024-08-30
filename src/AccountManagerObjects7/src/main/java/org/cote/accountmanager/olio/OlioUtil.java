@@ -367,20 +367,11 @@ public class OlioUtil {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
 			q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-			/*
-			q.requestMostFields();
-			try {
-				q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			} catch (FieldException | ValueException | ModelNotFoundException e) {
-				logger.error(e);
-			}
-			*/
 			q.setCache(false);
 			
 			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 			ctx.getPopulationMap().put(id, pop);
 			long stop = System.currentTimeMillis();
-			// logger.info("Time to stage population: " + (stop - start));
 		}
 		return ctx.getPopulationMap().get(id);
 	}
@@ -388,11 +379,7 @@ public class OlioUtil {
 	public static List<BaseRecord> listGroupPopulation(OlioContext ctx, BaseRecord group){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 		q.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
-		//q.requestMostFields();
 		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
-		//logger.info(q.toSelect());
-		//q.setCache(false);
 		return new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
 	
@@ -480,10 +467,6 @@ public class OlioUtil {
 		BaseRecord[] recs = new BaseRecord[0];
 
 		try {
-			/*
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			q.requestMostFields();
-			*/
 			q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 			if(fieldName != null) {
 				q.field(fieldName, val);
@@ -501,10 +484,6 @@ public class OlioUtil {
 	
 	public static BaseRecord getFullRecord(BaseRecord rec) {
 		Query q = QueryUtil.createQuery(rec.getModel(), FieldNames.FIELD_ID, rec.get(FieldNames.FIELD_ID));
-		/*
-		q.requestMostFields();
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
-		*/
 		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}

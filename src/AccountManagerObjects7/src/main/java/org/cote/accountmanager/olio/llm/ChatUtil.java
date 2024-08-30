@@ -50,7 +50,6 @@ public class ChatUtil {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_NAME, sessionName);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
 		return q;
 	}
 	
@@ -85,7 +84,6 @@ public class ChatUtil {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 				
 		if(dat == null) {
@@ -108,7 +106,6 @@ public class ChatUtil {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 				
 		if(dat == null) {

@@ -85,7 +85,7 @@ public class TestNestedStructures extends BaseTest {
 			
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, a1.get("name"));
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.planMost(true);
 			BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
 			assertNotNull("Rec is null", rec);
 			
@@ -188,7 +188,7 @@ public class TestNestedStructures extends BaseTest {
 
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, "Person 1");
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.planMost(true);
 			BaseRecord rec = ioContext.getSearch().findRecord(q);
 			assertNotNull("Record is null", rec);
 			/// logger.info(rec.toFullString());

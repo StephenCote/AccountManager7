@@ -74,7 +74,7 @@ public class TestChat extends BaseTest {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Chat", "DATA", testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, "Don't Exist");
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		q.planMost(true);
 		DBStatementMeta meta = null;
 		try {
 			meta = StatementUtil.getSelectTemplate(q);

@@ -178,7 +178,6 @@ public class FieldNames {
 		public static final String FIELD_INSPECT = "inspect";
 		public static final String FIELD_TOTAL_COUNT = "totalCount";
 		public static final String FIELD_EXECUTED = "executed";
-		public static final String FIELD_LIMIT_FIELDS = "limitFields";
 		
 		// Supplemental - Person
 		public static final String FIELD_USERS = "users";

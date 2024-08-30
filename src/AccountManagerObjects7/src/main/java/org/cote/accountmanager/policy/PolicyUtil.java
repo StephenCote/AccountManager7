@@ -232,6 +232,8 @@ public class PolicyUtil {
 		return outBool;
 	}
 	
+	/// TODO: Need to check that the query plan associated with a query matches the query fields
+	///
 	public PolicyResponseType[] evaluateQueryToReadPolicyResponses(BaseRecord contextUser, Query query) {
 		List<PolicyResponseType> prrs = new ArrayList<>();
 		ModelSchema ms = RecordFactory.getSchema(query.get(FieldNames.FIELD_TYPE));

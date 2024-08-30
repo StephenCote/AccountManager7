@@ -53,14 +53,7 @@ public class MapUtil {
 		IOSystem.getActiveContext().getReader().populate(loc);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, loc.get(FieldNames.FIELD_PARENT_ID));
 		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		/*
-		pq.requestCommonFields();
-		try {
-			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		*/
+
 		printAdmin2Map(ctx, IOSystem.getActiveContext().getSearch().findRecord(pq));
 		printLocationMaps(ctx);
 	}
@@ -82,14 +75,7 @@ public class MapUtil {
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
 		pq.field(FieldNames.FIELD_GROUP_ID, location.get(FieldNames.FIELD_GROUP_ID));
 		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		/*
-		pq.requestCommonFields();
-		try {
-			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		*/
+
 		/// Note: finding based only on parentId will span groups
 		/// 
 		BaseRecord[] plocs = IOSystem.getActiveContext().getSearch().findRecords(pq);
@@ -286,14 +272,7 @@ public class MapUtil {
 		// pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 		pq.field("feature", feature);
 		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		/*
-		pq.requestCommonFields();
-		try {
-			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		*/
+
 		BaseRecord[] locations = IOSystem.getActiveContext().getSearch().findRecords(pq);
 		Map<TerrainEnumType, Integer> map = TerrainUtil.getTerrainTypes(Arrays.asList(locations));
 		List<TerrainEnumType> sortTypes = map.entrySet()
@@ -321,14 +300,6 @@ public class MapUtil {
 		/// 
 		pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		/*
-		pq.requestCommonFields();
-		try {
-			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		*/
 
 		BaseRecord[] cells = IOSystem.getActiveContext().getSearch().findRecords(pq);
 		

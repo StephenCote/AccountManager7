@@ -130,9 +130,8 @@ public class PointOfInterestUtil {
 		q.field("east", east);
 		q.field("north", north);
 		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		//q.requestCommonFields();
+
 		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"}));
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 
@@ -149,10 +148,8 @@ public class PointOfInterestUtil {
 			logger.warn("No cells were specified");
 			return new ArrayList<>();
 		}
-		// logger.info("POI GID = " + ctx.getWorld().get("pointsOfInterest.id"));
+
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
-		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		//q.setValue("debug", true);
 		List<String> ptypes = pointTypes.stream().map(t -> t.toString()).collect(Collectors.toList());
 		if(ptypes.size() > 0) {
 			q.field(FieldNames.FIELD_TYPE, ComparatorEnumType.IN, ptypes.stream().collect(Collectors.joining(",")));	
@@ -161,21 +158,6 @@ public class PointOfInterestUtil {
 		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		q.field(FieldNames.FIELD_LOCATION, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
 		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		//q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north",  "type"});
-		//q.requestMostFields();
-		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
-		//q.setLimitFields(false);
-		//q.setCache(false);
-
-		/*
-		try {
-			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
-			logger.info(meta.getSql());
-		} catch (ModelException | FieldException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		}
-		*/
 
 		return new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}

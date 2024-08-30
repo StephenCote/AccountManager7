@@ -64,7 +64,6 @@ public class EventUtil {
 		try {
 			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
-			// q.set(FieldNames.FIELD_LIMIT_FIELDS,false);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
