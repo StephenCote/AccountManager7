@@ -169,9 +169,8 @@ public class AnimalUtil {
 							//StateUtil.agitateLocation(ctx, state);
 
 							anim1.set(FieldNames.FIELD_TYPE, "random");
-							if(random.nextDouble() <= Rules.ANIMAL_CARCASS_ODDS) {
-								state.set("alive", false);
-							}
+							state.set("alive", random.nextDouble() > Rules.ANIMAL_CARCASS_ODDS);
+							
 						} catch (FieldException | ValueException | ModelNotFoundException e) {
 							logger.error(e);
 						}
@@ -199,11 +198,16 @@ public class AnimalUtil {
 
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_ANIMAL, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("animals.id"));
 		q.field(FieldNames.FIELD_TYPE, "template");
+		/// q.requestMostFields();
+		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+
+		/*
 		try {
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+		*/
 		animalTemplates.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 		return animalTemplates;
 	}

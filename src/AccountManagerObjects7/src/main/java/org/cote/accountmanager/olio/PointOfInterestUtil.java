@@ -129,8 +129,10 @@ public class PointOfInterestUtil {
 		q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field("east", east);
 		q.field("north", north);
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"});
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		//q.requestCommonFields();
+		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"}));
+		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 
@@ -158,9 +160,11 @@ public class PointOfInterestUtil {
 		
 		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		q.field(FieldNames.FIELD_LOCATION, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
+		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 		//q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north",  "type"});
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
-		q.setLimitFields(false);
+		//q.requestMostFields();
+		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		//q.setLimitFields(false);
 		//q.setCache(false);
 
 		/*

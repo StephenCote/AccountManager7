@@ -20,7 +20,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -29,14 +28,10 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GeographyEnumType;
-import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 public class GeoLocationUtil {
 	public static final Logger logger = LogManager.getLogger(GeoLocationUtil.class);
@@ -614,6 +609,14 @@ public class GeoLocationUtil {
 		return pop.stream().filter(zp ->{
 			BaseRecord zloc = zp.get("state.currentLocation");
 			long zlid = (zloc != null ? zloc.get("id") : 0L);
+			/*
+			if(zlid == 0L) {
+				logger.warn("Null animal location");
+			}
+			else {
+				logger.info("Animal location: " + zlid + " ~ " + locId);
+			}
+			*/
 			return (zlid > 0 && (zlid == locId || aids.contains(zlid)));
 		}).collect(Collectors.toList());
 	}
@@ -651,7 +654,8 @@ public class GeoLocationUtil {
 	}
 	public static BaseRecord getParentLocation(OlioContext ctx, BaseRecord location) {
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, location.get(FieldNames.FIELD_PARENT_ID));
-		cq.setLimitFields(false);
+		//cq.setLimitFields(false);
+		cq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 		return IOSystem.getActiveContext().getSearch().findRecord(cq);
 	}
 
@@ -665,7 +669,9 @@ public class GeoLocationUtil {
 		cq.field("geoType", "cell");
 		cq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
 		cq.setCache(false);
-		cq.setLimitFields(false);
+		//cq.setLimitFields(false);
+		//cq.requestMostFields();
+		cq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 		List<BaseRecord> cells = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(cq));
 		if(cells.size() > 0) {
 			cellMap.put(id,  cells);
@@ -679,11 +685,15 @@ public class GeoLocationUtil {
 			pq.field(FieldNames.FIELD_GROUP_ID, groupId);
 		}
 		pq.field("feature", feature);
+		pq.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		/*
+		pq.requestMostFields();
 		try {
 			pq.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+		*/
 		return IOSystem.getActiveContext().getSearch().findRecords(pq);
 	}
 

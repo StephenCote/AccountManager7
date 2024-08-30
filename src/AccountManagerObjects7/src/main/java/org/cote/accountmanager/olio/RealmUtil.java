@@ -29,7 +29,9 @@ public class RealmUtil {
 	public static BaseRecord getCreateRealm(OlioContext ctx, BaseRecord origin) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("realmsGroup.id"));
 		q.field("origin", origin.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
-		q.setLimitFields(false);
+		//q.setLimitFields(false);
+		//q.requestMostFields();
+		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 		BaseRecord realm = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(realm == null) {
 			realm = createRealm(ctx, origin);

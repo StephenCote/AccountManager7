@@ -89,6 +89,7 @@ public class BaseTest {
 	
 	@After
 	public void tearDown() throws Exception{
+		logger.info("Shutting down");
 		IOSystem.close();
 		ioContext = null;
 		orgContext = null;

@@ -194,6 +194,33 @@ public class RecordUtil {
 		return flds.toArray(new String[0]);
 	}
 	
+	public static List<String> getRequestFields(ModelSchema schema, List<String> filter) {
+		return schema.getFields().stream()
+			.filter(s -> !filter.contains(s.getName()) && !s.isEphemeral())
+			.map(f -> f.getName())
+			.collect(Collectors.toList())
+		;
+	}
+	public static List<String> getRequestFields(String model) {
+		return getRequestFields(model, new ArrayList<>());
+	}
+	public static List<String> getRequestFields(String model, List<String> filter) {
+		ModelSchema schema = RecordFactory.getSchema(model);
+		if(schema == null) {
+			logger.error("Null schema for " + model);
+			return new ArrayList<>();
+		}
+		return getRequestFields(schema, filter);
+	}
+	
+	public static List<String> getMostRequestFields(String model){
+		return getRequestFields(model, Arrays.asList(new String[] {
+			FieldNames.FIELD_ATTRIBUTES,
+			FieldNames.FIELD_TAGS,
+			FieldNames.FIELD_CONTROLS
+		}));
+	}
+	
 	public static boolean inherits(ModelSchema ms, String fieldName) {
 		boolean outBool = false;
 		if(ms.getInherits().contains(fieldName) || ms.getLikeInherits().contains(fieldName)) {
@@ -380,9 +407,9 @@ public class RecordUtil {
 		return orec;
 	}
 	public BaseRecord findByRecord(BaseRecord user, BaseRecord rec, String[] fields) {
-		return findByRecord(user, rec, fields, true);
-	}
-	public BaseRecord findByRecord(BaseRecord user, BaseRecord rec, String[] fields, boolean limit) {
+	//	return findByRecord(user, rec, fields, true);
+	//}
+	//public BaseRecord findByRecord(BaseRecord user, BaseRecord rec, String[] fields, boolean limit) {
 
 		BaseRecord orec = null;
 		if(!rec.hasField(FieldNames.FIELD_OBJECT_ID) && !rec.hasField(FieldNames.FIELD_ID)) {
@@ -392,7 +419,7 @@ public class RecordUtil {
 		}
 		
 		Query q = new Query(rec.getModel());
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, limit);
+		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, limit);
 		q.setRequest(fields);
 		if(rec.hasField(FieldNames.FIELD_ID) && ((long)rec.get(FieldNames.FIELD_ID)) > 0L) {
 			q.field(FieldNames.FIELD_ID, ComparatorEnumType.EQUALS, rec.get(FieldNames.FIELD_ID));	
@@ -522,7 +549,11 @@ public class RecordUtil {
 						check = m.get(FieldNames.FIELD_PARTICIPATION_MODEL);
 					}
 					boolean partCheck = ((partModel == null && check != null) || (partModel != null && !partModel.equals(check)));
-					// logger.warn(firstModel.getModel() + " " + size + " " +  m.getFields().size() + " <> " + firstModel.getFields().size() + " " + ids + " " + rid + " <> " + id);
+					if((size || ids || partCheck)) {
+						logger.warn(firstModel.getModel() + " " + size + " " +  m.getFields().size() + " <> " + firstModel.getFields().size() + " " + ids + " " + rid + " <> " + id + " Part " + partCheck);
+						logger.warn(firstModel.toFullString());
+						logger.warn(m.toFullString());
+					}
 					return (size || ids || partCheck);
 				} 
 		).collect(Collectors.toList());

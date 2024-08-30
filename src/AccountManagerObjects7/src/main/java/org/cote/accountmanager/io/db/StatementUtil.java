@@ -32,6 +32,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
+import org.cote.accountmanager.io.QueryPlan;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;
@@ -465,6 +466,9 @@ public class StatementUtil {
 			throw new FieldException("Field schema does not define a base model");
 		}
 		String model = query.get(FieldNames.FIELD_TYPE);
+		if(schema.getBaseModel().equals(ModelNames.MODEL_FLEX)) {
+			logger.warn(model + "." + schema.getName());
+		}
 		ModelSchema mschema = RecordFactory.getSchema(model);
 		ModelSchema msschema = RecordFactory.getSchema(schema.getBaseModel());
 		List<String> fields = new ArrayList<>();
@@ -476,10 +480,10 @@ public class StatementUtil {
 			participantModel = schema.getParticipantModel();
 		}
 		
-		boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
+		//boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
 		Query subQuery = new Query(subModel);
 		try {
-			subQuery.set(FieldNames.FIELD_LIMIT_FIELDS, limit);
+			//subQuery.set(FieldNames.FIELD_LIMIT_FIELDS, limit);
 			subQuery.set(FieldNames.FIELD_COUNT, query.get(FieldNames.FIELD_COUNT));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			throw new FieldException(e);
@@ -502,14 +506,33 @@ public class StatementUtil {
 		if(IOSystem.isOpen()) {
 			
 			if(!model.equals(ModelNames.MODEL_MODEL_SCHEMA)){
-				List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
+				
+				QueryPlan qp = query.getPlan(schema.getName());
+				if(qp != null && qp.getPlanFields().size() > 0) {
+					subQuery.setRequest(qp.getPlanFields());
+				}
+				else {
+					subQuery.setRequest(Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel())));
+				}
+				subQuery.setValue("plan", qp);
+				
+				//List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
+				List<String> subReqFields = subQuery.get(FieldNames.FIELD_REQUEST);
+				/*
 				if(limit) {
-					msfields = msschema.getFields().stream().filter(f -> commonFields.contains(f.getName())).collect(Collectors.toList());
+					msfields = msschema.getFields().stream().filter(f -> subReqFields.contains(f.getName())).collect(Collectors.toList());
 				}
 				else if(!limit) {
+				*/
 					/// Filter blobs and foreign references to models with the same base query out of the otherwise no-limit, no-depth query
 					///
-					List<String> rfields = query.get(FieldNames.FIELD_REQUEST);
+					//List<String> xfields = query.get(FieldNames.FIELD_REQUEST);
+					List<String> xfields = subQuery.get(FieldNames.FIELD_REQUEST);
+					List<String> yfields = new ArrayList<>();
+					if(xfields.size() == 0) {
+						yfields = RecordUtil.getMostRequestFields(model);
+					}
+					List<String> rfields = (yfields.size() > 0 ? yfields : xfields);
 					msfields = msschema.getFields().stream().filter(f -> {
 						FieldSchema fs = msschema.getFieldSchema(f.getName());
 						return (
@@ -522,7 +545,7 @@ public class StatementUtil {
 						);
 					}
 					).collect(Collectors.toList());
-				}
+				//}
 
 			}
 			else {
@@ -1069,7 +1092,7 @@ public class StatementUtil {
 		return getDefaultOrderClause(model, alias, orderMap);
 	}
 	private static String getDefaultOrderClause(String model, String alias, Map<String, String> omap) {
-		if(IOSystem.getActiveContext() == null || !IOSystem.getActiveContext().isInitialized()) {
+		if(!IOSystem.isInitialized()) {
 			return "";
 		}
 		String key = model + "." + alias;

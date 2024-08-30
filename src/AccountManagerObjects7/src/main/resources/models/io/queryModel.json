@@ -156,6 +156,11 @@
 		"ephemeral": true
 	},
 	{
+		"name": "plan",
+		"type": "model",
+		"baseModel": "io.queryPlan"
+	},
+	{
 		"name": "debug",
 		"type": "boolean",
 		"ephemeral": true,

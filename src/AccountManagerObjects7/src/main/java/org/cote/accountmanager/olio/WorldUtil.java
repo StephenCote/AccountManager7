@@ -9,7 +9,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
@@ -17,8 +16,6 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
@@ -43,11 +40,8 @@ public class WorldUtil {
 		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_NAME, worldName);
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
+		q.requestMostFields();
+		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
 
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	
@@ -301,25 +295,7 @@ public class WorldUtil {
 		return deleted;
 	}
 	
-/*
-	public static List<BaseRecord> getPopulation(BaseRecord user, BaseRecord world, BaseRecord location){
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-		BaseRecord popGrp = getLocationGroup(user, world, location, "Population");
-		if(popGrp == null) {
-			logger.error("Failed to find population group");
-			return new ArrayList<>();
-		}
-		q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
-		// q.setCache(false);
-		
-		return new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
-	}
-*/	
+
 	public static BaseRecord getLocationGroup(BaseRecord user, BaseRecord world, BaseRecord location, String name) {
 		List<BaseRecord> grps = getWorldGroups(user, world);
 		BaseRecord ogrp = null;

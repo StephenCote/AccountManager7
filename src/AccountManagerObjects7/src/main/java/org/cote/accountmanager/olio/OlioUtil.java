@@ -366,11 +366,15 @@ public class OlioUtil {
 			}
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
+			q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+			/*
+			q.requestMostFields();
 			try {
 				q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
+			*/
 			q.setCache(false);
 			
 			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
@@ -384,14 +388,15 @@ public class OlioUtil {
 	public static List<BaseRecord> listGroupPopulation(OlioContext ctx, BaseRecord group){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 		q.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
+		//q.requestMostFields();
+		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
+		//q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		//logger.info(q.toSelect());
 		//q.setCache(false);
 		return new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
+	
+
 	
 	protected static <T> BaseRecord getCreateDirectoryObject(BaseRecord user, String modelName, String name, T type, BaseRecord group, BaseRecord template) {
 		Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
@@ -475,7 +480,11 @@ public class OlioUtil {
 		BaseRecord[] recs = new BaseRecord[0];
 
 		try {
+			/*
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
+			q.requestMostFields();
+			*/
+			q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 			if(fieldName != null) {
 				q.field(fieldName, val);
 			}
@@ -484,7 +493,7 @@ public class OlioUtil {
 				recs = qr.getResults();
 			}
 
-		} catch (FieldException | ValueException | ModelNotFoundException | ReaderException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 		return recs;
@@ -492,11 +501,11 @@ public class OlioUtil {
 	
 	public static BaseRecord getFullRecord(BaseRecord rec) {
 		Query q = QueryUtil.createQuery(rec.getModel(), FieldNames.FIELD_ID, rec.get(FieldNames.FIELD_ID));
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
-			logger.error(e);
-		}
+		/*
+		q.requestMostFields();
+		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
+		*/
+		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
@@ -506,29 +515,6 @@ public class OlioUtil {
 		return QueryUtil.getGroupQuery(model, null, (long)dir.get(FieldNames.FIELD_ID), (long)dir.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
 
-	/*
-	public static BaseRecord getCreateRefStore(OlioContext ctx, BaseRecord ref) {
-		BaseRecord store = null;
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_STORE, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("stores.id"));
-		q.field(FieldNames.FIELD_REFERENCE_TYPE, ref.getModel());
-		q.field(FieldNames.FIELD_REFERENCE_ID, ref.get(FieldNames.FIELD_ID));
-		try {
-			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
-			store = IOSystem.getActiveContext().getSearch().findRecord(q);
-			if(store == null) {
-				store = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
-				store.set(FieldNames.FIELD_REFERENCE_TYPE, ref.getModel());
-				store.set(FieldNames.FIELD_REFERENCE_ID, ref.get(FieldNames.FIELD_ID));
-				IOSystem.getActiveContext().getRecordUtil().createRecord(store);
-			}
-
-		} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
-			logger.error(e);
-		}
-		return store;
-	}
-	*/
-	
 	public static BaseRecord cloneIntoGroup(BaseRecord src, BaseRecord dir) {
 		IOSystem.getActiveContext().getReader().populate(src);
 		BaseRecord targ = src.copyDeidentifiedRecord();
@@ -547,6 +533,27 @@ public class OlioUtil {
 		List<BaseRecord> tags = rec.get("tags");
 		return tags.stream().filter(t -> tagName.equalsIgnoreCase(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
 	}
+	
+	public static List<String> FULL_PLAN_FILTER = Arrays.asList(new String[] {
+			FieldNames.FIELD_TAGS,
+			FieldNames.FIELD_ATTRIBUTES,
+			FieldNames.FIELD_CONTROLS,
+			FieldNames.FIELD_OBJECT_ID,
+			FieldNames.FIELD_URN,
+			FieldNames.FIELD_ORGANIZATION_ID,
+			FieldNames.FIELD_ORGANIZATION_PATH,
+			FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_GROUP_PATH,
+			FieldNames.FIELD_BYTE_STORE,
+			FieldNames.FIELD_OWNER_ID,
+			FieldNames.FIELD_SCORE,
+			FieldNames.FIELD_STREAM,
+			FieldNames.FIELD_USERS,
+			FieldNames.FIELD_ACCOUNTS,
+			"items",
+			"socialRing",
+			"dimensions"
+		});
 	
 	
 }

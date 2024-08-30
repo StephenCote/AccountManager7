@@ -1,0 +1,32 @@
+{
+"name": "io.queryPlan",
+"ioConstraints": ["unknown"],
+"fields": [
+	{
+		"name": "modelName",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "fieldName",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "parent",
+		"type": "model",
+		"baseModel": "io.queryPlan",
+		"ephemeral": true
+	},
+	{
+		"name": "plans",
+		"type": "list",
+		"baseType": "model",
+		"baseModel": "io.queryPlan"
+	},
+	{
+		"name": "fields",
+		"type": "list",
+		"baseType": "string"
+	}
+]}

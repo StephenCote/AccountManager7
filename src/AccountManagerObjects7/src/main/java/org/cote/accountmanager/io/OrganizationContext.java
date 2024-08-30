@@ -126,6 +126,7 @@ public class OrganizationContext {
 				Query query = QueryUtil.createQuery(ModelNames.MODEL_CREDENTIAL, FieldNames.FIELD_REFERENCE_TYPE, ModelNames.MODEL_KEY_STORE);
 				query.field(FieldNames.FIELD_REFERENCE_ID, rec.get(FieldNames.FIELD_ID));
 				query.field(FieldNames.FIELD_OWNER_ID, opsUser.get(FieldNames.FIELD_ID));
+				query.requestMostFields();
 				QueryResult res = ioContext.getSearch().find(query);
 				if(res.getResponse() == OperationResponseEnumType.SUCCEEDED && res.getResults().length == 1) {
 					storePass = new String((byte[])res.getResults()[0].get(FieldNames.FIELD_CREDENTIAL)).toCharArray();

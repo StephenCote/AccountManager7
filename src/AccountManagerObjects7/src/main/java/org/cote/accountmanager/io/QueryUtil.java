@@ -78,7 +78,7 @@ public class QueryUtil {
 	public synchronized static String key(BaseRecord query) {
 		String type = query.get(FieldNames.FIELD_TYPE);
 		String order = query.get(FieldNames.FIELD_ORDER);
-		boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
+		//boolean limit = query.get(FieldNames.FIELD_LIMIT_FIELDS);
 		String sortBy = query.get(FieldNames.FIELD_SORT_FIELD);
 		if(sortBy == null) {
 			sortBy = FieldNames.FIELD_ID;
@@ -107,7 +107,7 @@ public class QueryUtil {
 			jF = "*";
 		}
 		
-		return (actorId + "-" + type + "-" + (limit ? "L" : "U") + "-" + sortBy + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + jF + "] [" + reqF + "] " + fieldKey(query));
+		return (actorId + "-" + type + "-" + "-" + sortBy + "-" + order.toLowerCase().substring(0, 3) + "-" + startIndex + "-" + count + " [" + jF + "] [" + reqF + "] " + fieldKey(query));
 	}
 
 	private static String fieldKey(BaseRecord field) {
@@ -298,6 +298,10 @@ public class QueryUtil {
 		return lq;
 	}
 	
+	public static QueryPlan createQueryPlan(String modelName, String fieldName, String[] fields) {
+		return new QueryPlan(modelName, fieldName, fields);
+	}
+	
 	public static <T> Query createQuery(String modelName, String fieldName, T val) {
 		return createQuery(modelName, fieldName, val, 0L);
 	}
@@ -311,13 +315,15 @@ public class QueryUtil {
 			if(organizationId > 0L) {
 				query.field(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 			}
-			/*
-			if(!ModelNames.MODEL_MODEL_SCHEMA.equals(modelName)) {
-				query.setRequest(RecordUtil.getCommonFields(modelName));
+			
+			if(IOSystem.isOpen() && !ModelNames.MODEL_MODEL_SCHEMA.equals(modelName)) {
+				query.requestCommonFields();
 			}
-			*/
-		} catch (NullPointerException | FactoryException e) {
+			
+			// NullPointerException | Factory
+		} catch (Exception e) {
 			logger.error(e);
+			e.printStackTrace();
 			
 		}
 		return query;

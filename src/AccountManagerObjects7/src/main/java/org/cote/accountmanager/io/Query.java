@@ -1,5 +1,6 @@
 package org.cote.accountmanager.io;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
@@ -18,6 +19,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.util.CryptoUtil;
+import org.cote.accountmanager.util.RecordUtil;
 
 
 public class Query extends LooseRecord{
@@ -76,6 +78,69 @@ public class Query extends LooseRecord{
 		}
 	}
 	
+	public QueryPlan getPlan(String fieldName) {
+		QueryPlan fqp = null;
+		BaseRecord plan = get("plan");
+		if(plan != null) {
+			QueryPlan qp = new QueryPlan(plan);
+			fqp = qp.getSubPlan(fieldName);
+		}
+		else {
+			// logger.warn(fieldName + " was null");
+		}
+		return fqp;
+	}
+	
+	public QueryPlan plan(BaseRecord plan) {
+		QueryPlan qp = new QueryPlan(plan);
+		setRequest(qp.getPlanFields());
+		return qp;
+	}
+	
+	public QueryPlan planCommon(boolean recurse) {
+		// requestCommonFields();
+		QueryPlan qp = plan();
+		qp.planForCommonFields(recurse);
+		setRequest(qp.getPlanFields());
+		return qp;
+	}
+	
+	public QueryPlan planMost(boolean recurse) {
+		return planMost(recurse, new ArrayList<>());
+	}
+	public QueryPlan planMost(boolean recurse, List<String> filter) {
+		// requestMostFields();
+		QueryPlan qp = plan();
+		qp.planForMostFields(recurse, filter);
+		setRequest(qp.getPlanFields());
+		return qp;
+	}
+	
+	public QueryPlan plan() {
+		BaseRecord p = get("plan");
+		if(p != null) {
+			return new QueryPlan(p);
+		}
+		List<String> fields = getRequest();
+		if(fields.size() == 0) {
+			requestCommonFields();
+			fields = getRequest();
+		}
+		QueryPlan qp = new QueryPlan((String)get(FieldNames.FIELD_TYPE), null, fields);
+		setValue("plan", qp);
+		return qp;
+	}
+	
+	public void requestAllFields() {
+		setRequest(RecordUtil.getRequestFields((String)get(FieldNames.FIELD_TYPE)));	
+	}
+	public void requestCommonFields() {
+		setRequest(RecordUtil.getCommonFields((String)get(FieldNames.FIELD_TYPE)));
+	}
+	public void requestMostFields() {
+		setRequest(RecordUtil.getMostRequestFields((String)get(FieldNames.FIELD_TYPE)));	
+	}
+	
 	public void setRequestRange(long startRecord, int recordCount) {
 		try {
 			if(startRecord >= 0L) {
@@ -95,6 +160,7 @@ public class Query extends LooseRecord{
 		}
 		setRequestRange(startRecord, recordCount);
 	}
+	/*
 	public void setLimitFields(boolean limit) {
 		try {
 			set(FieldNames.FIELD_LIMIT_FIELDS, limit);
@@ -102,6 +168,7 @@ public class Query extends LooseRecord{
 			logger.error(e);
 		}
 	}
+	*/
 	public void setCache(boolean cache) {
 		try {
 			set(FieldNames.FIELD_CACHE, cache);
@@ -120,6 +187,9 @@ public class Query extends LooseRecord{
 		return get(FieldNames.FIELD_REQUEST);
 	}
 	
+	public void setRequest(List<String> requestFields) {
+		setValue(FieldNames.FIELD_REQUEST, requestFields);
+	}
 	public void setRequest(String[] requestFields) {
 		try {
 			set(FieldNames.FIELD_REQUEST, Arrays.asList(requestFields));
@@ -255,6 +325,7 @@ public class Query extends LooseRecord{
 			sql = meta.getSql();
 		} catch (ModelException | FieldException e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 		
 		return sql;

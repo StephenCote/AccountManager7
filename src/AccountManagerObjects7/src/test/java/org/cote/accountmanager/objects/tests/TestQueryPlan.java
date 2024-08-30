@@ -19,6 +19,7 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryPlan;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
@@ -52,110 +53,51 @@ import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
 
-public class TestOlioRules extends BaseTest {
+public class TestQueryPlan extends BaseTest {
 
 	private boolean debugBreak = true;
 	
 	@Test
-	public void TestOlioCanMove() {
+	public void TestQueryPlan() {
 		
-		logger.info("Test Olio Rules - CanMove");
+		logger.info("Test Query Plan");
 
 		Factory mf = ioContext.getFactory();
-
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");;
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+		q.planMost(true, Arrays.asList(new String[] {
+			FieldNames.FIELD_TAGS,
+			FieldNames.FIELD_ATTRIBUTES,
+			FieldNames.FIELD_CONTROLS,
+			FieldNames.FIELD_OBJECT_ID,
+			FieldNames.FIELD_URN,
+			FieldNames.FIELD_ORGANIZATION_ID,
+			FieldNames.FIELD_ORGANIZATION_PATH,
+			FieldNames.FIELD_GROUP_ID,
+			FieldNames.FIELD_GROUP_PATH,
+			FieldNames.FIELD_BYTE_STORE,
+			FieldNames.FIELD_OWNER_ID,
+			FieldNames.FIELD_SCORE,
+			FieldNames.FIELD_STREAM,
+			FieldNames.FIELD_USERS,
+			FieldNames.FIELD_ACCOUNTS,
+			"items",
+			"socialRing",
+			"dimensions"
+		}));
 		
-		String dataPath = testProperties.getProperty("test.datagen.path");
-		
-		//OlioTestUtil.setResetWorld(true);
-		// OlioTestUtil.setResetUniverse(true);
+		//QueryPlan qp = q.getPlan("apparel.wearables");
+		//logger.info(qp.toFilteredString());
+		logger.info(q.toSelect());
+		logger.info(q.plan().toFilteredString());
+		//assertNotNull("Expected to find the query plan", qp);
+		//logger.info(qp.toFullString());
+		//logger.info(q.toSelect());
 
-		OlioContext octx = null;
-		try{
-			octx = OlioTestUtil.getContext(testOrgContext, dataPath);
-		}
-		catch(StackOverflowError | Exception e) {
-			e.printStackTrace();
-		}
-		/*
-		if(debugBreak) {
-			logger.info("Debug check");
-			return;
-		}
-		*/
-		assertNotNull("Context is null", octx);
-
-
-
-		
-		OlioTestUtil.outfitAndStage(octx);
-		BaseRecord lrec = octx.getLocations()[0];
-		List<BaseRecord> pop = octx.getPopulation(lrec);
-		
-		logger.info("Imprint Characters");
-		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getLaurelPrint());
-		assertNotNull("Person was null", per1);
-		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
-		assertNotNull("Person was null", per2);
-
-		BaseRecord pact = null;
-		try {
-			
-			pact = ActionUtil.getInAction(per1, "look");
-			if(pact != null) {
-				pact.setValue("type", ActionResultEnumType.INCOMPLETE);
-				octx.queueUpdate(pact, new String[] {"type"});
-			}
-			
-			pact = Actions.beginLook(octx, octx.getCurrentIncrement(), per1);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-			
-			pact = Actions.beginGather(octx, octx.getCurrentIncrement(), per1, "water", 3);
-			octx.overwatchActions();
-			// logger.info(pact.toString());
-			/*
-			pact = Actions.beginPeek(octx, octx.getCurrentIncrement(), per1, per1);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-			
-			pact = Actions.beginUndress(octx, octx.getCurrentIncrement(), per1, null, WearLevelEnumType.BASE);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-
-			pact = Actions.beginDress(octx, octx.getCurrentIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-			*/
-
-			// NumberFormatException | StackOverflowError | OlioException | Overwatch
-		} catch (Exception  e) {
-			logger.info(e);
-			e.printStackTrace();
-		}
-		octx.processQueue();
-		/*
-		BaseRecord mact = null;
-		try {
-			mact = ActionUtil.getInAction(per1, "walkTo");
-			if(mact != null) {
-				mact.set("type", ActionResultEnumType.INCOMPLETE);
-				octx.queueUpdate(mact, new String[] {"type"});
-			}
-			mact = Actions.beginMoveTo(octx, octx.getCurrentIncrement(), per1, per2);
-			octx.overwatchActions();
-		} catch (OlioException | OverwatchException | FieldException | ValueException | ModelNotFoundException e) {
-			logger.info(e);
-		}
-		
-		octx.processQueue();
-		*/
 
 	}
-	
 
-	
 
 }

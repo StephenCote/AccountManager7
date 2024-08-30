@@ -34,6 +34,7 @@ public class EventUtil {
 		if(type != EventEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_TYPE, type);
 		}
+		q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
@@ -56,7 +57,7 @@ public class EventUtil {
 			q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		}
 		q.field(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
-		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE});
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE, "eventStart", "eventProgress", "eventEnd"});
 		q.setRequestRange(0L, 100);
 		q.setCache(false);
 
@@ -75,7 +76,8 @@ public class EventUtil {
 		if(eventType != EventEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_TYPE, eventType);
 		}
-		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
+		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
+		q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 		QueryUtil.filterParticipant(q, ModelNames.MODEL_EVENT, fieldNames, person, null);
 		q.setRequestRange(0L, 100);
 		q.setCache(false);
@@ -145,6 +147,7 @@ public class EventUtil {
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)world.get("events.id"));
 		q.field(FieldNames.FIELD_PARENT_ID, 0L);
+		q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
@@ -156,6 +159,7 @@ public class EventUtil {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)world.get("events.id"));
 			q.field(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
+			q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 			evts = IOSystem.getActiveContext().getSearch().findRecords(q);
 		}
 		return evts;
@@ -189,6 +193,7 @@ public class EventUtil {
 		try {
 			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
+			q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 			q.setRequestRange(0L, 1);
 			lastEvt = IOSystem.getActiveContext().getSearch().findRecord(q);
 		}
@@ -207,6 +212,7 @@ public class EventUtil {
 		try {
 			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
+			q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 			q.setRequestRange(0L, 1);
 			epoch = IOSystem.getActiveContext().getSearch().findRecord(q);
 		}

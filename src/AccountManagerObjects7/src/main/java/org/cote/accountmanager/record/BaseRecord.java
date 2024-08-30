@@ -120,6 +120,7 @@ public abstract class BaseRecord {
 			copy = RecordFactory.newInstance(getModel(), outFieldNames);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 		copyIntoRecord(copy, outFieldNames);
 		return copy;
@@ -208,6 +209,24 @@ public abstract class BaseRecord {
 		return outBool;
 	}
 	
+	@JsonIgnore
+	public List<String> getRequestFields(){
+		return RecordFactory.getSchema(model).getFields().stream()
+			.map(f -> f.getName())
+			.collect(Collectors.toList())
+		;
+	}
+
+	@JsonIgnore
+	public List<String> getIdentityFields(){
+		return RecordFactory.getSchema(model).getFields().stream()
+			.filter(f -> f.isSequence() || f.isIdentity())
+			.map(f -> f.getName())
+			.collect(Collectors.toList())
+		;
+	}
+
+	
 	private <T> T getEmbedded(String fieldName) {
 		
 		String[] embedded = fieldName.split("\\.");
@@ -242,6 +261,7 @@ public abstract class BaseRecord {
 			checkField(name);
 		} catch (ModelNotFoundException | FieldException e) {
 			logger.error(e);
+			e.printStackTrace();
 			return null;
 		}
 		
@@ -258,6 +278,7 @@ public abstract class BaseRecord {
 			checkField(name);
 		} catch (ModelNotFoundException | FieldException e) {
 			logger.error(e);
+			e.printStackTrace();
 			return null;
 		}
 		if(!fieldMap.get(name).getValueType().equals(FieldEnumType.ENUM) || fieldMap.get(name).getFieldValueType() == null) {
@@ -334,6 +355,7 @@ public abstract class BaseRecord {
 			set(fieldName, val);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
+			e.printStackTrace();
 		}
 	}
    public synchronized <T> void set(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {

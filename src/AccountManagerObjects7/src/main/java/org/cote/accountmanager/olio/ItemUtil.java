@@ -23,7 +23,6 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -122,11 +121,15 @@ public class ItemUtil {
 		Query q = OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
 		q.field("type", "template");
 		q.field(FieldNames.FIELD_NAME, name);
+		q.planMost(false, OlioUtil.FULL_PLAN_FILTER);
+		q.getRequest().add(FieldNames.FIELD_TAGS);
+		/*
 		try {
 			q.set(FieldNames.FIELD_LIMIT_FIELDS, false);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+		*/
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
