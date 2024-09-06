@@ -23,20 +23,25 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryPlan;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.TraitEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
+import org.cote.accountmanager.util.ErrorUtil;
 
 public class OlioUtil {
 	public static final Logger logger = LogManager.getLogger(OlioUtil.class);
@@ -315,14 +320,34 @@ public class OlioUtil {
 		if(fnlist.size() == 0) {
 			return;
 		}
+
 		fnlist.add(FieldNames.FIELD_ID);
-		fnlist.add(FieldNames.FIELD_OWNER_ID);
+		//fnlist.add(FieldNames.FIELD_OWNER_ID);
+		ModelSchema ms = RecordFactory.getSchema(record.getModel());
 		fnlist.sort((f1, f2) -> f1.compareTo(f2));
-		Set<String> fieldSet = fnlist.stream().collect(Collectors.toSet());
+		Set<String> fieldSet = fnlist.stream().filter(s -> {
+			boolean outBool = true;
+			FieldSchema fs = ms.getFieldSchema(s);
+			/// Leave the identity as it's necessary to actually perform the update
+			/// fs.isIdentity() || 
+			if(fs.isForeign() && fs.getFieldType() == FieldEnumType.LIST) {
+				logger.warn("Skip " + record.getModel() + "." + s);
+				outBool = false;
+			}
+			return outBool;
+		}).collect(Collectors.toSet());
+		
+		if(fieldSet.size() == 0) {
+			logger.error("No valid fields specified to update");
+			ErrorUtil.printStackTrace();
+			return;
+		}
+		
 		String key = "UP-" + record.getModel() + "-" + fieldSet.stream().collect(Collectors.joining("-"));
 		if(!queue.containsKey(key)) {
 			queue.put(key, new ArrayList<>());
 		}
+		
 		queue.get(key).add(record.copyRecord(fieldSet.toArray(new String[0])));
 	}
 	
@@ -368,7 +393,7 @@ public class OlioUtil {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
 			planMost(q);
-			q.setCache(false);
+			// q.setCache(false);
 			
 			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 			ctx.getPopulationMap().put(id, pop);
@@ -514,6 +539,21 @@ public class OlioUtil {
 		return tags.stream().filter(t -> tagName.equalsIgnoreCase(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
 	}
 	
+	public static void batchAddForeignList(OlioContext ctx, BaseRecord rec, String fieldName, List<BaseRecord> parts) {
+		List<BaseRecord> flist = rec.get(fieldName);
+		/// 
+		for(BaseRecord p : parts) {
+			flist.add(p);
+			ctx.queue(p);
+		}
+		ctx.processQueue();
+		for(BaseRecord p: parts) {
+			ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), rec, fieldName, p));
+		}
+		ctx.processQueue();
+	}
+
+	
 	public static void planMost(Query q) {
 		q.planMost(true, FULL_PLAN_FILTER);
 		prunePlan(q.plan());
@@ -577,7 +617,7 @@ public class OlioUtil {
 			FieldNames.FIELD_URN,
 			FieldNames.FIELD_ORGANIZATION_ID,
 			FieldNames.FIELD_ORGANIZATION_PATH,
-			FieldNames.FIELD_GROUP_ID,
+			//FieldNames.FIELD_GROUP_ID,
 			FieldNames.FIELD_GROUP_PATH,
 			FieldNames.FIELD_BYTE_STORE,
 			FieldNames.FIELD_OWNER_ID,

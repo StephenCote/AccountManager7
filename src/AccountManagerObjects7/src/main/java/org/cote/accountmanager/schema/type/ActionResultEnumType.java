@@ -7,7 +7,8 @@ public enum ActionResultEnumType {
 	INCOMPLETE,
 	COMPLETE,
 	IN_PROGRESS,
-	PENDING
+	PENDING,
+	ERROR
 	;
 	
 	

@@ -62,7 +62,7 @@ public class Overwatch {
 		INTERACTION
 	};
 	
-	/// Some actions may result in many small incremental and/or repeating steps, such as moving between two points
+	/// Some actions may result in many small incremental and/or repeating steps, such as moving between two points.  If the average walking speed is 1.2 meters per second.
 	private int maximumProcessCount = 500;
 	
 	private Clock clock = null;

@@ -75,6 +75,19 @@ public class GeoLocationUtil {
 		return mapCellHeightM;
 	}
 	
+	
+	public static List<BaseRecord> sortByDistanceToState(List<BaseRecord> list, BaseRecord state)
+	{
+		return list.stream().sorted((p1, p2) -> {
+			int sort = 0;
+			double d1 = getDistanceToState(p1.get("state"), state);
+			double d2 = getDistanceToState(p2.get("state"), state);
+			if(d1 < d2) sort = -1;
+			else if(d1 > d2) sort = 1;
+			return sort;
+		}).collect(Collectors.toList());
+	}
+
 	public static List<BaseRecord> sortByDistance(List<BaseRecord> list, String fieldX, String fieldY, int origX, int origY)
 	{
 		return list.stream().sorted((p1, p2) -> {
@@ -603,20 +616,15 @@ public class GeoLocationUtil {
 	}
 	
 	public static List<BaseRecord> limitToAdjacent(OlioContext ctx, List<BaseRecord> pop, BaseRecord location){
+		if(pop.size() == 0) {
+			return new ArrayList<>();
+		}
 		long locId = location.get(FieldNames.FIELD_ID);
 		List<BaseRecord> acells = getAdjacentCells(ctx, location, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 		List<Long> aids = acells.stream().map(c -> ((long)c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		return pop.stream().filter(zp ->{
 			BaseRecord zloc = zp.get("state.currentLocation");
 			long zlid = (zloc != null ? zloc.get("id") : 0L);
-			/*
-			if(zlid == 0L) {
-				logger.warn("Null animal location");
-			}
-			else {
-				logger.info("Animal location: " + zlid + " ~ " + locId);
-			}
-			*/
 			return (zlid > 0 && (zlid == locId || aids.contains(zlid)));
 		}).collect(Collectors.toList());
 	}
@@ -636,7 +644,6 @@ public class GeoLocationUtil {
 		int pnorth = north + distance;
 		int nnorth = north - distance;
 		long id = origin.get("id");
-		// logger.info("adj " + id + " " + peast + ", " + pnorth + " " + neast + ", " + nnorth + " from " + cells.size() + " cells");
 		List<BaseRecord> outCells = cells.stream().filter(c -> {
 			long cid = c.get("id");
 			int ceast = c.get("eastings");
@@ -648,7 +655,6 @@ public class GeoLocationUtil {
 				&&
 				cnorth >= nnorth && cnorth <= pnorth
 			);
-			//return (cid != id && (ceast == peast || ceast == neast || ceast == east) && (cnorth == pnorth || cnorth == nnorth || cnorth == north));
 		}).collect(Collectors.toList());
 		return outCells;
 	}
@@ -667,7 +673,7 @@ public class GeoLocationUtil {
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, id);
 		cq.field("geoType", "cell");
 		cq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
-		cq.setCache(false);
+		//cq.setCache(false);
 		OlioUtil.planMost(cq);
 		List<BaseRecord> cells = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(cq));
 		if(cells.size() > 0) {

@@ -71,37 +71,22 @@ public class CharacterUtil {
 
 		BaseRecord namesDir = parWorld.get("names");
 		BaseRecord surDir = parWorld.get("surnames");
-		BaseRecord occDir = parWorld.get("occupations");
 		BaseRecord popDir = world.get("population");
-		BaseRecord statDir = world.get("statistics");
-		BaseRecord instDir = world.get("instincts");
-		BaseRecord behDir = world.get("behaviors");
-		BaseRecord pperDir = world.get("personalities");
-		BaseRecord stDir = world.get("states");
-		BaseRecord stoDir = world.get("stores");
-		BaseRecord proDir = world.get("profiles");
-		IOSystem.getActiveContext().getReader().populate(popDir);
+		// IOSystem.getActiveContext().getReader().populate(popDir);
 		
-		ParameterList plist = ParameterList.newParameterList("path", popDir.get(FieldNames.FIELD_PATH));
-		ParameterList plist2 = ParameterList.newParameterList("path", statDir.get(FieldNames.FIELD_PATH));
-		ParameterList plist3 = ParameterList.newParameterList("path", instDir.get(FieldNames.FIELD_PATH));
-		ParameterList plist4 = ParameterList.newParameterList("path", behDir.get(FieldNames.FIELD_PATH));
-		ParameterList plist5 = ParameterList.newParameterList("path", pperDir.get(FieldNames.FIELD_PATH));
-		ParameterList plist6 = ParameterList.newParameterList("path", stDir.get(FieldNames.FIELD_PATH));
-		ParameterList plist7 = ParameterList.newParameterList("path", stoDir.get(FieldNames.FIELD_PATH));
-		ParameterList plist8 = ParameterList.newParameterList("path", proDir.get(FieldNames.FIELD_PATH));
+
 		BaseRecord person = null;
 		
 		try {
-			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, user, null, plist2);
-			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INSTINCT, user, null, plist3);
-			BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, user, null, plist4);
-			BaseRecord pper = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PERSONALITY, user, null, plist5);
-			BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, user, null, plist6);
-			BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, user, null, plist7);
-			BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, user, null, plist8);
+			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
+			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INSTINCT, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("instincts.path")));
+			BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("behaviors.path")));
+			BaseRecord pper = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PERSONALITY, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("personalities.path")));
+			BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path")));
+			BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
+			BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("profiles.path")));
 			
-			person = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, user, null, plist);
+			person = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("population.path")));
 			person.set("statistics", stats);
 			person.set("instinct", inst);
 			person.set("behavior", beh);

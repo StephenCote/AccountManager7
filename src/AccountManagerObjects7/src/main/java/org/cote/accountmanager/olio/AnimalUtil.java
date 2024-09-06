@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -73,7 +75,6 @@ public class AnimalUtil {
 
 		List<BaseRecord> oanims = new ArrayList<>();
 		for(BaseRecord anim: animals) {
-			//BaseRecord oanim = anim.copyDeidentifiedRecord();
 			BaseRecord oanim = anim;
 			BaseRecord state = oanim.get("state");
 			try {
@@ -96,7 +97,7 @@ public class AnimalUtil {
 			List<BaseRecord> cells = GeoLocationUtil.getCells(ctx, location);
 			if(cells.size() > 0) {
 				for(BaseRecord c: cells) {
-					Map<String, List<BaseRecord>> cpap = paintAnimalPopulation(ctx, location, c);
+					Map<String, List<BaseRecord>> cpap = createAnimalPopulation(ctx, c);
 					for(String k: cpap.keySet()) {
 						if(!pap.containsKey(k)) {
 							pap.put(k, new ArrayList<>());
@@ -115,8 +116,9 @@ public class AnimalUtil {
 		ctx.processQueue();
 		return pap;
 	}
-	public static Map<String, List<BaseRecord>> paintAnimalPopulation(OlioContext ctx, BaseRecord location, BaseRecord cell) {
-		Map<String, List<BaseRecord>> cpap = getAnimalPopulation(ctx, cell, 3);
+	
+	protected static Map<String, List<BaseRecord>> createAnimalPopulation(OlioContext ctx, BaseRecord cell) {
+		Map<String, List<BaseRecord>> cpap = newAnimalPopulation(ctx, cell);
 		List<BaseRecord> apap = new ArrayList<>();
 		for(String k: cpap.keySet()) {
 			apap.addAll(cpap.get(k));
@@ -129,10 +131,10 @@ public class AnimalUtil {
 	/// Note: The location isn't attached here and is only used for the id and type, because in a grid map setup, the animals should be attached to the child cells, but they need to be spread around and not all clumped together
 	///
 	/// Note: For 'feature' terrain, child cells may have other terraintypes that would be naturally less likely for the animal to occur - eg: don't drop the horse in the middle of a lake
-	public static Map<String, List<BaseRecord>> getAnimalPopulation(OlioContext ctx, BaseRecord location){
-		return getAnimalPopulation(ctx, location, Rules.ANIMAL_GROUP_COUNT);
+	protected static Map<String, List<BaseRecord>> newAnimalPopulation(OlioContext ctx, BaseRecord location){
+		return newAnimalPopulation(ctx, location, Rules.ANIMAL_GROUP_COUNT, Rules.ANIMAL_MAX_GROUP_COUNT);
 	}
-	public static Map<String, List<BaseRecord>> getAnimalPopulation(OlioContext ctx, BaseRecord location, int maxCount){
+	protected static Map<String, List<BaseRecord>> newAnimalPopulation(OlioContext ctx, BaseRecord location, int maxCount, int maxGroupCount){
 		long id = location.get(FieldNames.FIELD_ID);
 		if(animalSpread.containsKey(id)) {
 			return animalSpread.get(id);
@@ -142,8 +144,13 @@ public class AnimalUtil {
 		if(random.nextDouble() <= Rules.ODDS_ANY_ANIMAL_GROUP) {
 			TerrainEnumType type = TerrainEnumType.valueOf((String)location.get("terrainType"));
 			List<BaseRecord> animp = getAnimalTemplates(ctx).stream().filter(a -> ((List<String>)a.get("habitat")).contains(type.toString().toLowerCase())).collect(Collectors.toList());
+			Collections.shuffle(animp);
 			double odds = Rules.getAnimalOdds(type);
+			int total = 0;
 			for(BaseRecord a : animp) {
+				if(total >= Rules.ANIMAL_MAX_GROUP_COUNT) {
+					break;
+				}
 				if(random.nextDouble() <= odds) {
 					int count = random.nextInt(1, maxCount);
 					// logger.info("Add a " + a.get("groupName") + " of " + a.get(FieldNames.FIELD_NAME) + " with " + count);
@@ -164,12 +171,18 @@ public class AnimalUtil {
 								it.set("type", null);
 							}
 							BaseRecord state = anim1.get("state");
+							if(total == 0 && (long)anim1.get("state.groupId") == 0L) {
+								logger.info((long)anim1.get("state.groupId"));
+								logger.info(state.toFullString());
+								ErrorUtil.printStackTrace();
+							}
 							state.setValue("currentLocation", location);
 							StateUtil.setInitialLocation(ctx, state);
 							//StateUtil.agitateLocation(ctx, state);
 
 							anim1.set(FieldNames.FIELD_TYPE, "random");
 							state.set("alive", random.nextDouble() > Rules.ANIMAL_CARCASS_ODDS);
+							total++;
 							
 						} catch (FieldException | ValueException | ModelNotFoundException e) {
 							logger.error(e);

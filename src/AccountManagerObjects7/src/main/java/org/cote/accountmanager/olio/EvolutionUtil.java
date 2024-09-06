@@ -99,7 +99,7 @@ public class EvolutionUtil {
 			for(BaseRecord p: pop) {
 				int age =  CharacterUtil.getCurrentAge(ctx, p);
 				p.set("age",age);
-				OlioUtil.queueUpdate(ctx.getQueue(), p, new String[] {"age"});
+				ctx.queueUpdate(p, new String[] {"age"});
 			}
 			
 			logger.info("Updating population ...");

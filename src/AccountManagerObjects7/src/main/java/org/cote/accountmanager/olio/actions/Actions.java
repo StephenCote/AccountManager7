@@ -126,8 +126,15 @@ public class Actions {
 		String actionName = params.get("actionName");
 		BaseRecord cact = ActionUtil.getInAction(actor, actionName);
 		if(cact != null) {
-			logger.warn(actor.get(FieldNames.FIELD_NAME) + " is already in the middle of a '" + actionName + "' action.  Current action must be completed or abandoned.");
-			return cact;
+			if(params != null && (boolean)params.get("autoComplete") == true) {
+				logger.info("Auto-completing " + actor.get(FieldNames.FIELD_NAME) + "'s current '" + actionName + "' action.");
+				cact.setValue("type", ActionResultEnumType.INCOMPLETE);
+				context.queueUpdate(cact, new String[] {"type"});
+			}
+			else {
+				logger.warn(actor.get(FieldNames.FIELD_NAME) + " is already in the middle of a '" + actionName + "' action.  Current action must be completed or abandoned.");
+				return cact;
+			}
 		}
 		
 		BaseRecord action = ActionUtil.getAction(context, actionName);
@@ -230,7 +237,7 @@ public class Actions {
 		
 	}
 	public static BaseRecord beginGather(OlioContext ctx, BaseRecord evt, BaseRecord per1, String itemCategory, int quantity) throws OlioException {
-		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.PHYSIOLOGICAL, null, "gather");
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.PHYSIOLOGICAL, null, "gather", true);
 		params.setValue("itemCategory", itemCategory);
 		params.setValue("quantity", quantity);
 		return beginAction(ctx, evt, params, per1, null);
@@ -242,7 +249,8 @@ public class Actions {
 	}
 	
 	public static BaseRecord beginMoveTo(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2) throws OlioException {
-		return beginAction(ctx, evt, per1, per2, AssessmentEnumType.CURIOSITY, "walkTo");
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "walkTo", true);
+		return beginAction(ctx, evt, params, per1, per2);
 	}
 	
 	public static BaseRecord beginDress(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, WearLevelEnumType level) throws OlioException {
@@ -258,11 +266,13 @@ public class Actions {
 	}
 
 	public static BaseRecord beginPeek(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2) throws OlioException {
-		return beginAction(ctx, evt, per1, per2, AssessmentEnumType.CURIOSITY, "peek");
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "peek", true);
+		return beginAction(ctx, evt, params, per1, per2);
 	}
 
 	public static BaseRecord beginLook(OlioContext ctx, BaseRecord evt, BaseRecord per1) throws OlioException {
-		return beginAction(ctx, evt, per1, null, AssessmentEnumType.CURIOSITY, "look");
+		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "look", true);
+		return beginAction(ctx, evt, params, per1, null);
 	}
 
 

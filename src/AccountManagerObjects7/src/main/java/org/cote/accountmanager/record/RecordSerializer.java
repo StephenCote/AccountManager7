@@ -3,7 +3,10 @@ package org.cote.accountmanager.record;
 import java.io.IOException;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -35,6 +38,8 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	private boolean condenseDeclarations = false;
 	private boolean stopCondensing = false;
 	private boolean condenseFields = false;
+	
+	private Set<String> recursionSet = new HashSet<>();
 	
     public RecordSerializer() {
 
@@ -273,12 +278,47 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        				///
 		        				if(lft.getBaseModel() != null && (lft.getBaseModel().equals(value.getModel()) || value.inherits(lft.getBaseModel()))) {
 		        					BaseRecord o2 = (BaseRecord)o;
-		        					Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
-		        					List<String> ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
+		        					String recKey = null;
+		        					
+		        					List<String> ol = new ArrayList<>();
+		        					if(o2.hasField(FieldNames.FIELD_ID)) {
+		        						long id = o2.get(FieldNames.FIELD_ID);
+		        						recKey = o2.getModel() + "-#" + Long.toString(id);
+		        					}
+		        					if(recKey != null && recursionSet.contains(recKey)) {
+		        						logger.warn("Stop recursion: " + recKey);
+		        						ol = Arrays.asList(new String[] {FieldNames.FIELD_ID});
+		        					}
+		        					else {
+		        						Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
+		        						ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
+		        						if(recKey != null) {
+		        							recursionSet.add(recKey);
+		        						}
+		        					}
 		        					jgen.writeObject(o2.copyRecord(ol.toArray(new String[0])));
 		        				}
 		        				else {
-		        					jgen.writeObject(o);
+		        					if(o instanceof BaseRecord) {
+		        						BaseRecord o2 = (BaseRecord)o;
+		        						String recKey = null;
+			        					if(o2.hasField(FieldNames.FIELD_ID)) {
+			        						long id = o2.get(FieldNames.FIELD_ID);
+			        						recKey = o2.getModel() + "-#" + Long.toString(id);
+			        					}
+			        					if(recKey != null && recursionSet.contains(recKey)) {
+			        						logger.warn("Stop recursion: " + recKey);
+			        						jgen.writeObject(o2.copyRecord(new String[] {FieldNames.FIELD_ID}));
+			        					}
+			        					else {
+			        						recursionSet.add(recKey);
+			        						jgen.writeObject(o2);
+			        					}
+		        					}
+		        					else {
+		        				
+		        						jgen.writeObject(o);
+		        					}
 		        				}
 		        			}
 		        			jgen.writeEndArray();

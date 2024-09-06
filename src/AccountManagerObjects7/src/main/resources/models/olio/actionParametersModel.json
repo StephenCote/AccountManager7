@@ -43,6 +43,11 @@
 			"type": "boolean"
 		},
 		{
+			"name": "autoComplete",
+			"type": "boolean",
+			"description": "In an action is interrupted for some reason, and then the same action attempted again, setting autoComplete to true will conclude the incomplete action.  Otherwise, if false the new action won't start until the prior action is completed."
+		},
+		{
 			"name": "duration",
 			"type": "int",
 			"default": 0,

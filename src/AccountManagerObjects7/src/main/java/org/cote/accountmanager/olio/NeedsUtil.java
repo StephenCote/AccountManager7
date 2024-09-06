@@ -13,6 +13,7 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.actions.ActionUtil;
@@ -90,7 +91,7 @@ public class NeedsUtil {
 		List<BaseRecord> acts = new ArrayList<>();
 		return acts;
 	}
-	
+		
 	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
@@ -103,10 +104,8 @@ public class NeedsUtil {
 		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = getAgitatedThreatMap(ctx, realm, increment, map, false);
 		List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
 
-		for(BaseRecord tint : tinters) {
-			inters.add(tint);
-			ctx.queue(tint);
-		}
+		OlioUtil.batchAddForeignList(ctx, increment, "interactions", tinters);
+
 		logger.info("Calculating threat interactions ... " + tinters.size());
 		
 		/// Evaluate needs 
@@ -115,14 +114,8 @@ public class NeedsUtil {
 		
 		/// Delegate actions
 		GroupDynamicUtil.delegateActions(ctx, locationEpoch, increment, map, actions);
-		ctx.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
-		// String nar = NarrativeUtil.lookaround(ctx, realm, increment, increment, group, group.get((new Random()).nextInt(0,group.size())), tmap);
-		// logger.info(nar);
-		
-		/*
-		MapUtil.printLocationMap(ctx, locationEpoch.get(FieldNames.FIELD_LOCATION), realm, group);
-		MapUtil.printRealmMap(ctx, realm);
-		*/
+		// ctx.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
+
 		List<BaseRecord> acts = new ArrayList<>();
 		
 		return acts;

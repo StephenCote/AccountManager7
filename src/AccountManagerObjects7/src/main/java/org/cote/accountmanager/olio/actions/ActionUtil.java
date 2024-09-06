@@ -150,6 +150,9 @@ public class ActionUtil {
 	}
 	
 	public static BaseRecord newActionParameters(AssessmentEnumType needType, String needName, String actionName) {
+		return newActionParameters(needType, needName, actionName, false);
+	}
+	public static BaseRecord newActionParameters(AssessmentEnumType needType, String needName, String actionName, boolean autoComplete) {
 
 		BaseRecord actionParams = null;
 		try {
@@ -157,6 +160,7 @@ public class ActionUtil {
 			actionParams.set("actionName", actionName);
 			actionParams.set("needType", needType);
 			actionParams.set("needName", needName);
+			actionParams.set("autoComplete", autoComplete);
 
 		} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 			logger.error(e);

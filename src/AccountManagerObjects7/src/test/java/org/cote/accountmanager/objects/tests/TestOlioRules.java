@@ -30,6 +30,7 @@ import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
+import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
@@ -69,8 +70,8 @@ public class TestOlioRules extends BaseTest {
 		
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		
-		OlioTestUtil.setResetWorld(true);
-		//OlioTestUtil.setResetUniverse(true);
+		// OlioTestUtil.setResetWorld(true);
+		// OlioTestUtil.setResetUniverse(true);
 		 
 		OlioContext octx = null;
 		try{
@@ -100,6 +101,23 @@ public class TestOlioRules extends BaseTest {
 		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
 
+		BaseRecord realm = octx.getRealm(lrec);
+		
+		
+		MapUtil.printLocationMap(octx, lrec, realm, pop);
+		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
+		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, lrec));
+		
+		
+		/*
+		List<BaseRecord> zoo = realm.get("zoo");
+		List<BaseRecord> vzoo = GeoLocationUtil.limitToAdjacent(octx, zoo, per1.get("state.currentLocation"));
+		logger.info("View Zoo: " + vzoo.size());
+		for(BaseRecord a: zoo) {
+			double dist = GeoLocationUtil.getDistanceToState(per1.get("state"), a.get("state"));
+			logger.info(a.get("name") + " " + dist + "m");
+		}
+		*/
 		BaseRecord pact = null;
 		try {
 			
@@ -108,6 +126,12 @@ public class TestOlioRules extends BaseTest {
 				pact.setValue("type", ActionResultEnumType.INCOMPLETE);
 				octx.queueUpdate(pact, new String[] {"type"});
 			}
+			/// Epochs and increments are currently pinned against the root location of a realm (which made sense at some point and now just seems like it causes more problems than it solves)
+			/// Therefore, in order to process an action for an actor, it's necessary to start or continue the epoch and increment for their root location in order for the context to be correct, such as if trying to obtain the realm based on the context location, which would return the last location processed, not the correct location
+			///
+			///
+			octx.startOrContinueLocationEpoch(lrec);
+			octx.startOrContinueIncrement();
 			
 			pact = Actions.beginLook(octx, octx.getCurrentIncrement(), per1);
 			octx.overwatchActions();
@@ -130,8 +154,9 @@ public class TestOlioRules extends BaseTest {
 			logger.info(pact.toString());
 			*/
 
-			// NumberFormatException | StackOverflowError | OlioException | Overwatch
-		} catch (Exception  e) {
+			// 
+		}
+		catch (NullPointerException | NumberFormatException | StackOverflowError | OlioException | OverwatchException  e) {
 			logger.info(e);
 			e.printStackTrace();
 		}

@@ -28,7 +28,13 @@ public class Look  extends CommonAction implements IAction {
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor)
 			throws OlioException {
 		// TODO Auto-generated method stub
-		return null;
+		
+		BaseRecord cell = actor.get("state.currentLocation");
+		if(cell == null) {
+			throw new OlioException("Missing current location");
+		}
+		
+		return actionResult;
 	}
 	
 	@Override
@@ -38,6 +44,18 @@ public class Look  extends CommonAction implements IAction {
 		List<String> res = actionResult.get("results");
 		
 		BaseRecord cell = actor.get("state.currentLocation");
+		
+		if(cell == null) {
+			logger.error("Current location is null");
+			/*
+			BaseRecord state = actor.get("state");
+			logger.error(state.toFullString());
+			*/
+			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.ERROR);
+			return false;
+			
+			
+		}
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(context, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 
 		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));

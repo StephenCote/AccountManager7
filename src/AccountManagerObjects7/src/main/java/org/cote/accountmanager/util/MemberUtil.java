@@ -268,7 +268,7 @@ public class MemberUtil implements IMember {
 		boolean outBool = false;
 		
 		Query q = QueryUtil.createParticipationQuery(user, object, fieldName, actor, effect);
-		q.setCache(false);
+		/// q.setCache(false);
 		/// Clear the cache for any checks for existing membership
 		///
 		CacheUtil.clearCache(q.hash());

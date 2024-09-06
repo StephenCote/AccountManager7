@@ -59,7 +59,7 @@ public class EventUtil {
 		q.field(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
 		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE, "eventStart", "eventProgress", "eventEnd"});
 		q.setRequestRange(0L, 100);
-		q.setCache(false);
+		// q.setCache(false);
 
 		try {
 			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
@@ -79,7 +79,7 @@ public class EventUtil {
 		q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 		QueryUtil.filterParticipant(q, ModelNames.MODEL_EVENT, fieldNames, person, null);
 		q.setRequestRange(0L, 100);
-		q.setCache(false);
+		// q.setCache(false);
 
 		try {
 			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");

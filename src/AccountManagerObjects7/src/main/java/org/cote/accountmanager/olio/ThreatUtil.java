@@ -111,7 +111,7 @@ public class ThreatUtil {
 		return tet;
 	}
 	
-	public static List<AnimalProfile> evaluateAnimalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
+	public static Map<ThreatEnumType, List<AnimalProfile>> evaluateAnimalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
 		BaseRecord state = person.getRecord().get("state");
 		// BaseRecord stats = person.get("statistics");
 		//PersonalityProfile pp = group.get(person);
@@ -120,21 +120,27 @@ public class ThreatUtil {
 		NeedsUtil.agitateLocation(ctx, realm, event, zoo, false, true);
 		
 		/// Find animals in the current and adjacent cells
-		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(ctx, zoo, state.get("currentLocation"));
-		List<AnimalProfile> tpop = new ArrayList<>();
-		Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(zpop);
-		for(AnimalProfile ap : amap.values()) {
+		List<BaseRecord> zpop = GeoLocationUtil.sortByDistanceToState(GeoLocationUtil.limitToAdjacent(ctx, zoo, state.get("currentLocation")), person.getRecord().get("state"));
+		//List<AnimalProfile> tpop = new ArrayList<>();
+		Map<ThreatEnumType, List<AnimalProfile>> tpop = new HashMap<>();
+		//Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(zpop);
+		//for(AnimalProfile ap : amap.values()) {
+		for(BaseRecord apr: zpop) {
+			AnimalProfile ap = ProfileUtil.getAnimalProfile(apr);
 			// boolean toxic = isToxic(ap.getRecord());
 			ThreatEnumType tet = evaluateAggressive(ap, person, ThreatEnumType.ANIMAL_THREAT, ThreatEnumType.ANIMAL_TARGET);
 			if(tet != ThreatEnumType.NONE) {
-				tpop.add(ap);
+				if(!tpop.containsKey(tet)) {
+					tpop.put(tet, new ArrayList<>());
+				}
+				tpop.get(tet).add(ap);
 			}
 		}
 		return tpop;
 	}
 
 	
-	public static List<PersonalityProfile> evaluatePersonalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
+	public static Map<ThreatEnumType, List<PersonalityProfile>> evaluatePersonalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
 		BaseRecord state = person.getRecord().get("state");
 
 		long id = person.getId();
@@ -150,7 +156,7 @@ public class ThreatUtil {
 		/// Find people in the current and adjacent cells
 		List<BaseRecord> ppop = GeoLocationUtil.limitToAdjacent(ctx, pop, state.get("currentLocation"));
 
-		List<PersonalityProfile> tpop = new ArrayList<>();
+		Map<ThreatEnumType, List<PersonalityProfile>> tpop = new HashMap<>();
 		Map<BaseRecord, PersonalityProfile> amap = ProfileUtil.getProfileMap(ctx, ppop);
 		for(PersonalityProfile ap : amap.values()) {
 			if(ap.getId() == id) {
@@ -159,7 +165,10 @@ public class ThreatUtil {
 			}
 			ThreatEnumType tet = evaluateAggressive(ap, person, ThreatEnumType.PERSONAL_THREAT, ThreatEnumType.PERSONAL_TARGET);
 			if(tet != ThreatEnumType.NONE) {
-				tpop.add(ap);
+				if(!tpop.containsKey(tet)) {
+					tpop.put(tet, new ArrayList<>());
+				}
+				tpop.get(tet).add(ap);
 			}
 		}
 
@@ -185,15 +194,24 @@ public class ThreatUtil {
 	}
 	
 	public static Map<ThreatEnumType,List<BaseRecord>> evaluateImminentThreats(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person) {
-		Map<ThreatEnumType,List<BaseRecord>> threats = new HashMap<>();
-		
+		Map<ThreatEnumType, List<BaseRecord>> threats = new HashMap<>();
+		Map<ThreatEnumType, List<AnimalProfile>> amap = evaluateAnimalThreat(ctx, realm, event, group, person);
+		for(ThreatEnumType tet : amap.keySet()) {
+			addThreat(threats, tet, amap.get(tet).stream().map(a -> a.getRecord()).collect(Collectors.toList()));
+		}
+		Map<ThreatEnumType, List<PersonalityProfile>> pmap =  evaluatePersonalThreat(ctx, realm, event, group, person);
+		for(ThreatEnumType tet : pmap.keySet()) {
+			addThreat(threats, tet, pmap.get(tet).stream().map(a -> a.getRecord()).collect(Collectors.toList()));
+		}
+
+		/*
 		List<AnimalProfile> anim = evaluateAnimalThreat(ctx, realm, event, group, person);
 		addThreat(threats, ThreatEnumType.EXISTENTIAL_THREAT, anim.stream().filter(a -> a.getFixations().size() > 0).map(a -> a.getRecord()).collect(Collectors.toList()));
 		addThreat(threats, ThreatEnumType.ANIMAL_THREAT, anim.stream().filter(a -> a.getFixations().size() == 0).map(a -> a.getRecord()).collect(Collectors.toList()));
 		List<PersonalityProfile> people = evaluatePersonalThreat(ctx, realm, event, group, person);
 		addThreat(threats, ThreatEnumType.EXISTENTIAL_THREAT, people.stream().filter(a -> a.getFixations().size() > 0).map(a -> a.getRecord()).collect(Collectors.toList()));
 		addThreat(threats, ThreatEnumType.PERSONAL_THREAT, people.stream().filter(a -> a.getFixations().size() == 0).map(a -> a.getRecord()).collect(Collectors.toList()));
-
+		*/
 		return threats;
 	}
 	private static void addThreat(Map<ThreatEnumType,List<BaseRecord>> map, ThreatEnumType threat, List<BaseRecord> recs) {

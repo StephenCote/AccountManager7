@@ -86,7 +86,8 @@ public class Rules {
 	/// General guideline when dropping a small group of animals in a location
 	/// When using the map grid, the location size is a square km
 	///
-	public static final int ANIMAL_GROUP_COUNT = 10;
+	public static final int ANIMAL_MAX_GROUP_COUNT = 10;
+	public static final int ANIMAL_GROUP_COUNT = 3;
 	
 	/// 15% chance of an animal being dead
 	///
