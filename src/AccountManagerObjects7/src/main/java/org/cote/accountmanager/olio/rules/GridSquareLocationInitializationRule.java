@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio.rules;
 
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -40,8 +39,6 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 public class GridSquareLocationInitializationRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(GridSquareLocationInitializationRule.class);
 	
-	private SecureRandom rand = new SecureRandom();
-
 	public GridSquareLocationInitializationRule() {
 
 	}
@@ -188,13 +185,11 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 
 	@Override
 	public void postgenerate(OlioContext context) {
-		// TODO Auto-generated method stub
 		
 	}
 
 	@Override
 	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
-		// TODO Auto-generated method stub
 		
 	}
 

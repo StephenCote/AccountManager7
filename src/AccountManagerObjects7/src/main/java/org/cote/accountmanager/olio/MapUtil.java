@@ -44,12 +44,12 @@ public class MapUtil {
 	public static void printMapFromAdmin2(OlioContext ctx) {
 		/// Find the admin2 location of the first location and map that
 		///
-		BaseRecord[] locs = ctx.getLocations();
-		if(locs.length == 0) {
+		List<BaseRecord> locs = ctx.getLocations();
+		if(locs.size() == 0) {
 			logger.error("Context does not contain any locations!");
 			return;
 		}
-		BaseRecord loc = locs[0];
+		BaseRecord loc = locs.get(0);
 		IOSystem.getActiveContext().getReader().populate(loc);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_ID, loc.get(FieldNames.FIELD_PARENT_ID));
 		OlioUtil.planMost(pq);
@@ -66,7 +66,7 @@ public class MapUtil {
 		logger.info("Printing admin2 location " + location.get(FieldNames.FIELD_ID) + " " + location.get(FieldNames.FIELD_NAME));
 
 		IOSystem.getActiveContext().getReader().populate(location);
-		List<BaseRecord> locs = new ArrayList<>(Arrays.asList(ctx.getLocations()));
+		List<BaseRecord> locs = ctx.getLocations();
 		
 		/// This will look for the locations only in the universe, not the world
 		/// These are the templates, and the context locations will be substituted for these

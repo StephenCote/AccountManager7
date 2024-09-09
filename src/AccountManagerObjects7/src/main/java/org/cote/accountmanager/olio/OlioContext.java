@@ -5,7 +5,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -45,7 +47,7 @@ public class OlioContext {
 	///
 	private BaseRecord currentEpoch = null;
 	
-	private BaseRecord[] locations = new BaseRecord[0];
+	private List<BaseRecord> locations = new ArrayList<>();
 	private List<BaseRecord> populationGroups = new ArrayList<>();
 	/// Each location event defaults to 1 year
 	/// All events for a location within that period of time fall under the location event
@@ -334,9 +336,11 @@ public class OlioContext {
 				logger.info("Get/Create Epoch ...");
 			}
 			currentEpoch = EventUtil.getLastEpochEvent(this);
-			//clock = new Clock(currentEpoch);
 			
-			locations = GeoLocationUtil.getRegionLocations(this);
+			locations = getRealms().stream().map(r -> (BaseRecord)r.get("origin")).collect(Collectors.toList());
+			
+			//locations = GeoLocationUtil.getRegionLocations(this);
+
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
 
 			initialized = true;
@@ -425,25 +429,39 @@ public class OlioContext {
 			}
 		}
 	}
-	public BaseRecord[] getRealms() {
-		List<BaseRecord> rlms = new ArrayList<>();
-		for(BaseRecord loc: getLocations()) {
-			rlms.add(getRealm(loc));
+
+	public List<BaseRecord> getRealms() {
+		if(realms.size() > 0) {
+			return realms;
 		}
-		return rlms.toArray(new BaseRecord[0]);
+		
+		Query rq = QueryUtil.createQuery(ModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, world.get("realmsGroup.id"));
+		OlioUtil.planMost(rq);
+		realms.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(rq)));
+		
+		if(realms.size() == 0) {
+			List<BaseRecord> locs = GeoLocationUtil.getRegionLocations(this);
+			for(BaseRecord loc: locs) {
+				realms.add(getRealm(loc));
+			}
+		}
+		return realms;
 	}
-	private Map<Long, BaseRecord> realmMap = new ConcurrentHashMap<>();
+
 	public BaseRecord getRealm(BaseRecord location) {
 		long id = location.get(FieldNames.FIELD_ID);
-		if(!realmMap.containsKey(id)) {
-			BaseRecord realm = RealmUtil.getCreateRealm(this, location);
+		Optional<BaseRecord> rlm = realms.stream().filter(r -> id == (long)r.get("origin.id")).findFirst();
+		BaseRecord realm = null;
+		if(!rlm.isPresent()) {
+			realm = RealmUtil.getCreateRealm(this, location);
 			if(realm == null) {
 				logger.error("Realm is null");
 				return null;
 			}
-			realmMap.put(id, realm);
 		}
-		BaseRecord realm = realmMap.get(id);
+		else {
+			realm = rlm.get();
+		}
 		updateRealm(realm);
 		return realm;
 	}
@@ -604,7 +622,7 @@ public class OlioContext {
 		return populationMap;
 	}
 
-	public BaseRecord[] getLocations() {
+	public List<BaseRecord> getLocations() {
 		return locations;
 	}
 

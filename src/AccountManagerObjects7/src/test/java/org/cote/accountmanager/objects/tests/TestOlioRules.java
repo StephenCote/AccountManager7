@@ -80,20 +80,22 @@ public class TestOlioRules extends BaseTest {
 		catch(StackOverflowError | Exception e) {
 			e.printStackTrace();
 		}
+		
+
+		
+		assertNotNull("Context is null", octx);
+
+
+		OlioTestUtil.outfitAndStage(octx);
+		BaseRecord lrec = octx.getLocations().get(0);
+		List<BaseRecord> pop = octx.getPopulation(lrec);
+		
 		/*
 		if(debugBreak) {
 			logger.info("Debug check");
 			return;
 		}
 		*/
-		assertNotNull("Context is null", octx);
-
-
-
-		
-		OlioTestUtil.outfitAndStage(octx);
-		BaseRecord lrec = octx.getLocations()[0];
-		List<BaseRecord> pop = octx.getPopulation(lrec);
 		
 		logger.info("Imprint Characters");
 		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getLaurelPrint());

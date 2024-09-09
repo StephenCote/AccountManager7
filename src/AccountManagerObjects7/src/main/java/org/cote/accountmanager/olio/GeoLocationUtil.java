@@ -811,10 +811,10 @@ public class GeoLocationUtil {
 		}
 		return loc;
 	}
-	public static BaseRecord[] getRegionLocations(OlioContext ctx) {
+	public static List<BaseRecord> getRegionLocations(OlioContext ctx) {
 		return getRegionLocations(ctx.getOlioUser(), ctx.getWorld());
 	}
-	public static BaseRecord[] getRegionLocations(BaseRecord user, BaseRecord world) {
+	public static List<BaseRecord> getRegionLocations(BaseRecord user, BaseRecord world) {
 		List<BaseRecord> locs = new ArrayList<>();
 		BaseRecord[] evts = EventUtil.getBaseRegionEvents(user, world);
 		if(evts.length == 0) {
@@ -823,7 +823,7 @@ public class GeoLocationUtil {
 		for(BaseRecord evt : evts) {
 			locs.add(evt.get("location"));
 		}
-		return locs.toArray(new BaseRecord[0]);
+		return locs;
 	}
 	
 	public static BaseRecord randomLocation(BaseRecord user, BaseRecord world) {

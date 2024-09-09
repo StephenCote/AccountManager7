@@ -45,6 +45,7 @@ public class RealmUtil {
 
 		ParameterList plist = ParameterList.newParameterList("path", world.get("realmsGroup.path"));
 		BaseRecord realm = null;
+		IOSystem.getActiveContext().getReader().populate(origin, new String[] {FieldNames.FIELD_NAME});
 		try {
 			realm = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_REALM, ctx.getOlioUser(), null, plist);
 			realm.set("origin", origin);

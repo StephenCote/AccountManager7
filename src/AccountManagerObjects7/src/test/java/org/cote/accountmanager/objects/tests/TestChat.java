@@ -178,9 +178,9 @@ public class TestChat extends BaseTest {
 	
 		OlioContext ctx = getContext(user);
 		assertNotNull("Context is null", ctx);
-		BaseRecord[] realms = ctx.getRealms();
-		assertTrue("Expected at least one realm", realms.length > 0);
-		BaseRecord popGrp = realms[0].get("population");
+		List<BaseRecord> realms = ctx.getRealms();
+		assertTrue("Expected at least one realm", realms.size() > 0);
+		BaseRecord popGrp = realms.get(0).get("population");
 		assertNotNull("Expected a population group", popGrp);
 		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(ctx, popGrp);
 		assertTrue("Expected a population", pop.size() > 0);
@@ -195,7 +195,7 @@ public class TestChat extends BaseTest {
 			}
 		}
 		
-		BaseRecord[] locs = ctx.getLocations();
+		List<BaseRecord> locs = ctx.getLocations();
 		BaseRecord levt = null;
 		for(BaseRecord lrec : locs) {
 			levt = ctx.startOrContinueLocationEpoch(lrec);
@@ -276,7 +276,7 @@ public class TestChat extends BaseTest {
 		BaseRecord levt = null;
 		BaseRecord cevt = null;
 		assertNotNull("Epoch is null", evt);
-		BaseRecord[] locs = octx.getLocations();
+		List<BaseRecord> locs = octx.getLocations();
 		for(BaseRecord lrec : locs) {
 			levt = octx.startOrContinueLocationEpoch(lrec);
 			assertNotNull("Location epoch is null", levt);
@@ -291,8 +291,8 @@ public class TestChat extends BaseTest {
 		
 		}
 
-		BaseRecord[] realms = octx.getRealms();
-		assertTrue("Expected at least one realm", realms.length > 0);
+		List<BaseRecord> realms = octx.getRealms();
+		assertTrue("Expected at least one realm", realms.size() > 0);
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
 		AuditUtil.setLogToConsole(true);
 		return octx;

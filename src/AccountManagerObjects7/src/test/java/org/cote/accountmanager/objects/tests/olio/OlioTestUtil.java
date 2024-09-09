@@ -406,7 +406,7 @@ public class OlioTestUtil {
 	}
 	
 	public static void outfitAndStage(OlioContext ctx) {
-		BaseRecord[] locs = ctx.getLocations();
+		List<BaseRecord> locs = ctx.getLocations();
 		for(BaseRecord lrec : locs) {
 			ApparelUtil.outfitAndStage(ctx, null, ctx.getPopulation(lrec));
 			ItemUtil.showerWithMoney(ctx, ctx.getPopulation(lrec));
