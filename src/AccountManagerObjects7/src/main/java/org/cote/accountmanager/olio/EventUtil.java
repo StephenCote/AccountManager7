@@ -39,10 +39,10 @@ public class EventUtil {
 	}
 	
 	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, EventEnumType eventType) {
-		return getChildEvents(world, parentEvent, null, null, TimeEnumType.UNKNOWN, eventType);
+		return getChildEvents(world, parentEvent, null, null, null, TimeEnumType.UNKNOWN, eventType);
 	}
 	
-	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, BaseRecord location, String name, TimeEnumType timeType, EventEnumType eventType) {
+	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, BaseRecord realm, BaseRecord location, String name, TimeEnumType timeType, EventEnumType eventType) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 		if(eventType != EventEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_TYPE, eventType);
@@ -55,6 +55,9 @@ public class EventUtil {
 		}
 		if(location != null) {
 			q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		}
+		if(realm != null) {
+			q.field(FieldNames.FIELD_REALM, realm.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		}
 		q.field(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
 		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE, "eventStart", "eventProgress", "eventEnd"});
@@ -371,7 +374,7 @@ public class EventUtil {
 	
 	public static BaseRecord getCreateIncrement(OlioContext context, BaseRecord parentEvent, ZonedDateTime time, TimeEnumType tet) throws FieldException, ValueException, ModelNotFoundException {
 		String name = getTimeName(time, tet);
-		BaseRecord[] cevts = EventUtil.getChildEvents(context.getWorld(), parentEvent, null, name, tet, EventEnumType.UNKNOWN);
+		BaseRecord[] cevts = EventUtil.getChildEvents(context.getWorld(), parentEvent, null, null, name, tet, EventEnumType.UNKNOWN);
 		if(cevts.length > 0) {
 			parentEvent.set("eventProgress", time);
 			context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));

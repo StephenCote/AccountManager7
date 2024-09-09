@@ -301,5 +301,6 @@ public class FieldNames {
 		
 		// Olio
 		public static final String FIELD_LOCATION = "location";
+		public static final String FIELD_REALM = "realm";
 		public static final String FIELD_GROUPS = "groups";
 }

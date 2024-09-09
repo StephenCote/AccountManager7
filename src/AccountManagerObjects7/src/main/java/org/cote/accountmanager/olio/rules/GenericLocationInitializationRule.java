@@ -15,7 +15,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 
-public class GenericLocationInitializationRule implements IOlioContextRule {
+public class GenericLocationInitializationRule extends CommonContextRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(GenericLocationInitializationRule.class);
 	
 	private String rootLocationName = null;
@@ -64,24 +64,6 @@ public class GenericLocationInitializationRule implements IOlioContextRule {
 		recs.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(lq)));
 		logger.info("Returning " + recs.size() + " locs");
 		return recs.toArray(new BaseRecord[0]);
-	}
-
-	@Override
-	public void postgenerate(OlioContext context) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public BaseRecord generate(OlioContext context) {
-		// TODO Auto-generated method stub
-		return null;
 	}
 
 	

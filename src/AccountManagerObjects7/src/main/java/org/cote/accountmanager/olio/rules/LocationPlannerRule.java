@@ -12,7 +12,7 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
-public class LocationPlannerRule implements IOlioContextRule {
+public class LocationPlannerRule extends CommonContextRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(LocationPlannerRule.class);
 	
 	@Override
@@ -51,29 +51,6 @@ public class LocationPlannerRule implements IOlioContextRule {
 	private String campFire = "Field|Campfire";
 	private String standardVillage = "Village|Village Square|Hut";
 	private String standardHamlet = "Hamlet|Town Square|Main Street,SideStreet|House|Living Room,Bedroom";
-
-
-
-	@Override
-	public void pregenerate(OlioContext context) {
-		// TODO Auto-generated method stub
-		
-	}
-	@Override
-	public void postgenerate(OlioContext context) {
-		// TODO Auto-generated method stub
-		
-	}
-	@Override
-	public BaseRecord[] selectLocations(OlioContext context) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-	@Override
-	public BaseRecord generate(OlioContext context) {
-		// TODO Auto-generated method stub
-		return null;
-	}
 
 
 }

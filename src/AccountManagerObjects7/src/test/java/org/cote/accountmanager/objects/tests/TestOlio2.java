@@ -88,7 +88,7 @@ import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GenericStateRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
-import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
+import org.cote.accountmanager.olio.rules.HierarchicalNeedsEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
@@ -167,7 +167,7 @@ public class TestOlio2 extends BaseTest {
 		
 		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
 			new Increment24HourRule(),
-			new HierarchicalNeedsRule()
+			new HierarchicalNeedsEvolveRule()
 		}));
 		
 		cfg.getStateRules().addAll(Arrays.asList(new IOlioStateRule[] {
@@ -181,12 +181,12 @@ public class TestOlio2 extends BaseTest {
 		assertTrue("Expected context to be initialized", octx.isInitialized());
 		
 		logger.info("Get realms");
-		BaseRecord[] realms = octx.getRealms();
-		assertTrue("Expected realms", realms.length > 0);
+		List<BaseRecord> realms = octx.getRealms();
+		assertTrue("Expected realms", realms.size() > 0);
 		logger.info("Start/Continue Epoch");
 		BaseRecord evt = octx.startOrContinueEpoch();
 		
-		BaseRecord realm = realms[0];
+		BaseRecord realm = realms.get(0);
 		BaseRecord lrec = realm.get("origin");
 		assertNotNull("Location was null", lrec);
 		
@@ -221,7 +221,7 @@ public class TestOlio2 extends BaseTest {
 		logger.info(per1.get("state.id") + " " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
-		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms[0].get("origin")));
+		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms.get(0).get("origin")));
 		//BaseRecord upar = GeoLocationUtil.getParentLocation(octx, per1.get("state.currentLocation"));
 		// MapUtil.printPovLocationMap(octx, realm, per1, 3);
 		// MapUtil.printPovLocationMap(octx, realm, per2, 3);

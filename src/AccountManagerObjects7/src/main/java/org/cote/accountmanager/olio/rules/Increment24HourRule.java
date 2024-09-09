@@ -13,7 +13,8 @@ import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 
-public class Increment24HourRule implements IOlioEvolveRule {
+public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolveRule {
+
 	public static final Logger logger = LogManager.getLogger(Increment24HourRule.class);
 	private TimeEnumType incrementType = TimeEnumType.HOUR;
 	
@@ -36,35 +37,13 @@ public class Increment24HourRule implements IOlioEvolveRule {
 		logger.info("Continuing epoch: " + epoch.get(FieldNames.FIELD_NAME) + " at " + epoch.get("eventProgress"));
 	}
 
-	@Override
-	public void endEpoch(OlioContext context, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void beginEvolution(OlioContext context) {
-		// TODO Auto-generated method stub
-		
-	}
 
 	@Override
 	public void startLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
 		EventUtil.edgeTimes(epoch);
 	}
 
-	@Override
-	public void continueLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void endLocationEpoch(OlioContext context, BaseRecord previousEpoch, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
+	
 	@Override
 	public BaseRecord startIncrement(OlioContext context, BaseRecord locationEpoch) {
 		BaseRecord rec = continueIncrement(context, locationEpoch);
@@ -110,14 +89,6 @@ public class Increment24HourRule implements IOlioEvolveRule {
 	@Override
 	public BaseRecord nextIncrement(OlioContext context, BaseRecord parentEvent) {
 		return EventUtil.findNextIncrement(context, parentEvent, incrementType);
-	}
-
-	
-
-	@Override
-	public void evaluateIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment) {
-		// TODO Auto-generated method stub
-		
 	}
 	
 }

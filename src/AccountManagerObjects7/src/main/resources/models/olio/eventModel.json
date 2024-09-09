@@ -15,7 +15,7 @@
 	"label": "Olio Event",
 	"dedicatedParticipation": true,
 	"constraints": ["name, parentId, groupId, organizationId"],
-	"query": ["name", "id", "objectId", "ownerId", "parentId", "type"],
+	"query": ["name", "id", "objectId", "ownerId", "parentId", "type", "state"],
 	"fields": [
 		{
 			"name": "type",

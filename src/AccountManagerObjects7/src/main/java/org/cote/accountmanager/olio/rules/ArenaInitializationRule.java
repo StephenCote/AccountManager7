@@ -31,7 +31,7 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 ///   - The kident area MAY NOT REPRESENT 100Km - it will be the product of mapWidth1km x mapHeight1km. Depending on the type of map being constructed, it may be desirable to cut this down, such as to 50.  However, note that the naming convention will still imply 100km square, while the area will correctly reflect the adjusted size.
 ///   - The numerical locations are constructed only with 100m square blocks at the moment, with the intent that they may be subdivided as needed
 ///
-public class ArenaInitializationRule implements IOlioContextRule {
+public class ArenaInitializationRule extends CommonContextRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(ArenaInitializationRule.class);
 	
 	private SecureRandom rand = new SecureRandom();
@@ -170,11 +170,6 @@ public class ArenaInitializationRule implements IOlioContextRule {
 		return recs.toArray(new BaseRecord[0]);
 	}
 
-	@Override
-	public void postgenerate(OlioContext context) {
-		// TODO Auto-generated method stub
-		
-	}
 	public static BaseRecord findLocation(OlioContext context, String name) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, context.getUniverse().get("locations.id"));
 		q.field(FieldNames.FIELD_NAME, name);
@@ -192,12 +187,6 @@ public class ArenaInitializationRule implements IOlioContextRule {
     	prepField(context, field2);
     	prepField(context, field3);
 		
-	}
-
-	@Override
-	public BaseRecord generate(OlioContext context) {
-		// TODO Auto-generated method stub
-		return null;
 	}
 
 	

@@ -45,7 +45,7 @@ import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericStateRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
-import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
+import org.cote.accountmanager.olio.rules.HierarchicalNeedsEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
@@ -105,7 +105,7 @@ public class OlioTestUtil {
 		
 		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
 			new Increment24HourRule(),
-			new HierarchicalNeedsRule()
+			new HierarchicalNeedsEvolveRule()
 		}));
 		
 		cfg.getStateRules().addAll(Arrays.asList(new IOlioStateRule[] {
@@ -120,6 +120,8 @@ public class OlioTestUtil {
 		
 		logger.info("Start/Continue Epoch");
 		BaseRecord evt = octx.startOrContinueEpoch();
+		octx.startOrContinueRealmEpochs();
+		/*
 		for(BaseRecord lrec : octx.getLocations()) {
 		
 			logger.info("Start/Continue Location Epoch");
@@ -130,7 +132,7 @@ public class OlioTestUtil {
 			BaseRecord cevt = octx.startOrContinueIncrement();
 			octx.evaluateIncrement();
 		}
-		
+		*/
 		AuditUtil.setLogToConsole(true);
 		
 		return octx;

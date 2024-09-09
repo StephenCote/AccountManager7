@@ -36,7 +36,7 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 ///   - The kident area MAY NOT REPRESENT 100Km - it will be the product of mapWidth1km x mapHeight1km. Depending on the type of map being constructed, it may be desirable to cut this down, such as to 50.  However, note that the naming convention will still imply 100km square, while the area will correctly reflect the adjusted size.
 ///   - The numerical locations are constructed only with 100m square blocks at the moment, with the intent that they may be subdivided as needed
 ///
-public class GridSquareLocationInitializationRule implements IOlioContextRule {
+public class GridSquareLocationInitializationRule extends CommonContextRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(GridSquareLocationInitializationRule.class);
 	
 	public GridSquareLocationInitializationRule() {
@@ -182,16 +182,5 @@ public class GridSquareLocationInitializationRule implements IOlioContextRule {
 
 		return recs.toArray(new BaseRecord[0]);
 	}
-
-	@Override
-	public void postgenerate(OlioContext context) {
-		
-	}
-
-	@Override
-	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
-		
-	}
-
 	
 }

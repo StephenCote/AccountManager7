@@ -394,6 +394,36 @@ public class OlioContext {
 	public BaseRecord[] getChildEvents(BaseRecord event) {
 		return EventUtil.getChildEvents(world, event, EventEnumType.UNKNOWN);
 	}
+	
+	public boolean startOrContinueRealmEpochs() {
+		BaseRecord ep = startOrContinueEpoch();
+		int errors = 0;
+		if(ep != null) {
+			List<BaseRecord> rlms = getRealms();
+			for(BaseRecord r: rlms) {
+				r.setValue("currentEpoch", ep);
+				queueUpdate(r, new String[] {"currentEpoch"});
+				BaseRecord revt = startOrContinueRealmEpoch(r);
+				if(revt == null) {
+					logger.error("Failed to start or continue realm epoch");
+					errors++;
+					continue;
+				}
+				BaseRecord ievt = startOrContinueRealmIncrement(r);
+				if(ievt == null) {
+					logger.error("Failed to start or continue realm increment");
+					errors++;
+					continue;
+				}
+				evaluateIncrement(r);
+			}
+		}
+		else {
+			errors++;
+		}
+		processQueue();
+		return (errors == 0);
+	}
 
 	public BaseRecord startOrContinueEpoch() {
 		BaseRecord e = null;
@@ -437,13 +467,23 @@ public class OlioContext {
 		
 		Query rq = QueryUtil.createQuery(ModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, world.get("realmsGroup.id"));
 		OlioUtil.planMost(rq);
+		//logger.info(rq.toSelect());
 		realms.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(rq)));
 		
 		if(realms.size() == 0) {
+			logger.info("Creating realms ...");
 			List<BaseRecord> locs = GeoLocationUtil.getRegionLocations(this);
 			for(BaseRecord loc: locs) {
 				realms.add(getRealm(loc));
 			}
+		}
+		else {
+			BaseRecord tr = realms.get(0);
+			BaseRecord ci = tr.get("currentIncrement");
+			//if(ci != null) {
+				//logger.info("Debug realm:");
+				//logger.info(tr.toFullString());
+			//}
 		}
 		return realms;
 	}
@@ -492,13 +532,38 @@ public class OlioContext {
 			}
 		}
 	}
+
+	public BaseRecord startOrContinueRealmEpoch(BaseRecord realm) {
+		if(currentEpoch == null) {
+			logger.error("Current epoch is null");
+			return null;
+		}
+		
+		BaseRecord cevt = realm.get("currentEvent");
+		
+		if(cevt != null) {
+			ActionResultEnumType aet = ActionResultEnumType.valueOf(cevt.get(FieldNames.FIELD_STATE));
+			if(aet == ActionResultEnumType.PENDING) {
+				for(IOlioEvolveRule r : config.getEvolutionRules()) {
+					r.continueRealmEpoch(this, realm, currentEpoch);
+				}
+				return currentEpoch;
+			}
+			else {
+				logger.warn("Current realm epoch is not in a pending state");
+				logger.warn(cevt.toFullString());
+			}
+		}
+		return startRealmEpoch(realm);
+
+	}
 	
 	public BaseRecord startOrContinueLocationEpoch(BaseRecord location) {
 		if(currentEpoch == null) {
 			logger.error("Current epoch is null");
 			return null;
 		}
-		BaseRecord[] childEvts = EventUtil.getChildEvents(world, currentEpoch, location, null, TimeEnumType.UNKNOWN, EventEnumType.UNKNOWN);
+		BaseRecord[] childEvts = EventUtil.getChildEvents(world, currentEpoch, null, location, null, TimeEnumType.UNKNOWN, EventEnumType.UNKNOWN);
 		if(childEvts.length > 0) {
 			if(childEvts.length > 1) {
 				logger.warn("Expected only 1 location epoch and found " + childEvts.length);
@@ -527,6 +592,15 @@ public class OlioContext {
 	public void endLocationEpoch(BaseRecord location) {
 		EpochUtil.endLocationEpoch(this, location);
 	}
+
+	public BaseRecord startRealmEpoch(BaseRecord realm) {
+		return EpochUtil.startRealmEpoch(this, realm);
+	}
+	public void endRealmEpoch(BaseRecord realm) {
+		EpochUtil.endRealmEpoch(this, realm);
+	}
+
+	
 	public void endEpoch() {
 		EpochUtil.endEpoch(this);
 	}
@@ -539,6 +613,30 @@ public class OlioContext {
 			r.evaluateIncrement(this, currentEvent, currentIncrement);
 		}
 	}
+	
+	public void evaluateIncrement(BaseRecord realm) {
+		BaseRecord evt = realm.get("currentEvent");
+		BaseRecord ievt = realm.get("currentIncrement");
+		if(evt == null) {
+			logger.error("Invalid current event");
+			return;
+		}
+		if(ievt == null) {
+			logger.error("Invalid current increment");
+			return;
+		}
+		for(IOlioEvolveRule r : config.getEvolutionRules()) {
+			r.evaluateRealmIncrement(this, realm);
+		}		
+	}
+	
+	public BaseRecord startOrContinueRealmIncrement(BaseRecord realm) {
+		BaseRecord evt = startOrContinueIncrement(realm.get("currentEvent"));
+		realm.setValue("currentIncrement", evt);
+		queueUpdate(realm, new String[] {"currentIncrement"});
+		return evt;
+	}
+	
 	public BaseRecord startOrContinueIncrement() {
 		return startOrContinueIncrement(currentEvent);
 	}

@@ -12,8 +12,8 @@ import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.record.BaseRecord;
 
-public class HierarchicalNeedsRule implements IOlioEvolveRule {
-	public static final Logger logger = LogManager.getLogger(HierarchicalNeedsRule.class);
+public class HierarchicalNeedsEvolveRule extends CommonEvolveRule implements IOlioEvolveRule {
+	public static final Logger logger = LogManager.getLogger(HierarchicalNeedsEvolveRule.class);
 
 	private static final SecureRandom random = new SecureRandom();
 	
@@ -45,72 +45,6 @@ public class HierarchicalNeedsRule implements IOlioEvolveRule {
 		} catch (OverwatchException e) {
 			logger.error(e);
 		}
-	}
-	
-	@Override
-	public void startEpoch(OlioContext context, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void continueEpoch(OlioContext context, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void endEpoch(OlioContext context, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void startLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void continueLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void endLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public BaseRecord startIncrement(OlioContext context, BaseRecord locationEpoch) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public BaseRecord continueIncrement(OlioContext context, BaseRecord locationEpoch) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public void endIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord currentIncrement) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public BaseRecord nextIncrement(OlioContext context, BaseRecord parentEvent) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public void beginEvolution(OlioContext context) {
-		// TODO Auto-generated method stub
-		
 	}
 	
 }

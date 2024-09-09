@@ -23,44 +23,14 @@ import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 
-public class ArenaEvolveRule implements IOlioEvolveRule {
+public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule {
 	public static final Logger logger = LogManager.getLogger(ArenaEvolveRule.class);
 
 	private static final SecureRandom random = new SecureRandom();
 
 	@Override
-	public void startEpoch(OlioContext context, BaseRecord epoch) {
-		EventUtil.edgeTimes(epoch);
-		
-	}
-
-	@Override
-	public void continueEpoch(OlioContext context, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void endEpoch(OlioContext context, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
 	public void startLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
 		EventUtil.edgeTimes(epoch);
-		
-	}
-
-	@Override
-	public void continueLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void endLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		// TODO Auto-generated method stub
 		
 	}
 
@@ -143,5 +113,6 @@ public class ArenaEvolveRule implements IOlioEvolveRule {
 		IOSystem.getActiveContext().getMemberUtil().deleteMembers(OlioUtil.getCreatePopulationGroup(context, animalParty1Name), null);
 		
 	}
+
 
 }

@@ -187,29 +187,52 @@ public class EpochUtil {
 		}
 	}
 	
+	
+	public static void endRealmEpoch(OlioContext ctx, BaseRecord realm) {
+		endEpoch(ctx, realm.get("currentEvent"));
+		realm.setValue("currentEvent", null);
+		ctx.queueUpdate(realm, new String[]{"currentEvent"});
+		ctx.processQueue();
+	}
+	
 	public static void endLocationEpoch(OlioContext ctx, BaseRecord location) {
+		endEpoch(ctx, ctx.getCurrentEvent());
+	}
+	
+	protected static void endEpoch(OlioContext ctx, BaseRecord evt) {
 
 		if(!ctx.validateContext()) {
 			logger.error("Context is not valid");
 			return;
 		}
-		if(ctx.getCurrentEvent() == null) {
-			logger.error("Current location epoch is null");
+		
+		if(evt == null) {
+			logger.error("Current epoch is null");
 			return;
 		}
-		ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEvent().get(FieldNames.FIELD_STATE));
+
+		
+		ActionResultEnumType aet = ActionResultEnumType.valueOf(evt.get(FieldNames.FIELD_STATE));
 		if(aet != ActionResultEnumType.PENDING) {
 			logger.error("The current location epoch is not in a pending state.  Therefore, no activities will take place");
 			return;
 		}
 		try {
-			ctx.getCurrentEvent().set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
-			ctx.queue(ctx.getCurrentEvent().copyRecord(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+			evt.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
+			ctx.queueUpdate(evt, new String[]{FieldNames.FIELD_STATE});
 			ctx.processQueue();
 			ctx.setCurrentEvent(null);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+	}
+	
+	public static BaseRecord startRealmEpoch(OlioContext ctx, BaseRecord realm) {
+		BaseRecord loc = realm.get("origin");
+		BaseRecord epoch = startLocationEpoch(ctx, loc);
+		realm.setValue("currentEvent", epoch);
+		ctx.queueUpdate(realm, new String[] {"currentEvent"});
+		return epoch;
 	}
 	
 	public static BaseRecord startLocationEpoch(OlioContext ctx, BaseRecord location) {

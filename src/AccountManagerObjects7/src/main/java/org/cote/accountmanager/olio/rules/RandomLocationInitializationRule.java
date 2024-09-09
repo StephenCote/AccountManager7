@@ -12,18 +12,11 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
-public class RandomLocationInitializationRule implements IOlioContextRule {
+public class RandomLocationInitializationRule extends CommonContextRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(RandomLocationInitializationRule.class);
 	
 	public RandomLocationInitializationRule() {
 
-	}
-	
-	
-	@Override
-	public void pregenerate(OlioContext context) {
-	
-		
 	}
 	
 	/// Select locationCount + 1 (world) locations randomly from the universe.  The first location will be treated as the world location.
@@ -47,25 +40,5 @@ public class RandomLocationInitializationRule implements IOlioContextRule {
 		}
 		return locations.toArray(new BaseRecord[0]);
 	}
-
-	@Override
-	public void postgenerate(OlioContext context) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
-		// TODO Auto-generated method stub
-		
-	}
-
-
-	@Override
-	public BaseRecord generate(OlioContext context) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
 	
 }

@@ -9,7 +9,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.record.BaseRecord;
 
-public class GenericItemDataLoadRule implements IOlioContextRule {
+public class GenericItemDataLoadRule extends CommonContextRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(GenericItemDataLoadRule.class);
 	
 	@Override
@@ -24,24 +24,6 @@ public class GenericItemDataLoadRule implements IOlioContextRule {
 		ItemUtil.loadItems(context);
 		BuilderUtil.loadBuilders(context);
 		AnimalUtil.loadAnimals(context);
-	}
-
-	@Override
-	public BaseRecord[] selectLocations(OlioContext context) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public BaseRecord generate(OlioContext context) {
-		// TODO Auto-generated method stub
-		return null;
 	}
 
 }

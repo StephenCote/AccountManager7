@@ -70,7 +70,7 @@ public class TestOlioRules extends BaseTest {
 		
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		
-		// OlioTestUtil.setResetWorld(true);
+		//OlioTestUtil.setResetWorld(true);
 		// OlioTestUtil.setResetUniverse(true);
 		 
 		OlioContext octx = null;
@@ -80,7 +80,12 @@ public class TestOlioRules extends BaseTest {
 		catch(StackOverflowError | Exception e) {
 			e.printStackTrace();
 		}
-		
+
+		if(debugBreak) {
+			logger.info("Debug check");
+			return;
+		}
+
 
 		
 		assertNotNull("Context is null", octx);
@@ -90,12 +95,7 @@ public class TestOlioRules extends BaseTest {
 		BaseRecord lrec = octx.getLocations().get(0);
 		List<BaseRecord> pop = octx.getPopulation(lrec);
 		
-		/*
-		if(debugBreak) {
-			logger.info("Debug check");
-			return;
-		}
-		*/
+		
 		
 		logger.info("Imprint Characters");
 		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getLaurelPrint());

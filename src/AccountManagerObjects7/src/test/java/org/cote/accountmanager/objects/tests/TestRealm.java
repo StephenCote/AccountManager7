@@ -43,7 +43,7 @@ import org.cote.accountmanager.olio.llm.PromptRaceConfiguration;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
-import org.cote.accountmanager.olio.rules.HierarchicalNeedsRule;
+import org.cote.accountmanager.olio.rules.HierarchicalNeedsEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
@@ -107,7 +107,7 @@ public class TestRealm extends BaseTest {
 		// incRule.setIncrementType(TimeEnumType.HOUR);
 		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
 			new Increment24HourRule(),
-			new HierarchicalNeedsRule()
+			new HierarchicalNeedsEvolveRule()
 		}));
 
 		OlioContext octx = new OlioContext(cfg);
@@ -222,7 +222,7 @@ public class TestRealm extends BaseTest {
 		// incRule.setIncrementType(TimeEnumType.HOUR);
 		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
 			new Increment24HourRule(),
-			new HierarchicalNeedsRule()
+			new HierarchicalNeedsEvolveRule()
 		}));
 
 		OlioContext octx = new OlioContext(cfg);
