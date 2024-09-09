@@ -215,7 +215,7 @@ public class EventUtil {
 			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
 			q.requestCommonFields();
-			q.getRequest().addAll(Arrays.asList(new String[] {"state", "location", "eventStart", "eventProgress", "eventEnd"}));
+			q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
 			q.setRequestRange(0L, 1);
 			epoch = IOSystem.getActiveContext().getSearch().findRecord(q);
 		}

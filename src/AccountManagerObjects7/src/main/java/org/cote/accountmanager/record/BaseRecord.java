@@ -83,11 +83,13 @@ public abstract class BaseRecord {
 		return toConcrete(cls);
 	}
 	
+	@SuppressWarnings("unchecked")
 	public <T> T toConcrete(Class<?> cls) {
-		@SuppressWarnings("unchecked")
 		T obj = (T)RecordFactory.toConcrete(this, cls);
 		return obj;
 	}
+	
+	@SuppressWarnings("unchecked")
 	public BaseRecord copyDeidentifiedRecord() {
 		List<String> fields = RecordFactory.getSchema(model).getFields().stream()
 			.filter(f -> (!f.isIdentity() && !f.isVirtual() && !f.isEphemeral()))

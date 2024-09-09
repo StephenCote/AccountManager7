@@ -374,6 +374,9 @@ public class OlioUtil {
 		if(grp.isPresent()) {
 			ogrp = grp.get();
 		}
+		else {
+			logger.warn("No population group for " + locName);
+		}
 		return ogrp;
 	}
 	protected static int countPeople(BaseRecord group) {
@@ -381,6 +384,25 @@ public class OlioUtil {
 		pq.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
 		return IOSystem.getActiveContext().getSearch().count(pq);
 	}
+
+	protected static List<BaseRecord> getRealmPopulation(OlioContext ctx, BaseRecord realm){
+		long id = realm.get("origin.id");
+		if(!ctx.getPopulationMap().containsKey(id)) {
+			BaseRecord popGrp = realm.get("population");
+			if(popGrp == null) {
+				logger.error("Failed to find population group");
+				return new ArrayList<>();
+			}
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
+			planMost(q);
+			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
+			ctx.getPopulationMap().put(id, pop);
+		}
+		return ctx.getPopulationMap().get(id);
+	}
+	
+	/// TODO: Deprecate this method
 	protected static List<BaseRecord> getPopulation(OlioContext ctx, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
 		if(!ctx.getPopulationMap().containsKey(id)) {

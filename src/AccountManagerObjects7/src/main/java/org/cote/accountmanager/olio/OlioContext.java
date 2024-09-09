@@ -400,6 +400,10 @@ public class OlioContext {
 		int errors = 0;
 		if(ep != null) {
 			List<BaseRecord> rlms = getRealms();
+			if(rlms.size() == 0) {
+				logger.error("No realms detected");
+				errors++;
+			}
 			for(BaseRecord r: rlms) {
 				r.setValue("currentEpoch", ep);
 				queueUpdate(r, new String[] {"currentEpoch"});
@@ -419,6 +423,7 @@ public class OlioContext {
 			}
 		}
 		else {
+			logger.error("Root Epoch is null");
 			errors++;
 		}
 		processQueue();
@@ -727,6 +732,12 @@ public class OlioContext {
 	public List<BaseRecord> getPopulationGroups() {
 		return populationGroups;
 	}
+	
+	public List<BaseRecord> getRealmPopulation(BaseRecord realm){
+		return OlioUtil.getRealmPopulation(this, realm);
+	}
+	
+	/// TODO: Deprecate this
 	public List<BaseRecord> getPopulation(BaseRecord location){
 		return OlioUtil.getPopulation(this, location);
 	}

@@ -341,7 +341,7 @@ public class CharacterUtil {
 		return races;
 	}
 	
-	public static BaseRecord populateRegion(OlioContext ctx, BaseRecord location, BaseRecord rootEvent, int popCount){
+	public static BaseRecord populateRegion(OlioContext ctx, BaseRecord realm, BaseRecord location, BaseRecord rootEvent, int popCount){
 
 		String locName = location.get(FieldNames.FIELD_NAME);
 		long start = System.currentTimeMillis();
@@ -369,9 +369,10 @@ public class CharacterUtil {
 
 			List<BaseRecord> grps = event.get(FieldNames.FIELD_GROUPS);
 			BaseRecord popGrp = OlioUtil.newRegionGroup(ctx.getOlioUser(), popDir, locName + " Population");
+			BaseRecord cemGrp = OlioUtil.newRegionGroup(ctx.getOlioUser(), popDir, locName + " Cemetary");
 			grps.add(popGrp);
-			grps.add(OlioUtil.newRegionGroup(ctx.getOlioUser(), popDir, locName + " Cemetary"));
-			
+			grps.add(cemGrp);
+
 			/*
 			for(String name : leaderPopulation){
 				grps.add(newRegionGroup(user, popDir, locName + " " + name + " Leaders"));				
@@ -379,6 +380,13 @@ public class CharacterUtil {
 			*/
 			
 			IOSystem.getActiveContext().getRecordUtil().updateRecords(grps.toArray(new BaseRecord[0]));
+			
+			realm.set("population", popGrp);
+			ctx.queueUpdate(realm, new String[] {"population"});
+			realm.set("populationGroups", grps);
+			ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", popGrp));
+			ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", cemGrp));
+			ctx.processQueue();
 			
 			event.set(FieldNames.FIELD_GROUPS, grps);
 			List<BaseRecord> actors = event.get("actors");

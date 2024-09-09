@@ -118,7 +118,8 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 					event = root;
 				}
 				else {
-					BaseRecord popEvent = CharacterUtil.populateRegion(ctx, loc, root, ctx.getConfig().getBasePopulationCount());
+					BaseRecord realm = ctx.getRealm(loc);
+					BaseRecord popEvent = CharacterUtil.populateRegion(ctx, realm, loc, root, ctx.getConfig().getBasePopulationCount());
 					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					events.add(popEvent);
 					event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
@@ -134,13 +135,14 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 					event.set("eventStart", ctx.getConfig().getBaseInceptionDate());
 					event.set("eventProgress", ctx.getConfig().getBaseInceptionDate());
 					event.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
-					event.set("realm", ctx.getRealm(loc));
+
+
+					event.set("realm", realm);
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(event)) {
 						logger.error("Failed to create region event");
 						return null;
 					}
 					events.add(event);
-					
 					
 				}
 			}

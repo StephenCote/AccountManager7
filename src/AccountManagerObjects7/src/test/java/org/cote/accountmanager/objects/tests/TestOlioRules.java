@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -71,7 +72,7 @@ public class TestOlioRules extends BaseTest {
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		
 		//OlioTestUtil.setResetWorld(true);
-		// OlioTestUtil.setResetUniverse(true);
+		//OlioTestUtil.setResetUniverse(true);
 		 
 		OlioContext octx = null;
 		try{
@@ -80,21 +81,32 @@ public class TestOlioRules extends BaseTest {
 		catch(StackOverflowError | Exception e) {
 			e.printStackTrace();
 		}
+		assertNotNull("Context is null", octx);
 
+		List<BaseRecord> realms = octx.getRealms();
+		assertTrue("Expected some realms", realms.size() > 0);
+		BaseRecord realm = realms.get(0);
+		BaseRecord lrec = realm.get("origin");
+		BaseRecord popGroup = realm.get("population");
+		assertNotNull("Pop group is null", popGroup);
+		List<BaseRecord> pop = octx.getRealmPopulation(realm);
+		/*
 		if(debugBreak) {
 			logger.info("Debug check");
 			return;
 		}
+		*/
 
 
 		
-		assertNotNull("Context is null", octx);
+		
 
 
+		/*
 		OlioTestUtil.outfitAndStage(octx);
 		BaseRecord lrec = octx.getLocations().get(0);
 		List<BaseRecord> pop = octx.getPopulation(lrec);
-		
+		*/
 		
 		
 		logger.info("Imprint Characters");
@@ -103,13 +115,12 @@ public class TestOlioRules extends BaseTest {
 		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
 
-		BaseRecord realm = octx.getRealm(lrec);
 		
-		
+		/*
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
 		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, lrec));
-		
+		*/
 		
 		/*
 		List<BaseRecord> zoo = realm.get("zoo");

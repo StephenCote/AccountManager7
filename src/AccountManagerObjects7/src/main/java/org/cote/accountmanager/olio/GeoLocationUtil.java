@@ -162,6 +162,7 @@ public class GeoLocationUtil {
 		if(IOSystem.getActiveContext().getSearch().count(q) == 0) {
 			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, udir);
 			q2.field("geoType", "admin2");
+			OlioUtil.planMost(q2);
 			BaseRecord k100 = OlioUtil.randomSelection(context.getOlioUser(), q2);
 			if(k100 == null) {
 				logger.error("Failed to find a random location!");
@@ -257,9 +258,10 @@ public class GeoLocationUtil {
 		}
 	}    
     */
-	public static int prepareCells(OlioContext ctx, BaseRecord feature) {
-		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+
+    public static int prepareCells(OlioContext ctx, BaseRecord feature) {
 		IOSystem.getActiveContext().getReader().populate(feature);
+
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, feature.get(FieldNames.FIELD_ID));
 		cq.field("geoType", "cell");
 		int count = IOSystem.getActiveContext().getSearch().count(cq);

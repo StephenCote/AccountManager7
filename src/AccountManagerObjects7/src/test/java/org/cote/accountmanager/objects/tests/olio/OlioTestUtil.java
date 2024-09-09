@@ -119,20 +119,10 @@ public class OlioTestUtil {
 		assertTrue("Expected context to be initialized", octx.isInitialized());
 		
 		logger.info("Start/Continue Epoch");
-		BaseRecord evt = octx.startOrContinueEpoch();
-		octx.startOrContinueRealmEpochs();
-		/*
-		for(BaseRecord lrec : octx.getLocations()) {
-		
-			logger.info("Start/Continue Location Epoch");
-			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
-			assertNotNull("Location epoch is null", levt);
-		
-			logger.info("Start/Continue Increment");
-			BaseRecord cevt = octx.startOrContinueIncrement();
-			octx.evaluateIncrement();
+		if(!octx.startOrContinueRealmEpochs()) {
+			logger.error("Failed to start realm epochs");
 		}
-		*/
+
 		AuditUtil.setLogToConsole(true);
 		
 		return octx;

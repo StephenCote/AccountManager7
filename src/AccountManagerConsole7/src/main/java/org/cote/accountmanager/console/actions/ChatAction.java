@@ -183,7 +183,7 @@ public class ChatAction extends CommonAction implements IAction{
 		if(cmd.hasOption("olio")) {
 			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), universeName, worldName, cmd.hasOption("reset"));
 			epoch = octx.startOrContinueEpoch();
-			BaseRecord[] locs = octx.getLocations();
+			List<BaseRecord> locs = octx.getLocations();
 			for(BaseRecord lrec : locs) {
 				evt = octx.startOrContinueLocationEpoch(lrec);
 				cevt = octx.startOrContinueIncrement();
