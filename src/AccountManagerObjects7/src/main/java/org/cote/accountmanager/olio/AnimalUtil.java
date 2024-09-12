@@ -21,6 +21,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -66,8 +67,8 @@ public class AnimalUtil {
 				}
 			}
 			IOSystem.getActiveContext().getRecordUtil().createRecords(parts.toArray(new BaseRecord[0]));
-			context.processQueue();
-			context.clearCache();
+			Queue.processQueue();
+			// context.clearCache();
 		}
 	}
 	
@@ -83,7 +84,7 @@ public class AnimalUtil {
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
-			ctx.queue(oanim);
+			Queue.queue(oanim);
 			oanims.add(oanim);
 		}
 
@@ -113,7 +114,7 @@ public class AnimalUtil {
 		else {
 			logger.warn("**** Location is not a 'feature' location");
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 		return pap;
 	}
 	
@@ -241,7 +242,7 @@ public class AnimalUtil {
 		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ANIMAL, ctx.getWorld().get("animals.path")));
 		if(count == 0) {
 			importAnimals(ctx);
-			ctx.processQueue();
+			Queue.processQueue();
 		}
 	}
 	
@@ -304,7 +305,7 @@ public class AnimalUtil {
 					habitat.add(h.trim());
 				}
 				
-				ctx.queue(oanim);
+				Queue.queue(oanim);
 				oanims.add(oanim);
 				if(pairs.length < 5) {
 					continue;

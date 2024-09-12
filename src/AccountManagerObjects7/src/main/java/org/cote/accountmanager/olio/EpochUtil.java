@@ -17,6 +17,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
@@ -119,10 +120,11 @@ public class EpochUtil {
 			return null;
 		}
 		
-		if(ctx.getCurrentEpoch() != null) {
-			ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_STATE));
+		BaseRecord cepoch = ctx.clock().getEpoch();
+		if(cepoch != null) {
+			ActionResultEnumType aet = cepoch.getEnum(FieldNames.FIELD_STATE);
 			if(aet != ActionResultEnumType.COMPLETE) {
-				logger.error("The current epoch " + ctx.getCurrentEpoch().get(FieldNames.FIELD_NAME) + " is not marked as being complete.  This will result in inconsistent and skewed time and metric evaluations");
+				logger.error("The current epoch " + cepoch.get(FieldNames.FIELD_NAME) + " is not marked as being complete.  This will result in inconsistent and skewed time and metric evaluations");
 				return null;
 			}
 		}
@@ -146,8 +148,8 @@ public class EpochUtil {
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
-		/// logger.info("Epoch " + title + " begins");
-		ctx.setCurrentEpoch(epoch);
+
+		ctx.clock().setEpoch(epoch);
 		
 		for(IOlioEvolveRule r : ctx.getConfig().getEvolutionRules()) {
 			r.startEpoch(ctx, epoch);
@@ -168,35 +170,36 @@ public class EpochUtil {
 			logger.error("Context is not valid");
 			return;
 		}
-		if(ctx.getCurrentEpoch() == null) {
+		BaseRecord cepoch = ctx.clock().getEpoch();
+		if(cepoch == null) {
 			logger.error("Current epoch is null");
 			return;
 		}
-		ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_STATE));
+		ActionResultEnumType aet = cepoch.getEnum(FieldNames.FIELD_STATE);
 		if(aet != ActionResultEnumType.PENDING) {
 			logger.error("The current location epoch is not in a pending state.  Therefore, no activities will take place");
 			return;
 		}
 		try {
-			ctx.getCurrentEpoch().set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
-			ctx.queue(ctx.getCurrentEpoch().copyRecord(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
-			ctx.processQueue();
-			ctx.setCurrentEvent(null);
+			cepoch.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
+			Queue.queue(cepoch.copyRecord(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+			Queue.processQueue();
+			ctx.clock().setEvent(null);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 	}
 	
 	
-	public static void endRealmEpoch(OlioContext ctx, BaseRecord realm) {
+	public static void endRealmEvent(OlioContext ctx, BaseRecord realm) {
 		endEpoch(ctx, realm.get("currentEvent"));
 		realm.setValue("currentEvent", null);
-		ctx.queueUpdate(realm, new String[]{"currentEvent"});
-		ctx.processQueue();
+		Queue.queueUpdate(realm, new String[]{"currentEvent"});
+		Queue.processQueue();
 	}
 	
 	public static void endLocationEpoch(OlioContext ctx, BaseRecord location) {
-		endEpoch(ctx, ctx.getCurrentEvent());
+		endEpoch(ctx, ctx.clock().getEvent());
 	}
 	
 	protected static void endEpoch(OlioContext ctx, BaseRecord evt) {
@@ -219,79 +222,77 @@ public class EpochUtil {
 		}
 		try {
 			evt.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
-			ctx.queueUpdate(evt, new String[]{FieldNames.FIELD_STATE});
-			ctx.processQueue();
-			ctx.setCurrentEvent(null);
+			Queue.queueUpdate(evt, new String[]{FieldNames.FIELD_STATE});
+			Queue.processQueue();
+			// ctx.setCurrentEvent(null);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 	}
 	
-	public static BaseRecord startRealmEpoch(OlioContext ctx, BaseRecord realm) {
-		BaseRecord loc = realm.get("origin");
-		BaseRecord epoch = startLocationEpoch(ctx, loc);
-		realm.setValue("currentEvent", epoch);
-		ctx.queueUpdate(realm, new String[] {"currentEvent"});
-		return epoch;
-	}
-	
-	public static BaseRecord startLocationEpoch(OlioContext ctx, BaseRecord location) {
+	public static BaseRecord startRealmEvent(OlioContext ctx, BaseRecord realm) {
 		BaseRecord evt = null;
 		if(!ctx.validateContext()) {
 			logger.error("Context is not valid");
 			return evt;
 		}
-		if(ctx.getCurrentEpoch() == null) {
+		Clock clock = ctx.clock();
+		BaseRecord cepoch = clock.getEpoch();
+		if(cepoch == null) {
 			logger.error("Current epoch is null");
 			return evt;
 		}
-		ActionResultEnumType aet = ActionResultEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_STATE));
+		ActionResultEnumType aet = cepoch.getEnum(FieldNames.FIELD_STATE);
 		if(aet != ActionResultEnumType.PENDING) {
 			logger.error("The current epoch is not in a pending state.  Therefore, no activities will take place");
 			return null;
 		}
-
-		long locId = location.get(FieldNames.FIELD_ID);
-		List<BaseRecord> curLocEpochs = Arrays.asList(ctx.getChildEvents()).stream().filter(l -> locId == (long)l.get("location.id")).collect(Collectors.toList());
-		if(curLocEpochs.size() > 0) {
-			logger.error("The current location already has an epoch event");
+		
+		Clock rclock = ctx.clock().realmClock(realm);
+		if(rclock.getEvent() != null) {
+			logger.error("The current realm already has an ongoing event");
 			return evt;
 		}
-		AlignmentEnumType alignment = AlignmentEnumType.valueOf(ctx.getCurrentEpoch().get(FieldNames.FIELD_ALIGNMENT));
+		
+		AlignmentEnumType alignment = cepoch.getEnum(FieldNames.FIELD_ALIGNMENT);
 		int alignmentScore = AlignmentEnumType.getValue(alignment);
 		AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
 
-		BaseRecord popGrp = ctx.getPopulationGroup(location, "Population");
+		BaseRecord popGrp = realm.get("population");
 		int count = OlioUtil.countPeople(popGrp);
 		try {
 			if(count == 0){
-				logger.warn("Location " + location.get(FieldNames.FIELD_NAME) + " is decimated");
-				if(!AttributeUtil.getAttributeValue(location, "decimated", false)) {
-					AttributeUtil.addAttribute(location, "decimated", true);
-					ctx.queue(location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_ORGANIZATION_ID}));
+				logger.warn("Location " + realm.get(FieldNames.FIELD_NAME) + " is decimated");
+				if(!AttributeUtil.getAttributeValue(realm, "decimated", false)) {
+					AttributeUtil.addAttribute(realm, "decimated", true);
+					Queue.queue(realm.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_ORGANIZATION_ID}));
 				}
 			}
 			else {
 				AlignmentEnumType useAlignment = (rand.nextDouble() < Rules.ODDS_INVERT_ALIGNMENT ? invertedAlignment : alignment);
 				String childTitle = EpochUtil.generateEpochTitle(ctx.getOlioUser(), ctx.getUniverse(), useAlignment);
 				
-				BaseRecord childEpoch = EventUtil.newEvent(ctx, ctx.getCurrentEpoch(), (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, ctx.getCurrentEpoch().get("eventStart"));
-				childEpoch.set(FieldNames.FIELD_LOCATION, location);
-				childEpoch.set("eventProgress", ctx.getCurrentEpoch().get("eventProgress"));
+				BaseRecord childEpoch = EventUtil.newEvent(ctx, cepoch, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, clock.getStart());
+				childEpoch.set(FieldNames.FIELD_REALM, realm);
+				childEpoch.set("eventProgress", clock.getCurrent());
 				childEpoch.set("inProgress", true);
-				childEpoch.set("eventEnd", ctx.getCurrentEpoch().get("eventEnd"));
+				childEpoch.set("eventEnd", clock.getEnd());
 				childEpoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
 				childEpoch.set("timeType", TimeEnumType.YEAR);
+
 				List<BaseRecord> lgrps = childEpoch.get("groups");
 				lgrps.add(popGrp);
-				//logger.info("Location " + location.get(FieldNames.FIELD_NAME) + " begins " + (String)childEpoch.get(FieldNames.FIELD_NAME));
+				
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
-				ctx.setCurrentLocation(location);
-				ctx.setCurrentEvent(childEpoch);
+				rclock.setEvent(childEpoch);
+				
+				realm.setValue("currentEvent", childEpoch);
+				Queue.queueUpdate(realm, new String[] {"currentEvent"});
+				
 				evt = childEpoch;
 				
 				for(IOlioEvolveRule r : ctx.getConfig().getEvolutionRules()) {
-					r.startLocationEpoch(ctx, location, childEpoch);
+					r.startRealmEvent(ctx, realm);
 				}
 			}
 		}
@@ -299,45 +300,51 @@ public class EpochUtil {
 			logger.error(e);
 		}
 		
+		Queue.processQueue();
+		
 		return evt;
 	}
 	
+	/// The current setup is to break up events by global epoch, realm events, and realm increments
+	/// OLD
 	/// The original implementation didn't discretely break up events into time-based increments
 	/// The intent is to let the rules determine the increment, or leave it at the locationEpoch level
 	
-	public static BaseRecord startIncrement(OlioContext ctx, BaseRecord locationEpoch) {
+	public static BaseRecord startRealmIncrement(OlioContext ctx, BaseRecord realm) {
 		BaseRecord inc = null;
 		
 		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
-			inc = rule.startIncrement(ctx, locationEpoch);
+			inc = rule.startRealmIncrement(ctx, realm);
 			if(inc != null) {
+				realm.setValue("currentIncrement", inc);
+				Queue.queueUpdate(realm, new String[] {"currentIncrement"});
 				break;
 			}
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 		return inc;
 	}
 	
-	public static BaseRecord continueIncrement(OlioContext ctx, BaseRecord locationEpoch) {
+	public static BaseRecord continueRealmIncrement(OlioContext ctx, BaseRecord realm) {
 		BaseRecord inc = null;
 		
 		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
-			inc = rule.continueIncrement(ctx, locationEpoch);
+			inc = rule.continueRealmIncrement(ctx, realm);
 			if(inc != null) {
 				break;
 			}
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 		return inc;
 	}
 
 	
-	public static BaseRecord endIncrement(OlioContext ctx, BaseRecord locationEpoch) {
+	public static BaseRecord endRealmIncrement(OlioContext ctx, BaseRecord realm) {
 		BaseRecord inc = null;
 		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
-			rule.endIncrement(ctx, locationEpoch, ctx.getCurrentIncrement());
+			rule.endRealmIncrement(ctx, realm);
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 		return inc;
 	}
 

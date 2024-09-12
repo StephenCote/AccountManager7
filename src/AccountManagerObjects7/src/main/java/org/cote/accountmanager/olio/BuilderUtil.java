@@ -14,6 +14,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -48,7 +49,7 @@ public class BuilderUtil {
 		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_BUILDER, ctx.getWorld().get("builders.path")));
 		if(count == 0) {
 			BaseRecord[] builders = importBuilders(ctx);
-			ctx.processQueue();
+			Queue.processQueue();
 		}
 	}
 	protected static BaseRecord[] importBuilders(OlioContext ctx) {
@@ -102,7 +103,7 @@ public class BuilderUtil {
 				}
 				bld.set("materials", imats);
 				
-				ctx.queue(bld);
+				Queue.queue(bld);
 				oblds.add(bld);
 				
 			}

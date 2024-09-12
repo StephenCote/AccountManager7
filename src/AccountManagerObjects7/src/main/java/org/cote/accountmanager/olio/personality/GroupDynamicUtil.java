@@ -14,6 +14,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.CharacterRoleEnumType;
 import org.cote.accountmanager.olio.EventUtil;
@@ -43,19 +44,19 @@ public class GroupDynamicUtil {
 	private static final int maxPartyAge = 40;
 	private static final int maxPartyCheck = 5;
 	
+	/*
 	public static List<BaseRecord> randomParty(OlioContext ctx, BaseRecord locationEpoch){
 		return randomParty(ctx, locationEpoch, new HashSet<>());
 	}
+
 	public static List<BaseRecord> randomParty(OlioContext ctx, BaseRecord locationEpoch, List<BaseRecord> base){
 		return randomParty(ctx, locationEpoch, base.stream().map(r -> (long)r.get(FieldNames.FIELD_ID)).collect(Collectors.toSet()));
 	}
+	*/
 
-	public static List<BaseRecord> randomParty(OlioContext ctx, BaseRecord locationEpoch, Set<Long> partSet){
+	public static List<BaseRecord> randomParty(OlioContext ctx, BaseRecord realm, Set<Long> partSet){
 		List<BaseRecord> party = new ArrayList<>();
-		BaseRecord loc = locationEpoch.get("location");
-		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
-
-		List<BaseRecord> lpop = ctx.getPopulation(loc);
+		List<BaseRecord> lpop = ctx.getRealmPopulation(realm);
 		int len = random.nextInt(partyMin, partyMax);
 		for(int i = 0; i < len; i++) {
 			BaseRecord per = lpop.get(random.nextInt(lpop.size()));
@@ -79,29 +80,26 @@ public class GroupDynamicUtil {
 
 		return party;
 	}
-	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch){
-		BaseRecord loc = locationEpoch.get("location");
-		IOSystem.getActiveContext().getReader().populate(loc, new String[] { FieldNames.FIELD_NAME });
-		return getCreateParty(ctx, locationEpoch, loc.get(FieldNames.FIELD_NAME) + " Party", new HashSet<>());
+	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord realm){
+		return getCreateParty(ctx, realm, realm.get(FieldNames.FIELD_NAME) + " Party", new HashSet<>());
 	}
 	
-	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch, String partyName, List<BaseRecord> base){
-		return getCreateParty(ctx, locationEpoch, partyName, base.stream().map(r -> (long)r.get(FieldNames.FIELD_ID)).collect(Collectors.toSet()));
+	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord realm, String partyName, List<BaseRecord> base){
+		return getCreateParty(ctx, realm, partyName, base.stream().map(r -> (long)r.get(FieldNames.FIELD_ID)).collect(Collectors.toSet()));
 	}
-	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord locationEpoch, String partyName, Set<Long> partySet){
+	public static List<BaseRecord> getCreateParty(OlioContext ctx, BaseRecord realm, String partyName, Set<Long> partySet){
 		List<BaseRecord> party = new ArrayList<>();
 
 		BaseRecord grp = null;
 		try {
-			BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
 			grp = OlioUtil.getCreatePopulationGroup(ctx, partyName);
 			if(realm.get("principalGroup") == null) {
 				realm.set("principalGroup", grp);
-				IOSystem.getActiveContext().getRecordUtil().updateRecord(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "principalGroup", FieldNames.FIELD_ORGANIZATION_ID}));
+				Queue.queueUpdate(realm, new String[] {"principalGroup"});
 			}
 			party = OlioUtil.listGroupPopulation(ctx, grp);
 			if(party.size() == 0) {
-				List<BaseRecord> lpop = randomParty(ctx, locationEpoch, partySet);
+				List<BaseRecord> lpop = randomParty(ctx, realm, partySet);
 				for(BaseRecord per : lpop) {
 					if(!IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), grp, per, null, true)) {
 						logger.error("Failed to add member");
@@ -116,9 +114,9 @@ public class GroupDynamicUtil {
 	}
 	
 	
-	public static void delegateActions(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, Map<BaseRecord, PersonalityProfile> map, List<BaseRecord> actions) {
+	public static void delegateActions(OlioContext ctx, BaseRecord realm, Map<BaseRecord, PersonalityProfile> map, List<BaseRecord> actions) {
 
-		PersonalityProfile leader = identifyLeader(ctx, locationEpoch, increment, map);
+		PersonalityProfile leader = identifyLeader(ctx, realm, map);
 	}
 	
 	public static OutcomeEnumType rulePersonalityConflict(BaseRecord interaction, PersonalityProfile prof1, PersonalityProfile prof2) {
@@ -202,10 +200,9 @@ public class GroupDynamicUtil {
 		return actorOutcome;
 	}
 	
-	public static PersonalityProfile identifyLeader(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, Map<BaseRecord, PersonalityProfile> map) {
+	public static PersonalityProfile identifyLeader(OlioContext ctx, BaseRecord realm, Map<BaseRecord, PersonalityProfile> map) {
 		List<PersonalityProfile> lgrp = new ArrayList<>();
 		PersonalityProfile leader = null;
-		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
 		if(map.keySet().size() > 1) {
 			List<PersonalityProfile> natCommand = PersonalityUtil.filterCommanders(new ArrayList<>(map.values()));
 			/// Find any 'directors'
@@ -224,7 +221,7 @@ public class GroupDynamicUtil {
 				lgrp = new ArrayList<>(map.values());
 			}
 
-			leader = processLeadership(ctx, increment, map, lgrp);
+			leader = processLeadership(ctx, realm, map, lgrp);
 			if(leader == null) {
 				logger.error("Failed to identify a leader");
 			}
@@ -235,10 +232,10 @@ public class GroupDynamicUtil {
 		return leader;
 	}
 	
-	protected static PersonalityProfile processLeadership(OlioContext ctx, BaseRecord increment, Map<BaseRecord, PersonalityProfile> map, List<PersonalityProfile> lgrp) {
+	protected static PersonalityProfile processLeadership(OlioContext ctx, BaseRecord realm, Map<BaseRecord, PersonalityProfile> map, List<PersonalityProfile> lgrp) {
 		PersonalityProfile outLead = PersonalityUtil.identifyLeaderPersonality(lgrp);
 		if(lgrp.size() > 1) {
-			List<BaseRecord> contesting = contestLeadership(ctx, increment, lgrp, outLead);
+			List<BaseRecord> contesting = contestLeadership(ctx, realm, lgrp, outLead);
 			if(contesting.size() > 0) {
 				// logger.info(contesting.size() + " people are contesting leadership");
 				for(BaseRecord c: contesting) {
@@ -255,7 +252,7 @@ public class GroupDynamicUtil {
 							/// Remove the presumed leader from the possible group, and re-process leadership
 							///
 							long currId = outLead.getId();
-							outLead = processLeadership(ctx, increment, map, lgrp.stream().filter(p -> p.getId() != currId).collect(Collectors.toList()));
+							outLead = processLeadership(ctx, realm, map, lgrp.stream().filter(p -> p.getId() != currId).collect(Collectors.toList()));
 							break;
 						}
 						else {
@@ -269,7 +266,7 @@ public class GroupDynamicUtil {
 	}
 	
 	public static BaseRecord evaluateContest(OlioContext ctx, PersonalityProfile challenger, PersonalityProfile defender) {
-		BaseRecord evt = EventUtil.newEvent(ctx, ctx.getCurrentIncrement(), EventEnumType.DESTABILIZE, challenger.getRecord().get("firstName") + " challenges " + defender.getRecord().get("firstName"), ctx.getCurrentIncrement().get("startTime"), new BaseRecord[] {challenger.getRecord(), defender.getRecord()}, null, null, true);
+		BaseRecord evt = EventUtil.newEvent(ctx, ctx.clock().getIncrement(), EventEnumType.DESTABILIZE, challenger.getRecord().get("firstName") + " challenges " + defender.getRecord().get("firstName"), ctx.clock().getIncrement().get("startTime"), new BaseRecord[] {challenger.getRecord(), defender.getRecord()}, null, null, true);
 		return evt;
 	}
 	
@@ -288,11 +285,11 @@ public class GroupDynamicUtil {
 	
 	/// Given some leader, identify if the current group will accept them
 	///
-	public static List<BaseRecord> contestLeadership(OlioContext ctx, BaseRecord increment, List<PersonalityProfile> map, PersonalityProfile leader) {
+	public static List<BaseRecord> contestLeadership(OlioContext ctx, BaseRecord realm, List<PersonalityProfile> map, PersonalityProfile leader) {
 		// Set<PersonalityProfile> contest = new HashSet<>();
 		
 		/// TODO: Differentiate between new leadership and existing leadership
-		
+		BaseRecord increment = ctx.clock().realmClock(realm).getIncrement();
 		List<BaseRecord> interactions = new ArrayList<>();
 		List<PersonalityProfile> primeAge = map.stream().filter(pp -> pp.getId() != leader.getId() && pp.getAge() >= Rules.MINIMUM_ADULT_AGE && pp.getAge() <= Rules.SENIOR_AGE).collect(Collectors.toList());
 		List<PersonalityProfile> primeDipAge = primeAge.stream().filter(pp -> pp.getMbti().getGroup().equals("diplomat")).collect(Collectors.toList());

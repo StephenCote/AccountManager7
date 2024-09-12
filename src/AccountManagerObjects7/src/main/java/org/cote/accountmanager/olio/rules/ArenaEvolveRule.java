@@ -10,6 +10,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
@@ -25,40 +26,38 @@ import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule {
 	public static final Logger logger = LogManager.getLogger(ArenaEvolveRule.class);
-
+	private static final String party1Name = "Arena Party 1";
+	private static final String party2Name = "Arena Party 2";
+	private static final String animalParty1Name = "Animal Party 1";
+	private static final String contest1Name = "Contest 1";
 	private static final SecureRandom random = new SecureRandom();
 
 	@Override
-	public void startLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		EventUtil.edgeTimes(epoch);
+	public void startRealmEvent(OlioContext context, BaseRecord realm) {
+		EventUtil.edgeTimes(context.clock().realmClock(realm).getEvent());
 		
 	}
 
 	@Override
-	public BaseRecord startIncrement(OlioContext context, BaseRecord locationEpoch) {
-		BaseRecord rec = continueIncrement(context, locationEpoch);
+	public BaseRecord startRealmIncrement(OlioContext context, BaseRecord realm) {
+		BaseRecord rec = continueRealmIncrement(context, realm);
 		if(rec != null) {
 			logger.warn("Returning current pending increment.");
 			return rec;
 		}
-		return nextIncrement(context, locationEpoch);
+		return nextRealmIncrement(context, realm);
 	}
 
 	@Override
-	public BaseRecord continueIncrement(OlioContext context, BaseRecord locationEpoch) {
-		BaseRecord rec = EventUtil.getLastEvent(context.getOlioUser(), context.getWorld(), locationEpoch.get("location"), EventEnumType.PERIOD, TimeEnumType.HOUR, ActionResultEnumType.PENDING, false); 
-		if(rec != null) {
-			return rec;
-		}
-		return null;
+	public BaseRecord continueRealmIncrement(OlioContext context, BaseRecord realm) {
+		return context.clock().realmClock(realm).getIncrement();
+		// BaseRecord rec = EventUtil.getLastEvent(context.getOlioUser(), context.getWorld(), locationEpoch.get("location"), EventEnumType.PERIOD, TimeEnumType.HOUR, ActionResultEnumType.PENDING, false); 
 	}
 
 	@Override
-	public void endIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord currentIncrement) {
-		BaseRecord rec = currentIncrement;
-		if(currentIncrement == null) {
-			rec = continueIncrement(context, locationEpoch);
-		}
+	public void endRealmIncrement(OlioContext context, BaseRecord realm) {
+		BaseRecord rec = context.clock().realmClock(realm).getIncrement();
+
 		if(rec == null) {
 			logger.warn("Current increment was not found");
 			return;
@@ -70,22 +69,17 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 		}
 		try {
 			rec.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
-			context.queue(rec.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+			Queue.queue(rec.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 	}
-	private static final String party1Name = "Arena Party 1";
-	private static final String party2Name = "Arena Party 2";
-	private static final String animalParty1Name = "Animal Party 1";
-	private static final String contest1Name = "Contest 1";
-
 	
 	@Override
-	public void evaluateIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord increment) {
+	public void evaluateRealmIncrement(OlioContext context, BaseRecord realm) {
 		// TODO Auto-generated method stub
-		List<BaseRecord> party1 = GroupDynamicUtil.getCreateParty(context, locationEpoch, party1Name, new ArrayList<>());
-		List<BaseRecord> party2 = GroupDynamicUtil.getCreateParty(context, locationEpoch, party2Name, party1);
+		List<BaseRecord> party1 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party1Name, new ArrayList<>());
+		List<BaseRecord> party2 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party2Name, party1);
 		
 		logger.info("Party: " + party1.size() + " - " + party2.size());
 		//logger.info(increment.toString());
@@ -97,12 +91,12 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 		ApparelUtil.outfitAndStage(context, acells.get(random.nextInt(acells.size())), party2);
 		ItemUtil.showerWithMoney(context, party1);
 		ItemUtil.showerWithMoney(context, party2);
-		context.processQueue();
+		Queue.processQueue();
 	}
 
 	@Override
-	public BaseRecord nextIncrement(OlioContext context, BaseRecord parentEvent) {
-		return EventUtil.findNextIncrement(context, parentEvent, TimeEnumType.HOUR);
+	public BaseRecord nextRealmIncrement(OlioContext context, BaseRecord realm) {
+		return EventUtil.findNextIncrement(context, context.clock().realmClock(realm).getIncrement(), TimeEnumType.HOUR);
 	}
 
 	@Override

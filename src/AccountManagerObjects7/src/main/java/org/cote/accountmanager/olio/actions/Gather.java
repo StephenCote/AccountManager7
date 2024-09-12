@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.Coordinates;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
@@ -28,7 +29,7 @@ public class Gather extends CommonAction implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
-		BaseRecord realm = context.getRealm(context.getCurrentLocation());
+		BaseRecord realm = context.clock().getRealm();
 		if(realm == null) {
 			throw new OlioException("Unable to load realm");
 		}
@@ -126,7 +127,7 @@ public class Gather extends CommonAction implements IAction {
 		List<String> trace = actionResult.get("trace");
 		pois = GeoLocationUtil.sortByDistance(pois, "east", "north", cx, cy).stream().filter(p -> !trace.contains(p.get(FieldNames.FIELD_OBJECT_ID))).collect(Collectors.toList());
 
-		BaseRecord realm = context.getRealm(context.getCurrentLocation());
+		BaseRecord realm = context.clock().getRealm();
 		List<BaseRecord> zoo = realm.get("zoo");
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(context, zoo, cell);
 		List<BaseRecord> dzpop = zpop.stream().filter(a -> (boolean)a.get("state.alive")).collect(Collectors.toList());
@@ -176,7 +177,7 @@ public class Gather extends CommonAction implements IAction {
 			if(dist > Rules.PROXIMATE_CONTACT_DISTANCE) {
 				// logger.info("Too far away - " + dist + " meters.  Need to move closer.");
 				DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(GeoLocationUtil.getAngleBetweenInDegrees(new Coordinates(cx, cy), new Coordinates(poi.get("east"), poi.get("north"))));
-				BaseRecord move = Actions.beginMove(context, context.getCurrentIncrement(), actor, dir);
+				BaseRecord move = Actions.beginMove(context, context.clock().getIncrement(), actor, dir);
 				move.setValue("state.currentEast", poi.get("east"));
 				move.setValue("state.currentNorth", poi.get("north"));
 				actionResult.setValue("actionEnd", move.get("actionEnd"));
@@ -201,7 +202,7 @@ public class Gather extends CommonAction implements IAction {
 				if(count < quantity || count == 0) {
 					logger.info("Not enough (" + count + " < " + quantity + ") at this location.  Checking again - ");
 					trace.add(poi.get(FieldNames.FIELD_OBJECT_ID));
-					context.queueUpdate(actionResult, new String[] {"trace"});
+					Queue.queueUpdate(actionResult, new String[] {"trace"});
 				}
 				else {
 					logger.info("Gather from point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)) + " " + dist + " meters away");

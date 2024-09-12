@@ -5,6 +5,7 @@ import java.util.Map;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.olio.DensityEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
@@ -16,16 +17,16 @@ public class LocationPlannerRule extends CommonContextRule implements IOlioConte
 	public static final Logger logger = LogManager.getLogger(LocationPlannerRule.class);
 	
 	@Override
-	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
-		BaseRecord location = event.get(FieldNames.FIELD_LOCATION);
+	public void generateRegion(OlioContext context, BaseRecord realm) {
+		BaseRecord location = realm.get("origin");
 		if(location == null) {
 			logger.error("Unable to plan without a location");
 			//ErrorUtil.printStackTrace();
 			return;
 		}
 		//logger.info(location.toFullString());
-
-		List<BaseRecord> pop = context.getPopulation(location);
+		CacheUtil.clearCache();
+		List<BaseRecord> pop = context.getRealmPopulation(realm);
 		if(pop.isEmpty()){
 			logger.error("Unable to plan location with an empty population");
 			return;
@@ -34,7 +35,7 @@ public class LocationPlannerRule extends CommonContextRule implements IOlioConte
 		// logger.info("Planning for " + location.get(FieldNames.FIELD_NAME) + " " + pop.size());	
 		Map<String,List<BaseRecord>> demographicMap = context.getDemographicMap(location);
 		for(BaseRecord p : pop) {
-			OlioUtil.setDemographicMap(context.getOlioUser(), demographicMap, event, p);
+			OlioUtil.setDemographicMap(context, demographicMap, realm, p);
 		}
 		
 		DensityEnumType dens = DensityEnumType.valueOf(pop.size());

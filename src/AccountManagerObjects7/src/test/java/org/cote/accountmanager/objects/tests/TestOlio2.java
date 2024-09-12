@@ -1,91 +1,28 @@
 package org.cote.accountmanager.objects.tests;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.awt.Image;
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.StringReader;
 import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Random;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 
-import javax.imageio.ImageIO;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-
-import org.cote.accountmanager.exceptions.FactoryException;
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ReaderException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
-
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.ParameterList;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
-import org.cote.accountmanager.olio.AlignmentEnumType;
-import org.cote.accountmanager.olio.AnimalUtil;
-import org.cote.accountmanager.olio.ApparelUtil;
-import org.cote.accountmanager.olio.AssessmentEnumType;
-import org.cote.accountmanager.olio.BuilderUtil;
-import org.cote.accountmanager.olio.CharacterRoleEnumType;
 import org.cote.accountmanager.olio.DirectionEnumType;
-import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
-import org.cote.accountmanager.olio.InteractionUtil;
-import org.cote.accountmanager.olio.ItemUtil;
-import org.cote.accountmanager.olio.LoveNeedsEnumType;
 import org.cote.accountmanager.olio.MapUtil;
-import org.cote.accountmanager.olio.NarrativeUtil;
-import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
-import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioUtil;
-import org.cote.accountmanager.olio.PersonalityProfile;
-import org.cote.accountmanager.olio.ProfileUtil;
-import org.cote.accountmanager.olio.ReasonEnumType;
-import org.cote.accountmanager.olio.RollUtil;
-import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StateUtil;
-import org.cote.accountmanager.olio.ThreatEnumType;
-import org.cote.accountmanager.olio.ThreatUtil;
-import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
-import org.cote.accountmanager.olio.llm.OllamaExchange;
-import org.cote.accountmanager.olio.llm.OllamaMessage;
-import org.cote.accountmanager.olio.llm.OllamaRequest;
-import org.cote.accountmanager.olio.llm.OllamaResponse;
-import org.cote.accountmanager.olio.llm.OllamaUtil;
-import org.cote.accountmanager.personality.CompatibilityEnumType;
-import org.cote.accountmanager.personality.MBTIUtil;
-import org.cote.accountmanager.personality.SloanUtil;
-import org.cote.accountmanager.olio.rules.ArenaEvolveRule;
-import org.cote.accountmanager.olio.rules.ArenaInitializationRule;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
-import org.cote.accountmanager.olio.rules.GenericLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.GenericStateRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
 import org.cote.accountmanager.olio.rules.HierarchicalNeedsEvolveRule;
@@ -94,24 +31,8 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
-import org.cote.accountmanager.parsers.wordnet.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordSerializerConfig;
-import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
-import org.cote.accountmanager.schema.type.EffectEnumType;
-import org.cote.accountmanager.schema.type.EventEnumType;
-import org.cote.accountmanager.schema.type.TimeEnumType;
-import org.cote.accountmanager.schema.type.TraitEnumType;
-import org.cote.accountmanager.util.AuditUtil;
-import org.cote.accountmanager.util.ClientUtil;
-import org.cote.accountmanager.util.FileUtil;
-import org.cote.accountmanager.util.GraphicsUtil;
-import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ResourceUtil;
-import org.json.JSONObject;
 import org.junit.Test;
 
 public class TestOlio2 extends BaseTest {
@@ -184,18 +105,22 @@ public class TestOlio2 extends BaseTest {
 		List<BaseRecord> realms = octx.getRealms();
 		assertTrue("Expected realms", realms.size() > 0);
 		logger.info("Start/Continue Epoch");
-		BaseRecord evt = octx.startOrContinueEpoch();
+		BaseRecord evt = null;
+		///octx.startOrContinueEpoch();
 		
 		BaseRecord realm = realms.get(0);
 		BaseRecord lrec = realm.get("origin");
 		assertNotNull("Location was null", lrec);
 		
 		logger.info("Start/Continue Location Epoch");
-		BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
+		BaseRecord levt = null;
+		///octx.startOrContinueLocationEpoch(lrec);
 		assertNotNull("Location epoch is null", levt);
 		
 		logger.info("Start/Continue Increment");
-		BaseRecord cevt = octx.startOrContinueIncrement();
+		BaseRecord cevt = null;
+		//octx.startOrContinueIncrement();
+		/*
 		try {
 			octx.evaluateIncrement();
 		}
@@ -203,8 +128,9 @@ public class TestOlio2 extends BaseTest {
 			e.printStackTrace();
 			return;
 		}
+		*/
 		// octx.clearCache();
-		List<BaseRecord> pop = octx.getPopulation(lrec);
+		List<BaseRecord> pop = octx.getRealmPopulation(realm);
 
 		logger.info("Imprint Characters");
 		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getLaurelPrint());
@@ -234,7 +160,7 @@ public class TestOlio2 extends BaseTest {
 		logger.info("Move " + dir.toString().toLowerCase());
 		StateUtil.moveByOneMeterInCell(octx, per1, dir);
 		StateUtil.queueUpdateLocation(octx, per1);
-		octx.processQueue();
+		Queue.processQueue();
 		
 		OlioTestUtil.lookout(per1, per2);
 		OlioTestUtil.lookout(per2, per1);
@@ -249,7 +175,7 @@ public class TestOlio2 extends BaseTest {
 			mact = ActionUtil.getInAction(per1, "walkTo");
 			if(mact != null) {
 				mact.set("type", ActionResultEnumType.INCOMPLETE);
-				octx.queueUpdate(mact, new String[] {"type"});
+				Queue.queueUpdate(mact, new String[] {"type"});
 			}
 			mact = Actions.beginMoveTo(octx, cevt, per1, per2);
 			octx.overwatchActions();

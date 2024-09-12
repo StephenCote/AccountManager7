@@ -22,6 +22,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
@@ -194,13 +195,15 @@ public class TestChat extends BaseTest {
 				break;
 			}
 		}
-		
-		List<BaseRecord> locs = ctx.getLocations();
+
 		BaseRecord levt = null;
+		/// TODO: Refactor
+		/*
+		List<BaseRecord> locs = ctx.getLocations();
 		for(BaseRecord lrec : locs) {
 			levt = ctx.startOrContinueLocationEpoch(lrec);
 		}
-		
+		*/
 		ParameterList clist = ParameterList.newParameterList("path", "~/Chat");
 		clist.parameter("name", "Chat Config - " + UUID.randomUUID().toString());
 
@@ -219,7 +222,7 @@ public class TestChat extends BaseTest {
 			cfg.set("prune", true);
 			cfg.set("setting", null);
 			cfg.set("includeScene", true);
-			cfg.set("event", ctx.getCurrentIncrement());
+			cfg.set("event", ctx.clock().getIncrement());
 			cfg.set("terrain", NarrativeUtil.getTerrain(ctx, per2));
 			cfg.set("systemNarrative", NarrativeUtil.getNarrative(ctx, per1, setting));
 			cfg.set("userNarrative", NarrativeUtil.getNarrative(ctx, per2, setting));
@@ -272,11 +275,14 @@ public class TestChat extends BaseTest {
 		octx.initialize();
 		assertNotNull("Root location is null", octx.getRootLocation());
 		
-		BaseRecord evt = octx.startOrContinueEpoch();
+		BaseRecord evt = null;
+		/// octx.startOrContinueEpoch();
 		BaseRecord levt = null;
 		BaseRecord cevt = null;
 		assertNotNull("Epoch is null", evt);
 		List<BaseRecord> locs = octx.getLocations();
+		/// TODO: Refactor
+		/*
 		for(BaseRecord lrec : locs) {
 			levt = octx.startOrContinueLocationEpoch(lrec);
 			assertNotNull("Location epoch is null", levt);
@@ -287,10 +293,10 @@ public class TestChat extends BaseTest {
 			///
 			ApparelUtil.outfitAndStage(octx, null, octx.getPopulation(lrec));
 			ItemUtil.showerWithMoney(octx, octx.getPopulation(lrec));
-			octx.processQueue();
+			Queue.processQueue();
 		
 		}
-
+	*/
 		List<BaseRecord> realms = octx.getRealms();
 		assertTrue("Expected at least one realm", realms.size() > 0);
 		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);

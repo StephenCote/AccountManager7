@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
@@ -41,7 +42,7 @@ public class Dress implements IAction {
 
 		int minSeconds = actionResult.get("action.minimumTime");
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds);
-		context.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
 
 		return actionResult;
 	}
@@ -97,12 +98,12 @@ public class Dress implements IAction {
 				if(wl <= cwl) {
 					res.add("Wear: " + NarrativeUtil.describeWearable(w));
 					w.setValue("inuse", true);
-					context.queueUpdate(w, new String[] {"inuse"});
+					Queue.queueUpdate(w, new String[] {"inuse"});
 				}
 			});
 			if((boolean)app.get("inuse") == false) {
 				app.setValue("inuse", true);
-				context.queueUpdate(app, new String[] {"inuse"});
+				Queue.queueUpdate(app, new String[] {"inuse"});
 			}
 			
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);

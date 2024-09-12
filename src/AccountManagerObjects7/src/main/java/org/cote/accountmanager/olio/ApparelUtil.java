@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -109,13 +110,13 @@ public class ApparelUtil {
 				});
 				IOSystem.getActiveContext().getRecordUtil().createRecord(app);
 				appl.add(app);
-				ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), sto, "apparel", app));
+				Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), sto, "apparel", app));
 			}
 			if(iteml.size() == 0) {
 				List<BaseRecord> arms = ItemUtil.randomArms(ctx);
 				for(BaseRecord a: arms) {
 					IOSystem.getActiveContext().getRecordUtil().createRecord(a);
-					ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), sto, "items", a));
+					Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), sto, "items", a));
 				}
 				iteml.addAll(arms);
 			}
@@ -125,7 +126,7 @@ public class ApparelUtil {
 				logger.info("Agitate initial location: " + p.get("name"));;
 				sta.setValue("currentLocation", cell);
 				StateUtil.agitateLocation(ctx, p);
-				ctx.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth"});
+				Queue.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth"});
 			}
 		}
 	}

@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.record.BaseRecord;
@@ -24,7 +25,7 @@ public class StateUtil {
 		if(!obj.getModel().equals(ModelNames.MODEL_CHAR_STATE)) {
 			state = obj.get(FieldNames.FIELD_STATE);
 		}
-		context.queueUpdate(state, new String[] { "currentLocation", "currentEast", "currentNorth" });
+		Queue.queueUpdate(state, new String[] { "currentLocation", "currentEast", "currentNorth" });
 	}
 	
 	/*
@@ -72,7 +73,7 @@ public class StateUtil {
 			return false;
 		}
 		// logger.info("Moved " + x + ", " + y + " to " + (int)state.get("currentEast") + ", " + (int)state.get("currentNorth"));
-		//context.queueUpdate(state, new String[] { "currentLocation", "currentEast", "currentNorth" });
+		//Queue.queueUpdate(state, new String[] { "currentLocation", "currentEast", "currentNorth" });
 		
 		return (
 		x != (int)state.get("currentEast")
@@ -167,7 +168,7 @@ public class StateUtil {
 			}
 			// logger.info("Moved To: " + cellX + "." + stateX + ", " + cellY + "." + stateY);
 			// logger.info("Move " + x + ", " + y);
-			// context.queue(state.copyRecord(new String[] { FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth" }));
+			// Queue.queue(state.copyRecord(new String[] { FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth" }));
 		}
 	}
 	
@@ -232,7 +233,7 @@ public class StateUtil {
 		*/
 		DirectionEnumType dir = GeoLocationUtil.randomDirection();
 		try {
-			Actions.beginMove(context, context.getCurrentIncrement(), animal, dir);
+			Actions.beginMove(context, context.clock().getIncrement(), animal, dir);
 		} catch (OlioException e) {
 			logger.error(e);
 		}

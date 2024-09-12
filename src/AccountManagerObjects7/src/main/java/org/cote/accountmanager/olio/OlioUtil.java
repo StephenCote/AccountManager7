@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
@@ -30,6 +31,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryPlan;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -66,10 +68,10 @@ public class OlioUtil {
 		return ctx.getDemographicMap().get(id);
 	}
 	
-	public static void setDemographicMap(BaseRecord user, Map<String,List<BaseRecord>> map, BaseRecord parentEvent, BaseRecord person) {
+	public static void setDemographicMap(OlioContext ctx, Map<String,List<BaseRecord>> map, BaseRecord realm, BaseRecord person) {
 		try {
 			ZonedDateTime birthDate = person.get("birthDate");
-			ZonedDateTime endDate = parentEvent.get("eventEnd");
+			ZonedDateTime endDate = ctx.clock().getEnd();
 			int age = (int)((endDate.toInstant().toEpochMilli() - birthDate.toInstant().toEpochMilli()) / OlioUtil.YEAR);
 			map.values().stream().forEach(l -> l.removeIf(f -> ((long)person.get(FieldNames.FIELD_ID)) == ((long)f.get(FieldNames.FIELD_ID))));
 			
@@ -303,69 +305,13 @@ public class OlioUtil {
 		}
 		return irec;
 	}
-	public static <T> void addAttribute(Map<String, List<BaseRecord>> queue, BaseRecord obj, String attrName, T val) throws ModelException, FieldException, ModelNotFoundException, ValueException {
+	public static <T> void addAttribute(BaseRecord obj, String attrName, T val) throws ModelException, FieldException, ModelNotFoundException, ValueException {
 		BaseRecord attr = AttributeUtil.addAttribute(obj, attrName, val);
-		queueAttribute(queue, attr);
+		Queue.queue(attr);
 	}
-	public static void queueAttribute(Map<String, List<BaseRecord>> queue, BaseRecord record) {
-		String key = record.getModel();
-		if(!queue.containsKey(key)) {
-			queue.put(key, new ArrayList<>());
-		}
-		queue.get(key).add(record);
-	}
-	
-	public static void queueUpdate(Map<String, List<BaseRecord>> queue, BaseRecord record, String[] fields) {
-		List<String> fnlist =new ArrayList<>(Arrays.asList(fields));
-		if(fnlist.size() == 0) {
-			return;
-		}
 
-		fnlist.add(FieldNames.FIELD_ID);
-		//fnlist.add(FieldNames.FIELD_OWNER_ID);
-		ModelSchema ms = RecordFactory.getSchema(record.getModel());
-		fnlist.sort((f1, f2) -> f1.compareTo(f2));
-		Set<String> fieldSet = fnlist.stream().filter(s -> {
-			boolean outBool = true;
-			FieldSchema fs = ms.getFieldSchema(s);
-			/// Leave the identity as it's necessary to actually perform the update
-			/// fs.isIdentity() || 
-			if(fs.isForeign() && fs.getFieldType() == FieldEnumType.LIST) {
-				logger.warn("Skip " + record.getModel() + "." + s);
-				outBool = false;
-			}
-			return outBool;
-		}).collect(Collectors.toSet());
-		
-		if(fieldSet.size() == 0) {
-			logger.error("No valid fields specified to update");
-			ErrorUtil.printStackTrace();
-			return;
-		}
-		
-		String key = "UP-" + record.getModel() + "-" + fieldSet.stream().collect(Collectors.joining("-"));
-		if(!queue.containsKey(key)) {
-			queue.put(key, new ArrayList<>());
-		}
-		
-		queue.get(key).add(record.copyRecord(fieldSet.toArray(new String[0])));
-	}
 	
-	public static void queueAdd(Map<String, List<BaseRecord>> queue, BaseRecord record) {
-		record.getFields().sort((f1, f2) -> f1.getName().compareTo(f2.getName()));
-		String pref = "";
-		/// Split up the adds because participations can wind up going into different tables and the bulk add
-		/// will reject the dataset as being too disimilar
-		///
-		if(record.getModel().equals(ModelNames.MODEL_PARTICIPATION)) {
-			pref = record.get(FieldNames.FIELD_PARTICIPATION_MODEL) + "-";
-		}
-		String key = "ADD-" + pref + record.getModel() + "-" + record.getFields().stream().map(f -> f.getName()).collect(Collectors.joining("-"));
-		if(!queue.containsKey(key)) {
-			queue.put(key, new ArrayList<>());
-		}
-		queue.get(key).add(record);
-	}
+	/*
 	public static BaseRecord getPopulationGroup(OlioContext ctx, BaseRecord location, String name) {
 		IOSystem.getActiveContext().getReader().populate(location, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID});
 		String locName = location.get(FieldNames.FIELD_NAME) + " " + name;
@@ -379,6 +325,8 @@ public class OlioUtil {
 		}
 		return ogrp;
 	}
+	*/
+	
 	protected static int countPeople(BaseRecord group) {
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
 		pq.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
@@ -386,23 +334,28 @@ public class OlioUtil {
 	}
 
 	protected static List<BaseRecord> getRealmPopulation(OlioContext ctx, BaseRecord realm){
-		long id = realm.get("origin.id");
+		
+		long id = realm.get("id");
+
 		if(!ctx.getPopulationMap().containsKey(id)) {
 			BaseRecord popGrp = realm.get("population");
 			if(popGrp == null) {
 				logger.error("Failed to find population group");
 				return new ArrayList<>();
 			}
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
-			planMost(q);
-			List<BaseRecord> pop = new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
+			List<BaseRecord> pop = listGroupPopulation(ctx, popGrp);
+			if(pop.size() == 0) {
+				logger.warn("Realm " + realm.get(FieldNames.FIELD_NAME) + " population is empty for group " + popGrp.get("id"));
+				//logger.warn(q.toFullString());
+				ErrorUtil.printStackTrace();
+			}
 			ctx.getPopulationMap().put(id, pop);
 		}
 		return ctx.getPopulationMap().get(id);
 	}
 	
 	/// TODO: Deprecate this method
+	/*
 	protected static List<BaseRecord> getPopulation(OlioContext ctx, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
 		if(!ctx.getPopulationMap().containsKey(id)) {
@@ -423,6 +376,7 @@ public class OlioUtil {
 		}
 		return ctx.getPopulationMap().get(id);
 	}
+	*/
 
 	public static List<BaseRecord> listGroupPopulation(OlioContext ctx, BaseRecord group){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
@@ -566,13 +520,13 @@ public class OlioUtil {
 		/// 
 		for(BaseRecord p : parts) {
 			flist.add(p);
-			ctx.queue(p);
+			Queue.queue(p);
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 		for(BaseRecord p: parts) {
-			ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), rec, fieldName, p));
+			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), rec, fieldName, p));
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 	}
 
 	

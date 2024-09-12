@@ -23,6 +23,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.DirectionEnumType;
@@ -118,11 +119,12 @@ public class OlioTestUtil {
 		octx.initialize();
 		assertTrue("Expected context to be initialized", octx.isInitialized());
 		
+		/*
 		logger.info("Start/Continue Epoch");
 		if(!octx.startOrContinueRealmEpochs()) {
 			logger.error("Failed to start realm epochs");
 		}
-
+		*/
 		AuditUtil.setLogToConsole(true);
 		
 		return octx;
@@ -292,7 +294,7 @@ public class OlioTestUtil {
 		StateUtil.queueUpdateLocation(ctx, per1);
 		BaseRecord upar = GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation"));
 		AnimalUtil.checkAnimalPopulation(ctx, realm, upar);
-		ctx.processQueue();
+		Queue.processQueue();
 		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printPovLocationMap(ctx, realm, per1, 3);
 		MapUtil.printLocationMap(ctx, upar, realm, pop);
@@ -346,7 +348,7 @@ public class OlioTestUtil {
 		logger.info(lar);
 
 		StateUtil.queueUpdateLocation(ctx, state);
-		ctx.processQueue();
+		Queue.processQueue();
 		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printLocationMap(ctx, GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation")), realm, pop);
 
@@ -368,7 +370,7 @@ public class OlioTestUtil {
 			}
 			IOSystem.getActiveContext().getRecordUtil().createRecords(inters.toArray(new BaseRecord[0]));
 			
-			cfg.set("event", octx.getCurrentIncrement());
+			cfg.set("event", octx.clock().getIncrement());
 			cfg.set("universeName", octx.getUniverse().get("name"));
 			cfg.set("worldName", octx.getWorld().get("name"));
 			cfg.set("startMode", "system");
@@ -398,12 +400,12 @@ public class OlioTestUtil {
 	}
 	
 	public static void outfitAndStage(OlioContext ctx) {
-		List<BaseRecord> locs = ctx.getLocations();
+		List<BaseRecord> locs = ctx.getRealms();
 		for(BaseRecord lrec : locs) {
-			ApparelUtil.outfitAndStage(ctx, null, ctx.getPopulation(lrec));
-			ItemUtil.showerWithMoney(ctx, ctx.getPopulation(lrec));
+			ApparelUtil.outfitAndStage(ctx, null, ctx.getRealmPopulation(lrec));
+			ItemUtil.showerWithMoney(ctx, ctx.getRealmPopulation(lrec));
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 	}
 }
 

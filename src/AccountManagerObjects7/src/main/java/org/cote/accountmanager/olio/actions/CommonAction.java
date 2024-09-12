@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.actions;
 
 import java.util.List;
 
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.record.BaseRecord;
@@ -14,7 +15,7 @@ public abstract class CommonAction implements IAction {
 	protected void edgeEnd(OlioContext ctx, BaseRecord actionResult, int iter) {
 		int minSeconds = actionResult.get("action.minimumTime");
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds * iter);
-		ctx.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
 	}
 	
 	@Override

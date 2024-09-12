@@ -2,8 +2,6 @@ package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
 
-import java.io.File;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.After;

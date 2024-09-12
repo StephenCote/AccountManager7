@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.actions;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
@@ -38,7 +39,7 @@ public class Consume extends CommonAction implements IAction {
 		
 		int minSeconds = actionResult.get("action.minimumTime");
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds);
-		context.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
 
 		return actionResult;
 	}

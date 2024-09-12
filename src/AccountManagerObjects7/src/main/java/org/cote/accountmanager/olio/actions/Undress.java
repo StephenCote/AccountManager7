@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
@@ -41,7 +42,7 @@ public class Undress implements IAction {
 
 		int minSeconds = actionResult.get("action.minimumTime");
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds);
-		context.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
 
 		return actionResult;
 	}
@@ -92,7 +93,7 @@ public class Undress implements IAction {
 				if(wl > cwl) {
 					desc.add("Strip: " + NarrativeUtil.describeWearable(w));
 					w.setValue("inuse", false);
-					context.queueUpdate(w, new String[] {"inuse"});
+					Queue.queueUpdate(w, new String[] {"inuse"});
 				}
 			});
 			

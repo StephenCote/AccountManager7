@@ -5,6 +5,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.record.BaseRecord;
@@ -39,36 +40,29 @@ public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolve
 
 
 	@Override
-	public void startLocationEpoch(OlioContext context, BaseRecord location, BaseRecord epoch) {
-		EventUtil.edgeTimes(epoch);
+	public void startRealmEvent(OlioContext context, BaseRecord realm) {
+		EventUtil.edgeTimes(context.clock().realmClock(realm).getEvent());
 	}
 
 	
 	@Override
-	public BaseRecord startIncrement(OlioContext context, BaseRecord locationEpoch) {
-		BaseRecord rec = continueIncrement(context, locationEpoch);
+	public BaseRecord startRealmIncrement(OlioContext context, BaseRecord realm) {
+		BaseRecord rec = continueRealmIncrement(context, realm);
 		if(rec != null) {
 			logger.warn("Returning current pending increment.");
 			return rec;
 		}
-		return nextIncrement(context, locationEpoch);
+		return nextRealmIncrement(context, realm);
 	}
 
 	@Override
-	public BaseRecord continueIncrement(OlioContext context, BaseRecord locationEpoch) {
-		BaseRecord rec = EventUtil.getLastEvent(context.getOlioUser(), context.getWorld(), locationEpoch.get("location"), EventEnumType.PERIOD, incrementType, ActionResultEnumType.PENDING, false); 
-		if(rec != null) {
-			return rec;
-		}
-		return null;
+	public BaseRecord continueRealmIncrement(OlioContext context, BaseRecord realm) {
+		return context.clock().realmClock(realm).getIncrement();
 	}
 
 	@Override
-	public void endIncrement(OlioContext context, BaseRecord locationEpoch, BaseRecord currentIncrement) {
-		BaseRecord rec = currentIncrement;
-		if(currentIncrement == null) {
-			rec = continueIncrement(context, locationEpoch);
-		}
+	public void endRealmIncrement(OlioContext context, BaseRecord realm) {
+		BaseRecord rec = continueRealmIncrement(context, realm);
 		if(rec == null) {
 			logger.warn("Current increment was not found");
 			return;
@@ -80,15 +74,15 @@ public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolve
 		}
 		try {
 			rec.set(FieldNames.FIELD_STATE, ActionResultEnumType.COMPLETE);
-			context.queue(rec.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+			Queue.queue(rec.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
 	}
 
 	@Override
-	public BaseRecord nextIncrement(OlioContext context, BaseRecord parentEvent) {
-		return EventUtil.findNextIncrement(context, parentEvent, incrementType);
+	public BaseRecord nextRealmIncrement(OlioContext context, BaseRecord realm) {
+		return EventUtil.findNextIncrement(context, context.clock().realmClock(realm).getEvent(), incrementType);
 	}
 	
 }

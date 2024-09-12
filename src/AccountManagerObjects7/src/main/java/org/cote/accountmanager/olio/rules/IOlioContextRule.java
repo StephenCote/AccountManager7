@@ -7,7 +7,7 @@ public interface IOlioContextRule {
 	
 	public BaseRecord generate(OlioContext context);
 	public void pregenerate(OlioContext context);
-	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event);
+	public void generateRegion(OlioContext context, BaseRecord realm);
 	public void postgenerate(OlioContext context);
 	public BaseRecord[] selectLocations(OlioContext context);
 

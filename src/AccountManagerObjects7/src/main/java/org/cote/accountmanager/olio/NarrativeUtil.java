@@ -16,6 +16,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -987,7 +988,7 @@ public class NarrativeUtil {
 			if(onarrative == null) {
 				IOSystem.getActiveContext().getRecordUtil().createRecord(narrative);
 				p.setValue("narrative", narrative);
-				ctx.queueUpdate(p, new String[] {FieldNames.FIELD_ID, "narrative"});
+				Queue.queueUpdate(p, new String[] {FieldNames.FIELD_ID, "narrative"});
 			}
 			else {
 				IOSystem.getActiveContext().getRecordUtil().patch(narrative.copyDeidentifiedRecord(), onarrative);
@@ -995,7 +996,7 @@ public class NarrativeUtil {
 			}
 			nar.add(narrative);
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 		return nar;
 		
 	}
@@ -1408,7 +1409,7 @@ public class NarrativeUtil {
 		BaseRecord eloc = event.get("location");
 		//IOSystem.getActiveContext().getReader().populate(eloc);
 		//logger.info(eloc.toFullString());
-		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(eloc).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
+		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getRealmPopulation(realm).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
 		List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
 		String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		if(fpop.size() > 0) {
@@ -1471,7 +1472,7 @@ public class NarrativeUtil {
 			List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
 			String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 			List<Long> gids = Arrays.asList(new Long[] {user.get(FieldNames.FIELD_ID), systemUser.get(FieldNames.FIELD_ID)});
-			List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getPopulation(evt.get("location")), cell);
+			List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getRealmPopulation(realm), cell);
 			pdesc = "No one seems to be nearby.";
 			if(fpop.size() > 0) {
 				pdesc = "There are " + fpop.size() +" strangers nearby.";

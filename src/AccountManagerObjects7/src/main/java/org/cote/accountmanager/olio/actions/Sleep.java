@@ -6,6 +6,7 @@ import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.record.BaseRecord;
@@ -45,7 +46,7 @@ public class Sleep implements IAction {
 		}
 		
 		ActionUtil.edgeSecondsUntilEnd(actionResult, dur);
-		context.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
 		return actionResult;
 	}
 
@@ -66,7 +67,7 @@ public class Sleep implements IAction {
 		ActionUtil.addProgressSeconds(actionResult, timeIncrement);
 		BaseRecord state = actor.get("state");
 		state.setValue("awake", false);
-		context.queueUpdate(state, new String[] {"awake"});
+		Queue.queueUpdate(state, new String[] {"awake"});
 		
 		return true;
 	}
@@ -84,7 +85,7 @@ public class Sleep implements IAction {
 		if(prog.until(end, ChronoUnit.MILLIS) <= 0L) {
 			BaseRecord state = actor.get("state");
 			state.setValue("awake", true);
-			context.queueUpdate(state, new String[] {"awake"});
+			Queue.queueUpdate(state, new String[] {"awake"});
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.COMPLETE);
 		}
 

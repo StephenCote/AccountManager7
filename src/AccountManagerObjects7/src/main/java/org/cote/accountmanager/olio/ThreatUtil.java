@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
@@ -26,7 +27,7 @@ public class ThreatUtil {
 						BaseRecord inter = InteractionUtil.newInteraction(ctx, InteractionEnumType.THREATEN, increment, a, tet, pp.getRecord());
 						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get("firstName"));
 						inters.add(inter);
-						//ctx.queue(inter);
+						//Queue.queue(inter);
 					});
 				});
 			});
@@ -148,7 +149,7 @@ public class ThreatUtil {
 		/// Exclude the primary party from the general populace for purposes of agitating and assessing threat with the remainder of the population
 		///
 		List<Long> gids = group.keySet().stream().map(r -> ((long)r.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
-		List<BaseRecord> pop = ctx.getPopulation(event.get("location")).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList();
+		List<BaseRecord> pop = ctx.getRealmPopulation(realm);
 		
 		// logger.info("Agitate person threats");
 		NeedsUtil.agitateLocation(ctx, realm, event, pop, false, true);
@@ -258,7 +259,7 @@ public class ThreatUtil {
 				}
 			}
 		}
-		ctx.processQueue();
+		Queue.processQueue();
 		return tmap;
 	}
 }

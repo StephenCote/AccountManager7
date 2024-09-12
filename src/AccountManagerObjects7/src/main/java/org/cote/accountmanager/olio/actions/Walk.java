@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.OlioContext;
@@ -38,7 +39,7 @@ public class Walk implements IAction {
 		double mps = AnimalUtil.walkMetersPerSecond(actor);
 		long timeSeconds = (long)(dist / mps);
 		ActionUtil.edgeSecondsUntilEnd(actionResult, timeSeconds);
-		context.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
 		return actionResult;
 	}
 

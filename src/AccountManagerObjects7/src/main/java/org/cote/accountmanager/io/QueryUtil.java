@@ -247,7 +247,10 @@ public class QueryUtil {
 		part.field(FieldNames.FIELD_PARTICIPANT_MODEL, actorType);
 		try {
 			part.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
-			query.field(FieldNames.FIELD_ORGANIZATION_ID, object.get(FieldNames.FIELD_ORGANIZATION_ID));
+			long oid = object.get(FieldNames.FIELD_ORGANIZATION_ID);
+			if(oid > 0L) {
+				query.field(FieldNames.FIELD_ORGANIZATION_ID, object.get(FieldNames.FIELD_ORGANIZATION_ID));
+			}
 			query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);

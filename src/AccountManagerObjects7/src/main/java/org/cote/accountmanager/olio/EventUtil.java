@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -132,7 +133,7 @@ public class EventUtil {
 			evt.set("eventProgress", startTime);
 			evt.set("eventEnd", startTime);
 			if(enqueue) {
-				ctx.queue(evt);
+				Queue.queue(evt);
 			}
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -377,7 +378,7 @@ public class EventUtil {
 		BaseRecord[] cevts = EventUtil.getChildEvents(context.getWorld(), parentEvent, null, null, name, tet, EventEnumType.UNKNOWN);
 		if(cevts.length > 0) {
 			parentEvent.set("eventProgress", time);
-			context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+			Queue.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
 			return cevts[0];
 		}
 		BaseRecord evt = EventUtil.newEvent(context, parentEvent, EventEnumType.PERIOD, name, time);
@@ -394,7 +395,7 @@ public class EventUtil {
 			EventUtil.edgeHour(evt);
 		}
 		IOSystem.getActiveContext().getRecordUtil().createRecord(evt);
-		context.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+		Queue.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
 		return evt;
 	}
 	public static String getTimeName(ZonedDateTime prog, TimeEnumType tet) {

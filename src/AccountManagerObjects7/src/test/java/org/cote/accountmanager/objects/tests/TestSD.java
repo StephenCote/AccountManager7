@@ -4,40 +4,14 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.security.SecureRandom;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
 
-import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.ApparelUtil;
-import org.cote.accountmanager.olio.ItemUtil;
-import org.cote.accountmanager.olio.NarrativeUtil;
-import org.cote.accountmanager.olio.OlioContext;
-import org.cote.accountmanager.olio.OlioContextConfiguration;
-import org.cote.accountmanager.olio.OlioUtil;
-import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
-import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
-import org.cote.accountmanager.olio.rules.HierarchicalNeedsEvolveRule;
-import org.cote.accountmanager.olio.rules.IOlioContextRule;
-import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
-import org.cote.accountmanager.olio.rules.Increment24HourRule;
-import org.cote.accountmanager.olio.rules.LocationPlannerRule;
-import org.cote.accountmanager.olio.sd.SDExtraGenerationParams;
 import org.cote.accountmanager.olio.sd.SDOverrideSettings;
 import org.cote.accountmanager.olio.sd.SDResponse;
 import org.cote.accountmanager.olio.sd.SDTxt2Img;
 import org.cote.accountmanager.olio.sd.SDUtil;
-import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.junit.Test;
 
 public class TestSD extends BaseTest {
 	
@@ -130,7 +104,7 @@ public class TestSD extends BaseTest {
 			///
 			ApparelUtil.outfitAndStage(octx, null, octx.getPopulation(lrec));
 			ItemUtil.showerWithMoney(octx, octx.getPopulation(lrec));
-			octx.processQueue();
+			Queue.processQueue();
 		}
 
 		BaseRecord[] realms = octx.getRealms();

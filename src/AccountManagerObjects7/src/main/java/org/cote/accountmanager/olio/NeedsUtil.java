@@ -16,6 +16,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -87,17 +88,19 @@ public class NeedsUtil {
 	 *  
 	 */
 	
-	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment){
+	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord realm){
 		List<BaseRecord> acts = new ArrayList<>();
 		return acts;
 	}
 		
-	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group){
+	public static List<BaseRecord> recommend(OlioContext ctx, BaseRecord realm, List<BaseRecord> group){
 		Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
 
 		logger.info("Calculating recommendation ....");
-		BaseRecord realm = ctx.getRealm(locationEpoch.get("location"));
+
+		BaseRecord increment = ctx.clock().realmClock(realm).getIncrement();
+		
 		/// Agitate map, people, animals, and identify initial threats
 		///
 		List<BaseRecord> inters = increment.get("interactions");
@@ -109,12 +112,12 @@ public class NeedsUtil {
 		logger.info("Calculating threat interactions ... " + tinters.size());
 		
 		/// Evaluate needs 
-		List<BaseRecord> actions = evaluateNeeds(ctx, locationEpoch, increment, group, map);
+		List<BaseRecord> actions = evaluateNeeds(ctx, realm, group, map);
 		logger.info("Group actions to delegate: " + actions.size());
 		
 		/// Delegate actions
-		GroupDynamicUtil.delegateActions(ctx, locationEpoch, increment, map, actions);
-		// ctx.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
+		GroupDynamicUtil.delegateActions(ctx, realm, map, actions);
+		// Queue.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
 
 		List<BaseRecord> acts = new ArrayList<>();
 		
@@ -177,7 +180,7 @@ public class NeedsUtil {
 	}
 
 	
-	protected static List<BaseRecord> evaluateNeeds(OlioContext ctx, BaseRecord locationEpoch, BaseRecord increment, List<BaseRecord> group, Map<BaseRecord, PersonalityProfile> map) {
+	protected static List<BaseRecord> evaluateNeeds(OlioContext ctx, BaseRecord realm, List<BaseRecord> group, Map<BaseRecord, PersonalityProfile> map) {
 		List<BaseRecord> actions = new ArrayList<>();
 		PersonalityGroupProfile pgp = ProfileUtil.getGroupProfile(map);
 
@@ -220,6 +223,12 @@ public class NeedsUtil {
 	
 	protected static void agitateLocation(OlioContext ctx, BaseRecord realm, BaseRecord event, List<BaseRecord> pop, boolean cluster, boolean roam) {
 		BaseRecord eloc = event.get("location");
+		if(eloc == null) {
+			eloc = realm.get("origin");
+			event.setValue("location", eloc);
+			logger.warn("Increment missing location");
+			Queue.queueUpdate(eloc, new String[] {"location"});
+		}
 		List<BaseRecord> acells = GeoLocationUtil.getCells(ctx, eloc);
 		BaseRecord rloc = null;
 		
@@ -259,10 +268,10 @@ public class NeedsUtil {
 						upf.add("agitated");
 					}
 					// upf.add(FieldNames.FIELD_ID);
-					ctx.queueUpdate(state, upf.toArray(new String[0]));
+					Queue.queueUpdate(state, upf.toArray(new String[0]));
 				}
 			}
-			ctx.processQueue();
+			Queue.processQueue();
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);

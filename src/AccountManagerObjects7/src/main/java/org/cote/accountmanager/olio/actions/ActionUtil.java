@@ -16,6 +16,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.AssessmentEnumType;
 import org.cote.accountmanager.olio.EventUtil;
@@ -173,7 +174,7 @@ public class ActionUtil {
 		// int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getOlioUser(), OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
 		if(count == 0) {
 			importActions(ctx);
-			ctx.processQueue();
+			Queue.processQueue();
 		}
 	}
 	protected static BaseRecord[] importActions(OlioContext ctx) {
@@ -193,7 +194,7 @@ public class ActionUtil {
 					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getModel()));
 				}
 				actr.set("tags", itags);
-				ctx.queue(actr);
+				Queue.queue(actr);
 				oacts.add(actr);
 			}
 			

@@ -158,7 +158,8 @@
 	{
 		"name": "plan",
 		"type": "model",
-		"baseModel": "io.queryPlan"
+		"baseModel": "io.queryPlan",
+		"foreign": true
 	},
 	{
 		"name": "debug",

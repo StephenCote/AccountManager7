@@ -18,6 +18,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -44,7 +45,7 @@ public class ItemUtil {
 		List<BaseRecord> weapL = getItemTemplates(ctx).stream().filter(r -> "weapon".equals(r.get("category"))).collect(Collectors.toList());
 		BaseRecord weapT = weapL.get(random.nextInt(weapL.size()));
 		BaseRecord weap = ItemUtil.buildItem(ctx, weapT);
-		//ctx.queue(weap);
+		//Queue.queue(weap);
 		ApparelUtil.applyFabric(weap, weaponFab[random.nextInt(weaponFab.length)]);
 		aweaps.add(weap);
 		
@@ -284,7 +285,7 @@ public class ItemUtil {
 		
 		int quan = invItem.get("quantity");
 		invItem.setValue("quantity", quan + count);
-		ctx.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
+		Queue.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
 
 		return true;
 	}
@@ -328,7 +329,7 @@ public class ItemUtil {
 			return false;
 		}
 		invItem.setValue("quantity", quan);
-		ctx.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
+		Queue.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
 
 		return true;
 	}
@@ -430,7 +431,7 @@ public class ItemUtil {
 		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
 		if(count == 0) {
 			BaseRecord[] items = importItems(ctx);
-			ctx.processQueue();
+			Queue.processQueue();
 			//IOSystem.getActiveContext().getRecordUtil().createRecords(items);
 		}
 	}
@@ -480,7 +481,7 @@ public class ItemUtil {
 				}
 				itm.set("features", ifeats);
 
-				ctx.queue(itm);
+				Queue.queue(itm);
 				oitems.add(itm);
 			}
 		}

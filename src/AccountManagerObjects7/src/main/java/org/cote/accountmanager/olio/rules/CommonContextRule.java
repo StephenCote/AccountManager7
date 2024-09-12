@@ -18,7 +18,7 @@ public abstract class CommonContextRule implements IOlioContextRule {
 	}
 
 	@Override
-	public void generateRegion(OlioContext context, BaseRecord rootEvent, BaseRecord event) {
+	public void generateRegion(OlioContext context, BaseRecord realm) {
 		// TODO Auto-generated method stub
 		
 	}

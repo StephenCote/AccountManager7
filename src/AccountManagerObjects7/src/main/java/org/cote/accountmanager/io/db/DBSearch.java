@@ -55,6 +55,11 @@ public class DBSearch extends SearchBase {
 			sql = StatementUtil.getCountTemplate(query);
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
+			
+			if((boolean)query.get(FieldNames.FIELD_DEBUG) == true){
+				logger.info(statement);
+			}
+			
 			ResultSet rset = statement.executeQuery();
 			if(rset.next()) {
 				count = rset.getInt(1);

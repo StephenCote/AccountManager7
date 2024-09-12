@@ -49,7 +49,7 @@ public class RealmUtil {
 		try {
 			realm = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_REALM, ctx.getOlioUser(), null, plist);
 			realm.set("origin", origin);
-			realm.set("population", ctx.getPopulationGroup(origin, "Population"));
+			//realm.set("population", ctx.getPopulationGroup(origin, "Population"));
 			realm.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
 			realm.set(FieldNames.FIELD_NAME, "Realm " + origin.get(FieldNames.FIELD_NAME));
 			List<BaseRecord> locations = realm.get("locations");

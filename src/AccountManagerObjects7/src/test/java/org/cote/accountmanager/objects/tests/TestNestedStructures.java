@@ -1,10 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
-import java.time.ZonedDateTime;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -22,10 +19,6 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
-import org.cote.accountmanager.model.field.FieldType;
-import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
@@ -40,7 +33,6 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
-import org.cote.accountmanager.util.RecordUtil;
 import org.junit.Test;
 
 public class TestNestedStructures extends BaseTest {

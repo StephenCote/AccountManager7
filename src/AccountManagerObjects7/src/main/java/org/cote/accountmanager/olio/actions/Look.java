@@ -79,7 +79,7 @@ public class Look  extends CommonAction implements IAction {
 			res.add("POI: " + poi.get("name") + " " + getDistDirStatement(actor, poi, "east", "north"));
 		}
 		
-		BaseRecord realm = context.getRealm(context.getCurrentLocation());
+		BaseRecord realm = context.clock().getRealm();
 		List<BaseRecord> zoo = realm.get("zoo");
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(context, zoo, cell);
 		logger.info("Animal population: " + zoo.size() + " [visible = " + zpop.size() + "]");

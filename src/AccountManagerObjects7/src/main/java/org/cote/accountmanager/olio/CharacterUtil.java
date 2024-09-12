@@ -24,6 +24,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -42,7 +43,7 @@ public class CharacterUtil {
 	}
 	public static int getCurrentAge(OlioContext ctx, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
-		return getAgeAtEpoch(ctx.getOlioUser(), ctx.getCurrentEpoch(), person);
+		return getAgeAtEpoch(ctx.getOlioUser(), ctx.clock().getEpoch(), person);
 	}
 	public static int getCurrentAge(BaseRecord user, BaseRecord world, BaseRecord person) {
 		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
@@ -361,6 +362,7 @@ public class CharacterUtil {
 			event.set(FieldNames.FIELD_LOCATION, location);
 			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
 			event.set(FieldNames.FIELD_NAME, "Populate " + locName);
+			event.set(FieldNames.FIELD_REALM, realm);
 			event.set(FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
 			ZonedDateTime inceptionDate = rootEvent.get("eventStart");
 			event.set("eventStart", inceptionDate);
@@ -382,11 +384,11 @@ public class CharacterUtil {
 			IOSystem.getActiveContext().getRecordUtil().updateRecords(grps.toArray(new BaseRecord[0]));
 			
 			realm.set("population", popGrp);
-			ctx.queueUpdate(realm, new String[] {"population"});
+			Queue.queueUpdate(realm, new String[] {"population"});
 			realm.set("populationGroups", grps);
-			ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", popGrp));
-			ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", cemGrp));
-			ctx.processQueue();
+			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", popGrp));
+			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", cemGrp));
+			//Queue.processQueue();
 			
 			event.set(FieldNames.FIELD_GROUPS, grps);
 			List<BaseRecord> actors = event.get("actors");
@@ -431,6 +433,7 @@ public class CharacterUtil {
 				
 				/// Add event membership
 				List<BaseRecord> parts = new ArrayList<>();
+				// logger.info("**** Add " + actors.size() + " to " + popGrp.get("id"));
 				for(BaseRecord rec : actors) {
 					parts.add(ParticipationFactory.newParticipation(ctx.getOlioUser(), popGrp, null, rec));
 				}
@@ -452,6 +455,7 @@ public class CharacterUtil {
 		} catch (ValueException | FieldException | ModelNotFoundException | FactoryException e) {
 			logger.error(e);
 		}
+		Queue.processQueue();
 		logger.info("Finished populating " + locName + " in " + (System.currentTimeMillis() - start) + "ms");
 		return event;
 	}

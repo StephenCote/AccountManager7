@@ -18,6 +18,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.ProfileUtil;
@@ -70,7 +71,7 @@ public class SDUtil {
 				if(bl.size() > 0) {
 					// if(prof.get("portrait") == null) {
 						prof.setValue("portrait", bl.get(rand.nextInt(bl.size())));
-						octx.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
+						Queue.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
 					//}
 					for(BaseRecord b1 : bl) {
 						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
@@ -83,7 +84,7 @@ public class SDUtil {
 	
 			//}
 		}
-		octx.processQueue();
+		Queue.processQueue();
 	}
 
 	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, String style, String bodyStyle, int batchSize, boolean export, boolean hires, int seed) {
@@ -110,7 +111,7 @@ public class SDUtil {
 				if(bl.size() > 0) {
 					// if(prof.get("portrait") == null) {
 						prof.setValue("portrait", bl.get(rand.nextInt(bl.size())));
-						octx.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
+						Queue.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
 					//}
 					for(BaseRecord b1 : bl) {
 						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
@@ -123,7 +124,7 @@ public class SDUtil {
 	
 			//}
 		}
-		octx.processQueue();
+		Queue.processQueue();
 	}
 	
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String name) {

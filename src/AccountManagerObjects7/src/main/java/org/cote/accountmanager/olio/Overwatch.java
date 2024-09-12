@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.actions.IAction;
 import org.cote.accountmanager.record.BaseRecord;
@@ -142,6 +143,7 @@ public class Overwatch {
 	}
 
 	public void updateClock() {
+		/*
 		BaseRecord evt = null;
 		if(context.getCurrentIncrement() != null) {
 			evt = context.getCurrentIncrement();
@@ -155,6 +157,7 @@ public class Overwatch {
 		if(evt != null) {
 			this.clock = new Clock(evt);
 		}
+		*/
 	}
 	
 
@@ -176,7 +179,7 @@ public class Overwatch {
 			processTimedSchedules();
 			processEvents();
 			
-			context.processQueue();
+			Queue.processQueue();
 			
 			count++;
 			if(count >= maximumProcessCount) {

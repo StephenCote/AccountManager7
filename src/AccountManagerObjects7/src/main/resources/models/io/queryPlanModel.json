@@ -15,12 +15,15 @@
 	{
 		"name": "parent",
 		"type": "model",
+		"foreign": true,
+		"followReference": false,
 		"baseModel": "io.queryPlan",
 		"ephemeral": true
 	},
 	{
 		"name": "plans",
 		"type": "list",
+		"foreign": true,
 		"baseType": "model",
 		"baseModel": "io.queryPlan"
 	},

@@ -3,55 +3,19 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
-import java.util.UUID;
 
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
-import org.cote.accountmanager.exceptions.ModelException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ReaderException;
-import org.cote.accountmanager.exceptions.ScriptException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.db.DBStatementMeta;
-import org.cote.accountmanager.io.db.StatementUtil;
-import org.cote.accountmanager.model.field.FieldEnumType;
-import org.cote.accountmanager.objects.generated.FactType;
-import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
-import org.cote.accountmanager.objects.generated.PolicyRequestType;
-import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
-import org.cote.accountmanager.olio.GeoLocationUtil;
-import org.cote.accountmanager.olio.InteractionUtil;
-import org.cote.accountmanager.olio.MapUtil;
-import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
-import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioException;
-import org.cote.accountmanager.olio.OlioPolicyUtil;
 import org.cote.accountmanager.olio.OverwatchException;
-import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
-import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.llm.ESRBEnumType;
-import org.cote.accountmanager.policy.FactUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.record.RecordSerializerConfig;
-import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
-import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.Test;
 
 public class TestOlioRules extends BaseTest {
@@ -71,7 +35,7 @@ public class TestOlioRules extends BaseTest {
 		
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		
-		//OlioTestUtil.setResetWorld(true);
+		OlioTestUtil.setResetWorld(true);
 		//OlioTestUtil.setResetUniverse(true);
 		 
 		OlioContext octx = null;
@@ -90,12 +54,12 @@ public class TestOlioRules extends BaseTest {
 		BaseRecord popGroup = realm.get("population");
 		assertNotNull("Pop group is null", popGroup);
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
-		/*
+		
 		if(debugBreak) {
 			logger.info("Debug check");
 			return;
 		}
-		*/
+		
 
 
 		
@@ -137,20 +101,18 @@ public class TestOlioRules extends BaseTest {
 			pact = ActionUtil.getInAction(per1, "look");
 			if(pact != null) {
 				pact.setValue("type", ActionResultEnumType.INCOMPLETE);
-				octx.queueUpdate(pact, new String[] {"type"});
+				Queue.queueUpdate(pact, new String[] {"type"});
 			}
 			/// Epochs and increments are currently pinned against the root location of a realm (which made sense at some point and now just seems like it causes more problems than it solves)
 			/// Therefore, in order to process an action for an actor, it's necessary to start or continue the epoch and increment for their root location in order for the context to be correct, such as if trying to obtain the realm based on the context location, which would return the last location processed, not the correct location
 			///
 			///
-			octx.startOrContinueLocationEpoch(lrec);
-			octx.startOrContinueIncrement();
 			
-			pact = Actions.beginLook(octx, octx.getCurrentIncrement(), per1);
+			pact = Actions.beginLook(octx, octx.clock().getIncrement(), per1);
 			octx.overwatchActions();
 			logger.info(pact.toString());
 			
-			pact = Actions.beginGather(octx, octx.getCurrentIncrement(), per1, "water", 3);
+			pact = Actions.beginGather(octx, octx.clock().getIncrement(), per1, "water", 3);
 			octx.overwatchActions();
 			logger.info(pact.toString());
 			/*
@@ -173,14 +135,14 @@ public class TestOlioRules extends BaseTest {
 			logger.info(e);
 			e.printStackTrace();
 		}
-		octx.processQueue();
+		Queue.processQueue();
 		/*
 		BaseRecord mact = null;
 		try {
 			mact = ActionUtil.getInAction(per1, "walkTo");
 			if(mact != null) {
 				mact.set("type", ActionResultEnumType.INCOMPLETE);
-				octx.queueUpdate(mact, new String[] {"type"});
+				Queue.queueUpdate(mact, new String[] {"type"});
 			}
 			mact = Actions.beginMoveTo(octx, octx.getCurrentIncrement(), per1, per2);
 			octx.overwatchActions();
@@ -188,7 +150,7 @@ public class TestOlioRules extends BaseTest {
 			logger.info(e);
 		}
 		
-		octx.processQueue();
+		Queue.processQueue();
 		*/
 
 	}

@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.ItemUtil;
@@ -200,7 +201,7 @@ public class ChatAction extends CommonAction implements IAction{
 					///
 					ApparelUtil.outfitAndStage(octx, null, pop);
 					ItemUtil.showerWithMoney(octx, pop);
-					octx.processQueue();
+					Queue.processQueue();
 				}
 			}
 			

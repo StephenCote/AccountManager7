@@ -14,6 +14,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.Decks;
 import org.cote.accountmanager.olio.EventUtil;
@@ -155,6 +156,8 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 			logger.error("Failed to update root event");
 			return null;
 		}
+		
+		Queue.processQueue();
 		return root;
 	}
 	

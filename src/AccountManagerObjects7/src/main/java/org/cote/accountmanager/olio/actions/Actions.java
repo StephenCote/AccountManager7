@@ -10,6 +10,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AssessmentEnumType;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.InteractionEnumType;
@@ -102,7 +103,7 @@ public class Actions {
 	public static void dependAction(OlioContext ctx, BaseRecord actionResult1, BaseRecord actionResult2) {
 		List<BaseRecord> dacts = actionResult1.get("dependentActions");
 		dacts.add(actionResult2);
-		ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), actionResult1, "dependentActions", actionResult2));
+		Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), actionResult1, "dependentActions", actionResult2));
 	}
 	
 	public static BaseRecord beginAction(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, AssessmentEnumType assessType, String actionName) throws OlioException {
@@ -129,7 +130,7 @@ public class Actions {
 			if(params != null && (boolean)params.get("autoComplete") == true) {
 				logger.info("Auto-completing " + actor.get(FieldNames.FIELD_NAME) + "'s current '" + actionName + "' action.");
 				cact.setValue("type", ActionResultEnumType.INCOMPLETE);
-				context.queueUpdate(cact, new String[] {"type"});
+				Queue.queueUpdate(cact, new String[] {"type"});
 			}
 			else {
 				logger.warn(actor.get(FieldNames.FIELD_NAME) + " is already in the middle of a '" + actionName + "' action.  Current action must be completed or abandoned.");
@@ -167,7 +168,7 @@ public class Actions {
 		act.beginAction(context, actr, actor, interactor);
 		updateState(context, actr, actor);
 
-		context.processQueue();
+		Queue.processQueue();
 		
 		context.getOverwatch().watch(OverwatchEnumType.ACTION, new BaseRecord[] {actr});
 		
@@ -209,7 +210,7 @@ public class Actions {
 			}
 		}
 		ActionUtil.addProgressMS(actionResult, action.calculateCostMS(context, actionResult, actor, interactor));
-		context.queueUpdate(actionResult, new String[] {"actionProgress"});
+		Queue.queueUpdate(actionResult, new String[] {"actionProgress"});
 		
 		//logger.info("Execute action: " + actName);
 		return action.executeAction(context, actionResult, actor, interactor);
@@ -231,7 +232,7 @@ public class Actions {
 		if(aet != ActionResultEnumType.IN_PROGRESS && aet != ActionResultEnumType.PENDING) {
 			actionResult.setValue("actionEnd", actionResult.get("actionProgress"));
 		}
-		context.queueUpdate(actionResult, new String[] {"actionEnd", "actionProgress", "type"});
+		Queue.queueUpdate(actionResult, new String[] {"actionEnd", "actionProgress", "type"});
 
 		return aet;
 		

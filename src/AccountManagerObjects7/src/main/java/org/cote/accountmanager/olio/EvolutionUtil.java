@@ -19,6 +19,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -28,7 +29,7 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 public class EvolutionUtil {
 	public static final Logger logger = LogManager.getLogger(EvolutionUtil.class);
 	private static SecureRandom rand = new SecureRandom();
-	
+	/*
 	protected static void beginEvolution(OlioContext ctx){
 		if(ctx.getCurrentEvent() == null || ctx.getCurrentLocation() == null) {
 			logger.error("Context is not ready for evolution");
@@ -61,7 +62,7 @@ public class EvolutionUtil {
 			logger.error(e);
 		}
 		
-		ctx.queue(ctx.getCurrentEvent().copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
+		Queue.queue(ctx.getCurrentEvent().copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
 		
 
 	}
@@ -99,14 +100,11 @@ public class EvolutionUtil {
 			for(BaseRecord p: pop) {
 				int age =  CharacterUtil.getCurrentAge(ctx, p);
 				p.set("age",age);
-				ctx.queueUpdate(p, new String[] {"age"});
+				Queue.queueUpdate(p, new String[] {"age"});
 			}
 			
 			logger.info("Updating population ...");
-			ctx.getQueue().forEach((k, v) -> {
-				IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
-			});
-			ctx.getQueue().clear();
+			Queue.processQueue();
 			
 		}
 		catch(Exception e) {
@@ -153,13 +151,13 @@ public class EvolutionUtil {
 					
 					IOSystem.getActiveContext().getRecordUtil().updateRecord(baby);
 					dep1.add(baby);
-					ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), popGrp, null, baby));
-					ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), per, "dependents", baby));
+					Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), popGrp, null, baby));
+					Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), per, "dependents", baby));
 					if(partner != null){
 						BaseRecord partp = pop.stream().filter(p -> ((long)p.get(FieldNames.FIELD_ID)) == ((long)partner.get(FieldNames.FIELD_ID))).findFirst().get();
 						List<BaseRecord> dep2 = partp.get("dependents");
 						dep2.add(baby);
-						ctx.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), partp, "dependents", baby));
+						Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), partp, "dependents", baby));
 					}
 					
 					additions.add(baby);
@@ -168,7 +166,7 @@ public class EvolutionUtil {
 				}
 				
 				if(rulePersonDeath(eventAlignment, popGrp, per, currentAge)){
-					OlioUtil.addAttribute(ctx.getQueue(), per, "deceased", true);
+					OlioUtil.addAttribute(per, "deceased", true);
 					List<BaseRecord> partners = per.get("partners");
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
 					if(partner != null) {
@@ -186,11 +184,11 @@ public class EvolutionUtil {
 			}
 			pop.addAll(additions);
 			pop.removeAll(deaths);
-			/*
+			/ *
 			for(BaseRecord per : additions){
 				OlioUtil.setDemographicMap(ctx.getOlioUser(), map, ctx.getCurrentEvent(), per);
 			}
-			*/
+			* /
 			for(BaseRecord per : deaths){
 				OlioUtil.setDemographicMap(ctx.getOlioUser(), map, ctx.getCurrentEvent(), per);
 			}			
@@ -205,12 +203,6 @@ public class EvolutionUtil {
 			logger.error(e);
 		}
 	}
-	
-
-
-	/*
-
-	*/
 
 	private static boolean rulePersonBirth(AlignmentEnumType eventAlignmentType, BaseRecord populationGroup, BaseRecord mother, int age) {
 		boolean outBool = false;
@@ -252,7 +244,7 @@ public class EvolutionUtil {
 	}
 	
 	
-	/*
+	/ *
 
 	private void ruleImmigration(String sessionId, EventType parentEvent, PersonGroupType population) throws ArgumentException, FactoryException{
 		double rand = Math.random();
@@ -320,7 +312,7 @@ public class EvolutionUtil {
 		}
 
 	}
-	*/
+	* /
  	private static Map<String,List<BaseRecord>> getPotentialPartnerMap(Map<String, List<BaseRecord>> map){
 		Map<String,List<BaseRecord>> potentials = new HashMap<>();
 		potentials.put("male", new ArrayList<>());
@@ -399,11 +391,12 @@ public class EvolutionUtil {
 				}
 			}
 		}
-		/*
+		/ *
 		for(BaseRecord per : remap) {
 			OlioUtil.setDemographicMap(ctx.getOlioUser(), map, ctx.getCurrentEvent(), per);
 		}
-		*/
+		* /
 	}
+ 	*/
 
 }

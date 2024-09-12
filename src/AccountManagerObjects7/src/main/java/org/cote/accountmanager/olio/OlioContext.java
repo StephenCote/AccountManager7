@@ -20,6 +20,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.record.BaseRecord;
@@ -45,28 +46,27 @@ public class OlioContext {
 	private boolean initialized = false;
 	/// Each epoch currently defaults to 1 year
 	///
-	private BaseRecord currentEpoch = null;
+	// private BaseRecord currentEpoch = null;
 	
 	private List<BaseRecord> locations = new ArrayList<>();
 	private List<BaseRecord> populationGroups = new ArrayList<>();
 	/// Each location event defaults to 1 year
 	/// All events for a location within that period of time fall under the location event
 	///
-	private BaseRecord currentEvent = null;
-	private BaseRecord currentLocation = null;
-	private BaseRecord currentIncrement = null;
+	// private BaseRecord currentEvent = null;
+	//private BaseRecord currentLocation = null;
+	// private BaseRecord currentIncrement = null;
 	
 	private Map<Long, List<BaseRecord>> populationMap = new ConcurrentHashMap<>();
 	private Map<Long, Map<String,List<BaseRecord>>> demographicMap = new ConcurrentHashMap<>();
-	private Map<String, List<BaseRecord>> queue = new ConcurrentHashMap<>();
 	
 	private List<BaseRecord> realms = new ArrayList<>();
-	
+	/*
 	private ZonedDateTime currentTime = ZonedDateTime.now();
 	private ZonedDateTime currentMonth = currentTime;
 	private ZonedDateTime currentDay = currentTime;
 	private ZonedDateTime currentHour = currentTime;
-	
+	*/
 	private String olioUserName = "olioUser";
 	private BaseRecord olioUser = null;
 	private boolean initConfig = false;
@@ -90,10 +90,7 @@ public class OlioContext {
 		populationMap.clear();
 		demographicMap.clear();
 		realms.clear();
-		if(queue.size() > 0) {
-			logger.error("Warning: request to clear pending queue");
-		}
-		clearQueue();
+		Queue.clear();
 		CacheUtil.clearCache();
 	}
 	
@@ -106,9 +103,8 @@ public class OlioContext {
 	public BaseRecord getOlioUser() {
 		return olioUser;
 	}
-	public void clearQueue() {
-		queue.clear();
-	}
+
+	/*
 	public void setCurrentMonth(ZonedDateTime m) {
 		currentMonth = currentDay = currentHour = currentTime = m;
 	}
@@ -133,6 +129,7 @@ public class OlioContext {
 	public ZonedDateTime getCurrentHour() {
 		return currentHour;
 	}
+
 	public BaseRecord getCurrentEpoch() {
 		return currentEpoch;
 	}
@@ -141,6 +138,29 @@ public class OlioContext {
 		this.currentEpoch = currentEpoch;
 	}
 	
+	public BaseRecord getCurrentIncrement() {
+		return currentIncrement;
+	}
+	public void setCurrentIncrement(BaseRecord currentIncrement) {
+		this.currentIncrement = currentIncrement;
+	}
+	public BaseRecord getCurrentEvent() {
+		return currentEvent;
+	}
+
+	public void setCurrentEvent(BaseRecord currentEvent) {
+		this.currentEvent = currentEvent;
+	}
+
+	public BaseRecord getCurrentLocation() {
+		return currentLocation;
+	}
+
+	public void setCurrentLocation(BaseRecord currentLocation) {
+		this.currentLocation = currentLocation;
+	}
+	
+	*/
 	/*
 	public BaseRecord getUser() {
 		return config.getUser();
@@ -335,28 +355,27 @@ public class OlioContext {
 			if(trace) {
 				logger.info("Get/Create Epoch ...");
 			}
-			currentEpoch = EventUtil.getLastEpochEvent(this);
+
+			clock = new Clock(EventUtil.getLastEpochEvent(this), EventUtil.getRootEvent(this));
 			
 			locations = getRealms().stream().map(r -> (BaseRecord)r.get("origin")).collect(Collectors.toList());
-			
-			//locations = GeoLocationUtil.getRegionLocations(this);
+
 
 			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
 
 			initialized = true;
 			
-			Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
-			eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
-			eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-			eq.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
-			BaseRecord[] evts = IOSystem.getActiveContext().getSearch().findRecords(eq);
 			if(trace) {
 				logger.info("Generate Regions ...");
 			}
-			for(BaseRecord evt : evts) {
+			for(BaseRecord realm : getRealms()) {
 				for(IOlioContextRule rule : config.getContextRules()) {
-					rule.generateRegion(this, rootEvent, evt);
+					rule.generateRegion(this, realm);
 				}
+			}
+			
+			if(!startOrContinueRealmEvents()) {
+				logger.error("Failed to start realms");
 			}
 			
 			if(trace) {
@@ -371,19 +390,16 @@ public class OlioContext {
 		}
 	}
 	
-	public void queue(BaseRecord obj) {
-		OlioUtil.queueAdd(queue, obj);
+	public BaseRecord getRealmConstructEvent(BaseRecord realm) {
+		long eid = realm.get(FieldNames.FIELD_ID);
+		Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_REALM, eid);
+		eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
+		eq.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+		return IOSystem.getActiveContext().getSearch().findRecord(eq);
 	}
-	public void queueUpdate(BaseRecord obj, String[] fields) {
-		OlioUtil.queueUpdate(queue, obj, fields);
-	}
-	public void processQueue() {
-		queue.forEach((k, v) -> {
-			IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
-		});
-		queue.clear();
-	}
-	
+
+	/*
 	public BaseRecord[] getChildEvents() {
 		if(currentEpoch != null) {
 			return getChildEvents(currentEpoch);
@@ -394,8 +410,8 @@ public class OlioContext {
 	public BaseRecord[] getChildEvents(BaseRecord event) {
 		return EventUtil.getChildEvents(world, event, EventEnumType.UNKNOWN);
 	}
-	
-	public boolean startOrContinueRealmEpochs() {
+	*/
+	private boolean startOrContinueRealmEvents() {
 		BaseRecord ep = startOrContinueEpoch();
 		int errors = 0;
 		if(ep != null) {
@@ -406,19 +422,21 @@ public class OlioContext {
 			}
 			for(BaseRecord r: rlms) {
 				r.setValue("currentEpoch", ep);
-				queueUpdate(r, new String[] {"currentEpoch"});
-				BaseRecord revt = startOrContinueRealmEpoch(r);
+				Queue.queueUpdate(r, new String[] {"currentEpoch"});
+				BaseRecord revt = startOrContinueRealmEvent(r);
 				if(revt == null) {
 					logger.error("Failed to start or continue realm epoch");
 					errors++;
 					continue;
 				}
+				clock.realmClock(r).setEvent(revt);
 				BaseRecord ievt = startOrContinueRealmIncrement(r);
 				if(ievt == null) {
 					logger.error("Failed to start or continue realm increment");
 					errors++;
 					continue;
 				}
+				clock.realmClock(r).setIncrement(ievt);
 				evaluateIncrement(r);
 			}
 		}
@@ -426,29 +444,41 @@ public class OlioContext {
 			logger.error("Root Epoch is null");
 			errors++;
 		}
-		processQueue();
+		Queue.processQueue();
 		return (errors == 0);
 	}
 
-	public BaseRecord startOrContinueEpoch() {
+	private BaseRecord startOrContinueEpoch() {
 		BaseRecord e = null;
 		try {
-			if(currentEpoch != null) {
-				ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEpoch.get(FieldNames.FIELD_STATE));
+			if(clock.getEpoch() != null) {
+				ActionResultEnumType aet = ActionResultEnumType.valueOf(clock.getEpoch().get(FieldNames.FIELD_STATE));
 				if(aet == ActionResultEnumType.PENDING) {
 					for(IOlioEvolveRule r : config.getEvolutionRules()) {
-						r.continueEpoch(this, currentEpoch);
+						r.continueEpoch(this, clock.getEpoch());
 					}
-					return currentEpoch;
+					e = clock.getEpoch();
 				}
 			}
-			e = startEpoch();
+			else {
+				logger.info("Start an epoch");
+				e = startEpoch();
+			}
 		}
 		catch(Exception er) {
 			logger.error(er);
 			er.printStackTrace();
 		}
+		
 		return e;
+	}
+	
+	public Clock realmClock(BaseRecord realm) {
+		return clock.realmClock(realm);
+	}
+	
+	public Clock clock() {
+		return clock;
 	}
 	
 	public BaseRecord startEpoch() {
@@ -456,6 +486,7 @@ public class OlioContext {
 	}
 	
 	public void abandonEpoch() {
+		BaseRecord currentEpoch = clock.getEpoch();
 		if(currentEpoch != null) {
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEpoch.get(FieldNames.FIELD_STATE));
 			if(aet != ActionResultEnumType.COMPLETE) {
@@ -512,57 +543,53 @@ public class OlioContext {
 	}
 	
 	private void updateRealm(BaseRecord realm) {
-		if(currentLocation == null) {
-			return;
-		}
-		
-		IOSystem.getActiveContext().getReader().populate(realm, new String[] {"origin", "currentEpoch", "currentEvent", "currentIncrement"});
+
+		// IOSystem.getActiveContext().getReader().populate(realm, new String[] {"origin", "currentEpoch", "currentEvent", "currentIncrement"});
 		BaseRecord org = realm.get("origin");
 		if(org == null) {
 			logger.error("Origin is missing");
 			logger.error(realm.toFullString());
 			return;
 		}
-		long rloc = realm.get("origin.id");
-		long currId = currentLocation.get(FieldNames.FIELD_ID);
-		if(rloc > 0L && rloc == currId) {
-			try {
-				realm.set("currentEpoch", currentEpoch);
-				realm.set("currentEvent", currentEvent);
-				realm.set("currentIncrement", currentIncrement);
-				queue(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "currentEpoch", "currentEvent", "currentIncrement"}));
+		// Clock rclock = realmClock(realm);
+		try {
+			if(clock != null) {
+				realm.set("currentEpoch", clock.getEpoch());
 			}
-			catch(ModelNotFoundException | FieldException | ValueException e) {
-				logger.error(e);
-			}
+			// realm.set("currentEvent", rclock.getEvent());
+			// realm.set("currentIncrement", rclock.getIncrement());
+			Queue.queue(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "currentEpoch", "currentEvent", "currentIncrement"}));
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
 		}
 	}
 
-	public BaseRecord startOrContinueRealmEpoch(BaseRecord realm) {
-		if(currentEpoch == null) {
+	private BaseRecord startOrContinueRealmEvent(BaseRecord realm) {
+		if(clock.getEpoch() == null) {
 			logger.error("Current epoch is null");
 			return null;
 		}
 		
 		BaseRecord cevt = realm.get("currentEvent");
-		
+		Clock rclock = realmClock(realm);
 		if(cevt != null) {
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(cevt.get(FieldNames.FIELD_STATE));
 			if(aet == ActionResultEnumType.PENDING) {
 				for(IOlioEvolveRule r : config.getEvolutionRules()) {
-					r.continueRealmEpoch(this, realm, currentEpoch);
+					r.continueRealmEvent(this, realm);
 				}
-				return currentEpoch;
+				return rclock.getEvent();
 			}
 			else {
 				logger.warn("Current realm epoch is not in a pending state");
 				logger.warn(cevt.toFullString());
 			}
 		}
-		return startRealmEpoch(realm);
+		return startRealmEvent(realm);
 
 	}
-	
+	/*
 	public BaseRecord startOrContinueLocationEpoch(BaseRecord location) {
 		if(currentEpoch == null) {
 			logger.error("Current epoch is null");
@@ -597,18 +624,20 @@ public class OlioContext {
 	public void endLocationEpoch(BaseRecord location) {
 		EpochUtil.endLocationEpoch(this, location);
 	}
-
-	public BaseRecord startRealmEpoch(BaseRecord realm) {
-		return EpochUtil.startRealmEpoch(this, realm);
-	}
-	public void endRealmEpoch(BaseRecord realm) {
-		EpochUtil.endRealmEpoch(this, realm);
-	}
-
+	*/
 	
+	public BaseRecord startRealmEvent(BaseRecord realm) {
+		return EpochUtil.startRealmEvent(this, realm);
+	}
+	
+	public void endRealmEpoch(BaseRecord realm) {
+		EpochUtil.endRealmEvent(this, realm);
+	}
+
 	public void endEpoch() {
 		EpochUtil.endEpoch(this);
 	}
+	/*
 	public void evaluateIncrement() {
 		if(currentIncrement == null) {
 			logger.error("Invalid increment");
@@ -618,6 +647,7 @@ public class OlioContext {
 			r.evaluateIncrement(this, currentEvent, currentIncrement);
 		}
 	}
+	*/
 	
 	public void evaluateIncrement(BaseRecord realm) {
 		BaseRecord evt = realm.get("currentEvent");
@@ -636,68 +666,57 @@ public class OlioContext {
 	}
 	
 	public BaseRecord startOrContinueRealmIncrement(BaseRecord realm) {
-		BaseRecord evt = startOrContinueIncrement(realm.get("currentEvent"));
-		realm.setValue("currentIncrement", evt);
-		queueUpdate(realm, new String[] {"currentIncrement"});
-		return evt;
+		return startOrContinueIncrement(realm);
 	}
 	
-	public BaseRecord startOrContinueIncrement() {
-		return startOrContinueIncrement(currentEvent);
-	}
-	public BaseRecord startOrContinueIncrement(BaseRecord locationEpoch) {
-		if(locationEpoch == null) {
+
+	public BaseRecord startOrContinueIncrement(BaseRecord realm) {
+		if(clock.getEpoch() == null) {
 			logger.error("Invalid location epoch");
 		}
 		BaseRecord inc = null;
 		for(IOlioEvolveRule r : config.getEvolutionRules()) {
-			inc = r.continueIncrement(this, locationEpoch);
+			inc = r.continueRealmIncrement(this, realm);
 			if(inc != null) {
 				break;
 			}
 		}
 		if(inc != null) {
-			currentIncrement = inc;
 			return inc;
 		}
-		return startIncrement(locationEpoch);
+		return startIncrement(realm);
 	}
 	
-	public BaseRecord startIncrement() {
-		return startIncrement(currentEvent);
-	}
-	public BaseRecord startIncrement(BaseRecord locationEpoch) {
-		if(locationEpoch == null) {
-			logger.error("Invalid location epoch");
+	public BaseRecord startIncrement(BaseRecord realm) {
+		if(clock.getEpoch() == null) {
+			logger.error("Invalid epoch");
 			return null;
 		}
-		BaseRecord inc = EpochUtil.startIncrement(this, locationEpoch);
-		currentIncrement = inc;
-		return inc;
+		return EpochUtil.startRealmIncrement(this, realm);
 	}
-	public BaseRecord endIncrement() {
-		return endIncrement(currentEvent);
-	}
-	public BaseRecord endIncrement(BaseRecord locationEpoch) {
-		if(locationEpoch == null) {
-			logger.error("Invalid location epoch");
+
+	
+	public BaseRecord endIncrement(BaseRecord realm) {
+		Clock rclock = clock.realmClock(realm);
+		if(rclock.getIncrement() == null) {
+			logger.error("Invalid increment");
 			return null;
 		}
-		BaseRecord inc = EpochUtil.endIncrement(this, locationEpoch);
-		return inc;
+
+		return EpochUtil.endRealmIncrement(this, realm);
+
 	}
-	public BaseRecord continueIncrement() {
-		return continueIncrement(currentEvent);
-	}
-	public BaseRecord continueIncrement(BaseRecord locationEpoch) {
-		if(locationEpoch == null) {
-			logger.error("Invalid location epoch");
+
+	public BaseRecord continueIncrement(BaseRecord realm) {
+		Clock rclock = clock.realmClock(realm);
+		if(rclock.getIncrement() == null) {
+			logger.error("Invalid increment");
 			return null;
 		}
-		BaseRecord inc = EpochUtil.continueIncrement(this, locationEpoch);
-		return inc;
+		return EpochUtil.continueRealmIncrement(this, realm);
 	}
 	
+	/*
 	public void abandonLocationEpoch() {
 		if(currentEvent != null) {
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEvent.get(FieldNames.FIELD_STATE));
@@ -708,12 +727,8 @@ public class OlioContext {
 			}
 		}
 	}
+	*/
 	
-
-	
-	public Map<String, List<BaseRecord>> getQueue() {
-		return queue;
-	}
 
 	public Map<Long, Map<String, List<BaseRecord>>> getDemographicMap() {
 		return demographicMap;
@@ -738,34 +753,15 @@ public class OlioContext {
 	}
 	
 	/// TODO: Deprecate this
+	/*
 	public List<BaseRecord> getPopulation(BaseRecord location){
 		return OlioUtil.getPopulation(this, location);
 	}
 	public BaseRecord getPopulationGroup(BaseRecord location, String name) {
 		return OlioUtil.getPopulationGroup(this, location, name);
 	}
-
-	public BaseRecord getCurrentIncrement() {
-		return currentIncrement;
-	}
-	public void setCurrentIncrement(BaseRecord currentIncrement) {
-		this.currentIncrement = currentIncrement;
-	}
-	public BaseRecord getCurrentEvent() {
-		return currentEvent;
-	}
-
-	public void setCurrentEvent(BaseRecord currentEvent) {
-		this.currentEvent = currentEvent;
-	}
-
-	public BaseRecord getCurrentLocation() {
-		return currentLocation;
-	}
-
-	public void setCurrentLocation(BaseRecord currentLocation) {
-		this.currentLocation = currentLocation;
-	}
+	*/
+	
 	public boolean validateContext() {
 		if(!initialized) {
 			logger.error("Context is not initialized");
@@ -793,6 +789,7 @@ public class OlioContext {
 		
 		return true;
 	}
+	
 	public BaseRecord getRootLocation() {
 		 return GeoLocationUtil.getRootLocation(this);
 	}
