@@ -572,14 +572,13 @@ public class OlioContext {
 		}
 		
 		BaseRecord cevt = realm.get("currentEvent");
-		Clock rclock = realmClock(realm);
 		if(cevt != null) {
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(cevt.get(FieldNames.FIELD_STATE));
 			if(aet == ActionResultEnumType.PENDING) {
 				for(IOlioEvolveRule r : config.getEvolutionRules()) {
 					r.continueRealmEvent(this, realm);
 				}
-				return rclock.getEvent();
+				return cevt;
 			}
 			else {
 				logger.warn("Current realm epoch is not in a pending state");
@@ -589,6 +588,7 @@ public class OlioContext {
 		return startRealmEvent(realm);
 
 	}
+	
 	/*
 	public BaseRecord startOrContinueLocationEpoch(BaseRecord location) {
 		if(currentEpoch == null) {

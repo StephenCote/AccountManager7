@@ -20,6 +20,7 @@ import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldFactory;
 import org.cote.accountmanager.model.field.FieldType;
@@ -255,6 +256,14 @@ public abstract class BaseRecord {
 	}
 	
 	@JsonIgnore
+	public <T> T getP(String name) {
+		if(IOSystem.isInitialized() && !hasField(name)) {
+			IOSystem.getActiveContext().getReader().populate(this, new String[] {name});
+		}
+		return get(name);
+	}
+	
+	@JsonIgnore
 	public <T> T get(String name) {
 		if(name.contains(".")) {
 			return getEmbedded(name);
@@ -314,6 +323,7 @@ public abstract class BaseRecord {
 	public void setPrototype(boolean prototype) {
 		this.prototype = prototype;
 	}
+	
 	@JsonIgnore
 	public boolean isPrototype() {
 		return prototype;
@@ -352,14 +362,33 @@ public abstract class BaseRecord {
 		}
 		
 	}
+	
+	public <T> void setQValue(String fieldName, T val)  {
+		setValue(fieldName, val, true);
+	}
+	public <T> void setQ(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {
+		set(fieldName, val);
+		if(RecordUtil.isIdentityRecord(this)) {
+			Queue.queueUpdate(this, new String[] {fieldName});
+		}
+	}
+	
 	public <T> void setValue(String fieldName, T val) {
+		setValue(fieldName, val, false);
+	}
+	
+	private <T> void setValue(String fieldName, T val, boolean queue) {
 		try {
 			set(fieldName, val);
+			if(queue && RecordUtil.isIdentityRecord(this)) {
+				Queue.queueUpdate(this, new String[] {fieldName});
+			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
 	}
+	
    public synchronized <T> void set(String fieldName, T val) throws FieldException, ValueException, ModelNotFoundException {
 		if(prototype) {
 			throw new ValueException(String.format(ValueException.PROTOTYPE_READONLY_EXCEPTION, fieldName, model));

@@ -221,13 +221,21 @@ public class NeedsUtil {
 		return zoo.stream().filter(zp -> (zp.get("state.currentLocation") != null && ((long)zp.get("state.currentLocation.id")) == id)).collect(Collectors.toList());
 	}
 	
+	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> getAgitatedThreatMap(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
+		agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true, roam);
+		return ThreatUtil.getThreatMap(ctx, realm, event, map);
+	}
+	
 	protected static void agitateLocation(OlioContext ctx, BaseRecord realm, BaseRecord event, List<BaseRecord> pop, boolean cluster, boolean roam) {
-		BaseRecord eloc = event.get("location");
+		// IOSystem.getActiveContext().getReader().populate(event, new String[] {FieldNames.FIELD_LOCATION});
+		BaseRecord eloc = event.getP(FieldNames.FIELD_LOCATION);
+		
 		if(eloc == null) {
+			logger.warn("Increment missing location");
+			logger.info(event.toFullString());
 			eloc = realm.get("origin");
 			event.setValue("location", eloc);
-			logger.warn("Increment missing location");
-			Queue.queueUpdate(eloc, new String[] {"location"});
+			Queue.queueUpdate(event, new String[] {"location"});
 		}
 		List<BaseRecord> acells = GeoLocationUtil.getCells(ctx, eloc);
 		BaseRecord rloc = null;
@@ -278,10 +286,7 @@ public class NeedsUtil {
 		}
 	}
 
-	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> getAgitatedThreatMap(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
-		agitateLocation(ctx, realm, event, Arrays.asList(map.keySet().toArray(new BaseRecord[0])), true, roam);
-		return ThreatUtil.getThreatMap(ctx, realm, event, map);
-	}
+
 	
 
 	

@@ -217,7 +217,7 @@ public class QueryPlan extends LooseRecord {
 		List<String> flds = new ArrayList<>();
 		BaseRecord parent = get("parent");
 		if(pathSet.size() >= maximumDepth) {
-			logger.error("Exceeded maximum depth");
+			logger.error("Exceeded maximum depth: " + planPath());
 		}
 		if(!schema.isFollowReference() || planType == PlanType.COMMON) {
 			flds = Arrays.asList(RecordUtil.getCommonFields(schema.getName()));

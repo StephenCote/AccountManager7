@@ -400,14 +400,16 @@ public class EventUtil {
 	}
 	public static String getTimeName(ZonedDateTime prog, TimeEnumType tet) {
 		StringBuilder buff = new StringBuilder();
-		buff.append(prog.getYear() + "/" + String.format("%02d", prog.getMonthValue()));
-		if(tet == TimeEnumType.DAY || tet == TimeEnumType.HOUR) {
-			 buff.append("/" + String.format("%02d", prog.getDayOfMonth()));
+		buff.append(prog.getYear());
+		if(tet != TimeEnumType.YEAR) {
+			buff.append("/" + String.format("%02d", prog.getMonthValue()));
+			if(tet == TimeEnumType.DAY || tet == TimeEnumType.HOUR) {
+				 buff.append("/" + String.format("%02d", prog.getDayOfMonth()));
+			}
+			if(tet == TimeEnumType.HOUR) {
+				 buff.append(" " + String.format("%02d", prog.getHour()) + ":00");
+			}
 		}
-		if(tet == TimeEnumType.HOUR) {
-			 buff.append(" " + String.format("%02d", prog.getHour()) + ":00");
-		}
-
 		return buff.toString();
 	}
 	public static String getChildTimeName(BaseRecord parentEvent) {

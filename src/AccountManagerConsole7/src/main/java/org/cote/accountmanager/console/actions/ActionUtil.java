@@ -19,6 +19,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
+import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 
 public class ActionUtil {
@@ -40,9 +41,7 @@ public class ActionUtil {
         	usr = IOSystem.getActiveContext().getRecordUtil().getRecord(null, ModelNames.MODEL_USER, userName, 0L, 0L, orgType.get(FieldNames.FIELD_ID));
         	if(usr != null) {
         		VerificationEnumType vet = VerificationEnumType.UNKNOWN;
-        		BaseRecord cred = IOSystem.getActiveContext().getRecordUtil().getRecordByQuery(
-        			IOSystem.getActiveContext().getRecordUtil().getLatestReferenceQuery(usr, ModelNames.MODEL_CREDENTIAL)
-        		);
+        		BaseRecord cred = CredentialUtil.getLatestCredential(usr);
         		if(cred != null) {
 	        		try {
 						vet = ioContext.getFactory().verify(usr, cred, ParameterUtil.newParameterList("password", password));

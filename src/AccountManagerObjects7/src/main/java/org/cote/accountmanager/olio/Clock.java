@@ -84,6 +84,8 @@ public class Clock {
 		if(!realmClocks.containsKey(rid)) {
 			Clock rc = new Clock(this);
 			rc.setRealm(realm);
+			rc.setEvent(realm.get("currentEvent"));
+			rc.setIncrement(realm.get("currentIncrement"));
 			realmClocks.put(rid, rc);
 		}
 		Clock rc = realmClocks.get(rid);

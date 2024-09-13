@@ -495,7 +495,6 @@ Begin conversationally.
 			}
 			String sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
 			String userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
-
 			setLlmSystemPrompt(sysTemp);
 			req = newRequest(model);
 			setPruneSkip(2);
@@ -511,6 +510,7 @@ Begin conversationally.
 		}
 		else {
 			logger.warn("Either system or user characters were null - Defaulting to standard chat interface");
+			logger.warn(chatConfig.toFullString());
 		}
 		
 		OllamaOptions opts = new OllamaOptions();

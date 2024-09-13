@@ -183,12 +183,8 @@ public class ChatAction extends CommonAction implements IAction{
 		String worldName = "My Grid World";
 		if(cmd.hasOption("olio")) {
 			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), universeName, worldName, cmd.hasOption("reset"));
-			epoch = octx.startOrContinueEpoch();
-			List<BaseRecord> locs = octx.getLocations();
-			for(BaseRecord lrec : locs) {
-				evt = octx.startOrContinueLocationEpoch(lrec);
-				cevt = octx.startOrContinueIncrement();
-				octx.evaluateIncrement();
+			List<BaseRecord> rlms = octx.getRealms();
+			for(BaseRecord r : rlms) {
 				if(cmd.hasOption("party")) {
 					List<BaseRecord> party1  = OlioUtil.listGroupPopulation(octx, OlioUtil.getCreatePopulationGroup(octx, "Arena Party 1"));
 					List<BaseRecord> party2  = OlioUtil.listGroupPopulation(octx, OlioUtil.getCreatePopulationGroup(octx, "Arena Party 2"));
@@ -196,7 +192,7 @@ public class ChatAction extends CommonAction implements IAction{
 					pop.addAll(party2);
 				}
 				else {
-					pop.addAll(octx.getPopulation(lrec));
+					pop.addAll(octx.getRealmPopulation(r));
 					/// Depending on the staging rule, the population may not yet be dressed or have possessions
 					///
 					ApparelUtil.outfitAndStage(octx, null, pop);

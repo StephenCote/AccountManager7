@@ -534,6 +534,19 @@ public class OlioUtil {
 		q.planMost(true, FULL_PLAN_FILTER);
 		prunePlan(q.plan());
 	}
+	
+	public static void limitSubplanFields(QueryPlan plan, String modelName, String fieldName) {
+		List<BaseRecord> cplans = QueryPlan.findPlans(plan, modelName, fieldName);
+		cplans.forEach(cp -> {
+			limitPlanFields(cp);
+		});
+	}
+	public static void limitPlanFields(BaseRecord plan) {
+		limitPlanFields(plan, Arrays.asList(new String[] {"id", "name"}));
+	}
+	public static void limitPlanFields(BaseRecord plan, List<String> fields) {
+		QueryPlan.limitPlan(plan, fields);
+	}
 
 	/// This is really more of a subtraction experiment with creating deeply nested queries from a given model definition, and then pruning certain branches
 	public static void prunePlan(QueryPlan plan) {

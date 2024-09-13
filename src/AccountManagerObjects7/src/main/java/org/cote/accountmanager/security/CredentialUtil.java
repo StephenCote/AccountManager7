@@ -5,6 +5,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -33,9 +34,9 @@ public class CredentialUtil {
 	}
 	
     public static BaseRecord getLatestCredential(BaseRecord user) {
-    	return IOSystem.getActiveContext().getRecordUtil().getRecordByQuery(
-        	IOSystem.getActiveContext().getRecordUtil().getLatestReferenceQuery(user, ModelNames.MODEL_CREDENTIAL)
-        );
+    	Query q = IOSystem.getActiveContext().getRecordUtil().getLatestReferenceQuery(user, ModelNames.MODEL_CREDENTIAL);
+    	q.planMost(false);
+    	return IOSystem.getActiveContext().getRecordUtil().getRecordByQuery(q);
     }
 	
 }

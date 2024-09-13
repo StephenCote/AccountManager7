@@ -1,5 +1,7 @@
 package org.cote.accountmanager.olio.llm;
 
+import java.util.Arrays;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -9,6 +11,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -84,8 +87,11 @@ public class ChatUtil {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		OlioUtil.planMost(q);
+		OlioUtil.limitSubplanFields(q.plan(), ModelNames.MODEL_CHAT_CONFIG, "event");
+
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
-				
+		
 		if(dat == null) {
 			ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
 			plist.parameter("name", name);
@@ -106,8 +112,8 @@ public class ChatUtil {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.planMost(false);
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
-				
 		if(dat == null) {
 			BaseRecord template = getDefaultPrompt();
 			dat = newPromptConfig(user, name, template);

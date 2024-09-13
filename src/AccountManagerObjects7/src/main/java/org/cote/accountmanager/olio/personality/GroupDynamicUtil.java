@@ -289,7 +289,10 @@ public class GroupDynamicUtil {
 		// Set<PersonalityProfile> contest = new HashSet<>();
 		
 		/// TODO: Differentiate between new leadership and existing leadership
-		BaseRecord increment = ctx.clock().realmClock(realm).getIncrement();
+		BaseRecord increment = null;
+		if(realm != null) {
+			realm.get("currentIncrement");
+		}
 		List<BaseRecord> interactions = new ArrayList<>();
 		List<PersonalityProfile> primeAge = map.stream().filter(pp -> pp.getId() != leader.getId() && pp.getAge() >= Rules.MINIMUM_ADULT_AGE && pp.getAge() <= Rules.SENIOR_AGE).collect(Collectors.toList());
 		List<PersonalityProfile> primeDipAge = primeAge.stream().filter(pp -> pp.getMbti().getGroup().equals("diplomat")).collect(Collectors.toList());

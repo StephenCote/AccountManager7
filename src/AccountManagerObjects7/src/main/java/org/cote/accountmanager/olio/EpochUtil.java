@@ -262,7 +262,7 @@ public class EpochUtil {
 		int count = OlioUtil.countPeople(popGrp);
 		try {
 			if(count == 0){
-				logger.warn("Location " + realm.get(FieldNames.FIELD_NAME) + " is decimated");
+				logger.warn("Realm " + realm.get(FieldNames.FIELD_NAME) + " is decimated");
 				if(!AttributeUtil.getAttributeValue(realm, "decimated", false)) {
 					AttributeUtil.addAttribute(realm, "decimated", true);
 					Queue.queue(realm.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_ORGANIZATION_ID}));
@@ -274,6 +274,7 @@ public class EpochUtil {
 				
 				BaseRecord childEpoch = EventUtil.newEvent(ctx, cepoch, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, clock.getStart());
 				childEpoch.set(FieldNames.FIELD_REALM, realm);
+				childEpoch.set(FieldNames.FIELD_LOCATION, realm.get("origin"));
 				childEpoch.set("eventProgress", clock.getCurrent());
 				childEpoch.set("inProgress", true);
 				childEpoch.set("eventEnd", clock.getEnd());

@@ -12,6 +12,7 @@ import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OverwatchException;
+import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.record.BaseRecord;
@@ -36,7 +37,7 @@ public class TestOlioRules extends BaseTest {
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		
 		OlioTestUtil.setResetWorld(true);
-		//OlioTestUtil.setResetUniverse(true);
+		// OlioTestUtil.setResetUniverse(true);
 		 
 		OlioContext octx = null;
 		try{
@@ -55,10 +56,7 @@ public class TestOlioRules extends BaseTest {
 		assertNotNull("Pop group is null", popGroup);
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
 		
-		if(debugBreak) {
-			logger.info("Debug check");
-			return;
-		}
+
 		
 
 
@@ -79,7 +77,12 @@ public class TestOlioRules extends BaseTest {
 		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
 
-		
+		/*
+		if(debugBreak) {
+			logger.info("Debug check");
+			return;
+		}
+		*/
 		/*
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
@@ -115,19 +118,19 @@ public class TestOlioRules extends BaseTest {
 			pact = Actions.beginGather(octx, octx.clock().getIncrement(), per1, "water", 3);
 			octx.overwatchActions();
 			logger.info(pact.toString());
-			/*
-			pact = Actions.beginPeek(octx, octx.getCurrentIncrement(), per1, per1);
+			
+			pact = Actions.beginPeek(octx, octx.clock().getIncrement(), per1, per1);
 			octx.overwatchActions();
 			logger.info(pact.toString());
 			
-			pact = Actions.beginUndress(octx, octx.getCurrentIncrement(), per1, null, WearLevelEnumType.BASE);
+			pact = Actions.beginUndress(octx, octx.clock().getIncrement(), per1, null, WearLevelEnumType.BASE);
 			octx.overwatchActions();
 			logger.info(pact.toString());
 
-			pact = Actions.beginDress(octx, octx.getCurrentIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
+			pact = Actions.beginDress(octx, octx.clock().getIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
 			octx.overwatchActions();
 			logger.info(pact.toString());
-			*/
+			
 
 			// 
 		}

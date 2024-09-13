@@ -41,13 +41,15 @@
 			"baseType": "model",
 			"baseModel": "olio.interaction",
 			"foreign": true,
-			"participantModel": "chatConfig.interaction"
+			"participantModel": "chatConfig.interaction",
+			"followReference": false
 		},
 		{
 			"name": "event",
 			"type": "model",
 			"baseModel": "olio.event",
-			"foreign": true
+			"foreign": true,
+			"followReference": false
 		},
 		{
 			"name": "assist",
