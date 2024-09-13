@@ -22,6 +22,7 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 
@@ -111,6 +112,7 @@ public class ConsoleMain {
 	}
 	
 	private static void startContext(boolean setup) {
+		OlioModelNames.use();
 		Properties properties = loadProperties();
 		IOFactory.DEFAULT_FILE_BASE = properties.getProperty("app.basePath");
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));

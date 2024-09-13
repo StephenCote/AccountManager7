@@ -42,6 +42,7 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.thread.Threaded;
@@ -121,7 +122,8 @@ public class RestServiceConfig extends ResourceConfig{
 			logger.info("Initializing Account Manager");
 			
 			String path = context.getInitParameter("store.path");
-
+			OlioModelNames.use();
+			
 			IOFactory.DEFAULT_FILE_BASE = path;
 			IOFactory.addPermittedPath(path + "/.streams");
 			String dsName = context.getInitParameter("database.dsname");

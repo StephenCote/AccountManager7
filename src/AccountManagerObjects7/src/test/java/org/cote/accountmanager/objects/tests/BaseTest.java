@@ -66,7 +66,7 @@ public class BaseTest {
 				return;
 			}
 		}
-		OlioModelNames.addModels();
+		OlioModelNames.use();
 		if(!checkReset) {
 			checkReset = true;
 			resetDataSchema = Boolean.parseBoolean(testProperties.getProperty("test.db.reset"));

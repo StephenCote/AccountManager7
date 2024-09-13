@@ -46,7 +46,7 @@ public class OlioModelNames extends ModelNames {
 		MODEL_NARRATIVE, MODEL_CHAT_CONFIG, MODEL_PROMPT_CONFIG, MODEL_PROMPT_RACE_CONFIG, MODEL_POI, MODEL_WORLD
 	);
 	
-	public static void addModels() {
+	public static void use() {
 		if(!prep) {
 			ModelNames.MODELS.addAll(MODELS);
 			prep = true;
