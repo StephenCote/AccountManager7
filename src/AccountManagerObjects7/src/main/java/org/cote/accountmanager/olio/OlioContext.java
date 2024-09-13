@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -223,7 +224,7 @@ public class OlioContext {
 
 		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
-		ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_WORLD);
+		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_WORLD);
 		for(FieldSchema fs : ms.getFields()) {
 			if(fs.getBaseModel() != null && fs.getBaseModel().equals(ModelNames.MODEL_GROUP) && fs.isForeign()) {
 				BaseRecord group = cfgWorld.get(fs.getName());
@@ -392,7 +393,7 @@ public class OlioContext {
 	
 	public BaseRecord getRealmConstructEvent(BaseRecord realm) {
 		long eid = realm.get(FieldNames.FIELD_ID);
-		Query eq = QueryUtil.createQuery(ModelNames.MODEL_EVENT, FieldNames.FIELD_REALM, eid);
+		Query eq = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_REALM, eid);
 		eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 		eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 		eq.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
@@ -501,7 +502,7 @@ public class OlioContext {
 			return realms;
 		}
 		
-		Query rq = QueryUtil.createQuery(ModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, world.get("realmsGroup.id"));
+		Query rq = QueryUtil.createQuery(OlioModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, world.get("realmsGroup.id"));
 		OlioUtil.planMost(rq);
 		//logger.info(rq.toSelect());
 		realms.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(rq)));

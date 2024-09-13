@@ -26,6 +26,7 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -48,16 +49,16 @@ public class TestNestedStructures extends BaseTest {
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		try {
-			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set("firstName", "Jay");
 			a1.set("middleName", "Kippy");
 			a1.set("lastName", "Smith");
 			a1.set("name", "Jay Kippy Smith");
-			a1.set("instinct", ioContext.getFactory().newInstance(ModelNames.MODEL_INSTINCT, testUser1, null, plist));
-			a1.set("statistics", ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
+			a1.set("instinct", ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
+			a1.set("statistics", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
 			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
-			a1.set("state", ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
-			a1.set("store", ioContext.getFactory().newInstance(ModelNames.MODEL_STORE, testUser1, null, plist));
+			a1.set("state", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
+			a1.set("store", ioContext.getFactory().newInstance(OlioModelNames.MODEL_STORE, testUser1, null, plist));
 			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
@@ -75,7 +76,7 @@ public class TestNestedStructures extends BaseTest {
 			BaseRecord ca1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, a1);
 			assertNotNull("Char Person was null", ca1);
 			
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, a1.get("name"));
 			q.planMost(true);
 			BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
@@ -106,7 +107,7 @@ public class TestNestedStructures extends BaseTest {
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		try {
-			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set(FieldNames.FIELD_NAME, "Dooter");
 			BaseRecord ca1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, a1);
 			assertNotNull("Char Person was null", ca1);
@@ -157,11 +158,11 @@ public class TestNestedStructures extends BaseTest {
 
 			ioContext.getAccessPoint().create(testUser1, w1);
 			
-			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set("gender", "male");
 			AttributeUtil.addAttribute(a1, "test", true);
 			a1.set(FieldNames.FIELD_CONTACT_INFORMATION, ioContext.getFactory().newInstance(ModelNames.MODEL_CONTACT_INFORMATION, testUser1, null, null));
-			BaseRecord a2 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			BaseRecord a2 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a2.set(FieldNames.FIELD_NAME, "Person 2");
 			a2.set("gender", "female");
 			a2.set(FieldNames.FIELD_CONTACT_INFORMATION, ioContext.getFactory().newInstance(ModelNames.MODEL_CONTACT_INFORMATION, testUser1, null, null));
@@ -178,7 +179,7 @@ public class TestNestedStructures extends BaseTest {
 			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, "partners", a1);
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {p1, p2});
 
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, "Person 1");
 			q.planMost(true);
 			BaseRecord rec = ioContext.getSearch().findRecord(q);

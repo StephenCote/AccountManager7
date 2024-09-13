@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -105,7 +106,7 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 
 				if(root == null) {
 					ParameterList plist = ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH));
-					root = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
+					root = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 					root.set(FieldNames.FIELD_NAME, "Construct Region " + locName);
 					root.set(FieldNames.FIELD_LOCATION, loc);
 					root.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
@@ -123,7 +124,7 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 					BaseRecord popEvent = CharacterUtil.populateRegion(ctx, realm, loc, root, ctx.getConfig().getBasePopulationCount());
 					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					events.add(popEvent);
-					event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
+					event = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
 					event.set(FieldNames.FIELD_NAME, "Construct " + locName);
 					event.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					

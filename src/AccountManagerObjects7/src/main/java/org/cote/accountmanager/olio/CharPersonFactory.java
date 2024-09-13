@@ -9,6 +9,7 @@ import org.cote.accountmanager.factory.FactoryBase;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -31,7 +32,7 @@ public class CharPersonFactory extends FactoryBase {
 	
 	@Override
 	public BaseRecord implement(BaseRecord contextUser, BaseRecord newRecord, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
-		ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_CHAR_PERSON);
+		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_PERSON);
 		String path = "~/" + ms.getGroup();
 		String name = null;
 		if(parameterList != null) {
@@ -46,20 +47,20 @@ public class CharPersonFactory extends FactoryBase {
 				String mtype = ModelNames.MODEL_GROUP;
 				
 
-				ParameterList plist2 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_CHAR_STATISTICS).getGroup());
-				ParameterList plist3 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_INSTINCT).getGroup());
+				ParameterList plist2 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_STATISTICS).getGroup());
+				ParameterList plist3 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_INSTINCT).getGroup());
 				ParameterList plist4 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_BEHAVIOR).getGroup());
 				ParameterList plist5 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_PERSONALITY).getGroup());
-				ParameterList plist6 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_CHAR_STATE).getGroup());
-				ParameterList plist7 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_STORE).getGroup());
+				ParameterList plist6 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_STATE).getGroup());
+				ParameterList plist7 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_STORE).getGroup());
 				ParameterList plist8 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_PROFILE).getGroup());
 
-				BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, contextUser, null, plist2);
-				BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INSTINCT, contextUser, null, plist3);
+				BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, contextUser, null, plist2);
+				BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, contextUser, null, plist3);
 				BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, contextUser, null, plist4);
 				BaseRecord pper = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PERSONALITY, contextUser, null, plist5);
-				BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, contextUser, null, plist6);
-				BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, contextUser, null, plist7);
+				BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, contextUser, null, plist6);
+				BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, contextUser, null, plist7);
 				BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, contextUser, null, plist8);
 				
 				newRecord.set("statistics", stats);

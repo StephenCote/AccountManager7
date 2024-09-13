@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -150,7 +151,7 @@ public class NeedsUtil {
 		if(action != null) {
 			ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
 			try {
-				actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
+				actionResult = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
 				actionResult.set("action", action);
 				actionResult.set("builder", builder);
 				actionResult.set("needType", "physiological");

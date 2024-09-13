@@ -14,6 +14,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -23,11 +24,11 @@ public class RealmUtil {
 	public static final Logger logger = LogManager.getLogger(RealmUtil.class);
 	
 	public static List<BaseRecord> getRealms(OlioContext context){
-		return Arrays.asList(OlioUtil.list(context, ModelNames.MODEL_REALM, "realms"));
+		return Arrays.asList(OlioUtil.list(context, OlioModelNames.MODEL_REALM, "realms"));
 	}
 	
 	public static BaseRecord getCreateRealm(OlioContext ctx, BaseRecord origin) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("realmsGroup.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("realmsGroup.id"));
 		q.field("origin", origin.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
 		OlioUtil.planMost(q);
 		BaseRecord realm = IOSystem.getActiveContext().getSearch().findRecord(q);
@@ -47,10 +48,10 @@ public class RealmUtil {
 		BaseRecord realm = null;
 		IOSystem.getActiveContext().getReader().populate(origin, new String[] {FieldNames.FIELD_NAME});
 		try {
-			realm = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_REALM, ctx.getOlioUser(), null, plist);
+			realm = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_REALM, ctx.getOlioUser(), null, plist);
 			realm.set("origin", origin);
 			//realm.set("population", ctx.getPopulationGroup(origin, "Population"));
-			realm.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
+			realm.set("store", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
 			realm.set(FieldNames.FIELD_NAME, "Realm " + origin.get(FieldNames.FIELD_NAME));
 			List<BaseRecord> locations = realm.get("locations");
 			BaseRecord[] locs = GeoLocationUtil.getLocationsByFeature(origin, origin.get("feature"), 0L);

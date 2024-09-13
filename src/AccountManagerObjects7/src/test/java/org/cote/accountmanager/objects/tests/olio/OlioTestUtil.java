@@ -52,6 +52,7 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -211,14 +212,14 @@ public class OlioTestUtil {
 
 		if(print.getStatistics() != null) {
 			/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_STATISTICS, print.getStatistics()), temp.get("statistics"), true);
+			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, print.getStatistics()), temp.get("statistics"), true);
 		}
 		if(print.getPersonality() != null) {
 			/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
 			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, print.getPersonality()), temp.get("personality"), true);
 		}
 		if(print.getPerson() != null) {
-			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_PERSON, print.getPerson()), temp);
+			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_PERSON, print.getPerson()), temp);
 		}
 		
 		return temp;

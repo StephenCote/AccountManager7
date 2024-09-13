@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -22,7 +23,7 @@ public class StateUtil {
 	
 	public static void queueUpdateLocation(OlioContext context, BaseRecord obj) {
 		BaseRecord state = obj;
-		if(!obj.getModel().equals(ModelNames.MODEL_CHAR_STATE)) {
+		if(!obj.getModel().equals(OlioModelNames.MODEL_CHAR_STATE)) {
 			state = obj.get(FieldNames.FIELD_STATE);
 		}
 		Queue.queueUpdate(state, new String[] { "currentLocation", "currentEast", "currentNorth" });

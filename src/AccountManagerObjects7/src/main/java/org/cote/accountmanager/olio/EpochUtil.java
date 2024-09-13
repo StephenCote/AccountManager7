@@ -391,7 +391,7 @@ public class EpochUtil {
 			
 			ParameterList plist = ParameterList.newParameterList("path", world.get("events.path"));
 			try {
-				epoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
+				epoch = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 				/// TODO: Need a way to bulk-add hierarchies
 				/// The previous version used a complex method of identifier assignment and rewrite with negative values
 				epoch.set(FieldNames.FIELD_NAME, "Epoch: " + title);
@@ -429,7 +429,7 @@ public class EpochUtil {
 					else {
 						AlignmentEnumType useAlignment = (rand.nextDouble() < .35 ? invertedAlignment : alignment);
 						String childTitle = EpochUtil.generateEpochTitle(ctx.getOlioUser(), parWorld, useAlignment);
-						BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
+						BaseRecord childEpoch = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 						childEpoch.set(FieldNames.FIELD_LOCATION, loc);
 						childEpoch.set(FieldNames.FIELD_NAME, locName + " experienced a " + useAlignment.toString() + " event: " + childTitle);
 						childEpoch.set(FieldNames.FIELD_ALIGNMENT, useAlignment);

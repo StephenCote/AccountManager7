@@ -39,6 +39,7 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -61,7 +62,7 @@ public class OlioService {
 	public Response narrateCharacter(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "narrative"});
 		q.planMost(true);
 		BaseRecord a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -88,7 +89,7 @@ public class OlioService {
 		BaseRecord a1 = null;
 		SDUtil sdu = new SDUtil();
 
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
 		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if(a1 != null) {
@@ -109,18 +110,18 @@ public class OlioService {
 		
 		BaseRecord a1 = null;
 		try{
-			a1 = f.newInstance(ModelNames.MODEL_CHAR_PERSON, user, null, null);
+			a1 = f.newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, null);
 		
 			a1.set("firstName", "Jay");
 			a1.set("middleName", "Kippy");
 			a1.set("lastName", "Smith");
 			a1.set("name", "Jay Kippy Smith");
 			/*
-			a1.set("instinct", f.newInstance(ModelNames.MODEL_INSTINCT, user, null, null));
-			a1.set("statistics", f.newInstance(ModelNames.MODEL_CHAR_STATISTICS, user, null, null));
+			a1.set("instinct", f.newInstance(OlioModelNames.MODEL_INSTINCT, user, null, null));
+			a1.set("statistics", f.newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, null));
 			a1.set("personality", f.newInstance(ModelNames.MODEL_PERSONALITY, user, null, null));
-			a1.set("state", f.newInstance(ModelNames.MODEL_CHAR_STATE, user, null, null));
-			a1.set("store", f.newInstance(ModelNames.MODEL_STORE, user, null, null));
+			a1.set("state", f.newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, null));
+			a1.set("store", f.newInstance(OlioModelNames.MODEL_STORE, user, null, null));
 			*/
 			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
 			a1.set("age", (new Random()).nextInt(7, 70));

@@ -25,6 +25,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -79,15 +80,15 @@ public class CharacterUtil {
 		BaseRecord person = null;
 		
 		try {
-			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
-			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INSTINCT, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("instincts.path")));
+			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
+			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("instincts.path")));
 			BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("behaviors.path")));
 			BaseRecord pper = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PERSONALITY, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("personalities.path")));
-			BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path")));
-			BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
+			BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path")));
+			BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
 			BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("profiles.path")));
 			
-			person = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("population.path")));
+			person = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("population.path")));
 			person.set("statistics", stats);
 			person.set("instinct", inst);
 			person.set("behavior", beh);
@@ -117,7 +118,7 @@ public class CharacterUtil {
 			String lastName = (preferredLastName != null ? preferredLastName : (snames != null ? snames[rand.nextInt(snames.length)] : OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)))));			
 			String name = firstName + " " + middleName + " " + lastName;
 	
-			while(OlioUtil.nameInDirExists(user, ModelNames.MODEL_CHAR_PERSON, (long)popDir.get(FieldNames.FIELD_ID), name)) {
+			while(OlioUtil.nameInDirExists(user, OlioModelNames.MODEL_CHAR_PERSON, (long)popDir.get(FieldNames.FIELD_ID), name)) {
 				logger.info("Name " + name + " exists .... trying again");
 				firstName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
 				middleName = (names != null ? names[rand.nextInt(names.length)] : OlioUtil.randomSelectionName(user, fnq));
@@ -358,7 +359,7 @@ public class CharacterUtil {
 			BaseRecord evtDir = ctx.getWorld().get("events");
 			
 			ParameterList plist = ParameterList.newParameterList("path", evtDir.get(FieldNames.FIELD_PATH));
-			event = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
+			event = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 			event.set(FieldNames.FIELD_LOCATION, location);
 			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
 			event.set(FieldNames.FIELD_NAME, "Populate " + locName);

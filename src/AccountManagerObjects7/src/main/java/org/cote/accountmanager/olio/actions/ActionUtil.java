@@ -23,6 +23,7 @@ import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -101,7 +102,7 @@ public class ActionUtil {
 		if(actions.length > 0) {
 			return actions;
 		}
-		actions = OlioUtil.list(ctx, ModelNames.MODEL_ACTION, "actions");
+		actions = OlioUtil.list(ctx, OlioModelNames.MODEL_ACTION, "actions");
 		return actions;
 	}
 	
@@ -109,7 +110,7 @@ public class ActionUtil {
 		BaseRecord state = actionResult.get("state");
 		if(state == null) {
 			try {
-				state = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path")));
+				state = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path")));
 				actionResult.set("state", state);
 			} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 				logger.error(e);
@@ -133,7 +134,7 @@ public class ActionUtil {
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
 		BaseRecord actionResult = null;
 		try {
-			actionResult = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
+			actionResult = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
 			actionResult.set("action", action);
 			actionResult.set("builder", null);
 			actionResult.set("needType", params.get("needType"));
@@ -157,7 +158,7 @@ public class ActionUtil {
 
 		BaseRecord actionParams = null;
 		try {
-			actionParams = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION_PARAMETERS);
+			actionParams = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_PARAMETERS);
 			actionParams.set("actionName", actionName);
 			actionParams.set("needType", needType);
 			actionParams.set("needName", needName);
@@ -170,8 +171,8 @@ public class ActionUtil {
 	}
 	
 	public static void loadActions(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
-		// int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getOlioUser(), OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
+		// int count = IOSystem.getActiveContext().getAccessPoint().count(ctx.getOlioUser(), OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ACTION, ctx.getWorld().get("actions.path")));
 		if(count == 0) {
 			importActions(ctx);
 			Queue.processQueue();
@@ -187,7 +188,7 @@ public class ActionUtil {
 				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actions.path"));
 				plist.parameter(FieldNames.FIELD_NAME, act.get(FieldNames.FIELD_NAME));
 
-				BaseRecord actr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ACTION, ctx.getOlioUser(), act, plist);
+				BaseRecord actr = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION, ctx.getOlioUser(), act, plist);
 				List<BaseRecord> tags = actr.get("tags");
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {

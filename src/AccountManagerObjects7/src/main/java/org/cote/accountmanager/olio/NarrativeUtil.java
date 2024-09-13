@@ -18,6 +18,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.OCEANUtil;
@@ -129,7 +130,7 @@ public class NarrativeUtil {
 		List<String> desc = new ArrayList<>();
 		boolean alive = targ.get("state.alive");
 		
-		if(targ.getModel().equals(ModelNames.MODEL_CHAR_PERSON)) {
+		if(targ.getModel().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
 			int age = targ.get("age");
 			String gender = targ.get("gender");
 			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get("race")));
@@ -162,7 +163,7 @@ public class NarrativeUtil {
 			}
 
 		}
-		else if(targ.getModel().equals(ModelNames.MODEL_ANIMAL)) {
+		else if(targ.getModel().equals(OlioModelNames.MODEL_ANIMAL)) {
 			desc.add((alive ? "" : "Dead ") + targ.get(FieldNames.FIELD_NAME));
 		}
 		
@@ -1012,11 +1013,11 @@ public class NarrativeUtil {
 		BaseRecord nar = null;
 		try {
 			if(ctx == null) {
-				nar = RecordFactory.newInstance(ModelNames.MODEL_NARRATIVE);
+				nar = RecordFactory.newInstance(OlioModelNames.MODEL_NARRATIVE);
 			}
 			else {
 				try {
-					nar = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NARRATIVE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("narratives.path")));
+					nar = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_NARRATIVE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("narratives.path")));
 				} catch (FactoryException e) {
 					logger.error(e);
 					return null;

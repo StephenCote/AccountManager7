@@ -22,6 +22,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -210,7 +211,7 @@ public class AnimalUtil {
 			return animalTemplates;
 		}
 
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_ANIMAL, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("animals.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ANIMAL, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("animals.id"));
 		q.field(FieldNames.FIELD_TYPE, "template");
 		OlioUtil.planMost(q);
 
@@ -226,11 +227,11 @@ public class AnimalUtil {
 			ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("animals.path"));
 			plist.parameter(FieldNames.FIELD_NAME, name);
 	
-			oanim = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ANIMAL, ctx.getOlioUser(), null, plist);
-			oanim.set("statistics", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path"))));
-			oanim.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
-			oanim.set("instinct", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("instincts.path"))));
-			oanim.set("state", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path"))));
+			oanim = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ANIMAL, ctx.getOlioUser(), null, plist);
+			oanim.set("statistics", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path"))));
+			oanim.set("store", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
+			oanim.set("instinct", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("instincts.path"))));
+			oanim.set("state", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path"))));
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -239,7 +240,7 @@ public class AnimalUtil {
 	}
 	
 	public static void loadAnimals(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ANIMAL, ctx.getWorld().get("animals.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ANIMAL, ctx.getWorld().get("animals.path")));
 		if(count == 0) {
 			importAnimals(ctx);
 			Queue.processQueue();

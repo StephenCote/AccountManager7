@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -110,8 +111,8 @@ public class PointOfInterestUtil {
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("pointsOfInterest.path"));
 		plist.parameter("name", name);
 		try {
-			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
-			rec.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
+			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
+			rec.set("store", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
 			rec.set("type", type);
 			rec.set("location", cell);
 			rec.set("north", y);
@@ -125,7 +126,7 @@ public class PointOfInterestUtil {
 	}
 	
 	public static BaseRecord getPointOfInterest(OlioContext ctx, BaseRecord cell, int east, int north) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
 		q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field("east", east);
 		q.field("north", north);
@@ -149,7 +150,7 @@ public class PointOfInterestUtil {
 			return new ArrayList<>();
 		}
 
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
 		List<String> ptypes = pointTypes.stream().map(t -> t.toString()).collect(Collectors.toList());
 		if(ptypes.size() > 0) {
 			q.field(FieldNames.FIELD_TYPE, ComparatorEnumType.IN, ptypes.stream().collect(Collectors.joining(",")));	
@@ -167,7 +168,7 @@ public class PointOfInterestUtil {
 	}
 	
 	public static int countPointsOfInterest(OlioContext ctx, List<BaseRecord> cells) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
 		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		q.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));

@@ -33,6 +33,7 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -257,7 +258,7 @@ public class OlioUtil {
 
 	/*
 	public static BaseRecord newQuality(BaseRecord user, String groupPath) {
-		BaseRecord qual = newGroupRecord(user, ModelNames.MODEL_QUALITY, groupPath, null);
+		BaseRecord qual = newGroupRecord(user, OlioModelNames.MODEL_QUALITY, groupPath, null);
 		return IOSystem.getActiveContext().getAccessPoint().create(user, qual);
 	}
 	*/
@@ -328,8 +329,8 @@ public class OlioUtil {
 	*/
 	
 	protected static int countPeople(BaseRecord group) {
-		Query pq = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-		pq.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
+		Query pq = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+		pq.filterParticipation(group, null, OlioModelNames.MODEL_CHAR_PERSON, null);
 		return IOSystem.getActiveContext().getSearch().count(pq);
 	}
 
@@ -365,8 +366,8 @@ public class OlioUtil {
 				logger.error("Failed to find population group");
 				return new ArrayList<>();
 			}
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-			q.filterParticipation(popGrp, null, ModelNames.MODEL_CHAR_PERSON, null);
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+			q.filterParticipation(popGrp, null, OlioModelNames.MODEL_CHAR_PERSON, null);
 			planMost(q);
 			// q.setCache(false);
 			
@@ -379,8 +380,8 @@ public class OlioUtil {
 	*/
 
 	public static List<BaseRecord> listGroupPopulation(OlioContext ctx, BaseRecord group){
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
-		q.filterParticipation(group, null, ModelNames.MODEL_CHAR_PERSON, null);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
+		q.filterParticipation(group, null, OlioModelNames.MODEL_CHAR_PERSON, null);
 		planMost(q);
 		return new CopyOnWriteArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(q)));
 	}
@@ -550,49 +551,49 @@ public class OlioUtil {
 
 	/// This is really more of a subtraction experiment with creating deeply nested queries from a given model definition, and then pruning certain branches
 	public static void prunePlan(QueryPlan plan) {
-		List<BaseRecord> cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_INVENTORY_ENTRY, "item");
+		List<BaseRecord> cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, "item");
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
 		});
 
-		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_INVENTORY_ENTRY, "apparel");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, "apparel");
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
 		});
 		
-		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_ITEM, null);
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_ITEM, null);
 		cplans.forEach(cp -> {
 			List<String> fields = cp.get(FieldNames.FIELD_FIELDS);
 			fields.add(FieldNames.FIELD_TAGS);
 		});
 
 		
-		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, null);
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, null);
 		cplans.forEach(cp -> {
 			List<String> fields = cp.get(FieldNames.FIELD_FIELDS);
 			fields.add(FieldNames.FIELD_TAGS);
 		});
 
 		
-		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, FieldNames.FIELD_STORE);
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, FieldNames.FIELD_STORE);
 		cplans.forEach(cp -> {
-			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, ModelNames.MODEL_STORE, "apparel");
+			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, OlioModelNames.MODEL_STORE, "apparel");
 			ccplans.forEach(ccp -> {
 				QueryPlan.limitPlan(ccp, Arrays.asList(new String[] {"id", "name"}));
 			});
 		});
 		
-		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, "locations");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, "locations");
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
 		});
 		
-		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_BUILDER, "materials");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, "materials");
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
 		});
 
-		cplans = QueryPlan.findPlans(plan, ModelNames.MODEL_STORE, "locations");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_STORE, "locations");
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
 		});

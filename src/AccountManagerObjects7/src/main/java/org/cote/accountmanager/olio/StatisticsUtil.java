@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.MemoryReader;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
 
@@ -28,7 +29,7 @@ public class StatisticsUtil {
 		rollStatistics(rec, 0);
 	}
 	public static void rollStatistics(BaseRecord rec, int age) {
-		if(!rec.inherits(ModelNames.MODEL_CHAR_STATISTICS)) {
+		if(!rec.inherits(OlioModelNames.MODEL_CHAR_STATISTICS)) {
 			logger.error("Record is not a statistics record");
 			return;
 		}

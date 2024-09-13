@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StateUtil;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.ThreatUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -181,7 +182,7 @@ public class TestOlio extends BaseTest {
 		}
 		IOSystem.getActiveContext().getRecordUtil().createRecord(interaction);
 		
-		BaseRecord interaction2 = ioContext.getSearch().findRecord(QueryUtil.createQuery(ModelNames.MODEL_INTERACTION, FieldNames.FIELD_ID, interaction.get(FieldNames.FIELD_ID)));
+		BaseRecord interaction2 = ioContext.getSearch().findRecord(QueryUtil.createQuery(OlioModelNames.MODEL_INTERACTION, FieldNames.FIELD_ID, interaction.get(FieldNames.FIELD_ID)));
 		assertNotNull("Interaction is null", interaction2);
 		// logger.info(interaction2.toFullString());
 		// PersonalityProfile prof1 = ProfileUtil.analyzePersonality(ctx, per1);

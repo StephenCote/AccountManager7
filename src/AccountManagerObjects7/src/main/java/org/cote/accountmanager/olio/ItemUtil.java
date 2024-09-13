@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -95,8 +96,8 @@ public class ItemUtil {
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("items.path"));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
-			BaseRecord stat = rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
-			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM, ctx.getOlioUser(), null, plist);
+			BaseRecord stat = rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ITEM_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
+			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ITEM, ctx.getOlioUser(), null, plist);
 			rec.set("statistics", stat);
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -119,7 +120,7 @@ public class ItemUtil {
 		return tmp;
 	}
 	public static BaseRecord getItemTemplate(OlioContext ctx, String name) {
-		Query q = OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
+		Query q = OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
 		q.field("type", "template");
 		q.field(FieldNames.FIELD_NAME, name);
 		OlioUtil.planMost(q);
@@ -141,7 +142,7 @@ public class ItemUtil {
 
 
 			try {
-				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
+				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
 				inv.set("item", i);
 				inv.set("quantity", 1);
 				entries.add(inv);
@@ -243,7 +244,7 @@ public class ItemUtil {
 		String iname = item.get(FieldNames.FIELD_NAME);
 		Optional<BaseRecord> oive = inv.stream().filter(i -> iname.equals(i.get("item.name"))).findFirst();
 		if(!oive.isPresent()) {
-			BaseRecord ive = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path")));
+			BaseRecord ive = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path")));
 			ive.setValue("item", item);
 			ive.setValue("quantity", (quantity < 0 ? rand.nextInt(1, 10) : quantity));
 			inv.add(ive);
@@ -344,7 +345,7 @@ public class ItemUtil {
 		List<BaseRecord> entries = store.get("inventory");
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("inventories.path"));
 		try {
-			inv = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
+			inv = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
 			inv.set("item", item);
 			entries.add(inv);
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -397,7 +398,7 @@ public class ItemUtil {
 	}
 	
 	public static BaseRecord getCreateRawMaterial(OlioContext ctx, String name, String type, String cat) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("items.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_ITEM, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("items.id"));
 		q.field(FieldNames.FIELD_NAME, name);
 		if(type != null) {
 			q.field(FieldNames.FIELD_TYPE, type);
@@ -422,13 +423,13 @@ public class ItemUtil {
 	}
 	
 	public static List<BaseRecord> getTemplateBuilders(OlioContext ctx) {
-		return Arrays.asList(OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders", "type", "template"));
+		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_BUILDER, "builders", "type", "template"));
 	}
 	public static List<BaseRecord> getTemplateItems(OlioContext ctx) {
-		return Arrays.asList(OlioUtil.list(ctx, ModelNames.MODEL_ITEM, "items", "type", "template"));
+		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_ITEM, "items", "type", "template"));
 	}
 	public static void loadItems(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
 		if(count == 0) {
 			BaseRecord[] items = importItems(ctx);
 			Queue.processQueue();
@@ -450,13 +451,13 @@ public class ItemUtil {
 				
 				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("items.path"));
 				plist.parameter(FieldNames.FIELD_NAME, item.get(FieldNames.FIELD_NAME));
-				BaseRecord itm = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ITEM, ctx.getOlioUser(), item, plist);
+				BaseRecord itm = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ITEM, ctx.getOlioUser(), item, plist);
 
-				BaseRecord os = mf.newInstance(ModelNames.MODEL_ITEM_STATISTICS, ctx.getOlioUser(), item.get("statistics"), ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
+				BaseRecord os = mf.newInstance(OlioModelNames.MODEL_ITEM_STATISTICS, ctx.getOlioUser(), item.get("statistics"), ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
 				itm.set("statistics", os);
 
 				List<BaseRecord> qs = itm.get("qualities");
-				BaseRecord oq = mf.newInstance(ModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
+				BaseRecord oq = mf.newInstance(OlioModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
 				qs.clear();
 				qs.add(oq);
 				

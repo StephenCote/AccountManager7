@@ -24,6 +24,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.PolicyType;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -65,6 +66,7 @@ public class BaseTest {
 				return;
 			}
 		}
+		OlioModelNames.addModels();
 		if(!checkReset) {
 			checkReset = true;
 			resetDataSchema = Boolean.parseBoolean(testProperties.getProperty("test.db.reset"));

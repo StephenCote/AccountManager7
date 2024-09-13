@@ -12,6 +12,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -85,10 +86,10 @@ public class ChatUtil {
 	}
 	public static BaseRecord getCreateChatConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, name);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 		OlioUtil.planMost(q);
-		OlioUtil.limitSubplanFields(q.plan(), ModelNames.MODEL_CHAT_CONFIG, "event");
+		OlioUtil.limitSubplanFields(q.plan(), OlioModelNames.MODEL_CHAT_CONFIG, "event");
 
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 		
@@ -96,7 +97,7 @@ public class ChatUtil {
 			ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
 			plist.parameter("name", name);
 			try {
-				dat = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+				dat = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
 			} catch (Exception e) {
 				logger.error(e);
 			}
@@ -110,7 +111,7 @@ public class ChatUtil {
 	}
 	public static BaseRecord getCreatePromptConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, name);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 		q.planMost(false);
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
@@ -127,7 +128,7 @@ public class ChatUtil {
 		ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
 		plist.parameter("name", name);
 		try {
-			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROMPT_CONFIG, user, template, plist);
+			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, template, plist);
 		} catch (Exception e) {
 			logger.error(e);
 			error = true;

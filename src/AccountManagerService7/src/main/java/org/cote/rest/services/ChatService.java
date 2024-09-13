@@ -42,6 +42,7 @@ import org.cote.accountmanager.olio.llm.OllamaChatRequest;
 import org.cote.accountmanager.olio.llm.OllamaChatResponse;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -95,8 +96,8 @@ public class ChatService {
 			return Response.status(404).entity(null).build();
 		}
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
 		if(chatConfig != null && promptConfig != null) {
 	
 			String key = getKey(user, chatConfig, promptConfig, chatReq);
@@ -131,8 +132,8 @@ public class ChatService {
 		}
 		OllamaChatResponse crep = null;
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
 		if(chatConfig != null && promptConfig != null) {
 			String key = getKey(user, chatConfig, promptConfig, chatReq);
 			crep = new OllamaChatResponse();
@@ -174,7 +175,7 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response getPromptConfig(@PathParam("name") String name, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord cfg = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, null, name);
+		BaseRecord cfg = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, null, name);
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
 	}
 	
@@ -207,7 +208,7 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response getChatConfig(@PathParam("name") String name, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord cfg = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, null, name);
+		BaseRecord cfg = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, name);
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
 	}
 	
@@ -231,8 +232,8 @@ public class ChatService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		
 		OllamaRequest req = getOllamaRequest(user, chatReq);
-		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
 		///logger.info(JSONUtil.exportObject(req));
 		// if(chatReq.getMessage() != null) {
 			//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("systemCharacter.name") + "-" + chatConfig.get("userCharacter.name");
@@ -252,7 +253,7 @@ public class ChatService {
 		if(req == null || creq == null) {
 			return null;
 		}
-		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
 		OllamaChatResponse rep = new OllamaChatResponse();
 		rep.setUid(creq.getUid());
 		rep.setModel(chatConfig.get("llmModel"));
@@ -308,8 +309,8 @@ public class ChatService {
 	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
 		OllamaRequest req = null;
 		Chat chat = null;
-		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
 		String key = getKey(user, chatConfig, promptConfig, creq);
 		//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("name") + "-" + promptConfig.get("name");
 		if(reqMap.containsKey(key)) {
@@ -410,8 +411,8 @@ public class ChatService {
 		if(chatMap.containsKey(key)) {
 			return chatMap.get(key);
 		}
-		BaseRecord chatConfig = getConfig(user, ModelNames.MODEL_CHAT_CONFIG, req.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, ModelNames.MODEL_PROMPT_CONFIG, req.getPromptConfig(), null);
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, req.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, req.getPromptConfig(), null);
 		Chat chat = null;
 		if(chatConfig != null && promptConfig != null) {
 			chat = new Chat(user, chatConfig, promptConfig);

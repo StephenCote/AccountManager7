@@ -5,6 +5,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
 import org.junit.Test;
@@ -22,10 +23,10 @@ public class TestQueryPlan extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");;
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON);
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
 		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		q.filterPlan(ModelNames.MODEL_INVENTORY_ENTRY, "apparel");
-		q.filterPlan(ModelNames.MODEL_STORE, "locations");
+		q.filterPlan(OlioModelNames.MODEL_INVENTORY_ENTRY, "apparel");
+		q.filterPlan(OlioModelNames.MODEL_STORE, "locations");
 
 		OlioUtil.prunePlan(q.plan());
 

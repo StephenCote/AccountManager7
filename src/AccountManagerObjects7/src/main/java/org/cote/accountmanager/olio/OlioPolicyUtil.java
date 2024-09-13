@@ -19,6 +19,7 @@ import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.PolicyDefinitionType;
 import org.cote.accountmanager.objects.generated.PolicyRequestType;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.policy.FactUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -98,7 +99,7 @@ public class OlioPolicyUtil {
 			}
 		}
 		else if(character != null && FieldEnumType.MODEL == param.getEnum("valueType")) {
-			if(ModelNames.MODEL_CHAR_STATE.equals(param.get(FieldNames.FIELD_MODEL_TYPE))){
+			if(OlioModelNames.MODEL_CHAR_STATE.equals(param.get(FieldNames.FIELD_MODEL_TYPE))){
 				param.setValue("factReference", character.get(FieldNames.FIELD_STATE));
 			}
 			else {

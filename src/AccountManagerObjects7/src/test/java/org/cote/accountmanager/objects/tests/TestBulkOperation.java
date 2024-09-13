@@ -24,6 +24,7 @@ import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.DBWriter;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -51,10 +52,10 @@ public class TestBulkOperation extends BaseTest {
 		String name = "Person 1";
 		plist.parameter("name", name);
 		try {
-			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set("gender", "male");
 			AttributeUtil.addAttribute(a1, "test", true);
-			BaseRecord a2 = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
+			BaseRecord a2 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a2.set(FieldNames.FIELD_NAME, "Person 2");
 			a2.set("gender", "female");
 			AttributeUtil.addAttribute(a2, "test", false);
@@ -70,12 +71,12 @@ public class TestBulkOperation extends BaseTest {
 			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, "partners", a1);
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {p1, p2});
 			
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, "Person 1");
 			q.planMost(true);
 			//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES, "partners", "gender"});
 			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
-			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_APPAREL);
+			Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL);
 			q.planMost(true);
 			DBStatementMeta meta2 = StatementUtil.getSelectTemplate(q2);
 			// logger.info("Outside io.db: " + meta.getColumns().stream().collect(Collectors.joining(", ")));
@@ -119,13 +120,13 @@ public class TestBulkOperation extends BaseTest {
 		String name = "Dooter - " + UUID.randomUUID().toString();
 		plist.parameter("name", name);
 		try {
-			BaseRecord a1 = ioContext.getFactory().newInstance(ModelNames.MODEL_APPAREL, testUser1, null, plist);
+			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_APPAREL, testUser1, null, plist);
 			aal.add(a1);
 			List<BaseRecord> wl = a1.get("wearables");
-			BaseRecord w1 = ioContext.getFactory().newInstance(ModelNames.MODEL_WEARABLE, testUser1, null, plist);
+			BaseRecord w1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_WEARABLE, testUser1, null, plist);
 			wl.add(w1);
 			List<BaseRecord> ql = w1.get("qualities");
-			BaseRecord q1 = ioContext.getFactory().newInstance(ModelNames.MODEL_QUALITY, testUser1, null, plist);
+			BaseRecord q1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_QUALITY, testUser1, null, plist);
 			ql.add(q1);
 			BaseRecord d1 = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
 			w1.set("pattern", d1);
@@ -133,7 +134,7 @@ public class TestBulkOperation extends BaseTest {
 			ioContext.getAccessPoint().create(testUser1, a1);
 
 			
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, a1.get(FieldNames.FIELD_ID));
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL, FieldNames.FIELD_ID, a1.get(FieldNames.FIELD_ID));
 			q.planMost(true);
 
 			// DBStatementMeta meta = StatementUtil.getSelectTemplate(q);

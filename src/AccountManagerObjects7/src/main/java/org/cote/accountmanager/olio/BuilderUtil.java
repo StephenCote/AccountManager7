@@ -15,6 +15,7 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -40,13 +41,13 @@ public class BuilderUtil {
 	
 	public static BaseRecord[] getBuilders(OlioContext ctx) {
 		if(builders.length == 0) {
-			builders = OlioUtil.list(ctx, ModelNames.MODEL_BUILDER, "builders");
+			builders = OlioUtil.list(ctx, OlioModelNames.MODEL_BUILDER, "builders");
 		}
 		return builders;
 	}
 	
 	public static void loadBuilders(OlioContext ctx) {
-		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), ModelNames.MODEL_BUILDER, ctx.getWorld().get("builders.path")));
+		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_BUILDER, ctx.getWorld().get("builders.path")));
 		if(count == 0) {
 			BaseRecord[] builders = importBuilders(ctx);
 			Queue.processQueue();
@@ -64,8 +65,8 @@ public class BuilderUtil {
 				
 				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("builders.path"));
 				plist.parameter(FieldNames.FIELD_NAME, vbld.get(FieldNames.FIELD_NAME));
-				BaseRecord bld = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BUILDER, ctx.getOlioUser(), vbld, plist);
-				// bld.set("store", IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
+				BaseRecord bld = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_BUILDER, ctx.getOlioUser(), vbld, plist);
+				// bld.set("store", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
 
 				BaseRecord itm = bld.get("item");
 				if(itm != null) {
@@ -78,7 +79,7 @@ public class BuilderUtil {
 				}
 
 				List<BaseRecord> qs = bld.get("qualities");
-				BaseRecord oq = mf.newInstance(ModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
+				BaseRecord oq = mf.newInstance(OlioModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList("path", ctx.getWorld().get("qualities.path")));
 				qs.clear();
 				qs.add(oq);
 

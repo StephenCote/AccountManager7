@@ -34,6 +34,7 @@ import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -139,13 +140,13 @@ public class ChatAction extends CommonAction implements IAction{
 				logger.info("Import chat config " + cmd.getOptionValue("path"));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 				String patch = FileUtil.getFileAsString(cmd.getOptionValue("path"));
-				IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAT_CONFIG, patch), cfg);
+				IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAT_CONFIG, patch), cfg);
 			}
 			else if(cmd.hasOption("promptConfig")) {
 				logger.info("Import prompt config " + cmd.getOptionValue("path"));
 				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
 				String patch = FileUtil.getFileAsString(cmd.getOptionValue("path"));
-				IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PROMPT_CONFIG, patch), prompt);
+				IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_PROMPT_CONFIG, patch), prompt);
 			}
 		}
 		
@@ -257,7 +258,7 @@ public class ChatAction extends CommonAction implements IAction{
 					if(cmd.hasOption("wearable") && cmd.hasOption("name")) {
 						BaseRecord item = ItemUtil.findStoredItemByName(char1, cmd.getOptionValue("name"));
 						if(item != null) {
-							IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_WEARABLE, cmd.getOptionValue("wearable")), item);		
+							IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_WEARABLE, cmd.getOptionValue("wearable")), item);		
 						}
 					}
 					if(cmd.hasOption("qualities") && cmd.hasOption("name")) {
@@ -265,20 +266,20 @@ public class ChatAction extends CommonAction implements IAction{
 						if(item != null) {
 							List<BaseRecord> qs = item.get("qualities");
 							if(qs.size() > 0) {
-								IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_QUALITY, cmd.getOptionValue("qualities")), qs.get(0));		
+								IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_QUALITY, cmd.getOptionValue("qualities")), qs.get(0));		
 							}
 						}
 					}
 					if(cmd.hasOption("statistics")) {
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_STATISTICS, cmd.getOptionValue("statistics")), char1.get("statistics"), true);
+						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, cmd.getOptionValue("statistics")), char1.get("statistics"), true);
 					}
 					if(cmd.hasOption("personality")) {
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
 						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, cmd.getOptionValue("personality")), char1.get("personality"), true);
 					}
 					if(cmd.hasOption("person")) {
-						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_CHAR_PERSON, cmd.getOptionValue("person")), char1);
+						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_PERSON, cmd.getOptionValue("person")), char1);
 					}
 
 

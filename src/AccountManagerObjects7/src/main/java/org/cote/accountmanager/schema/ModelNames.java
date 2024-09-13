@@ -20,18 +20,33 @@ public class ModelNames {
 	public static final Logger logger = LogManager.getLogger(ModelNames.class);
 	
 	public static final String MODEL_MODEL = "model";
+	public static final String MODEL_SELF = "$self";
+	public static final String MODEL_FLEX = "$flex";
+
 	public static final String MODEL_MODEL_SCHEMA = "system.modelSchema";
 	public static final String MODEL_PRIMARY_KEY = "system.primaryKey";
 	
 	public static final String MODEL_ACCOUNT = "identity.account";
 	public static final String MODEL_ADDRESS = "identity.address";
+	public static final String MODEL_CONTACT = "identity.contact";
+	public static final String MODEL_CONTACT_INFORMATION = "identity.contactInformation";
+	public static final String MODEL_PERSON = "identity.person";
+	public static final String MODEL_PROFILE = "identity.profile";
+	public static final String MODEL_APPLICATION_PROFILE = "identity.applicationProfile";
+	public static final String MODEL_SUBJECT = "identity.subject";
+	public static final String MODEL_PERSONALITY = "identity.personality";
+	public static final String MODEL_SOCIAL_BEHAVIOR = "identity.socialBehavior";
+	public static final String MODEL_SOCIAL_GROUP = "identity.socialGroup";
+	public static final String MODEL_BEHAVIOR = "identity.behavior";
+
+	
 	public static final String MODEL_ATTRIBUTE = "common.attribute";
 	public static final String MODEL_NAME = "common.name";
 	public static final String MODEL_ATTRIBUTE_LIST = "common.attributeList";
 	public static final String MODEL_BASE = "common.base";
 	public static final String MODEL_CIPHER_KEY = "crypto.cipherKey";
-	public static final String MODEL_CONTACT = "identity.contact";
-	public static final String MODEL_CONTACT_INFORMATION = "identity.contactInformation";
+
+	
 	public static final String MODEL_CONTROL = "policy.control";
 	public static final String MODEL_CREDENTIAL = "auth.credential";
 	public static final String MODEL_CRYPTOBYTESTORE = "crypto.cryptoByteStore";
@@ -48,7 +63,6 @@ public class ModelNames {
 	public static final String MODEL_KEY = "crypto.key";
 	public static final String MODEL_KEY_SET = "crypto.keySet";
 	public static final String MODEL_KEY_STORE = "crypto.keyStore";
-	// public static final String MODEL_STORE = "store";
 	public static final String MODEL_OPERATION = "policy.operation";
 	public static final String MODEL_ORGANIZATION = "system.organization";
 	public static final String MODEL_ORGANIZATION_EXT = "system.organizationExt";
@@ -60,8 +74,6 @@ public class ModelNames {
 	public static final String MODEL_PERMISSION = "auth.permission";
 	public static final String MODEL_AUDIT = "system.audit";
 	
-	public static final String MODEL_PERSON = "identity.person";
-	public static final String MODEL_PROFILE = "identity.profile";
 	public static final String MODEL_POLICY = "policy.policy";
 	public static final String MODEL_POLICY_DEFINITION = "policy.policyDefinition";
 	public static final String MODEL_POLICY_REQUEST = "policy.policyRequest";
@@ -71,8 +83,6 @@ public class ModelNames {
 	public static final String MODEL_ROLE = "auth.role";
 	public static final String MODEL_RSA_KEY = "crypto.rsaKey";
 	public static final String MODEL_RULE = "policy.rule";
-	public static final String MODEL_SELF = "$self";
-	public static final String MODEL_FLEX = "$flex";
 	public static final String MODEL_SIMPLE_BYTE_STORE = "file.simpleByteStore";
 	public static final String MODEL_UNKNOWN = "unknown";
 	public static final String MODEL_SPOOL = "message.spool";
@@ -110,14 +120,14 @@ public class ModelNames {
 	public static final String MODEL_CONTENT_TYPE = "data.contentType";
 	public static final String MODEL_THUMBNAIL = "data.thumbnail";
 	public static final String MODEL_VALIDATION_RULE = "policy.validationRule";
-	public static final String MODEL_APPLICATION_PROFILE = "identity.applicationProfile";
+
 	public static final String MODEL_FUNCTION = "policy.function";
 	public static final String MODEL_TAG = "data.tag";
 	public static final String MODEL_SOCKET_MESSAGE = "message.socketMessage";
 	public static final String MODEL_NOTE = "data.note";
 	
 	public static final String MODEL_FIELD_LOCK = "system.fieldLock";
-	public static final String MODEL_SUBJECT = "identity.subject";
+	
 	
 	public static final String MODEL_MODEL_CATEGORY = "system.modelCategory";
 	
@@ -133,46 +143,8 @@ public class ModelNames {
 	public static final String MODEL_TRAIT = "data.trait";
 	public static final String MODEL_LOCATION = "data.location";
 	public static final String MODEL_GEO_LOCATION = "data.geoLocation";
-	public static final String MODEL_WORLD = "olio.world";
 	public static final String MODEL_ALIGNMENT = "common.alignment";
 	
-	
-	
-	
-	// olio
-	public static final String MODEL_PERSONALITY = "identity.personality";
-	public static final String MODEL_SOCIAL_BEHAVIOR = "identity.socialBehavior";
-	public static final String MODEL_SOCIAL_GROUP = "identity.socialGroup";
-	public static final String MODEL_BEHAVIOR = "identity.behavior";
-	
-	public static final String MODEL_ANIMAL = "olio.animal";
-	public static final String MODEL_CHAR_PERSON = "olio.charPerson";
-	public static final String MODEL_CHAR_STATISTICS = "olio.statistics";
-	public static final String MODEL_CHAR_SKILL = "olio.charSkill";
-	public static final String MODEL_INSTINCT = "olio.instinct";
-
-	public static final String MODEL_QUALITY = "olio.quality";
-	public static final String MODEL_ITEM = "olio.item";
-	public static final String MODEL_ITEM_STATISTICS = "olio.itemStatistics";
-	public static final String MODEL_APPAREL = "olio.apparel";
-	public static final String MODEL_WEARABLE = "olio.wearable";
-	public static final String MODEL_EVENT = "olio.event";
-	public static final String MODEL_CHAR_STATE = "olio.state";
-	public static final String MODEL_PLAYER_STATE = "olio.playerState";
-	public static final String MODEL_ACTION = "olio.action";
-	public static final String MODEL_ACTION_RESULT = "olio.actionResult";
-	public static final String MODEL_ACTION_PARAMETERS = "olio.actionParameters";
-	public static final String MODEL_SCHEDULE = "olio.schedule";
-	public static final String MODEL_STORE = "olio.store";
-	public static final String MODEL_INVENTORY_ENTRY = "olio.inventoryEntry";
-	public static final String MODEL_BUILDER = "olio.builder";
-	public static final String MODEL_REALM = "olio.realm";
-	public static final String MODEL_POI = "olio.pointOfInterest";
-	public static final String MODEL_INTERACTION = "olio.interaction";
-	public static final String MODEL_NARRATIVE = "olio.narrative";
-	public static final String MODEL_CHAT_CONFIG = "olio.llm.chatConfig";
-	public static final String MODEL_PROMPT_CONFIG = "olio.llm.promptConfig";
-	public static final String MODEL_PROMPT_RACE_CONFIG = "olio.llm.promptRaceConfig";
 	
 	public static List<String> MODELS = Arrays.asList(
 		MODEL_ORGANIZATION, MODEL_SIMPLE_BYTE_STORE, MODEL_USER, MODEL_ACCOUNT, MODEL_PERSON, MODEL_GROUP, MODEL_ATTRIBUTE, MODEL_ROLE,
@@ -182,11 +154,15 @@ public class ModelNames {
 		MODEL_INDEX2, MODEL_INDEX_ENTRY2, MODEL_INDEX_ENTRY_VALUE2, MODEL_INDEX_STORE, MODEL_KEY_STORE, MODEL_VAULT, MODEL_AUTHENTICATION_REQUEST, MODEL_AUTHENTICATION_RESPONSE,
 		MODEL_AUDIT, MODEL_CONTACT_INFORMATION, MODEL_ACCESS_REQUEST, MODEL_MODEL_SCHEMA, MODEL_STREAM, MODEL_STREAM_SEGMENT, MODEL_THUMBNAIL, MODEL_VALIDATION_RULE, MODEL_APPLICATION_PROFILE,
 		MODEL_FUNCTION, MODEL_TAG, MODEL_MODEL_CATEGORY, MODEL_NOTE, MODEL_SOCKET_MESSAGE, MODEL_FIELD_LOCK, MODEL_TRAIT, MODEL_WORD, MODEL_WORD_NET, MODEL_CENSUS_WORD, MODEL_WORD_NET_POINTER, MODEL_WORD_NET_ALT,
-		MODEL_LOCATION, MODEL_GEO_LOCATION, MODEL_WORLD, MODEL_CHAR_PERSON, MODEL_INSTINCT, MODEL_PERSONALITY, MODEL_SOCIAL_BEHAVIOR,
-		MODEL_SOCIAL_GROUP, MODEL_BEHAVIOR, MODEL_QUALITY, MODEL_ITEM, MODEL_WEARABLE, MODEL_APPAREL, MODEL_EVENT, MODEL_COLOR, MODEL_CHAR_STATISTICS, MODEL_CHAR_STATE,
-		MODEL_ACTION, MODEL_ACTION_RESULT, MODEL_ACTION_PARAMETERS, MODEL_SCHEDULE, MODEL_INVENTORY_ENTRY, MODEL_STORE, MODEL_BUILDER, MODEL_ITEM_STATISTICS, MODEL_ANIMAL, MODEL_REALM, MODEL_INTERACTION,
-		MODEL_NARRATIVE, MODEL_CHAT_CONFIG, MODEL_PROMPT_CONFIG, MODEL_PROMPT_RACE_CONFIG, MODEL_PROFILE, MODEL_POI
-	);
+		MODEL_LOCATION, MODEL_GEO_LOCATION,  MODEL_PERSONALITY, MODEL_SOCIAL_BEHAVIOR,MODEL_COLOR, MODEL_SOCIAL_GROUP, MODEL_BEHAVIOR, MODEL_PROFILE
+	).stream().collect(Collectors.toList());
+	
+	public static void addModels(List<String> modelNames) {
+		logger.info("Adding " + modelNames.size() + " models");
+		if(!MODELS.addAll(modelNames)) {
+			logger.error("Failed to add " + modelNames.size() + " models");
+		}
+	}
 	
 	private static List<String> customModelNames = null;
 	public static void releaseCustomModelNames() {

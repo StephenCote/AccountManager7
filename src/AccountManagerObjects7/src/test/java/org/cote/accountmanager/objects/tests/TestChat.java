@@ -48,6 +48,7 @@ import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -73,7 +74,7 @@ public class TestChat extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Chat", "DATA", testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, "Don't Exist");
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, "Don't Exist");
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 		q.planMost(true);
 		DBStatementMeta meta = null;
@@ -93,8 +94,8 @@ public class TestChat extends BaseTest {
 		BaseRecord cfg = null;
 		BaseRecord pcfg = null;
 		try {
-			cfg = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAT_CONFIG, testUser1, null, clist);
-			pcfg = ioContext.getFactory().newInstance(ModelNames.MODEL_PROMPT_CONFIG, testUser1, null, plist);
+			cfg = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, testUser1, null, clist);
+			pcfg = ioContext.getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, testUser1, null, plist);
 		}
 		catch(NullPointerException | FactoryException e) {
 			logger.error(e);
@@ -164,7 +165,7 @@ public class TestChat extends BaseTest {
 		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 
 		try {
-			pcfg = ioContext.getFactory().newInstance(ModelNames.MODEL_PROMPT_CONFIG, user, ipcfg, plist);
+			pcfg = ioContext.getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, ipcfg, plist);
 			opcfg = ioContext.getAccessPoint().create(user, pcfg);
 		}
 		catch(NullPointerException | FactoryException e) {
@@ -211,7 +212,7 @@ public class TestChat extends BaseTest {
 		BaseRecord ocfg = null;
 		String setting = NarrativeUtil.getRandomSetting();
 		try {
-			cfg = ioContext.getFactory().newInstance(ModelNames.MODEL_CHAT_CONFIG, user, null, clist);
+			cfg = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, clist);
 			cfg.set("rating", ESRBEnumType.AO);
 			cfg.set("alignment", levt.get("alignment"));
 			cfg.set("systemCharacter", per1);

@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
@@ -38,7 +39,7 @@ public class WorldUtil {
 	public static BaseRecord getWorld(BaseRecord user, String groupPath, String worldName) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_NAME, worldName);
 		q.planMost(true, Arrays.asList(new String[] {"realms", FieldNames.FIELD_TAGS, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_CONTROLS}));
 
@@ -58,7 +59,7 @@ public class WorldUtil {
 			ParameterList plist = ParameterList.newParameterList("path", groupPath);
 			plist.parameter("name", worldName);
 			try {
-				BaseRecord world = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_WORLD, user, null, plist);
+				BaseRecord world = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_WORLD, user, null, plist);
 				world.set("features", Arrays.asList(features));
 				world.set("basis", basis);
 				if(useSharedLibrary) {
@@ -72,7 +73,7 @@ public class WorldUtil {
 				}
 				IOSystem.getActiveContext().getAccessPoint().create(user, world);
 				// rec = getWorld(user, groupPath, worldName);
-				rec = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
+				rec = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, OlioModelNames.MODEL_WORLD, (long)dir.get(FieldNames.FIELD_ID), worldName);
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
@@ -228,8 +229,8 @@ public class WorldUtil {
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		long start = System.currentTimeMillis();
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_GEO_LOCATION, (long)world.get("locations.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_EVENT, (long)world.get("events.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_PERSON, (long)world.get("population.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_EVENT, (long)world.get("events.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_CHAR_PERSON, (long)world.get("population.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_GROUP, (long)world.get("population.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_ADDRESS, (long)world.get("addresses.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_CONTACT, (long)world.get("contacts.id"), orgId);
@@ -245,29 +246,29 @@ public class WorldUtil {
 		}
 		
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_TRAIT, (long)world.get("traits.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_QUALITY, (long)world.get("qualities.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_WEARABLE, (long)world.get("wearables.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_APPAREL, (long)world.get("apparel.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATISTICS, (long)world.get("statistics.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_INSTINCT, (long)world.get("instincts.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_QUALITY, (long)world.get("qualities.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_WEARABLE, (long)world.get("wearables.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_APPAREL, (long)world.get("apparel.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_CHAR_STATISTICS, (long)world.get("statistics.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_INSTINCT, (long)world.get("instincts.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_BEHAVIOR, (long)world.get("behaviors.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_CHAR_STATE, (long)world.get("states.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_ACTION, (long)world.get("actions.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_ACTION_RESULT, (long)world.get("actionResults.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_SCHEDULE, (long)world.get("schedules.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_CHAR_STATE, (long)world.get("states.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ACTION, (long)world.get("actions.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ACTION_RESULT, (long)world.get("actionResults.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_SCHEDULE, (long)world.get("schedules.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_PERSONALITY, (long)world.get("personalities.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_STORE, (long)world.get("stores.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_BUILDER, (long)world.get("builders.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_ITEM, (long)world.get("items.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_ITEM_STATISTICS, (long)world.get("statistics.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_STORE, (long)world.get("stores.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_BUILDER, (long)world.get("builders.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ITEM, (long)world.get("items.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ITEM_STATISTICS, (long)world.get("statistics.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_TAG, (long)world.get("tagsGroup.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_ANIMAL, (long)world.get("animals.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_REALM, (long)world.get("realmsGroup.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_INVENTORY_ENTRY, (long)world.get("inventories.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_NARRATIVE, (long)world.get("narratives.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ANIMAL, (long)world.get("animals.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_REALM, (long)world.get("realmsGroup.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_INVENTORY_ENTRY, (long)world.get("inventories.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_NARRATIVE, (long)world.get("narratives.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_PROFILE, (long)world.get("profiles.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_POI, (long)world.get("pointsOfInterest.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_POI, (long)world.get("pointsOfInterest.id"), orgId);
 		
 		RecordFactory.cleanupOrphans(null);
 		long stop = System.currentTimeMillis();
