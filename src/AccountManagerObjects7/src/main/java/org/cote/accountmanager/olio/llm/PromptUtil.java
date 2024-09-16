@@ -234,8 +234,8 @@ public class PromptUtil {
 			sjobDesc =" " + strades.get(0).toLowerCase();
 		}		
 		
-		templ = systemASG.matcher(templ).replaceAll(systemChar.get("age") + " year old " + sgen + sjobDesc);
-		templ = userASG.matcher(templ).replaceAll(userChar.get("age") + " year old " + ugen + ujobDesc);
+		templ = systemASG.matcher(templ).replaceAll(systemChar.get(FieldNames.FIELD_AGE) + " year old " + sgen + sjobDesc);
+		templ = userASG.matcher(templ).replaceAll(userChar.get(FieldNames.FIELD_AGE) + " year old " + ugen + ujobDesc);
 		templ = userCPro.matcher(templ).replaceAll(ucpro);
 		templ = userPro.matcher(templ).replaceAll(upro);
 		templ = userPPro.matcher(templ).replaceAll(uppro);

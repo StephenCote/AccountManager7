@@ -44,7 +44,7 @@ public class ItemUtil {
 	private static String[] weaponFab = new String[] {"iron", "steel", "bronze", "stainless steel", "damascus steel"};
 	public static List<BaseRecord> randomArms(OlioContext ctx){
 		List<BaseRecord> aweaps = new ArrayList<>();
-		List<BaseRecord> weapL = getItemTemplates(ctx).stream().filter(r -> "weapon".equals(r.get("category"))).collect(Collectors.toList());
+		List<BaseRecord> weapL = getItemTemplates(ctx).stream().filter(r -> "weapon".equals(r.get(OlioFieldNames.FIELD_CATEGORY))).collect(Collectors.toList());
 		BaseRecord weapT = weapL.get(random.nextInt(weapL.size()));
 		BaseRecord weap = ItemUtil.buildItem(ctx, weapT);
 		//Queue.queue(weap);
@@ -53,7 +53,7 @@ public class ItemUtil {
 		
 		// logger.info(weap.toFullString());
 		if(!OlioUtil.isTagged(weap, "two-handed") && random.nextDouble() <= 0.25) {
-			List<BaseRecord> armorL = getItemTemplates(ctx).stream().filter(r -> "armor".equals(r.get("category"))).collect(Collectors.toList());
+			List<BaseRecord> armorL = getItemTemplates(ctx).stream().filter(r -> "armor".equals(r.get(OlioFieldNames.FIELD_CATEGORY))).collect(Collectors.toList());
 			BaseRecord armorT = armorL.get(random.nextInt(armorL.size()));
 			BaseRecord armor = ItemUtil.buildItem(ctx, armorT);
 			ApparelUtil.applyFabric(armor, weaponFab[random.nextInt(weaponFab.length)]);	
@@ -112,7 +112,7 @@ public class ItemUtil {
 		if(tmp == null) {
 			tmp = newItem(ctx, name);
 			try {
-				tmp.set("type", "template");
+				tmp.set(FieldNames.FIELD_TYPE, "template");
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e.toString());
 			}
@@ -122,7 +122,7 @@ public class ItemUtil {
 	}
 	public static BaseRecord getItemTemplate(OlioContext ctx, String name) {
 		Query q = OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ITEM, ctx.getWorld().get("items.path"));
-		q.field("type", "template");
+		q.field(FieldNames.FIELD_TYPE, "template");
 		q.field(FieldNames.FIELD_NAME, name);
 		OlioUtil.planMost(q);
 		q.getRequest().add(FieldNames.FIELD_TAGS);
@@ -179,11 +179,11 @@ public class ItemUtil {
 		return getMoneyTemplates(ctx, null);
 	}
 	public static List<BaseRecord> getMoneyTemplates(OlioContext ctx, String name){
-		return ItemUtil.getTemplateItems(ctx).stream().filter(i -> (name == null || name.equals(i.get(FieldNames.FIELD_NAME))) && ((String)i.get("category")).equals("money")).collect(Collectors.toList());
+		return ItemUtil.getTemplateItems(ctx).stream().filter(i -> (name == null || name.equals(i.get(FieldNames.FIELD_NAME))) && ((String)i.get(OlioFieldNames.FIELD_CATEGORY)).equals("money")).collect(Collectors.toList());
 	}
 	
 	public static int countItemInInventory(OlioContext ctx, BaseRecord rec, String itemName) {
-		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> ((String)i.get("type")).equals("template") && ((String)i.get(FieldNames.FIELD_NAME)).equals(itemName)).findFirst();
+		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> ((String)i.get(FieldNames.FIELD_TYPE)).equals("template") && ((String)i.get(FieldNames.FIELD_NAME)).equals(itemName)).findFirst();
 		if(item.isPresent()) {
 			return countItemInInventory(ctx, rec, item.get());
 		}
@@ -209,8 +209,8 @@ public class ItemUtil {
 	}
 	public static List<BaseRecord> getTemplateItemsByCategory(OlioContext ctx, String itemCat){
 		return getTemplateItems(ctx).stream().filter(i -> {
-			String type = i.get("type");
-			String cat = i.get("category");
+			String type = i.get(FieldNames.FIELD_TYPE);
+			String cat = i.get(OlioFieldNames.FIELD_CATEGORY);
 			return type != null && type.equals("template") && cat != null && cat.equals(itemCat);
 		}).collect(Collectors.toList());	
 	}
@@ -254,7 +254,7 @@ public class ItemUtil {
 	
 	public static boolean depositItemIntoInventory(OlioContext ctx, BaseRecord rec, String itemName, int count) {
 		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> {
-			String type = i.get("type");
+			String type = i.get(FieldNames.FIELD_TYPE);
 			String name = i.get(FieldNames.FIELD_NAME);
 			return type != null && type.equals("template") && name != null && name.equals(itemName);
 		}).findFirst();
@@ -293,7 +293,7 @@ public class ItemUtil {
 	}
 	public static boolean withdrawItemFromInventory(OlioContext ctx, BaseRecord rec, String itemName, int count) {
 		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> {
-			String type = i.get("type");
+			String type = i.get(FieldNames.FIELD_TYPE);
 			String name = i.get(FieldNames.FIELD_NAME);
 			return type != null && type.equals("template") && name != null && name.equals(itemName);
 		}).findFirst();
@@ -387,7 +387,7 @@ public class ItemUtil {
 	public static BaseRecord buildItem(OlioContext ctx, BaseRecord template) {
 		BaseRecord item = OlioUtil.cloneIntoGroup(template, ctx.getWorld().get(OlioFieldNames.FIELD_ITEMS));
 		try {
-			item.set("type", null);
+			item.set(FieldNames.FIELD_TYPE, null);
 			item.set("tags", template.get("tags"));
 			item.set("perks", template.get("perks"));
 			item.set(OlioFieldNames.FIELD_FEATURES, template.get(OlioFieldNames.FIELD_FEATURES));
@@ -405,7 +405,7 @@ public class ItemUtil {
 			q.field(FieldNames.FIELD_TYPE, type);
 		}
 		if(cat != null) {
-			q.field("category", cat);
+			q.field(OlioFieldNames.FIELD_CATEGORY, cat);
 		}
 
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
@@ -413,7 +413,7 @@ public class ItemUtil {
 			rec = newItem(ctx, name);
 			try {
 				rec.set(FieldNames.FIELD_TYPE, type);
-				rec.set("category", cat);
+				rec.set(OlioFieldNames.FIELD_CATEGORY, cat);
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
@@ -424,10 +424,10 @@ public class ItemUtil {
 	}
 	
 	public static List<BaseRecord> getTemplateBuilders(OlioContext ctx) {
-		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_BUILDER, OlioFieldNames.FIELD_BUILDERS, "type", "template"));
+		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_BUILDER, OlioFieldNames.FIELD_BUILDERS, FieldNames.FIELD_TYPE, "template"));
 	}
 	public static List<BaseRecord> getTemplateItems(OlioContext ctx) {
-		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_ITEM, OlioFieldNames.FIELD_ITEMS, "type", "template"));
+		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_ITEM, OlioFieldNames.FIELD_ITEMS, FieldNames.FIELD_TYPE, "template"));
 	}
 	public static void loadItems(OlioContext ctx) {
 		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));

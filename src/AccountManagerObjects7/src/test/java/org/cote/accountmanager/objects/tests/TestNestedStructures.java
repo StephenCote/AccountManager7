@@ -55,21 +55,21 @@ public class TestNestedStructures extends BaseTest {
 			a1.set(FieldNames.FIELD_MIDDLE_NAME, "Kippy");
 			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
 			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
-			a1.set("instinct", ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
+			a1.set(OlioFieldNames.FIELD_INSTINCT, ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
 			a1.set(OlioFieldNames.FIELD_STATISTICS, ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
 			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
 			a1.set(FieldNames.FIELD_STATE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
 			a1.set(FieldNames.FIELD_STORE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_STORE, testUser1, null, plist));
 			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
-			a1.set("age", (new Random()).nextInt(7, 70));
+			a1.set(FieldNames.FIELD_AGE, (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
 			
-			StatisticsUtil.rollStatistics(a1.get(OlioFieldNames.FIELD_STATISTICS), (int)a1.get("age"));
+			StatisticsUtil.rollStatistics(a1.get(OlioFieldNames.FIELD_STATISTICS), (int)a1.get(FieldNames.FIELD_AGE));
 			ProfileUtil.rollPersonality(a1.get("personality"));
 			a1.set("race", CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
 
 			CharacterUtil.setStyleByRace(null, a1);
-			List<BaseRecord> apps = a1.get("store.apparel");
+			List<BaseRecord> apps = a1.get(OlioFieldNames.FIELD_STORE_APPAREL);
 			BaseRecord app = ApparelUtil.randomApparel(null, a1);
 			app.set(FieldNames.FIELD_NAME, "Primary Apparel");
 			apps.add(app);

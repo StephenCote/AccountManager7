@@ -133,7 +133,7 @@ public class NeedsUtil {
 		BaseRecord builder = null;
 		BaseRecord actionResult = null;
 		if(need == PhysiologicalNeedsEnumType.SHELTER) {
-			List<BaseRecord> builders = Arrays.asList(BuilderUtil.getBuilders(ctx)).stream().filter(b -> (b.getEnum("type") == BuilderEnumType.LOCATION)).collect(Collectors.toList());
+			List<BaseRecord> builders = Arrays.asList(BuilderUtil.getBuilders(ctx)).stream().filter(b -> (b.getEnum(FieldNames.FIELD_TYPE) == BuilderEnumType.LOCATION)).collect(Collectors.toList());
 			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get(FieldNames.FIELD_NAME)).equals("build")).collect(Collectors.toList());
 			action = actions.get(0);
 			builder = builders.get(random.nextInt(0, builders.size()));
@@ -295,25 +295,25 @@ public class NeedsUtil {
 
 	
 	public static boolean isNaked(BaseRecord record) {
-		List<BaseRecord> items = record.get("store.apparel");
+		List<BaseRecord> items = record.get(OlioFieldNames.FIELD_STORE_APPAREL);
 		/// TODO: Need to filter for inuse
 		return items.size() == 0;
 	}	
 	public static boolean isUnarmed(BaseRecord record) {
-		List<BaseRecord> items = record.get("store.items");
-		List<BaseRecord> weaps = items.stream().filter(i -> "weapon".equals(i.get("category"))).collect(Collectors.toList());
+		List<BaseRecord> items = record.get(OlioFieldNames.FIELD_STORE_ITEMS);
+		List<BaseRecord> weaps = items.stream().filter(i -> "weapon".equals(i.get(OlioFieldNames.FIELD_CATEGORY))).collect(Collectors.toList());
 		return weaps.size() == 0;
 	}
 	
 	public static boolean needsFood(BaseRecord record) {
-		List<BaseRecord> items = record.get("store.items");
-		List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get("category"))).collect(Collectors.toList());
+		List<BaseRecord> items = record.get(OlioFieldNames.FIELD_STORE_ITEMS);
+		List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get(OlioFieldNames.FIELD_CATEGORY))).collect(Collectors.toList());
 		return food.size() == 0;
 	}
 	
 	public static boolean needsWater(BaseRecord record) {
-		List<BaseRecord> items = record.get("store.items");
-		List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
+		List<BaseRecord> items = record.get(OlioFieldNames.FIELD_STORE_ITEMS);
+		List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get(OlioFieldNames.FIELD_CATEGORY))).collect(Collectors.toList());
 		return water.size() == 0;
 	}
 	

@@ -99,8 +99,8 @@ public class EvolutionUtil {
 			
 			for(BaseRecord p: pop) {
 				int age =  CharacterUtil.getCurrentAge(ctx, p);
-				p.set("age",age);
-				Queue.queueUpdate(p, new String[] {"age"});
+				p.set(FieldNames.FIELD_AGE,age);
+				Queue.queueUpdate(p, new String[] {FieldNames.FIELD_AGE});
 			}
 			
 			logger.info("Updating population ...");
@@ -146,7 +146,7 @@ public class EvolutionUtil {
 					baby.set("birthDate", now);
 					// queueAdd(queue, baby);
 					AddressUtil.randomAddressPerson(ctx.getOlioUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get(FieldNames.FIELD_LOCATION));
-					List<BaseRecord> appl = baby.get("store.apparel");
+					List<BaseRecord> appl = baby.get(OlioFieldNames.FIELD_STORE_APPAREL);
 					appl.add(ApparelUtil.randomApparel(ctx, baby));
 					
 					IOSystem.getActiveContext().getRecordUtil().updateRecord(baby);

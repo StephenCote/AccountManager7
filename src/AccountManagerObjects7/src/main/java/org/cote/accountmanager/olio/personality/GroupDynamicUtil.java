@@ -62,12 +62,12 @@ public class GroupDynamicUtil {
 		for(int i = 0; i < len; i++) {
 			BaseRecord per = lpop.get(random.nextInt(lpop.size()));
 			long id = per.get(FieldNames.FIELD_ID);
-			int age = per.get("age");
+			int age = per.get(FieldNames.FIELD_AGE);
 			int check = 0;
 			while(partSet.contains(id) || age < minPartyAge || age > maxPartyAge) {
 				per = lpop.get(random.nextInt(lpop.size()));
 				id = per.get(FieldNames.FIELD_ID);
-				age = per.get("age");
+				age = per.get(FieldNames.FIELD_AGE);
 				check++;
 				if(check > maxPartyCheck) {
 					break;
@@ -142,7 +142,7 @@ public class GroupDynamicUtil {
 	
 	public static RollEnumType rollAgeMaturity(BaseRecord rec) {
 		
-		int age = rec.get("age");
+		int age = rec.get(FieldNames.FIELD_AGE);
 		int off = 0;
 		if(age < Rules.MINIMUM_ADULT_AGE) off = Rules.MINIMUM_ADULT_AGE - age;
 		else if(age >= Rules.SENIOR_AGE) off = age - Rules.SENIOR_AGE;

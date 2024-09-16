@@ -15,6 +15,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.TypeUtil;
 
@@ -50,11 +51,11 @@ public class PolicyResponseType extends LooseRecord {
 	}
 
 	public PolicyResponseEnumType getType() {
-		return PolicyResponseEnumType.valueOf(get("type"));
+		return PolicyResponseEnumType.valueOf(get(FieldNames.FIELD_TYPE));
 	}
 	public void setType(PolicyResponseEnumType type) {
 		try {
-			set("type", type.toString());
+			set(FieldNames.FIELD_TYPE, type.toString());
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

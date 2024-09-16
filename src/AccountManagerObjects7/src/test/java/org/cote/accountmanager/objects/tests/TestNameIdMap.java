@@ -81,7 +81,7 @@ public class TestNameIdMap {
 		logger.info("Test LooseModel map");
 
 		ModelSchema lm = RecordFactory.getSchema("genericObject");
-		Optional<FieldSchema> olft = lm.getFields().stream().filter(o -> o.getName().equals("type")).findFirst();
+		Optional<FieldSchema> olft = lm.getFields().stream().filter(o -> o.getName().equals(FieldNames.FIELD_TYPE)).findFirst();
 		assertTrue("Failed to find matching object", olft.isPresent());
 		FieldSchema lft = olft.get();
 		String clsName = lft.getBaseClass();
@@ -104,12 +104,12 @@ public class TestNameIdMap {
 		BaseRecord linkObj = null;
 		
 		try {
-			genObj = com.newInstance(new String[] {FieldNames.FIELD_NAME, "link", "type"});
+			genObj = com.newInstance(new String[] {FieldNames.FIELD_NAME, "link", FieldNames.FIELD_TYPE});
 			assertNotNull("Expected complex instance to exist", genObj);
-			linkObj = com.newInstance(new String[] {FieldNames.FIELD_NAME, "type"});
+			linkObj = com.newInstance(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
 			genObj.set(FieldNames.FIELD_NAME, "Parent Object");
 			linkObj.set(FieldNames.FIELD_NAME, "Child Object");
-			linkObj.set("type", "SYSTEM");
+			linkObj.set(FieldNames.FIELD_TYPE, "SYSTEM");
 			genObj.set("link", linkObj);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -125,7 +125,7 @@ public class TestNameIdMap {
 		assertTrue("Expected serials to match", ser2.equals(ser));
 		BaseRecord impLink = impObj.get("link");
 		assertNotNull("Expected a link object", impLink);
-		assertTrue("Expected child link types to match", "SYSTEM".equals(impLink.get("type")));
+		assertTrue("Expected child link types to match", "SYSTEM".equals(impLink.get(FieldNames.FIELD_TYPE)));
 		logger.info(ser2);
 	}
 
@@ -195,7 +195,7 @@ public class TestNameIdMap {
 		
 		try {
 			genObj = RecordFactory.model("genericObject").newInstance();
-			genObj.set("type", "SYSTEM");
+			genObj.set(FieldNames.FIELD_TYPE, "SYSTEM");
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}

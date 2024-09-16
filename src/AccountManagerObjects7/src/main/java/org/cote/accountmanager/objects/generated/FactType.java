@@ -128,11 +128,11 @@ public class FactType extends LooseRecord {
 		}
 	}
 	public FactEnumType getType() {
-		return FactEnumType.valueOf(get("type"));
+		return FactEnumType.valueOf(get(FieldNames.FIELD_TYPE));
 	}
 	public void setType(FactEnumType type) {
 		try {
-			set("type", type.toString());
+			set(FieldNames.FIELD_TYPE, type.toString());
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

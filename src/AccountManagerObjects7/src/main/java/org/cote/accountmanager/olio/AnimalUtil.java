@@ -156,26 +156,26 @@ public class AnimalUtil {
 				}
 				if(random.nextDouble() <= odds) {
 					int count = random.nextInt(1, maxCount);
-					// logger.info("Add a " + a.get("groupName") + " of " + a.get(FieldNames.FIELD_NAME) + " with " + count);
+					// logger.info("Add a " + a.get(FieldNames.FIELD_GROUP_NAME) + " of " + a.get(FieldNames.FIELD_NAME) + " with " + count);
 					List<BaseRecord> grp = new ArrayList<>();
 					for(int i = 0; i < count; i++) {
 						BaseRecord anim1 = a.copyDeidentifiedRecord();
 						try {
-							anim1.set("store.items", a.get("store.items"));
+							anim1.set(OlioFieldNames.FIELD_STORE_ITEMS, a.get(OlioFieldNames.FIELD_STORE_ITEMS));
 							ItemUtil.convertItemsToInventory(ctx, anim1);
 							
 							int age = random.nextInt(1,20);
-							anim1.setValue("age", age);
+							anim1.setValue(FieldNames.FIELD_AGE, age);
 							StatisticsUtil.rollStatistics(anim1.get(OlioFieldNames.FIELD_STATISTICS), age);
 							BaseRecord store = anim1.get(FieldNames.FIELD_STORE);
 							List<BaseRecord> items = store.get(OlioFieldNames.FIELD_ITEMS);
 
 							for(BaseRecord it : items) {
-								it.set("type", null);
+								it.set(FieldNames.FIELD_TYPE, null);
 							}
 							BaseRecord state = anim1.get(FieldNames.FIELD_STATE);
-							if(total == 0 && (long)anim1.get("state.groupId") == 0L) {
-								logger.info((long)anim1.get("state.groupId"));
+							if(total == 0 && (long)anim1.get(OlioFieldNames.FIELD_STATE_GROUPID) == 0L) {
+								logger.info((long)anim1.get(OlioFieldNames.FIELD_STATE_GROUPID));
 								logger.info(state.toFullString());
 								ErrorUtil.printStackTrace();
 							}
@@ -184,7 +184,7 @@ public class AnimalUtil {
 							//StateUtil.agitateLocation(ctx, state);
 
 							anim1.set(FieldNames.FIELD_TYPE, "random");
-							state.set("alive", random.nextDouble() > Rules.ANIMAL_CARCASS_ODDS);
+							state.set(OlioFieldNames.FIELD_ALIVE, random.nextDouble() > Rules.ANIMAL_CARCASS_ODDS);
 							total++;
 							
 						} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -192,10 +192,10 @@ public class AnimalUtil {
 						}
 						grp.add(anim1);
 					}
-					pop.put(a.get("groupName"), grp);
+					pop.put(a.get(FieldNames.FIELD_GROUP_NAME), grp);
 				}
 				else {
-					// logger.info("Skip adding " + a.get("groupName") + " of " + a.get(FieldNames.FIELD_NAME));
+					// logger.info("Skip adding " + a.get(FieldNames.FIELD_GROUP_NAME) + " of " + a.get(FieldNames.FIELD_NAME));
 				}
 			}
 			//logger.info("Found " + animp.size() + " templates for " + type.toString());
@@ -231,7 +231,7 @@ public class AnimalUtil {
 			oanim = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ANIMAL, ctx.getOlioUser(), null, plist);
 			oanim.set(OlioFieldNames.FIELD_STATISTICS, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path"))));
 			oanim.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
-			oanim.set("instinct", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("instincts.path"))));
+			oanim.set(OlioFieldNames.FIELD_INSTINCT, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("instincts.path"))));
 			oanim.set(FieldNames.FIELD_STATE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path"))));
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -264,11 +264,11 @@ public class AnimalUtil {
 				BaseRecord oanim = newAnimal(ctx, pairs[0]);
 				oanim.set(FieldNames.FIELD_TYPE, "template");
 				oanims.add(oanim);
-				oanim.set("groupName", pairs[1]);
+				oanim.set(FieldNames.FIELD_GROUP_NAME, pairs[1]);
 				
 				char[] instKeys = pairs[2].toCharArray();
 				if(instKeys.length >= 3) {
-					BaseRecord inst = oanim.get("instinct");
+					BaseRecord inst = oanim.get(OlioFieldNames.FIELD_INSTINCT);
 					double fight = 0;
 					double protect = 0;
 					double flight = 0;

@@ -44,11 +44,11 @@ public class OperationType extends LooseRecord {
 		}
 	}
 	public OperationEnumType getType() {
-		return OperationEnumType.valueOf(get("type"));
+		return OperationEnumType.valueOf(get(FieldNames.FIELD_TYPE));
 	}
 	public void setType(OperationEnumType type) {
 		try {
-			set("type", type.toString());
+			set(FieldNames.FIELD_TYPE, type.toString());
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

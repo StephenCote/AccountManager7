@@ -17,6 +17,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 
@@ -39,7 +40,7 @@ public class NameIdImporter {
 		Object outObj = null;
 		
 		String name = model.getModel();
-		String tname = name + "type";
+		String tname = name + FieldNames.FIELD_TYPE;
 		Optional<Class<?>> ocls = NameIdExporter.nameIdTypes.stream().filter(o -> o.getSimpleName().toLowerCase().equals(tname)).findFirst();
 		Class<?> cls = null;
 		if(ocls.isPresent()) {

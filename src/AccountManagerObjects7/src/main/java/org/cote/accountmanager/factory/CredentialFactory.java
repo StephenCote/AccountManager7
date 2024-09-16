@@ -49,7 +49,7 @@ public class CredentialFactory extends FactoryBase {
 			cred.set(FieldNames.FIELD_REFERENCE_TYPE, targetObject.getModel());
 			cred.set(FieldNames.FIELD_REFERENCE_ID, tid);
 			if(parameterList != null) {
-				String type = ParameterUtil.getParameter(parameterList, "type", String.class, null);
+				String type = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_TYPE, String.class, null);
 				String pwd = ParameterUtil.getParameter(parameterList, "password", String.class, null);
 				if(pwd != null && type != null && type.toUpperCase().equals(CredentialEnumType.HASHED_PASSWORD.toString())) {
 					cred.set(FieldNames.FIELD_TYPE, CredentialEnumType.HASHED_PASSWORD);

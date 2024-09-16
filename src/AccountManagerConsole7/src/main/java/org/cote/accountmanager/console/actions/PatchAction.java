@@ -27,7 +27,7 @@ public class PatchAction extends CommonAction implements IAction {
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
 		// TODO Auto-generated method stub
 		if(cmd.hasOption("list")) {
-			if(cmd.hasOption("color")) {
+			if(cmd.hasOption(OlioFieldNames.FIELD_COLOR)) {
 				OlioContext octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), "My Grid Universe", "My Grid World", cmd.hasOption("reset"));
 				BaseRecord dir = octx.getWorld().get(OlioFieldNames.FIELD_COLORS);
 				Query q = QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));

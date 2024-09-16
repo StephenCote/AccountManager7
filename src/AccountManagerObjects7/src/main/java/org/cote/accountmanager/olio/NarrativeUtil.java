@@ -132,7 +132,7 @@ public class NarrativeUtil {
 		boolean alive = targ.get("state.alive");
 		
 		if(targ.getModel().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
-			int age = targ.get("age");
+			int age = targ.get(FieldNames.FIELD_AGE);
 			String gender = targ.get("gender");
 			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get("race")));
 			desc.add("Age: " + age);
@@ -146,7 +146,7 @@ public class NarrativeUtil {
 			}
 
 			for(BaseRecord w : wearl) {
-				WearLevelEnumType wel = w.getEnum("level");
+				WearLevelEnumType wel = w.getEnum(OlioFieldNames.FIELD_LEVEL);
 				if(wet == WearLevelEnumType.UNKNOWN) {
 					wet = wel;
 				}
@@ -173,10 +173,10 @@ public class NarrativeUtil {
 	
 	public static String describeArmament(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
-		if(pp.getRecord().get("store.items")  == null) {
+		if(pp.getRecord().get(OlioFieldNames.FIELD_STORE_ITEMS)  == null) {
 			return buff.toString();
 		}
-		List<BaseRecord> items = ((List<BaseRecord>)pp.getRecord().get("store.items")).stream().filter(w -> ("weapon".equals(w.get("category")) || "armor".equals(w.get("category")))).collect(Collectors.toList());
+		List<BaseRecord> items = ((List<BaseRecord>)pp.getRecord().get(OlioFieldNames.FIELD_STORE_ITEMS)).stream().filter(w -> ("weapon".equals(w.get(OlioFieldNames.FIELD_CATEGORY)) || "armor".equals(w.get(OlioFieldNames.FIELD_CATEGORY)))).collect(Collectors.toList());
 		if(items.size() == 0) {
 			buff.append("unarmed");
 		}
@@ -218,13 +218,13 @@ public class NarrativeUtil {
 			smoo = q.get("smoothness");
 		}
 		
-		String col = getColor(w, "color");
+		String col = getColor(w, OlioFieldNames.FIELD_COLOR);
 		// (w.get("color.name") != null ? " " + ((String)w.get("color.name")).toLowerCase() : "");
 		if(col != null) {
 			col = col.replaceAll("\\([^()]*\\)", "");
 		}
 		String pat = (w.get("pattern.name") != null ? " " + ((String)w.get("pattern.name")).toLowerCase().replace(" pattern", "") : "");
-		String fab = (w.get("fabric") != null ? " " + ((String)w.get("fabric")).toLowerCase() : "");
+		String fab = (w.get(OlioFieldNames.FIELD_FABRIC) != null ? " " + ((String)w.get(OlioFieldNames.FIELD_FABRIC)).toLowerCase() : "");
 		List<String> locs = w.get(FieldNames.FIELD_LOCATION);
 		String loc = (locs.size() > 0 ? " " + locs.get(0) : "");
 		String name = w.get(FieldNames.FIELD_NAME);
@@ -258,7 +258,7 @@ public class NarrativeUtil {
 			// for(BaseRecord w: wearl) {
 			for(int i = 0; i < wearl.size(); i++) {
 				BaseRecord w = wearl.get(i);
-				WearLevelEnumType lvle = w.getEnum("level");
+				WearLevelEnumType lvle = w.getEnum(OlioFieldNames.FIELD_LEVEL);
 				int lvl = WearLevelEnumType.valueOf(lvle);
 				if(!includeOuterArms && lvl >= WearLevelEnumType.valueOf(WearLevelEnumType.OUTER)) {
 					continue;
@@ -277,7 +277,7 @@ public class NarrativeUtil {
 			return "Nothing happened.";
 		}
 		String aname = inter.get("actor.firstName");
-		InteractionEnumType type = inter.getEnum("type");
+		InteractionEnumType type = inter.getEnum(FieldNames.FIELD_TYPE);
 		AlignmentEnumType aalign = inter.getEnum("actorAlignment");
 		ThreatEnumType athr = inter.getEnum("actorThreat");
 		CharacterRoleEnumType arol = inter.getEnum("actorRole");
@@ -941,7 +941,7 @@ public class NarrativeUtil {
 
 		String name = person.get(FieldNames.FIELD_NAME);
 		String fname = person.get(FieldNames.FIELD_FIRST_NAME);
-		int age = person.get("age");
+		int age = person.get(FieldNames.FIELD_AGE);
 
 		String hairColor = getColor(person, "hairColor");
 		String hairStyle = person.get("hairStyle");
@@ -1353,7 +1353,7 @@ public class NarrativeUtil {
 
 		String name = pov.get(FieldNames.FIELD_NAME);
 		String fname = pov.get(FieldNames.FIELD_FIRST_NAME);
-		int age = pov.get("age");
+		int age = pov.get(FieldNames.FIELD_AGE);
 		
 		
 		String hairColor =  getColor(pov, "hairColor");
@@ -1405,7 +1405,7 @@ public class NarrativeUtil {
 		}
 
 
-		String names = group.stream().filter(p -> !fname.equals(p.get(FieldNames.FIELD_FIRST_NAME))).map(p -> ((String)p.get(FieldNames.FIELD_FIRST_NAME) + " (" + p.get("age") + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
+		String names = group.stream().filter(p -> !fname.equals(p.get(FieldNames.FIELD_FIRST_NAME))).map(p -> ((String)p.get(FieldNames.FIELD_FIRST_NAME) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
 		buff.append(" " + pro + " is accompanied by " + names + ".");
 		
 		BaseRecord eloc = event.get(FieldNames.FIELD_LOCATION);
@@ -1436,7 +1436,7 @@ public class NarrativeUtil {
 			PersonalityProfile pp2 = ProfileUtil.analyzePersonality(ctx, p);
 			String compatKey = OCEANUtil.getCompatibilityKey(pov.get("personality"), p.get("personality"));
 			CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(pov.get("personality.mbtiKey"), p.get("personality.mbtiKey"));
-			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get("race")) + " (" + p.get("age") + " year old " + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTriadDescription(pp2));
+			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get("race")) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTriadDescription(pp2));
 		}
 		
 		return buff.toString();

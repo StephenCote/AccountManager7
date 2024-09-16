@@ -17,6 +17,7 @@ import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.junit.Test;
 
@@ -104,8 +105,8 @@ public class TestOlioRules extends BaseTest {
 			
 			pact = ActionUtil.getInAction(per1, "look");
 			if(pact != null) {
-				pact.setValue("type", ActionResultEnumType.INCOMPLETE);
-				Queue.queueUpdate(pact, new String[] {"type"});
+				pact.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
+				Queue.queueUpdate(pact, new String[] {FieldNames.FIELD_TYPE});
 			}
 			/// Epochs and increments are currently pinned against the root location of a realm (which made sense at some point and now just seems like it causes more problems than it solves)
 			/// Therefore, in order to process an action for an actor, it's necessary to start or continue the epoch and increment for their root location in order for the context to be correct, such as if trying to obtain the realm based on the context location, which would return the last location processed, not the correct location
@@ -145,8 +146,8 @@ public class TestOlioRules extends BaseTest {
 		try {
 			mact = ActionUtil.getInAction(per1, "walkTo");
 			if(mact != null) {
-				mact.set("type", ActionResultEnumType.INCOMPLETE);
-				Queue.queueUpdate(mact, new String[] {"type"});
+				mact.set(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
+				Queue.queueUpdate(mact, new String[] {FieldNames.FIELD_TYPE});
 			}
 			mact = Actions.beginMoveTo(octx, octx.getCurrentIncrement(), per1, per2);
 			octx.overwatchActions();

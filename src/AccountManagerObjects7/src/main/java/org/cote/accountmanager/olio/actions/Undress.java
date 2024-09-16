@@ -13,6 +13,7 @@ import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.RollEnumType;
 import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.WearLevelEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -88,12 +89,12 @@ public class Undress implements IAction {
 			int cwl = WearLevelEnumType.valueOf(level);
 			List<String> desc = actionResult.get("results");
 			ApparelUtil.getWearing(targ).forEach(w -> {
-				WearLevelEnumType wlvl = w.getEnum("level");
+				WearLevelEnumType wlvl = w.getEnum(OlioFieldNames.FIELD_LEVEL);
 				int wl = WearLevelEnumType.valueOf(wlvl);
 				if(wl > cwl) {
 					desc.add("Strip: " + NarrativeUtil.describeWearable(w));
-					w.setValue("inuse", false);
-					Queue.queueUpdate(w, new String[] {"inuse"});
+					w.setValue(OlioFieldNames.FIELD_IN_USE, false);
+					Queue.queueUpdate(w, new String[] {OlioFieldNames.FIELD_IN_USE});
 				}
 			});
 			

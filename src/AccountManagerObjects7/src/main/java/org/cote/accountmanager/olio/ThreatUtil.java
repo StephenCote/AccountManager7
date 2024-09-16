@@ -86,7 +86,7 @@ public class ThreatUtil {
 	}
 	
 	public static boolean isToxic(BaseRecord record) {
-		List<BaseRecord> items = record.get("store.items");
+		List<BaseRecord> items = record.get(OlioFieldNames.FIELD_STORE_ITEMS);
 		return items.stream().filter(i -> "toxin".equals(i.get(FieldNames.FIELD_NAME))).collect(Collectors.toList()).size() > 0;
 	}
 
@@ -236,7 +236,7 @@ public class ThreatUtil {
 			BaseRecord state = p.get(FieldNames.FIELD_STATE);
 			boolean immobile = state.get("immobilized");
 			boolean incap = state.get("incapacitated");
-			boolean alive = state.get("alive");
+			boolean alive = state.get(OlioFieldNames.FIELD_ALIVE);
 			boolean awake = state.get("awake");
 			
 			BaseRecord location = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);

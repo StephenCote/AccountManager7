@@ -94,17 +94,17 @@ public class Dress implements IAction {
 			int cwl = WearLevelEnumType.valueOf(level);
 			List<BaseRecord> wearl = app.get(OlioFieldNames.FIELD_WEARABLES);
 			wearl.forEach(w -> {
-				WearLevelEnumType wlvl = w.getEnum("level");
+				WearLevelEnumType wlvl = w.getEnum(OlioFieldNames.FIELD_LEVEL);
 				int wl = WearLevelEnumType.valueOf(wlvl);
 				if(wl <= cwl) {
 					res.add("Wear: " + NarrativeUtil.describeWearable(w));
-					w.setValue("inuse", true);
-					Queue.queueUpdate(w, new String[] {"inuse"});
+					w.setValue(OlioFieldNames.FIELD_IN_USE, true);
+					Queue.queueUpdate(w, new String[] {OlioFieldNames.FIELD_IN_USE});
 				}
 			});
-			if((boolean)app.get("inuse") == false) {
-				app.setValue("inuse", true);
-				Queue.queueUpdate(app, new String[] {"inuse"});
+			if((boolean)app.get(OlioFieldNames.FIELD_IN_USE) == false) {
+				app.setValue(OlioFieldNames.FIELD_IN_USE, true);
+				Queue.queueUpdate(app, new String[] {OlioFieldNames.FIELD_IN_USE});
 			}
 			
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);

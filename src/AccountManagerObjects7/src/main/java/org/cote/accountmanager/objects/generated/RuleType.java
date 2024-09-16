@@ -55,11 +55,11 @@ public class RuleType extends LooseRecord {
 		}
 	}
 	public RuleEnumType getType() {
-		return RuleEnumType.valueOf(get("type"));
+		return RuleEnumType.valueOf(get(FieldNames.FIELD_TYPE));
 	}
 	public void setType(RuleEnumType type) {
 		try {
-			set("type", type.toString());
+			set(FieldNames.FIELD_TYPE, type.toString());
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

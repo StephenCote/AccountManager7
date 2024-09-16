@@ -91,7 +91,7 @@ public class CharacterUtil {
 			
 			person = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("population.path")));
 			person.set(OlioFieldNames.FIELD_STATISTICS, stats);
-			person.set("instinct", inst);
+			person.set(OlioFieldNames.FIELD_INSTINCT, inst);
 			person.set("behavior", beh);
 			person.set("personality", pper);
 			person.set(FieldNames.FIELD_STATE, st);
@@ -414,7 +414,7 @@ public class CharacterUtil {
 					AddressUtil.simpleAddressPerson(ctx, location, person);
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
 					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
-					person.set("age", (int)years);
+					person.set(FieldNames.FIELD_AGE, (int)years);
 					
 					StatisticsUtil.rollStatistics(person.get(OlioFieldNames.FIELD_STATISTICS), (int)years);
 					ProfileUtil.rollPersonality(person.get("personality"));

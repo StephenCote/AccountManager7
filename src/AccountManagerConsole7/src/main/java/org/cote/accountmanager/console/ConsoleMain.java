@@ -22,6 +22,7 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
@@ -51,7 +52,7 @@ public class ConsoleMain {
 		options.addOption("reset", false, "Generic bit to indicate a value reset");
 		options.addOption("resetPassword", false, "Reset user password");
 		options.addOption("inspect", false, "Generic bit");
-		options.addOption("color", false, "Generic bit");
+		options.addOption(OlioFieldNames.FIELD_COLOR, false, "Generic bit");
 		options.addOption("pattern", false, "Generic bit");
 		options.addOption(FieldNames.FIELD_NAME, true, "Generic placeholder");
 		options.addOption(FieldNames.FIELD_PATH, true, "Generic placeholder");

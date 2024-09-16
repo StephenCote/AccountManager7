@@ -163,7 +163,7 @@ public class PolicyUtil {
 	}
 	
 	public static boolean isPermit(BaseRecord prt) {
-		return (prt != null && prt.getEnum("type") == PolicyResponseEnumType.PERMIT);
+		return (prt != null && prt.getEnum(FieldNames.FIELD_TYPE) == PolicyResponseEnumType.PERMIT);
 	}
 	
 	public static void addResponseMessage(BaseRecord prt, String msg) {

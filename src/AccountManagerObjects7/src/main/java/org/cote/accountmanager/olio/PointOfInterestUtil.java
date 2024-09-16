@@ -114,7 +114,7 @@ public class PointOfInterestUtil {
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
 			rec.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
-			rec.set("type", type);
+			rec.set(FieldNames.FIELD_TYPE, type);
 			rec.set(FieldNames.FIELD_LOCATION, cell);
 			rec.set("north", y);
 			rec.set("east", x);

@@ -7,9 +7,16 @@ public class OlioFieldNames {
 	public static final String FIELD_STORES_ID = "stores.id";
 	public static final String FIELD_STORES_PATH = "stores.path";
 	public static final String FIELD_REALMS = "realms";
-	public static  final String FIELD_REALMS_GROUP = "realmsGroup";
-	public static  final String FIELD_REALMS_GROUP_ID = "realmsGroup.id";
-	public static  final String FIELD_REALMS_GROUP_PATH = "realmsGroup.path";
+	public static final String FIELD_REALMS_GROUP = "realmsGroup";
+	public static final String FIELD_REALMS_GROUP_ID = "realmsGroup.id";
+	public static final String FIELD_REALMS_GROUP_PATH = "realmsGroup.path";
+	public static final String FIELD_STORE_ITEMS = "store.items";
+	public static final String FIELD_ALIVE = "alive";
+	public static final String FIELD_STATE_GROUPID = "state.groupId";
+	public static final String FIELD_INSTINCT = "instinct";
+	public static final String FIELD_STORE_APPAREL = "store.apparel";
+	public static final String FIELD_IN_USE = "inuse";
+	public static final String FIELD_LEVEL = "level";
 	
 	public static final String FIELD_NAMES = "names";
 	public static final String FIELD_NAMES_ID = "names.id";
@@ -94,9 +101,16 @@ public class OlioFieldNames {
 	
 	public static final String FIELD_APPAREL = "apparel";
 	public static final String FIELD_APPAREL_ID = "apparel.id";
+	public static final String FIELD_APPAREL_PATH = "apparel.path";
 	
 	public static final String FIELD_WEARABLES = "wearables";
 	public static final String FIELD_WEARABLES_ID = "wearables.id";
+	public static final String FIELD_WEARABLES_PATH = "wearables.path";
+	
+	public static final String FIELD_CATEGORY = "category";
+	public static final String FIELD_COLOR = "color";
+	public static final String FIELD_COMPLEMENT_COLOR = "complementColor";
+	public static final String FIELD_FABRIC = "fabric";
 	
 	public static final String FIELD_QUALITIES = "qualities";
 	public static final String FIELD_QUALITIES_ID = "qualities.id";

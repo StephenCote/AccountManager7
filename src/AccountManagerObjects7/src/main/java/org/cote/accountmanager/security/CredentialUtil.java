@@ -23,7 +23,7 @@ public class CredentialUtil {
 		BaseRecord newCred = null;
 		try {
 			ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_PASSWORD, credStr);
-			plist.parameter("type", CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
+			plist.parameter(FieldNames.FIELD_TYPE, CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
 			newCred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, user, null, plist);
 			// IOSystem.getActiveContext().getRecordUtil().createRecord(newCred);
 		}

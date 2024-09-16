@@ -37,7 +37,7 @@ public class WalkTo implements IAction {
 		List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 		if(inters.size() > 0) {
 			BaseRecord inter = inters.get(0);
-			inter.setValue("type", InteractionEnumType.INVESTIGATE);
+			inter.setValue(FieldNames.FIELD_TYPE, InteractionEnumType.INVESTIGATE);
 		}
 	}
 	

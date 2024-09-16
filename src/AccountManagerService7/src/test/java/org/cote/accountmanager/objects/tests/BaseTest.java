@@ -111,7 +111,7 @@ public class BaseTest {
 		BaseRecord cred = CredentialUtil.getLatestCredential(user);
 		if(cred == null) {
 			ParameterList plist = ParameterUtil.newParameterList("password", pwd);
-			plist.parameter("type", CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
+			plist.parameter(FieldNames.FIELD_TYPE, CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
 			try {
 				cred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, user, null, plist);
 				ioContext.getRecordUtil().createRecord(cred);
@@ -130,7 +130,7 @@ public class BaseTest {
 			octx.createOrganization();
 			BaseRecord admin = octx.getAdminUser();
 			ParameterList plist = ParameterUtil.newParameterList("password", "password");
-			plist.parameter("type", CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
+			plist.parameter(FieldNames.FIELD_TYPE, CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
 			BaseRecord cred = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_CREDENTIAL, admin, null, plist);
 			ioContext.getRecordUtil().createRecord(cred);
 			logger.info("Created credential");

@@ -55,7 +55,7 @@ public class StreamProvider implements IProvider {
 			}
 		}
 		if(operation == RecordOperation.CREATE || operation == RecordOperation.UPDATE) {
-			StreamEnumType set = StreamEnumType.valueOf(model.get("type"));
+			StreamEnumType set = StreamEnumType.valueOf(model.get(FieldNames.FIELD_TYPE));
 			switch(set) {
 				case FILE:
 					writeSegments(model);

@@ -101,11 +101,11 @@ public class PatternType extends LooseRecord {
 		}
 	}
 	public PatternEnumType getType() {
-		return PatternEnumType.valueOf(get("type"));
+		return PatternEnumType.valueOf(get(FieldNames.FIELD_TYPE));
 	}
 	public void setType(PatternEnumType type) {
 		try {
-			set("type", type.toString());
+			set(FieldNames.FIELD_TYPE, type.toString());
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

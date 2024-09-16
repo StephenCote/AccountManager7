@@ -193,10 +193,10 @@ public class OlioTestUtil {
 		if(print.getOutfit() != null) {
 			String[] outfit = print.getOutfit().split(",");
 			BaseRecord apparel = ApparelUtil.constructApparel(ctx, 0L, temp, outfit);
-			apparel.setValue("inuse", true);
+			apparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
 			List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
 			wearl.forEach(w -> {
-				w.setValue("inuse", true);
+				w.setValue(OlioFieldNames.FIELD_IN_USE, true);
 			});
 			IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
 			BaseRecord store = temp.get(FieldNames.FIELD_STORE);

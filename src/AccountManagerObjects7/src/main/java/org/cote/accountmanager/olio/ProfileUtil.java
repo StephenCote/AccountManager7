@@ -318,12 +318,12 @@ SLOAN Notation
 		prof.setName(animal.get(FieldNames.FIELD_NAME));
 		prof.setRecord(animal);
 		prof.setGender(animal.get("gender"));
-		prof.setAge(animal.get("age"));
+		prof.setAge(animal.get(FieldNames.FIELD_AGE));
 		if(animal.get(FieldNames.FIELD_STATE) != null) {
 			prof.setAlive(animal.get("state.alive"));
 		}
 		prof.setAlignment(AlignmentEnumType.valueOf(animal.get(FieldNames.FIELD_ALIGNMENT)));
-		BaseRecord inst = animal.get("instinct");
+		BaseRecord inst = animal.get(OlioFieldNames.FIELD_INSTINCT);
 		if(inst != null) {
 			prof.setSleep(InstinctEnumType.valueOf((double)inst.get("sleep")));
 			prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
@@ -424,12 +424,12 @@ SLOAN Notation
 			}
 			
 			List<BaseRecord> items = store.get(OlioFieldNames.FIELD_ITEMS);
-			List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
+			List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get(OlioFieldNames.FIELD_CATEGORY))).collect(Collectors.toList());
 			if(water.size() == 0) {
 				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.WATER);
 			}
 			
-			List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get("category"))).collect(Collectors.toList());
+			List<BaseRecord> food = items.stream().filter(i -> "food".equals(i.get(OlioFieldNames.FIELD_CATEGORY))).collect(Collectors.toList());
 			if(food.size() == 0) {
 				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.FOOD);
 			}

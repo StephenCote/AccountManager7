@@ -55,7 +55,7 @@ public class Actions {
 		List<BaseRecord> actions = state.get(OlioFieldNames.FIELD_ACTIONS);
 		Set<Long> aset = new HashSet<>();
 		for(BaseRecord a: actions) {
-			ActionResultEnumType aet = a.getEnum("type");
+			ActionResultEnumType aet = a.getEnum(FieldNames.FIELD_TYPE);
 			if(aet != ActionResultEnumType.IN_PROGRESS && aet != ActionResultEnumType.PENDING) {
 				aset.add(a.get(FieldNames.FIELD_ID));
 				IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, OlioFieldNames.FIELD_ACTIONS, a, null, false);
@@ -130,8 +130,8 @@ public class Actions {
 		if(cact != null) {
 			if(params != null && (boolean)params.get("autoComplete") == true) {
 				logger.info("Auto-completing " + actor.get(FieldNames.FIELD_NAME) + "'s current '" + actionName + "' action.");
-				cact.setValue("type", ActionResultEnumType.INCOMPLETE);
-				Queue.queueUpdate(cact, new String[] {"type"});
+				cact.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
+				Queue.queueUpdate(cact, new String[] {FieldNames.FIELD_TYPE});
 			}
 			else {
 				logger.warn(actor.get(FieldNames.FIELD_NAME) + " is already in the middle of a '" + actionName + "' action.  Current action must be completed or abandoned.");
@@ -233,7 +233,7 @@ public class Actions {
 		if(aet != ActionResultEnumType.IN_PROGRESS && aet != ActionResultEnumType.PENDING) {
 			actionResult.setValue("actionEnd", actionResult.get("actionProgress"));
 		}
-		Queue.queueUpdate(actionResult, new String[] {"actionEnd", "actionProgress", "type"});
+		Queue.queueUpdate(actionResult, new String[] {"actionEnd", "actionProgress", FieldNames.FIELD_TYPE});
 
 		return aet;
 		

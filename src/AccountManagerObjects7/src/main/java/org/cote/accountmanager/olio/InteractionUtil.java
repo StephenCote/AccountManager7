@@ -288,7 +288,7 @@ public class InteractionUtil {
 			return null;
 		}
 		BaseRecord inter = inters.get(rand.nextInt(inters.size()));
-		logger.info("Interaction: " + inter.get("type"));
+		logger.info("Interaction: " + inter.get(FieldNames.FIELD_TYPE));
 		
 		List<String> baseActorReasons = inter.get("actorReasonSuggestion");
 		List<ReasonEnumType> actorReasons = new ArrayList<>();
@@ -376,7 +376,7 @@ public class InteractionUtil {
 		}
 		
 		rtd.setReason(actorReason);
-		rtd.setInteraction(InteractionEnumType.valueOf(((String)inter.get("type")).toUpperCase()));
+		rtd.setInteraction(InteractionEnumType.valueOf(((String)inter.get(FieldNames.FIELD_TYPE)).toUpperCase()));
 		rtd.setThreat(actorThreat);
 		rtd.setRole(getCharacterRoleByAlignment(actorAlign, prof1.getGender()));
 		rtd.setAlignment(actorAlign);
@@ -469,7 +469,7 @@ public class InteractionUtil {
 				inter.set("interactionStart", event.get(OlioFieldNames.FIELD_EVENT_START));
 				inter.set("interactionEnd", event.get(OlioFieldNames.FIELD_EVENT_END));
 			}
-			inter.set("type", type);
+			inter.set(FieldNames.FIELD_TYPE, type);
 			inter.set("actor", actor);
 			inter.set("actorAlignment", actorAlignment);
 			inter.set("actorType", actor.getModel());

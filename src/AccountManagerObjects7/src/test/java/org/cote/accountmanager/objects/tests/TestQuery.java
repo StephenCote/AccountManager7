@@ -55,7 +55,7 @@ public class TestQuery extends BaseTest {
 
 			String tmpStr = """
 					{
-						"type": "data",
+						FieldNames.FIELD_TYPE: "data",
 						"order": "ascending"
 					}
 			""";

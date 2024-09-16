@@ -27,11 +27,11 @@ public class ExportAction extends CommonAction {
 	@Override
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
 		// TODO Auto-generated method stub
-		if(cmd.hasOption("export") && cmd.hasOption("type")) {
+		if(cmd.hasOption("export") && cmd.hasOption(FieldNames.FIELD_TYPE)) {
 			int exp = 0;
-			ModelSchema ms = RecordFactory.getSchema(cmd.getOptionValue("type"));
+			ModelSchema ms = RecordFactory.getSchema(cmd.getOptionValue(FieldNames.FIELD_TYPE));
 			if(ms == null) {
-				logger.error("Invalid model type: " + cmd.getOptionValue("type"));
+				logger.error("Invalid model type: " + cmd.getOptionValue(FieldNames.FIELD_TYPE));
 				return;
 			}
 			if(cmd.hasOption(FieldNames.FIELD_PATH)) {
@@ -43,7 +43,7 @@ public class ExportAction extends CommonAction {
 						logger.error("Invalid path");
 					}
 					try {
-						exp = exportGroup(cmd, user, rec, cmd.getOptionValue("type"), cmd.hasOption("recurse"));
+						exp = exportGroup(cmd, user, rec, cmd.getOptionValue(FieldNames.FIELD_TYPE), cmd.hasOption("recurse"));
 
 					} catch (ReaderException e) {
 						logger.error(e);
@@ -90,7 +90,7 @@ public class ExportAction extends CommonAction {
 	@Override
 	public void addOptions(Options options) {
 		// TODO Auto-generated method stub
-		options.addOption("type", true, "Model type");
+		options.addOption(FieldNames.FIELD_TYPE, true, "Model type");
 		options.addOption("extract", false, "Bit to indicate extracting contained data");
 		options.addOption("recurse", false, "Bit to indicate recursing through child groups");
 		//options.addOption("exportPath", true, "Location to export data");

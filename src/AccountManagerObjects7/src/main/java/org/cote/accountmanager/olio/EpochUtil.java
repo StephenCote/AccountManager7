@@ -42,19 +42,19 @@ public class EpochUtil {
 	
 		Query bq = QueryUtil.createQuery(ModelNames.MODEL_WORD_NET, FieldNames.FIELD_GROUP_ID, groupId);
 		Query advQ = new Query(bq.copyRecord());
-		advQ.field("type", WordNetParser.adverbWordType);
+		advQ.field(FieldNames.FIELD_TYPE, WordNetParser.adverbWordType);
 		String advWord = OlioUtil.randomSelectionName(user, advQ);
 
 		Query verQ = new Query(bq.copyRecord());
-		verQ.field("type", WordNetParser.verbWordType);
+		verQ.field(FieldNames.FIELD_TYPE, WordNetParser.verbWordType);
 		String verWord = OlioUtil.randomSelectionName(user, verQ);
 
 		Query adjQ = new Query(bq.copyRecord());
-		adjQ.field("type", WordNetParser.adjectiveWordType);
+		adjQ.field(FieldNames.FIELD_TYPE, WordNetParser.adjectiveWordType);
 		String adjWord = OlioUtil.randomSelectionName(user, adjQ);
 
 		Query nounQ = new Query(bq.copyRecord());
-		nounQ.field("type", WordNetParser.nounWordType);
+		nounQ.field(FieldNames.FIELD_TYPE, WordNetParser.nounWordType);
 		String nouWord = OlioUtil.randomSelectionName(user, nounQ);
 		
 		// logger.info(nounQ.toFullString());

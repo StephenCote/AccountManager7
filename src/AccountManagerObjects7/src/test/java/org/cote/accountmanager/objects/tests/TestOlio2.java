@@ -33,6 +33,7 @@ import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.junit.Test;
 
@@ -175,8 +176,8 @@ public class TestOlio2 extends BaseTest {
 		try{
 			mact = ActionUtil.getInAction(per1, "walkTo");
 			if(mact != null) {
-				mact.set("type", ActionResultEnumType.INCOMPLETE);
-				Queue.queueUpdate(mact, new String[] {"type"});
+				mact.set(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
+				Queue.queueUpdate(mact, new String[] {FieldNames.FIELD_TYPE});
 			}
 			mact = Actions.beginMoveTo(octx, cevt, per1, per2);
 			octx.overwatchActions();

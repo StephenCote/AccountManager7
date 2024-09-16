@@ -70,7 +70,7 @@ public class TestAuthentication extends BaseTest {
 		assertTrue("Expected hashes to be different", !Arrays.areEqual(hash1,  hash2));
 		
 		try {
-			ParameterList plist = ParameterUtil.newParameterList("type", CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
+			ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_TYPE, CredentialEnumType.HASHED_PASSWORD.toString().toLowerCase());
 			plist.parameter("password", "password");
 			cred = mf.newInstance(ModelNames.MODEL_CREDENTIAL, testUser1, null, plist);
 			assertNotNull("Credential is null", cred);

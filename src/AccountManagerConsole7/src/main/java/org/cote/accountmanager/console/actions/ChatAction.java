@@ -240,10 +240,10 @@ public class ChatAction extends CommonAction implements IAction{
 				if(cmd.hasOption("outfit")) {
 					String[] outfit = cmd.getOptionValue("outfit").split(",");
 					BaseRecord apparel = ApparelUtil.constructApparel(octx, 0L, char1, outfit);
-					apparel.setValue("inuse", true);
+					apparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
 					List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
 					wearl.forEach(w -> {
-						w.setValue("inuse", true);
+						w.setValue(OlioFieldNames.FIELD_IN_USE, true);
 					});
 					IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
 					BaseRecord store = char1.get(FieldNames.FIELD_STORE);

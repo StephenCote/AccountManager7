@@ -527,7 +527,7 @@ public class ContentTypeUtil {
 		types.put("xyz","chemical/x-pdb");
 		types.put("z","application/x-compressed");
 		types.put("zip","multipart/x-zip");
-		types.put(OlioFieldNames.FIELD_ZOO,"application/octet-stream");
+		types.put("zoo","application/octet-stream");
 		types.put("zsh","text/x-script.zsh");
 	    }
 }

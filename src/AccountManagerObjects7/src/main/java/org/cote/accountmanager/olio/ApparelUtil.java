@@ -69,9 +69,9 @@ public class ApparelUtil {
 	private static SecureRandom rand = new SecureRandom();
 	public static BaseRecord getWearingApparel(BaseRecord per) {
 		BaseRecord app = null;
-		List<BaseRecord> appl = per.get("store.apparel");
+		List<BaseRecord> appl = per.get(OlioFieldNames.FIELD_STORE_APPAREL);
 		if(appl != null && appl.size() > 0) {
-			Optional<BaseRecord> oapp = appl.stream().filter(a -> ((boolean)a.get("inuse"))).findFirst();
+			Optional<BaseRecord> oapp = appl.stream().filter(a -> ((boolean)a.get(OlioFieldNames.FIELD_IN_USE))).findFirst();
 			if(oapp.isPresent()) {
 				app = oapp.get();
 			}
@@ -82,8 +82,8 @@ public class ApparelUtil {
 		BaseRecord app = getWearingApparel(per);
 		List<BaseRecord> wearl = new ArrayList<>();
 		if(app != null) {
-			wearl = ((List<BaseRecord>)app.get(OlioFieldNames.FIELD_WEARABLES)).stream().filter(a -> ((boolean)a.get("inuse"))).collect(Collectors.toList());
-			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get("level")), WearLevelEnumType.valueOf((String)f2.get("level"))));
+			wearl = ((List<BaseRecord>)app.get(OlioFieldNames.FIELD_WEARABLES)).stream().filter(a -> ((boolean)a.get(OlioFieldNames.FIELD_IN_USE))).collect(Collectors.toList());
+			wearl.sort((f1, f2) -> WearLevelEnumType.compareTo(WearLevelEnumType.valueOf((String)f1.get(OlioFieldNames.FIELD_LEVEL)), WearLevelEnumType.valueOf((String)f2.get(OlioFieldNames.FIELD_LEVEL))));
 			Collections.reverse(wearl);
 		}
 		return wearl;
@@ -101,14 +101,13 @@ public class ApparelUtil {
 			BaseRecord sto = p.get(FieldNames.FIELD_STORE);
 			List<BaseRecord> appl = sto.get(OlioFieldNames.FIELD_APPAREL);
 			List<BaseRecord> iteml = sto.get(OlioFieldNames.FIELD_ITEMS);
-			List<String> upf = new ArrayList<>();
 			if(appl.size() == 0) {
 				BaseRecord app = ApparelUtil.randomApparel(ctx, p);
-				app.setValue("inuse", true);
+				app.setValue(OlioFieldNames.FIELD_IN_USE, true);
 				List<BaseRecord> wears = app.get(OlioFieldNames.FIELD_WEARABLES);
 				wears.addAll(ApparelUtil.randomArmor(ctx));
 				wears.forEach(w -> {
-					w.setValue("inuse", true);
+					w.setValue(OlioFieldNames.FIELD_IN_USE, true);
 				});
 				IOSystem.getActiveContext().getRecordUtil().createRecord(app);
 				appl.add(app);
@@ -141,7 +140,7 @@ public class ApparelUtil {
 			String p = protect[i];
 		
 			if(rand.nextDouble() <= protectOdds[i]) {
-				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
+				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_WEARABLE, ctx.getWorld().get(OlioFieldNames.FIELD_WEARABLES_PATH), null);
 				List<BaseRecord> quals = wearRec.get(OlioFieldNames.FIELD_QUALITIES);
 				quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
 				ApparelUtil.embedWearable(ctx, 0L, wearRec, ApparelUtil.randomWearable(WearLevelEnumType.OUTER, p, null));
@@ -155,12 +154,12 @@ public class ApparelUtil {
 	
 	protected static BaseRecord newApparel(OlioContext ctx, String name, String type, String cat) {
 		BaseRecord rec = null;
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getUniverse().get("apparel.path"));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getUniverse().get(OlioFieldNames.FIELD_APPAREL_PATH));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_APPAREL, ctx.getOlioUser(), null, plist);
 			rec.set(FieldNames.FIELD_TYPE, type);
-			rec.set("category", cat);
+			rec.set(OlioFieldNames.FIELD_CATEGORY, cat);
 			IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -175,7 +174,7 @@ public class ApparelUtil {
 			q.field(FieldNames.FIELD_TYPE, type);
 		}
 		if(cat != null) {
-			q.field("category", cat);
+			q.field(OlioFieldNames.FIELD_CATEGORY, cat);
 		}		
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(rec == null) {
@@ -366,7 +365,7 @@ public class ApparelUtil {
 				buff.append(",\n");
 			}
 			if(type.equals("wearable")) {
-				rec = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_WEARABLE, world.get("wearables.path"), null);
+				rec = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_WEARABLE, world.get(OlioFieldNames.FIELD_WEARABLES_PATH), null);
 				if(gender != null) {
 					try {
 						rec.set("gender", gender);
@@ -399,25 +398,25 @@ public class ApparelUtil {
 				if(!locs.contains("feet") && !locs.contains("ankle")) {
 					/// First article sets the color, complement, pattern, and fabric
 					if(primCol == null) {
-						primCol = rec.get("color");
-						secCol = rec.get("complementColor");
-						primPatt = rec.get("pattern");
-						fabric = rec.get("fabric");
+						primCol = rec.get(OlioFieldNames.FIELD_COLOR);
+						secCol = rec.get(OlioFieldNames.FIELD_COMPLEMENT_COLOR);
+						primPatt = rec.get(FieldNames.FIELD_PATTERN);
+						fabric = rec.get(OlioFieldNames.FIELD_FABRIC);
 					}
 					else {
 						/// Change next article to the complementary color
 						if(rand.nextDouble() > complementRatio) {
-							rec.set("color", secCol);
+							rec.set(OlioFieldNames.FIELD_COLOR, secCol);
 						}
 						/// Or, match the color
 						else {
-							rec.set("color", primCol);
+							rec.set(OlioFieldNames.FIELD_COLOR, primCol);
 						}
 						/// Change the next article to the same pattern and fabric
 						///
 						if(rand.nextDouble() > patternRatio) {
-							rec.set("pattern", primPatt);
-							rec.set("fabric", fabric);
+							rec.set(FieldNames.FIELD_PATTERN, primPatt);
+							rec.set(OlioFieldNames.FIELD_FABRIC, fabric);
 						}
 					}
 				}
@@ -432,7 +431,7 @@ public class ApparelUtil {
 		BaseRecord randomColor = null;
 		List<String> nfeats = new ArrayList<>();
 		BaseRecord pattern = null;
-		String cat = wear.get("category");
+		String cat = wear.get(OlioFieldNames.FIELD_CATEGORY);
 
 		if(cat != null && cat.equals("jewelry")) {
 			randomColor = ColorUtil.getDefaultColor(ctx, ownerId, jewelryColors[rand.nextInt(jewelryColors.length)]);
@@ -460,9 +459,9 @@ public class ApparelUtil {
 			compColor = ColorUtil.findComplementaryColor(ctx.getUniverse(), randomColor.get("hex"));
 		}
 		try {
-			wear.set("color", randomColor);
-			wear.set("complementColor", compColor);
-			wear.set("pattern", pattern);
+			wear.set(OlioFieldNames.FIELD_COLOR, randomColor);
+			wear.set(OlioFieldNames.FIELD_COMPLEMENT_COLOR, compColor);
+			wear.set(FieldNames.FIELD_PATTERN, pattern);
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -470,8 +469,8 @@ public class ApparelUtil {
 	}
 	public static void designApparel(BaseRecord apparel) {
 		List<BaseRecord> wears = apparel.get(OlioFieldNames.FIELD_WEARABLES);
-		List<BaseRecord> base = wears.stream().filter(w -> "clothing".equals(w.get("category")) && WearLevelEnumType.BASE.toString().equals((String)w.get("level"))).collect(Collectors.toList());
-		List<BaseRecord> suit = wears.stream().filter(w -> "clothing".equals(w.get("category")) && WearLevelEnumType.SUIT.toString().equals((String)w.get("level"))).collect(Collectors.toList());
+		List<BaseRecord> base = wears.stream().filter(w -> "clothing".equals(w.get(OlioFieldNames.FIELD_CATEGORY)) && WearLevelEnumType.BASE.toString().equals((String)w.get(OlioFieldNames.FIELD_LEVEL))).collect(Collectors.toList());
+		List<BaseRecord> suit = wears.stream().filter(w -> "clothing".equals(w.get(OlioFieldNames.FIELD_CATEGORY)) && WearLevelEnumType.SUIT.toString().equals((String)w.get(OlioFieldNames.FIELD_LEVEL))).collect(Collectors.toList());
 		alignPatternAndColors(base, 0.8, 0.5);
 		alignPatternAndColors(suit, 0.6, 0.7);
 	}
@@ -494,7 +493,7 @@ public class ApparelUtil {
 		BaseRecord app = null;
 		try {
 			if(ctx != null) {
-				app = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_APPAREL, ctx.getWorld().get("apparel.path"), null);
+				app = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_APPAREL, ctx.getWorld().get(OlioFieldNames.FIELD_APPAREL_PATH), null);
 			}
 			else {
 	
@@ -507,7 +506,7 @@ public class ApparelUtil {
 			for(String emb : wears) {
 				BaseRecord wearRec = null;
 				if(ctx != null) {
-					wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_WEARABLE, ctx.getWorld().get("wearables.path"), null);
+					wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_WEARABLE, ctx.getWorld().get(OlioFieldNames.FIELD_WEARABLES_PATH), null);
 				}
 				else {
 					wearRec = RecordFactory.newInstance(OlioModelNames.MODEL_WEARABLE);
@@ -609,7 +608,7 @@ public class ApparelUtil {
 		try {
 			String ttype = tmeta[0];
 			
-			rec.set("category", ttype);
+			rec.set(OlioFieldNames.FIELD_CATEGORY, ttype);
 			designWearable(ctx, ownerId, rec);
 
 			rec.set(FieldNames.FIELD_TYPE, tmeta[1]);
@@ -619,7 +618,7 @@ public class ApparelUtil {
 			if(ttype.equals("clothing")) {
 				applyEmbeddedFabric(rec, randomFabric(lvl, gender));
 			}
-			rec.set("level", wlvl);
+			rec.set(OlioFieldNames.FIELD_LEVEL, wlvl);
 			if(tmeta[3].equals("u")){
 				gender = "unisex";
 			}
@@ -672,7 +671,7 @@ public class ApparelUtil {
 		String[] tmat = emb.split(":");
 		try {
 			if(rec.getModel().equals(OlioModelNames.MODEL_WEARABLE)) {
-				rec.set("fabric", tmat[0]);
+				rec.set(OlioFieldNames.FIELD_FABRIC, tmat[0]);
 			}
 			else if(rec.getModel().equals(OlioModelNames.MODEL_ITEM)) {
 				List<String> mats = rec.get(OlioFieldNames.FIELD_MATERIALS);
@@ -794,7 +793,7 @@ public class ApparelUtil {
 	}
 	*/
 	public BaseRecord newApparel(BaseRecord user, BaseRecord world, String name, BaseRecord[] wearables) {
-		String wpath = world.get("apparel.path");
+		String wpath = world.get(OlioFieldNames.FIELD_APPAREL_PATH);
 		BaseRecord temp1 = IOSystem.getActiveContext().getFactory().template(OlioModelNames.MODEL_APPAREL, "{\"name\": \"" + name + "\"}");
 		BaseRecord app = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_APPAREL, wpath, temp1);
 		if(wearables != null && wearables.length > 0) {
@@ -805,7 +804,7 @@ public class ApparelUtil {
 	}
 	
 	public BaseRecord newWearable(BaseRecord user, BaseRecord world, String gender, String name, String location) {
-		String wpath = world.get("wearables.path");
+		String wpath = world.get(OlioFieldNames.FIELD_WEARABLES_PATH);
 		String qpath = world.get("qualities.path");
 		BaseRecord temp1 = IOSystem.getActiveContext().getFactory().template(OlioModelNames.MODEL_WEARABLE, "{\"name\": \"" + name + "\",\"gender\":\"" + gender + "\", \"location\":[\"" + location + "\"]}");
 		BaseRecord wear = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_WEARABLE, wpath, temp1);

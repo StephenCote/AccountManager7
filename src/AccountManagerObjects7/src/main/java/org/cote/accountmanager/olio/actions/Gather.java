@@ -72,7 +72,7 @@ public class Gather extends CommonAction implements IAction {
 		boolean gathered = false;
 		
 		List<BaseRecord> dacts = actionResult.get("dependentActions");
-		if(dacts.stream().filter(a -> (a.getEnum("type") == ActionResultEnumType.PENDING || a.getEnum("type") == ActionResultEnumType.IN_PROGRESS)).findFirst().isPresent()) {
+		if(dacts.stream().filter(a -> (a.getEnum(FieldNames.FIELD_TYPE) == ActionResultEnumType.PENDING || a.getEnum(FieldNames.FIELD_TYPE) == ActionResultEnumType.IN_PROGRESS)).findFirst().isPresent()) {
 			// logger.info("Gather action waiting on dependent action");
 			return false;
 		}
