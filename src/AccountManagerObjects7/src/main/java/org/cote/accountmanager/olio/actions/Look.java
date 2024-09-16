@@ -76,7 +76,7 @@ public class Look  extends CommonAction implements IAction {
 		List<BaseRecord> pois = PointOfInterestUtil.listPointsOfInterest(context, Arrays.asList(new BaseRecord[] {cell}), Arrays.asList(new PointOfInterestEnumType[] {PointOfInterestEnumType.RESOURCE, PointOfInterestEnumType.STASH, PointOfInterestEnumType.HARVESTABLE}));
 		pois = GeoLocationUtil.sortByDistance(pois, "east", "north", cx, cy);
 		for(BaseRecord poi : pois) {
-			res.add("POI: " + poi.get("name") + " " + getDistDirStatement(actor, poi, "east", "north"));
+			res.add("POI: " + poi.get(FieldNames.FIELD_NAME) + " " + getDistDirStatement(actor, poi, "east", "north"));
 		}
 		
 		BaseRecord realm = context.clock().getRealm();

@@ -176,7 +176,7 @@ public class ModelService {
 	@GET
 	@Path("/{type:[A-Za-z\\.]+}/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response getObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam("name") String name,@Context HttpServletRequest request){
+	public Response getObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam(FieldNames.FIELD_NAME) String name,@Context HttpServletRequest request){
 		BaseRecord rec = ServiceUtil.generateRecordQueryResponse(type, parentId, name, request);
 		return Response.status((rec == null ? 404 : 200)).entity((rec != null ? rec.toFullString() : null)).build();
 	}
@@ -191,7 +191,7 @@ public class ModelService {
 	@GET
 	@Path("/{type:[A-Za-z\\.]+}/parent/{parentId:[0-9A-Za-z\\-]+}/{name: [\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response getGroupedObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam("name") String name,@Context HttpServletRequest request){
+	public Response getGroupedObjectByNameInParent(@PathParam("type") String type, @PathParam("parentId") String parentId,@PathParam(FieldNames.FIELD_NAME) String name,@Context HttpServletRequest request){
 		BaseRecord rec = ServiceUtil.generateRecordQueryResponse(type, parentId, name, request);
 		return Response.status((rec == null ? 404 : 200)).entity((rec != null ? rec.toFullString() : null)).build();
 	}
@@ -200,7 +200,7 @@ public class ModelService {
 	@GET
 	@Path("/stream/{objectId:[0-9A-Za-z\\-]+}/{startIndex:[\\\\d]+}/{length:[\\\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response getStreamSegment(@PathParam("objectId") String objectId,@PathParam("name") String name, @PathParam("startIndex") long startIndex, @PathParam("length") int length, @Context HttpServletRequest request){
+	public Response getStreamSegment(@PathParam("objectId") String objectId,@PathParam(FieldNames.FIELD_NAME) String name, @PathParam("startIndex") long startIndex, @PathParam("length") int length, @Context HttpServletRequest request){
 		BaseRecord rseg = null;
 		try{
 			rseg = IOSystem.getActiveContext().getReader().read(new StreamSegmentUtil().newSegment(objectId, startIndex, length));

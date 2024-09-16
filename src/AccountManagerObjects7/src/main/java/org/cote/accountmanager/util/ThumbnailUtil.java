@@ -113,7 +113,7 @@ public class ThumbnailUtil {
 		
 		if(thumb == null) {
 			ParameterList plist = ParameterList.newParameterList("path", thumbPath);
-			plist.parameter("name", thumbName);
+			plist.parameter(FieldNames.FIELD_NAME, thumbName);
 			thumb = ctx.getFactory().newInstance(ModelNames.MODEL_THUMBNAIL, owner, null, plist);
 		}
 

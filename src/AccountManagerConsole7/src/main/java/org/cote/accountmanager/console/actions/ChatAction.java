@@ -255,14 +255,14 @@ public class ChatAction extends CommonAction implements IAction{
 					IOSystem.getActiveContext().getMemberUtil().member(user, store, "apparel", apparel, null, true);
 				}
 				if(cmd.hasOption("update")) {
-					if(cmd.hasOption("wearable") && cmd.hasOption("name")) {
-						BaseRecord item = ItemUtil.findStoredItemByName(char1, cmd.getOptionValue("name"));
+					if(cmd.hasOption("wearable") && cmd.hasOption(FieldNames.FIELD_NAME)) {
+						BaseRecord item = ItemUtil.findStoredItemByName(char1, cmd.getOptionValue(FieldNames.FIELD_NAME));
 						if(item != null) {
 							IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_WEARABLE, cmd.getOptionValue("wearable")), item);		
 						}
 					}
-					if(cmd.hasOption("qualities") && cmd.hasOption("name")) {
-						BaseRecord item = ItemUtil.findStoredItemByName(char1, cmd.getOptionValue("name"));
+					if(cmd.hasOption("qualities") && cmd.hasOption(FieldNames.FIELD_NAME)) {
+						BaseRecord item = ItemUtil.findStoredItemByName(char1, cmd.getOptionValue(FieldNames.FIELD_NAME));
 						if(item != null) {
 							List<BaseRecord> qs = item.get("qualities");
 							if(qs.size() > 0) {

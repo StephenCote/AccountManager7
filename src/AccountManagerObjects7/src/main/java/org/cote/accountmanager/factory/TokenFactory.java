@@ -39,7 +39,7 @@ public class TokenFactory extends FactoryBase {
 		}
 		if(parameterList != null) {
 			expiry = ParameterUtil.getParameter(parameterList, "expirySeconds", Integer.class, DEFAULT_TOKEN_EXPIRY_SECONDS);
-			name = ParameterUtil.getParameter(parameterList, "name", String.class, UUID.randomUUID().toString());
+			name = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_NAME, String.class, UUID.randomUUID().toString());
 		}
 
 		BaseRecord newToken = super.newInstance(contextUser, recordTemplate, parameterList, arguments);

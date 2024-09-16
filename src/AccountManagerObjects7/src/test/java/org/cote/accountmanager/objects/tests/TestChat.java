@@ -85,10 +85,10 @@ public class TestChat extends BaseTest {
 		}
 		assertNotNull("Meta is null", meta);
 		ParameterList clist = ParameterList.newParameterList("path", "~/Chat");
-		clist.parameter("name", "Chat Config - " + UUID.randomUUID().toString());
+		clist.parameter(FieldNames.FIELD_NAME, "Chat Config - " + UUID.randomUUID().toString());
 
 		ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
-		plist.parameter("name", "Prompt Config - " + UUID.randomUUID().toString());
+		plist.parameter(FieldNames.FIELD_NAME, "Prompt Config - " + UUID.randomUUID().toString());
 
 		
 		BaseRecord cfg = null;
@@ -158,7 +158,7 @@ public class TestChat extends BaseTest {
 	}
 	private BaseRecord getPromptConfig(BaseRecord user) {
 		ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
-		plist.parameter("name", "Prompt Config - " + UUID.randomUUID().toString());
+		plist.parameter(FieldNames.FIELD_NAME, "Prompt Config - " + UUID.randomUUID().toString());
 
 		BaseRecord pcfg = null;
 		BaseRecord opcfg = null;
@@ -206,7 +206,7 @@ public class TestChat extends BaseTest {
 		}
 		*/
 		ParameterList clist = ParameterList.newParameterList("path", "~/Chat");
-		clist.parameter("name", "Chat Config - " + UUID.randomUUID().toString());
+		clist.parameter(FieldNames.FIELD_NAME, "Chat Config - " + UUID.randomUUID().toString());
 
 		BaseRecord cfg = null;
 		BaseRecord ocfg = null;

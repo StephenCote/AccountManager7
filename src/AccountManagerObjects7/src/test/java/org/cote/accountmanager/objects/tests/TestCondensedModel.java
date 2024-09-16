@@ -40,7 +40,7 @@ public class TestCondensedModel extends BaseTest {
 		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Condensed", "DATA", testOrgContext.getOrganizationId());
 		String dataName = "Condenser Test " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Condensed");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		
 		try {

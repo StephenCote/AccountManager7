@@ -93,7 +93,7 @@ public class TestAccessPoint extends BaseTest {
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		String dataName = "Demo data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;
 		
@@ -133,7 +133,7 @@ public class TestAccessPoint extends BaseTest {
 		
 		String dataName = "Demo data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;
 		
@@ -225,7 +225,7 @@ public class TestAccessPoint extends BaseTest {
 		
 		String dataName = "Demo data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;
 		try {

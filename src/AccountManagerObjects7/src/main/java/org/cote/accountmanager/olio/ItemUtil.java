@@ -254,7 +254,7 @@ public class ItemUtil {
 	public static boolean depositItemIntoInventory(OlioContext ctx, BaseRecord rec, String itemName, int count) {
 		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> {
 			String type = i.get("type");
-			String name = i.get("name");
+			String name = i.get(FieldNames.FIELD_NAME);
 			return type != null && type.equals("template") && name != null && name.equals(itemName);
 		}).findFirst();
 
@@ -293,7 +293,7 @@ public class ItemUtil {
 	public static boolean withdrawItemFromInventory(OlioContext ctx, BaseRecord rec, String itemName, int count) {
 		Optional<BaseRecord> item = getTemplateItems(ctx).stream().filter(i -> {
 			String type = i.get("type");
-			String name = i.get("name");
+			String name = i.get(FieldNames.FIELD_NAME);
 			return type != null && type.equals("template") && name != null && name.equals(itemName);
 		}).findFirst();
 		

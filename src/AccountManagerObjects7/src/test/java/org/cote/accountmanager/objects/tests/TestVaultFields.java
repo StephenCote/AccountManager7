@@ -56,7 +56,7 @@ public class TestVaultFields extends BaseTest {
 		
 		String dataName = "Vault Field Test " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/VaultFieldTests");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord ndata = null;
 		BaseRecord policy = null;

@@ -37,7 +37,7 @@ public class CharPersonFactory extends FactoryBase {
 		String name = null;
 		if(parameterList != null) {
 			path = ParameterUtil.getParameter(parameterList, "path", String.class, path);
-			name = ParameterUtil.getParameter(parameterList, "name", String.class, null);
+			name = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_NAME, String.class, null);
 		}
 		if(contextUser != null) {
 			IPath pu = IOSystem.getActiveContext().getPathUtil();

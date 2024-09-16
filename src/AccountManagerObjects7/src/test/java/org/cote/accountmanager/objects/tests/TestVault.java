@@ -50,7 +50,7 @@ public class TestVault extends BaseTest {
 		
 		String dataName = "Dump data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Data/Dump");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		try {
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
@@ -94,7 +94,7 @@ public class TestVault extends BaseTest {
 		
 		String dataName = "Demo data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		
 		try {

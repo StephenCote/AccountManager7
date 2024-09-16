@@ -40,7 +40,7 @@ public class WordParser {
 		logger.info("New Surnames Parse Configuration");
 		
 		List<ParseMap> map = new ArrayList<>();
-		map.add(new ParseMap("name", 0, new CaseInterceptor()));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 0, new CaseInterceptor()));
 		map.add(new ParseMap("rank", 1));
 		map.add(new ParseMap("count", 2));
 		map.add(new ParseMap("proportion", 4));
@@ -60,7 +60,7 @@ public class WordParser {
 		cfg.setMaxCount(maxLines);
 		cfg.setOwner(user);
 		ParseMap filter = new ParseMap(null, 0);
-		filter.setMatchValue("name");
+		filter.setMatchValue(FieldNames.FIELD_NAME);
 		filter.setExcludeMatch(true);
 		cfg.setFilters(new ParseMap[] {filter});
 		cfg.setInterceptor(new DataInterceptor());
@@ -71,7 +71,7 @@ public class WordParser {
 		logger.info("New Occupations Parse Configuration");
 		
 		List<ParseMap> map = new ArrayList<>();
-		map.add(new ParseMap("name", 4));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 4));
 		map.add(new ParseMap("class", 2));
 
 		ParseConfiguration cfg = new ParseConfiguration();
@@ -93,7 +93,7 @@ public class WordParser {
 		logger.info("New Web Color Resource Parse Configuration");
 		
 		List<ParseMap> map = new ArrayList<>();
-		map.add(new ParseMap("name", 0));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 0));
 		map.add(new ParseMap("hex", 1, new LowercaseInterceptor()));
 		map.add(new ParseMap(null, 2, new DecimalColorInterceptor()));
 
@@ -113,7 +113,7 @@ public class WordParser {
 		
 		List<ParseMap> map = new ArrayList<>();
 		map.add(new ParseMap("code", 0));
-		map.add(new ParseMap("name", 1));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 1));
 		map.add(new ParseMap("hex", 2));
 		map.add(new ParseMap("red", 3));
 		map.add(new ParseMap("green", 4));
@@ -134,7 +134,7 @@ public class WordParser {
 		logger.info("New Pattern Parse Configuration");
 		
 		List<ParseMap> map = new ArrayList<>();
-		map.add(new ParseMap("name", 0));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 0));
 		map.add(new ParseMap(FieldNames.FIELD_BYTE_STORE, 1, new PatternInterceptor()));
 		map.add(new ParseMap("description", 2));
 
@@ -153,7 +153,7 @@ public class WordParser {
 		logger.info("New Names Parse Configuration");
 		
 		List<ParseMap> map = new ArrayList<>();
-		map.add(new ParseMap("name", 0));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 0));
 		map.add(new ParseMap("gender", 1));
 		map.add(new ParseMap("count", 2));
 		
@@ -335,7 +335,7 @@ public class WordParser {
 	}
 	private static BaseRecord newTrait(BaseRecord owner, String path, String name, TraitEnumType type, AlignmentEnumType alignment) {
 		ParameterList plist = ParameterList.newParameterList("path", path);
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		BaseRecord data = null;
 		try {
 			data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TRAIT, owner, null, plist);

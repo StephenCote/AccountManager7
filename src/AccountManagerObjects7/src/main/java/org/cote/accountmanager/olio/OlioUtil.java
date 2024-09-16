@@ -543,7 +543,7 @@ public class OlioUtil {
 		});
 	}
 	public static void limitPlanFields(BaseRecord plan) {
-		limitPlanFields(plan, Arrays.asList(new String[] {"id", "name"}));
+		limitPlanFields(plan, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 	}
 	public static void limitPlanFields(BaseRecord plan, List<String> fields) {
 		QueryPlan.limitPlan(plan, fields);
@@ -553,12 +553,12 @@ public class OlioUtil {
 	public static void prunePlan(QueryPlan plan) {
 		List<BaseRecord> cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, "item");
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, "apparel");
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 		
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_ITEM, null);
@@ -579,23 +579,23 @@ public class OlioUtil {
 		cplans.forEach(cp -> {
 			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, OlioModelNames.MODEL_STORE, "apparel");
 			ccplans.forEach(ccp -> {
-				QueryPlan.limitPlan(ccp, Arrays.asList(new String[] {"id", "name"}));
+				QueryPlan.limitPlan(ccp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 			});
 		});
 		
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, "locations");
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 		
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, "materials");
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_STORE, "locations");
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", "name"}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 	
 	}

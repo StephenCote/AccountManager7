@@ -217,7 +217,7 @@ public class StateUtil {
 		///
 		List<BaseRecord> acts = state.get("actions");
 		if(acts.size() > 0) {
-			// logger.warn("Don't agitate with current action: " + animal.get("name"));
+			// logger.warn("Don't agitate with current action: " + animal.get(FieldNames.FIELD_NAME));
 			return false;
 		}
 

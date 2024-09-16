@@ -372,8 +372,8 @@ public class OlioTestUtil {
 			IOSystem.getActiveContext().getRecordUtil().createRecords(inters.toArray(new BaseRecord[0]));
 			
 			cfg.set("event", octx.clock().getIncrement());
-			cfg.set("universeName", octx.getUniverse().get("name"));
-			cfg.set("worldName", octx.getWorld().get("name"));
+			cfg.set("universeName", octx.getUniverse().get(FieldNames.FIELD_NAME));
+			cfg.set("worldName", octx.getWorld().get(FieldNames.FIELD_NAME));
 			cfg.set("startMode", "system");
 			cfg.set("assist", true);
 			cfg.set("useNLP", true);

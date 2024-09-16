@@ -35,7 +35,7 @@ public class WorldFactory extends FactoryBase {
 		// logger.info(newRecord.toFullString());
 		if(parameterList != null) {
 			
-			String name = ParameterUtil.getParameter(parameterList, "name", String.class, null);
+			String name = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_NAME, String.class, null);
 			String path = ParameterUtil.getParameter(parameterList, "path", String.class, null);
 			if(name != null && path != null && contextUser != null) {
 				IPath pu = IOSystem.getActiveContext().getPathUtil();

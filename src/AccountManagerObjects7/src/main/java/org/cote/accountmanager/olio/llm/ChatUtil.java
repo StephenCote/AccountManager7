@@ -95,7 +95,7 @@ public class ChatUtil {
 		
 		if(dat == null) {
 			ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
-			plist.parameter("name", name);
+			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
 				dat = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
 			} catch (Exception e) {
@@ -126,7 +126,7 @@ public class ChatUtil {
 		BaseRecord rec = null;
 		boolean error = false;
 		ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, template, plist);
 		} catch (Exception e) {

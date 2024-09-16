@@ -250,8 +250,8 @@ public class PromptUtil {
 		templ = ratingMpa.matcher(templ).replaceAll(ESRBEnumType.getESRBMPA(rating));
 		templ = userFirstName.matcher(templ).replaceAll((String)userChar.get(FieldNames.FIELD_FIRST_NAME));
 		templ = systemFirstName.matcher(templ).replaceAll((String)systemChar.get(FieldNames.FIELD_FIRST_NAME));
-		templ = userFullName.matcher(templ).replaceAll((String)userChar.get("name"));
-		templ = systemFullName.matcher(templ).replaceAll((String)systemChar.get("name"));
+		templ = userFullName.matcher(templ).replaceAll((String)userChar.get(FieldNames.FIELD_NAME));
+		templ = systemFullName.matcher(templ).replaceAll((String)systemChar.get(FieldNames.FIELD_NAME));
 
 		templ = userCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(null, userChar));
 		templ = systemCharDesc.matcher(templ).replaceAll(NarrativeUtil.describe(null, systemChar));

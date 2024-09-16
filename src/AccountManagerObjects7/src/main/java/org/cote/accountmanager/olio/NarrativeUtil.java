@@ -188,7 +188,7 @@ public class NarrativeUtil {
 				String mat = "plastic";
 				List<String> mats = w.get("materials");
 				if(mats.size() > 0) mat = mats.get(0);
-				buff.append(andl + " " + mat + " " + w.get("name"));
+				buff.append(andl + " " + mat + " " + w.get(FieldNames.FIELD_NAME));
 				andl = ", " + (i == items.size() - 2 ? "and" : "");
 			}
 		}
@@ -226,7 +226,7 @@ public class NarrativeUtil {
 		String fab = (w.get("fabric") != null ? " " + ((String)w.get("fabric")).toLowerCase() : "");
 		List<String> locs = w.get("location");
 		String loc = (locs.size() > 0 ? " " + locs.get(0) : "");
-		String name = w.get("name");
+		String name = w.get(FieldNames.FIELD_NAME);
 		if(name.contains("pierc")) {
 			name = "pierced" + loc + " ring";
 			pat = "";
@@ -1023,8 +1023,8 @@ public class NarrativeUtil {
 					return null;
 				}
 			}
-			nar.set("name", pp.getRecord().get(FieldNames.FIELD_FIRST_NAME));
-			nar.set("fullName", pp.getRecord().get("name"));
+			nar.set(FieldNames.FIELD_NAME, pp.getRecord().get(FieldNames.FIELD_FIRST_NAME));
+			nar.set("fullName", pp.getRecord().get(FieldNames.FIELD_NAME));
 			nar.set("physicalDescription", describePhysical(pp));
 			nar.set("outfitDescription", describeOutfit(pp));
 			nar.set("armamentDescription", describeArmament(pp));
@@ -1412,7 +1412,7 @@ public class NarrativeUtil {
 		//logger.info(eloc.toFullString());
 		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getRealmPopulation(realm).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
 		List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
-		String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
+		String anames = apop.stream().map(a -> (String)a.get(FieldNames.FIELD_NAME)).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		if(fpop.size() > 0) {
 			buff.append(" There are " + fpop.size() +" strangers nearby.");
 		}
@@ -1471,7 +1471,7 @@ public class NarrativeUtil {
 			}
 
 			List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
-			String anames = apop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
+			String anames = apop.stream().map(a -> (String)a.get(FieldNames.FIELD_NAME)).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 			List<Long> gids = Arrays.asList(new Long[] {user.get(FieldNames.FIELD_ID), systemUser.get(FieldNames.FIELD_ID)});
 			List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getRealmPopulation(realm), cell);
 			pdesc = "No one seems to be nearby.";

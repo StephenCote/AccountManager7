@@ -375,7 +375,7 @@ public class EpochUtil {
 			logger.error("Failed to find root location");
 			return null;
 		}
-		logger.info("Root location: " + rootLoc.get("name"));
+		logger.info("Root location: " + rootLoc.get(FieldNames.FIELD_NAME));
 		// BaseRecord[] locs = GeoLocationUtil.getRegionLocations(ctx);
 		if(ctx.getLocations().length == 0) {
 			logger.error("Failed to find child locations");

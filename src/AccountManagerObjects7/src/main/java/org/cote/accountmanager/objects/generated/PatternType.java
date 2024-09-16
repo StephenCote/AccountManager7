@@ -170,11 +170,11 @@ public class PatternType extends LooseRecord {
 		}
 	}
 	public String getName() {
-		return get("name");
+		return get(FieldNames.FIELD_NAME);
 	}
 	public void setName(String name) {
 		try {
-			set("name", name);
+			set(FieldNames.FIELD_NAME, name);
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

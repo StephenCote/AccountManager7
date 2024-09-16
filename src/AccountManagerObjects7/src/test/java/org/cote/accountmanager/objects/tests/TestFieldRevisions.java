@@ -113,7 +113,7 @@ public class TestFieldRevisions extends BaseTest {
 		//BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, "DATA", testOrgContext.getOrganizationId());
 		String dataName = "Random data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", groupPath);
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		boolean error = false;
 		try {
@@ -158,7 +158,7 @@ public class TestFieldRevisions extends BaseTest {
 		boolean error = false;
 		try {
 			data = ioContext.getFactory().newInstance("revisedField", testUser1, null, null);
-			data.set("name", dataName);
+			data.set(FieldNames.FIELD_NAME, dataName);
 			assertNotNull("Data is null", data);
 			data.set("testDate", ZonedDateTime.now());
 			data.set("testText", textToEncrypt);

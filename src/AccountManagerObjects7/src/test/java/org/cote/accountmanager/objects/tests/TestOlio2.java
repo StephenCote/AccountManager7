@@ -207,7 +207,7 @@ public class TestOlio2 extends BaseTest {
 			List<BaseRecord> pop = octx.getPopulation(lrec);
 			BaseRecord per = null;
 			if(filtName != null) {
-				Optional<BaseRecord> oper = pop.stream().filter(c -> filtName.equals(c.get("name"))).findFirst();
+				Optional<BaseRecord> oper = pop.stream().filter(c -> filtName.equals(c.get(FieldNames.FIELD_NAME))).findFirst();
 				if(oper.isPresent()) {
 					per = oper.get();
 				}

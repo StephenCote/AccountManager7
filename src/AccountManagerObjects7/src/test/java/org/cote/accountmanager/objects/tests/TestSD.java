@@ -44,7 +44,7 @@ public class TestSD extends BaseTest {
 				List<BaseRecord> bl = sdu.createPersonImage(testUser1, per, "Photo Op", null, "professional portrait", 40, 3);		
 				for(BaseRecord b1 : bl) {
 					IOSystem.getActiveContext().getMemberUtil().member(testUser1, nar, "images", b1, null, true);
-					FileUtil.emitFile("./img-" + b1.get("name") + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
+					FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
 				}
 
 			}

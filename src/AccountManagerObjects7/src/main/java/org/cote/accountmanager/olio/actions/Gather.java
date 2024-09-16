@@ -138,13 +138,13 @@ public class Gather extends CommonAction implements IAction {
 		}
 		/// Find animals in the current and adjacent cells
 		/*
-		String anames = zpop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
+		String anames = zpop.stream().map(a -> (String)a.get(FieldNames.FIELD_NAME)).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		String adesc = "No animals seem to be nearby.";
 		if(anames.length() > 0) {
 			adesc ="Some animals are close, including " + anames + ".";
 		}
 		*/
-		String anames = dzpop.stream().map(a -> (String)a.get("name")).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
+		String anames = dzpop.stream().map(a -> (String)a.get(FieldNames.FIELD_NAME)).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		String adesc = "No animal remains are nearby.";
 		if(anames.length() > 0) {
 			adesc ="Some animal remains are close, including " + anames + ".";

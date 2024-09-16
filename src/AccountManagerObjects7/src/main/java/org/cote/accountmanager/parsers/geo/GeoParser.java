@@ -209,7 +209,7 @@ public class GeoParser {
 		List<ParseMap> map = new ArrayList<>();
 		map.add(new ParseMap("iso", 0));
 		map.add(new ParseMap("iso3", 1));
-		map.add(new ParseMap("name", 4));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 4));
 		map.add(new ParseMap("capital", 5));
 		map.add(new ParseMap("continent", 8));
 		map.add(new ParseMap("currencyCode", 10));
@@ -237,7 +237,7 @@ public class GeoParser {
 		map.add(new ParseMap("altgeonameid", 1));
 		map.add(new ParseMap("geonameid", 0));
 		map.add(new ParseMap("altType", 2));
-		map.add(new ParseMap("name", 3));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 3));
 		
 	
 		BaseRecord template = null;
@@ -272,7 +272,7 @@ public class GeoParser {
 		List<ParseMap> map = new ArrayList<>();
 		
 		map.add(new ParseMap("altName", 1));
-		map.add(new ParseMap("name", 2));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 2));
 		map.add(new ParseMap("geonameid", 0));
 		map.add(new ParseMap("latitude", 4));
 		map.add(new ParseMap("longitude", 5));
@@ -322,7 +322,7 @@ public class GeoParser {
 		map.add(new ParseMap("code", 0));
 		map.add(new ParseMap("iso", 0, new CodeInterceptor()));
 		map.add(new ParseMap("altName", 1));
-		map.add(new ParseMap("name", 2));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 2));
 		map.add(new ParseMap("geonameid", 3));
 	
 		BaseRecord template = null;
@@ -362,7 +362,7 @@ public class GeoParser {
 		map.add(new ParseMap("code", 0));
 		map.add(new ParseMap("iso", 0, new CodeInterceptor()));
 		map.add(new ParseMap("altName", 1));
-		map.add(new ParseMap("name", 2));
+		map.add(new ParseMap(FieldNames.FIELD_NAME, 2));
 		map.add(new ParseMap("geonameid", 3));
 	
 		BaseRecord template = null;

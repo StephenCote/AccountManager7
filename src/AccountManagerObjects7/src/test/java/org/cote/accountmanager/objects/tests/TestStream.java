@@ -87,7 +87,7 @@ public class TestStream extends BaseTest {
 		BaseRecord testUser6 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser6", testOrgContext.getOrganizationId());
 		String dataName = "Auth stream " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Data/Streams");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;
 		StreamSegmentUtil ssu = new StreamSegmentUtil();
@@ -228,7 +228,7 @@ public class TestStream extends BaseTest {
 		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
 		String dataName = "Demo stream " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Data/StreamUtil");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		
 		String[] sampleData = new String[] {"airship.jpg", "anaconda.jpg", "antikythera.jpg", "railplane.png", "shark.webp", "steampunk.png", "sunflower.jpg"};
 		try(FileInputStream fos = new FileInputStream("./media/" + sampleData[6])){
@@ -252,7 +252,7 @@ public class TestStream extends BaseTest {
 		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
 		String dataName = "Demo stream " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Data/Streams");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;
 		
@@ -337,7 +337,7 @@ public class TestStream extends BaseTest {
 		String dataName = "Demo stream in place #1";
 		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Data/StreamInPlace", GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		ParameterList plist = ParameterList.newParameterList("path", "~/Data/StreamInPlace");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_STREAM, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_NAME, dataName);

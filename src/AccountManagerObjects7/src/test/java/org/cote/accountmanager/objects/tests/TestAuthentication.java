@@ -35,7 +35,7 @@ public class TestAuthentication extends BaseTest {
 	@Test
 	public void TestCreatePolicy() {
 		BaseRecord rec = null;
-		ParameterList plist = ParameterUtil.newParameterList("name", "Demo data - " + UUID.randomUUID().toString());
+		ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_NAME, "Demo data - " + UUID.randomUUID().toString());
 		plist.parameter("path", "~/QA Demo");
 		boolean canCreate = false;
 		try {

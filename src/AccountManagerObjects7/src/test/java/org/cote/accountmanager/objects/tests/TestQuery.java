@@ -87,7 +87,7 @@ public class TestQuery extends BaseTest {
 		
 		String tmpStr = """
 		{
-			"name": "Demo text 1",
+			FieldNames.FIELD_NAME: "Demo text 1",
 			"groupId": 1
 		}
 		""";

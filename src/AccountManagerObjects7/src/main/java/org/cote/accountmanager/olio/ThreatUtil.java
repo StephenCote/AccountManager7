@@ -25,7 +25,7 @@ public class ThreatUtil {
 				threats.forEach((tet, al) -> {
 					al.forEach(a -> {
 						BaseRecord inter = InteractionUtil.newInteraction(ctx, InteractionEnumType.THREATEN, increment, a, tet, pp.getRecord());
-						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get(FieldNames.FIELD_FIRST_NAME));
+						inter.setValue("description", a.get(FieldNames.FIELD_NAME) + " is a " + tet.toString() + " to " + pp.getRecord().get(FieldNames.FIELD_FIRST_NAME));
 						inters.add(inter);
 						//Queue.queue(inter);
 					});
@@ -86,7 +86,7 @@ public class ThreatUtil {
 	
 	public static boolean isToxic(BaseRecord record) {
 		List<BaseRecord> items = record.get("store.items");
-		return items.stream().filter(i -> "toxin".equals(i.get("name"))).collect(Collectors.toList()).size() > 0;
+		return items.stream().filter(i -> "toxin".equals(i.get(FieldNames.FIELD_NAME))).collect(Collectors.toList()).size() > 0;
 	}
 
 	public static ThreatEnumType evaluateAggressive(AnimalProfile ap, PersonalityProfile pp, ThreatEnumType threat, ThreatEnumType antiThreat) {
@@ -180,11 +180,11 @@ public class ThreatUtil {
 		ThreatEnumType tet = ThreatEnumType.NONE;
 		RollEnumType per = RollUtil.rollStat20(rec1, statistic);
 		if(per == RollEnumType.CATASTROPHIC_FAILURE) {
-			logger.warn(rec1.get("name") + " #" + rec1.get("id") + " made itself a target by catastrophically failing a " + statistic + " roll");
+			logger.warn(rec1.get(FieldNames.FIELD_NAME) + " #" + rec1.get("id") + " made itself a target by catastrophically failing a " + statistic + " roll");
 			tet = antiThreat;
 		}
 		else if(per == RollEnumType.NATURAL_SUCCESS) {
-			logger.warn(rec1.get("name") + " #" + rec1.get("id") + " made itself an existential threat by naturally succeeding a " + statistic + " roll");
+			logger.warn(rec1.get(FieldNames.FIELD_NAME) + " #" + rec1.get("id") + " made itself an existential threat by naturally succeeding a " + statistic + " roll");
 			tet = ThreatEnumType.EXISTENTIAL_THREAT;
 		}
 		if(per == RollEnumType.SUCCESS) {

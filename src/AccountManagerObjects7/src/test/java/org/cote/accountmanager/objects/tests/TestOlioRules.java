@@ -95,7 +95,7 @@ public class TestOlioRules extends BaseTest {
 		logger.info("View Zoo: " + vzoo.size());
 		for(BaseRecord a: zoo) {
 			double dist = GeoLocationUtil.getDistanceToState(per1.get("state"), a.get("state"));
-			logger.info(a.get("name") + " " + dist + "m");
+			logger.info(a.get(FieldNames.FIELD_NAME) + " " + dist + "m");
 		}
 		*/
 		BaseRecord pact = null;

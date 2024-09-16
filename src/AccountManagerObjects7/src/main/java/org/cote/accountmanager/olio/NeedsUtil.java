@@ -133,16 +133,16 @@ public class NeedsUtil {
 		BaseRecord actionResult = null;
 		if(need == PhysiologicalNeedsEnumType.SHELTER) {
 			List<BaseRecord> builders = Arrays.asList(BuilderUtil.getBuilders(ctx)).stream().filter(b -> (b.getEnum("type") == BuilderEnumType.LOCATION)).collect(Collectors.toList());
-			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("build")).collect(Collectors.toList());
+			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get(FieldNames.FIELD_NAME)).equals("build")).collect(Collectors.toList());
 			action = actions.get(0);
 			builder = builders.get(random.nextInt(0, builders.size()));
 		}
 		else if(need == PhysiologicalNeedsEnumType.FOOD) {
-			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("gather") || ((String)b.get("name")).equals("hunt")).collect(Collectors.toList());
+			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get(FieldNames.FIELD_NAME)).equals("gather") || ((String)b.get(FieldNames.FIELD_NAME)).equals("hunt")).collect(Collectors.toList());
 			action = actions.get(random.nextInt(0, actions.size()));
 		}
 		else if(need == PhysiologicalNeedsEnumType.WATER) {
-			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get("name")).equals("gather")).collect(Collectors.toList());
+			List<BaseRecord> actions = Arrays.asList(ActionUtil.getActions(ctx)).stream().filter(b -> ((String)b.get(FieldNames.FIELD_NAME)).equals("gather")).collect(Collectors.toList());
 			action = actions.get(random.nextInt(0, actions.size()));
 		}
 		else if(need == PhysiologicalNeedsEnumType.REPRODUCTION) {
@@ -261,7 +261,7 @@ public class NeedsUtil {
 				}
 				StateUtil.agitateLocation(ctx, p);
 				state.setValue("agitated", true);
-				// logger.info("Agitate " + p.get("name") + " " + location.get("name") + ", " + state.get("currentEast") + ", " + state.get("currentNorth"));
+				// logger.info("Agitate " + p.get(FieldNames.FIELD_NAME) + " " + location.get(FieldNames.FIELD_NAME) + ", " + state.get("currentEast") + ", " + state.get("currentNorth"));
 
 				String geoType = location.get("geoType");
 				if(geoType.equals("feature")) {

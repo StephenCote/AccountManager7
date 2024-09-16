@@ -53,7 +53,7 @@ public class TestNestedStructures extends BaseTest {
 			a1.set(FieldNames.FIELD_FIRST_NAME, "Jay");
 			a1.set(FieldNames.FIELD_MIDDLE_NAME, "Kippy");
 			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
-			a1.set("name", "Jay Kippy Smith");
+			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
 			a1.set("instinct", ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
 			a1.set("statistics", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
 			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
@@ -70,14 +70,14 @@ public class TestNestedStructures extends BaseTest {
 			CharacterUtil.setStyleByRace(null, a1);
 			List<BaseRecord> apps = a1.get("store.apparel");
 			BaseRecord app = ApparelUtil.randomApparel(null, a1);
-			app.set("name", "Primary Apparel");
+			app.set(FieldNames.FIELD_NAME, "Primary Apparel");
 			apps.add(app);
 			
 			BaseRecord ca1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, a1);
 			assertNotNull("Char Person was null", ca1);
 			
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_NAME, a1.get("name"));
+			q.field(FieldNames.FIELD_NAME, a1.get(FieldNames.FIELD_NAME));
 			q.planMost(true);
 			BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
 			assertNotNull("Rec is null", rec);
@@ -145,7 +145,7 @@ public class TestNestedStructures extends BaseTest {
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		String name = "Person 1";
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			
 			BaseRecord w1 = ioContext.getFactory().newInstance(ModelNames.MODEL_WORD_NET, testUser1, null, plist);

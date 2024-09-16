@@ -326,7 +326,7 @@ public class TestObjectPolicy extends BaseTest {
 			testUser1 = mf.getCreateUser(orgContext.getAdminUser(), "testUser1", orgContext.getOrganizationId());
 			
 			ParameterList plist = ParameterList.newParameterList("path", "~/Temp QA");
-			plist.parameter("name", "Demo data");
+			plist.parameter(FieldNames.FIELD_NAME, "Demo data");
 			newDat = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
 		}
 		catch(Exception e) {
@@ -358,7 +358,7 @@ public class TestObjectPolicy extends BaseTest {
 			testUser3 = mf.getCreateUser(orgContext.getAdminUser(), "testUser3", orgContext.getOrganizationId());
 			
 			ParameterList plist = ParameterList.newParameterList("path", "~/Temp QA");
-			plist.parameter("name", "Demo data");
+			plist.parameter(FieldNames.FIELD_NAME, "Demo data");
 			newDat = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
 		}
 		catch(Exception e) {

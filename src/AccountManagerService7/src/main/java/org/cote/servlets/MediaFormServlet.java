@@ -119,7 +119,7 @@ public class MediaFormServlet extends HttpServlet {
 			    	else if(fname.equals("organizationPath")){
 			    		orgPath = Streams.asString(stream);
 			    	}
-			    	else if(fname.equals("name")){
+			    	else if(fname.equals(FieldNames.FIELD_NAME)){
 			    		name = Streams.asString(stream);
 			    	}
 			    	else if(fname.equals("id")){

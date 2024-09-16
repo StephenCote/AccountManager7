@@ -77,7 +77,7 @@ public class ChatService {
 		if(request.getSessionName() != null && request.getSessionName().length() > 0) {
 			sess = "-" + request.getSessionName();
 		}
-		return user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("name") + "-" + promptConfig.get("name") + sess;
+		return user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get(FieldNames.FIELD_NAME) + "-" + promptConfig.get(FieldNames.FIELD_NAME) + sess;
 	}
 	
 	@RolesAllowed({"admin","user"})
@@ -152,7 +152,7 @@ public class ChatService {
 	@GET
 	@Path("/prompt")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response getSystemPrompt(@PathParam("name") String name, @Context HttpServletRequest request){
+	public Response getSystemPrompt(@PathParam(FieldNames.FIELD_NAME) String name, @Context HttpServletRequest request){
 		return Response.status(200).entity(ChatUtil.getDefaultPrompt().toFullString()).build();
 	}
 	
@@ -161,7 +161,7 @@ public class ChatService {
 	@GET
 	@Path("/character/{name:[\\.A-Za-z\\s]+}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response getCharactor(@PathParam("name") String name, @Context HttpServletRequest request){
+	public Response getCharactor(@PathParam(FieldNames.FIELD_NAME) String name, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord chart = getCharacter(user, name);
 		
@@ -173,7 +173,7 @@ public class ChatService {
 	@GET
 	@Path("/config/prompt/{name:[\\.A-Za-z0-9%\\s]+}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response getPromptConfig(@PathParam("name") String name, @Context HttpServletRequest request){
+	public Response getPromptConfig(@PathParam(FieldNames.FIELD_NAME) String name, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord cfg = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, null, name);
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
@@ -206,7 +206,7 @@ public class ChatService {
 	@GET
 	@Path("/config/chat/{name:[\\.A-Za-z0-9%\\s]+}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response getChatConfig(@PathParam("name") String name, @Context HttpServletRequest request){
+	public Response getChatConfig(@PathParam(FieldNames.FIELD_NAME) String name, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord cfg = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, null, name);
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
@@ -299,7 +299,7 @@ public class ChatService {
 		else {
 			pop = popMap.get(uname);
 		}
-		Optional<BaseRecord> brec = pop.stream().filter(r -> name.equals(r.get("firstName"))).findFirst();
+		Optional<BaseRecord> brec = pop.stream().filter(r -> name.equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
 		if(brec.isPresent()) {
 			chart = brec.get();
 		}
@@ -312,7 +312,7 @@ public class ChatService {
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
 		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
 		String key = getKey(user, chatConfig, promptConfig, creq);
-		//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("name") + "-" + promptConfig.get("name");
+		//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get(FieldNames.FIELD_NAME) + "-" + promptConfig.get(FieldNames.FIELD_NAME);
 		if(reqMap.containsKey(key)) {
 			return reqMap.get(key);
 		}
@@ -376,12 +376,12 @@ public class ChatService {
 			
 		}
 
-		Optional<BaseRecord> brec = pop.stream().filter(r -> systemName.equals(r.get("firstName"))).findFirst();
+		Optional<BaseRecord> brec = pop.stream().filter(r -> systemName.equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
 		if(brec.isPresent()) {
 			char1 = brec.get();
 		}
 
-		Optional<BaseRecord> brec2 = pop.stream().filter(r -> userName.equals(r.get("firstName"))).findFirst();
+		Optional<BaseRecord> brec2 = pop.stream().filter(r -> userName.equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
 		if(brec2.isPresent()) {
 			char2 = brec2.get();
 		}

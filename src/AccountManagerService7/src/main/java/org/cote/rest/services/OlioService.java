@@ -39,6 +39,7 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -112,10 +113,10 @@ public class OlioService {
 		try{
 			a1 = f.newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, null);
 		
-			a1.set("firstName", "Jay");
-			a1.set("middleName", "Kippy");
-			a1.set("lastName", "Smith");
-			a1.set("name", "Jay Kippy Smith");
+			a1.set(FieldNames.FIELD_FIRST_NAME, "Jay");
+			a1.set(FieldNames.FIELD_MIDDLE_NAME, "Kippy");
+			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
+			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
 			/*
 			a1.set("instinct", f.newInstance(OlioModelNames.MODEL_INSTINCT, user, null, null));
 			a1.set("statistics", f.newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, null));
@@ -134,7 +135,7 @@ public class OlioService {
 			CharacterUtil.setStyleByRace(null, a1);
 			List<BaseRecord> apps = a1.get("store.apparel");
 			BaseRecord app = ApparelUtil.randomApparel(null, a1);
-			app.set("name", "Primary Apparel");
+			app.set(FieldNames.FIELD_NAME, "Primary Apparel");
 			apps.add(app);
 			return Response.status(200).entity(a1.toFullString()).build();
 		}

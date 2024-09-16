@@ -50,7 +50,7 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		String name = "Person 1";
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set("gender", "male");
@@ -118,7 +118,7 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		String name = "Dooter - " + UUID.randomUUID().toString();
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_APPAREL, testUser1, null, plist);
 			aal.add(a1);
@@ -169,7 +169,7 @@ public class TestBulkOperation extends BaseTest {
 		String locName = "Parent Loc";
 		String chdName = "Child Loc";
 		ParameterList plist = ParameterList.newParameterList("path", groupPath);
-		plist.parameter("name", locName);
+		plist.parameter(FieldNames.FIELD_NAME, locName);
 		BaseRecord loc = null;
 		try {
 			loc = ioContext.getFactory().newInstance(ModelNames.MODEL_LOCATION, testUser1, null, plist);
@@ -189,7 +189,7 @@ public class TestBulkOperation extends BaseTest {
 
 	 private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
 		ParameterList plist = ParameterList.newParameterList("path", path);
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		BaseRecord data = null;
 		try {
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, owner, null, plist);

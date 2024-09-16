@@ -71,10 +71,10 @@ public class TestAM6Model extends BaseTest {
 		logger.info("Test Byte Access");
 		BaseRecord model = null;
 		try {
-			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {"name", "dataBytesStore"});
+			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {FieldNames.FIELD_NAME, "dataBytesStore"});
 			assertNotNull("Model was null", model);
 			
-			model.set("name", "Demo Data");
+			model.set(FieldNames.FIELD_NAME, "Demo Data");
 			model.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			String demoData = "This is the demo data that we're going to be working with for now";
 			model.set("dataBytesStore", demoData.getBytes());
@@ -100,10 +100,10 @@ public class TestAM6Model extends BaseTest {
 		try {
 			proto = RecordFactory.model(ModelNames.MODEL_DATA);
 			assertNotNull("Protoype was null", proto);
-			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {"name", "dataBytesStore"});
+			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {FieldNames.FIELD_NAME, "dataBytesStore"});
 			assertNotNull("Model was null", model);
 			
-			model.set("name", "Demo Data");
+			model.set(FieldNames.FIELD_NAME, "Demo Data");
 			String demoData = "This is the demo data that we're going to be working with for now";
 			model.set("dataBytesStore", demoData.getBytes());
 			
@@ -122,8 +122,8 @@ public class TestAM6Model extends BaseTest {
 		BaseRecord model = null;
 		MemoryWriter writer = new MemoryWriter();
 		try {
-			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {"name", "dataBytesStore"});
-			model.set("name", "Demo Data");
+			model = RecordFactory.model(ModelNames.MODEL_DATA).newInstance(new String[] {FieldNames.FIELD_NAME, "dataBytesStore"});
+			model.set(FieldNames.FIELD_NAME, "Demo Data");
 			model.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
 			String demoData = "This is the demo data that we're going to be working with for now";
 			model.set("dataBytesStore", demoData.getBytes());

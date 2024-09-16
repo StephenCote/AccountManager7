@@ -737,7 +737,7 @@ public class GeoLocationUtil {
 			return rec;
 		}
 		ParameterList plist = ParameterList.newParameterList("path", (world ? ctx.getWorld() : ctx.getUniverse()).get("locations.path"));
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getOlioUser(), null, plist);
 			rec.set("geographyType", GeographyEnumType.PHYSICAL);

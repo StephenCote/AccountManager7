@@ -109,7 +109,7 @@ public class PointOfInterestUtil {
 			return rec;
 		}
 		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("pointsOfInterest.path"));
-		plist.parameter("name", name);
+		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
 			rec.set("store", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));

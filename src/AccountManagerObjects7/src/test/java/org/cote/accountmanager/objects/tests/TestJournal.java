@@ -35,7 +35,7 @@ public class TestJournal extends BaseTest {
 
 		String dataName = "Demo data " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
-		plist.parameter("name", dataName);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		
 		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("testJournal8", "journalObject");
 		assertNotNull("Schema is null", ms);

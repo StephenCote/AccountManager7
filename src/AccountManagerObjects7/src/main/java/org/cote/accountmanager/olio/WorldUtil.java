@@ -57,7 +57,7 @@ public class WorldUtil {
 			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 
 			ParameterList plist = ParameterList.newParameterList("path", groupPath);
-			plist.parameter("name", worldName);
+			plist.parameter(FieldNames.FIELD_NAME, worldName);
 			try {
 				BaseRecord world = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_WORLD, user, null, plist);
 				world.set("features", Arrays.asList(features));

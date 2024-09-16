@@ -33,7 +33,7 @@ public class DirectoryFactory extends FactoryBase {
 	public BaseRecord implement(BaseRecord contextUser, BaseRecord newRecord, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
 		if(parameterList != null) {
 			
-			String name = ParameterUtil.getParameter(parameterList, "name", String.class, null);
+			String name = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_NAME, String.class, null);
 			if(name == null && !FieldUtil.isNullOrEmpty(newRecord.getModel(), newRecord.getField(FieldNames.FIELD_NAME))) {
 				name = newRecord.get(FieldNames.FIELD_NAME);
 			}

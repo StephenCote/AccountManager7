@@ -62,7 +62,7 @@ public class TestLooseField {
 		ValueType dvt = genericInst.getField("createdDate").getFieldValueType();
 		// logger.info("Date check: " + dvt.getValue());
 		try {
-			genericInst.set("name", "Generic Object");
+			genericInst.set(FieldNames.FIELD_NAME, "Generic Object");
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			// TODO Auto-generated catch block
 			
@@ -92,14 +92,14 @@ public class TestLooseField {
 			{
 				"model": "genericObject",
 				"fields": [
-					{"name" : "id", "value": 123 },
-					{"name" : "name", "value": "Generic Object"}
+					{FieldNames.FIELD_NAME : "id", "value": 123 },
+					{FieldNames.FIELD_NAME : FieldNames.FIELD_NAME, "value": "Generic Object"}
 				]
 			}
 		""";
 		try {
 			genObj = RecordFactory.model("genericObject").newInstance();
-			genObj.set("name", "Generic object");
+			genObj.set(FieldNames.FIELD_NAME, "Generic object");
 			genObj.set("id", 123L);
 			genObj.set("populated", false);
 			genObj.set("dataStore", "This is some data".getBytes());

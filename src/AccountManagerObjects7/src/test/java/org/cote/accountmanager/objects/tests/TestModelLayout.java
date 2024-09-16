@@ -38,11 +38,11 @@ public class TestModelLayout extends BaseTest {
 		BaseRecord newData = null;
 		BaseRecord newTag = null;
 		String dataName = "Test Data - " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterUtil.newParameterList("name", dataName);
+		ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_NAME, dataName);
 		plist.parameter("path", "~/Data");
 
 		String tagName = "Test Tag - " + UUID.randomUUID().toString();
-		ParameterList plist2 = ParameterUtil.newParameterList("name", tagName);
+		ParameterList plist2 = ParameterUtil.newParameterList(FieldNames.FIELD_NAME, tagName);
 		plist2.parameter("path", "~/Tags");
 		
 		try {

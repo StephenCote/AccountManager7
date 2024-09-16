@@ -356,11 +356,11 @@ public class AnimalUtil {
 	public static double walkMetersPerSecond(BaseRecord animal) {
 		double speed = (double)(int)animal.get("statistics.speed");
 		if(speed <= 0) {
-			logger.warn("Invalid speed for #" + animal.get("id") + " " + animal.get("name") + ": Using default");
+			logger.warn("Invalid speed for #" + animal.get("id") + " " + animal.get(FieldNames.FIELD_NAME) + ": Using default");
 			speed = defaultAnimalSpeed;
 		}
 		/// Average walking speed is 1.2 meters per second
-		// logger.info(animal.get("name") + " speed " + speed + " is " + ((speed/10)*1.2) + "mps");
+		// logger.info(animal.get(FieldNames.FIELD_NAME) + " speed " + speed + " is " + ((speed/10)*1.2) + "mps");
 		return (speed/10) * 1.2;
 	}
 	

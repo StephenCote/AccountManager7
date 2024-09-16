@@ -32,7 +32,7 @@ public class TestValueType {
 			org = RecordFactory.model(ModelNames.MODEL_ORGANIZATION).newInstance();
 			assertNotNull("Org is null", org);
 
-			FieldType name = org.getField("name");
+			FieldType name = org.getField(FieldNames.FIELD_NAME);
 			assertNotNull("Name field is null", name);
 
 			name.setValue("Test organization");

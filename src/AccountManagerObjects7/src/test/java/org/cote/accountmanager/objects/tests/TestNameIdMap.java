@@ -103,11 +103,11 @@ public class TestNameIdMap {
 		BaseRecord linkObj = null;
 		
 		try {
-			genObj = com.newInstance(new String[] {"name", "link", "type"});
+			genObj = com.newInstance(new String[] {FieldNames.FIELD_NAME, "link", "type"});
 			assertNotNull("Expected complex instance to exist", genObj);
-			linkObj = com.newInstance(new String[] {"name", "type"});
-			genObj.set("name", "Parent Object");
-			linkObj.set("name", "Child Object");
+			linkObj = com.newInstance(new String[] {FieldNames.FIELD_NAME, "type"});
+			genObj.set(FieldNames.FIELD_NAME, "Parent Object");
+			linkObj.set(FieldNames.FIELD_NAME, "Child Object");
 			linkObj.set("type", "SYSTEM");
 			genObj.set("link", linkObj);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -136,11 +136,11 @@ public class TestNameIdMap {
 		BaseRecord cobj2 = null;
 		try {
 			obj = RecordFactory.model("complexObject").newInstance(new String[] {"fancyStuff"});
-			cobj1 = RecordFactory.model("genericObject").newInstance(new String[] {"name"});
-			cobj2 = RecordFactory.model("genericObject").newInstance(new String[] {"name"});
+			cobj1 = RecordFactory.model("genericObject").newInstance(new String[] {FieldNames.FIELD_NAME});
+			cobj2 = RecordFactory.model("genericObject").newInstance(new String[] {FieldNames.FIELD_NAME});
 
-			cobj1.set("name", "Example 1");
-			cobj2.set("name", "Example 2");
+			cobj1.set(FieldNames.FIELD_NAME, "Example 1");
+			cobj2.set(FieldNames.FIELD_NAME, "Example 2");
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -155,7 +155,7 @@ public class TestNameIdMap {
 		assertNotNull("Object is null", impObj);
 		List<BaseRecord> list2 = impObj.get("fancyStuff");
 		BaseRecord icobj1 = (BaseRecord)list2.get(0);
-		//logger.info((String)icobj1.get("name"));
+		//logger.info((String)icobj1.get(FieldNames.FIELD_NAME));
 		String ser2 = JSONUtil.exportObject(impObj, RecordSerializerConfig.getUnfilteredModule());
 		
 		logger.info(ser2);
