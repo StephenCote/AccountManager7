@@ -297,7 +297,7 @@ public class FieldNames {
 		public static final String FIELD_CITY = "city";
 		public static final String FIELD_STATE = "state";
 		public static final String FIELD_REGION = "region";
-		public static final String FIELD_POST = FieldNames.FIELD_POSTAL_CODE;
+		public static final String FIELD_POST = "postalCode";
 		public static final String FIELD_STREET = "street";
 		public static final String FIELD_STREET2 = "street2";
 		public static final String FIELD_POSTAL_CODE = "postalCode";
@@ -327,6 +327,8 @@ public class FieldNames {
 		public static final String FIELD_KIDENT = "kident";
 		public static final String FIELD_GEOTYPE = "geoType";
 		
+		public static final String FIELD_EAST = "east";
+		public static final String FIELD_NORTH = "north";
 		public static final String FIELD_EASTINGS = "eastings";
 		public static final String FIELD_NORTHINGS = "northings";
 		public static final String FIELD_CURRENT_EAST = "currentEast";

@@ -313,7 +313,7 @@ public class InteractionUtil {
 				}
 			}
 		}
-		ReasonEnumType actorReason = inter.getEnum("actorReason");
+		ReasonEnumType actorReason = inter.getEnum(OlioFieldNames.FIELD_ACTOR_REASON);
 		if(actorReasons.size() == 0 && actorReason != ReasonEnumType.UNKNOWN) {
 			logger.warn("Failed to identify any possible reasons");
 			return null;
@@ -344,7 +344,7 @@ public class InteractionUtil {
 			}
 		}
 		
-		ReasonEnumType interactorReason = inter.getEnum("interactorReason");
+		ReasonEnumType interactorReason = inter.getEnum(OlioFieldNames.FIELD_INTERACTOR_REASON);
 		if(iactorReasons.size() > 0) {
 			interactorReason = iactorReasons.get(rand.nextInt(iactorReasons.size()));
 		}
@@ -466,22 +466,22 @@ public class InteractionUtil {
 		try {
 			inter = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INTERACTION, (ctx != null ? ctx.getOlioUser() : null), null, plist);
 			if(event != null) {
-				inter.set("interactionStart", event.get(OlioFieldNames.FIELD_EVENT_START));
-				inter.set("interactionEnd", event.get(OlioFieldNames.FIELD_EVENT_END));
+				inter.set(OlioFieldNames.FIELD_INTERACTION_START, event.get(OlioFieldNames.FIELD_EVENT_START));
+				inter.set(OlioFieldNames.FIELD_INTERACTION_END, event.get(OlioFieldNames.FIELD_EVENT_END));
 			}
 			inter.set(FieldNames.FIELD_TYPE, type);
-			inter.set("actor", actor);
-			inter.set("actorAlignment", actorAlignment);
-			inter.set("actorType", actor.getModel());
-			inter.set("actorThreat", actorThreat);
-			inter.set("actorRole", actorRole);
-			inter.set("actorReason", actorReason);
-			inter.set("interactor", interactor);
-			inter.set("interactorAlignment", interactorAlignment);
-			inter.set("interactorType", interactor.getModel());
-			inter.set("interactorThreat", interactorThreat);
-			inter.set("interactorRole", interactorRole);
-			inter.set("interactorReason", interactorReason);
+			inter.set(OlioFieldNames.FIELD_ACTOR, actor);
+			inter.set(OlioFieldNames.FIELD_ACTOR_ALIGNMENT, actorAlignment);
+			inter.set(OlioFieldNames.FIELD_ACTOR_TYPE, actor.getModel());
+			inter.set(OlioFieldNames.FIELD_ACTOR_THREAT, actorThreat);
+			inter.set(OlioFieldNames.FIELD_ACTOR_ROLE, actorRole);
+			inter.set(OlioFieldNames.FIELD_ACTOR_REASON, actorReason);
+			inter.set(OlioFieldNames.FIELD_INTERACTOR, interactor);
+			inter.set(OlioFieldNames.FIELD_INTERACTOR_ALIGNMENT, interactorAlignment);
+			inter.set(OlioFieldNames.FIELD_INTERACTOR_TYPE, interactor.getModel());
+			inter.set(OlioFieldNames.FIELD_INTERACTOR_THREAT, interactorThreat);
+			inter.set(OlioFieldNames.FIELD_INTERACTOR_ROLE, interactorRole);
+			inter.set(OlioFieldNames.FIELD_INTERACTOR_REASON, interactorReason);
 
 		}
 		catch(ModelNotFoundException | FactoryException | FieldException | ValueException e) {

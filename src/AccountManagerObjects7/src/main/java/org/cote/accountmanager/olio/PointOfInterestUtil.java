@@ -116,8 +116,8 @@ public class PointOfInterestUtil {
 			rec.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
 			rec.set(FieldNames.FIELD_TYPE, type);
 			rec.set(FieldNames.FIELD_LOCATION, cell);
-			rec.set("north", y);
-			rec.set("east", x);
+			rec.set(FieldNames.FIELD_NORTH, y);
+			rec.set(FieldNames.FIELD_EAST, x);
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -129,11 +129,11 @@ public class PointOfInterestUtil {
 	public static BaseRecord getPointOfInterest(OlioContext ctx, BaseRecord cell, int east, int north) {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_POI, FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("pointsOfInterest.id"));
 		q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		q.field("east", east);
-		q.field("north", north);
+		q.field(FieldNames.FIELD_EAST, east);
+		q.field(FieldNames.FIELD_NORTH, north);
 		OlioUtil.planMost(q);
 
-		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, OlioFieldNames.FIELD_BUILDER, "east", "north"}));
+		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, OlioFieldNames.FIELD_BUILDER, FieldNames.FIELD_EAST, FieldNames.FIELD_NORTH}));
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 
@@ -173,7 +173,7 @@ public class PointOfInterestUtil {
 		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		q.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, OlioFieldNames.FIELD_BUILDER, "east", "north"});
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, OlioFieldNames.FIELD_BUILDER, FieldNames.FIELD_EAST, FieldNames.FIELD_NORTH});
 		q.setCache(false);
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}

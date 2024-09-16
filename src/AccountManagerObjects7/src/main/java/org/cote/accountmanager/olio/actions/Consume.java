@@ -32,10 +32,10 @@ public class Consume extends CommonAction implements IAction {
 			throw new OlioException("Item name refers to an invalid template");
 		}
 		
-		int quantity = params.get("quantity");
+		int quantity = params.get(OlioFieldNames.FIELD_QUANTITY);
 		if(quantity <= 0) {
 			quantity = 1;
-			params.setValue("quantity", 1);
+			params.setValue(OlioFieldNames.FIELD_QUANTITY, 1);
 		}
 		
 		int minSeconds = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
@@ -51,7 +51,7 @@ public class Consume extends CommonAction implements IAction {
 		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		String itemName = params.get("itemName");
 		String itemModel = params.get("itemModel");
-		int quantity = params.get("quantity");
+		int quantity = params.get(OlioFieldNames.FIELD_QUANTITY);
 		boolean transferred = false;
 		
 		/// does actor have item in inventory

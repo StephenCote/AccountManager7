@@ -628,7 +628,7 @@ public class OlioUtil {
 			FieldNames.FIELD_BEHAVIOR,
 			"album",
 			"portrait",
-			"pattern",
+			FieldNames.FIELD_PATTERN,
 			"images",
 			OlioFieldNames.FIELD_ITEMS,
 			"socialRing",

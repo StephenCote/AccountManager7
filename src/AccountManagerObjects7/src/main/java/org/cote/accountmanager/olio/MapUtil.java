@@ -140,21 +140,21 @@ public class MapUtil {
 	private static void paintPopulation(Graphics2D g2d, BaseRecord cell, List<BaseRecord> pop, int x, int y, int tileSize, int spriteSize, Color color) {
 		long cid = cell.get(FieldNames.FIELD_ID);
 
-		List<BaseRecord> lpop = pop.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+		List<BaseRecord> lpop = pop.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID)) == cid)).collect(Collectors.toList());
 		int div = (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) / tileSize;
 		if(lpop.size() > 0) {
 			for(BaseRecord p : lpop) {
-				int peast = p.get("state.currentEast");
+				int peast = p.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
 				/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
 				///
 				if(peast > 0) {
 					peast = peast / div;
 				}
-				int pnorth = p.get("state.currentNorth");
+				int pnorth = p.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 				if(pnorth > 0) {
 					pnorth = pnorth / div;
 				}
-				//logger.info(p.get("state.currentEast") + ", " + p.get("state.currentNorth") + " -> " + cell.get(FieldNames.FIELD_EASTINGS) + ", " + cell.get(FieldNames.FIELD_NORTHINGS) + " -> " + peast + ", " + pnorth + "; " +  " -> " + (x + peast) + ", " + (y + pnorth));
+				//logger.info(p.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST) + ", " + p.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH) + " -> " + cell.get(FieldNames.FIELD_EASTINGS) + ", " + cell.get(FieldNames.FIELD_NORTHINGS) + " -> " + peast + ", " + pnorth + "; " +  " -> " + (x + peast) + ", " + (y + pnorth));
 				// logger.info((x + peast) + ", " + (y + pnorth));
 				g2d.setColor(color);
 				g2d.fillOval(x + peast, y + pnorth, spriteSize, spriteSize);
@@ -337,16 +337,16 @@ public class MapUtil {
 			}
 			long cid = cell.get(FieldNames.FIELD_ID);
 
-			List<BaseRecord> lpop = pop.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+			List<BaseRecord> lpop = pop.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID)) == cid)).collect(Collectors.toList());
 			if(lpop.size() > 0) {
 				for(BaseRecord p : lpop) {
-					int peast = p.get("state.currentEast");
+					int peast = p.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
 					/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
 					///
 					if(peast > 0) {
 						peast = peast / 2;
 					}
-					int pnorth = p.get("state.currentNorth");
+					int pnorth = p.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 					if(pnorth > 0) {
 						pnorth = pnorth / 2;
 					}
@@ -356,12 +356,12 @@ public class MapUtil {
 			}
 			
 			if(realm != null) {
-				List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+				List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID)) == cid)).collect(Collectors.toList());
 				
 				if(zpop.size() > 0) {
 					for(BaseRecord z : zpop) {
-						int peast = z.get("state.currentEast");
-						int pnorth = z.get("state.currentNorth");
+						int peast = z.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
+						int pnorth = z.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 						/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
 						///
 						if(peast > 0) {
@@ -415,7 +415,7 @@ public class MapUtil {
 			zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		}
 		
-		long plid = pov.get("state.currentLocation.id");
+		long plid = pov.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID);
 		//for(BaseRecord cell : cells) {
 		for(int xi = 0; xi < diam; xi++) {
 			for(int yi = 0; yi < diam; yi++) {
@@ -446,13 +446,13 @@ public class MapUtil {
 	
 				if(plid == cid) {
 	
-					int peast = pov.get("state.currentEast");
+					int peast = pov.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
 					/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
 					///
 					if(peast > 0) {
 						peast = peast / 2;
 					}
-					int pnorth = pov.get("state.currentNorth");
+					int pnorth = pov.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 					if(pnorth > 0) {
 						pnorth = pnorth / 2;
 					}
@@ -462,12 +462,12 @@ public class MapUtil {
 				}
 				
 				if(realm != null) {
-					List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+					List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID)) == cid)).collect(Collectors.toList());
 					
 					if(zpop.size() > 0) {
 						for(BaseRecord z : zpop) {
-							int peast = z.get("state.currentEast");
-							int pnorth = z.get("state.currentNorth");
+							int peast = z.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
+							int pnorth = z.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 							/// To show the position on a grid cell w/ multiplier, take the grid cell w/ multiplier (eg: 10 * 10), divided by the raster cell (eg: 50), and divide the current state position
 							///
 							if(peast > 0) {

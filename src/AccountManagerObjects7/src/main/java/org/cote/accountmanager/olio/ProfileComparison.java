@@ -7,6 +7,7 @@ import java.util.stream.Collectors;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityRules;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
@@ -125,13 +126,13 @@ public class ProfileComparison {
 		return PersonalityRules.ruleCrossesAgeBoundary(profile1.getRecord(), profile2.getRecord());
 	}
 	public double getMachiavellianDiff() {
-		return getPersonalityDiff("machiavellianism");
+		return getPersonalityDiff(OlioFieldNames.FIELD_MACHIAVELLIANISM);
 	}
 	public double getPsychopathyDiff() {
-		return getPersonalityDiff("psychopathy");
+		return getPersonalityDiff(OlioFieldNames.FIELD_PSYCHOPATHY);
 	}
 	public double getNarcissismDiff() {
-		return getPersonalityDiff("narcissism");
+		return getPersonalityDiff(OlioFieldNames.FIELD_NARCISSISM);
 	}
 	public double getWealthGap() {
 		double wealth1 = ItemUtil.countMoney(profile1.getRecord());

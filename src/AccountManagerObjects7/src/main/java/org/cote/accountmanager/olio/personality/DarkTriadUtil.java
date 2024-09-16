@@ -47,9 +47,9 @@ public class DarkTriadUtil {
 	/// This is a somewhat simplistic view on the DarkTriad personality theory, and currently only indicates a presence on the spectrum and not the degree
 	///
 	public static String getDarkTriadKey(BaseRecord per) {
-		double mach = per.get("machiavellianism");
-		double narc = per.get("narcissism");
-		double psych = per.get("psychopathy");
+		double mach = per.get(OlioFieldNames.FIELD_MACHIAVELLIANISM);
+		double narc = per.get(OlioFieldNames.FIELD_NARCISSISM);
+		double psych = per.get(OlioFieldNames.FIELD_PSYCHOPATHY);
 		StringBuilder buff = new StringBuilder();
 		if(mach > 0.5) buff.append("M");
 		else buff.append("m");
@@ -103,12 +103,12 @@ public class DarkTriadUtil {
 		return RollUtil.rollStat1(rec.get("personality.psychopathy"));
 	}
 	public static RollEnumType rollCounterPsychopathy(BaseRecord rec) {
-		return RollUtil.rollStat1(ComputeUtil.getDblAverage(rec.get(FieldNames.FIELD_PERSONALITY), new String[] {"conscientiousness", "agreeableness"}));
+		return RollUtil.rollStat1(ComputeUtil.getDblAverage(rec.get(FieldNames.FIELD_PERSONALITY), new String[] {OlioFieldNames.FIELD_CONSCIENTIOUSNESS, OlioFieldNames.FIELD_AGREEABLENESS}));
 	}
 	public static OutcomeEnumType ruleDarkTriad(BaseRecord interaction, PersonalityProfile actor, PersonalityProfile interactor) {
 		OutcomeEnumType actorOutcome = OutcomeEnumType.EQUILIBRIUM;
 		OutcomeEnumType interactorOutcome = OutcomeEnumType.EQUILIBRIUM;
-		ReasonEnumType ret = interaction.getEnum("actorReason");
+		ReasonEnumType ret = interaction.getEnum(OlioFieldNames.FIELD_ACTOR_REASON);
 		RollEnumType roll = RollEnumType.UNKNOWN;
 		RollEnumType iroll = RollEnumType.UNKNOWN;
 		switch(ret) {
@@ -220,14 +220,14 @@ public class DarkTriadUtil {
 		df.setRoundingMode(RoundingMode.HALF_EVEN);
 		/// Allow a minimum of ten percent to dark personality traits
 		///
-		double agreeLimit = Math.max(1.0 - ((double)per.get("agreeableness")), 0.10);
-		double avgLimit = ((double)per.get("openness") + (double)per.get("extraversion")) / 2;
+		double agreeLimit = Math.max(1.0 - ((double)per.get(OlioFieldNames.FIELD_AGREEABLENESS)), 0.10);
+		double avgLimit = ((double)per.get(OlioFieldNames.FIELD_OPENNESS) + (double)per.get(OlioFieldNames.FIELD_EXTRAVERSION)) / 2;
 		double prettyPsycho = Math.min(agreeLimit, avgLimit);
 		
 		try {
-			per.set("machiavellianism", Double.parseDouble(df.format(rand.nextDouble(agreeLimit))));
-			per.set("narcissism", Double.parseDouble(df.format(rand.nextDouble(prettyPsycho))));
-			per.set("psychopathy", Double.parseDouble(df.format(rand.nextDouble(prettyPsycho))));
+			per.set(OlioFieldNames.FIELD_MACHIAVELLIANISM, Double.parseDouble(df.format(rand.nextDouble(agreeLimit))));
+			per.set(OlioFieldNames.FIELD_NARCISSISM, Double.parseDouble(df.format(rand.nextDouble(prettyPsycho))));
+			per.set(OlioFieldNames.FIELD_PSYCHOPATHY, Double.parseDouble(df.format(rand.nextDouble(prettyPsycho))));
 		} catch (NumberFormatException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}

@@ -220,7 +220,7 @@ public class NeedsUtil {
 	protected static List<BaseRecord> localWildlife(BaseRecord realm, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
 		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
-		return zoo.stream().filter(zp -> (zp.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)zp.get("state.currentLocation.id")) == id)).collect(Collectors.toList());
+		return zoo.stream().filter(zp -> (zp.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)zp.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID)) == id)).collect(Collectors.toList());
 	}
 	
 	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> getAgitatedThreatMap(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {

@@ -199,4 +199,46 @@ public class OlioFieldNames {
 	public static final String FIELD_EPOCH = "epoch";
 	public static final String FIELD_TIME_TYPE = "timeType";
 	public static final String FIELD_POPULATION_GROUPS = "populationGroups";
+	
+	public static final String FIELD_INVENTORY = "inventory";
+	public static final String FIELD_QUANTITY = "quantity";
+	public static final String FIELD_PERKS = "perks";
+	
+	public static final String FIELD_STATE_CURRENT_EAST = "state.currentEast";
+	public static final String FIELD_STATE_CURRENT_NORTH = "state.currentNorth";
+
+	public static final String FIELD_STATE_CURRENT_LOCATION_ID = "state.currentLocation.id";
+	
+	public static final String FIELD_INTERACTION_START = "interactionStart";
+	public static final String FIELD_INTERACTION_END = "interactionEnd";
+	public static final String FIELD_ACTOR = "actor";
+	public static final String FIELD_ACTOR_REASON = "actorReason";
+	public static final String FIELD_ACTOR_ALIGNMENT = "actorAlignment";
+	public static final String FIELD_ACTOR_TYPE = "actorType";
+	public static final String FIELD_ACTOR_THREAT = "actorThreat";
+	public static final String FIELD_ACTOR_ROLE = "actorRole";
+	
+	public static final String FIELD_INTERACTOR = "interactor";
+	public static final String FIELD_INTERACTOR_REASON = "interactorReason";
+	public static final String FIELD_INTERACTOR_ALIGNMENT = "interactorAlignment";
+	public static final String FIELD_INTERACTOR_TYPE = "interactorType";
+	public static final String FIELD_INTERACTOR_THREAT = "interactorThreat";
+	public static final String FIELD_INTERACTOR_ROLE = "interactorRole";
+	
+	public static final String FIELD_SLOAN_KEY = "sloanKey";
+	public static final String FIELD_SLOAN_CARDINAL = "sloanCardinal";
+	public static final String FIELD_MBTI_KEY = "mbtiKey";
+	public static final String FIELD_DARK_TRIAD_KEY = "darkTriadKey";
+	
+	public static final String FIELD_OPENNESS = "openness";
+	public static final String FIELD_CONSCIENTIOUSNESS = "conscientiousness";
+	public static final String FIELD_EXTRAVERSION = "extraversion";
+	public static final String FIELD_AGREEABLENESS = "agreeableness";
+	public static final String FIELD_NEUROTICISM = "neuroticism";
+	public static final String FIELD_MACHIAVELLIANISM = "machiavellianism";
+	public static final String FIELD_NARCISSISM = "narcissism";
+	public static final String FIELD_PSYCHOPATHY = "psychopathy";
+
+	
+	
 }

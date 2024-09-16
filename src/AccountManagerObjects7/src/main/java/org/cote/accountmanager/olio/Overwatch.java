@@ -232,14 +232,14 @@ public class Overwatch {
 			if(action == null) {
 				throw new OverwatchException("Invalid action");
 			}
-			BaseRecord actor = actionResult.get("actor");
+			BaseRecord actor = actionResult.get(OlioFieldNames.FIELD_ACTOR);
 			BaseRecord iactor = null;
 			List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 			BaseRecord interaction = null;
 			if(inters.size() > 0) {
 				interaction = inters.get(0);
-				IOSystem.getActiveContext().getReader().populate(interaction, new String[] {"interactor", "interactorType"});
-				iactor = interaction.get("interactor");
+				IOSystem.getActiveContext().getReader().populate(interaction, new String[] {OlioFieldNames.FIELD_INTERACTOR, OlioFieldNames.FIELD_INTERACTOR_TYPE});
+				iactor = interaction.get(OlioFieldNames.FIELD_INTERACTOR);
 			}
 			if(actor != null) {
 				IOSystem.getActiveContext().getReader().populate(actor, new String[] {FieldNames.FIELD_STATE});

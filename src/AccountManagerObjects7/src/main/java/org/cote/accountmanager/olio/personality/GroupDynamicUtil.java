@@ -121,7 +121,7 @@ public class GroupDynamicUtil {
 	}
 	
 	public static OutcomeEnumType rulePersonalityConflict(BaseRecord interaction, PersonalityProfile prof1, PersonalityProfile prof2) {
-		ReasonEnumType ret = interaction.getEnum("actorReason");
+		ReasonEnumType ret = interaction.getEnum(OlioFieldNames.FIELD_ACTOR_REASON);
 		OutcomeEnumType oet = OutcomeEnumType.EQUILIBRIUM;
 		switch(ret) {
 			case ATTRACTIVE_NARCISSISM:
@@ -240,16 +240,16 @@ public class GroupDynamicUtil {
 			if(contesting.size() > 0) {
 				// logger.info(contesting.size() + " people are contesting leadership");
 				for(BaseRecord c: contesting) {
-					if(!map.containsKey(c.get("actor")) || !map.containsKey(c.get("interactor"))) {
+					if(!map.containsKey(c.get(OlioFieldNames.FIELD_ACTOR)) || !map.containsKey(c.get(OlioFieldNames.FIELD_INTERACTOR))) {
 						logger.warn("Not sure who is contesting!"); 
 					}
 					else {
-						PersonalityProfile pp = map.get(c.get("actor"));
-						PersonalityProfile pp2 = map.get(c.get("interactor"));
-						// logger.info(pp.getName() + " is contesting " + outLead.getName() + "'s leadership over " + c.get("actorReason"));
+						PersonalityProfile pp = map.get(c.get(OlioFieldNames.FIELD_ACTOR));
+						PersonalityProfile pp2 = map.get(c.get(OlioFieldNames.FIELD_INTERACTOR));
+						// logger.info(pp.getName() + " is contesting " + outLead.getName() + "'s leadership over " + c.get(OlioFieldNames.FIELD_ACTOR_REASON));
 						OutcomeEnumType oet = rulePersonalityConflict(c, pp, pp2);
 						if(oet == OutcomeEnumType.FAVORABLE || oet == OutcomeEnumType.VERY_FAVORABLE) {
-							logger.info(pp.getName() + " has successfully contested " + outLead.getName() + "'s leadership over " + c.get("actorReason"));
+							logger.info(pp.getName() + " has successfully contested " + outLead.getName() + "'s leadership over " + c.get(OlioFieldNames.FIELD_ACTOR_REASON));
 							/// Remove the presumed leader from the possible group, and re-process leadership
 							///
 							long currId = outLead.getId();
@@ -257,7 +257,7 @@ public class GroupDynamicUtil {
 							break;
 						}
 						else {
-							logger.info(pp.getName() + " failed to contest " + outLead.getName() + "'s leadership over " + c.get("actorReason"));
+							logger.info(pp.getName() + " failed to contest " + outLead.getName() + "'s leadership over " + c.get(OlioFieldNames.FIELD_ACTOR_REASON));
 						}
 					}
 				}

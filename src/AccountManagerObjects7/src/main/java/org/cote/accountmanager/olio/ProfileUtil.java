@@ -39,8 +39,8 @@ public class ProfileUtil {
 	Agreeableness - [friendly/compassionate to critical/rational/detached]
 	Neuroticism - [resilient/confident to sensitive/nervous]
 	 */
-	public static final String[] PERSONALITY_FIELDS = new String[]{"openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism"};
-	public static final String[] DARK_PERSONALITY_FIELDS = new String[]{"machiavellianism", "narcissism", "psychopathy"};
+	public static final String[] PERSONALITY_FIELDS = new String[]{OlioFieldNames.FIELD_OPENNESS, OlioFieldNames.FIELD_CONSCIENTIOUSNESS, OlioFieldNames.FIELD_EXTRAVERSION, OlioFieldNames.FIELD_AGREEABLENESS, OlioFieldNames.FIELD_NEUROTICISM};
+	public static final String[] DARK_PERSONALITY_FIELDS = new String[]{OlioFieldNames.FIELD_MACHIAVELLIANISM, OlioFieldNames.FIELD_NARCISSISM, OlioFieldNames.FIELD_PSYCHOPATHY};
 /*
 
 Primary (Big 5 - OCEAN):
@@ -382,19 +382,19 @@ SLOAN Notation
 		}
 
 		BaseRecord per = person.get(FieldNames.FIELD_PERSONALITY);
-		prof.setOpen(VeryEnumType.valueOf((double)per.get("openness")));
-		prof.setConscientious(VeryEnumType.valueOf((double)per.get("conscientiousness")));
-		prof.setExtraverted(VeryEnumType.valueOf((double)per.get("extraversion")));
-		prof.setAgreeable(VeryEnumType.valueOf((double)per.get("agreeableness")));
-		prof.setNeurotic(VeryEnumType.valueOf((double)per.get("neuroticism")));
+		prof.setOpen(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_OPENNESS)));
+		prof.setConscientious(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_CONSCIENTIOUSNESS)));
+		prof.setExtraverted(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_EXTRAVERSION)));
+		prof.setAgreeable(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_AGREEABLENESS)));
+		prof.setNeurotic(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_NEUROTICISM)));
 		
-		prof.setMachiavellian(VeryEnumType.valueOf((double)per.get("machiavellianism")));
-		prof.setNarcissist(VeryEnumType.valueOf((double)per.get("narcissism")));
-		prof.setPsychopath(VeryEnumType.valueOf((double)per.get("psychopathy")));
-		prof.setDarkTriadKey(per.get("darkTriadKey"));
+		prof.setMachiavellian(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_MACHIAVELLIANISM)));
+		prof.setNarcissist(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_NARCISSISM)));
+		prof.setPsychopath(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_PSYCHOPATHY)));
+		prof.setDarkTriadKey(per.get(OlioFieldNames.FIELD_DARK_TRIAD_KEY));
 		
-		Sloan sloan = SloanUtil.getSloan(per.get("sloanKey"));
-		MBTI mbti = MBTIUtil.getMBTI(per.get("mbtiKey"));
+		Sloan sloan = SloanUtil.getSloan(per.get(OlioFieldNames.FIELD_SLOAN_KEY));
+		MBTI mbti = MBTIUtil.getMBTI(per.get(OlioFieldNames.FIELD_MBTI_KEY));
 		if(sloan != null) {
 			prof.setSloanKey(sloan.getKey());
 			prof.setSloanDescription(sloan.getDescription());

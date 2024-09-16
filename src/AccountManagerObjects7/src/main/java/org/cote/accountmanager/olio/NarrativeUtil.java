@@ -278,16 +278,16 @@ public class NarrativeUtil {
 		}
 		String aname = inter.get("actor.firstName");
 		InteractionEnumType type = inter.getEnum(FieldNames.FIELD_TYPE);
-		AlignmentEnumType aalign = inter.getEnum("actorAlignment");
-		ThreatEnumType athr = inter.getEnum("actorThreat");
-		CharacterRoleEnumType arol = inter.getEnum("actorRole");
-		ReasonEnumType area = inter.getEnum("actorReason");
+		AlignmentEnumType aalign = inter.getEnum(OlioFieldNames.FIELD_ACTOR_ALIGNMENT);
+		ThreatEnumType athr = inter.getEnum(OlioFieldNames.FIELD_ACTOR_THREAT);
+		CharacterRoleEnumType arol = inter.getEnum(OlioFieldNames.FIELD_ACTOR_ROLE);
+		ReasonEnumType area = inter.getEnum(OlioFieldNames.FIELD_ACTOR_REASON);
 		OutcomeEnumType aout = inter.getEnum("actorOutcome");
 		String iname = inter.get("interactor.firstName");
-		AlignmentEnumType ialign = inter.getEnum("interactorAlignment");
-		ThreatEnumType ithr = inter.getEnum("interactorThreat");
-		CharacterRoleEnumType irol = inter.getEnum("interactorRole");
-		ReasonEnumType irea = inter.getEnum("interactorReason");
+		AlignmentEnumType ialign = inter.getEnum(OlioFieldNames.FIELD_INTERACTOR_ALIGNMENT);
+		ThreatEnumType ithr = inter.getEnum(OlioFieldNames.FIELD_INTERACTOR_THREAT);
+		CharacterRoleEnumType irol = inter.getEnum(OlioFieldNames.FIELD_INTERACTOR_ROLE);
+		ReasonEnumType irea = inter.getEnum(OlioFieldNames.FIELD_INTERACTOR_REASON);
 		OutcomeEnumType iout = inter.getEnum("interactorOutcome");
 		StringBuilder  buff = new StringBuilder();
 		String athreat = "";

@@ -10,6 +10,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.Sloan;
 import org.cote.accountmanager.personality.SloanUtil;
 import org.cote.accountmanager.provider.IProvider;
@@ -32,24 +33,24 @@ public class PersonalityProvider  implements IProvider {
 		if(!RecordOperation.UPDATE.equals(operation) && !RecordOperation.CREATE.equals(operation)) {
 			return;
 		}
-		if(lfield.getName().equals("sloanKey")) {
+		if(lfield.getName().equals(OlioFieldNames.FIELD_SLOAN_KEY)) {
 			IOSystem.getActiveContext().getReader().populate(model, ProfileUtil.PERSONALITY_FIELDS);
 			model.set(lfield.getName(), SloanUtil.getSloanKey(model));
 		}
-		else if(lfield.getName().equals("sloanCardinal")) {
+		else if(lfield.getName().equals(OlioFieldNames.FIELD_SLOAN_CARDINAL)) {
 			IOSystem.getActiveContext().getReader().populate(model, ProfileUtil.PERSONALITY_FIELDS);
 			model.set(lfield.getName(), SloanUtil.getSloanCardinal(model));
 		}
-		else if(lfield.getName().equals("mbtiKey")) {
-			Sloan sloan = SloanUtil.getSloan(model.get("sloanKey"));
+		else if(lfield.getName().equals(OlioFieldNames.FIELD_MBTI_KEY)) {
+			Sloan sloan = SloanUtil.getSloan(model.get(OlioFieldNames.FIELD_SLOAN_KEY));
 			if(sloan != null) {
 				model.set(lfield.getName(), sloan.getMbtiKey());
 			}
 			else {
-				logger.warn("Sloan key is null or invalid: " + model.get("sloanKey") + " / empty map = " + SloanUtil.getSloanDef().isEmpty());
+				logger.warn("Sloan key is null or invalid: " + model.get(OlioFieldNames.FIELD_SLOAN_KEY) + " / empty map = " + SloanUtil.getSloanDef().isEmpty());
 			}
 		}
-		else if(lfield.getName().equals("darkTriadKey")) {
+		else if(lfield.getName().equals(OlioFieldNames.FIELD_DARK_TRIAD_KEY)) {
 			IOSystem.getActiveContext().getReader().populate(model, ProfileUtil.DARK_PERSONALITY_FIELDS);
 			model.set(lfield.getName(), DarkTriadUtil.getDarkTriadKey(model));
 		}

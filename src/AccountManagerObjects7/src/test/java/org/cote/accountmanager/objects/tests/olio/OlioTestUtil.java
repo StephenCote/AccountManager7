@@ -245,20 +245,20 @@ public class OlioTestUtil {
 		logger.info(per1.get(FieldNames.FIELD_NAME) + " is wandering amok " + dir.toString().toLowerCase());
 		BaseRecord state = per1.get(FieldNames.FIELD_STATE);
 		state.setValue(OlioFieldNames.FIELD_CURRENT_LOCATION, ocells.get((new Random()).nextInt(ocells.size())));
-		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
+		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST) + ", " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH));
 		
-		int sx = per1.get("state.currentEast");
-		int sy = per1.get("state.currentNorth");
+		int sx = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
+		int sy = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 		int rx = per1.get("state.currentLocation.eastings");
 		int ry = per1.get("state.currentLocation.northings");
 		
-		long lid = per1.get("state.currentLocation.id");
+		long lid = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID);
 		Set<Long> walkBack = new HashSet<>();
 		walkBack.add(lid);
 
 		boolean moved = StateUtil.moveByOneMeterInCell(ctx,  per1, dir);
 		
-		lid = per1.get("state.currentLocation.id");
+		lid = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID);
 		walkBack.add(lid);
 		if(!moved) {
 			logger.warn("Unable to move that way");
@@ -275,7 +275,7 @@ public class OlioTestUtil {
 			Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
 			Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = ThreatUtil.getThreatMap(ctx, realm, increment, map);
 			List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
-			long lid1 = per1.get("state.currentLocation.id");
+			long lid1 = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID);
 			if(lid1 != lastLid) {
 				assertFalse("Walked back from " + lastLid + " to " + lid1, walkBack.contains(lid1));
 				lastLid = lid1;
@@ -284,11 +284,11 @@ public class OlioTestUtil {
 		
 		}
 		
-		int sx1 = per1.get("state.currentEast");
-		int sy1 = per1.get("state.currentNorth");
+		int sx1 = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
+		int sy1 = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 		int rx1 = per1.get("state.currentLocation.eastings");
 		int ry1 = per1.get("state.currentLocation.northings");
-		long lid1 = per1.get("state.currentLocation.id");
+		long lid1 = per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION_ID);
 
 		logger.info("Origin: " + sx + ", " + sy + "; #" + lid + ", " + rx + ", " + ry);
 		logger.info("Dest: " + sx1 + ", " + sy1 + "; #" + lid1 + ", " + rx1 + ", " + ry1);
@@ -297,7 +297,7 @@ public class OlioTestUtil {
 		BaseRecord upar = GeoLocationUtil.getParentLocation(ctx, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
 		AnimalUtil.checkAnimalPopulation(ctx, realm, upar);
 		Queue.processQueue();
-		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
+		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST) + ", " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH));
 		MapUtil.printPovLocationMap(ctx, realm, per1, 3);
 		MapUtil.printLocationMap(ctx, upar, realm, pop);
 
@@ -314,7 +314,7 @@ public class OlioTestUtil {
 		//Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
 		
 		BaseRecord state = per1.get(FieldNames.FIELD_STATE);
-		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));		
+		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST) + ", " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH));		
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
 			boolean moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
@@ -351,7 +351,7 @@ public class OlioTestUtil {
 
 		StateUtil.queueUpdateLocation(ctx, state);
 		Queue.processQueue();
-		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
+		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST) + ", " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH));
 		MapUtil.printLocationMap(ctx, GeoLocationUtil.getParentLocation(ctx, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION)), realm, pop);
 
 	}

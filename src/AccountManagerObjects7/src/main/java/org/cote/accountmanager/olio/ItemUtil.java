@@ -137,7 +137,7 @@ public class ItemUtil {
 			return;
 		}
 		List<BaseRecord> items = store.get(OlioFieldNames.FIELD_ITEMS);
-		List<BaseRecord> entries = store.get("inventory");
+		List<BaseRecord> entries = store.get(OlioFieldNames.FIELD_INVENTORY);
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("inventories.path"));
 		for(BaseRecord i : items) {
 
@@ -145,7 +145,7 @@ public class ItemUtil {
 			try {
 				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
 				inv.set(OlioFieldNames.FIELD_ITEM, i);
-				inv.set("quantity", 1);
+				inv.set(OlioFieldNames.FIELD_QUANTITY, 1);
 				entries.add(inv);
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
@@ -157,7 +157,7 @@ public class ItemUtil {
 	public static double countMoney(BaseRecord rec) {
 		double count = 0.0;
 		BaseRecord store = rec.get(FieldNames.FIELD_STORE);
-		List<BaseRecord> inv = store.get("inventory");
+		List<BaseRecord> inv = store.get(OlioFieldNames.FIELD_INVENTORY);
 
 		for(BaseRecord i: inv) {
 			String cat = i.get("item.category");
@@ -169,7 +169,7 @@ public class ItemUtil {
 			if(quals != null && quals.size() > 0) {
 				adj = quals.get(0).get("valueAdjustment");
 			}
-			int quan = i.get("quantity");
+			int quan = i.get(OlioFieldNames.FIELD_QUANTITY);
 			count += (quan * adj);
 		}
 		return count;
@@ -198,9 +198,9 @@ public class ItemUtil {
 		int count = 0;
 		long id = item.get(FieldNames.FIELD_ID);
 		BaseRecord invItem = null;
-		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get(OlioFieldNames.FIELD_INVENTORY)).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
 		if(oinvItem.isPresent()) {
-			count = oinvItem.get().get("quantity");
+			count = oinvItem.get().get(OlioFieldNames.FIELD_QUANTITY);
 		}
 		else {
 			// logger.warn("Didn't find item #" + id + " in the inventory");
@@ -233,21 +233,21 @@ public class ItemUtil {
 		int count = 0;
 		long id = item.get(FieldNames.FIELD_ID);
 		BaseRecord invItem = null;
-		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get(OlioFieldNames.FIELD_INVENTORY)).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
 		if(oinvItem.isPresent()) {
-			count = oinvItem.get().get("quantity");
+			count = oinvItem.get().get(OlioFieldNames.FIELD_QUANTITY);
 		}
 		return 0;
 	}
 	
 	public static void addNewInventory(OlioContext ctx, BaseRecord item,  BaseRecord store, int quantity) throws FactoryException {
-		List<BaseRecord> inv = store.get("inventory");
+		List<BaseRecord> inv = store.get(OlioFieldNames.FIELD_INVENTORY);
 		String iname = item.get(FieldNames.FIELD_NAME);
 		Optional<BaseRecord> oive = inv.stream().filter(i -> iname.equals(i.get("item.name"))).findFirst();
 		if(!oive.isPresent()) {
 			BaseRecord ive = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("inventories.path")));
 			ive.setValue(OlioFieldNames.FIELD_ITEM, item);
-			ive.setValue("quantity", (quantity < 0 ? rand.nextInt(1, 10) : quantity));
+			ive.setValue(OlioFieldNames.FIELD_QUANTITY, (quantity < 0 ? rand.nextInt(1, 10) : quantity));
 			inv.add(ive);
 		}
 	}
@@ -276,7 +276,7 @@ public class ItemUtil {
 		}
 		long id = item.get(FieldNames.FIELD_ID);
 		BaseRecord invItem = null;
-		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get(OlioFieldNames.FIELD_INVENTORY)).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
 		if(oinvItem.isPresent()) {
 			invItem = oinvItem.get();
 		}
@@ -285,9 +285,9 @@ public class ItemUtil {
 			IOSystem.getActiveContext().getRecordUtil().createRecord(invItem);
 		}
 		
-		int quan = invItem.get("quantity");
-		invItem.setValue("quantity", quan + count);
-		Queue.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
+		int quan = invItem.get(OlioFieldNames.FIELD_QUANTITY);
+		invItem.setValue(OlioFieldNames.FIELD_QUANTITY, quan + count);
+		Queue.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_QUANTITY});
 
 		return true;
 	}
@@ -316,7 +316,7 @@ public class ItemUtil {
 		}
 		long id = item.get(FieldNames.FIELD_ID);
 		BaseRecord invItem = null;
-		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get("inventory")).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
+		Optional<BaseRecord> oinvItem = ((List<BaseRecord>)store.get(OlioFieldNames.FIELD_INVENTORY)).stream().filter(i -> ((long)i.get("item.id")) == id).findFirst();
 		if(oinvItem.isPresent()) {
 			invItem = oinvItem.get();
 		}
@@ -325,13 +325,13 @@ public class ItemUtil {
 			return false;
 		}
 		
-		int quan = ((int)invItem.get("quantity")) - count;
+		int quan = ((int)invItem.get(OlioFieldNames.FIELD_QUANTITY)) - count;
 		if(quan < 0) {
 			logger.warn("Withdraw amount is more than the quantity balance");
 			return false;
 		}
-		invItem.setValue("quantity", quan);
-		Queue.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, "quantity"});
+		invItem.setValue(OlioFieldNames.FIELD_QUANTITY, quan);
+		Queue.queueUpdate(invItem, new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_QUANTITY});
 
 		return true;
 	}
@@ -343,7 +343,7 @@ public class ItemUtil {
 			return null;
 		}
 		BaseRecord inv = null;
-		List<BaseRecord> entries = store.get("inventory");
+		List<BaseRecord> entries = store.get(OlioFieldNames.FIELD_INVENTORY);
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("inventories.path"));
 		try {
 			inv = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
@@ -389,7 +389,7 @@ public class ItemUtil {
 		try {
 			item.set(FieldNames.FIELD_TYPE, null);
 			item.set(FieldNames.FIELD_TAGS, template.get(FieldNames.FIELD_TAGS));
-			item.set("perks", template.get("perks"));
+			item.set(OlioFieldNames.FIELD_PERKS, template.get(OlioFieldNames.FIELD_PERKS));
 			item.set(OlioFieldNames.FIELD_FEATURES, template.get(OlioFieldNames.FIELD_FEATURES));
 		}
 		catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -469,12 +469,12 @@ public class ItemUtil {
 				}
 				itm.set(FieldNames.FIELD_TAGS, itags);
 				
-				List<BaseRecord> perks = itm.get("perks");
+				List<BaseRecord> perks = itm.get(OlioFieldNames.FIELD_PERKS);
 				List<BaseRecord> iperks = new ArrayList<>();
 				for(BaseRecord t: perks) {
 					iperks.add(OlioUtil.getCreatePerk(ctx, t.get(FieldNames.FIELD_NAME)));
 				}
-				itm.set("perks", iperks);
+				itm.set(OlioFieldNames.FIELD_PERKS, iperks);
 				
 				List<BaseRecord> feats = itm.get(OlioFieldNames.FIELD_FEATURES);
 				List<BaseRecord> ifeats = new ArrayList<>();

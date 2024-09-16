@@ -71,13 +71,13 @@ public class Look  extends CommonAction implements IAction {
 		acellsx.addAll(acells);
 		acellsx.add(cell);
 		
-		int cx = actor.get("state.currentEast");
-		int cy = actor.get("state.currentNorth");
+		int cx = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
+		int cy = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 
 		List<BaseRecord> pois = PointOfInterestUtil.listPointsOfInterest(context, Arrays.asList(new BaseRecord[] {cell}), Arrays.asList(new PointOfInterestEnumType[] {PointOfInterestEnumType.RESOURCE, PointOfInterestEnumType.STASH, PointOfInterestEnumType.HARVESTABLE}));
-		pois = GeoLocationUtil.sortByDistance(pois, "east", "north", cx, cy);
+		pois = GeoLocationUtil.sortByDistance(pois, FieldNames.FIELD_EAST, FieldNames.FIELD_NORTH, cx, cy);
 		for(BaseRecord poi : pois) {
-			res.add("POI: " + poi.get(FieldNames.FIELD_NAME) + " " + getDistDirStatement(actor, poi, "east", "north"));
+			res.add("POI: " + poi.get(FieldNames.FIELD_NAME) + " " + getDistDirStatement(actor, poi, FieldNames.FIELD_EAST, FieldNames.FIELD_NORTH));
 		}
 		
 		BaseRecord realm = context.clock().getRealm();
@@ -97,8 +97,8 @@ public class Look  extends CommonAction implements IAction {
 	}
 	
 	protected String getDistDirStatement(BaseRecord actor, BaseRecord targ, String fieldX, String fieldY) {
-		int cx = actor.get("state.currentEast");
-		int cy = actor.get("state.currentNorth");
+		int cx = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
+		int cy = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 		double dist = GeoLocationUtil.distance(cx, cy, targ.get(fieldX), targ.get(fieldY));
 		DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(GeoLocationUtil.getAngleBetweenInDegrees(new Coordinates(cx, cy), new Coordinates(targ.get(fieldX), targ.get(fieldY))));
 		return dist + " meters " + dir.toString();

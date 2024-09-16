@@ -150,8 +150,8 @@ public class Actions {
 			throw new OlioException("Failed to create action result for " + actionName);
 		}
 		
-		actr.setValue("actor", actor);
-		actr.setValue("actorType", actor.getModel());
+		actr.setValue(OlioFieldNames.FIELD_ACTOR, actor);
+		actr.setValue(OlioFieldNames.FIELD_ACTOR_TYPE, actor.getModel());
 		
 		act.configureAction(context, actr, actor, interactor);
 		if(event != null) {
@@ -179,14 +179,14 @@ public class Actions {
 	public static boolean executeAction(OlioContext context, BaseRecord actionResult) throws OlioException {
 		IOSystem.getActiveContext().getReader().populate(actionResult);
 		//logger.info(actionResult.toFullString());
-		BaseRecord actor = actionResult.get("actor");
+		BaseRecord actor = actionResult.get(OlioFieldNames.FIELD_ACTOR);
 		BaseRecord interactor = null;
 		List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 		BaseRecord interaction = null;
 		if(inters.size() > 0) {
 			interaction = inters.get(0);
-			IOSystem.getActiveContext().getReader().populate(interaction, new String[] {"actor", "actorType", "interactor", "interactorType"});
-			interactor = interaction.get("interactor");
+			IOSystem.getActiveContext().getReader().populate(interaction, new String[] {OlioFieldNames.FIELD_ACTOR, OlioFieldNames.FIELD_ACTOR_TYPE, OlioFieldNames.FIELD_INTERACTOR, OlioFieldNames.FIELD_INTERACTOR_TYPE});
+			interactor = interaction.get(OlioFieldNames.FIELD_INTERACTOR);
 		}
 
 		return executeAction(context, actionResult, actor, interactor);
@@ -241,7 +241,7 @@ public class Actions {
 	public static BaseRecord beginGather(OlioContext ctx, BaseRecord evt, BaseRecord per1, String itemCategory, int quantity) throws OlioException {
 		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.PHYSIOLOGICAL, null, "gather", true);
 		params.setValue("itemCategory", itemCategory);
-		params.setValue("quantity", quantity);
+		params.setValue(OlioFieldNames.FIELD_QUANTITY, quantity);
 		return beginAction(ctx, evt, params, per1, null);
 	}
 	public static BaseRecord beginMove(OlioContext ctx, BaseRecord evt, BaseRecord per1, DirectionEnumType dir) throws OlioException {

@@ -79,19 +79,19 @@ public class OCEANUtil {
 	}
 	
 	public static CompatibilityEnumType getOpennessCompatibility(BaseRecord per1, BaseRecord per2) {
-		return get123Compatibility(per1, per2, "openness");
+		return get123Compatibility(per1, per2, OlioFieldNames.FIELD_OPENNESS);
 	}
 	public static CompatibilityEnumType getConscientiousnessCompatibility(BaseRecord per1, BaseRecord per2) {
-		return get123Compatibility(per1, per2, "conscientiousness");
+		return get123Compatibility(per1, per2, OlioFieldNames.FIELD_CONSCIENTIOUSNESS);
 	}	
 	public static CompatibilityEnumType getExtraversionCompatibility(BaseRecord per1, BaseRecord per2) {
-		return get257Compatibility(per1, per2, "extraversion");
+		return get257Compatibility(per1, per2, OlioFieldNames.FIELD_EXTRAVERSION);
 	}	
 	public static CompatibilityEnumType getAgreeablenessCompatibility(BaseRecord per1, BaseRecord per2) {
-		return get136Compatibility(per1, per2, "agreeableness");
+		return get136Compatibility(per1, per2, OlioFieldNames.FIELD_AGREEABLENESS);
 	}	
 	public static CompatibilityEnumType getNeuroticismCompatibility(BaseRecord per1, BaseRecord per2) {
-		return getPolarizedCompatibility(per1, per2, "neuroticism", 0.2, 0.3, 0.5);
+		return getPolarizedCompatibility(per1, per2, OlioFieldNames.FIELD_NEUROTICISM, 0.2, 0.3, 0.5);
 	}	
 	
 	

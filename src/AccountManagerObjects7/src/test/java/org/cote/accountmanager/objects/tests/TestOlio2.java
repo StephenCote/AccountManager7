@@ -146,7 +146,7 @@ public class TestOlio2 extends BaseTest {
 		look(octx, realm, pop, cevt, per2);
 		*/
 		
-		logger.info(per1.get("state.id") + " " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
+		logger.info(per1.get("state.id") + " " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST) + ", " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH));
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
 		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms.get(0).get(OlioFieldNames.FIELD_ORIGIN)));

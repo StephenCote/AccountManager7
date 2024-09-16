@@ -49,10 +49,10 @@ public class Gather extends CommonAction implements IAction {
 			throw new OlioException("Item category required");
 		}
 
-		int quantity = params.get("quantity");
+		int quantity = params.get(OlioFieldNames.FIELD_QUANTITY);
 		if(quantity <= 0) {
 			quantity = 1;
-			params.setValue("quantity", 1);
+			params.setValue(OlioFieldNames.FIELD_QUANTITY, 1);
 		}
 		
 		edgeEnd(context, actionResult, quantity);
@@ -67,7 +67,7 @@ public class Gather extends CommonAction implements IAction {
 		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 
 		String itemCategory = params.get("itemCategory");
-		int quantity = params.get("quantity");
+		int quantity = params.get(OlioFieldNames.FIELD_QUANTITY);
 		
 		boolean gathered = false;
 		
@@ -122,11 +122,11 @@ public class Gather extends CommonAction implements IAction {
 				return ret;
 			}).collect(Collectors.toList());
 		}
-		int cx = actor.get("state.currentEast");
-		int cy = actor.get("state.currentNorth");
+		int cx = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST);
+		int cy = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH);
 
 		List<String> trace = actionResult.get("trace");
-		pois = GeoLocationUtil.sortByDistance(pois, "east", "north", cx, cy).stream().filter(p -> !trace.contains(p.get(FieldNames.FIELD_OBJECT_ID))).collect(Collectors.toList());
+		pois = GeoLocationUtil.sortByDistance(pois, FieldNames.FIELD_EAST, FieldNames.FIELD_NORTH, cx, cy).stream().filter(p -> !trace.contains(p.get(FieldNames.FIELD_OBJECT_ID))).collect(Collectors.toList());
 
 		BaseRecord realm = context.clock().getRealm();
 		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
@@ -171,16 +171,16 @@ public class Gather extends CommonAction implements IAction {
 			/// Choose nearest poi
 			BaseRecord poi = pois.get(0);
 			
-			double dist = GeoLocationUtil.distance(cx, cy, poi.get("east"), poi.get("north"));
+			double dist = GeoLocationUtil.distance(cx, cy, poi.get(FieldNames.FIELD_EAST), poi.get(FieldNames.FIELD_NORTH));
 			PointOfInterestEnumType type = poi.getEnum(FieldNames.FIELD_TYPE);
 			BaseRecord bld = poi.get(OlioFieldNames.FIELD_BUILDER);
 			
 			if(dist > Rules.PROXIMATE_CONTACT_DISTANCE) {
 				// logger.info("Too far away - " + dist + " meters.  Need to move closer.");
-				DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(GeoLocationUtil.getAngleBetweenInDegrees(new Coordinates(cx, cy), new Coordinates(poi.get("east"), poi.get("north"))));
+				DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(GeoLocationUtil.getAngleBetweenInDegrees(new Coordinates(cx, cy), new Coordinates(poi.get(FieldNames.FIELD_EAST), poi.get(FieldNames.FIELD_NORTH))));
 				BaseRecord move = Actions.beginMove(context, context.clock().getIncrement(), actor, dir);
-				move.setValue("state.currentEast", poi.get("east"));
-				move.setValue("state.currentNorth", poi.get("north"));
+				move.setValue(OlioFieldNames.FIELD_STATE_CURRENT_EAST, poi.get(FieldNames.FIELD_EAST));
+				move.setValue(OlioFieldNames.FIELD_STATE_CURRENT_NORTH, poi.get(FieldNames.FIELD_NORTH));
 				actionResult.setValue(OlioFieldNames.FIELD_ACTION_END, move.get(OlioFieldNames.FIELD_ACTION_END));
 				
 				edgeEnd(context, actionResult, quantity);
