@@ -393,7 +393,7 @@ public class OlioContext {
 	
 	public BaseRecord getRealmConstructEvent(BaseRecord realm) {
 		long eid = realm.get(FieldNames.FIELD_ID);
-		Query eq = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_REALM, eid);
+		Query eq = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, OlioFieldNames.FIELD_REALM, eid);
 		eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
 		eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
 		eq.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));

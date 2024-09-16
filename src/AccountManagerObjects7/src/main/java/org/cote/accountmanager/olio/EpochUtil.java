@@ -273,7 +273,7 @@ public class EpochUtil {
 				String childTitle = EpochUtil.generateEpochTitle(ctx.getOlioUser(), ctx.getUniverse(), useAlignment);
 				
 				BaseRecord childEpoch = EventUtil.newEvent(ctx, cepoch, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, clock.getStart());
-				childEpoch.set(FieldNames.FIELD_REALM, realm);
+				childEpoch.set(OlioFieldNames.FIELD_REALM, realm);
 				childEpoch.set(FieldNames.FIELD_LOCATION, realm.get("origin"));
 				childEpoch.set("eventProgress", clock.getCurrent());
 				childEpoch.set("inProgress", true);

@@ -302,7 +302,7 @@ public class FieldNames {
 		
 		public static final String FIELD_CONTACT_INFORMATION = "contactInformation";
 		
-
-		
-		//
+		// Location
+		public static final String FIELD_LOCATION = "location";
+		public static final String FIELD_GROUPS = "groups";
 }

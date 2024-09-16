@@ -363,7 +363,7 @@ public class CharacterUtil {
 			event.set(FieldNames.FIELD_LOCATION, location);
 			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
 			event.set(FieldNames.FIELD_NAME, "Populate " + locName);
-			event.set(FieldNames.FIELD_REALM, realm);
+			event.set(OlioFieldNames.FIELD_REALM, realm);
 			event.set(FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
 			ZonedDateTime inceptionDate = rootEvent.get("eventStart");
 			event.set("eventStart", inceptionDate);

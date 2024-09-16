@@ -59,7 +59,7 @@ public class EventUtil {
 			q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		}
 		if(realm != null) {
-			q.field(FieldNames.FIELD_REALM, realm.copyRecord(new String[] {FieldNames.FIELD_ID}));
+			q.field(OlioFieldNames.FIELD_REALM, realm.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		}
 		q.field(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
 		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE, "eventStart", "eventProgress", "eventEnd"});
