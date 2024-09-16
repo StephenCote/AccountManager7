@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.MemoryReader;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
@@ -20,9 +21,9 @@ public class StatisticsUtil {
 	public static final Logger logger = LogManager.getLogger(StatisticsUtil.class);
 	private static SecureRandom rand = new SecureRandom();
 	private static final StatisticRule[] statistics = new StatisticRule[]{
-		new StatisticRule("physicalStrength"), new StatisticRule("physicalEndurance"), new StatisticRule("manualDexterity"), new StatisticRule("agility"), new StatisticRule("speed"), new StatisticRule("mentalStrength"),
-		new StatisticRule("mentalEndurance"), new StatisticRule("intelligence"), new StatisticRule("wisdom"), new StatisticRule("charisma"), new StatisticRule("creativity"), new StatisticRule("spirituality"), new StatisticRule("luck")
-		, new StatisticRule("perception")
+		new StatisticRule(OlioFieldNames.FIELD_PHYSICAL_STRENGTH), new StatisticRule(OlioFieldNames.FIELD_PHYSICAL_ENDURANCE), new StatisticRule(OlioFieldNames.FIELD_MANUAL_DEXTERITY), new StatisticRule(OlioFieldNames.FIELD_AGILITY), new StatisticRule(OlioFieldNames.FIELD_SPEED), new StatisticRule(OlioFieldNames.FIELD_MENTAL_STRENGTH),
+		new StatisticRule(OlioFieldNames.FIELD_MENTAL_ENDURANCE), new StatisticRule(OlioFieldNames.FIELD_INTELLIGENCE), new StatisticRule(OlioFieldNames.FIELD_WISDOM), new StatisticRule(OlioFieldNames.FIELD_CHARISMA), new StatisticRule(OlioFieldNames.FIELD_CREATIVITY), new StatisticRule(OlioFieldNames.FIELD_SPIRITUALITY), new StatisticRule(OlioFieldNames.FIELD_LUCK)
+		, new StatisticRule(OlioFieldNames.FIELD_PERCEPTION)
 	};
 	
 	public static void rollStatistics(BaseRecord rec) {

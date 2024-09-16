@@ -149,7 +149,7 @@ public class GroupDynamicUtil {
 		if(off == 0) {
 			return RollEnumType.SUCCESS;
 		}
-		int rollStat = ComputeUtil.getMaximumInt(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {"wisdom", "spirituality"}) - off;
+		int rollStat = ComputeUtil.getMaximumInt(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {OlioFieldNames.FIELD_WISDOM, OlioFieldNames.FIELD_SPIRITUALITY}) - off;
 		if(rollStat <= 0) {
 			logger.info(rec.get(FieldNames.FIELD_FIRST_NAME) + " is not only too young, but not wise or spiritual enough to even be considered.  Who picked this person to begin with?  Sheesh.");
 			return RollEnumType.CATASTROPHIC_FAILURE;
@@ -165,7 +165,7 @@ public class GroupDynamicUtil {
 		/// If the person claiming maturity as an issue is also outside the mature  band, then roll on another skill to determine if they don't inadvertently wind up going first
 		///
 		if(actor.getAge() < Rules.MINIMUM_ADULT_AGE || actor.getAge() >= Rules.SENIOR_AGE) {
-			RollEnumType retf = RollUtil.rollStat20(ComputeUtil.getMaximumInt(actor.getRecord().get(OlioFieldNames.FIELD_STATISTICS), new String[] {"wisdom", "spirituality"}));
+			RollEnumType retf = RollUtil.rollStat20(ComputeUtil.getMaximumInt(actor.getRecord().get(OlioFieldNames.FIELD_STATISTICS), new String[] {OlioFieldNames.FIELD_WISDOM, OlioFieldNames.FIELD_SPIRITUALITY}));
 			goFirst = (retf == RollEnumType.FAILURE || retf == RollEnumType.CATASTROPHIC_FAILURE);
 		}
 		

@@ -96,25 +96,25 @@ public class ProfileComparison {
 		return HighEnumType.margin(profile1.getCharisma(), profile2.getCharisma());
 	}
 	public int getCharismaDiff() {
-		return getStatDiff("charisma");
+		return getStatDiff(OlioFieldNames.FIELD_CHARISMA);
 	}
 	public HighEnumType getIntelligenceMargin() {
 		return HighEnumType.margin(profile1.getIntelligence(), profile2.getIntelligence());
 	}	
 	public int getIntelligenceDiff() {
-		return getStatDiff("intelligence");
+		return getStatDiff(OlioFieldNames.FIELD_INTELLIGENCE);
 	}
 	public HighEnumType getPhysicalStrengthMargin() {
 		return HighEnumType.margin(profile1.getPhysicalStrength(), profile2.getPhysicalStrength());
 	}
 	public int getPhysicalStrengthDiff() {
-		return getStatDiff("physicalStrength");
+		return getStatDiff(OlioFieldNames.FIELD_PHYSICAL_STRENGTH);
 	}
 	public HighEnumType getWisdomMargin() {
 		return HighEnumType.margin(profile1.getWisdom(), profile2.getWisdom());
 	}
 	public int getWisdomDiff() {
-		return getStatDiff("wisdom");
+		return getStatDiff(OlioFieldNames.FIELD_WISDOM);
 	}
 	private int getStatDiff(String fieldName) {
 		return (((int)profile1.getRecord().get("statistics." + fieldName)) - ((int)profile2.getRecord().get("statistics." + fieldName)));

@@ -1,5 +1,7 @@
 package org.cote.accountmanager.olio.schema;
 
+import org.cote.accountmanager.olio.StatisticRule;
+
 public class OlioFieldNames {
 	// Common
 	public static final String FIELD_ORIGIN = "origin";
@@ -238,6 +240,22 @@ public class OlioFieldNames {
 	public static final String FIELD_MACHIAVELLIANISM = "machiavellianism";
 	public static final String FIELD_NARCISSISM = "narcissism";
 	public static final String FIELD_PSYCHOPATHY = "psychopathy";
+	
+	
+	public static final String FIELD_PHYSICAL_STRENGTH = "physicalStrength";
+	public static final String FIELD_PHYSICAL_ENDURANCE = "physicalEndurance";
+	public static final String FIELD_MANUAL_DEXTERITY = "manualDexterity";
+	public static final String FIELD_AGILITY = "agility";
+	public static final String FIELD_SPEED = "speed";
+	public static final String FIELD_MENTAL_STRENGTH = "mentalStrength";
+	public static final String FIELD_MENTAL_ENDURANCE = "mentalEndurance";
+	public static final String FIELD_INTELLIGENCE = "intelligence";
+	public static final String FIELD_WISDOM = "wisdom";
+	public static final String FIELD_CHARISMA = "charisma";
+	public static final String FIELD_CREATIVITY = "creativity";
+	public static final String FIELD_SPIRITUALITY = "spirituality";
+	public static final String FIELD_LUCK = "luck";
+	public static final String FIELD_PERCEPTION = "perception";
 
 	
 	

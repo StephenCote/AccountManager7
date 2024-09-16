@@ -343,27 +343,27 @@ SLOAN Notation
 		BaseRecord stats = animal.get(OlioFieldNames.FIELD_STATISTICS);
 		if(stats != null) {
 			double d1 = 100.0;
-			prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get("physicalStrength")*5)/d1));
-			prof.setPhysicalEndurance(HighEnumType.valueOf(((int)stats.get("physicalEndurance")*5)/d1));
-			prof.setManualDexterity(HighEnumType.valueOf(((int)stats.get("manualDexterity")*5)/d1));
-			prof.setAgility(HighEnumType.valueOf(((int)stats.get("agility")*5)/d1));
-			prof.setSpeed(HighEnumType.valueOf(((int)stats.get("speed")*5)/d1));
-			prof.setMentalStrength(HighEnumType.valueOf(((int)stats.get("mentalStrength")*5)/d1));
+			prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_PHYSICAL_STRENGTH)*5)/d1));
+			prof.setPhysicalEndurance(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_PHYSICAL_ENDURANCE)*5)/d1));
+			prof.setManualDexterity(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_MANUAL_DEXTERITY)*5)/d1));
+			prof.setAgility(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_AGILITY)*5)/d1));
+			prof.setSpeed(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_SPEED)*5)/d1));
+			prof.setMentalStrength(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_MENTAL_STRENGTH)*5)/d1));
 			prof.setAthleticism(HighEnumType.valueOf(((int)stats.get("athleticism")*5)/d1));
-			prof.setMentalEndurance(HighEnumType.valueOf(((int)stats.get("mentalEndurance")*5)/d1));
-			prof.setIntelligence(HighEnumType.valueOf(((int)stats.get("intelligence")*5)/d1));
-			prof.setCharisma(HighEnumType.valueOf(((int)stats.get("charisma")*5)/d1));
-			prof.setCreativity(HighEnumType.valueOf(((int)stats.get("creativity")*5)/d1));
-			prof.setSpirituality(HighEnumType.valueOf(((int)stats.get("spirituality")*5)/d1));
-			prof.setWisdom(HighEnumType.valueOf(((int)stats.get("wisdom")*5)/d1));
+			prof.setMentalEndurance(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_MENTAL_ENDURANCE)*5)/d1));
+			prof.setIntelligence(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_INTELLIGENCE)*5)/d1));
+			prof.setCharisma(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_CHARISMA)*5)/d1));
+			prof.setCreativity(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_CREATIVITY)*5)/d1));
+			prof.setSpirituality(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_SPIRITUALITY)*5)/d1));
+			prof.setWisdom(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_WISDOM)*5)/d1));
 			prof.setHealth(HighEnumType.valueOf(((int)stats.get("health")*5)/d1));
 			prof.setMaximumHealth(HighEnumType.valueOf(((int)stats.get("maximumHealth")*5)/d1));
 			prof.setSave(HighEnumType.valueOf((double)stats.get("save")));
 			prof.setReaction(HighEnumType.valueOf(((int)stats.get("reaction")*5)/d1));
 			prof.setScience(HighEnumType.valueOf(((int)stats.get("science")*5)/d1));
 			prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
-			prof.setLuck(HighEnumType.valueOf(((int)stats.get("luck")*5)/d1));
-			prof.setPerception(HighEnumType.valueOf(((int)stats.get("perception")*5)/d1));
+			prof.setLuck(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_LUCK)*5)/d1));
+			prof.setPerception(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_PERCEPTION)*5)/d1));
 		}
 	}
 	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {

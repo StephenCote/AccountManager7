@@ -70,15 +70,15 @@ public class DarkTriadUtil {
 
 	public static int getDeceptionCounterStatistic(BaseRecord record) {
 		BaseRecord stat = record.get(OlioFieldNames.FIELD_STATISTICS);
-		int cs = ComputeUtil.getAverage(stat, new String[] {"perception", "wisdom", "mentalEndurance"});
+		int cs = ComputeUtil.getAverage(stat, new String[] {OlioFieldNames.FIELD_PERCEPTION, OlioFieldNames.FIELD_WISDOM, OlioFieldNames.FIELD_MENTAL_ENDURANCE});
 		return cs;
 		//if(cs > 0) return cs / 2;
 		//return 0;
 	}
 	public static int getDeceptionStatistic(BaseRecord record) {
 		BaseRecord stat = record.get(OlioFieldNames.FIELD_STATISTICS);
-		int ci = ComputeUtil.getMaximumInt(stat, new String[] {"charisma", "intelligence"});
-		int cp = ComputeUtil.getMinimumInt(stat, new String[] {"creativity", "perception"});
+		int ci = ComputeUtil.getMaximumInt(stat, new String[] {OlioFieldNames.FIELD_CHARISMA, OlioFieldNames.FIELD_INTELLIGENCE});
+		int cp = ComputeUtil.getMinimumInt(stat, new String[] {OlioFieldNames.FIELD_CREATIVITY, OlioFieldNames.FIELD_PERCEPTION});
 		int cv = ci + cp;
 		if(cv > 0) {
 			return cv / 2;
@@ -97,7 +97,7 @@ public class DarkTriadUtil {
 		return RollUtil.rollStat1(rec.get("personality.narcissism"));
 	}
 	public static RollEnumType rollCounterNarcissism(BaseRecord rec) {
-		return RollUtil.rollStat20(ComputeUtil.getAverage(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {"spirituality", "willpower"}));
+		return RollUtil.rollStat20(ComputeUtil.getAverage(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {OlioFieldNames.FIELD_SPIRITUALITY, "willpower"}));
 	}
 	public static RollEnumType rollPsychopathy(BaseRecord rec) {
 		return RollUtil.rollStat1(rec.get("personality.psychopathy"));

@@ -135,14 +135,14 @@ public class RollUtil {
 	}
 	
 	public static RollEnumType rollPerception(BaseRecord rec) {
-		return rollStat20(rec, "perception");
+		return rollStat20(rec, OlioFieldNames.FIELD_PERCEPTION);
 	}
 	
 	public static RollEnumType rollCharisma(BaseRecord rec) {
-		return rollStat20(rec, "charisma");
+		return rollStat20(rec, OlioFieldNames.FIELD_CHARISMA);
 	}
 	public static RollEnumType rollCounterCharisma(BaseRecord rec) {
-		return rollStat20(ComputeUtil.getAverage(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {"charisma", "intelligence"}));
+		return rollStat20(ComputeUtil.getAverage(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {OlioFieldNames.FIELD_CHARISMA, OlioFieldNames.FIELD_INTELLIGENCE}));
 	}
 
 	/*
