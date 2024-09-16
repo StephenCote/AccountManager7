@@ -223,12 +223,12 @@ public class Overwatch {
 	}
 	
 	protected void processAction(BaseRecord actionResult) throws OverwatchException {
-		// logger.info("Processing action " + actionResult.get("action.name"));
+		// logger.info("Processing action " + actionResult.get(OlioFieldNames.FIELD_ACTION_NAME));
 		if(testForRollOut(actionResult)) {
 			return;
 		}
 		try {
-			IAction action = Actions.getActionProvider(context, (String)actionResult.get("action.name"));
+			IAction action = Actions.getActionProvider(context, (String)actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2));
 			if(action == null) {
 				throw new OverwatchException("Invalid action");
 			}
@@ -253,7 +253,7 @@ public class Overwatch {
 			// logger.info("Time Cost: " + timeCost + "ms");
 			
 			if(!Actions.executeAction(context, actionResult)) {
-				// logger.warn("Follow-up failed action: " + (String)actionResult.get("action.name"));
+				// logger.warn("Follow-up failed action: " + (String)actionResult.get(OlioFieldNames.FIELD_ACTION_NAME));
 			}
 			
 			Actions.concludeAction(context, actionResult, actor, iactor);

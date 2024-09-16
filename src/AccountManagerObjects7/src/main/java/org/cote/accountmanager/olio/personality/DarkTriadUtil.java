@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.ComputeUtil;
 
 public class DarkTriadUtil {
@@ -102,7 +103,7 @@ public class DarkTriadUtil {
 		return RollUtil.rollStat1(rec.get("personality.psychopathy"));
 	}
 	public static RollEnumType rollCounterPsychopathy(BaseRecord rec) {
-		return RollUtil.rollStat1(ComputeUtil.getDblAverage(rec.get("personality"), new String[] {"conscientiousness", "agreeableness"}));
+		return RollUtil.rollStat1(ComputeUtil.getDblAverage(rec.get(FieldNames.FIELD_PERSONALITY), new String[] {"conscientiousness", "agreeableness"}));
 	}
 	public static OutcomeEnumType ruleDarkTriad(BaseRecord interaction, PersonalityProfile actor, PersonalityProfile interactor) {
 		OutcomeEnumType actorOutcome = OutcomeEnumType.EQUILIBRIUM;

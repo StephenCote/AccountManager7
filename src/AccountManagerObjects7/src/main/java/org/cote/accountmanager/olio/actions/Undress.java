@@ -31,19 +31,19 @@ public class Undress implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
 		
-		WearLevelEnumType level = params.getEnum("wearLevel");
+		WearLevelEnumType level = params.getEnum(OlioFieldNames.FIELD_WEAR_LEVEL);
 		if(level == WearLevelEnumType.UNKNOWN) {
 			throw new OlioException("Unexpected target level");
 		}
 
-		int minSeconds = actionResult.get("action.minimumTime");
+		int minSeconds = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds);
-		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 
 		return actionResult;
 	}
@@ -57,12 +57,12 @@ public class Undress implements IAction {
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
 		
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
 		
-		WearLevelEnumType level = params.getEnum("wearLevel");
+		WearLevelEnumType level = params.getEnum(OlioFieldNames.FIELD_WEAR_LEVEL);
 		if(level == WearLevelEnumType.UNKNOWN) {
 			throw new OlioException("Unexpected target level");
 		}
@@ -76,7 +76,7 @@ public class Undress implements IAction {
 			double dist = GeoLocationUtil.getDistanceToState(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
 			RollEnumType ret = RollUtil.rollContact(actor, interactor); 
 			canUndress = (ret == RollEnumType.SUCCESS || ret == RollEnumType.NATURAL_SUCCESS);
-			List<String> res = actionResult.get("results");
+			List<String> res = actionResult.get(FieldNames.FIELD_RESULTS);
 			if(ret == RollEnumType.CATASTROPHIC_FAILURE){
 				res.add(actor.get(FieldNames.FIELD_NAME) + " is groping at " + interactor.get(FieldNames.FIELD_NAME));
 			}
@@ -87,7 +87,7 @@ public class Undress implements IAction {
 
 		if(canUndress) {
 			int cwl = WearLevelEnumType.valueOf(level);
-			List<String> desc = actionResult.get("results");
+			List<String> desc = actionResult.get(FieldNames.FIELD_RESULTS);
 			ApparelUtil.getWearing(targ).forEach(w -> {
 				WearLevelEnumType wlvl = w.getEnum(OlioFieldNames.FIELD_LEVEL);
 				int wl = WearLevelEnumType.valueOf(wlvl);
@@ -109,7 +109,7 @@ public class Undress implements IAction {
 	
 	@Override
 	public long calculateCostMS(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		int timeSecs = actionResult.get("action.minimumTime");
+		int timeSecs = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		return (long)(timeSecs * 1000);
 	}
 

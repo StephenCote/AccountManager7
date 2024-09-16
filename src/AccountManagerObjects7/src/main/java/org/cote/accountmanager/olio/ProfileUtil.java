@@ -317,7 +317,7 @@ SLOAN Notation
 	protected static void updateAnimalProfile(BaseRecord animal, AnimalProfile prof) {
 		prof.setName(animal.get(FieldNames.FIELD_NAME));
 		prof.setRecord(animal);
-		prof.setGender(animal.get("gender"));
+		prof.setGender(animal.get(FieldNames.FIELD_GENDER));
 		prof.setAge(animal.get(FieldNames.FIELD_AGE));
 		if(animal.get(FieldNames.FIELD_STATE) != null) {
 			prof.setAlive(animal.get("state.alive"));
@@ -326,19 +326,19 @@ SLOAN Notation
 		BaseRecord inst = animal.get(OlioFieldNames.FIELD_INSTINCT);
 		if(inst != null) {
 			prof.setSleep(InstinctEnumType.valueOf((double)inst.get("sleep")));
-			prof.setFight(InstinctEnumType.valueOf((double)inst.get("fight")));
-			prof.setFlight(InstinctEnumType.valueOf((double)inst.get("flight")));
+			prof.setFight(InstinctEnumType.valueOf((double)inst.get(OlioFieldNames.FIELD_FIGHT)));
+			prof.setFlight(InstinctEnumType.valueOf((double)inst.get(OlioFieldNames.FIELD_FLIGHT)));
 			prof.setFeed(InstinctEnumType.valueOf((double)inst.get("feed")));
 			prof.setDrink(InstinctEnumType.valueOf((double)inst.get("drink")));
 			prof.setMate(InstinctEnumType.valueOf((double)inst.get("mate")));
 			prof.setHerd(InstinctEnumType.valueOf((double)inst.get("herd")));
 			prof.setHygiene(InstinctEnumType.valueOf((double)inst.get("hygiene")));
-			prof.setCooperate(InstinctEnumType.valueOf((double)inst.get("cooperate")));
+			prof.setCooperate(InstinctEnumType.valueOf((double)inst.get(OlioFieldNames.FIELD_COOPERATE)));
 			prof.setResist(InstinctEnumType.valueOf((double)inst.get("resist")));
 			prof.setAdapt(InstinctEnumType.valueOf((double)inst.get("adapt")));
 			prof.setLaugh(InstinctEnumType.valueOf((double)inst.get("laugh")));
 			prof.setCry(InstinctEnumType.valueOf((double)inst.get("cry")));
-			prof.setProtect(InstinctEnumType.valueOf((double)inst.get("protect")));
+			prof.setProtect(InstinctEnumType.valueOf((double)inst.get(OlioFieldNames.FIELD_PROTECT)));
 		}
 		BaseRecord stats = animal.get(OlioFieldNames.FIELD_STATISTICS);
 		if(stats != null) {
@@ -369,19 +369,19 @@ SLOAN Notation
 	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {
 		updateAnimalProfile(person, prof);
 
-		List<BaseRecord> parts = person.get("partners");
+		List<BaseRecord> parts = person.get(FieldNames.FIELD_PARTNERS);
 		List<BaseRecord> deps = person.get("dependents");
 		prof.setMarried(parts.size() > 0);
 		prof.setChildren(deps.size() > 0);
 		if(world != null) {
-			prof.setEvents(Arrays.asList(EventUtil.getEvents(world, person, new String[]{"actors", "participants", "observers", "influencers"}, EventEnumType.UNKNOWN)));
+			prof.setEvents(Arrays.asList(EventUtil.getEvents(world, person, new String[]{OlioFieldNames.FIELD_ACTORS, OlioFieldNames.FIELD_PARTICIPANTS, OlioFieldNames.FIELD_OBSERVERS, OlioFieldNames.FIELD_INFLUENCERS}, EventEnumType.UNKNOWN)));
 		}
 		Optional<BaseRecord> dopt = prof.getEvents().stream().filter(e -> EventEnumType.DIVORCE.toString().equals(((String)e.get(FieldNames.FIELD_TYPE)).toUpperCase())).findFirst();
 		if(dopt.isPresent()) {
 			prof.setDivorced(true);
 		}
 
-		BaseRecord per = person.get("personality");
+		BaseRecord per = person.get(FieldNames.FIELD_PERSONALITY);
 		prof.setOpen(VeryEnumType.valueOf((double)per.get("openness")));
 		prof.setConscientious(VeryEnumType.valueOf((double)per.get("conscientiousness")));
 		prof.setExtraverted(VeryEnumType.valueOf((double)per.get("extraversion")));
@@ -447,13 +447,13 @@ SLOAN Notation
 		}
 		if(cit != null) {
 			List<BaseRecord> addrl = cit.get(OlioFieldNames.FIELD_ADDRESSES);
-			List<BaseRecord> home = addrl.stream().filter(a -> LocationEnumType.HOME.toString().equals(a.get("locationType"))).collect(Collectors.toList());
+			List<BaseRecord> home = addrl.stream().filter(a -> LocationEnumType.HOME.toString().equals(a.get(FieldNames.FIELD_LOCATION_TYPE))).collect(Collectors.toList());
 			if(home.size() == 0) {
 				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.SHELTER);	
 			}
 		}
 		
-		List<BaseRecord> partners = person.get("partners");
+		List<BaseRecord> partners = person.get(FieldNames.FIELD_PARTNERS);
 		int marker = 0;
 		if(partners.size() == 0) {
 			prof.getLoveNeeds().add(LoveNeedsEnumType.INTIMACY);

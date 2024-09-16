@@ -165,7 +165,7 @@ public class PolicyDefinitionUtil {
 			parmFact.set(FieldNames.FIELD_SOURCE_URL, fact.get(FieldNames.FIELD_SOURCE_URL));
 			parmFact.set("valueType", fact.get("valueType"));
 			parmFact.set("propertyName", fact.get("propertyName"));
-			parmFact.set("parameters", fact.get("parameters"));
+			parmFact.set(FieldNames.FIELD_PARAMETERS, fact.get(FieldNames.FIELD_PARAMETERS));
 			/// TODO: Fix needing a null check before trying to copy a flex field via set
 			///
 			if(fact.hasField("value")) {

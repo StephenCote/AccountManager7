@@ -101,7 +101,7 @@ public class MapUtil {
 			int y = north * cellHeight;
 
 			String type = loc.get(FieldNames.FIELD_GEOTYPE);
-			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get("terrainType"));
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get(FieldNames.FIELD_TERRAIN_TYPE));
 			if(blot) {
 				g2d.setColor(Color.RED);
 			}
@@ -203,7 +203,7 @@ public class MapUtil {
 			int x = (east - minWidth) * featureWidth;
 			int y = (north - minHeight) * featureHeight;
 			String type = loc.get(FieldNames.FIELD_GEOTYPE);
-			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get("terrainType"));
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get(FieldNames.FIELD_TERRAIN_TYPE));
 			boolean ico = false;
 			if(useTileIcons) {
 				Image img = getTile(tet, featureWidth, featureHeight);
@@ -223,7 +223,7 @@ public class MapUtil {
 				int ceast = cell.get(FieldNames.FIELD_EASTINGS);
 				int cnorth = cell.get(FieldNames.FIELD_NORTHINGS);
 				
-				TerrainEnumType ctet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+				TerrainEnumType ctet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
 				int cx = x + (ceast * cellWidth);
 				int cy = y + (cnorth * cellHeight);
 				ico = false;
@@ -292,7 +292,7 @@ public class MapUtil {
 	}
 	
 	public static void printLocationMap(OlioContext ctx, BaseRecord location, BaseRecord realm, List<BaseRecord> pop) {
-		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
+		logger.info("Printing location " + location.get(FieldNames.FIELD_NAME) + " " + location.get(FieldNames.FIELD_TERRAIN_TYPE));
 
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
@@ -320,7 +320,7 @@ public class MapUtil {
 			int x = east * 50;
 			int y = north * 50;
 			
-			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
 			boolean ico = false;
 			if(useTileIcons) {
 				Image img = getTile(tet, 50, 50);
@@ -399,7 +399,7 @@ public class MapUtil {
 			logger.error("Location is null");
 			return;
 		}
-		logger.info("Printing POV location for " + pov.get(FieldNames.FIELD_NAME) + " in " + location.get(FieldNames.FIELD_NAME) + " " + location.get("terrainType"));
+		logger.info("Printing POV location for " + pov.get(FieldNames.FIELD_NAME) + " in " + location.get(FieldNames.FIELD_NAME) + " " + location.get(FieldNames.FIELD_TERRAIN_TYPE));
 		//List<BaseRecord> cells = GeoLocationUtil.getAdjacentCells(ctx, location, radius);
 		BaseRecord[][] cells = GeoLocationUtil.findAdjacentCells(ctx, location, radius);
 		
@@ -427,7 +427,7 @@ public class MapUtil {
 				int x = 50 * xi;
 				int y = 50 * yi;
 				
-				TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
+				TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
 				boolean ico = false;
 				if(useTileIcons) {
 					Image img = getTile(tet, 50, 50);

@@ -70,7 +70,7 @@ public class TestProfile extends BaseTest {
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
 		String objStr = """
-				{"attributes":[],"organizationId":0,"ownerId":0,"controls":[],"tags":[],FieldNames.FIELD_NAME:"aouaoeu","parentId":28,FieldNames.FIELD_TYPE:"data","model":"auth.group",FieldNames.FIELD_PATH:"~/Groups","organizationPath":"/Development/Audit"}"
+				{"attributes":[],"organizationId":0,"ownerId":0,"controls":[],FieldNames.FIELD_TAGS:[],FieldNames.FIELD_NAME:"aouaoeu","parentId":28,FieldNames.FIELD_TYPE:"data","model":"auth.group",FieldNames.FIELD_PATH:"~/Groups","organizationPath":"/Development/Audit"}"
 		""";
 		logger.info("Test creating imported object with mismatched identifiers and virtual (denormalized) paths");
 		BaseRecord newGroup = JSONUtil.importObject(objStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());

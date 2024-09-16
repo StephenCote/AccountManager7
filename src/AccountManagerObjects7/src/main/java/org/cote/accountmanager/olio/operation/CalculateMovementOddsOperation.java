@@ -7,6 +7,7 @@ import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.TerrainUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.policy.FactUtil;
 import org.cote.accountmanager.policy.PolicyUtil;
@@ -45,10 +46,10 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 				return OperationResponseEnumType.ERROR;
 			}
 
-			TerrainEnumType tet = paramLocation.getEnum("terrainType");
+			TerrainEnumType tet = paramLocation.getEnum(FieldNames.FIELD_TERRAIN_TYPE);
 			double movementOdds = Rules.getMovementOdds(tet);
 			if(paramAnimal.getModel().equals(OlioModelNames.MODEL_ANIMAL)) {
-				List<String> habitat = paramAnimal.get("habitat");
+				List<String> habitat = paramAnimal.get(OlioFieldNames.FIELD_HABITAT);
 				if(habitat.contains(tet.toString().toLowerCase())) {
 					movementOdds = Rules.ODDS_HABITAT_MOVEMENT;
 				}

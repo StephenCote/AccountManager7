@@ -62,7 +62,7 @@ public class SDUtil {
 		for(BaseRecord per : pop) {
 			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), "random");
 			BaseRecord nar = nars.get(0);
-			BaseRecord prof = per.get("profile");
+			BaseRecord prof = per.get(FieldNames.FIELD_PROFILE);
 			
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 
@@ -101,7 +101,7 @@ public class SDUtil {
 		for(BaseRecord per : pop) {
 			List<BaseRecord> nars = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {per}), setting);
 			BaseRecord nar = nars.get(0);
-			BaseRecord prof = per.get("profile");
+			BaseRecord prof = per.get(FieldNames.FIELD_PROFILE);
 			
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 			//List<BaseRecord> images = nar.get("images");

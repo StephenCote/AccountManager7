@@ -66,7 +66,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("wearable", true, "Wearables");
 		options.addOption(OlioFieldNames.FIELD_QUALITIES, true, "Qualities");
 		options.addOption(OlioFieldNames.FIELD_STATISTICS, true, "Statistics");
-		options.addOption("personality", true, "Personality");
+		options.addOption(FieldNames.FIELD_PERSONALITY, true, "Personality");
 		options.addOption("person", true, "Person");
 		options.addOption("chat", false, "Start chat console");
 		options.addOption("chat2", false, "Start chat console");
@@ -275,9 +275,9 @@ public class ChatAction extends CommonAction implements IAction{
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
 						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, cmd.getOptionValue(OlioFieldNames.FIELD_STATISTICS)), char1.get(OlioFieldNames.FIELD_STATISTICS), true);
 					}
-					if(cmd.hasOption("personality")) {
+					if(cmd.hasOption(FieldNames.FIELD_PERSONALITY)) {
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, cmd.getOptionValue("personality")), char1.get("personality"), true);
+						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, cmd.getOptionValue(FieldNames.FIELD_PERSONALITY)), char1.get(FieldNames.FIELD_PERSONALITY), true);
 					}
 					if(cmd.hasOption("person")) {
 						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_PERSON, cmd.getOptionValue("person")), char1);

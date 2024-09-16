@@ -154,7 +154,7 @@ public class WordParser {
 		
 		List<ParseMap> map = new ArrayList<>();
 		map.add(new ParseMap(FieldNames.FIELD_NAME, 0));
-		map.add(new ParseMap("gender", 1));
+		map.add(new ParseMap(FieldNames.FIELD_GENDER, 1));
 		map.add(new ParseMap("count", 2));
 		
 		ParseConfiguration cfg = new ParseConfiguration();

@@ -85,7 +85,7 @@ public class OlioPolicyUtil {
 	
 	public static void configureParameters(OlioContext ctx, FactType param, List<BaseRecord> fparams) {
 
-		List<BaseRecord> params = param.get("parameters");
+		List<BaseRecord> params = param.get(FieldNames.FIELD_PARAMETERS);
 		BaseRecord character = FactUtil.getParameterValue(fparams, "character");
 		if(params.size() > 0) {
 			for(BaseRecord pp: params) {

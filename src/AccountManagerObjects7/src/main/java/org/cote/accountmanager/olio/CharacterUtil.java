@@ -44,16 +44,16 @@ public class CharacterUtil {
 		return AttributeUtil.getAttributeValue(person, "deceased", false);
 	}
 	public static int getCurrentAge(OlioContext ctx, BaseRecord person) {
-		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {FieldNames.FIELD_BIRTH_DATE});
 		return getAgeAtEpoch(ctx.getOlioUser(), ctx.clock().getEpoch(), person);
 	}
 	public static int getCurrentAge(BaseRecord user, BaseRecord world, BaseRecord person) {
-		IOSystem.getActiveContext().getReader().populate(person, new String[] {"birthDate"});
+		IOSystem.getActiveContext().getReader().populate(person, new String[] {FieldNames.FIELD_BIRTH_DATE});
 		BaseRecord evt = EventUtil.getLastEpochEvent(user, world);
 		return getAgeAtEpoch(user, evt, person);
 	}
 	public static int getAgeAtEpoch(BaseRecord user, BaseRecord epoch, BaseRecord person) {
-		Date bday = person.get("birthDate");
+		Date bday = person.get(FieldNames.FIELD_BIRTH_DATE);
 		Date cday = epoch.get(OlioFieldNames.FIELD_EVENT_END);
 		return (int)(Math.abs(cday.getTime() - bday.getTime()) / OlioUtil.YEAR);
 	}
@@ -92,24 +92,24 @@ public class CharacterUtil {
 			person = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("population.path")));
 			person.set(OlioFieldNames.FIELD_STATISTICS, stats);
 			person.set(OlioFieldNames.FIELD_INSTINCT, inst);
-			person.set("behavior", beh);
-			person.set("personality", pper);
+			person.set(FieldNames.FIELD_BEHAVIOR, beh);
+			person.set(FieldNames.FIELD_PERSONALITY, pper);
 			person.set(FieldNames.FIELD_STATE, st);
 			person.set(FieldNames.FIELD_STORE, sto);
-			person.set("profile", pro);
+			person.set(FieldNames.FIELD_PROFILE, pro);
 			boolean isMale = (Math.random() < 0.5);
 			
 			if(inceptionDate != null) {
 				ZonedDateTime birthDate = inceptionDate.minus(rand.nextInt(75), ChronoUnit.YEARS);
-				person.set("birthDate", birthDate);
+				person.set(FieldNames.FIELD_BIRTH_DATE, birthDate);
 			}
 			String gen = isMale ? "male":"female";
-			person.set("gender", gen);
-			person.set("race", randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
+			person.set(FieldNames.FIELD_GENDER, gen);
+			person.set(OlioFieldNames.FIELD_RACE, randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
 			setStyleByRace(ctx, person);
 			
 			Query fnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
-			fnq.field("gender", gen.substring(0, 1).toUpperCase());
+			fnq.field(FieldNames.FIELD_GENDER, gen.substring(0, 1).toUpperCase());
 			String[] names = mnames;
 			if(gen.equals("female")) {
 				names = fnames;
@@ -134,7 +134,7 @@ public class CharacterUtil {
 			person.set(FieldNames.FIELD_NAME, name);
 	
 			/*
-			List<String> trades = person.get("trades");
+			List<String> trades = person.get(OlioFieldNames.FIELD_TRADES);
 			trades.add((
 				tnames != null ? tnames[rand.nextInt(tnames.length)]
 				:
@@ -198,8 +198,8 @@ public class CharacterUtil {
 	public static void couple(BaseRecord user, BaseRecord person1, BaseRecord person2, boolean enabled) {
 
 		/// The properties are being manually updated here so as not to reread from the database
-		List<BaseRecord> partners1 = person1.get("partners");
-		List<BaseRecord> partners2 = person2.get("partners");
+		List<BaseRecord> partners1 = person1.get(FieldNames.FIELD_PARTNERS);
+		List<BaseRecord> partners2 = person2.get(FieldNames.FIELD_PARTNERS);
 		if(!enabled) {
 			partners1.clear();
 			partners2.clear();
@@ -211,8 +211,8 @@ public class CharacterUtil {
 		String action = (enabled ? "" : "un") + "couple";
 		String dir = (enabled ? "to" : "from");
 		// logger.info(action + " " + person1.get(FieldNames.FIELD_ID) + " " + person1.get(FieldNames.FIELD_NAME) + " " + dir + " " + person2.get(FieldNames.FIELD_ID) + " " + person2.get(FieldNames.FIELD_NAME));
-		boolean mem1 = IOSystem.getActiveContext().getMemberUtil().member(user, person1, "partners", person2, null, enabled);
-		boolean mem2 = IOSystem.getActiveContext().getMemberUtil().member(user, person2, "partners", person1, null, enabled);
+		boolean mem1 = IOSystem.getActiveContext().getMemberUtil().member(user, person1, FieldNames.FIELD_PARTNERS, person2, null, enabled);
+		boolean mem2 = IOSystem.getActiveContext().getMemberUtil().member(user, person2, FieldNames.FIELD_PARTNERS, person1, null, enabled);
 		if(!mem1) {
 			logger.warn("Failed to " + action + " " + person1.get(FieldNames.FIELD_ID) + " " + person1.get(FieldNames.FIELD_NAME) + " " + dir + " " + person2.get(FieldNames.FIELD_ID) + " " + person2.get(FieldNames.FIELD_NAME));
 		}
@@ -247,8 +247,8 @@ public class CharacterUtil {
 	};
 	
 	public static void setStyleByRace(OlioContext ctx, BaseRecord person) throws FieldException, ValueException, ModelNotFoundException {
-		String gender = person.get("gender");
-		List<String> rets = person.get("race");
+		String gender = person.get(FieldNames.FIELD_GENDER);
+		List<String> rets = person.get(OlioFieldNames.FIELD_RACE);
 		if(rets.size() == 0) {
 			return;
 		}
@@ -302,9 +302,9 @@ public class CharacterUtil {
 			logger.warn("Invalid owner");
 			logger.warn(person.toFullString());
 		}
-		person.set("eyeColor", ColorUtil.getDefaultColor(ctx, person.get(FieldNames.FIELD_OWNER_ID), eyeColor));
-		person.set("hairStyle", hairStyle);
-		person.set("hairColor", ColorUtil.getDefaultColor(ctx, person.get(FieldNames.FIELD_OWNER_ID), hairColor));
+		person.set(OlioFieldNames.FIELD_EYE_COLOR, ColorUtil.getDefaultColor(ctx, person.get(FieldNames.FIELD_OWNER_ID), eyeColor));
+		person.set(OlioFieldNames.FIELD_HAIR_STYLE, hairStyle);
+		person.set(OlioFieldNames.FIELD_HAIR_COLOR, ColorUtil.getDefaultColor(ctx, person.get(FieldNames.FIELD_OWNER_ID), hairColor));
 
 	}
 	public static List<RaceEnumType> randomRaceType(){
@@ -387,13 +387,13 @@ public class CharacterUtil {
 			
 			realm.set(OlioFieldNames.FIELD_POPULATION, popGrp);
 			Queue.queueUpdate(realm, new String[] {OlioFieldNames.FIELD_POPULATION});
-			realm.set("populationGroups", grps);
-			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", popGrp));
-			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", cemGrp));
+			realm.set(OlioFieldNames.FIELD_POPULATION_GROUPS, grps);
+			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, OlioFieldNames.FIELD_POPULATION_GROUPS, popGrp));
+			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, OlioFieldNames.FIELD_POPULATION_GROUPS, cemGrp));
 			//Queue.processQueue();
 			
 			event.set(FieldNames.FIELD_GROUPS, grps);
-			List<BaseRecord> actors = event.get("actors");
+			List<BaseRecord> actors = event.get(OlioFieldNames.FIELD_ACTORS);
 			if(popCount == 0){
 				logger.error("Empty population");
 				event.set(FieldNames.FIELD_DESCRIPTION, "Decimated");
@@ -413,11 +413,11 @@ public class CharacterUtil {
 					BaseRecord person = CharacterUtil.randomPerson(ctx, null, inceptionDate, Decks.maleNamesDeck, Decks.femaleNamesDeck, Decks.surnameNamesDeck, Decks.occupationsDeck);
 					AddressUtil.simpleAddressPerson(ctx, location, person);
 					int alignment = AlignmentEnumType.getAlignmentScore(person);
-					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
+					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get(FieldNames.FIELD_BIRTH_DATE)).toInstant().toEpochMilli()) / OlioUtil.YEAR;
 					person.set(FieldNames.FIELD_AGE, (int)years);
 					
 					StatisticsUtil.rollStatistics(person.get(OlioFieldNames.FIELD_STATISTICS), (int)years);
-					ProfileUtil.rollPersonality(person.get("personality"));
+					ProfileUtil.rollPersonality(person.get(FieldNames.FIELD_PERSONALITY));
 
 					totalAbsoluteAlignment += (alignment + 4);
 					

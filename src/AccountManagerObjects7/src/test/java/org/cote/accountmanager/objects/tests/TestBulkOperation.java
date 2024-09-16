@@ -54,11 +54,11 @@ public class TestBulkOperation extends BaseTest {
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
-			a1.set("gender", "male");
+			a1.set(FieldNames.FIELD_GENDER, "male");
 			AttributeUtil.addAttribute(a1, "test", true);
 			BaseRecord a2 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a2.set(FieldNames.FIELD_NAME, "Person 2");
-			a2.set("gender", "female");
+			a2.set(FieldNames.FIELD_GENDER, "female");
 			AttributeUtil.addAttribute(a2, "test", false);
 
 			/// BUG: When adding cross-relationships such as partnerships, the auto-created participation for one half will wind up missing the other half's identifier (in io.db) because of the auto-participation adds are currently coded within the scope of a single record.
@@ -68,14 +68,14 @@ public class TestBulkOperation extends BaseTest {
 			/// In other words, don't auto-create cross-participations except to be able to make an in-scope reference:
 
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {a1, a2});
-			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, "partners", a2);
-			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, "partners", a1);
+			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, FieldNames.FIELD_PARTNERS, a2);
+			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, FieldNames.FIELD_PARTNERS, a1);
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {p1, p2});
 			
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, "Person 1");
 			q.planMost(true);
-			//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES, "partners", "gender"});
+			//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_PARTNERS, FieldNames.FIELD_GENDER});
 			DBStatementMeta meta = StatementUtil.getSelectTemplate(q);
 			Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_APPAREL);
 			q.planMost(true);
@@ -90,7 +90,7 @@ public class TestBulkOperation extends BaseTest {
 			//BaseRecord rec = ioContext.getAccessPoint().find(testUser1, q);
 			BaseRecord rec = ioContext.getSearch().findRecord(q);
 			assertNotNull("Record is null", rec);
-			List<BaseRecord> parts = rec.get("partners");
+			List<BaseRecord> parts = rec.get(FieldNames.FIELD_PARTNERS);
 			assertTrue("Expected partners to be populated", parts.size() == 1);
 			
 			BaseRecord attr = AttributeUtil.getAttribute(rec, "test");

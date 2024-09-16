@@ -748,7 +748,7 @@ public class GeoLocationUtil {
 				rec.set(FieldNames.FIELD_GEONAMEID, id);
 			}
 			else {
-				rec.set(FieldNames.FIELD_GEOTYPE, "country");
+				rec.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_COUNTRY);
 			}
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);

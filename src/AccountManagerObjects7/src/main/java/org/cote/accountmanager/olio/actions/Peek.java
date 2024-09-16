@@ -11,6 +11,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.RollEnumType;
 import org.cote.accountmanager.olio.RollUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -28,14 +29,14 @@ public class Peek implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
 
-		int minSeconds = actionResult.get("action.minimumTime");
+		int minSeconds = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds);
-		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 		return actionResult;
 	}
 
@@ -58,7 +59,7 @@ public class Peek implements IAction {
 			double dist = GeoLocationUtil.getDistanceToState(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
 			RollEnumType ret = RollUtil.rollPerception(actor, interactor); 
 			canSee = (ret == RollEnumType.SUCCESS || ret == RollEnumType.NATURAL_SUCCESS);
-			List<String> res = actionResult.get("results");
+			List<String> res = actionResult.get(FieldNames.FIELD_RESULTS);
 			if(ret == RollEnumType.NATURAL_SUCCESS) {
 				canSeeAll = true;
 			}
@@ -72,7 +73,7 @@ public class Peek implements IAction {
 		}
 		
 		if(canSee) {
-			actionResult.setValue("results", NarrativeUtil.describeVisibleTarget(targ, canSeeAll));
+			actionResult.setValue(FieldNames.FIELD_RESULTS, NarrativeUtil.describeVisibleTarget(targ, canSeeAll));
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);
 		}
 		else {
@@ -84,7 +85,7 @@ public class Peek implements IAction {
 	
 	@Override
 	public long calculateCostMS(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		int timeSecs = actionResult.get("action.minimumTime");
+		int timeSecs = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		return (long)(timeSecs * 1000);
 	}
 

@@ -6,6 +6,7 @@ import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -16,7 +17,7 @@ public class Consume extends CommonAction implements IAction {
 
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
@@ -37,9 +38,9 @@ public class Consume extends CommonAction implements IAction {
 			params.setValue("quantity", 1);
 		}
 		
-		int minSeconds = actionResult.get("action.minimumTime");
+		int minSeconds = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds);
-		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 
 		return actionResult;
 	}
@@ -47,7 +48,7 @@ public class Consume extends CommonAction implements IAction {
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		String itemName = params.get("itemName");
 		String itemModel = params.get("itemModel");
 		int quantity = params.get("quantity");

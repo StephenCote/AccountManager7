@@ -172,7 +172,7 @@ public class RollUtil {
 	public static RollEnumType rollContact(BaseRecord rec, BaseRecord targ) {
 
 		double rel = GeoLocationUtil.getDistanceToState(rec, targ);
-		int iavg = ((int)rec.get("statistics.agility") + (int)rec.get("statistics.speed"))/2;
+		int iavg = ((int)rec.get("statistics.agility") + (int)rec.get(OlioFieldNames.FIELD_STATISTICS_SPEED))/2;
 
 		double relPerc =  ((double)iavg * rel);
 		int irelp = (int)relPerc;

@@ -53,8 +53,8 @@ public class AddressUtil {
 				BaseRecord addr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ADDRESS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("addresses.path")));
 				addr.set(FieldNames.FIELD_NAME, UUID.randomUUID().toString());
 				addr.set(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
-				addr.set("locationType", LocationEnumType.OTHER);
-				addr.set("preferred", true);
+				addr.set(FieldNames.FIELD_LOCATION_TYPE, LocationEnumType.OTHER);
+				addr.set(FieldNames.FIELD_PREFERRED, true);
 				addrs.add(addr);
 				//IOSystem.getActiveContext().getRecordUtil().createRecord(cit);
 				person.set(FieldNames.FIELD_CONTACT_INFORMATION, cit);
@@ -88,7 +88,7 @@ public class AddressUtil {
 			objs.add(email);
 			
 			String tradeName = "unknown";
-			List<String> trades = person.get("trades");
+			List<String> trades = person.get(OlioFieldNames.FIELD_TRADES);
 			if(trades.size() > 0) {
 				if(trades.get(0) == null) {
 					logger.error("Null trade name: " + trades.stream().collect(Collectors.joining(",")));
@@ -103,9 +103,9 @@ public class AddressUtil {
 			String middleName = person.get(FieldNames.FIELD_MIDDLE_NAME);
 			String lastName = person.get(FieldNames.FIELD_LAST_NAME);
 			
-			 email.set("contactValue", (firstName + (middleName != null ? "." + middleName : "") + "." + lastName + "@" + tradeName + ".com").toLowerCase());
-			 email.set("locationType", LocationEnumType.WORK);
-			 email.set("contactType", ContactEnumType.EMAIL);
+			 email.set(FieldNames.FIELD_CONTACT_VALUE, (firstName + (middleName != null ? "." + middleName : "") + "." + lastName + "@" + tradeName + ".com").toLowerCase());
+			 email.set(FieldNames.FIELD_LOCATION_TYPE, LocationEnumType.WORK);
+			 email.set(FieldNames.FIELD_CONTACT_TYPE, ContactEnumType.EMAIL);
 
 			 List<BaseRecord> contacts = cit.get(OlioFieldNames.FIELD_CONTACTS);
 			 contacts.add(email);
@@ -114,22 +114,22 @@ public class AddressUtil {
 			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, phone, person.get(FieldNames.FIELD_NAME) + " Work Phone", contactDir.get(FieldNames.FIELD_PATH), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			objs.add(phone);
 			
-			phone.set("contactValue", "000-000-0000");
-			 phone.set("locationType", LocationEnumType.WORK);
-			 phone.set("contactType", ContactEnumType.PHONE);
+			phone.set(FieldNames.FIELD_CONTACT_VALUE, "000-000-0000");
+			 phone.set(FieldNames.FIELD_LOCATION_TYPE, LocationEnumType.WORK);
+			 phone.set(FieldNames.FIELD_CONTACT_TYPE, ContactEnumType.PHONE);
 			 contacts.add(phone);
 			 
 			 List<BaseRecord> addrs = cit.get(OlioFieldNames.FIELD_ADDRESSES);
 			 
 			 BaseRecord home = randomAddress(user, world, location, addrDir.get(FieldNames.FIELD_PATH));
 			 home.set(FieldNames.FIELD_NAME, person.get(FieldNames.FIELD_NAME) + " Home Address");
-			 home.set("locationType", LocationEnumType.HOME);
+			 home.set(FieldNames.FIELD_LOCATION_TYPE, LocationEnumType.HOME);
 			 addrs.add(home);
 			 objs.add(home);
 			 
 			 BaseRecord work = randomAddress(user, world, location, addrDir.get(FieldNames.FIELD_PATH));
 			 work.set(FieldNames.FIELD_NAME, person.get(FieldNames.FIELD_NAME) + " Work Address");
-			 work.set("locationType", LocationEnumType.WORK);
+			 work.set(FieldNames.FIELD_LOCATION_TYPE, LocationEnumType.WORK);
 			 addrs.add(work);
 			 objs.add(work);
 			 objs.add(cit);
@@ -158,7 +158,7 @@ public class AddressUtil {
 			
 			String[] posts = GeoLocationUtil.getAlternateNames(user, location, "post");
 			if(posts.length > 0) {
-				addr.set("postalCode", posts[0]);
+				addr.set(FieldNames.FIELD_POSTAL_CODE, posts[0]);
 			}
 			else {
 				/// logger.warn("No postal code found");
@@ -186,15 +186,15 @@ public class AddressUtil {
 				checkParent = true;
 			}
 			else if(geoType.equals("admin2")) {
-				addr.set("region", location.get(FieldNames.FIELD_NAME));
+				addr.set(FieldNames.FIELD_REGION, location.get(FieldNames.FIELD_NAME));
 				checkParent = true;
 			}
 			else if(geoType.equals("admin1")) {
 				addr.set(FieldNames.FIELD_STATE, location.get(FieldNames.FIELD_NAME));
 				checkParent = true;
 			}			
-			else if(geoType.equals("country")) {
-				addr.set("country", location.get(FieldNames.FIELD_NAME));
+			else if(geoType.equals(FieldNames.FIELD_COUNTRY)) {
+				addr.set(FieldNames.FIELD_COUNTRY, location.get(FieldNames.FIELD_NAME));
 			}				
 			if(checkParent) {
 				long parentId = location.get(FieldNames.FIELD_PARENT_ID);

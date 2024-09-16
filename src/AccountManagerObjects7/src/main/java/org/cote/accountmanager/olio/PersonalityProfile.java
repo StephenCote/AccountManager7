@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.MBTI;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
@@ -47,7 +48,7 @@ public class PersonalityProfile extends AnimalProfile {
 	}
 	
 	public List<String> getRace(){
-		return getRecord().get("race");
+		return getRecord().get(OlioFieldNames.FIELD_RACE);
 	}
 	
 	public List<String> getEthnicity(){

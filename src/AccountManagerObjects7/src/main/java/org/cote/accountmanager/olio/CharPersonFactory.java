@@ -66,11 +66,11 @@ public class CharPersonFactory extends FactoryBase {
 				
 				newRecord.set(OlioFieldNames.FIELD_STATISTICS, stats);
 				newRecord.set(OlioFieldNames.FIELD_INSTINCT, inst);
-				newRecord.set("behavior", beh);
-				newRecord.set("personality", pper);
+				newRecord.set(FieldNames.FIELD_BEHAVIOR, beh);
+				newRecord.set(FieldNames.FIELD_PERSONALITY, pper);
 				newRecord.set(FieldNames.FIELD_STATE, st);
 				newRecord.set(FieldNames.FIELD_STORE, sto);
-				newRecord.set("profile", pro);
+				newRecord.set(FieldNames.FIELD_PROFILE, pro);
 
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);

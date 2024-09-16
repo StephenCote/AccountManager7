@@ -51,7 +51,7 @@ public class WalkTo implements IAction {
 			throw new OlioException("Expected a target");
 		}
 		ActionUtil.updateTimeToDistance(actionResult, actor, interactor);
-		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 		return actionResult;
 	}
 

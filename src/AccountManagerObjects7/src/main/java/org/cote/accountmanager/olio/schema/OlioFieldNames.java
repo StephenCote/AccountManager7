@@ -30,6 +30,9 @@ public class OlioFieldNames {
 	public static final String FIELD_OCCUPATIONS = "occupations";
 	public static final String FIELD_OCCUPATIONS_ID = "occupations.id";
 
+	public static final String FIELD_TRAITS = "traits";
+	public static final String FIELD_TRAITS_ID = "traits.id";
+	
 	public static final String FIELD_FEATURES = "features";
 	public static final String FIELD_PATTERNS_ID = "patterns.id";
 	public static final String FIELD_CONTACTS = "contacts";
@@ -42,8 +45,6 @@ public class OlioFieldNames {
 	public static final String FIELD_WORDS = "words";
 	public static final String FIELD_WORDS_ID = "words.id";
 	
-	public static final String FIELD_TRAITS = "traits";
-	public static final String FIELD_TRAITS_ID = "traits.id";
 	
 	public static final String FIELD_STATISTICS = "statistics";
 	public static final String FIELD_STATISTICS_ID = "statistics.id";
@@ -62,6 +63,7 @@ public class OlioFieldNames {
 
 	public static final String FIELD_ACTION_RESULTS = "actionResults";
 	public static final String FIELD_ACTION_RESULTS_ID = "actionResults.id";
+	public static final String FIELD_ACTION_RESULTS_PATH = "actionResults.path";
 	
 	public static final String FIELD_SCHEDULES = "schedules";
 	public static final String FIELD_SCHEDULES_ID = "schedules.id";
@@ -114,6 +116,7 @@ public class OlioFieldNames {
 	
 	public static final String FIELD_QUALITIES = "qualities";
 	public static final String FIELD_QUALITIES_ID = "qualities.id";
+	public static final String FIELD_QUALITIES_PATH = "qualities.path";
 	
 	public static final String FIELD_COLORS = "colors";
 	public static final String FIELD_COLORS_ID = "colors.id";
@@ -144,6 +147,56 @@ public class OlioFieldNames {
 	public static final String FIELD_STATE_CURRENT_LOCATION = "state.currentLocation";
 	
 	public static final String FIELD_ZOO = "zoo";
+	
+	public static final String FIELD_BUILDER = "builder";
+	public static final String FIELD_NEED = "need";
+	public static final String FIELD_NEED_TYPE = "needType";
 	// Store
-
+	
+	// Actions
+	public static final String FIELD_ACTION_MINIMUM_TIME = "action.minimumTime";
+	public static final String FIELD_WEAR_LEVEL = "wearLevel";
+	public static final String FIELD_ACTION_NAME2 = "action.name";
+	public static final String FIELD_ACTION_PROGRESS = "actionProgress";
+	public static final String FIELD_ACTION_END = "actionEnd";
+	public static final String FIELD_ACTION_NAME = "actionName";
+	public static final String FIELD_NEED_NAME = "needName";
+	public static final String FIELD_AUTOCOMPLETE = "autoComplete";
+	public static final String FIELD_TRADES = "trades";
+	
+	public static final String FIELD_FIGHT = "fight";
+	public static final String FIELD_FLIGHT = "flight";
+	public static final String FIELD_PROTECT = "protect";
+	public static final String FIELD_COOPERATE = "cooperate";
+	public static final String FIELD_HIDE = "hide";
+	public static final String FIELD_HABITAT = "habitat";
+	public static final String FIELD_STATISTICS_SPEED = "statistics.speed";
+	
+	public static final String FIELD_OPACITY = "opacity";
+	public static final String FIELD_ELASTICITY = "elasticity";
+	public static final String FIELD_SMOOTHNESS = "smoothness";
+	public static final String FIELD_GLOSSINESS = "glossiness";
+	public static final String FIELD_DEFENSIVE = "defensive";
+	public static final String FIELD_WATER_RESISTANCE = "waterresistance";
+	public static final String FIELD_HEAT_RESISTANCE = "heatresistance";
+	public static final String FIELD_INSULATION = "insulation";
+	
+	public static final String FIELD_ITEM = "item";
+	public static final String FIELD_SKILLS = "skills";
+	
+	public static final String FIELD_RACE = "race";
+	
+	public static final String FIELD_EYE_COLOR = "eyeColor";
+	public static final String FIELD_HAIR_COLOR = "hairColor";
+	public static final String FIELD_HAIR_STYLE = "hairStyle";
+	
+	public static final String FIELD_PARTICIPANTS = "participants";
+	public static final String FIELD_INFLUENCERS = "influencers";
+	public static final String FIELD_OBSERVERS = "observers";
+	
+	public static final String FIELD_ACTORS = "actors";
+	public static final String FIELD_IN_PROGRESS = "inProgress";
+	public static final String FIELD_EPOCH = "epoch";
+	public static final String FIELD_TIME_TYPE = "timeType";
+	public static final String FIELD_POPULATION_GROUPS = "populationGroups";
 }

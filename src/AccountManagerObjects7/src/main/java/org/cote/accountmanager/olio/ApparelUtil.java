@@ -142,7 +142,7 @@ public class ApparelUtil {
 			if(rand.nextDouble() <= protectOdds[i]) {
 				BaseRecord wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_WEARABLE, ctx.getWorld().get(OlioFieldNames.FIELD_WEARABLES_PATH), null);
 				List<BaseRecord> quals = wearRec.get(OlioFieldNames.FIELD_QUALITIES);
-				quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
+				quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_QUALITY, ctx.getWorld().get(OlioFieldNames.FIELD_QUALITIES_PATH), null));
 				ApparelUtil.embedWearable(ctx, 0L, wearRec, ApparelUtil.randomWearable(WearLevelEnumType.OUTER, p, null));
 				ApparelUtil.applyEmbeddedFabric(wearRec, ApparelUtil.randomFabric(WearLevelEnumType.OUTER, null));
 				ApparelUtil.designWearable(ctx, 0L, wearRec);
@@ -368,7 +368,7 @@ public class ApparelUtil {
 				rec = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_WEARABLE, world.get(OlioFieldNames.FIELD_WEARABLES_PATH), null);
 				if(gender != null) {
 					try {
-						rec.set("gender", gender);
+						rec.set(FieldNames.FIELD_GENDER, gender);
 					} catch (FieldException | ValueException | ModelNotFoundException e) {
 						logger.error(e);
 					}
@@ -476,12 +476,12 @@ public class ApparelUtil {
 	}
 
 	public static BaseRecord constructApparel(OlioContext ctx, long ownerId, BaseRecord person, String[] names) {
-		return constructApparel(ctx, ownerId, (String)person.get("gender"), getEmbeddedOutfit(names, (String)person.get("gender")));
+		return constructApparel(ctx, ownerId, (String)person.get(FieldNames.FIELD_GENDER), getEmbeddedOutfit(names, (String)person.get(FieldNames.FIELD_GENDER)));
 	}
 
 	
 	public static BaseRecord randomApparel(OlioContext ctx, BaseRecord person) {
-		return randomApparel(ctx, person.get(FieldNames.FIELD_OWNER_ID), (String)person.get("gender"));
+		return randomApparel(ctx, person.get(FieldNames.FIELD_OWNER_ID), (String)person.get(FieldNames.FIELD_GENDER));
 	}
 	
 	public static BaseRecord randomApparel(OlioContext ctx, long ownerId, String gender) {
@@ -499,7 +499,7 @@ public class ApparelUtil {
 	
 				app = RecordFactory.newInstance(OlioModelNames.MODEL_APPAREL);
 			}
-			app.setValue("gender", gender);
+			app.setValue(FieldNames.FIELD_GENDER, gender);
 			
 			List<BaseRecord> wearList = app.get(OlioFieldNames.FIELD_WEARABLES);
 			
@@ -513,7 +513,7 @@ public class ApparelUtil {
 				}
 				List<BaseRecord> quals = wearRec.get(OlioFieldNames.FIELD_QUALITIES);
 				if(ctx != null) {
-					quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_QUALITY, ctx.getWorld().get("qualities.path"), null));
+					quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_QUALITY, ctx.getWorld().get(OlioFieldNames.FIELD_QUALITIES_PATH), null));
 				}
 				else {
 					quals.add(RecordFactory.newInstance(OlioModelNames.MODEL_QUALITY));
@@ -558,7 +558,7 @@ public class ApparelUtil {
 	/*
 	protected static void applyRandomWearable(OlioContext ctx, BaseRecord rec) {
 		String type = rec.get(FieldNames.FIELD_TYPE);
-		String gender = rec.get("gender");
+		String gender = rec.get(FieldNames.FIELD_GENDER);
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";
 		String randType = randomClothingType(gender, type);
@@ -601,7 +601,7 @@ public class ApparelUtil {
 		applyEmbeddedWearable(ctx, ownerId, rec, cpref + embType);
 	}
 	private static void applyEmbeddedWearable(OlioContext ctx, long ownerId, BaseRecord rec, String embType) {
-		String gender = rec.get("gender");
+		String gender = rec.get(FieldNames.FIELD_GENDER);
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";
 		String[] tmeta = embType.split(":");
@@ -628,7 +628,7 @@ public class ApparelUtil {
 			else{
 				gender = "male";
 			}
-			rec.set("gender", gender);
+			rec.set(FieldNames.FIELD_GENDER, gender);
 			List<String> locs = rec.get(FieldNames.FIELD_LOCATION);
 			String[] plocs = tmeta[4].split(",");
 			String ploc = plocs[rand.nextInt(plocs.length)];
@@ -680,14 +680,14 @@ public class ApparelUtil {
 			else {
 				logger.warn("Unhandled model for fab type: " + rec.getModel());
 			}
-			ComputeUtil.addDouble(qual, "opacity", Double.parseDouble(tmat[3]));
-			ComputeUtil.addDouble(qual, "elasticity", Double.parseDouble(tmat[4]));
-			ComputeUtil.addDouble(qual, "glossiness", Double.parseDouble(tmat[5]));
-			ComputeUtil.addDouble(qual, "smoothness", Double.parseDouble(tmat[6]));
-			ComputeUtil.addDouble(qual, "defensive", Double.parseDouble(tmat[7]));
-			ComputeUtil.addDouble(qual, "waterresistance", Double.parseDouble(tmat[8]));
-			ComputeUtil.addDouble(qual, "heatresistance", Double.parseDouble(tmat[9]));
-			ComputeUtil.addDouble(qual, "insulation", Double.parseDouble(tmat[10]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_OPACITY, Double.parseDouble(tmat[3]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_ELASTICITY, Double.parseDouble(tmat[4]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_GLOSSINESS, Double.parseDouble(tmat[5]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_SMOOTHNESS, Double.parseDouble(tmat[6]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_DEFENSIVE, Double.parseDouble(tmat[7]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_WATER_RESISTANCE, Double.parseDouble(tmat[8]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_HEAT_RESISTANCE, Double.parseDouble(tmat[9]));
+			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_INSULATION, Double.parseDouble(tmat[10]));
 		} catch (ArrayIndexOutOfBoundsException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			logger.error(emb);
@@ -805,7 +805,7 @@ public class ApparelUtil {
 	
 	public BaseRecord newWearable(BaseRecord user, BaseRecord world, String gender, String name, String location) {
 		String wpath = world.get(OlioFieldNames.FIELD_WEARABLES_PATH);
-		String qpath = world.get("qualities.path");
+		String qpath = world.get(OlioFieldNames.FIELD_QUALITIES_PATH);
 		BaseRecord temp1 = IOSystem.getActiveContext().getFactory().template(OlioModelNames.MODEL_WEARABLE, "{\"name\": \"" + name + "\",\"gender\":\"" + gender + "\", \"location\":[\"" + location + "\"]}");
 		BaseRecord wear = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_WEARABLE, wpath, temp1);
 		List<BaseRecord> quals = wear.get(OlioFieldNames.FIELD_QUALITIES);

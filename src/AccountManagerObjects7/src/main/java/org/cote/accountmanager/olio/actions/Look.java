@@ -42,7 +42,7 @@ public class Look  extends CommonAction implements IAction {
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor)
 			throws OlioException {
 		
-		List<String> res = actionResult.get("results");
+		List<String> res = actionResult.get(FieldNames.FIELD_RESULTS);
 		
 		BaseRecord cell = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		
@@ -59,8 +59,8 @@ public class Look  extends CommonAction implements IAction {
 		}
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(context, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 
-		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
-		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
+		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)) != tet).map(c -> ((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)).toLowerCase()).collect(Collectors.toSet());
 		String tdesc = "an expanse of " + tet.toString().toLowerCase();
 		if(stets.size() > 0) {
 			tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));

@@ -405,7 +405,7 @@ public class InteractionUtil {
 		// AlignmentEnumType actorAlign = AlignmentEnumType.margin(interAlign, per1.getEnum("alignment"));
 		// AlignmentEnumType interactorAlign = AlignmentEnumType.margin(interAlign, per2.getEnum("alignment"));
 		// InteractionEnumType interType = OlioUtil.getRandomInteraction();
-		// CharacterRoleEnumType actorRole = OlioUtil.getRandomCharacterRole(per1.get("gender"));
+		// CharacterRoleEnumType actorRole = OlioUtil.getRandomCharacterRole(per1.get(FieldNames.FIELD_GENDER));
 		//ReasonEnumType actorReason = guessReason(prof1, actorAlign, interType, actorRole, prof2);
 
 		ReasonToDo rtd = guessReasonToInteract(ctx, prof1, interAlign, prof2);

@@ -184,7 +184,7 @@ public class OlioTestUtil {
 		if(oper.isPresent()) {
 			return oper.get();
 		}
-		List<BaseRecord> glist = pop.stream().filter(p -> print.getGender().equals(p.get("gender"))).collect(Collectors.toList());
+		List<BaseRecord> glist = pop.stream().filter(p -> print.getGender().equals(p.get(FieldNames.FIELD_GENDER))).collect(Collectors.toList());
 		if(glist.size() == 0) {
 			logger.error("Failed to find a gendered population");
 			return null;
@@ -217,7 +217,7 @@ public class OlioTestUtil {
 		}
 		if(print.getPersonality() != null) {
 			/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, print.getPersonality()), temp.get("personality"), true);
+			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(ModelNames.MODEL_PERSONALITY, print.getPersonality()), temp.get(FieldNames.FIELD_PERSONALITY), true);
 		}
 		if(print.getPerson() != null) {
 			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_PERSON, print.getPerson()), temp);

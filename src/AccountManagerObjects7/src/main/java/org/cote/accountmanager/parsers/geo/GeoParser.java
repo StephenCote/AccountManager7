@@ -114,7 +114,7 @@ public class GeoParser {
 	
 	public static int loadCountryInfo(BaseRecord user, String groupPath, String basePath, int maxLines,boolean resetCountryInfo) {
 		// logger.info("Load country information into " + groupPath);
-		int count = countCleanupLocation(user, groupPath, "country", null, resetCountryInfo);
+		int count = countCleanupLocation(user, groupPath, FieldNames.FIELD_COUNTRY, null, resetCountryInfo);
 		if(count == 0) {
 			ParseConfiguration cfg = GeoParser.newCountryParseConfiguration(user, groupPath, basePath, maxLines);
 			count = importFile(cfg);
@@ -199,7 +199,7 @@ public class GeoParser {
 		BaseRecord template = null;
 		try {
 			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set(FieldNames.FIELD_GEOTYPE, "country");
+			template.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_COUNTRY);
 			template.set(FieldNames.FIELD_GEOGRAPHY_TYPE, GeographyEnumType.PHYSICAL.toString());
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
@@ -337,7 +337,7 @@ public class GeoParser {
 	
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field(FieldNames.FIELD_GEOTYPE, "country");
+		q.field(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_COUNTRY);
 		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
 
 		ParseConfiguration cfg = new ParseConfiguration();
@@ -377,7 +377,7 @@ public class GeoParser {
 	
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field(FieldNames.FIELD_GEOTYPE, "country");
+		q.field(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_COUNTRY);
 		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
 
 		ParseConfiguration cfg = new ParseConfiguration();

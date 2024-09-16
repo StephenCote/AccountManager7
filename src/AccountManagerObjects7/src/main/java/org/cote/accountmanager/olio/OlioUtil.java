@@ -72,14 +72,14 @@ public class OlioUtil {
 	
 	public static void setDemographicMap(OlioContext ctx, Map<String,List<BaseRecord>> map, BaseRecord realm, BaseRecord person) {
 		try {
-			ZonedDateTime birthDate = person.get("birthDate");
+			ZonedDateTime birthDate = person.get(FieldNames.FIELD_BIRTH_DATE);
 			ZonedDateTime endDate = ctx.clock().getEnd();
 			int age = (int)((endDate.toInstant().toEpochMilli() - birthDate.toInstant().toEpochMilli()) / OlioUtil.YEAR);
 			map.values().stream().forEach(l -> l.removeIf(f -> ((long)person.get(FieldNames.FIELD_ID)) == ((long)f.get(FieldNames.FIELD_ID))));
 			
 			if(CharacterUtil.isDeceased(person)){
 				map.get("Deceased").add(person);
-				List<BaseRecord> partners = person.get("partners");
+				List<BaseRecord> partners = person.get(FieldNames.FIELD_PARTNERS);
 				if(partners.size() > 0) {
 					logger.error("***** Deceased " + person.get(FieldNames.FIELD_NAME) + " should have been decoupled and wasn't");
 					// decouple(user, person);
@@ -101,14 +101,14 @@ public class OlioUtil {
 					map.get("Adult").add(person);
 				}
 
-				List<BaseRecord> partners = person.get("partners");
+				List<BaseRecord> partners = person.get(FieldNames.FIELD_PARTNERS);
 				if(!partners.isEmpty()) {
 					map.get("Coupled").add(person);
 				}
 				else if(age >= Rules.MINIMUM_MARRY_AGE && age <= Rules.MAXIMUM_MARRY_AGE && partners.isEmpty()) {
 					map.get("Available").add(person);
 				}
-				if("female".equals(person.get("gender")) && age >= Rules.MINIMUM_ADULT_AGE && age <= Rules.MAXIMUM_FERTILITY_AGE_FEMALE) {
+				if("female".equals(person.get(FieldNames.FIELD_GENDER)) && age >= Rules.MINIMUM_ADULT_AGE && age <= Rules.MAXIMUM_FERTILITY_AGE_FEMALE) {
 					map.get("Mother").add(person);
 				}
 
@@ -434,7 +434,7 @@ public class OlioUtil {
 	}
 
 	protected static BaseRecord getCreateTrait(OlioContext ctx, String name, TraitEnumType type) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get("traits.id"));
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, ctx.getUniverse().get(OlioFieldNames.FIELD_TRAITS_ID));
 		q.field(FieldNames.FIELD_NAME, name);
 		q.field(FieldNames.FIELD_TYPE, type);
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
@@ -513,7 +513,7 @@ public class OlioUtil {
 	}
 	
 	public static boolean isTagged(BaseRecord rec, String tagName) {
-		List<BaseRecord> tags = rec.get("tags");
+		List<BaseRecord> tags = rec.get(FieldNames.FIELD_TAGS);
 		return tags.stream().filter(t -> tagName.equalsIgnoreCase(t.get(FieldNames.FIELD_NAME))).findFirst().isPresent();
 	}
 	
@@ -552,7 +552,7 @@ public class OlioUtil {
 
 	/// This is really more of a subtraction experiment with creating deeply nested queries from a given model definition, and then pruning certain branches
 	public static void prunePlan(QueryPlan plan) {
-		List<BaseRecord> cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, "item");
+		List<BaseRecord> cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, OlioFieldNames.FIELD_ITEM);
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 		});
@@ -625,7 +625,7 @@ public class OlioUtil {
 			OlioFieldNames.FIELD_TRAITS,
 			"entryTraits",
 			"exitTraits",
-			"behavior",
+			FieldNames.FIELD_BEHAVIOR,
 			"album",
 			"portrait",
 			"pattern",

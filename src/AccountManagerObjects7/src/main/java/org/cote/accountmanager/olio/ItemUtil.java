@@ -144,7 +144,7 @@ public class ItemUtil {
 
 			try {
 				BaseRecord inv = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
-				inv.set("item", i);
+				inv.set(OlioFieldNames.FIELD_ITEM, i);
 				inv.set("quantity", 1);
 				entries.add(inv);
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -246,7 +246,7 @@ public class ItemUtil {
 		Optional<BaseRecord> oive = inv.stream().filter(i -> iname.equals(i.get("item.name"))).findFirst();
 		if(!oive.isPresent()) {
 			BaseRecord ive = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("inventories.path")));
-			ive.setValue("item", item);
+			ive.setValue(OlioFieldNames.FIELD_ITEM, item);
 			ive.setValue("quantity", (quantity < 0 ? rand.nextInt(1, 10) : quantity));
 			inv.add(ive);
 		}
@@ -347,7 +347,7 @@ public class ItemUtil {
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("inventories.path"));
 		try {
 			inv = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INVENTORY_ENTRY, ctx.getOlioUser(), null, plist);
-			inv.set("item", item);
+			inv.set(OlioFieldNames.FIELD_ITEM, item);
 			entries.add(inv);
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -388,7 +388,7 @@ public class ItemUtil {
 		BaseRecord item = OlioUtil.cloneIntoGroup(template, ctx.getWorld().get(OlioFieldNames.FIELD_ITEMS));
 		try {
 			item.set(FieldNames.FIELD_TYPE, null);
-			item.set("tags", template.get("tags"));
+			item.set(FieldNames.FIELD_TAGS, template.get(FieldNames.FIELD_TAGS));
 			item.set("perks", template.get("perks"));
 			item.set(OlioFieldNames.FIELD_FEATURES, template.get(OlioFieldNames.FIELD_FEATURES));
 		}
@@ -458,16 +458,16 @@ public class ItemUtil {
 				itm.set(OlioFieldNames.FIELD_STATISTICS, os);
 
 				List<BaseRecord> qs = itm.get(OlioFieldNames.FIELD_QUALITIES);
-				BaseRecord oq = mf.newInstance(OlioModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("qualities.path")));
+				BaseRecord oq = mf.newInstance(OlioModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_QUALITIES_PATH)));
 				qs.clear();
 				qs.add(oq);
 				
-				List<BaseRecord> tags = itm.get("tags");
+				List<BaseRecord> tags = itm.get(FieldNames.FIELD_TAGS);
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
 					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), item.getModel()));
 				}
-				itm.set("tags", itags);
+				itm.set(FieldNames.FIELD_TAGS, itags);
 				
 				List<BaseRecord> perks = itm.get("perks");
 				List<BaseRecord> iperks = new ArrayList<>();

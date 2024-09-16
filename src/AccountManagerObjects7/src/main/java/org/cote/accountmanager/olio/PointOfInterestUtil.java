@@ -42,7 +42,7 @@ public class PointOfInterestUtil {
 		List<BaseRecord> pois = new ArrayList<>();
 		int pcount = countPointsOfInterest(ctx, cell);
 		if(pcount == 0) {
-			TerrainEnumType tet = cell.getEnum("terrainType");
+			TerrainEnumType tet = cell.getEnum(FieldNames.FIELD_TERRAIN_TYPE);
 			List<BaseRecord> builders = BuilderUtil.listBuildersCommonToTerrain(ctx, tet);
 			if(builders.size() == 0) {
 				logger.warn("No builders for " + tet.toString());
@@ -59,7 +59,7 @@ public class PointOfInterestUtil {
 					int x = rand.nextInt(0,10);
 					int y = rand.nextInt(0,10);
 					BaseRecord poi = newPointOfInterest(ctx, poit, cell, bld.get(FieldNames.FIELD_NAME), x, y);
-					poi.setValue("builder", bld);
+					poi.setValue(OlioFieldNames.FIELD_BUILDER, bld);
 					pois.add(poi);
 				}
 			}
@@ -77,7 +77,7 @@ public class PointOfInterestUtil {
 	protected static void populatePointOfInterestBuilder(OlioContext ctx, List<BaseRecord> pois) {
 		for(BaseRecord poi : pois) {
 
-			BaseRecord bld = poi.get("builder");
+			BaseRecord bld = poi.get(OlioFieldNames.FIELD_BUILDER);
 			if(bld == null) {
 				logger.warn("Not a builder");
 				continue;
@@ -91,8 +91,8 @@ public class PointOfInterestUtil {
 						ItemUtil.addNewInventory(ctx, mat, poi.get(FieldNames.FIELD_STORE), -1);
 					}
 				}
-				else if(bet == BuilderEnumType.ITEM || bet == BuilderEnumType.FIXTURE || (bet == BuilderEnumType.LOCATION && bld.get("item") != null)) {
-					ItemUtil.addNewInventory(ctx, bld.get("item"), poi.get(FieldNames.FIELD_STORE), -1);
+				else if(bet == BuilderEnumType.ITEM || bet == BuilderEnumType.FIXTURE || (bet == BuilderEnumType.LOCATION && bld.get(OlioFieldNames.FIELD_ITEM) != null)) {
+					ItemUtil.addNewInventory(ctx, bld.get(OlioFieldNames.FIELD_ITEM), poi.get(FieldNames.FIELD_STORE), -1);
 				}
 				else {
 					logger.warn("Unhandled builder type: " + bet.toString());
@@ -133,7 +133,7 @@ public class PointOfInterestUtil {
 		q.field("north", north);
 		OlioUtil.planMost(q);
 
-		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, "builder", "east", "north"}));
+		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, OlioFieldNames.FIELD_BUILDER, "east", "north"}));
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 
@@ -173,7 +173,7 @@ public class PointOfInterestUtil {
 		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		q.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, "builder", "east", "north"});
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, OlioFieldNames.FIELD_BUILDER, "east", "north"});
 		q.setCache(false);
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}

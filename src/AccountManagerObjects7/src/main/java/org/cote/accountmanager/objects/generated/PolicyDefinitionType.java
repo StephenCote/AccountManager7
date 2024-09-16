@@ -15,6 +15,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.TypeUtil;
 
 public class PolicyDefinitionType extends LooseRecord {
@@ -32,11 +33,11 @@ public class PolicyDefinitionType extends LooseRecord {
 		setFieldMap(rec.getFieldMap());
 	}
 	public List<FactType> getParameters() {
-		return TypeUtil.convertRecordList(get("parameters"));
+		return TypeUtil.convertRecordList(get(FieldNames.FIELD_PARAMETERS));
 	}
 	public void setParameters(List<FactType> parameters) {
 		try {
-			set("parameters", parameters);
+			set(FieldNames.FIELD_PARAMETERS, parameters);
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

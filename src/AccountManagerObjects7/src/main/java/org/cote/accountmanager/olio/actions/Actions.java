@@ -125,10 +125,10 @@ public class Actions {
 	}
 	public static BaseRecord beginAction(OlioContext context, BaseRecord event, BaseRecord params, BaseRecord actor, BaseRecord interactor, BaseRecord interaction) throws OlioException {
 			
-		String actionName = params.get("actionName");
+		String actionName = params.get(OlioFieldNames.FIELD_ACTION_NAME);
 		BaseRecord cact = ActionUtil.getInAction(actor, actionName);
 		if(cact != null) {
-			if(params != null && (boolean)params.get("autoComplete") == true) {
+			if(params != null && (boolean)params.get(OlioFieldNames.FIELD_AUTOCOMPLETE) == true) {
 				logger.info("Auto-completing " + actor.get(FieldNames.FIELD_NAME) + "'s current '" + actionName + "' action.");
 				cact.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
 				Queue.queueUpdate(cact, new String[] {FieldNames.FIELD_TYPE});
@@ -156,8 +156,8 @@ public class Actions {
 		act.configureAction(context, actr, actor, interactor);
 		if(event != null) {
 			actr.setValue("actionStart", event.get(OlioFieldNames.FIELD_EVENT_PROGRESS));
-			actr.setValue("actionProgress", actr.get("actionStart"));
-			actr.setValue("actionEnd", actr.get("actionStart"));
+			actr.setValue(OlioFieldNames.FIELD_ACTION_PROGRESS, actr.get("actionStart"));
+			actr.setValue(OlioFieldNames.FIELD_ACTION_END, actr.get("actionStart"));
 		}
 		IOSystem.getActiveContext().getRecordUtil().createRecord(actr);
 		String ename = getActionEventName(actionName, actor, interactor);
@@ -193,7 +193,7 @@ public class Actions {
 	}
 	
 	public static boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		String actName = actionResult.get("action.name");
+		String actName = actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2);
 		if(actName == null) {
 			throw new OlioException("Unknown action name");
 		}
@@ -211,7 +211,7 @@ public class Actions {
 			}
 		}
 		ActionUtil.addProgressMS(actionResult, action.calculateCostMS(context, actionResult, actor, interactor));
-		Queue.queueUpdate(actionResult, new String[] {"actionProgress"});
+		Queue.queueUpdate(actionResult, new String[] {OlioFieldNames.FIELD_ACTION_PROGRESS});
 		
 		//logger.info("Execute action: " + actName);
 		return action.executeAction(context, actionResult, actor, interactor);
@@ -219,7 +219,7 @@ public class Actions {
 	}
 	
 	public static ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		String actName = actionResult.get("action.name");
+		String actName = actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2);
 		if(actName == null) {
 			throw new OlioException("Unknown action name");
 		}
@@ -231,9 +231,9 @@ public class Actions {
 		ActionResultEnumType aet = action.concludeAction(context, actionResult, actor, interactor);
 		
 		if(aet != ActionResultEnumType.IN_PROGRESS && aet != ActionResultEnumType.PENDING) {
-			actionResult.setValue("actionEnd", actionResult.get("actionProgress"));
+			actionResult.setValue(OlioFieldNames.FIELD_ACTION_END, actionResult.get(OlioFieldNames.FIELD_ACTION_PROGRESS));
 		}
-		Queue.queueUpdate(actionResult, new String[] {"actionEnd", "actionProgress", FieldNames.FIELD_TYPE});
+		Queue.queueUpdate(actionResult, new String[] {OlioFieldNames.FIELD_ACTION_END, OlioFieldNames.FIELD_ACTION_PROGRESS, FieldNames.FIELD_TYPE});
 
 		return aet;
 		
@@ -257,13 +257,13 @@ public class Actions {
 	
 	public static BaseRecord beginDress(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, WearLevelEnumType level) throws OlioException {
 		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "dress");
-		params.setValue("wearLevel", level);
+		params.setValue(OlioFieldNames.FIELD_WEAR_LEVEL, level);
 		return beginAction(ctx, evt, params, per1, per2);
 	}
 
 	public static BaseRecord beginUndress(OlioContext ctx, BaseRecord evt, BaseRecord per1, BaseRecord per2, WearLevelEnumType level) throws OlioException {
 		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "undress");
-		params.setValue("wearLevel", level);
+		params.setValue(OlioFieldNames.FIELD_WEAR_LEVEL, level);
 		return beginAction(ctx, evt, params, per1, per2);
 	}
 

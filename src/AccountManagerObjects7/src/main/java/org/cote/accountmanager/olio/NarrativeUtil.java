@@ -133,12 +133,12 @@ public class NarrativeUtil {
 		
 		if(targ.getModel().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
 			int age = targ.get(FieldNames.FIELD_AGE);
-			String gender = targ.get("gender");
-			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get("race")));
+			String gender = targ.get(FieldNames.FIELD_GENDER);
+			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get(OlioFieldNames.FIELD_RACE)));
 			desc.add("Age: " + age);
 			desc.add("Gender: " + gender);
 			desc.add("Eyes: " + targ.get("eyeColor.name"));
-			desc.add("Hair: " + targ.get("hairStyle") + " " + targ.get("hairColor.name"));
+			desc.add("Hair: " + targ.get(OlioFieldNames.FIELD_HAIR_STYLE) + " " + targ.get("hairColor.name"));
 			List<BaseRecord> wearl = ApparelUtil.getWearing(targ);
 			WearLevelEnumType wet = WearLevelEnumType.UNKNOWN;
 			if(wearl.size() == 0) {
@@ -213,9 +213,9 @@ public class NarrativeUtil {
 		double shin = 0.0;
 		double smoo = 0.0;
 		if(q != null) {
-			opac = q.get("opacity");
-			shin = q.get("glossiness");
-			smoo = q.get("smoothness");
+			opac = q.get(OlioFieldNames.FIELD_OPACITY);
+			shin = q.get(OlioFieldNames.FIELD_GLOSSINESS);
+			smoo = q.get(OlioFieldNames.FIELD_SMOOTHNESS);
 		}
 		
 		String col = getColor(w, OlioFieldNames.FIELD_COLOR);
@@ -817,8 +817,8 @@ public class NarrativeUtil {
 	public static String getSDNegativePrompt(BaseRecord person) {
 
 		List<RaceEnumType> fraces = new ArrayList<>(Arrays.asList(new RaceEnumType[] {RaceEnumType.A, RaceEnumType.B, RaceEnumType.C, RaceEnumType.D, RaceEnumType.E}));
-		List<String> rs = person.get("race");
-		String gender = person.get("gender");
+		List<String> rs = person.get(OlioFieldNames.FIELD_RACE);
+		String gender = person.get(FieldNames.FIELD_GENDER);
 		String mod = ("male".equals(gender) ? "feminine" : "masculine");
 		for(String r : rs) {
 			fraces.remove(RaceEnumType.valueOf(r));
@@ -838,7 +838,7 @@ public class NarrativeUtil {
 		StringBuilder buff = new StringBuilder();
 		
 		int age = pp.getAge();
-		String gender = person.get("gender");
+		String gender = person.get(FieldNames.FIELD_GENDER);
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
 		boolean isMale = gender.equals("male");
@@ -857,7 +857,7 @@ public class NarrativeUtil {
 		BaseRecord cell = person.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		
 		String ujobDesc = "";
-		List<String> utrades = person.get("trades");
+		List<String> utrades = person.get(OlioFieldNames.FIELD_TRADES);
 		if(utrades.size() > 0) {
 			ujobDesc =" " + utrades.get(0).toLowerCase();
 		}
@@ -876,8 +876,8 @@ public class NarrativeUtil {
 		else {
 			if(cell != null) {
 				List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
-				TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
-				Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+				TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
+				Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)) != tet).map(c -> ((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)).toLowerCase()).collect(Collectors.toSet());
 				String tdesc = "an expanse of " + tet.toString().toLowerCase();
 				if(stets.size() > 0) {
 					tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
@@ -922,9 +922,9 @@ public class NarrativeUtil {
 
 		buff.append(" (" + mof.toLowerCase() + "))");
 		
-		String hairColor = getColor(pp.getRecord(), "hairColor");
-		String hairStyle = pp.getRecord().get("hairStyle");
-		String eyeColor =  getColor(pp.getRecord(), "eyeColor");
+		String hairColor = getColor(pp.getRecord(), OlioFieldNames.FIELD_HAIR_COLOR);
+		String hairStyle = pp.getRecord().get(OlioFieldNames.FIELD_HAIR_STYLE);
+		String eyeColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_EYE_COLOR);
 		
 		buff.append(" with ((" + hairStyle + ") (" + hairColor + " hair)) and (" + eyeColor + " eyes).");
 		buff.append(" " + cpro + " is (((" + describeOutfit(pp, false) + "))).");
@@ -943,18 +943,18 @@ public class NarrativeUtil {
 		String fname = person.get(FieldNames.FIELD_FIRST_NAME);
 		int age = person.get(FieldNames.FIELD_AGE);
 
-		String hairColor = getColor(person, "hairColor");
-		String hairStyle = person.get("hairStyle");
-		String eyeColor =  getColor(person, "eyeColor");
+		String hairColor = getColor(person, OlioFieldNames.FIELD_HAIR_COLOR);
+		String hairStyle = person.get(OlioFieldNames.FIELD_HAIR_STYLE);
+		String eyeColor =  getColor(person, OlioFieldNames.FIELD_EYE_COLOR);
 		
-		String gender = person.get("gender");
+		String gender = person.get(FieldNames.FIELD_GENDER);
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
 		String pos = ("male".equals(gender) ? "his" : "her");
 		
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
-		String raceDesc = getRaceDescription(person.get("race"));
+		String raceDesc = getRaceDescription(person.get(OlioFieldNames.FIELD_RACE));
 		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
 		if(includePersonality) {
 			buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
@@ -1047,9 +1047,9 @@ public class NarrativeUtil {
 
 		int age = pp.getAge();
 
-		String hairColor =  getColor(pp.getRecord(), "hairColor");
-		String hairStyle = pp.getRecord().get("hairStyle");
-		String eyeColor =  getColor(pp.getRecord(), "eyeColor");
+		String hairColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_HAIR_COLOR);
+		String hairStyle = pp.getRecord().get(OlioFieldNames.FIELD_HAIR_STYLE);
+		String eyeColor =  getColor(pp.getRecord(), OlioFieldNames.FIELD_EYE_COLOR);
 		
 		String gender = pp.getGender();
 		
@@ -1356,11 +1356,11 @@ public class NarrativeUtil {
 		int age = pov.get(FieldNames.FIELD_AGE);
 		
 		
-		String hairColor =  getColor(pov, "hairColor");
-		String hairStyle = pov.get("hairStyle");
-		String eyeColor =  getColor(pov, "eyeColor");
+		String hairColor =  getColor(pov, OlioFieldNames.FIELD_HAIR_COLOR);
+		String hairStyle = pov.get(OlioFieldNames.FIELD_HAIR_STYLE);
+		String eyeColor =  getColor(pov, OlioFieldNames.FIELD_EYE_COLOR);
 		
-		String gender = pov.get("gender");
+		String gender = pov.get(FieldNames.FIELD_GENDER);
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String pos = ("male".equals(gender) ? "him" : "her");
 		boolean nak = NeedsUtil.isNaked(pov);
@@ -1368,11 +1368,11 @@ public class NarrativeUtil {
 		boolean dri = NeedsUtil.needsWater(pov);
 		
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
-		//Set<TerrainEnumType> stets = acells.stream().map(c -> TerrainEnumType.valueOf((String)c.get("terrainType"))).collect(Collectors.toSet());
-		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
-		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+		//Set<TerrainEnumType> stets = acells.stream().map(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE))).collect(Collectors.toSet());
+		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
+		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)) != tet).map(c -> ((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)).toLowerCase()).collect(Collectors.toSet());
 		
-		String raceDesc = getRaceDescription(pov.get("race"));
+		String raceDesc = getRaceDescription(pov.get(OlioFieldNames.FIELD_RACE));
 		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
 		buff.append(" " + pro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + getDarkTriadDescription(pp));
@@ -1405,7 +1405,7 @@ public class NarrativeUtil {
 		}
 
 
-		String names = group.stream().filter(p -> !fname.equals(p.get(FieldNames.FIELD_FIRST_NAME))).map(p -> ((String)p.get(FieldNames.FIELD_FIRST_NAME) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
+		String names = group.stream().filter(p -> !fname.equals(p.get(FieldNames.FIELD_FIRST_NAME))).map(p -> ((String)p.get(FieldNames.FIELD_FIRST_NAME) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get(FieldNames.FIELD_GENDER) + ")")).collect(Collectors.joining(", "));
 		buff.append(" " + pro + " is accompanied by " + names + ".");
 		
 		BaseRecord eloc = event.get(FieldNames.FIELD_LOCATION);
@@ -1434,9 +1434,9 @@ public class NarrativeUtil {
 				continue;
 			}
 			PersonalityProfile pp2 = ProfileUtil.analyzePersonality(ctx, p);
-			String compatKey = OCEANUtil.getCompatibilityKey(pov.get("personality"), p.get("personality"));
+			String compatKey = OCEANUtil.getCompatibilityKey(pov.get(FieldNames.FIELD_PERSONALITY), p.get(FieldNames.FIELD_PERSONALITY));
 			CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(pov.get("personality.mbtiKey"), p.get("personality.mbtiKey"));
-			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get("race")) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTriadDescription(pp2));
+			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get(OlioFieldNames.FIELD_RACE)) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get(FieldNames.FIELD_GENDER) + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTriadDescription(pp2));
 		}
 		
 		return buff.toString();
@@ -1447,8 +1447,8 @@ public class NarrativeUtil {
 		BaseRecord cell = person.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(cell != null) {
 			List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
-			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
-			Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
+			Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)) != tet).map(c -> ((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)).toLowerCase()).collect(Collectors.toSet());
 			tdesc = "an expanse of " + tet.toString().toLowerCase();
 			if(stets.size() > 0) {
 				tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));

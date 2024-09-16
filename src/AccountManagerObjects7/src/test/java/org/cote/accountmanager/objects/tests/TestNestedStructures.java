@@ -57,16 +57,16 @@ public class TestNestedStructures extends BaseTest {
 			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
 			a1.set(OlioFieldNames.FIELD_INSTINCT, ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
 			a1.set(OlioFieldNames.FIELD_STATISTICS, ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
-			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
+			a1.set(FieldNames.FIELD_PERSONALITY, ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
 			a1.set(FieldNames.FIELD_STATE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
 			a1.set(FieldNames.FIELD_STORE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_STORE, testUser1, null, plist));
-			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
+			a1.set(FieldNames.FIELD_GENDER, (Math.random() < 0.5 ? "male" : "female"));
 			a1.set(FieldNames.FIELD_AGE, (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
 			
 			StatisticsUtil.rollStatistics(a1.get(OlioFieldNames.FIELD_STATISTICS), (int)a1.get(FieldNames.FIELD_AGE));
-			ProfileUtil.rollPersonality(a1.get("personality"));
-			a1.set("race", CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
+			ProfileUtil.rollPersonality(a1.get(FieldNames.FIELD_PERSONALITY));
+			a1.set(OlioFieldNames.FIELD_RACE, CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
 
 			CharacterUtil.setStyleByRace(null, a1);
 			List<BaseRecord> apps = a1.get(OlioFieldNames.FIELD_STORE_APPAREL);
@@ -121,7 +121,7 @@ public class TestNestedStructures extends BaseTest {
 			logger.info(p1.toFullString());
 			BaseRecord cp1 = IOSystem.getActiveContext().getAccessPoint().create(testUser1, p1);
 			assertNotNull("Personality was null", cp1);
-			ca1.set("personality", cp1);
+			ca1.set(FieldNames.FIELD_PERSONALITY, cp1);
 			
 			BaseRecord up1 = IOSystem.getActiveContext().getAccessPoint().update(testUser1, cp1);
 			assertNotNull("Failed to update", up1);
@@ -160,12 +160,12 @@ public class TestNestedStructures extends BaseTest {
 			ioContext.getAccessPoint().create(testUser1, w1);
 			
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
-			a1.set("gender", "male");
+			a1.set(FieldNames.FIELD_GENDER, "male");
 			AttributeUtil.addAttribute(a1, "test", true);
 			a1.set(FieldNames.FIELD_CONTACT_INFORMATION, ioContext.getFactory().newInstance(ModelNames.MODEL_CONTACT_INFORMATION, testUser1, null, null));
 			BaseRecord a2 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a2.set(FieldNames.FIELD_NAME, "Person 2");
-			a2.set("gender", "female");
+			a2.set(FieldNames.FIELD_GENDER, "female");
 			a2.set(FieldNames.FIELD_CONTACT_INFORMATION, ioContext.getFactory().newInstance(ModelNames.MODEL_CONTACT_INFORMATION, testUser1, null, null));
 			AttributeUtil.addAttribute(a2, "test", false);
 
@@ -176,8 +176,8 @@ public class TestNestedStructures extends BaseTest {
 			/// In other words, don't auto-create cross-participations except to be able to make an in-scope reference:
 
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {a1, a2});
-			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, "partners", a2);
-			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, "partners", a1);
+			BaseRecord p1 = ParticipationFactory.newParticipation(testUser1, a1, FieldNames.FIELD_PARTNERS, a2);
+			BaseRecord p2 = ParticipationFactory.newParticipation(testUser1, a2, FieldNames.FIELD_PARTNERS, a1);
 			ioContext.getRecordUtil().createRecords(new BaseRecord[] {p1, p2});
 
 			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));

@@ -51,7 +51,7 @@ public class EventUtil {
 			q.field(FieldNames.FIELD_TYPE, eventType);
 		}
 		if(timeType != TimeEnumType.UNKNOWN) {
-			q.field("timeType", timeType);
+			q.field(OlioFieldNames.FIELD_TIME_TYPE, timeType);
 		}
 		if(name != null) {
 			q.field(FieldNames.FIELD_NAME, name);
@@ -118,15 +118,15 @@ public class EventUtil {
 			evt.set(FieldNames.FIELD_LOCATION, parentEvent.get(FieldNames.FIELD_LOCATION));
 			evt.set(FieldNames.FIELD_STATE, ActionResultEnumType.PENDING);
 			if(actors != null && actors.length > 0) {
-				List<BaseRecord> acts = evt.get("actors");
+				List<BaseRecord> acts = evt.get(OlioFieldNames.FIELD_ACTORS);
 				acts.addAll(Arrays.asList(actors));
 			}
 			if(participants != null && participants.length > 0) {
-				List<BaseRecord> parts = evt.get("participants");
+				List<BaseRecord> parts = evt.get(OlioFieldNames.FIELD_PARTICIPANTS);
 				parts.addAll(Arrays.asList(participants));
 			}
 			if(influencers != null && influencers.length > 0) {
-				List<BaseRecord> inf = evt.get("influencers");
+				List<BaseRecord> inf = evt.get(OlioFieldNames.FIELD_INFLUENCERS);
 				inf.addAll(Arrays.asList(influencers));
 			}
 			evt.set(FieldNames.FIELD_TYPE, type);
@@ -186,7 +186,7 @@ public class EventUtil {
 			q.field(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		}
 		if(timeType != TimeEnumType.UNKNOWN) {
-			q.field("timeType", timeType);
+			q.field(OlioFieldNames.FIELD_TIME_TYPE, timeType);
 		}
 		if(state != ActionResultEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_STATE, state);
@@ -212,7 +212,7 @@ public class EventUtil {
 	}
 	public static BaseRecord getLastEpochEvent(BaseRecord user, BaseRecord world) {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_EVENTS_ID));
-		q.field("epoch", true);
+		q.field(OlioFieldNames.FIELD_EPOCH, true);
 		BaseRecord epoch = null;
 		try {
 			q.set(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_EVENT_START);
@@ -384,7 +384,7 @@ public class EventUtil {
 			return cevts[0];
 		}
 		BaseRecord evt = EventUtil.newEvent(context, parentEvent, EventEnumType.PERIOD, name, time);
-		evt.set("timeType", tet);
+		evt.set(OlioFieldNames.FIELD_TIME_TYPE, tet);
 		parentEvent.set(OlioFieldNames.FIELD_EVENT_PROGRESS, time);
 
 		if(tet == TimeEnumType.MONTH) {
@@ -415,7 +415,7 @@ public class EventUtil {
 		return buff.toString();
 	}
 	public static String getChildTimeName(BaseRecord parentEvent) {
-		TimeEnumType ptet = TimeEnumType.valueOf(parentEvent.get("timeType"));
+		TimeEnumType ptet = TimeEnumType.valueOf(parentEvent.get(OlioFieldNames.FIELD_TIME_TYPE));
 		TimeEnumType tet = getChildTime(ptet);
 		ZonedDateTime prog = parentEvent.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 		return EventUtil.getTimeName(prog, tet);

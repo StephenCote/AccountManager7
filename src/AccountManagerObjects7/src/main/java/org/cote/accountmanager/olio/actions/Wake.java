@@ -7,6 +7,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -28,9 +29,9 @@ public class Wake implements IAction {
 			logger.warn("Actor " + FieldNames.FIELD_NAME + " is already awake");
 		}
 		else {
-			int minTime = actionResult.get("action.minimumTime");
+			int minTime = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 			ActionUtil.edgeSecondsUntilEnd(actionResult, minTime);
-			Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+			Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 		}
 		return actionResult;
 	}
@@ -45,7 +46,7 @@ public class Wake implements IAction {
 		
 		boolean awake = actor.get("state.awake");
 		if(!awake) {
-			int minTime = actionResult.get("action.minimumTime");
+			int minTime = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 			ActionUtil.addProgressSeconds(actionResult, minTime);
 		}
 		
@@ -54,7 +55,7 @@ public class Wake implements IAction {
 	
 	@Override
 	public long calculateCostMS(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		int timeSecs = actionResult.get("action.minimumTime");
+		int timeSecs = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		return (long)(timeSecs * 1000);
 	}
 

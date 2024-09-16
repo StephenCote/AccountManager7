@@ -39,7 +39,7 @@ public class Gather extends CommonAction implements IAction {
 		if(cell == null) {
 			throw new OlioException("Missing current location");
 		}
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
@@ -64,7 +64,7 @@ public class Gather extends CommonAction implements IAction {
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 
 		String itemCategory = params.get("itemCategory");
 		int quantity = params.get("quantity");
@@ -81,8 +81,8 @@ public class Gather extends CommonAction implements IAction {
 		BaseRecord cell = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(context, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 
-		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
-		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get("terrainType")) != tet).map(c -> ((String)c.get("terrainType")).toLowerCase()).collect(Collectors.toSet());
+		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get(FieldNames.FIELD_TERRAIN_TYPE));
+		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)) != tet).map(c -> ((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)).toLowerCase()).collect(Collectors.toSet());
 		String tdesc = "an expanse of " + tet.toString().toLowerCase();
 		if(stets.size() > 0) {
 			tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
@@ -101,7 +101,7 @@ public class Gather extends CommonAction implements IAction {
 		// logger.info("Can see " + pois.size() + " points of interest" + (pois.size() > 0 && itemCategory != null ? ", but are there any with " + itemCategory + "?": ""));
 		/*
 		for(BaseRecord p : pois) {
-			BaseRecord bld = p.get("builder");
+			BaseRecord bld = p.get(OlioFieldNames.FIELD_BUILDER);
 			if(bld != null) {
 				List<BaseRecord> tags = bld.get(FieldNames.FIELD_TAGS);
 				String ts = tags.stream().map(t -> (String)t.get(FieldNames.FIELD_NAME)).collect(Collectors.joining(","));
@@ -113,7 +113,7 @@ public class Gather extends CommonAction implements IAction {
 		if(itemCategory != null) {
 			
 			pois = pois.stream().filter(p -> {
-				BaseRecord bld = p.get("builder");
+				BaseRecord bld = p.get(OlioFieldNames.FIELD_BUILDER);
 				boolean ret = false;
 				if(bld != null) {
 					List<BaseRecord> tags = bld.get(FieldNames.FIELD_TAGS);
@@ -155,14 +155,14 @@ public class Gather extends CommonAction implements IAction {
 		/*
 		for(BaseRecord poi : pois) {
 			PointOfInterestEnumType type = poi.getEnum(FieldNames.FIELD_TYPE);
-			BaseRecord bld = poi.get("builder");
+			BaseRecord bld = poi.get(OlioFieldNames.FIELD_BUILDER);
 			logger.info("Point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)));
 		}
 		*/
 
 		/*
 		ZonedDateTime ep = actionResult.get("actionStart");
-		ZonedDateTime ee = actionResult.get("actionEnd");
+		ZonedDateTime ee = actionResult.get(OlioFieldNames.FIELD_ACTION_END);
 		long remSec = ep.until(ee, ChronoUnit.SECONDS);
 		logger.info("Seconds ... " + remSec + " from " + ep + " / " + ee);
 		*/
@@ -173,7 +173,7 @@ public class Gather extends CommonAction implements IAction {
 			
 			double dist = GeoLocationUtil.distance(cx, cy, poi.get("east"), poi.get("north"));
 			PointOfInterestEnumType type = poi.getEnum(FieldNames.FIELD_TYPE);
-			BaseRecord bld = poi.get("builder");
+			BaseRecord bld = poi.get(OlioFieldNames.FIELD_BUILDER);
 			
 			if(dist > Rules.PROXIMATE_CONTACT_DISTANCE) {
 				// logger.info("Too far away - " + dist + " meters.  Need to move closer.");
@@ -181,7 +181,7 @@ public class Gather extends CommonAction implements IAction {
 				BaseRecord move = Actions.beginMove(context, context.clock().getIncrement(), actor, dir);
 				move.setValue("state.currentEast", poi.get("east"));
 				move.setValue("state.currentNorth", poi.get("north"));
-				actionResult.setValue("actionEnd", move.get("actionEnd"));
+				actionResult.setValue(OlioFieldNames.FIELD_ACTION_END, move.get(OlioFieldNames.FIELD_ACTION_END));
 				
 				edgeEnd(context, actionResult, quantity);
 				
@@ -199,7 +199,7 @@ public class Gather extends CommonAction implements IAction {
 			}
 			if(inv.size() > 0) {
 				BaseRecord iinv = inv.get(0);
-				int count = ItemUtil.countItemInInventory(context, poi, (BaseRecord)iinv.get("item"));
+				int count = ItemUtil.countItemInInventory(context, poi, (BaseRecord)iinv.get(OlioFieldNames.FIELD_ITEM));
 				if(count < quantity || count == 0) {
 					logger.info("Not enough (" + count + " < " + quantity + ") at this location.  Checking again - ");
 					trace.add(poi.get(FieldNames.FIELD_OBJECT_ID));
@@ -208,11 +208,11 @@ public class Gather extends CommonAction implements IAction {
 				else {
 					logger.info("Gather from point of interest (" + type.toString().toLowerCase() + ") " + (bld == null ? "Unknown" : bld.get(FieldNames.FIELD_NAME)) + " " + dist + " meters away");
 	
-					boolean withdraw = ItemUtil.withdrawItemFromInventory(context, poi, (BaseRecord)iinv.get("item"), quantity);
+					boolean withdraw = ItemUtil.withdrawItemFromInventory(context, poi, (BaseRecord)iinv.get(OlioFieldNames.FIELD_ITEM), quantity);
 					if(withdraw) {
-						int minSeconds = actionResult.get("action.minimumTime");
+						int minSeconds = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 						ActionUtil.addProgressSeconds(actionResult, minSeconds * quantity);
-						boolean deposit = ItemUtil.depositItemIntoInventory(context, actor, (BaseRecord)iinv.get("item"), quantity);
+						boolean deposit = ItemUtil.depositItemIntoInventory(context, actor, (BaseRecord)iinv.get(OlioFieldNames.FIELD_ITEM), quantity);
 						if(deposit) {
 							logger.info("Gathered " + quantity + " " + iinv.get("item.name"));
 							actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);

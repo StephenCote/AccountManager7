@@ -150,13 +150,13 @@ public class NeedsUtil {
 			/// 
 		}
 		if(action != null) {
-			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("actionResults.path"));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_ACTION_RESULTS_PATH));
 			try {
 				actionResult = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
-				actionResult.set("action", action);
-				actionResult.set("builder", builder);
-				actionResult.set("needType", "physiological");
-				actionResult.set("need", need.toString().toLowerCase());
+				actionResult.set(FieldNames.FIELD_ACTION, action);
+				actionResult.set(OlioFieldNames.FIELD_BUILDER, builder);
+				actionResult.set(OlioFieldNames.FIELD_NEED_TYPE, "physiological");
+				actionResult.set(OlioFieldNames.FIELD_NEED, need.toString().toLowerCase());
 			} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}

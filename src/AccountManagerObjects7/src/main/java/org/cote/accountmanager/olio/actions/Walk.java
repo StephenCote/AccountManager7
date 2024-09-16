@@ -10,6 +10,7 @@ import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.StateUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -27,7 +28,7 @@ public class Walk implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
@@ -39,7 +40,7 @@ public class Walk implements IAction {
 		double mps = AnimalUtil.walkMetersPerSecond(actor);
 		long timeSeconds = (long)(dist / mps);
 		ActionUtil.edgeSecondsUntilEnd(actionResult, timeSeconds);
-		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 		return actionResult;
 	}
 
@@ -52,7 +53,7 @@ public class Walk implements IAction {
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
 		
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}

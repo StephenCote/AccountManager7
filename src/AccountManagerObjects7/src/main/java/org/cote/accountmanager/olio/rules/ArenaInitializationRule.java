@@ -99,11 +99,11 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	    	holding2.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 	    	holding3.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 	    	field1.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
-	    	field1.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
+	    	field1.set(FieldNames.FIELD_TERRAIN_TYPE, TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
 	    	field2.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
-	    	field2.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
+	    	field2.set(FieldNames.FIELD_TERRAIN_TYPE, TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
 	    	field3.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
-	    	field3.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
+	    	field3.set(FieldNames.FIELD_TERRAIN_TYPE, TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
 	    	staging1.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 	    	IOSystem.getActiveContext().getRecordUtil().createRecords(new BaseRecord[] {goodSeats, badSeats, holding1, holding2, holding3, field1, field2, field3, staging1});
 	    	
@@ -138,7 +138,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	    			cell.set(FieldNames.FIELD_EASTINGS, x);
 	    			cell.set(FieldNames.FIELD_NORTHINGS, y);
 	    			cell.set(FieldNames.FIELD_GEOTYPE, "cell");
-	    			cell.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
+	    			cell.set(FieldNames.FIELD_TERRAIN_TYPE, TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
 	    			cells.add(cell);
 				}
 			}

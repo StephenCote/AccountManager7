@@ -69,9 +69,9 @@ public class BuilderUtil {
 				BaseRecord bld = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_BUILDER, ctx.getOlioUser(), vbld, plist);
 				// bld.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
 
-				BaseRecord itm = bld.get("item");
+				BaseRecord itm = bld.get(OlioFieldNames.FIELD_ITEM);
 				if(itm != null) {
-					bld.set("item", ItemUtil.getItemTemplate(ctx, itm.get(FieldNames.FIELD_NAME)));
+					bld.set(OlioFieldNames.FIELD_ITEM, ItemUtil.getItemTemplate(ctx, itm.get(FieldNames.FIELD_NAME)));
 				}
 				
 				BaseRecord app = bld.get(OlioFieldNames.FIELD_APPAREL);
@@ -80,23 +80,23 @@ public class BuilderUtil {
 				}
 
 				List<BaseRecord> qs = bld.get(OlioFieldNames.FIELD_QUALITIES);
-				BaseRecord oq = mf.newInstance(OlioModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("qualities.path")));
+				BaseRecord oq = mf.newInstance(OlioModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_QUALITIES_PATH)));
 				qs.clear();
 				qs.add(oq);
 
-				List<BaseRecord> tags = bld.get("tags");
+				List<BaseRecord> tags = bld.get(FieldNames.FIELD_TAGS);
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
 					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), bld.getModel()));
 				}
-				bld.set("tags", itags);
+				bld.set(FieldNames.FIELD_TAGS, itags);
 				
-				List<BaseRecord> skillz = bld.get("skills");
+				List<BaseRecord> skillz = bld.get(OlioFieldNames.FIELD_SKILLS);
 				List<BaseRecord> iskillz = new ArrayList<>();
 				for(BaseRecord t: skillz) {
 					iskillz.add(OlioUtil.getCreateSkill(ctx, t.get(FieldNames.FIELD_NAME)));
 				}
-				bld.set("skills", iskillz);
+				bld.set(OlioFieldNames.FIELD_SKILLS, iskillz);
 				
 				List<BaseRecord> mats = bld.get(OlioFieldNames.FIELD_MATERIALS);
 				List<BaseRecord> imats = new ArrayList<>();

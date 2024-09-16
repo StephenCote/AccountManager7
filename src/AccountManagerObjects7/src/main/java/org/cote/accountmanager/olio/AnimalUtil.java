@@ -145,8 +145,8 @@ public class AnimalUtil {
 		
 		Map<String, List<BaseRecord>> pop = new HashMap<>();
 		if(random.nextDouble() <= Rules.ODDS_ANY_ANIMAL_GROUP) {
-			TerrainEnumType type = TerrainEnumType.valueOf((String)location.get("terrainType"));
-			List<BaseRecord> animp = getAnimalTemplates(ctx).stream().filter(a -> ((List<String>)a.get("habitat")).contains(type.toString().toLowerCase())).collect(Collectors.toList());
+			TerrainEnumType type = TerrainEnumType.valueOf((String)location.get(FieldNames.FIELD_TERRAIN_TYPE));
+			List<BaseRecord> animp = getAnimalTemplates(ctx).stream().filter(a -> ((List<String>)a.get(OlioFieldNames.FIELD_HABITAT)).contains(type.toString().toLowerCase())).collect(Collectors.toList());
 			Collections.shuffle(animp);
 			double odds = Rules.getAnimalOdds(type);
 			int total = 0;
@@ -294,15 +294,15 @@ public class AnimalUtil {
 					else {
 						logger.warn("Unhandled 3: " + instKeys[2] + " from " + pairs[0] + " " + pairs[2]);
 					}
-					inst.set("fight", fight);
-					inst.set("flight", flight);
-					inst.set("protect", protect);
-					inst.set("cooperate", coop);
-					inst.set("hide", stealth);
+					inst.set(OlioFieldNames.FIELD_FIGHT, fight);
+					inst.set(OlioFieldNames.FIELD_FLIGHT, flight);
+					inst.set(OlioFieldNames.FIELD_PROTECT, protect);
+					inst.set(OlioFieldNames.FIELD_COOPERATE, coop);
+					inst.set(OlioFieldNames.FIELD_HIDE, stealth);
 					
 				}
 				
-				List<String> habitat = oanim.get("habitat");
+				List<String> habitat = oanim.get(OlioFieldNames.FIELD_HABITAT);
 				for(String h : pairs[3].split(",")) {
 					habitat.add(h.trim());
 				}
@@ -326,12 +326,12 @@ public class AnimalUtil {
 				store.set(OlioFieldNames.FIELD_ITEMS, items);
 				*/
 				/*)
-				List<BaseRecord> tags = oanim.get("tags");
+				List<BaseRecord> tags = oanim.get(FieldNames.FIELD_TAGS);
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
 					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getModel()));
 				}
-				oanim.set("tags", itags);
+				oanim.set(FieldNames.FIELD_TAGS, itags);
 				*/
 
 			}
@@ -350,12 +350,12 @@ public class AnimalUtil {
 	}
 	
 	public static double sprintMetersPerSecond(BaseRecord animal) {
-		int speed = animal.get("statistics.speed");
+		int speed = animal.get(OlioFieldNames.FIELD_STATISTICS_SPEED);
 		return Math.abs(((double)speed - 10)/10) * 10.2;
 	}
 	
 	public static double walkMetersPerSecond(BaseRecord animal) {
-		double speed = (double)(int)animal.get("statistics.speed");
+		double speed = (double)(int)animal.get(OlioFieldNames.FIELD_STATISTICS_SPEED);
 		if(speed <= 0) {
 			logger.warn("Invalid speed for #" + animal.get(FieldNames.FIELD_ID) + " " + animal.get(FieldNames.FIELD_NAME) + ": Using default");
 			speed = defaultAnimalSpeed;

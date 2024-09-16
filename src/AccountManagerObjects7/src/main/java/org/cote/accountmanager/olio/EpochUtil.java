@@ -141,10 +141,10 @@ public class EpochUtil {
 		epoch = EventUtil.newEvent(ctx, rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTime);
 		try {
 			epoch.set(OlioFieldNames.FIELD_EVENT_PROGRESS, startTime);
-			epoch.set("inProgress", true);
+			epoch.set(OlioFieldNames.FIELD_IN_PROGRESS, true);
 			epoch.set(OlioFieldNames.FIELD_EVENT_END, startTime.plusYears(1));
-			epoch.set("epoch", true);
-			epoch.set("timeType", TimeEnumType.YEAR);
+			epoch.set(OlioFieldNames.FIELD_EPOCH, true);
+			epoch.set(OlioFieldNames.FIELD_TIME_TYPE, TimeEnumType.YEAR);
 			epoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -277,12 +277,12 @@ public class EpochUtil {
 				childEpoch.set(OlioFieldNames.FIELD_REALM, realm);
 				childEpoch.set(FieldNames.FIELD_LOCATION, realm.get(OlioFieldNames.FIELD_ORIGIN));
 				childEpoch.set(OlioFieldNames.FIELD_EVENT_PROGRESS, clock.getCurrent());
-				childEpoch.set("inProgress", true);
+				childEpoch.set(OlioFieldNames.FIELD_IN_PROGRESS, true);
 				childEpoch.set(OlioFieldNames.FIELD_EVENT_END, clock.getEnd());
 				childEpoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
-				childEpoch.set("timeType", TimeEnumType.YEAR);
+				childEpoch.set(OlioFieldNames.FIELD_TIME_TYPE, TimeEnumType.YEAR);
 
-				List<BaseRecord> lgrps = childEpoch.get("groups");
+				List<BaseRecord> lgrps = childEpoch.get(FieldNames.FIELD_GROUPS);
 				lgrps.add(popGrp);
 				
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
@@ -400,7 +400,7 @@ public class EpochUtil {
 				epoch.set(FieldNames.FIELD_TYPE, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE));
 				epoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
 				epoch.set(FieldNames.FIELD_PARENT_ID, rootEvt.get(FieldNames.FIELD_ID));
-				epoch.set("epoch", true);
+				epoch.set(OlioFieldNames.FIELD_EPOCH, true);
 				long startTimeMS = ((Date)lastEpoch.get(OlioFieldNames.FIELD_EVENT_END)).getTime();
 				epoch.set(OlioFieldNames.FIELD_EVENT_START, new Date(startTimeMS));
 				epoch.set(OlioFieldNames.FIELD_EVENT_END, new Date(startTimeMS + (OlioUtil.YEAR * increment)));
@@ -438,7 +438,7 @@ public class EpochUtil {
 						childEpoch.set(OlioFieldNames.FIELD_EVENT_START, epoch.get(OlioFieldNames.FIELD_EVENT_START));
 						childEpoch.set(OlioFieldNames.FIELD_EVENT_END, epoch.get(OlioFieldNames.FIELD_EVENT_END));
 						childEpoch.set(FieldNames.FIELD_STATE, ActionResultEnumType.PENDING);
-						List<BaseRecord> lgrps = childEpoch.get("groups");
+						List<BaseRecord> lgrps = childEpoch.get(FieldNames.FIELD_GROUPS);
 						lgrps.add(popGrp);
 						logger.info((String)childEpoch.get(FieldNames.FIELD_NAME));
 						IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);

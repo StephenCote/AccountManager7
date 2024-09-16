@@ -45,7 +45,7 @@ public class ActionUtil {
 			return new ArrayList<>();
 		}
 		return actions.stream().filter(a -> {
-			String name = a.get("action.name");
+			String name = a.get(OlioFieldNames.FIELD_ACTION_NAME2);
 			ActionResultEnumType type = a.getEnum(FieldNames.FIELD_TYPE);
 			
 			if(name == null) {
@@ -79,17 +79,17 @@ public class ActionUtil {
 	}
 	
 	public static void addProgressMS(BaseRecord actionResult, long ms) {
-		ZonedDateTime prog = actionResult.get("actionProgress");
-		actionResult.setValue("actionProgress", prog.plus(ms, ChronoUnit.MILLIS));
+		ZonedDateTime prog = actionResult.get(OlioFieldNames.FIELD_ACTION_PROGRESS);
+		actionResult.setValue(OlioFieldNames.FIELD_ACTION_PROGRESS, prog.plus(ms, ChronoUnit.MILLIS));
 	}
 	public static void addProgressSeconds(BaseRecord actionResult, int seconds) {
-		ZonedDateTime prog = actionResult.get("actionProgress");
-		actionResult.setValue("actionProgress", prog.plus(seconds, ChronoUnit.SECONDS));
+		ZonedDateTime prog = actionResult.get(OlioFieldNames.FIELD_ACTION_PROGRESS);
+		actionResult.setValue(OlioFieldNames.FIELD_ACTION_PROGRESS, prog.plus(seconds, ChronoUnit.SECONDS));
 	}
 	
 	public static void edgeSecondsUntilEnd(BaseRecord actionResult, long seconds) {
-		ZonedDateTime end = actionResult.get("actionEnd");
-		actionResult.setValue("actionEnd", end.plusSeconds(seconds));
+		ZonedDateTime end = actionResult.get(OlioFieldNames.FIELD_ACTION_END);
+		actionResult.setValue(OlioFieldNames.FIELD_ACTION_END, end.plusSeconds(seconds));
 	}
 	
 	public static BaseRecord getAction(OlioContext ctx, String name) {
@@ -132,15 +132,15 @@ public class ActionUtil {
 	}
 	public static BaseRecord newActionResult(OlioContext ctx, BaseRecord action, BaseRecord params, BaseRecord interaction) {
 
-		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("actionResults.path"));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_ACTION_RESULTS_PATH));
 		BaseRecord actionResult = null;
 		try {
 			actionResult = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
-			actionResult.set("action", action);
-			actionResult.set("builder", null);
-			actionResult.set("needType", params.get("needType"));
-			actionResult.set("need", params.get("needName"));
-			actionResult.set("parameters", params);
+			actionResult.set(FieldNames.FIELD_ACTION, action);
+			actionResult.set(OlioFieldNames.FIELD_BUILDER, null);
+			actionResult.set(OlioFieldNames.FIELD_NEED_TYPE, params.get(OlioFieldNames.FIELD_NEED_TYPE));
+			actionResult.set(OlioFieldNames.FIELD_NEED, params.get(OlioFieldNames.FIELD_NEED_NAME));
+			actionResult.set(FieldNames.FIELD_PARAMETERS, params);
 			actionResult.set(FieldNames.FIELD_TYPE, ActionResultEnumType.PENDING);
 			if(interaction != null) {
 				List<BaseRecord> iacts = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
@@ -160,10 +160,10 @@ public class ActionUtil {
 		BaseRecord actionParams = null;
 		try {
 			actionParams = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_PARAMETERS);
-			actionParams.set("actionName", actionName);
-			actionParams.set("needType", needType);
-			actionParams.set("needName", needName);
-			actionParams.set("autoComplete", autoComplete);
+			actionParams.set(OlioFieldNames.FIELD_ACTION_NAME, actionName);
+			actionParams.set(OlioFieldNames.FIELD_NEED_TYPE, needType);
+			actionParams.set(OlioFieldNames.FIELD_NEED_NAME, needName);
+			actionParams.set(OlioFieldNames.FIELD_AUTOCOMPLETE, autoComplete);
 
 		} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 			logger.error(e);
@@ -190,12 +190,12 @@ public class ActionUtil {
 				plist.parameter(FieldNames.FIELD_NAME, act.get(FieldNames.FIELD_NAME));
 
 				BaseRecord actr = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION, ctx.getOlioUser(), act, plist);
-				List<BaseRecord> tags = actr.get("tags");
+				List<BaseRecord> tags = actr.get(FieldNames.FIELD_TAGS);
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
 					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getModel()));
 				}
-				actr.set("tags", itags);
+				actr.set(FieldNames.FIELD_TAGS, itags);
 				Queue.queue(actr);
 				oacts.add(actr);
 			}

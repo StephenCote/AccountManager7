@@ -31,19 +31,19 @@ public class Dress implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
 		
-		WearLevelEnumType level = params.getEnum("wearLevel");
+		WearLevelEnumType level = params.getEnum(OlioFieldNames.FIELD_WEAR_LEVEL);
 		if(level == WearLevelEnumType.UNKNOWN) {
 			throw new OlioException("Unexpected target level");
 		}
 
-		int minSeconds = actionResult.get("action.minimumTime");
+		int minSeconds = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds);
-		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 
 		return actionResult;
 	}
@@ -57,12 +57,12 @@ public class Dress implements IAction {
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
 		
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
 		
-		WearLevelEnumType level = params.getEnum("wearLevel");
+		WearLevelEnumType level = params.getEnum(OlioFieldNames.FIELD_WEAR_LEVEL);
 		if(level == WearLevelEnumType.UNKNOWN) {
 			throw new OlioException("Unexpected target level");
 		}
@@ -70,7 +70,7 @@ public class Dress implements IAction {
 		BaseRecord targ = (interactor !=  null ? interactor : actor);
 		boolean canDress = true;
 		BaseRecord app = ApparelUtil.getWearingApparel(targ);
-		List<String> res = actionResult.get("results");
+		List<String> res = actionResult.get(FieldNames.FIELD_RESULTS);
 		if(app == null) {
 			res.add(targ.get(FieldNames.FIELD_NAME) + " does not have any active apparel");
 		}
@@ -118,7 +118,7 @@ public class Dress implements IAction {
 	
 	@Override
 	public long calculateCostMS(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		int timeSecs = actionResult.get("action.minimumTime");
+		int timeSecs = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		return (long)(timeSecs * 1000);
 	}
 

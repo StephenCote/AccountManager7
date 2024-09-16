@@ -130,14 +130,14 @@ public class PromptUtil {
 		if(sysProf.getRace().contains("L") || sysProf.getRace().contains("S") || sysProf.getRace().contains("V") || sysProf.getRace().contains("R") || sysProf.getRace().contains("W") || sysProf.getRace().contains("X") || sysProf.getRace().contains("Y") || sysProf.getRace().contains("Z")) {
 			Optional<BaseRecord> osupp = races.stream().filter(r -> sysProf.getRace().contains(r.get("raceType"))).findFirst();
 			if(osupp.isPresent()) {
-				srace = composeTemplate(osupp.get().get("race"));
+				srace = composeTemplate(osupp.get().get(OlioFieldNames.FIELD_RACE));
 			}
 		}
 
 		if(usrProf.getRace().contains("L") || usrProf.getRace().contains("S") || usrProf.getRace().contains("V") || usrProf.getRace().contains("R") || usrProf.getRace().contains("W") || usrProf.getRace().contains("X") || usrProf.getRace().contains("Y") || usrProf.getRace().contains("Z")) {
 			Optional<BaseRecord> osupp = races.stream().filter(r -> usrProf.getRace().contains(r.get("raceType"))).findFirst();
 			if(osupp.isPresent()) {
-				urace = composeTemplate(osupp.get().get("race"));
+				urace = composeTemplate(osupp.get().get(OlioFieldNames.FIELD_RACE));
 			}
 		}
 		templ = userRace.matcher(templ).replaceAll(urace);
@@ -195,7 +195,7 @@ public class PromptUtil {
 		}
 		templ = userConsent.matcher(templ).replaceAll(ucons.length() > 0 ? uconpref + ucons + ".": "");
 		
-		String ugen = userChar.get("gender");
+		String ugen = userChar.get(FieldNames.FIELD_GENDER);
 		String ucppro = "His";
 		String uppro = "his";
 		String ucpro = "He";
@@ -208,7 +208,7 @@ public class PromptUtil {
 			upro = "she";
 		}
 
-		String sgen = systemChar.get("gender");
+		String sgen = systemChar.get(FieldNames.FIELD_GENDER);
 		String scppro = "His";
 		String sppro = "his";
 		String scpro = "He";
@@ -223,13 +223,13 @@ public class PromptUtil {
 
 		
 		String ujobDesc = "";
-		List<String> utrades = userChar.get("trades");
+		List<String> utrades = userChar.get(OlioFieldNames.FIELD_TRADES);
 		if(utrades.size() > 0) {
 			ujobDesc =" " + utrades.get(0).toLowerCase();
 		}
 		
 		String sjobDesc = "";
-		List<String> strades = systemChar.get("trades");
+		List<String> strades = systemChar.get(OlioFieldNames.FIELD_TRADES);
 		if(strades.size() > 0) {
 			sjobDesc =" " + strades.get(0).toLowerCase();
 		}		
@@ -330,7 +330,7 @@ public class PromptUtil {
 		
 		BaseRecord loc = userChar.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(loc != null) {
-			templ = locationTerrain.matcher(templ).replaceAll(loc.getEnum("terrainType").toString().toLowerCase());	
+			templ = locationTerrain.matcher(templ).replaceAll(loc.getEnum(FieldNames.FIELD_TERRAIN_TYPE).toString().toLowerCase());	
 		}
 		List<BaseRecord> interactions = chatConfig.get(OlioFieldNames.FIELD_INTERACTIONS);
 		BaseRecord interaction = null;

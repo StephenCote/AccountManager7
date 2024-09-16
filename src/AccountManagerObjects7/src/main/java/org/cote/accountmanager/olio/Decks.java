@@ -108,27 +108,27 @@ public class Decks {
 
 	private static void shuffleOccupationsDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
 		Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_OCCUPATIONS_ID));
-		tnq.set("cache", false);
+		tnq.set(FieldNames.FIELD_CACHE, false);
 		occupationsDeck = OlioUtil.randomSelectionNames(user, tnq, count);
 	}
 	
 	private static void shuffleMaleNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
 		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_NAMES_ID));
-		mnq.field("gender", "M");
-		mnq.set("cache", false);
+		mnq.field(FieldNames.FIELD_GENDER, "M");
+		mnq.set(FieldNames.FIELD_CACHE, false);
 		maleNamesDeck = OlioUtil.randomSelectionNames(user, mnq, count);
 	}
 	
 	private static void shuffleFemaleNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
 		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_NAMES_ID));
-		mnq.field("gender", "F");
-		mnq.set("cache", false);
+		mnq.field(FieldNames.FIELD_GENDER, "F");
+		mnq.set(FieldNames.FIELD_CACHE, false);
 		femaleNamesDeck = OlioUtil.randomSelectionNames(user, mnq, count);
 	}
 	
 	private static void shuffleSurnameNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
 		Query snq = QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_SURNAMES_ID));
-		snq.set("cache", false);
+		snq.set(FieldNames.FIELD_CACHE, false);
 		surnameNamesDeck = OlioUtil.randomSelectionNames(user, snq, count);
 	}
 	
@@ -147,7 +147,7 @@ public class Decks {
 	}
 	
 	protected static void shuffleTraitDeck(BaseRecord user, BaseRecord world) {
-		long traitDir = world.get("traits.id");
+		long traitDir = world.get(OlioFieldNames.FIELD_TRAITS_ID);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_TRAIT, FieldNames.FIELD_GROUP_ID, traitDir);
 		q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID});
 		traitDeck = OlioUtil.randomSelections(user, q, traitDeckSize);

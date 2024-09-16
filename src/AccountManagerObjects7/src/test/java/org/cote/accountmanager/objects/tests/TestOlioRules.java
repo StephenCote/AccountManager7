@@ -39,7 +39,7 @@ public class TestOlioRules extends BaseTest {
 		String dataPath = testProperties.getProperty("test.datagen.path");
 		
 		OlioTestUtil.setResetWorld(true);
-		// OlioTestUtil.setResetUniverse(true);
+		OlioTestUtil.setResetUniverse(true);
 		 
 		OlioContext octx = null;
 		try{

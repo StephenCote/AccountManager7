@@ -297,18 +297,31 @@ public class FieldNames {
 		public static final String FIELD_CITY = "city";
 		public static final String FIELD_STATE = "state";
 		public static final String FIELD_REGION = "region";
-		public static final String FIELD_POST = "postalCode";
+		public static final String FIELD_POST = FieldNames.FIELD_POSTAL_CODE;
 		public static final String FIELD_STREET = "street";
 		public static final String FIELD_STREET2 = "street2";
+		public static final String FIELD_POSTAL_CODE = "postalCode";
+		public static final String FIELD_COUNTRY = "country";
+		
+		public static final String FIELD_GENDER = "gender";
+		public static final String FIELD_BIRTH_DATE = "birthDate";
+		public static final String FIELD_BEHAVIOR = "behavior";
+		public static final String FIELD_PERSONALITY = "personality";
+		public static final String FIELD_PROFILE = "profile";
 		
 		public static final String FIELD_CONTACT_INFORMATION = "contactInformation";
+		public static final String FIELD_CONTACT_TYPE = "contactType";
+		public static final String FIELD_CONTACT_VALUE = "contactValue";
 		
 		// Location
+		public static final String FIELD_PREFERRED = "preferred";
 		public static final String FIELD_LOCATION = "location";
+		public static final String FIELD_LOCATION_TYPE = "locationType";
 		public static final String FIELD_GROUPS = "groups";
 		public static final String FIELD_FEATURE = "feature";
 		public static final String FIELD_LOCATIONS = "locations";
 		public static final String FIELD_TERRAIN = "terrain";
+		public static final String FIELD_TERRAIN_TYPE = "terrainType";
 		public static final String FIELD_GRID_ZONE = "gridZone";
 		public static final String FIELD_AREA = "area";
 		public static final String FIELD_KIDENT = "kident";

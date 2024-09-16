@@ -68,7 +68,7 @@ public class FactUtil {
 	}
 	
 	public static BaseRecord getParameter(BaseRecord fact, String name) {
-		List<BaseRecord> fparams = fact.get("parameters");
+		List<BaseRecord> fparams = fact.get(FieldNames.FIELD_PARAMETERS);
 		return getParameter(fparams, name);
 	}
 	
@@ -77,7 +77,7 @@ public class FactUtil {
 		return (param.isPresent() ? param.get() : null);
 	}
 	public static BaseRecord getParameterValue(BaseRecord fact, String name) {
-		List<BaseRecord> fparams = fact.get("parameters");
+		List<BaseRecord> fparams = fact.get(FieldNames.FIELD_PARAMETERS);
 		return getParameterValue(fparams, name);
 	}
 	public static <T> T getParameterValue(List<BaseRecord> factParams, String name) {

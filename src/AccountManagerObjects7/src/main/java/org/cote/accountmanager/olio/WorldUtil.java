@@ -246,7 +246,7 @@ public class WorldUtil {
 			totalWrites += cleanupLocation(user, ModelNames.MODEL_DATA, (long)world.get(OlioFieldNames.FIELD_PATTERNS_ID), orgId);
 		}
 		
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_TRAIT, (long)world.get("traits.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_TRAIT, (long)world.get(OlioFieldNames.FIELD_TRAITS_ID), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_QUALITY, (long)world.get("qualities.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_WEARABLE, (long)world.get("wearables.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_APPAREL, (long)world.get("apparel.id"), orgId);

@@ -9,6 +9,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -29,7 +30,7 @@ public class Sleep implements IAction {
 	@Override
 	public BaseRecord beginAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
@@ -46,7 +47,7 @@ public class Sleep implements IAction {
 		}
 		
 		ActionUtil.edgeSecondsUntilEnd(actionResult, dur);
-		Queue.queueUpdate(actionResult, new String[]{"actionEnd"});
+		Queue.queueUpdate(actionResult, new String[]{OlioFieldNames.FIELD_ACTION_END});
 		return actionResult;
 	}
 
@@ -59,7 +60,7 @@ public class Sleep implements IAction {
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		
 		
-		BaseRecord params = actionResult.get("parameters");
+		BaseRecord params = actionResult.get(FieldNames.FIELD_PARAMETERS);
 		if(params == null) {
 			throw new OlioException("Missing required parameters");
 		}
@@ -74,14 +75,14 @@ public class Sleep implements IAction {
 	
 	@Override
 	public long calculateCostMS(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		int timeSecs = actionResult.get("action.minimumTime");
+		int timeSecs = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		return (long)(timeSecs * 1000);
 	}
 
 	@Override
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		ZonedDateTime prog = actionResult.get("actionProgress");
-		ZonedDateTime end = actionResult.get("actionEnd");
+		ZonedDateTime prog = actionResult.get(OlioFieldNames.FIELD_ACTION_PROGRESS);
+		ZonedDateTime end = actionResult.get(OlioFieldNames.FIELD_ACTION_END);
 		if(prog.until(end, ChronoUnit.MILLIS) <= 0L) {
 			BaseRecord state = actor.get(FieldNames.FIELD_STATE);
 			state.setValue("awake", true);

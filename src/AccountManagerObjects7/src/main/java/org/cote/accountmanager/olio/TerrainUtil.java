@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
@@ -22,7 +23,7 @@ public class TerrainUtil {
 	private static final SecureRandom rand = new SecureRandom();
 	
 	public static boolean ruleFishOutOfWater(BaseRecord animal, TerrainEnumType tet) {
-		List<String> habitat = animal.get("habitat");
+		List<String> habitat = animal.get(OlioFieldNames.FIELD_HABITAT);
 		boolean tf1 = TerrainEnumType.isTerraFirma(tet);
 		boolean tf2 = false;
 		for(String h : habitat) {
@@ -59,7 +60,7 @@ public class TerrainUtil {
 	public static Map<TerrainEnumType, Integer> getTerrainTypes(List<BaseRecord> locs){
 		Map<TerrainEnumType, Integer> types = new HashMap<>();
 		for(BaseRecord r : locs) {
-			TerrainEnumType tet = TerrainEnumType.valueOf((String)r.get("terrainType"));
+			TerrainEnumType tet = TerrainEnumType.valueOf((String)r.get(FieldNames.FIELD_TERRAIN_TYPE));
 			int count = 0;
 			if(types.containsKey(tet)) {
 				count = types.get(tet);
@@ -73,12 +74,12 @@ public class TerrainUtil {
 		// logger.info("Terrain blasting " + location.get(FieldNames.FIELD_NAME) + " cells");
 		Map<TerrainEnumType, Double> map = getTerrainTypesPerc(cells);
 		// fill in everything with the parent terrain type
-		TerrainEnumType tet = TerrainEnumType.valueOf((String)location.get("terrainType"));
+		TerrainEnumType tet = TerrainEnumType.valueOf((String)location.get(FieldNames.FIELD_TERRAIN_TYPE));
 		for(BaseRecord l : cells) {
-			TerrainEnumType ctet = TerrainEnumType.valueOf((String)l.get("terrainType"));
+			TerrainEnumType ctet = TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE));
 			if(ctet == TerrainEnumType.UNKNOWN) {
 				try {
-					l.set("terrainType", tet);
+					l.set(FieldNames.FIELD_TERRAIN_TYPE, tet);
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
 				}
@@ -94,11 +95,11 @@ public class TerrainUtil {
 		blastRegions(locs, mapWidth, mapHeight);
 		
 		
-		List<BaseRecord> glaciers = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.GLACIER).collect(Collectors.toList());
-		List<BaseRecord> lakes = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.LAKE).collect(Collectors.toList());
-		List<BaseRecord> rivers = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.RIVER).collect(Collectors.toList());
-		List<BaseRecord> oceans = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.OCEAN).collect(Collectors.toList());
-		List<BaseRecord> mountains = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get("terrainType")) == TerrainEnumType.MOUNTAIN).collect(Collectors.toList());
+		List<BaseRecord> glaciers = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE)) == TerrainEnumType.GLACIER).collect(Collectors.toList());
+		List<BaseRecord> lakes = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE)) == TerrainEnumType.LAKE).collect(Collectors.toList());
+		List<BaseRecord> rivers = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE)) == TerrainEnumType.RIVER).collect(Collectors.toList());
+		List<BaseRecord> oceans = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE)) == TerrainEnumType.OCEAN).collect(Collectors.toList());
+		List<BaseRecord> mountains = locs.stream().filter(l -> TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE)) == TerrainEnumType.MOUNTAIN).collect(Collectors.toList());
 		
 		Set<BaseRecord> targSet = new HashSet<>();
 
@@ -137,7 +138,7 @@ public class TerrainUtil {
 		}
 		if(mark1 != null && mark2 != null) {
 			targSet.add(mark2);
-			logger.info((isShort ? "Short" : "Long") + " walk between " + mark1.get("terrainType") + " " + mark1.get(FieldNames.FIELD_NAME) + " to " + mark2.get("terrainType") + " " + mark2.get(FieldNames.FIELD_NAME) + " - " + currentDist + " sqs");
+			logger.info((isShort ? "Short" : "Long") + " walk between " + mark1.get(FieldNames.FIELD_TERRAIN_TYPE) + " " + mark1.get(FieldNames.FIELD_NAME) + " to " + mark2.get(FieldNames.FIELD_TERRAIN_TYPE) + " " + mark2.get(FieldNames.FIELD_NAME) + " - " + currentDist + " sqs");
 			walk(locs, mark1, mark2, walkType, true);
 		}
 	}
@@ -207,10 +208,10 @@ public class TerrainUtil {
 	    	 return;
 	     }
 	     else {
-	    	 TerrainEnumType wet = TerrainEnumType.valueOf((String)nloc.get("terrainType"));
+	    	 TerrainEnumType wet = TerrainEnumType.valueOf((String)nloc.get(FieldNames.FIELD_TERRAIN_TYPE));
 	    	 if(wet != type) {
 	    		 try {
-					nloc.set("terrainType", wet);
+					nloc.set(FieldNames.FIELD_TERRAIN_TYPE, wet);
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
 				}
@@ -248,9 +249,9 @@ public class TerrainUtil {
 			
 			// fill remainder with random arable
 			for(BaseRecord l : locs) {
-				TerrainEnumType tet = TerrainEnumType.valueOf((String)l.get("terrainType"));
+				TerrainEnumType tet = TerrainEnumType.valueOf((String)l.get(FieldNames.FIELD_TERRAIN_TYPE));
 				if(tet == TerrainEnumType.UNKNOWN) {
-					l.set("terrainType", defaultTerrain);
+					l.set(FieldNames.FIELD_TERRAIN_TYPE, defaultTerrain);
 				}
 			}
 		}
@@ -294,7 +295,7 @@ public class TerrainUtil {
 
 		for(BaseRecord r : irecs) {
 			TerrainEnumType utet = tet;
-			TerrainEnumType itet = TerrainEnumType.valueOf((String)r.get("terrainType"));
+			TerrainEnumType itet = TerrainEnumType.valueOf((String)r.get(FieldNames.FIELD_TERRAIN_TYPE));
 			int rx = r.get(FieldNames.FIELD_EASTINGS);
 			int ry = r.get(FieldNames.FIELD_NORTHINGS);
 			if(itet != TerrainEnumType.UNKNOWN && itet != tet) {
@@ -322,7 +323,7 @@ public class TerrainUtil {
 				}
 			}
 			try {
-				r.set("terrainType", utet);
+				r.set(FieldNames.FIELD_TERRAIN_TYPE, utet);
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}

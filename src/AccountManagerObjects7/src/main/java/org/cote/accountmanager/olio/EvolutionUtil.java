@@ -131,19 +131,19 @@ public class EvolutionUtil {
 				ZonedDateTime estart = ctx.getCurrentEvent().get(OlioFieldNames.FIELD_EVENT_START);
 				ZonedDateTime now = estart.plusMonths(month);
 				ctx.setCurrentMonth(now);
-				long lage = now.toInstant().toEpochMilli() - ((ZonedDateTime)per.get("birthDate")).toInstant().toEpochMilli();
-				//long now = (((Date)parentEvent.get(OlioFieldNames.FIELD_EVENT_START)).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration));
+				long lage = now.toInstant().toEpochMilli() - ((ZonedDateTime)per.get(FieldNames.FIELD_BIRTH_DATE)).toInstant().toEpochMilli();
+				//long now = (((Date)parentEvent.get(OlioFieldNames.FIELD_EVENT_START)).getTime() - ((Date)per.get(FieldNames.FIELD_BIRTH_DATE)).getTime() + (OlioUtil.DAY * iteration));
 				int currentAge = (int)(lage/OlioUtil.YEAR);
-				String gender = per.get("gender");
+				String gender = per.get(FieldNames.FIELD_GENDER);
 				/// If a female is ruled to be a mother, generate the baby
 				///
 				if("female".equalsIgnoreCase(gender) && rulePersonBirth(eventAlignment, popGrp, per, currentAge)){
-					List<BaseRecord> partners = per.get("partners");
+					List<BaseRecord> partners = per.get(FieldNames.FIELD_PARTNERS);
 					List<BaseRecord> dep1 = per.get("dependents");
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
 					BaseRecord baby = CharacterUtil.randomPerson(ctx, (Rules.IS_PATRIARCHAL && partner != null ? partner : per).get(FieldNames.FIELD_LAST_NAME));
 					StatisticsUtil.rollStatistics(baby.get(OlioFieldNames.FIELD_STATISTICS), 0);
-					baby.set("birthDate", now);
+					baby.set(FieldNames.FIELD_BIRTH_DATE, now);
 					// queueAdd(queue, baby);
 					AddressUtil.randomAddressPerson(ctx.getOlioUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get(FieldNames.FIELD_LOCATION));
 					List<BaseRecord> appl = baby.get(OlioFieldNames.FIELD_STORE_APPAREL);
@@ -167,7 +167,7 @@ public class EvolutionUtil {
 				
 				if(rulePersonDeath(eventAlignment, popGrp, per, currentAge)){
 					OlioUtil.addAttribute(per, "deceased", true);
-					List<BaseRecord> partners = per.get("partners");
+					List<BaseRecord> partners = per.get(FieldNames.FIELD_PARTNERS);
 					BaseRecord partner = partners.isEmpty() ? null : partners.get(0);
 					if(partner != null) {
 						/// Use the population copy of the partner since the partners list may be consulted later in the same evolution cycle
@@ -206,12 +206,12 @@ public class EvolutionUtil {
 
 	private static boolean rulePersonBirth(AlignmentEnumType eventAlignmentType, BaseRecord populationGroup, BaseRecord mother, int age) {
 		boolean outBool = false;
-		String gender = mother.get("gender");
+		String gender = mother.get(FieldNames.FIELD_GENDER);
 		if(!gender.equals("female") || age < Rules.MINIMUM_MARRY_AGE || age > Rules.MAXIMUM_FERTILITY_AGE_FEMALE) {
 			return false;
 		}
 		
-		List<BaseRecord> partners = mother.get("partners");
+		List<BaseRecord> partners = mother.get(FieldNames.FIELD_PARTNERS);
 		List<BaseRecord> dependents = mother.get("dependents");
 		
 		double odds = Rules.ODDS_BIRTH_BASE + (partners.isEmpty() ? Rules.ODDS_BIRTH_SINGLE : Rules.ODDS_BIRTH_MARRIED - (dependents.size() * Rules.ODDS_BIRTH_FAMILY_SIZE));
@@ -318,8 +318,8 @@ public class EvolutionUtil {
 		potentials.put("male", new ArrayList<>());
 		potentials.put("female", new ArrayList<>());
 		for(BaseRecord person : map.get("Available")){
-			List<BaseRecord> partners = person.get("partners");
-			String gender = person.get("gender");
+			List<BaseRecord> partners = person.get(FieldNames.FIELD_PARTNERS);
+			String gender = person.get(FieldNames.FIELD_GENDER);
 			if(!partners.isEmpty()){
 				continue;
 			}
@@ -340,7 +340,7 @@ public class EvolutionUtil {
 				continue;
 			}
 			eval.add(per);
-			List<BaseRecord> parts1 = per.get("partners");
+			List<BaseRecord> parts1 = per.get(FieldNames.FIELD_PARTNERS);
 			if(parts1.size() == 0) {
 				logger.error(per.get(FieldNames.FIELD_ID) + " " + per.get(FieldNames.FIELD_NAME) + " misplaced in couples list");
 				continue;
@@ -372,8 +372,8 @@ public class EvolutionUtil {
 		if(pots.get("male").size() > 0 && pots.get("female").size() > 0) {
 			for(BaseRecord man : pots.get("male")) {
 				BaseRecord woman = pots.get("female").get(rand.nextInt(pots.get("female").size()));
-				List<BaseRecord> parts1 = man.get("partners");
-				List<BaseRecord> parts2 = woman.get("partners");
+				List<BaseRecord> parts1 = man.get(FieldNames.FIELD_PARTNERS);
+				List<BaseRecord> parts2 = woman.get(FieldNames.FIELD_PARTNERS);
 				if(!parts1.isEmpty() || !parts2.isEmpty() || eval.contains(man) || eval.contains(woman)) {
 					continue;
 				}
