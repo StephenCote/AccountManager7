@@ -115,7 +115,7 @@ public class ThreatUtil {
 	
 	public static Map<ThreatEnumType, List<AnimalProfile>> evaluateAnimalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
 		BaseRecord state = person.getRecord().get("state");
-		// BaseRecord stats = person.get("statistics");
+		// BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
 		//PersonalityProfile pp = group.get(person);
 		List<BaseRecord> zoo = realm.get("zoo");
 		// logger.info("Agitate animal threats");

@@ -5,6 +5,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -26,7 +27,7 @@ public class TestQueryPlan extends BaseTest {
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
 		q.planMost(true, OlioUtil.FULL_PLAN_FILTER);
-		q.filterPlan(OlioModelNames.MODEL_INVENTORY_ENTRY, "apparel");
+		q.filterPlan(OlioModelNames.MODEL_INVENTORY_ENTRY, OlioFieldNames.FIELD_APPAREL);
 		q.filterPlan(OlioModelNames.MODEL_STORE, FieldNames.FIELD_LOCATIONS);
 
 		OlioUtil.prunePlan(q.plan());

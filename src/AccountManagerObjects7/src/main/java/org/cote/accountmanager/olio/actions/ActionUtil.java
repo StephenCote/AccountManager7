@@ -103,7 +103,7 @@ public class ActionUtil {
 		if(actions.length > 0) {
 			return actions;
 		}
-		actions = OlioUtil.list(ctx, OlioModelNames.MODEL_ACTION, "actions");
+		actions = OlioUtil.list(ctx, OlioModelNames.MODEL_ACTION, OlioFieldNames.FIELD_ACTIONS);
 		return actions;
 	}
 	
@@ -143,7 +143,7 @@ public class ActionUtil {
 			actionResult.set("parameters", params);
 			actionResult.set(FieldNames.FIELD_TYPE, ActionResultEnumType.PENDING);
 			if(interaction != null) {
-				List<BaseRecord> iacts = actionResult.get("interactions");
+				List<BaseRecord> iacts = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 				iacts.add(interaction);
 			}
 		} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {

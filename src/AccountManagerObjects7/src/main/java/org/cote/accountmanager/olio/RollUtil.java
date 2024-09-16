@@ -4,6 +4,7 @@ import java.security.SecureRandom;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.util.ComputeUtil;
@@ -140,7 +141,7 @@ public class RollUtil {
 		return rollStat20(rec, "charisma");
 	}
 	public static RollEnumType rollCounterCharisma(BaseRecord rec) {
-		return rollStat20(ComputeUtil.getAverage(rec.get("statistics"), new String[] {"charisma", "intelligence"}));
+		return rollStat20(ComputeUtil.getAverage(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {"charisma", "intelligence"}));
 	}
 
 	/*

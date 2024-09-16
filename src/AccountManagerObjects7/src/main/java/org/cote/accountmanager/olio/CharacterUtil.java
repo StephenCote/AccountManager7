@@ -90,7 +90,7 @@ public class CharacterUtil {
 			BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("profiles.path")));
 			
 			person = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("population.path")));
-			person.set("statistics", stats);
+			person.set(OlioFieldNames.FIELD_STATISTICS, stats);
 			person.set("instinct", inst);
 			person.set("behavior", beh);
 			person.set("personality", pper);
@@ -416,13 +416,13 @@ public class CharacterUtil {
 					long years = Math.abs(now.toInstant().toEpochMilli() - ((ZonedDateTime)person.get("birthDate")).toInstant().toEpochMilli()) / OlioUtil.YEAR;
 					person.set("age", (int)years);
 					
-					StatisticsUtil.rollStatistics(person.get("statistics"), (int)years);
+					StatisticsUtil.rollStatistics(person.get(OlioFieldNames.FIELD_STATISTICS), (int)years);
 					ProfileUtil.rollPersonality(person.get("personality"));
 
 					totalAbsoluteAlignment += (alignment + 4);
 					
 					/*
-					List<BaseRecord> appl = person.get("apparel");
+					List<BaseRecord> appl = person.get(OlioFieldNames.FIELD_APPAREL);
 					appl.add(ApparelUtil.randomApparel(user, world, person));
 					*/
 					actors.add(person);

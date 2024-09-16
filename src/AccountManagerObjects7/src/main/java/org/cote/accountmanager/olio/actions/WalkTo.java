@@ -13,6 +13,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.StateUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -33,7 +34,7 @@ public class WalkTo implements IAction {
 			throw new OlioException("Expected a target");
 		}
 		ActionUtil.setDestination(context, actionResult, interactor.get("state"));
-		List<BaseRecord> inters = actionResult.get("interactions");
+		List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 		if(inters.size() > 0) {
 			BaseRecord inter = inters.get(0);
 			inter.setValue("type", InteractionEnumType.INVESTIGATE);

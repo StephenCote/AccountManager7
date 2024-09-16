@@ -99,7 +99,7 @@ public class ItemUtil {
 		try {
 			BaseRecord stat = rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ITEM_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path")));
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ITEM, ctx.getOlioUser(), null, plist);
-			rec.set("statistics", stat);
+			rec.set(OlioFieldNames.FIELD_STATISTICS, stat);
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -136,7 +136,7 @@ public class ItemUtil {
 			logger.warn("Store was null");
 			return;
 		}
-		List<BaseRecord> items = store.get("items");
+		List<BaseRecord> items = store.get(OlioFieldNames.FIELD_ITEMS);
 		List<BaseRecord> entries = store.get("inventory");
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("inventories.path"));
 		for(BaseRecord i : items) {
@@ -358,10 +358,10 @@ public class ItemUtil {
 	public static BaseRecord findStoredItemByName(BaseRecord person, String name) {
 		BaseRecord item = null;
 		BaseRecord store = person.get(FieldNames.FIELD_STORE);
-		List<BaseRecord> appl = store.get("apparel");
-		List<BaseRecord> iteml = store.get("items");
+		List<BaseRecord> appl = store.get(OlioFieldNames.FIELD_APPAREL);
+		List<BaseRecord> iteml = store.get(OlioFieldNames.FIELD_ITEMS);
 		for(BaseRecord a: appl) {
-			List<BaseRecord> wearl = a.get("wearables");
+			List<BaseRecord> wearl = a.get(OlioFieldNames.FIELD_WEARABLES);
 			Optional<BaseRecord> owear = wearl.stream().filter(r -> name.equals(r.get(FieldNames.FIELD_NAME))).findFirst();
 			if(owear.isPresent()) {
 				item = owear.get();
@@ -385,7 +385,7 @@ public class ItemUtil {
 		return buildItem(ctx, itemT);
 	}
 	public static BaseRecord buildItem(OlioContext ctx, BaseRecord template) {
-		BaseRecord item = OlioUtil.cloneIntoGroup(template, ctx.getWorld().get("items"));
+		BaseRecord item = OlioUtil.cloneIntoGroup(template, ctx.getWorld().get(OlioFieldNames.FIELD_ITEMS));
 		try {
 			item.set("type", null);
 			item.set("tags", template.get("tags"));
@@ -424,10 +424,10 @@ public class ItemUtil {
 	}
 	
 	public static List<BaseRecord> getTemplateBuilders(OlioContext ctx) {
-		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_BUILDER, "builders", "type", "template"));
+		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_BUILDER, OlioFieldNames.FIELD_BUILDERS, "type", "template"));
 	}
 	public static List<BaseRecord> getTemplateItems(OlioContext ctx) {
-		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_ITEM, "items", "type", "template"));
+		return Arrays.asList(OlioUtil.list(ctx, OlioModelNames.MODEL_ITEM, OlioFieldNames.FIELD_ITEMS, "type", "template"));
 	}
 	public static void loadItems(OlioContext ctx) {
 		int count = IOSystem.getActiveContext().getSearch().count(OlioUtil.getQuery(ctx.getOlioUser(), OlioModelNames.MODEL_ITEM, ctx.getWorld().get("items.path")));
@@ -454,10 +454,10 @@ public class ItemUtil {
 				plist.parameter(FieldNames.FIELD_NAME, item.get(FieldNames.FIELD_NAME));
 				BaseRecord itm = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ITEM, ctx.getOlioUser(), item, plist);
 
-				BaseRecord os = mf.newInstance(OlioModelNames.MODEL_ITEM_STATISTICS, ctx.getOlioUser(), item.get("statistics"), ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path")));
-				itm.set("statistics", os);
+				BaseRecord os = mf.newInstance(OlioModelNames.MODEL_ITEM_STATISTICS, ctx.getOlioUser(), item.get(OlioFieldNames.FIELD_STATISTICS), ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path")));
+				itm.set(OlioFieldNames.FIELD_STATISTICS, os);
 
-				List<BaseRecord> qs = itm.get("qualities");
+				List<BaseRecord> qs = itm.get(OlioFieldNames.FIELD_QUALITIES);
 				BaseRecord oq = mf.newInstance(OlioModelNames.MODEL_QUALITY, ctx.getOlioUser(), (qs.size() > 0 ? qs.get(0) : null), ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("qualities.path")));
 				qs.clear();
 				qs.add(oq);

@@ -86,7 +86,7 @@ public class PointOfInterestUtil {
 			BuilderEnumType bet = bld.getEnum(FieldNames.FIELD_TYPE);
 			try {
 				if(bet == BuilderEnumType.BUILDER) {
-					List<BaseRecord> materials = bld.get("materials");
+					List<BaseRecord> materials = bld.get(OlioFieldNames.FIELD_MATERIALS);
 					for(BaseRecord mat : materials) {
 						ItemUtil.addNewInventory(ctx, mat, poi.get(FieldNames.FIELD_STORE), -1);
 					}

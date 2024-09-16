@@ -9,6 +9,7 @@ import org.cote.accountmanager.factory.FactoryBase;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -63,7 +64,7 @@ public class CharPersonFactory extends FactoryBase {
 				BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, contextUser, null, plist7);
 				BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, contextUser, null, plist8);
 				
-				newRecord.set("statistics", stats);
+				newRecord.set(OlioFieldNames.FIELD_STATISTICS, stats);
 				newRecord.set("instinct", inst);
 				newRecord.set("behavior", beh);
 				newRecord.set("personality", pper);

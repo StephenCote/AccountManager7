@@ -26,6 +26,7 @@ import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StatisticsUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -55,7 +56,7 @@ public class TestNestedStructures extends BaseTest {
 			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
 			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
 			a1.set("instinct", ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
-			a1.set("statistics", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
+			a1.set(OlioFieldNames.FIELD_STATISTICS, ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
 			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
 			a1.set("state", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
 			a1.set(FieldNames.FIELD_STORE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_STORE, testUser1, null, plist));
@@ -63,7 +64,7 @@ public class TestNestedStructures extends BaseTest {
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
 			
-			StatisticsUtil.rollStatistics(a1.get("statistics"), (int)a1.get("age"));
+			StatisticsUtil.rollStatistics(a1.get(OlioFieldNames.FIELD_STATISTICS), (int)a1.get("age"));
 			ProfileUtil.rollPersonality(a1.get("personality"));
 			a1.set("race", CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
 

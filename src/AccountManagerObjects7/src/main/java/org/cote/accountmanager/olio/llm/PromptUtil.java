@@ -18,6 +18,7 @@ import org.cote.accountmanager.olio.ProfileComparison;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -292,7 +293,7 @@ public class PromptUtil {
 		}
 		else {
 			templ = setting.matcher(templ).replaceAll("");
-			String tdesc = chatConfig.get("terrain");
+			String tdesc = chatConfig.get(FieldNames.FIELD_TERRAIN);
 			if(tdesc == null) tdesc = "";
 
 			templ = locationTerrains.matcher(templ).replaceAll(tdesc);	
@@ -331,7 +332,7 @@ public class PromptUtil {
 		if(loc != null) {
 			templ = locationTerrain.matcher(templ).replaceAll(loc.getEnum("terrainType").toString().toLowerCase());	
 		}
-		List<BaseRecord> interactions = chatConfig.get("interactions");
+		List<BaseRecord> interactions = chatConfig.get(OlioFieldNames.FIELD_INTERACTIONS);
 		BaseRecord interaction = null;
 		if(interactions.size() > 0) {
 			interaction = interactions.get(rand.nextInt(interactions.size()));

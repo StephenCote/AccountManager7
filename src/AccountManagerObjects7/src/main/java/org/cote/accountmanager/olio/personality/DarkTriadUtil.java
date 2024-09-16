@@ -19,6 +19,7 @@ import org.cote.accountmanager.olio.ReasonEnumType;
 import org.cote.accountmanager.olio.RollEnumType;
 import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.Rules;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.util.ComputeUtil;
 
@@ -67,14 +68,14 @@ public class DarkTriadUtil {
 	
 
 	public static int getDeceptionCounterStatistic(BaseRecord record) {
-		BaseRecord stat = record.get("statistics");
+		BaseRecord stat = record.get(OlioFieldNames.FIELD_STATISTICS);
 		int cs = ComputeUtil.getAverage(stat, new String[] {"perception", "wisdom", "mentalEndurance"});
 		return cs;
 		//if(cs > 0) return cs / 2;
 		//return 0;
 	}
 	public static int getDeceptionStatistic(BaseRecord record) {
-		BaseRecord stat = record.get("statistics");
+		BaseRecord stat = record.get(OlioFieldNames.FIELD_STATISTICS);
 		int ci = ComputeUtil.getMaximumInt(stat, new String[] {"charisma", "intelligence"});
 		int cp = ComputeUtil.getMinimumInt(stat, new String[] {"creativity", "perception"});
 		int cv = ci + cp;
@@ -95,7 +96,7 @@ public class DarkTriadUtil {
 		return RollUtil.rollStat1(rec.get("personality.narcissism"));
 	}
 	public static RollEnumType rollCounterNarcissism(BaseRecord rec) {
-		return RollUtil.rollStat20(ComputeUtil.getAverage(rec.get("statistics"), new String[] {"spirituality", "willpower"}));
+		return RollUtil.rollStat20(ComputeUtil.getAverage(rec.get(OlioFieldNames.FIELD_STATISTICS), new String[] {"spirituality", "willpower"}));
 	}
 	public static RollEnumType rollPsychopathy(BaseRecord rec) {
 		return RollUtil.rollStat1(rec.get("personality.psychopathy"));

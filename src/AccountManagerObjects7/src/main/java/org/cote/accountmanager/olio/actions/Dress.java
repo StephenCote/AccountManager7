@@ -13,6 +13,7 @@ import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.RollEnumType;
 import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.WearLevelEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -91,7 +92,7 @@ public class Dress implements IAction {
 		
 		if(canDress) {
 			int cwl = WearLevelEnumType.valueOf(level);
-			List<BaseRecord> wearl = app.get("wearables");
+			List<BaseRecord> wearl = app.get(OlioFieldNames.FIELD_WEARABLES);
 			wearl.forEach(w -> {
 				WearLevelEnumType wlvl = w.getEnum("level");
 				int wl = WearLevelEnumType.valueOf(wlvl);

@@ -12,6 +12,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.actions.IAction;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -233,7 +234,7 @@ public class Overwatch {
 			}
 			BaseRecord actor = actionResult.get("actor");
 			BaseRecord iactor = null;
-			List<BaseRecord> inters = actionResult.get("interactions");
+			List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 			BaseRecord interaction = null;
 			if(inters.size() > 0) {
 				interaction = inters.get(0);

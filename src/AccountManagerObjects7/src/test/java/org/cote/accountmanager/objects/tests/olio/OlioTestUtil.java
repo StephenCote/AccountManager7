@@ -194,26 +194,26 @@ public class OlioTestUtil {
 			String[] outfit = print.getOutfit().split(",");
 			BaseRecord apparel = ApparelUtil.constructApparel(ctx, 0L, temp, outfit);
 			apparel.setValue("inuse", true);
-			List<BaseRecord> wearl = apparel.get("wearables");
+			List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
 			wearl.forEach(w -> {
 				w.setValue("inuse", true);
 			});
 			IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
 			BaseRecord store = temp.get(FieldNames.FIELD_STORE);
-			List<BaseRecord> appl = store.get("apparel");
+			List<BaseRecord> appl = store.get(OlioFieldNames.FIELD_APPAREL);
 			for(BaseRecord a : appl) {
-				IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, "apparel", a, null, false);
+				IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, a, null, false);
 			}
 			appl.clear();
 			appl.add(apparel);
-			IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, "apparel", apparel, null, true);
+			IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
 		}
 
 
 
 		if(print.getStatistics() != null) {
 			/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, print.getStatistics()), temp.get("statistics"), true);
+			IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, print.getStatistics()), temp.get(OlioFieldNames.FIELD_STATISTICS), true);
 		}
 		if(print.getPersonality() != null) {
 			/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
@@ -386,8 +386,8 @@ public class OlioTestUtil {
 			cfg.set("llmModel", "fim-local");
 			cfg.set("systemCharacter", per2);
 			cfg.set("userCharacter", per1);
-			cfg.set("interactions", inters);
-			cfg.set("terrain", NarrativeUtil.getTerrain(octx, per1));
+			cfg.set(OlioFieldNames.FIELD_INTERACTIONS, inters);
+			cfg.set(FieldNames.FIELD_TERRAIN, NarrativeUtil.getTerrain(octx, per1));
 			NarrativeUtil.describePopulation(octx, cfg);
 			// IOSystem.getActiveContext().getPolicyUtil().setTrace(true);
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);

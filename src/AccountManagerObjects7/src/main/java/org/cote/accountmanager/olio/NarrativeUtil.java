@@ -18,6 +18,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -186,7 +187,7 @@ public class NarrativeUtil {
 			for(int i = 0; i < items.size(); i++) {
 				BaseRecord w = items.get(i);
 				String mat = "plastic";
-				List<String> mats = w.get("materials");
+				List<String> mats = w.get(OlioFieldNames.FIELD_MATERIALS);
 				if(mats.size() > 0) mat = mats.get(0);
 				buff.append(andl + " " + mat + " " + w.get(FieldNames.FIELD_NAME));
 				andl = ", " + (i == items.size() - 2 ? "and" : "");
@@ -204,7 +205,7 @@ public class NarrativeUtil {
 		StringBuilder buff = new StringBuilder();
 
 		BaseRecord q = null;
-		List<BaseRecord> qs = w.get("qualities");
+		List<BaseRecord> qs = w.get(OlioFieldNames.FIELD_QUALITIES);
 		if(qs.size() > 0) {
 			q = qs.get(0);
 		}

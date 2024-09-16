@@ -166,9 +166,9 @@ public class AnimalUtil {
 							
 							int age = random.nextInt(1,20);
 							anim1.setValue("age", age);
-							StatisticsUtil.rollStatistics(anim1.get("statistics"), age);
+							StatisticsUtil.rollStatistics(anim1.get(OlioFieldNames.FIELD_STATISTICS), age);
 							BaseRecord store = anim1.get(FieldNames.FIELD_STORE);
-							List<BaseRecord> items = store.get("items");
+							List<BaseRecord> items = store.get(OlioFieldNames.FIELD_ITEMS);
 
 							for(BaseRecord it : items) {
 								it.set("type", null);
@@ -229,7 +229,7 @@ public class AnimalUtil {
 			plist.parameter(FieldNames.FIELD_NAME, name);
 	
 			oanim = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ANIMAL, ctx.getOlioUser(), null, plist);
-			oanim.set("statistics", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path"))));
+			oanim.set(OlioFieldNames.FIELD_STATISTICS, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path"))));
 			oanim.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
 			oanim.set("instinct", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("instincts.path"))));
 			oanim.set("state", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path"))));
@@ -314,7 +314,7 @@ public class AnimalUtil {
 				}
 				
 				BaseRecord store = oanim.get(FieldNames.FIELD_STORE);
-				List<BaseRecord> items = store.get("items");
+				List<BaseRecord> items = store.get(OlioFieldNames.FIELD_ITEMS);
 				for(String i : pairs[4].split(",")) {
 					items.add(ItemUtil.getCreateItemTemplate(ctx, i.trim()));
 				}
@@ -323,7 +323,7 @@ public class AnimalUtil {
 				for(String i : pairs[3].split(",")) {
 					items.add(ItemUtil.getItemTemplate(ctx, i.trim()));
 				}
-				store.set("items", items);
+				store.set(OlioFieldNames.FIELD_ITEMS, items);
 				*/
 				/*)
 				List<BaseRecord> tags = oanim.get("tags");

@@ -17,6 +17,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.MBTI;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.Sloan;
@@ -339,7 +340,7 @@ SLOAN Notation
 			prof.setCry(InstinctEnumType.valueOf((double)inst.get("cry")));
 			prof.setProtect(InstinctEnumType.valueOf((double)inst.get("protect")));
 		}
-		BaseRecord stats = animal.get("statistics");
+		BaseRecord stats = animal.get(OlioFieldNames.FIELD_STATISTICS);
 		if(stats != null) {
 			double d1 = 100.0;
 			prof.setPhysicalStrength(HighEnumType.valueOf(((int)stats.get("physicalStrength")*5)/d1));
@@ -417,12 +418,12 @@ SLOAN Notation
 		BaseRecord store = person.get(FieldNames.FIELD_STORE);
 		BaseRecord cit = person.get(FieldNames.FIELD_CONTACT_INFORMATION);
 		if(store != null) {
-			List<BaseRecord> apparel = store.get("apparel");
+			List<BaseRecord> apparel = store.get(OlioFieldNames.FIELD_APPAREL);
 			if(apparel.size() == 0) {
 				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.CLOTHING);
 			}
 			
-			List<BaseRecord> items = store.get("items");
+			List<BaseRecord> items = store.get(OlioFieldNames.FIELD_ITEMS);
 			List<BaseRecord> water = items.stream().filter(i -> "water".equals(i.get("category"))).collect(Collectors.toList());
 			if(water.size() == 0) {
 				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.WATER);
@@ -445,7 +446,7 @@ SLOAN Notation
 
 		}
 		if(cit != null) {
-			List<BaseRecord> addrl = cit.get("addresses");
+			List<BaseRecord> addrl = cit.get(OlioFieldNames.FIELD_ADDRESSES);
 			List<BaseRecord> home = addrl.stream().filter(a -> LocationEnumType.HOME.toString().equals(a.get("locationType"))).collect(Collectors.toList());
 			if(home.size() == 0) {
 				prof.getPhysiologicalNeeds().add(PhysiologicalNeedsEnumType.SHELTER);	

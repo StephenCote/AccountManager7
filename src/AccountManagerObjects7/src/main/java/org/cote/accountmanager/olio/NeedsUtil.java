@@ -105,11 +105,11 @@ public class NeedsUtil {
 		
 		/// Agitate map, people, animals, and identify initial threats
 		///
-		List<BaseRecord> inters = increment.get("interactions");
+		List<BaseRecord> inters = increment.get(OlioFieldNames.FIELD_INTERACTIONS);
 		Map<PersonalityProfile, Map<ThreatEnumType, List<BaseRecord>>> tmap = getAgitatedThreatMap(ctx, realm, increment, map, false);
 		List<BaseRecord> tinters = ThreatUtil.evaluateThreatMap(ctx, tmap, increment);
 
-		OlioUtil.batchAddForeignList(ctx, increment, "interactions", tinters);
+		OlioUtil.batchAddForeignList(ctx, increment, OlioFieldNames.FIELD_INTERACTIONS, tinters);
 
 		logger.info("Calculating threat interactions ... " + tinters.size());
 		
@@ -119,7 +119,7 @@ public class NeedsUtil {
 		
 		/// Delegate actions
 		GroupDynamicUtil.delegateActions(ctx, realm, map, actions);
-		// Queue.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, "interactions"});
+		// Queue.queueUpdate(increment, new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_INTERACTIONS});
 
 		List<BaseRecord> acts = new ArrayList<>();
 		

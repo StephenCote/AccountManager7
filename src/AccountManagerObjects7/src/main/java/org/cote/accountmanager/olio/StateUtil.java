@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -215,7 +216,7 @@ public class StateUtil {
 		
 		/// If the state is currently committed to an action, don't agitate it's location
 		///
-		List<BaseRecord> acts = state.get("actions");
+		List<BaseRecord> acts = state.get(OlioFieldNames.FIELD_ACTIONS);
 		if(acts.size() > 0) {
 			// logger.warn("Don't agitate with current action: " + animal.get(FieldNames.FIELD_NAME));
 			return false;

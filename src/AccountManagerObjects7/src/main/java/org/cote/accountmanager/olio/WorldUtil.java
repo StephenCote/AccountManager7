@@ -173,7 +173,7 @@ public class WorldUtil {
 	}
 	private static int loadTraits(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord traitsDir = world.get("traits");
+		BaseRecord traitsDir = world.get(OlioFieldNames.FIELD_TRAITS);
 		IOSystem.getActiveContext().getReader().populate(traitsDir);
 		
 		String groupPath = traitsDir.get(FieldNames.FIELD_PATH);

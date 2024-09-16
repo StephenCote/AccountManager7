@@ -34,6 +34,7 @@ import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
@@ -63,8 +64,8 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("hires", false, "Bit to generate a higher resolution SD image");
 		options.addOption("seed", true, "Seed to be used for SD images");
 		options.addOption("wearable", true, "Wearables");
-		options.addOption("qualities", true, "Qualities");
-		options.addOption("statistics", true, "Statistics");
+		options.addOption(OlioFieldNames.FIELD_QUALITIES, true, "Qualities");
+		options.addOption(OlioFieldNames.FIELD_STATISTICS, true, "Statistics");
 		options.addOption("personality", true, "Personality");
 		options.addOption("person", true, "Person");
 		options.addOption("chat", false, "Start chat console");
@@ -240,19 +241,19 @@ public class ChatAction extends CommonAction implements IAction{
 					String[] outfit = cmd.getOptionValue("outfit").split(",");
 					BaseRecord apparel = ApparelUtil.constructApparel(octx, 0L, char1, outfit);
 					apparel.setValue("inuse", true);
-					List<BaseRecord> wearl = apparel.get("wearables");
+					List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
 					wearl.forEach(w -> {
 						w.setValue("inuse", true);
 					});
 					IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
 					BaseRecord store = char1.get(FieldNames.FIELD_STORE);
-					List<BaseRecord> appl = store.get("apparel");
+					List<BaseRecord> appl = store.get(OlioFieldNames.FIELD_APPAREL);
 					for(BaseRecord a : appl) {
-						IOSystem.getActiveContext().getMemberUtil().member(user, store, "apparel", a, null, false);
+						IOSystem.getActiveContext().getMemberUtil().member(user, store, OlioFieldNames.FIELD_APPAREL, a, null, false);
 					}
 					appl.clear();
 					appl.add(apparel);
-					IOSystem.getActiveContext().getMemberUtil().member(user, store, "apparel", apparel, null, true);
+					IOSystem.getActiveContext().getMemberUtil().member(user, store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
 				}
 				if(cmd.hasOption("update")) {
 					if(cmd.hasOption("wearable") && cmd.hasOption(FieldNames.FIELD_NAME)) {
@@ -261,18 +262,18 @@ public class ChatAction extends CommonAction implements IAction{
 							IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_WEARABLE, cmd.getOptionValue("wearable")), item);		
 						}
 					}
-					if(cmd.hasOption("qualities") && cmd.hasOption(FieldNames.FIELD_NAME)) {
+					if(cmd.hasOption(OlioFieldNames.FIELD_QUALITIES) && cmd.hasOption(FieldNames.FIELD_NAME)) {
 						BaseRecord item = ItemUtil.findStoredItemByName(char1, cmd.getOptionValue(FieldNames.FIELD_NAME));
 						if(item != null) {
-							List<BaseRecord> qs = item.get("qualities");
+							List<BaseRecord> qs = item.get(OlioFieldNames.FIELD_QUALITIES);
 							if(qs.size() > 0) {
-								IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_QUALITY, cmd.getOptionValue("qualities")), qs.get(0));		
+								IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_QUALITY, cmd.getOptionValue(OlioFieldNames.FIELD_QUALITIES)), qs.get(0));		
 							}
 						}
 					}
-					if(cmd.hasOption("statistics")) {
+					if(cmd.hasOption(OlioFieldNames.FIELD_STATISTICS)) {
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
-						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, cmd.getOptionValue("statistics")), char1.get("statistics"), true);
+						IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_CHAR_STATISTICS, cmd.getOptionValue(OlioFieldNames.FIELD_STATISTICS)), char1.get(OlioFieldNames.FIELD_STATISTICS), true);
 					}
 					if(cmd.hasOption("personality")) {
 						/// Patch the full record because some attributes feed into computed values so the computed values won't correctly reflect the dependent update
@@ -372,14 +373,14 @@ public class ChatAction extends CommonAction implements IAction{
 					if(char1 != null && char2 != null) {
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);
-						cfg.set("interactions", inters);
+						cfg.set(OlioFieldNames.FIELD_INTERACTIONS, inters);
 						if(cmd.hasOption("reimage")) {
 							// char1.setValue("narrative", null);
 							// char2.setValue("narrative", null);
 							sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 						}
 					}
-					cfg.set("terrain", NarrativeUtil.getTerrain(octx, char2));
+					cfg.set(FieldNames.FIELD_TERRAIN, NarrativeUtil.getTerrain(octx, char2));
 					// cfg.set("systemNarrative", NarrativeUtil.getNarrative(octx, char1, cmd.getOptionValue("setting")));
 					// cfg.set("userNarrative", NarrativeUtil.getNarrative(octx, char2, cmd.getOptionValue("setting")));
 					NarrativeUtil.describePopulation(octx, cfg);

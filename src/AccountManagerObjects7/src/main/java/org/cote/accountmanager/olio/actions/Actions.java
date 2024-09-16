@@ -52,13 +52,13 @@ public class Actions {
 	}
 	public static void pruneActionState(OlioContext context, BaseRecord actor) {
 		BaseRecord state = actor.get("state");
-		List<BaseRecord> actions = state.get("actions");
+		List<BaseRecord> actions = state.get(OlioFieldNames.FIELD_ACTIONS);
 		Set<Long> aset = new HashSet<>();
 		for(BaseRecord a: actions) {
 			ActionResultEnumType aet = a.getEnum("type");
 			if(aet != ActionResultEnumType.IN_PROGRESS && aet != ActionResultEnumType.PENDING) {
 				aset.add(a.get(FieldNames.FIELD_ID));
-				IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, "actions", a, null, false);
+				IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, OlioFieldNames.FIELD_ACTIONS, a, null, false);
 			}
 		}
 	}
@@ -67,8 +67,8 @@ public class Actions {
 		pruneActionState(context, actor);
 		
 		BaseRecord state = actor.get("state");
-		List<BaseRecord> actions = state.get("actions");
-		IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, "actions", actionResult, null, true);
+		List<BaseRecord> actions = state.get(OlioFieldNames.FIELD_ACTIONS);
+		IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, OlioFieldNames.FIELD_ACTIONS, actionResult, null, true);
 		actions.add(actionResult);
 
 	}
@@ -181,7 +181,7 @@ public class Actions {
 		//logger.info(actionResult.toFullString());
 		BaseRecord actor = actionResult.get("actor");
 		BaseRecord interactor = null;
-		List<BaseRecord> inters = actionResult.get("interactions");
+		List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 		BaseRecord interaction = null;
 		if(inters.size() > 0) {
 			interaction = inters.get(0);
@@ -205,7 +205,7 @@ public class Actions {
 		boolean narrate = actionResult.get("parameters.narrate");
 		
 		if(narrate) {
-			List<BaseRecord> inters = actionResult.get("interactions");
+			List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 			if(inters.size() > 0) {
 				logger.info(NarrativeUtil.describeInteraction(inters.get(0)));
 			}

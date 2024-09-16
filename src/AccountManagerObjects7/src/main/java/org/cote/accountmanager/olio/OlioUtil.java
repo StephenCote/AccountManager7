@@ -557,7 +557,7 @@ public class OlioUtil {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 
-		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, "apparel");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, OlioFieldNames.FIELD_APPAREL);
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
@@ -578,7 +578,7 @@ public class OlioUtil {
 		
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, FieldNames.FIELD_STORE);
 		cplans.forEach(cp -> {
-			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, OlioModelNames.MODEL_STORE, "apparel");
+			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, OlioModelNames.MODEL_STORE, OlioFieldNames.FIELD_APPAREL);
 			ccplans.forEach(ccp -> {
 				QueryPlan.limitPlan(ccp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 			});
@@ -589,7 +589,7 @@ public class OlioUtil {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 		
-		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, "materials");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, OlioFieldNames.FIELD_MATERIALS);
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
@@ -616,13 +616,13 @@ public class OlioUtil {
 			FieldNames.FIELD_STREAM,
 			FieldNames.FIELD_USERS,
 			FieldNames.FIELD_ACCOUNTS,
-			"schedules",
+			OlioFieldNames.FIELD_SCHEDULES,
 			"boundaries",
 			"borders",
 			"childLocations",
 			"positive",
 			"negative",
-			"traits",
+			OlioFieldNames.FIELD_TRAITS,
 			"entryTraits",
 			"exitTraits",
 			"behavior",
@@ -630,7 +630,7 @@ public class OlioUtil {
 			"portrait",
 			"pattern",
 			"images",
-			"items",
+			OlioFieldNames.FIELD_ITEMS,
 			"socialRing",
 			"dimensions"
 		});

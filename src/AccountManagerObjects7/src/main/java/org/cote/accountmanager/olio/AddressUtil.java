@@ -16,6 +16,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -48,7 +49,7 @@ public class AddressUtil {
 				cit.set(FieldNames.FIELD_REFERENCE_ID, person.get(FieldNames.FIELD_ID));
 				cit.set(FieldNames.FIELD_REFERENCE_TYPE, person.getModel());
 				IOSystem.getActiveContext().getRecordUtil().applyOwnership(ctx.getOlioUser(), cit, ctx.getOlioUser().get(FieldNames.FIELD_ORGANIZATION_ID));
-				List<BaseRecord> addrs = cit.get("addresses");
+				List<BaseRecord> addrs = cit.get(OlioFieldNames.FIELD_ADDRESSES);
 				BaseRecord addr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ADDRESS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("addresses.path")));
 				addr.set(FieldNames.FIELD_NAME, UUID.randomUUID().toString());
 				addr.set(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
@@ -77,8 +78,8 @@ public class AddressUtil {
 			cit = RecordFactory.newInstance(ModelNames.MODEL_CONTACT_INFORMATION);
 			IOSystem.getActiveContext().getRecordUtil().applyOwnership(user, cit, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			
-			BaseRecord addrDir = world.get("addresses");
-			BaseRecord contactDir = world.get("contacts");
+			BaseRecord addrDir = world.get(OlioFieldNames.FIELD_ADDRESSES);
+			BaseRecord contactDir = world.get(OlioFieldNames.FIELD_CONTACTS);
 			IOSystem.getActiveContext().getReader().populate(contactDir);
 			IOSystem.getActiveContext().getReader().populate(addrDir);
 
@@ -106,7 +107,7 @@ public class AddressUtil {
 			 email.set("locationType", LocationEnumType.WORK);
 			 email.set("contactType", ContactEnumType.EMAIL);
 
-			 List<BaseRecord> contacts = cit.get("contacts");
+			 List<BaseRecord> contacts = cit.get(OlioFieldNames.FIELD_CONTACTS);
 			 contacts.add(email);
 			 
 			BaseRecord phone = RecordFactory.newInstance(ModelNames.MODEL_CONTACT);
@@ -118,7 +119,7 @@ public class AddressUtil {
 			 phone.set("contactType", ContactEnumType.PHONE);
 			 contacts.add(phone);
 			 
-			 List<BaseRecord> addrs = cit.get("addresses");
+			 List<BaseRecord> addrs = cit.get(OlioFieldNames.FIELD_ADDRESSES);
 			 
 			 BaseRecord home = randomAddress(user, world, location, addrDir.get(FieldNames.FIELD_PATH));
 			 home.set(FieldNames.FIELD_NAME, person.get(FieldNames.FIELD_NAME) + " Home Address");

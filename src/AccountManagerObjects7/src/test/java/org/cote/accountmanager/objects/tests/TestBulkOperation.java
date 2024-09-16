@@ -24,6 +24,7 @@ import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.DBWriter;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -122,10 +123,10 @@ public class TestBulkOperation extends BaseTest {
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_APPAREL, testUser1, null, plist);
 			aal.add(a1);
-			List<BaseRecord> wl = a1.get("wearables");
+			List<BaseRecord> wl = a1.get(OlioFieldNames.FIELD_WEARABLES);
 			BaseRecord w1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_WEARABLE, testUser1, null, plist);
 			wl.add(w1);
-			List<BaseRecord> ql = w1.get("qualities");
+			List<BaseRecord> ql = w1.get(OlioFieldNames.FIELD_QUALITIES);
 			BaseRecord q1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_QUALITY, testUser1, null, plist);
 			ql.add(q1);
 			BaseRecord d1 = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);

@@ -218,14 +218,14 @@ public class TestChat extends BaseTest {
 			cfg.set("alignment", levt.get("alignment"));
 			cfg.set("systemCharacter", per1);
 			cfg.set("userCharacter", per2);
-			cfg.set("interactions", Arrays.asList(new BaseRecord[] {inter}));
+			cfg.set(OlioFieldNames.FIELD_INTERACTIONS, Arrays.asList(new BaseRecord[] {inter}));
 			cfg.set("assist", true);
 			cfg.set("useNLP", false);
 			cfg.set("prune", true);
 			cfg.set("setting", null);
 			cfg.set("includeScene", true);
 			cfg.set("event", ctx.clock().getIncrement());
-			cfg.set("terrain", NarrativeUtil.getTerrain(ctx, per2));
+			cfg.set(FieldNames.FIELD_TERRAIN, NarrativeUtil.getTerrain(ctx, per2));
 			cfg.set("systemNarrative", NarrativeUtil.getNarrative(ctx, per1, setting));
 			cfg.set("userNarrative", NarrativeUtil.getNarrative(ctx, per2, setting));
 			NarrativeUtil.describePopulation(ctx, cfg);

@@ -119,7 +119,7 @@ public class OlioService {
 			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
 			/*
 			a1.set("instinct", f.newInstance(OlioModelNames.MODEL_INSTINCT, user, null, null));
-			a1.set("statistics", f.newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, null));
+			a1.set(OlioFieldNames.FIELD_STATISTICS, f.newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, null));
 			a1.set("personality", f.newInstance(ModelNames.MODEL_PERSONALITY, user, null, null));
 			a1.set("state", f.newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, null));
 			a1.set(FieldNames.FIELD_STORE, f.newInstance(OlioModelNames.MODEL_STORE, user, null, null));
@@ -128,7 +128,7 @@ public class OlioService {
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
 			
-			StatisticsUtil.rollStatistics(a1.get("statistics"), (int)a1.get("age"));
+			StatisticsUtil.rollStatistics(a1.get(OlioFieldNames.FIELD_STATISTICS), (int)a1.get("age"));
 			ProfileUtil.rollPersonality(a1.get("personality"));
 			a1.set("race", CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
 			a1.set("ethnicity", Arrays.asList(new String[] {EthnicityEnumType.ZERO.toString()}));
