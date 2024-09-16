@@ -33,6 +33,7 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -264,7 +265,7 @@ public class OlioUtil {
 	*/
 	
 	public static BaseRecord getCreatePopulationGroup(OlioContext context, String name)  {
-		BaseRecord popDir = context.getWorld().get("population");
+		BaseRecord popDir = context.getWorld().get(OlioFieldNames.FIELD_POPULATION);
 		BaseRecord grp = null;
 		try{
 			BaseRecord[] grps = IOSystem.getActiveContext().getSearch().findByNameInParent(ModelNames.MODEL_GROUP, popDir.get(FieldNames.FIELD_ID), name);
@@ -296,7 +297,7 @@ public class OlioUtil {
 			logger.error("Failed to find or create group " + groupPath);
 			return null;
 		}
-		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 		BaseRecord irec = null;
 		try {
 			irec = IOSystem.getActiveContext().getFactory().newInstance(model, user, template, plist);
@@ -339,7 +340,7 @@ public class OlioUtil {
 		long id = realm.get("id");
 
 		if(!ctx.getPopulationMap().containsKey(id)) {
-			BaseRecord popGrp = realm.get("population");
+			BaseRecord popGrp = realm.get(OlioFieldNames.FIELD_POPULATION);
 			if(popGrp == null) {
 				logger.error("Failed to find population group");
 				return new ArrayList<>();
@@ -396,7 +397,7 @@ public class OlioUtil {
 		}
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(rec == null) {
-			ParameterList plist = ParameterList.newParameterList("path", group.get("path"));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, group.get(FieldNames.FIELD_PATH));
 			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
 				rec = IOSystem.getActiveContext().getFactory().newInstance(modelName, user, template, plist);
@@ -418,7 +419,7 @@ public class OlioUtil {
 		q.field(FieldNames.FIELD_TYPE, type);
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(rec == null) {
-			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("tagsGroup.path"));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getUniverse().get("tagsGroup.path"));
 			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
 				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TAG, ctx.getOlioUser(), null, plist);
@@ -438,7 +439,7 @@ public class OlioUtil {
 		q.field(FieldNames.FIELD_TYPE, type);
 		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(rec == null) {
-			ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("traits.path"));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getUniverse().get("traits.path"));
 			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
 				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TRAIT, ctx.getOlioUser(), null, plist);
@@ -583,7 +584,7 @@ public class OlioUtil {
 			});
 		});
 		
-		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, "locations");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, FieldNames.FIELD_LOCATIONS);
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
@@ -593,7 +594,7 @@ public class OlioUtil {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});
 
-		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_STORE, "locations");
+		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_STORE, FieldNames.FIELD_LOCATIONS);
 		cplans.forEach(cp -> {
 			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
 		});

@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -87,11 +88,11 @@ public class PointOfInterestUtil {
 				if(bet == BuilderEnumType.BUILDER) {
 					List<BaseRecord> materials = bld.get("materials");
 					for(BaseRecord mat : materials) {
-						ItemUtil.addNewInventory(ctx, mat, poi.get("store"), -1);
+						ItemUtil.addNewInventory(ctx, mat, poi.get(FieldNames.FIELD_STORE), -1);
 					}
 				}
 				else if(bet == BuilderEnumType.ITEM || bet == BuilderEnumType.FIXTURE || (bet == BuilderEnumType.LOCATION && bld.get("item") != null)) {
-					ItemUtil.addNewInventory(ctx, bld.get("item"), poi.get("store"), -1);
+					ItemUtil.addNewInventory(ctx, bld.get("item"), poi.get(FieldNames.FIELD_STORE), -1);
 				}
 				else {
 					logger.warn("Unhandled builder type: " + bet.toString());
@@ -108,13 +109,13 @@ public class PointOfInterestUtil {
 		if(ctx.getWorld() == null) {
 			return rec;
 		}
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("pointsOfInterest.path"));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("pointsOfInterest.path"));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_POI, ctx.getOlioUser(), null, plist);
-			rec.set("store", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
+			rec.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
 			rec.set("type", type);
-			rec.set("location", cell);
+			rec.set(FieldNames.FIELD_LOCATION, cell);
 			rec.set("north", y);
 			rec.set("east", x);
 		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
@@ -132,7 +133,7 @@ public class PointOfInterestUtil {
 		q.field("north", north);
 		OlioUtil.planMost(q);
 
-		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"}));
+		//q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, "builder", "east", "north"}));
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 
@@ -172,7 +173,7 @@ public class PointOfInterestUtil {
 		//q.field(FieldNames.FIELD_LOCATION, cell.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		List<String> ids = cells.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 		q.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
-		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, "store", "builder", "east", "north"});
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_DESCRIPTION, FieldNames.FIELD_STORE, "builder", "east", "north"});
 		q.setCache(false);
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}

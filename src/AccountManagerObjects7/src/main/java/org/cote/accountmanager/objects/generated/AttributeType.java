@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 
 public class AttributeType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(AttributeType.class);

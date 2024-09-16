@@ -24,6 +24,7 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -119,7 +120,7 @@ public class MapUtil {
 			if(!ico) {
 				g2d.fillRect(x, y, cellWidth, cellHeight);
 			}
-			if(type != null && type.equals("feature")) {
+			if(type != null && type.equals(FieldNames.FIELD_FEATURE)) {
 				g2d.setColor(Color.DARK_GRAY);
 				g2d.drawRect(x, y, cellWidth, cellHeight);
 			}
@@ -168,8 +169,8 @@ public class MapUtil {
 		// logger.info("Printing realm: " + realm.get(FieldNames.FIELD_NAME));
 		// logger.info("NOTE: This currently expects a GridSquare layout");
 		IOSystem.getActiveContext().getReader().populate(realm);
-		IOSystem.getActiveContext().getReader().populate(realm, new String[] {"locations"});
-		List<BaseRecord> locs = realm.get("locations");
+		IOSystem.getActiveContext().getReader().populate(realm, new String[] {FieldNames.FIELD_LOCATIONS});
+		List<BaseRecord> locs = realm.get(FieldNames.FIELD_LOCATIONS);
 		if(locs.size() == 0) {
 			logger.error("Zero locations for realm");
 			return;
@@ -269,8 +270,8 @@ public class MapUtil {
 	public static void printDescriptionByFeature(OlioContext ctx, BaseRecord location, String feature) {
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_PARENT_ID));
 		/// DON'T search by group id because feature level grid squares may still be in the universe group
-		// pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
-		pq.field("feature", feature);
+		// pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID));
+		pq.field(FieldNames.FIELD_FEATURE, feature);
 		OlioUtil.planMost(pq);
 
 		BaseRecord[] locations = IOSystem.getActiveContext().getSearch().findRecords(pq);
@@ -298,7 +299,7 @@ public class MapUtil {
 
 		/// Note: finding based only on parentId will span groups.  Each location map should be scoped to only the world
 		/// 
-		pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+		pq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID));
 		OlioUtil.planMost(pq);
 
 		BaseRecord[] cells = IOSystem.getActiveContext().getSearch().findRecords(pq);

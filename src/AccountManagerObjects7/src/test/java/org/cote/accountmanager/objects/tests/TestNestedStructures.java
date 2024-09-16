@@ -47,7 +47,7 @@ public class TestNestedStructures extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		String path = "~/Dooter Peeps - " + UUID.randomUUID().toString();
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		ParameterList plist = ParameterList.newParameterList("path", path);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set(FieldNames.FIELD_FIRST_NAME, "Jay");
@@ -58,7 +58,7 @@ public class TestNestedStructures extends BaseTest {
 			a1.set("statistics", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
 			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
 			a1.set("state", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
-			a1.set("store", ioContext.getFactory().newInstance(OlioModelNames.MODEL_STORE, testUser1, null, plist));
+			a1.set(FieldNames.FIELD_STORE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_STORE, testUser1, null, plist));
 			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
@@ -105,7 +105,7 @@ public class TestNestedStructures extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		String path = "~/Dooter Peeps - " + UUID.randomUUID().toString();
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		ParameterList plist = ParameterList.newParameterList("path", path);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
 			a1.set(FieldNames.FIELD_NAME, "Dooter");
@@ -143,7 +143,7 @@ public class TestNestedStructures extends BaseTest {
 		
 		String path = "~/Dooter Peeps - " + UUID.randomUUID().toString();
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		ParameterList plist = ParameterList.newParameterList("path", path);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
 		String name = "Person 1";
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {

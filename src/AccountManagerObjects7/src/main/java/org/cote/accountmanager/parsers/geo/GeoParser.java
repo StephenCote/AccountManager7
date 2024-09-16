@@ -156,7 +156,7 @@ public class GeoParser {
 	
 	public static int loadFeatureInfo(BaseRecord user, String groupPath, String basePath, String isoCode, int maxLines, boolean resetCountryInfo) {
 		// logger.info("Load " + isoCode + " feature information into " + groupPath);
-		int count = countCleanupLocation(user, groupPath, "feature", isoCode, resetCountryInfo);
+		int count = countCleanupLocation(user, groupPath, FieldNames.FIELD_FEATURE, isoCode, resetCountryInfo);
 		if(count == 0) {
 			ParseConfiguration cfg = GeoParser.newFeatureParseConfiguration(user, groupPath, basePath, isoCode, maxLines);
 			count = importFile(cfg);
@@ -276,13 +276,13 @@ public class GeoParser {
 		map.add(new ParseMap("geonameid", 0));
 		map.add(new ParseMap("latitude", 4));
 		map.add(new ParseMap("longitude", 5));
-		map.add(new ParseMap("feature", 6, new ParseMap(null, 7)));
+		map.add(new ParseMap(FieldNames.FIELD_FEATURE, 6, new ParseMap(null, 7)));
 		map.add(new ParseMap("code", 8, new ParseMap(null, 10)));
 
 		BaseRecord template = null;
 		try {
 			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "feature");
+			template.set("geoType", FieldNames.FIELD_FEATURE);
 			template.set("iso", isoCode);
 			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
 		}

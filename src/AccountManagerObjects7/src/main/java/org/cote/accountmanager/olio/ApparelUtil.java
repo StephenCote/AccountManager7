@@ -97,7 +97,7 @@ public class ApparelUtil {
 	
 	public static void outfitAndStage(OlioContext ctx, BaseRecord cell, List<BaseRecord> party) {
 		for(BaseRecord p: party) {
-			BaseRecord sto = p.get("store");
+			BaseRecord sto = p.get(FieldNames.FIELD_STORE);
 			List<BaseRecord> appl = sto.get("apparel");
 			List<BaseRecord> iteml = sto.get("items");
 			List<String> upf = new ArrayList<>();
@@ -154,7 +154,7 @@ public class ApparelUtil {
 	
 	protected static BaseRecord newApparel(OlioContext ctx, String name, String type, String cat) {
 		BaseRecord rec = null;
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("apparel.path"));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getUniverse().get("apparel.path"));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_APPAREL, ctx.getOlioUser(), null, plist);
@@ -394,7 +394,7 @@ public class ApparelUtil {
 		String fabric = null;
 		try {
 			for(BaseRecord rec : wears) {
-				List<String> locs = rec.get("location");
+				List<String> locs = rec.get(FieldNames.FIELD_LOCATION);
 				if(!locs.contains("feet") && !locs.contains("ankle")) {
 					/// First article sets the color, complement, pattern, and fabric
 					if(primCol == null) {
@@ -629,7 +629,7 @@ public class ApparelUtil {
 				gender = "male";
 			}
 			rec.set("gender", gender);
-			List<String> locs = rec.get("location");
+			List<String> locs = rec.get(FieldNames.FIELD_LOCATION);
 			String[] plocs = tmeta[4].split(",");
 			String ploc = plocs[rand.nextInt(plocs.length)];
 			String[] iplocs = ploc.split("\\+");

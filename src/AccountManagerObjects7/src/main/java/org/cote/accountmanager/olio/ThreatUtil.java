@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
@@ -244,12 +245,12 @@ public class ThreatUtil {
 				continue;
 			}
 			String geoType = location.get("geoType");
-			if(geoType.equals("feature")) {
+			if(geoType.equals(FieldNames.FIELD_FEATURE)) {
 				logger.warn("Feature placement detected: Move " + name);
 			}
 			else {
 				if(alive && awake && !immobile && !incap) {
-					if(state.get("currentEvent") != null) {
+					if(state.get(OlioFieldNames.FIELD_CURRENT_EVENT) != null) {
 						logger.warn("Agitating " + name + " who is currently busy");
 					}
 					Map<ThreatEnumType, List<BaseRecord>> threats = ThreatUtil.evaluateImminentThreats(ctx, realm, event, map, pp);

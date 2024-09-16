@@ -15,6 +15,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.FunctionEnumType;
 import org.cote.accountmanager.util.TypeUtil;
 

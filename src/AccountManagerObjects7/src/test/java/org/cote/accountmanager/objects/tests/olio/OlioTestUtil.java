@@ -52,6 +52,7 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -198,7 +199,7 @@ public class OlioTestUtil {
 				w.setValue("inuse", true);
 			});
 			IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
-			BaseRecord store = temp.get("store");
+			BaseRecord store = temp.get(FieldNames.FIELD_STORE);
 			List<BaseRecord> appl = store.get("apparel");
 			for(BaseRecord a : appl) {
 				IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, "apparel", a, null, false);
@@ -234,7 +235,7 @@ public class OlioTestUtil {
 		assertNotNull("Person location is null", per1.get("state.currentLocation"));
 		
 		/// Move person back into a random cell in the realm origin
-		BaseRecord org = realm.get("origin");
+		BaseRecord org = realm.get(OlioFieldNames.FIELD_ORIGIN);
 		List<BaseRecord> ocells = GeoLocationUtil.getCells(ctx, org);
 		
 		DirectionEnumType dir = DirectionEnumType.UNKNOWN;

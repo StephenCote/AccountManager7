@@ -39,11 +39,11 @@ public class TestModelLayout extends BaseTest {
 		BaseRecord newTag = null;
 		String dataName = "Test Data - " + UUID.randomUUID().toString();
 		ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_NAME, dataName);
-		plist.parameter("path", "~/Data");
+		plist.parameter(FieldNames.FIELD_PATH, "~/Data");
 
 		String tagName = "Test Tag - " + UUID.randomUUID().toString();
 		ParameterList plist2 = ParameterUtil.newParameterList(FieldNames.FIELD_NAME, tagName);
-		plist2.parameter("path", "~/Tags");
+		plist2.parameter(FieldNames.FIELD_PATH, "~/Tags");
 		
 		try {
 			newData = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);

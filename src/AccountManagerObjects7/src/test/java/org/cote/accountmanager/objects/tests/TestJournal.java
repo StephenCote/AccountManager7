@@ -34,7 +34,7 @@ public class TestJournal extends BaseTest {
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
 		String dataName = "Demo data " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Authorize/Create");
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		
 		ModelSchema ms = RecordFactory.getCustomSchemaFromResource("testJournal8", "journalObject");

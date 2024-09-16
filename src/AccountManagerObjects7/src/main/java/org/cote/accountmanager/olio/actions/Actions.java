@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.Overwatch.OverwatchEnumType;
 import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.WearLevelEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
@@ -154,7 +155,7 @@ public class Actions {
 		
 		act.configureAction(context, actr, actor, interactor);
 		if(event != null) {
-			actr.setValue("actionStart", event.get("eventProgress"));
+			actr.setValue("actionStart", event.get(OlioFieldNames.FIELD_EVENT_PROGRESS));
 			actr.setValue("actionProgress", actr.get("actionStart"));
 			actr.setValue("actionEnd", actr.get("actionStart"));
 		}

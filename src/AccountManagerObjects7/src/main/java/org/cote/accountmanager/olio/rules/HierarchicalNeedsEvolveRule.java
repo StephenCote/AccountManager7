@@ -11,6 +11,7 @@ import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 
 public class HierarchicalNeedsEvolveRule extends CommonEvolveRule implements IOlioEvolveRule {
@@ -30,7 +31,7 @@ public class HierarchicalNeedsEvolveRule extends CommonEvolveRule implements IOl
 		
 		/// populate any animal life as needed
 
-		AnimalUtil.checkAnimalPopulation(context, realm, realm.get("origin"));
+		AnimalUtil.checkAnimalPopulation(context, realm, realm.get(OlioFieldNames.FIELD_ORIGIN));
 		
 		/// Party Play will pick a small band of work with, versus the total population
 		/// This becomes the primaryGroup of the 'realm' for this location

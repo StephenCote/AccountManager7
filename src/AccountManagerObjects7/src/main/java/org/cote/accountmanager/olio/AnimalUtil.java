@@ -22,6 +22,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -95,7 +96,7 @@ public class AnimalUtil {
 	public static Map<String, List<BaseRecord>> paintAnimalPopulation(OlioContext ctx, BaseRecord location) {
 		String type = location.get("geoType");
 		Map<String, List<BaseRecord>> pap = new ConcurrentHashMap<>();
-		if(type.equals("feature") || type.equals("featureless")) {
+		if(type.equals(FieldNames.FIELD_FEATURE) || type.equals("featureless")) {
 			List<BaseRecord> cells = GeoLocationUtil.getCells(ctx, location);
 			if(cells.size() > 0) {
 				for(BaseRecord c: cells) {
@@ -166,7 +167,7 @@ public class AnimalUtil {
 							int age = random.nextInt(1,20);
 							anim1.setValue("age", age);
 							StatisticsUtil.rollStatistics(anim1.get("statistics"), age);
-							BaseRecord store = anim1.get("store");
+							BaseRecord store = anim1.get(FieldNames.FIELD_STORE);
 							List<BaseRecord> items = store.get("items");
 
 							for(BaseRecord it : items) {
@@ -224,14 +225,14 @@ public class AnimalUtil {
 		BaseRecord oanim = null;
 		
 		try {
-			ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("animals.path"));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("animals.path"));
 			plist.parameter(FieldNames.FIELD_NAME, name);
 	
 			oanim = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ANIMAL, ctx.getOlioUser(), null, plist);
-			oanim.set("statistics", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path"))));
-			oanim.set("store", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path"))));
-			oanim.set("instinct", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("instincts.path"))));
-			oanim.set("state", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path"))));
+			oanim.set("statistics", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path"))));
+			oanim.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
+			oanim.set("instinct", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("instincts.path"))));
+			oanim.set("state", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path"))));
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -312,7 +313,7 @@ public class AnimalUtil {
 					continue;
 				}
 				
-				BaseRecord store = oanim.get("store");
+				BaseRecord store = oanim.get(FieldNames.FIELD_STORE);
 				List<BaseRecord> items = store.get("items");
 				for(String i : pairs[4].split(",")) {
 					items.add(ItemUtil.getCreateItemTemplate(ctx, i.trim()));

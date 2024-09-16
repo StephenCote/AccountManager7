@@ -37,7 +37,7 @@ public class DirectoryFactory extends FactoryBase {
 			if(name == null && !FieldUtil.isNullOrEmpty(newRecord.getModel(), newRecord.getField(FieldNames.FIELD_NAME))) {
 				name = newRecord.get(FieldNames.FIELD_NAME);
 			}
-			String path = ParameterUtil.getParameter(parameterList, "path", String.class, null);
+			String path = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_PATH, String.class, null);
 			if(name == null && newRecord.inherits(ModelNames.MODEL_NAME)) {
 				name = UUID.randomUUID().toString();
 			}

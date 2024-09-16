@@ -53,10 +53,10 @@ public class TestData extends BaseTest {
 		
 		String dataName = "Test Data - " + UUID.randomUUID().toString();
 		String groupPath = "~/Tagged Data";
-		ParameterList tplist = ParameterList.newParameterList("path", tagGroupPath);
+		ParameterList tplist = ParameterList.newParameterList(FieldNames.FIELD_PATH, tagGroupPath);
 		tplist.parameter(FieldNames.FIELD_NAME, tagName);
 
-		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 
 		
@@ -207,7 +207,7 @@ public class TestData extends BaseTest {
 		
 		byte[] fdata = FileUtil.getFile(filePath);
 
-		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 
 		data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);

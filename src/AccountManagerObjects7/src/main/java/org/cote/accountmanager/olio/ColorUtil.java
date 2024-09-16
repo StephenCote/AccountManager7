@@ -16,6 +16,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.db.DBUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -143,7 +144,7 @@ public class ColorUtil {
 		BaseRecord owner = null;
 		if(ctx != null) {
 			owner = ctx.getOlioUser();
-			group = ctx.getUniverse().get("colors");
+			group = ctx.getUniverse().get(OlioFieldNames.FIELD_COLORS);
 		}
 		else {
 			try {
@@ -174,7 +175,7 @@ public class ColorUtil {
 		if(colorComplements.containsKey(colorHex)) {
 			return colorComplements.get(colorHex);
 		}
-		long groupId = world.get("colors.id");
+		long groupId = world.get(OlioFieldNames.FIELD_COLORS_ID);
 		BaseRecord outColor = null;
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
 		String tableName = dbUtil.getTableName(ModelNames.MODEL_COLOR);

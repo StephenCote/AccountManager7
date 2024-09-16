@@ -34,7 +34,7 @@ public class ChatUtil {
 			if(dat == null) {
 				BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 				dat = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
-				IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, dat, sessionName, dir.get("path"), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+				IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, dat, sessionName, dir.get(FieldNames.FIELD_PATH), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 				dat.set(FieldNames.FIELD_CONTENT_TYPE,  "text/plain");
 				dat = IOSystem.getActiveContext().getAccessPoint().create(user, dat);
 			}
@@ -94,7 +94,7 @@ public class ChatUtil {
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 		
 		if(dat == null) {
-			ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
 				dat = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
@@ -125,7 +125,7 @@ public class ChatUtil {
 	protected static BaseRecord newPromptConfig(BaseRecord user, String name, BaseRecord template) {
 		BaseRecord rec = null;
 		boolean error = false;
-		ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, template, plist);

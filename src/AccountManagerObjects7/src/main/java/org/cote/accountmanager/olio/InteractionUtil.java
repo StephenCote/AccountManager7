@@ -13,11 +13,13 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.util.JSONUtil;
@@ -460,12 +462,12 @@ public class InteractionUtil {
 	) {
 		BaseRecord inter = null;
 	
-		ParameterList plist = ParameterList.newParameterList("path", (ctx != null ? ctx.getWorld().get("interactions.path") : null));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, (ctx != null ? ctx.getWorld().get("interactions.path") : null));
 		try {
 			inter = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INTERACTION, (ctx != null ? ctx.getOlioUser() : null), null, plist);
 			if(event != null) {
-				inter.set("interactionStart", event.get("eventStart"));
-				inter.set("interactionEnd", event.get("eventEnd"));
+				inter.set("interactionStart", event.get(OlioFieldNames.FIELD_EVENT_START));
+				inter.set("interactionEnd", event.get(OlioFieldNames.FIELD_EVENT_END));
 			}
 			inter.set("type", type);
 			inter.set("actor", actor);

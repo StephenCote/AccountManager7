@@ -25,6 +25,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -53,7 +54,7 @@ public class CharacterUtil {
 	}
 	public static int getAgeAtEpoch(BaseRecord user, BaseRecord epoch, BaseRecord person) {
 		Date bday = person.get("birthDate");
-		Date cday = epoch.get("eventEnd");
+		Date cday = epoch.get(OlioFieldNames.FIELD_EVENT_END);
 		return (int)(Math.abs(cday.getTime() - bday.getTime()) / OlioUtil.YEAR);
 	}
 
@@ -65,36 +66,36 @@ public class CharacterUtil {
 	public static BaseRecord randomPerson(OlioContext ctx, String preferredLastName, ZonedDateTime inceptionDate, String[] mnames, String[] fnames, String[] snames, String[] tnames) {
 		BaseRecord user = ctx.getOlioUser();
 		BaseRecord world = ctx.getWorld();
-		BaseRecord parWorld = world.get("basis");
+		BaseRecord parWorld = world.get(OlioFieldNames.FIELD_BASIS);
 		if(parWorld == null) {
 			logger.error("A basis world is required");
 			return null;
 		}
 
-		BaseRecord namesDir = parWorld.get("names");
-		BaseRecord surDir = parWorld.get("surnames");
-		BaseRecord popDir = world.get("population");
+		BaseRecord namesDir = parWorld.get(OlioFieldNames.FIELD_NAMES);
+		BaseRecord surDir = parWorld.get(OlioFieldNames.FIELD_SURNAMES);
+		BaseRecord popDir = world.get(OlioFieldNames.FIELD_POPULATION);
 		// IOSystem.getActiveContext().getReader().populate(popDir);
 		
 
 		BaseRecord person = null;
 		
 		try {
-			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("statistics.path")));
-			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("instincts.path")));
-			BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("behaviors.path")));
-			BaseRecord pper = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PERSONALITY, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("personalities.path")));
-			BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path")));
-			BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("stores.path")));
-			BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("profiles.path")));
+			BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path")));
+			BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("instincts.path")));
+			BaseRecord beh = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_BEHAVIOR, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("behaviors.path")));
+			BaseRecord pper = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PERSONALITY, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("personalities.path")));
+			BaseRecord st = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path")));
+			BaseRecord sto = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH)));
+			BaseRecord pro = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_PROFILE, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("profiles.path")));
 			
-			person = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList("path", ctx.getWorld().get("population.path")));
+			person = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("population.path")));
 			person.set("statistics", stats);
 			person.set("instinct", inst);
 			person.set("behavior", beh);
 			person.set("personality", pper);
 			person.set("state", st);
-			person.set("store", sto);
+			person.set(FieldNames.FIELD_STORE, sto);
 			person.set("profile", pro);
 			boolean isMale = (Math.random() < 0.5);
 			
@@ -348,27 +349,27 @@ public class CharacterUtil {
 		String locName = location.get(FieldNames.FIELD_NAME);
 		long start = System.currentTimeMillis();
 		BaseRecord event = null;
-		BaseRecord parWorld = ctx.getWorld().get("basis");
+		BaseRecord parWorld = ctx.getWorld().get(OlioFieldNames.FIELD_BASIS);
 		if(parWorld == null) {
 			logger.error("A basis world is required");
 			return null;
 		}
 		IOSystem.getActiveContext().getReader().populate(parWorld, 2);
 		try {
-			BaseRecord popDir = ctx.getWorld().get("population");
-			BaseRecord evtDir = ctx.getWorld().get("events");
+			BaseRecord popDir = ctx.getWorld().get(OlioFieldNames.FIELD_POPULATION);
+			BaseRecord evtDir = ctx.getWorld().get(OlioFieldNames.FIELD_EVENTS);
 			
-			ParameterList plist = ParameterList.newParameterList("path", evtDir.get(FieldNames.FIELD_PATH));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, evtDir.get(FieldNames.FIELD_PATH));
 			event = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 			event.set(FieldNames.FIELD_LOCATION, location);
 			event.set(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
 			event.set(FieldNames.FIELD_NAME, "Populate " + locName);
 			event.set(OlioFieldNames.FIELD_REALM, realm);
 			event.set(FieldNames.FIELD_PARENT_ID, rootEvent.get(FieldNames.FIELD_ID));
-			ZonedDateTime inceptionDate = rootEvent.get("eventStart");
-			event.set("eventStart", inceptionDate);
-			event.set("eventProgress", inceptionDate);
-			event.set("eventEnd", rootEvent.get("eventEnd"));
+			ZonedDateTime inceptionDate = rootEvent.get(OlioFieldNames.FIELD_EVENT_START);
+			event.set(OlioFieldNames.FIELD_EVENT_START, inceptionDate);
+			event.set(OlioFieldNames.FIELD_EVENT_PROGRESS, inceptionDate);
+			event.set(OlioFieldNames.FIELD_EVENT_END, rootEvent.get(OlioFieldNames.FIELD_EVENT_END));
 
 			List<BaseRecord> grps = event.get(FieldNames.FIELD_GROUPS);
 			BaseRecord popGrp = OlioUtil.newRegionGroup(ctx.getOlioUser(), popDir, locName + " Population");
@@ -384,8 +385,8 @@ public class CharacterUtil {
 			
 			IOSystem.getActiveContext().getRecordUtil().updateRecords(grps.toArray(new BaseRecord[0]));
 			
-			realm.set("population", popGrp);
-			Queue.queueUpdate(realm, new String[] {"population"});
+			realm.set(OlioFieldNames.FIELD_POPULATION, popGrp);
+			Queue.queueUpdate(realm, new String[] {OlioFieldNames.FIELD_POPULATION});
 			realm.set("populationGroups", grps);
 			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", popGrp));
 			Queue.queue(ParticipationFactory.newParticipation(ctx.getOlioUser(), realm, "populationGroups", cemGrp));

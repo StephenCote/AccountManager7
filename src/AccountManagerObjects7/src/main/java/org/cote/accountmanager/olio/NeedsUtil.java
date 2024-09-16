@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -149,7 +150,7 @@ public class NeedsUtil {
 			/// 
 		}
 		if(action != null) {
-			ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("actionResults.path"));
 			try {
 				actionResult = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
 				actionResult.set("action", action);
@@ -234,9 +235,9 @@ public class NeedsUtil {
 		if(eloc == null) {
 			logger.warn("Increment missing location");
 			logger.info(event.toFullString());
-			eloc = realm.get("origin");
-			event.setValue("location", eloc);
-			Queue.queueUpdate(event, new String[] {"location"});
+			eloc = realm.get(OlioFieldNames.FIELD_ORIGIN);
+			event.setValue(FieldNames.FIELD_LOCATION, eloc);
+			Queue.queueUpdate(event, new String[] {FieldNames.FIELD_LOCATION});
 		}
 		List<BaseRecord> acells = GeoLocationUtil.getCells(ctx, eloc);
 		BaseRecord rloc = null;
@@ -264,7 +265,7 @@ public class NeedsUtil {
 				// logger.info("Agitate " + p.get(FieldNames.FIELD_NAME) + " " + location.get(FieldNames.FIELD_NAME) + ", " + state.get("currentEast") + ", " + state.get("currentNorth"));
 
 				String geoType = location.get("geoType");
-				if(geoType.equals("feature")) {
+				if(geoType.equals(FieldNames.FIELD_FEATURE)) {
 					logger.warn("Feature placement detected: Move " + name);
 				}
 				else {

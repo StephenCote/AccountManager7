@@ -305,4 +305,6 @@ public class FieldNames {
 		// Location
 		public static final String FIELD_LOCATION = "location";
 		public static final String FIELD_GROUPS = "groups";
+		public static final String FIELD_FEATURE = "feature";
+		public static final String FIELD_LOCATIONS = "locations";
 }

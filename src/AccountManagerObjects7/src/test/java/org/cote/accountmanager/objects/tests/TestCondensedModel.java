@@ -17,6 +17,7 @@ import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
@@ -39,7 +40,7 @@ public class TestCondensedModel extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		BaseRecord group = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Condensed", "DATA", testOrgContext.getOrganizationId());
 		String dataName = "Condenser Test " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", "~/Condensed");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Condensed");
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		

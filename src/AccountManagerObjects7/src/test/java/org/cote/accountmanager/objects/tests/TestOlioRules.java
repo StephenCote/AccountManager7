@@ -15,6 +15,7 @@ import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.junit.Test;
@@ -51,8 +52,8 @@ public class TestOlioRules extends BaseTest {
 		List<BaseRecord> realms = octx.getRealms();
 		assertTrue("Expected some realms", realms.size() > 0);
 		BaseRecord realm = realms.get(0);
-		BaseRecord lrec = realm.get("origin");
-		BaseRecord popGroup = realm.get("population");
+		BaseRecord lrec = realm.get(OlioFieldNames.FIELD_ORIGIN);
+		BaseRecord popGroup = realm.get(OlioFieldNames.FIELD_POPULATION);
 		assertNotNull("Pop group is null", popGroup);
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
 		

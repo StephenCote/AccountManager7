@@ -25,6 +25,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
+import org.cote.accountmanager.schema.FieldNames;
 
 public class ConsoleMain {
 	public static final Logger logger = LogManager.getLogger(ConsoleMain.class);
@@ -53,7 +54,7 @@ public class ConsoleMain {
 		options.addOption("color", false, "Generic bit");
 		options.addOption("pattern", false, "Generic bit");
 		options.addOption(FieldNames.FIELD_NAME, true, "Generic placeholder");
-		options.addOption("path", true, "Generic placeholder");
+		options.addOption(FieldNames.FIELD_PATH, true, "Generic placeholder");
 		options.addOption("delete", false, "Generic placeholder");
 		options.addOption("update", false, "Generic bit to indicate a value update");
 		options.addOption("list", false, "Generic bit to list values");

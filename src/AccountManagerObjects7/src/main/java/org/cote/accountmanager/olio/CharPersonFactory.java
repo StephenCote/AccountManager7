@@ -36,7 +36,7 @@ public class CharPersonFactory extends FactoryBase {
 		String path = "~/" + ms.getGroup();
 		String name = null;
 		if(parameterList != null) {
-			path = ParameterUtil.getParameter(parameterList, "path", String.class, path);
+			path = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_PATH, String.class, path);
 			name = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_NAME, String.class, null);
 		}
 		if(contextUser != null) {
@@ -47,13 +47,13 @@ public class CharPersonFactory extends FactoryBase {
 				String mtype = ModelNames.MODEL_GROUP;
 				
 
-				ParameterList plist2 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_STATISTICS).getGroup());
-				ParameterList plist3 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_INSTINCT).getGroup());
-				ParameterList plist4 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_BEHAVIOR).getGroup());
-				ParameterList plist5 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_PERSONALITY).getGroup());
-				ParameterList plist6 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_STATE).getGroup());
-				ParameterList plist7 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_STORE).getGroup());
-				ParameterList plist8 = ParameterList.newParameterList("path", "~/" + RecordFactory.getSchema(ModelNames.MODEL_PROFILE).getGroup());
+				ParameterList plist2 = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_STATISTICS).getGroup());
+				ParameterList plist3 = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_INSTINCT).getGroup());
+				ParameterList plist4 = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + RecordFactory.getSchema(ModelNames.MODEL_BEHAVIOR).getGroup());
+				ParameterList plist5 = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + RecordFactory.getSchema(ModelNames.MODEL_PERSONALITY).getGroup());
+				ParameterList plist6 = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_STATE).getGroup());
+				ParameterList plist7 = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + RecordFactory.getSchema(OlioModelNames.MODEL_STORE).getGroup());
+				ParameterList plist8 = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + RecordFactory.getSchema(ModelNames.MODEL_PROFILE).getGroup());
 
 				BaseRecord stats = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, contextUser, null, plist2);
 				BaseRecord inst = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, contextUser, null, plist3);
@@ -68,7 +68,7 @@ public class CharPersonFactory extends FactoryBase {
 				newRecord.set("behavior", beh);
 				newRecord.set("personality", pper);
 				newRecord.set("state", st);
-				newRecord.set("store", sto);
+				newRecord.set(FieldNames.FIELD_STORE, sto);
 				newRecord.set("profile", pro);
 
 			} catch (FieldException | ValueException | ModelNotFoundException e) {

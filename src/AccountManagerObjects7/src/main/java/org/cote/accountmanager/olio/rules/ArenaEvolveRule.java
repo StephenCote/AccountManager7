@@ -51,7 +51,7 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 	@Override
 	public BaseRecord continueRealmIncrement(OlioContext context, BaseRecord realm) {
 		return context.clock().realmClock(realm).getIncrement();
-		// BaseRecord rec = EventUtil.getLastEvent(context.getOlioUser(), context.getWorld(), locationEpoch.get("location"), EventEnumType.PERIOD, TimeEnumType.HOUR, ActionResultEnumType.PENDING, false); 
+		// BaseRecord rec = EventUtil.getLastEvent(context.getOlioUser(), context.getWorld(), locationEpoch.get(FieldNames.FIELD_LOCATION), EventEnumType.PERIOD, TimeEnumType.HOUR, ActionResultEnumType.PENDING, false); 
 	}
 
 	@Override

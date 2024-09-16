@@ -222,7 +222,7 @@ public class WordParser {
 			ParseConfiguration cfg = newColorParseConfiguration(user, groupPath, basePath, 0);
 			count = importFile(cfg);
 			*/
-			ParameterList plist = ParameterList.newParameterList("path", groupPath);
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 			List<BaseRecord> newCol = new ArrayList<>();
 			List<BaseRecord> colTemp = ColorUtil.getDefaultColors();
 			// logger.info("Loading " + colTemp.size() + " colors");
@@ -334,7 +334,7 @@ public class WordParser {
 
 	}
 	private static BaseRecord newTrait(BaseRecord owner, String path, String name, TraitEnumType type, AlignmentEnumType alignment) {
-		ParameterList plist = ParameterList.newParameterList("path", path);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		BaseRecord data = null;
 		try {

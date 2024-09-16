@@ -29,7 +29,7 @@ public class TestSD extends BaseTest {
 		OlioContext ctx = getContext(testUser1);
 		BaseRecord[] realms = ctx.getRealms();
 		assertTrue("Expected at least one realm", realms.length > 0);
-		BaseRecord popGrp = realms[0].get("population");
+		BaseRecord popGrp = realms[0].get(OlioFieldNames.FIELD_POPULATION);
 		assertNotNull("Expected a population group", popGrp);
 		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(ctx, popGrp);
 		assertTrue("Expected a population", pop.size() > 0);

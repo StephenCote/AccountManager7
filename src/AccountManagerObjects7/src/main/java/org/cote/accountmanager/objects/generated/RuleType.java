@@ -15,6 +15,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ConditionEnumType;
 import org.cote.accountmanager.schema.type.RuleEnumType;
 import org.cote.accountmanager.util.TypeUtil;
@@ -44,11 +45,11 @@ public class RuleType extends LooseRecord {
 		}
 	}
 	public List<PatternType> getPatterns() {
-		return TypeUtil.convertRecordList(get("patterns"));
+		return TypeUtil.convertRecordList(get(FieldNames.FIELD_PATTERNS));
 	}
 	public void setPatterns(List<PatternType> patterns) {
 		try {
-			set("patterns", patterns);
+			set(FieldNames.FIELD_PATTERNS, patterns);
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

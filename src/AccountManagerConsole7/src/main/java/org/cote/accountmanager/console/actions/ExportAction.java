@@ -34,11 +34,11 @@ public class ExportAction extends CommonAction {
 				logger.error("Invalid model type: " + cmd.getOptionValue("type"));
 				return;
 			}
-			if(cmd.hasOption("path")) {
+			if(cmd.hasOption(FieldNames.FIELD_PATH)) {
 				if(ms.inherits(ModelNames.MODEL_DIRECTORY)) {
 			
 					logger.info("Export directory");
-					BaseRecord rec = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP, cmd.getOptionValue("path"), GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+					BaseRecord rec = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP, cmd.getOptionValue(FieldNames.FIELD_PATH), GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 					if(rec == null) {
 						logger.error("Invalid path");
 					}

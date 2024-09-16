@@ -10,6 +10,7 @@ import org.cote.accountmanager.olio.DensityEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
@@ -18,7 +19,7 @@ public class LocationPlannerRule extends CommonContextRule implements IOlioConte
 	
 	@Override
 	public void generateRegion(OlioContext context, BaseRecord realm) {
-		BaseRecord location = realm.get("origin");
+		BaseRecord location = realm.get(OlioFieldNames.FIELD_ORIGIN);
 		if(location == null) {
 			logger.error("Unable to plan without a location");
 			//ErrorUtil.printStackTrace();

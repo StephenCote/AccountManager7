@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -359,10 +360,10 @@ public class OlioContext {
 
 			clock = new Clock(EventUtil.getLastEpochEvent(this), EventUtil.getRootEvent(this));
 			
-			locations = getRealms().stream().map(r -> (BaseRecord)r.get("origin")).collect(Collectors.toList());
+			locations = getRealms().stream().map(r -> (BaseRecord)r.get(OlioFieldNames.FIELD_ORIGIN)).collect(Collectors.toList());
 
 
-			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id")))));
+			populationGroups.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get(OlioFieldNames.FIELD_POPULATION_ID)))));
 
 			initialized = true;
 			
@@ -394,9 +395,9 @@ public class OlioContext {
 	public BaseRecord getRealmConstructEvent(BaseRecord realm) {
 		long eid = realm.get(FieldNames.FIELD_ID);
 		Query eq = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, OlioFieldNames.FIELD_REALM, eid);
-		eq.field(FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		eq.field(FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_EVENTS_ID));
 		eq.field(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-		eq.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+		eq.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END}));
 		return IOSystem.getActiveContext().getSearch().findRecord(eq);
 	}
 
@@ -422,8 +423,8 @@ public class OlioContext {
 				errors++;
 			}
 			for(BaseRecord r: rlms) {
-				r.setValue("currentEpoch", ep);
-				Queue.queueUpdate(r, new String[] {"currentEpoch"});
+				r.setValue(OlioFieldNames.FIELD_CURRENT_EPOCH, ep);
+				Queue.queueUpdate(r, new String[] {OlioFieldNames.FIELD_CURRENT_EPOCH});
 				BaseRecord revt = startOrContinueRealmEvent(r);
 				if(revt == null) {
 					logger.error("Failed to start or continue realm epoch");
@@ -502,7 +503,7 @@ public class OlioContext {
 			return realms;
 		}
 		
-		Query rq = QueryUtil.createQuery(OlioModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, world.get("realmsGroup.id"));
+		Query rq = QueryUtil.createQuery(OlioModelNames.MODEL_REALM, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_REALMS_GROUP_ID));
 		OlioUtil.planMost(rq);
 		//logger.info(rq.toSelect());
 		realms.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(rq)));
@@ -514,14 +515,7 @@ public class OlioContext {
 				realms.add(getRealm(loc));
 			}
 		}
-		else {
-			BaseRecord tr = realms.get(0);
-			BaseRecord ci = tr.get("currentIncrement");
-			//if(ci != null) {
-				//logger.info("Debug realm:");
-				//logger.info(tr.toFullString());
-			//}
-		}
+
 		return realms;
 	}
 
@@ -545,21 +539,17 @@ public class OlioContext {
 	
 	private void updateRealm(BaseRecord realm) {
 
-		// IOSystem.getActiveContext().getReader().populate(realm, new String[] {"origin", "currentEpoch", "currentEvent", "currentIncrement"});
-		BaseRecord org = realm.get("origin");
+		BaseRecord org = realm.get(OlioFieldNames.FIELD_ORIGIN);
 		if(org == null) {
 			logger.error("Origin is missing");
 			logger.error(realm.toFullString());
 			return;
 		}
-		// Clock rclock = realmClock(realm);
 		try {
 			if(clock != null) {
-				realm.set("currentEpoch", clock.getEpoch());
+				realm.set(OlioFieldNames.FIELD_CURRENT_EPOCH, clock.getEpoch());
 			}
-			// realm.set("currentEvent", rclock.getEvent());
-			// realm.set("currentIncrement", rclock.getIncrement());
-			Queue.queue(realm.copyRecord(new String[] {FieldNames.FIELD_ID, "currentEpoch", "currentEvent", "currentIncrement"}));
+			Queue.queue(realm.copyRecord(new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_CURRENT_EPOCH, OlioFieldNames.FIELD_CURRENT_EVENT, OlioFieldNames.FIELD_CURRENT_INCREMENT}));
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -572,7 +562,7 @@ public class OlioContext {
 			return null;
 		}
 		
-		BaseRecord cevt = realm.get("currentEvent");
+		BaseRecord cevt = realm.get(OlioFieldNames.FIELD_CURRENT_EVENT);
 		if(cevt != null) {
 			ActionResultEnumType aet = ActionResultEnumType.valueOf(cevt.get(FieldNames.FIELD_STATE));
 			if(aet == ActionResultEnumType.PENDING) {
@@ -590,43 +580,6 @@ public class OlioContext {
 
 	}
 	
-	/*
-	public BaseRecord startOrContinueLocationEpoch(BaseRecord location) {
-		if(currentEpoch == null) {
-			logger.error("Current epoch is null");
-			return null;
-		}
-		BaseRecord[] childEvts = EventUtil.getChildEvents(world, currentEpoch, null, location, null, TimeEnumType.UNKNOWN, EventEnumType.UNKNOWN);
-		if(childEvts.length > 0) {
-			if(childEvts.length > 1) {
-				logger.warn("Expected only 1 location epoch and found " + childEvts.length);
-			}
-			ActionResultEnumType aet = ActionResultEnumType.valueOf(childEvts[0].get(FieldNames.FIELD_STATE));
-			if(aet == ActionResultEnumType.PENDING) {
-				for(IOlioEvolveRule r : config.getEvolutionRules()) {
-					r.continueLocationEpoch(this, location, currentEpoch);
-				}
-				currentEvent = childEvts[0];
-				currentLocation = location;
-				return currentEpoch;
-			}
-			else {
-				logger.warn("Current location epoch is not in a pending state");
-				logger.warn(childEvts[0].toFullString());
-			}
-		}
-		return startLocationEpoch(location);
-
-	}
-	
-	public BaseRecord startLocationEpoch(BaseRecord location) {
-		return EpochUtil.startLocationEpoch(this, location);
-	}
-	public void endLocationEpoch(BaseRecord location) {
-		EpochUtil.endLocationEpoch(this, location);
-	}
-	*/
-	
 	public BaseRecord startRealmEvent(BaseRecord realm) {
 		return EpochUtil.startRealmEvent(this, realm);
 	}
@@ -638,21 +591,10 @@ public class OlioContext {
 	public void endEpoch() {
 		EpochUtil.endEpoch(this);
 	}
-	/*
-	public void evaluateIncrement() {
-		if(currentIncrement == null) {
-			logger.error("Invalid increment");
-			return;
-		}
-		for(IOlioEvolveRule r : config.getEvolutionRules()) {
-			r.evaluateIncrement(this, currentEvent, currentIncrement);
-		}
-	}
-	*/
 	
 	public void evaluateIncrement(BaseRecord realm) {
-		BaseRecord evt = realm.get("currentEvent");
-		BaseRecord ievt = realm.get("currentIncrement");
+		BaseRecord evt = realm.get(OlioFieldNames.FIELD_CURRENT_EVENT);
+		BaseRecord ievt = realm.get(OlioFieldNames.FIELD_CURRENT_INCREMENT);
 		if(evt == null) {
 			logger.error("Invalid current event");
 			return;
@@ -716,20 +658,6 @@ public class OlioContext {
 		}
 		return EpochUtil.continueRealmIncrement(this, realm);
 	}
-	
-	/*
-	public void abandonLocationEpoch() {
-		if(currentEvent != null) {
-			ActionResultEnumType aet = ActionResultEnumType.valueOf(currentEvent.get(FieldNames.FIELD_STATE));
-			if(aet != ActionResultEnumType.COMPLETE) {
-				IOSystem.getActiveContext().getRecordUtil().deleteRecord(currentEvent);
-				currentEvent = null;
-				currentLocation = null;
-			}
-		}
-	}
-	*/
-	
 
 	public Map<Long, Map<String, List<BaseRecord>>> getDemographicMap() {
 		return demographicMap;
@@ -752,16 +680,6 @@ public class OlioContext {
 	public List<BaseRecord> getRealmPopulation(BaseRecord realm){
 		return OlioUtil.getRealmPopulation(this, realm);
 	}
-	
-	/// TODO: Deprecate this
-	/*
-	public List<BaseRecord> getPopulation(BaseRecord location){
-		return OlioUtil.getPopulation(this, location);
-	}
-	public BaseRecord getPopulationGroup(BaseRecord location, String name) {
-		return OlioUtil.getPopulationGroup(this, location, name);
-	}
-	*/
 	
 	public boolean validateContext() {
 		if(!initialized) {

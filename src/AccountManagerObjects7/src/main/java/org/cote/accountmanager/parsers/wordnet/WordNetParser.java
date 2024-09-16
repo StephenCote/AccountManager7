@@ -176,7 +176,7 @@ public class WordNetParser {
 					
 					int lexId = Integer.parseInt("0" + record.get(5), 16);
 					int offset = 6;
-					ParameterList plist = ParameterList.newParameterList("path", cfg.getGroupPath());
+					ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, cfg.getGroupPath());
 					plist.parameter(FieldNames.FIELD_NAME, name);
 					BaseRecord word = IOSystem.getActiveContext().getFactory().newInstance(cfg.getModel(), cfg.getOwner(), null, plist);
 					List<BaseRecord> alts = word.get("alternatives");

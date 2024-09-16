@@ -29,6 +29,7 @@ import org.cote.accountmanager.olio.RollEnumType;
 import org.cote.accountmanager.olio.RollUtil;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.ThreatEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.EventEnumType;
@@ -291,7 +292,7 @@ public class GroupDynamicUtil {
 		/// TODO: Differentiate between new leadership and existing leadership
 		BaseRecord increment = null;
 		if(realm != null) {
-			realm.get("currentIncrement");
+			realm.get(OlioFieldNames.FIELD_CURRENT_INCREMENT);
 		}
 		List<BaseRecord> interactions = new ArrayList<>();
 		List<PersonalityProfile> primeAge = map.stream().filter(pp -> pp.getId() != leader.getId() && pp.getAge() >= Rules.MINIMUM_ADULT_AGE && pp.getAge() <= Rules.SENIOR_AGE).collect(Collectors.toList());

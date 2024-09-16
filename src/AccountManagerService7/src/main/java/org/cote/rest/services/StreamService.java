@@ -29,7 +29,7 @@ public class StreamService {
 	@GET
 	@Path("/{objectId:[0-9A-Za-z\\-]+}/{startIndex:[\\d]+}/{length:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response getStreamSegment(@PathParam("objectId") String objectId,@PathParam(FieldNames.FIELD_NAME) String name, @PathParam("startIndex") long startIndex, @PathParam("length") int length, @Context HttpServletRequest request){
+	public Response getStreamSegment(@PathParam("objectId") String objectId,@PathParam("name") String name, @PathParam("startIndex") long startIndex, @PathParam("length") int length, @Context HttpServletRequest request){
 		BaseRecord rseg = null;
 		try{
 			rseg = IOSystem.getActiveContext().getReader().read(new StreamSegmentUtil().newSegment(objectId, startIndex, length));

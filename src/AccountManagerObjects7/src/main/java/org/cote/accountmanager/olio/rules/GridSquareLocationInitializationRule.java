@@ -21,6 +21,7 @@ import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -56,9 +57,9 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 		
 		List<BaseRecord> events = new ArrayList<>(); 
 		BaseRecord world = ctx.getWorld();
-		BaseRecord parWorld = world.get("basis");
-		BaseRecord locDir = world.get("locations");
-		BaseRecord eventsDir = world.get("events");
+		BaseRecord parWorld = world.get(OlioFieldNames.FIELD_BASIS);
+		BaseRecord locDir = world.get(FieldNames.FIELD_LOCATIONS);
+		BaseRecord eventsDir = world.get(OlioFieldNames.FIELD_EVENTS);
 		if(parWorld == null) {
 			logger.error("A basis world is required");
 			return null;
@@ -105,14 +106,14 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 				BaseRecord event = null;
 
 				if(root == null) {
-					ParameterList plist = ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH));
+					ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, eventsDir.get(FieldNames.FIELD_PATH));
 					root = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 					root.set(FieldNames.FIELD_NAME, "Construct Region " + locName);
 					root.set(FieldNames.FIELD_LOCATION, loc);
 					root.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-					root.set("eventStart", ctx.getConfig().getBaseInceptionDate());
-					root.set("eventProgress", ctx.getConfig().getBaseInceptionDate());
-					root.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
+					root.set(OlioFieldNames.FIELD_EVENT_START, ctx.getConfig().getBaseInceptionDate());
+					root.set(OlioFieldNames.FIELD_EVENT_PROGRESS, ctx.getConfig().getBaseInceptionDate());
+					root.set(OlioFieldNames.FIELD_EVENT_END, ctx.getConfig().getBaseInceptionDate());
 					if(!IOSystem.getActiveContext().getRecordUtil().updateRecord(root)) {
 						logger.error("Failed to create root event");
 						return null;
@@ -124,7 +125,7 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 					BaseRecord popEvent = CharacterUtil.populateRegion(ctx, realm, loc, root, ctx.getConfig().getBasePopulationCount());
 					popEvent.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					events.add(popEvent);
-					event = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, ParameterList.newParameterList("path", eventsDir.get(FieldNames.FIELD_PATH)));
+					event = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, eventsDir.get(FieldNames.FIELD_PATH)));
 					event.set(FieldNames.FIELD_NAME, "Construct " + locName);
 					event.set(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 					
@@ -134,9 +135,9 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 					}
 					event.set(FieldNames.FIELD_LOCATION, loc);
 					event.set(FieldNames.FIELD_TYPE, EventEnumType.CONSTRUCT);
-					event.set("eventStart", ctx.getConfig().getBaseInceptionDate());
-					event.set("eventProgress", ctx.getConfig().getBaseInceptionDate());
-					event.set("eventEnd", ctx.getConfig().getBaseInceptionDate());
+					event.set(OlioFieldNames.FIELD_EVENT_START, ctx.getConfig().getBaseInceptionDate());
+					event.set(OlioFieldNames.FIELD_EVENT_PROGRESS, ctx.getConfig().getBaseInceptionDate());
+					event.set(OlioFieldNames.FIELD_EVENT_END, ctx.getConfig().getBaseInceptionDate());
 
 
 					event.set("realm", realm);
@@ -165,7 +166,7 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 	@Override
 	public BaseRecord[] selectLocations(OlioContext context) {
 		List<BaseRecord> recs = new ArrayList<>();
-		long id = context.getUniverse().get("locations.id");
+		long id = context.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
 
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id);
 		pq.field(FieldNames.FIELD_PARENT_ID, 0L);
@@ -177,7 +178,7 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 		recs.add(world);
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id);
 
-		lq.field("geoType", "feature");
+		lq.field("geoType", FieldNames.FIELD_FEATURE);
 		lq.setRequestRange(0L, context.getConfig().getBaseLocationCount());
 		try {
 			lq.set(FieldNames.FIELD_SORT_FIELD, "random()");

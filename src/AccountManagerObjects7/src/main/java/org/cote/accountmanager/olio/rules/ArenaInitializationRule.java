@@ -15,6 +15,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -47,7 +48,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 		
 	@Override
 	public void pregenerate(OlioContext context) {
-		long id = context.getUniverse().get("locations.id");
+		long id = context.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
 		if(IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id)) > 0) {
 			logger.info("Locations already setup");
 			return;
@@ -92,18 +93,18 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	    	BaseRecord field3 = GeoLocationUtil.newLocation(ctx, field, "Field 3", iter++);
 	    	BaseRecord staging1 = GeoLocationUtil.newLocation(ctx, stands, "Staging 1", iter++);
 	
-	    	goodSeats.set("geoType", "feature");
-	    	badSeats.set("geoType", "feature");
-	    	holding1.set("geoType", "feature");
-	    	holding2.set("geoType", "feature");
-	    	holding3.set("geoType", "feature");
-	    	field1.set("geoType", "feature");
+	    	goodSeats.set("geoType", FieldNames.FIELD_FEATURE);
+	    	badSeats.set("geoType", FieldNames.FIELD_FEATURE);
+	    	holding1.set("geoType", FieldNames.FIELD_FEATURE);
+	    	holding2.set("geoType", FieldNames.FIELD_FEATURE);
+	    	holding3.set("geoType", FieldNames.FIELD_FEATURE);
+	    	field1.set("geoType", FieldNames.FIELD_FEATURE);
 	    	field1.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
-	    	field2.set("geoType", "feature");
+	    	field2.set("geoType", FieldNames.FIELD_FEATURE);
 	    	field2.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
-	    	field3.set("geoType", "feature");
+	    	field3.set("geoType", FieldNames.FIELD_FEATURE);
 	    	field3.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
-	    	staging1.set("geoType", "feature");
+	    	staging1.set("geoType", FieldNames.FIELD_FEATURE);
 	    	IOSystem.getActiveContext().getRecordUtil().createRecords(new BaseRecord[] {goodSeats, badSeats, holding1, holding2, holding3, field1, field2, field3, staging1});
 	    	
     	}
@@ -132,7 +133,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 					
 					int in = y;
 	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, field, field.get(FieldNames.FIELD_NAME) + " " + GeoLocationUtil.df3.format(ie) + "" + GeoLocationUtil.df3.format(in), iter++);
-	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID));
 	    			cell.set("area", (double)10);
 	    			cell.set("eastings", x);
 	    			cell.set("northings", y);
@@ -152,7 +153,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	@Override
 	public BaseRecord[] selectLocations(OlioContext context) {
 		List<BaseRecord> recs = new ArrayList<>();
-		long id = context.getUniverse().get("locations.id");
+		long id = context.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
 
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id);
 		pq.field(FieldNames.FIELD_PARENT_ID, 0L);
@@ -163,7 +164,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 		}
 		recs.add(world);
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id);
-		lq.field("geoType", "feature");
+		lq.field("geoType", FieldNames.FIELD_FEATURE);
 		lq.field(FieldNames.FIELD_NAME, "Staging 1");
 		lq.setRequestRange(0L, context.getConfig().getBaseLocationCount());
 		recs.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(lq)));
@@ -171,7 +172,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	}
 
 	public static BaseRecord findLocation(OlioContext context, String name) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, context.getUniverse().get("locations.id"));
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, context.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID));
 		q.field(FieldNames.FIELD_NAME, name);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}

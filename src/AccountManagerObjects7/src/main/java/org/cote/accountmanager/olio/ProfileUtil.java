@@ -414,7 +414,7 @@ SLOAN Notation
 
 	protected static void analyzePhysiologicalNeeds(BaseRecord person, PersonalityProfile prof) {
 		/// do they have clothes?
-		BaseRecord store = person.get("store");
+		BaseRecord store = person.get(FieldNames.FIELD_STORE);
 		BaseRecord cit = person.get(FieldNames.FIELD_CONTACT_INFORMATION);
 		if(store != null) {
 			List<BaseRecord> apparel = store.get("apparel");
@@ -438,7 +438,7 @@ SLOAN Notation
 				prof.getSafetyNeeds().add(SafetyNeedsEnumType.RESOURCES);
 			}
 			
-			List<BaseRecord> locs = store.get("locations");
+			List<BaseRecord> locs = store.get(FieldNames.FIELD_LOCATIONS);
 			if(locs.size() == 0) {
 				prof.getSafetyNeeds().add(SafetyNeedsEnumType.PROPERTY);
 			}

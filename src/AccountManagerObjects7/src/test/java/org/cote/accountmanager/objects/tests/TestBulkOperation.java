@@ -48,7 +48,7 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		String path = "~/Dooter Peeps - " + UUID.randomUUID().toString();
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		ParameterList plist = ParameterList.newParameterList("path", path);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
 		String name = "Person 1";
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
@@ -116,7 +116,7 @@ public class TestBulkOperation extends BaseTest {
 		List<BaseRecord> aal = new ArrayList<>();
 		String path = "~/Demo - " + UUID.randomUUID().toString();
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
-		ParameterList plist = ParameterList.newParameterList("path", path);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
 		String name = "Dooter - " + UUID.randomUUID().toString();
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
@@ -168,7 +168,7 @@ public class TestBulkOperation extends BaseTest {
 		BaseRecord dir = ioContext.getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), testOrgContext.getOrganizationId());
 		String locName = "Parent Loc";
 		String chdName = "Child Loc";
-		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 		plist.parameter(FieldNames.FIELD_NAME, locName);
 		BaseRecord loc = null;
 		try {
@@ -188,7 +188,7 @@ public class TestBulkOperation extends BaseTest {
 
 
 	 private BaseRecord newTestData(BaseRecord owner, String path, String name, String textData) {
-		ParameterList plist = ParameterList.newParameterList("path", path);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, path);
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		BaseRecord data = null;
 		try {

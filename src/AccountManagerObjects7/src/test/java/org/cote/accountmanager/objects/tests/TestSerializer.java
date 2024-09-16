@@ -200,7 +200,7 @@ public class TestSerializer extends BaseTest {
 			String dataName = "Test Data - " + UUID.randomUUID().toString();
 			String demoData = "This is the demo data that we're going to use to test with";
 
-			BaseRecord dat = newData(testUser1, dataName, "text/plain", demoData.getBytes(), group.get("path"), orgContext.getOrganizationId());
+			BaseRecord dat = newData(testUser1, dataName, "text/plain", demoData.getBytes(), group.get(FieldNames.FIELD_PATH), orgContext.getOrganizationId());
 			ioContext.getRecordUtil().createRecord(dat, false);
 			if(i == 5) {
 				checkData = dat;
@@ -222,11 +222,11 @@ public class TestSerializer extends BaseTest {
 		long mark3 = System.currentTimeMillis();
 		/// Note: getRecord uses the contextUser's org id, so if using a custom org while testing, make sure to specify the correct org id
 		/// 
-		//BaseRecord data = ioContext.getRecordUtil().getRecord(testUser1, "data", checkDataName, 0L, group.get("path"));
+		//BaseRecord data = ioContext.getRecordUtil().getRecord(testUser1, "data", checkDataName, 0L, group.get(FieldNames.FIELD_PATH));
 		BaseRecord data = ioContext.getRecordUtil().getRecord(testUser1, "data", checkDataName, 0L, group.get("id"), orgContext.getOrganizationId());
 
 		long mark4 = System.currentTimeMillis();
-		assertNotNull("Data " + checkDataName + "(" + checkDataOid + ") in " + group.get("path") + " in " + storeName + " was null", data);		
+		assertNotNull("Data " + checkDataName + "(" + checkDataOid + ") in " + group.get(FieldNames.FIELD_PATH) + " in " + storeName + " was null", data);		
 		logger.info("Preliminary Setup: " + (start - prelim) + "ms");
 		logger.info("10 Create Time: " + (mark1 - start) + "ms");
 		logger.info("Flush Time: " + (mark2 - mark1) + "ms");
@@ -306,7 +306,7 @@ public class TestSerializer extends BaseTest {
 			
 		}
 		
-		String path = irecord.get("path");
+		String path = irecord.get(FieldNames.FIELD_PATH);
 		assertNotNull("Expected the path to be set", path);
 
 	}

@@ -92,7 +92,7 @@ public class TestAccessPoint extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		String dataName = "Demo data " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Authorize/Create");
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;
@@ -132,7 +132,7 @@ public class TestAccessPoint extends BaseTest {
 
 		
 		String dataName = "Demo data " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Authorize/Create");
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;
@@ -224,7 +224,7 @@ public class TestAccessPoint extends BaseTest {
 		assertNotNull("User is null", testUser2);
 		
 		String dataName = "Demo data " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Authorize/Create");
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		BaseRecord odata = null;

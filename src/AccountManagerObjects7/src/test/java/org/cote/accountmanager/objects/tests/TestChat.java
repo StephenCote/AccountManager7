@@ -48,6 +48,7 @@ import org.cote.accountmanager.olio.rules.IOlioContextRule;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -84,10 +85,10 @@ public class TestChat extends BaseTest {
 			logger.error(e);
 		}
 		assertNotNull("Meta is null", meta);
-		ParameterList clist = ParameterList.newParameterList("path", "~/Chat");
+		ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		clist.parameter(FieldNames.FIELD_NAME, "Chat Config - " + UUID.randomUUID().toString());
 
-		ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "Prompt Config - " + UUID.randomUUID().toString());
 
 		
@@ -157,7 +158,7 @@ public class TestChat extends BaseTest {
 
 	}
 	private BaseRecord getPromptConfig(BaseRecord user) {
-		ParameterList plist = ParameterList.newParameterList("path", "~/Chat");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		plist.parameter(FieldNames.FIELD_NAME, "Prompt Config - " + UUID.randomUUID().toString());
 
 		BaseRecord pcfg = null;
@@ -182,7 +183,7 @@ public class TestChat extends BaseTest {
 		assertNotNull("Context is null", ctx);
 		List<BaseRecord> realms = ctx.getRealms();
 		assertTrue("Expected at least one realm", realms.size() > 0);
-		BaseRecord popGrp = realms.get(0).get("population");
+		BaseRecord popGrp = realms.get(0).get(OlioFieldNames.FIELD_POPULATION);
 		assertNotNull("Expected a population group", popGrp);
 		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(ctx, popGrp);
 		assertTrue("Expected a population", pop.size() > 0);
@@ -205,7 +206,7 @@ public class TestChat extends BaseTest {
 			levt = ctx.startOrContinueLocationEpoch(lrec);
 		}
 		*/
-		ParameterList clist = ParameterList.newParameterList("path", "~/Chat");
+		ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		clist.parameter(FieldNames.FIELD_NAME, "Chat Config - " + UUID.randomUUID().toString());
 
 		BaseRecord cfg = null;

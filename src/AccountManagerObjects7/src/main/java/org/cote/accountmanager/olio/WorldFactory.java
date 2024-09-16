@@ -9,6 +9,7 @@ import org.cote.accountmanager.factory.FactoryBase;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -36,7 +37,7 @@ public class WorldFactory extends FactoryBase {
 		if(parameterList != null) {
 			
 			String name = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_NAME, String.class, null);
-			String path = ParameterUtil.getParameter(parameterList, "path", String.class, null);
+			String path = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_PATH, String.class, null);
 			if(name != null && path != null && contextUser != null) {
 				IPath pu = IOSystem.getActiveContext().getPathUtil();
 				try {
@@ -46,26 +47,26 @@ public class WorldFactory extends FactoryBase {
 					String mtype = ModelNames.MODEL_GROUP;
 					newRecord.set("addresses", pu.makePath(contextUser, mtype, path + "/" + name + "/Addresses", gtype, orgId));
 					newRecord.set("contacts", pu.makePath(contextUser, mtype, path + "/" + name + "/Contacts", gtype, orgId));
-					newRecord.set("population", pu.makePath(contextUser, mtype, path + "/" + name + "/Population", gtype, orgId));
-					newRecord.set("locations", pu.makePath(contextUser, mtype, path + "/" + name + "/Locations", gtype, orgId));
-					newRecord.set("events", pu.makePath(contextUser, mtype, path + "/" + name + "/Events", gtype, orgId));
-					newRecord.set("words", pu.makePath(contextUser, mtype, path + "/" + name + "/Words", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_POPULATION, pu.makePath(contextUser, mtype, path + "/" + name + "/Population", gtype, orgId));
+					newRecord.set(FieldNames.FIELD_LOCATIONS, pu.makePath(contextUser, mtype, path + "/" + name + "/Locations", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_EVENTS, pu.makePath(contextUser, mtype, path + "/" + name + "/Events", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_WORDS, pu.makePath(contextUser, mtype, path + "/" + name + "/Words", gtype, orgId));
 					newRecord.set("traits", pu.makePath(contextUser, mtype, path + "/" + name + "/Traits", gtype, orgId));
-					newRecord.set("colors", pu.makePath(contextUser, mtype, path + "/" + name + "/Colors", gtype, orgId));
-					newRecord.set("names", pu.makePath(contextUser, mtype, path + "/" + name + "/Names", gtype, orgId));
-					newRecord.set("surnames", pu.makePath(contextUser, mtype, path + "/" + name + "/Surnames", gtype, orgId));
-					newRecord.set("occupations", pu.makePath(contextUser, mtype, path + "/" + name + "/Occupations", gtype, orgId));
-					newRecord.set("dictionary", pu.makePath(contextUser, mtype, path + "/" + name + "/Dictionary", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_COLORS, pu.makePath(contextUser, mtype, path + "/" + name + "/Colors", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_NAMES, pu.makePath(contextUser, mtype, path + "/" + name + "/Names", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_SURNAMES, pu.makePath(contextUser, mtype, path + "/" + name + "/Surnames", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_OCCUPATIONS, pu.makePath(contextUser, mtype, path + "/" + name + "/Occupations", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_DICTIONARY, pu.makePath(contextUser, mtype, path + "/" + name + "/Dictionary", gtype, orgId));
 					newRecord.set("apparel", pu.makePath(contextUser, mtype, path + "/" + name + "/Apparel", gtype, orgId));
 					newRecord.set("wearables", pu.makePath(contextUser, mtype, path + "/" + name + "/Wearables", gtype, orgId));
 					newRecord.set("qualities", pu.makePath(contextUser, mtype, path + "/" + name + "/Qualities", gtype, orgId));
-					newRecord.set("patterns", pu.makePath(contextUser, mtype, path + "/" + name + "/Patterns", gtype, orgId));
+					newRecord.set(FieldNames.FIELD_PATTERNS, pu.makePath(contextUser, mtype, path + "/" + name + "/Patterns", gtype, orgId));
 					newRecord.set("statistics", pu.makePath(contextUser, mtype, path + "/" + name + "/Statistics", gtype, orgId));
 					newRecord.set("instincts", pu.makePath(contextUser, mtype, path + "/" + name + "/Instincts", gtype, orgId));
 					newRecord.set("behaviors", pu.makePath(contextUser, mtype, path + "/" + name + "/Behaviors", gtype, orgId));
 					newRecord.set("states", pu.makePath(contextUser, mtype, path + "/" + name + "/States", gtype, orgId));
 					newRecord.set("actions", pu.makePath(contextUser, mtype, path + "/" + name + "/Actions", gtype, orgId));
-					newRecord.set("stores", pu.makePath(contextUser, mtype, path + "/" + name + "/Stores", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_STORES, pu.makePath(contextUser, mtype, path + "/" + name + "/Stores", gtype, orgId));
 					newRecord.set("actionResults", pu.makePath(contextUser, mtype, path + "/" + name + "/ActionResults", gtype, orgId));
 					newRecord.set("schedules", pu.makePath(contextUser, mtype, path + "/" + name + "/Schedules", gtype, orgId));
 					newRecord.set("personalities", pu.makePath(contextUser, mtype, path + "/" + name + "/Personalities", gtype, orgId));

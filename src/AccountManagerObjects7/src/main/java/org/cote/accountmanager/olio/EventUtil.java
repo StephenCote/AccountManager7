@@ -17,6 +17,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -36,7 +37,7 @@ public class EventUtil {
 		if(type != EventEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_TYPE, type);
 		}
-		q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+		q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END}));
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
@@ -45,7 +46,7 @@ public class EventUtil {
 	}
 	
 	public static BaseRecord[] getChildEvents(BaseRecord world, BaseRecord parentEvent, BaseRecord realm, BaseRecord location, String name, TimeEnumType timeType, EventEnumType eventType) {
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_EVENTS_ID));
 		if(eventType != EventEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_TYPE, eventType);
 		}
@@ -62,12 +63,12 @@ public class EventUtil {
 			q.field(OlioFieldNames.FIELD_REALM, realm.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		}
 		q.field(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
-		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE, "eventStart", "eventProgress", "eventEnd"});
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE, FieldNames.FIELD_LOCATION, FieldNames.FIELD_STATE, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END});
 		q.setRequestRange(0L, 100);
 		// q.setCache(false);
 
 		try {
-			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
+			q.set(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_EVENT_START);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -76,18 +77,18 @@ public class EventUtil {
 	}
 
 	public static BaseRecord[] getEvents(BaseRecord world, BaseRecord person, String[] fieldNames, EventEnumType eventType) {
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_EVENTS_ID));
 		if(eventType != EventEnumType.UNKNOWN) {
 			q.field(FieldNames.FIELD_TYPE, eventType);
 		}
 		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
-		q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+		q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END}));
 		QueryUtil.filterParticipant(q, OlioModelNames.MODEL_EVENT, fieldNames, person, null);
 		q.setRequestRange(0L, 100);
 		// q.setCache(false);
 
 		try {
-			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
+			q.set(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_EVENT_START);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
 
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
@@ -108,7 +109,7 @@ public class EventUtil {
 			boolean enqueue
 		) {
 		BaseRecord evt = null;
-		ParameterList elist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
+		ParameterList elist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("events.path"));
 		try {
 			evt = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, elist);
 			/// TODO: Need a way to bulk-add hierarchies
@@ -130,9 +131,9 @@ public class EventUtil {
 			}
 			evt.set(FieldNames.FIELD_TYPE, type);
 			evt.set(FieldNames.FIELD_PARENT_ID, parentEvent.get(FieldNames.FIELD_ID));
-			evt.set("eventStart", startTime);
-			evt.set("eventProgress", startTime);
-			evt.set("eventEnd", startTime);
+			evt.set(OlioFieldNames.FIELD_EVENT_START, startTime);
+			evt.set(OlioFieldNames.FIELD_EVENT_PROGRESS, startTime);
+			evt.set(OlioFieldNames.FIELD_EVENT_END, startTime);
 			if(enqueue) {
 				Queue.queue(evt);
 			}
@@ -149,9 +150,9 @@ public class EventUtil {
 
 	public static BaseRecord getRootEvent(BaseRecord user, BaseRecord world) {
 		IOSystem.getActiveContext().getReader().populate(world, 2);
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)world.get("events.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)world.get(OlioFieldNames.FIELD_EVENTS_ID));
 		q.field(FieldNames.FIELD_PARENT_ID, 0L);
-		q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+		q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END}));
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	
@@ -160,10 +161,10 @@ public class EventUtil {
 		BaseRecord[] evts = new BaseRecord[0];
 		if(root != null) {
 			IOSystem.getActiveContext().getReader().populate(world, 2);
-			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)world.get("events.id"));
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, (long)world.get(OlioFieldNames.FIELD_EVENTS_ID));
 			q.field(FieldNames.FIELD_PARENT_ID, root.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_TYPE, EventEnumType.INCEPT);
-			q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+			q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END}));
 			evts = IOSystem.getActiveContext().getSearch().findRecords(q);
 		}
 		return evts;
@@ -177,7 +178,7 @@ public class EventUtil {
 			return null;
 		}
 		
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_EVENTS_ID));
 		if(epochChild && lastEpoch != null) {
 			q.field(FieldNames.FIELD_PARENT_ID, lastEpoch.get(FieldNames.FIELD_ID));
 		}
@@ -195,9 +196,9 @@ public class EventUtil {
 		}
 		BaseRecord lastEvt = null;
 		try {
-			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
+			q.set(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_EVENT_START);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
-			q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+			q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END}));
 			q.setRequestRange(0L, 1);
 			lastEvt = IOSystem.getActiveContext().getSearch().findRecord(q);
 		}
@@ -210,14 +211,14 @@ public class EventUtil {
 		return getLastEpochEvent(ctx.getOlioUser(), ctx.getWorld());
 	}
 	public static BaseRecord getLastEpochEvent(BaseRecord user, BaseRecord world) {
-		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get("events.id"));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_EVENT, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_EVENTS_ID));
 		q.field("epoch", true);
 		BaseRecord epoch = null;
 		try {
-			q.set(FieldNames.FIELD_SORT_FIELD, "eventStart");
+			q.set(FieldNames.FIELD_SORT_FIELD, OlioFieldNames.FIELD_EVENT_START);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);
 			q.requestCommonFields();
-			q.getRequest().addAll(Arrays.asList(new String[] {"location", "eventStart", "eventProgress", "eventEnd"}));
+			q.getRequest().addAll(Arrays.asList(new String[] {FieldNames.FIELD_LOCATION, OlioFieldNames.FIELD_EVENT_START, OlioFieldNames.FIELD_EVENT_PROGRESS, OlioFieldNames.FIELD_EVENT_END}));
 			q.setRequestRange(0L, 1);
 			epoch = IOSystem.getActiveContext().getSearch().findRecord(q);
 		}
@@ -227,13 +228,13 @@ public class EventUtil {
 		return epoch;
 	}
 	public static void addProgressMS(BaseRecord event, long ms) {
-		ZonedDateTime prog = event.get("eventProgress");
-		event.setValue("eventProgress", prog.plus(ms, ChronoUnit.MILLIS));
+		ZonedDateTime prog = event.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
+		event.setValue(OlioFieldNames.FIELD_EVENT_PROGRESS, prog.plus(ms, ChronoUnit.MILLIS));
 	}
 	public static void edgeSecondsUntilEnd(BaseRecord event, long seconds) {
-		ZonedDateTime prog = event.get("eventProgress");
+		ZonedDateTime prog = event.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 		try {
-			event.set("eventEnd", prog.plusSeconds(seconds));
+			event.set(OlioFieldNames.FIELD_EVENT_END, prog.plusSeconds(seconds));
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -241,53 +242,53 @@ public class EventUtil {
 	}
 	
 	public static void edgeHour(BaseRecord event) {
-		ZonedDateTime start = event.get("eventStart");
-		ZonedDateTime end = event.get("eventEnd");
-		ZonedDateTime prog = event.get("eventProgress");
+		ZonedDateTime start = event.get(OlioFieldNames.FIELD_EVENT_START);
+		ZonedDateTime end = event.get(OlioFieldNames.FIELD_EVENT_END);
+		ZonedDateTime prog = event.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 
 		try {
-			event.set("eventStart", prog.withMinute(0).withSecond(0));
-			event.set("eventProgress", event.get("eventStart"));
-			event.set("eventEnd", prog.withMinute(59).withSecond(59));
+			event.set(OlioFieldNames.FIELD_EVENT_START, prog.withMinute(0).withSecond(0));
+			event.set(OlioFieldNames.FIELD_EVENT_PROGRESS, event.get(OlioFieldNames.FIELD_EVENT_START));
+			event.set(OlioFieldNames.FIELD_EVENT_END, prog.withMinute(59).withSecond(59));
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
 		}
 	}
 	public static void edgeDay(BaseRecord event) {
-		ZonedDateTime start = event.get("eventStart");
-		ZonedDateTime end = event.get("eventEnd");
-		ZonedDateTime prog = event.get("eventProgress");
+		ZonedDateTime start = event.get(OlioFieldNames.FIELD_EVENT_START);
+		ZonedDateTime end = event.get(OlioFieldNames.FIELD_EVENT_END);
+		ZonedDateTime prog = event.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 
 		try {
-			event.set("eventStart", prog.with(LocalTime.of(0, 0, 0)));
-			event.set("eventProgress", event.get("eventStart"));
-			event.set("eventEnd", prog.with(LocalTime.of(23, 59, 59)));
+			event.set(OlioFieldNames.FIELD_EVENT_START, prog.with(LocalTime.of(0, 0, 0)));
+			event.set(OlioFieldNames.FIELD_EVENT_PROGRESS, event.get(OlioFieldNames.FIELD_EVENT_START));
+			event.set(OlioFieldNames.FIELD_EVENT_END, prog.with(LocalTime.of(23, 59, 59)));
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
 		}
 	}
 	public static void edgeMonth(BaseRecord event) {
-		ZonedDateTime start = event.get("eventStart");
-		ZonedDateTime end = event.get("eventEnd");
+		ZonedDateTime start = event.get(OlioFieldNames.FIELD_EVENT_START);
+		ZonedDateTime end = event.get(OlioFieldNames.FIELD_EVENT_END);
 
 		try {
-			event.set("eventStart", start.withDayOfMonth(1).with(LocalTime.of(0, 0, 0)));
-			event.set("eventProgress", event.get("eventStart"));
-			event.set("eventEnd", end.withDayOfMonth(end.getMonth().length(end.toLocalDate().isLeapYear())).with(LocalTime.of(23, 59, 59)));
+			event.set(OlioFieldNames.FIELD_EVENT_START, start.withDayOfMonth(1).with(LocalTime.of(0, 0, 0)));
+			event.set(OlioFieldNames.FIELD_EVENT_PROGRESS, event.get(OlioFieldNames.FIELD_EVENT_START));
+			event.set(OlioFieldNames.FIELD_EVENT_END, end.withDayOfMonth(end.getMonth().length(end.toLocalDate().isLeapYear())).with(LocalTime.of(23, 59, 59)));
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
 		}
 	}
 	public static void edgeTimes(BaseRecord event) {
-		ZonedDateTime start = event.get("eventStart");
-		ZonedDateTime end = event.get("eventEnd");
+		ZonedDateTime start = event.get(OlioFieldNames.FIELD_EVENT_START);
+		ZonedDateTime end = event.get(OlioFieldNames.FIELD_EVENT_END);
 		try {
-			event.set("eventStart", start.with(LocalTime.of(0, 0, 0)));
-			event.set("eventProgress", event.get("eventStart"));
-			event.set("eventEnd", end.with(LocalTime.of(23, 59, 59)));
+			event.set(OlioFieldNames.FIELD_EVENT_START, start.with(LocalTime.of(0, 0, 0)));
+			event.set(OlioFieldNames.FIELD_EVENT_PROGRESS, event.get(OlioFieldNames.FIELD_EVENT_START));
+			event.set(OlioFieldNames.FIELD_EVENT_END, end.with(LocalTime.of(23, 59, 59)));
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -295,9 +296,9 @@ public class EventUtil {
 	}
 	
 	public static void edgeEndOfYear(BaseRecord event) {
-		ZonedDateTime start = event.get("eventStart");
+		ZonedDateTime start = event.get(OlioFieldNames.FIELD_EVENT_START);
 		try {
-			event.set("eventEnd", start.withYear(start.getYear()).withMonth(12).withDayOfMonth(31).with(LocalTime.of(23, 59, 59)));
+			event.set(OlioFieldNames.FIELD_EVENT_END, start.withYear(start.getYear()).withMonth(12).withDayOfMonth(31).with(LocalTime.of(23, 59, 59)));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -309,8 +310,8 @@ public class EventUtil {
 	public static BaseRecord findNextIncrement(OlioContext context, BaseRecord parentEvent, TimeEnumType incrementType)  {
 		BaseRecord outRec = null;
 		try {
-			ZonedDateTime prog = parentEvent.get("eventProgress");
-			ZonedDateTime end = parentEvent.get("eventEnd");
+			ZonedDateTime prog = parentEvent.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
+			ZonedDateTime end = parentEvent.get(OlioFieldNames.FIELD_EVENT_END);
 			int imonth = prog.getMonthValue();
 			if(incrementType == TimeEnumType.HOUR) {
 				prog = prog.plusHours(1);
@@ -378,13 +379,13 @@ public class EventUtil {
 		String name = getTimeName(time, tet);
 		BaseRecord[] cevts = EventUtil.getChildEvents(context.getWorld(), parentEvent, null, null, name, tet, EventEnumType.UNKNOWN);
 		if(cevts.length > 0) {
-			parentEvent.set("eventProgress", time);
-			Queue.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+			parentEvent.set(OlioFieldNames.FIELD_EVENT_PROGRESS, time);
+			Queue.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_EVENT_PROGRESS}));
 			return cevts[0];
 		}
 		BaseRecord evt = EventUtil.newEvent(context, parentEvent, EventEnumType.PERIOD, name, time);
 		evt.set("timeType", tet);
-		parentEvent.set("eventProgress", time);
+		parentEvent.set(OlioFieldNames.FIELD_EVENT_PROGRESS, time);
 
 		if(tet == TimeEnumType.MONTH) {
 			EventUtil.edgeMonth(evt);
@@ -396,7 +397,7 @@ public class EventUtil {
 			EventUtil.edgeHour(evt);
 		}
 		IOSystem.getActiveContext().getRecordUtil().createRecord(evt);
-		Queue.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, "eventProgress"}));
+		Queue.queue(parentEvent.copyRecord(new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_EVENT_PROGRESS}));
 		return evt;
 	}
 	public static String getTimeName(ZonedDateTime prog, TimeEnumType tet) {
@@ -416,7 +417,7 @@ public class EventUtil {
 	public static String getChildTimeName(BaseRecord parentEvent) {
 		TimeEnumType ptet = TimeEnumType.valueOf(parentEvent.get("timeType"));
 		TimeEnumType tet = getChildTime(ptet);
-		ZonedDateTime prog = parentEvent.get("eventProgress");
+		ZonedDateTime prog = parentEvent.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 		return EventUtil.getTimeName(prog, tet);
 	}
 	

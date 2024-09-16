@@ -117,7 +117,7 @@ public class EvolutionUtil {
 		try {
 			List<BaseRecord> additions = new ArrayList<>();
 			List<BaseRecord> deaths = new ArrayList<>();
-			ParameterList elist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
+			ParameterList elist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("events.path"));
 			List<BaseRecord> pop = ctx.getPopulation(ctx.getCurrentLocation());
 			BaseRecord popGrp = ctx.getPopulationGroup(ctx.getCurrentLocation(), "Population");
 			BaseRecord cemGrp = ctx.getPopulationGroup(ctx.getCurrentLocation(), "Cemetary");
@@ -128,11 +128,11 @@ public class EvolutionUtil {
 				if(CharacterUtil.isDeceased(per)) {
 					continue;
 				}
-				ZonedDateTime estart = ctx.getCurrentEvent().get("eventStart");
+				ZonedDateTime estart = ctx.getCurrentEvent().get(OlioFieldNames.FIELD_EVENT_START);
 				ZonedDateTime now = estart.plusMonths(month);
 				ctx.setCurrentMonth(now);
 				long lage = now.toInstant().toEpochMilli() - ((ZonedDateTime)per.get("birthDate")).toInstant().toEpochMilli();
-				//long now = (((Date)parentEvent.get("eventStart")).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration));
+				//long now = (((Date)parentEvent.get(OlioFieldNames.FIELD_EVENT_START)).getTime() - ((Date)per.get("birthDate")).getTime() + (OlioUtil.DAY * iteration));
 				int currentAge = (int)(lage/OlioUtil.YEAR);
 				String gender = per.get("gender");
 				/// If a female is ruled to be a mother, generate the baby
@@ -145,7 +145,7 @@ public class EvolutionUtil {
 					StatisticsUtil.rollStatistics(baby.get("statistics"), 0);
 					baby.set("birthDate", now);
 					// queueAdd(queue, baby);
-					AddressUtil.randomAddressPerson(ctx.getOlioUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get("location"));
+					AddressUtil.randomAddressPerson(ctx.getOlioUser(), ctx.getWorld(), baby, ctx.getCurrentEvent().get(FieldNames.FIELD_LOCATION));
 					List<BaseRecord> appl = baby.get("store.apparel");
 					appl.add(ApparelUtil.randomApparel(ctx, baby));
 					

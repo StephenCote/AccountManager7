@@ -16,6 +16,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.parsers.data.WordParser;
 import org.cote.accountmanager.parsers.geo.GeoParser;
@@ -41,7 +42,7 @@ public class WorldUtil {
 		
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_WORLD, FieldNames.FIELD_GROUP_ID, (long)dir.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_NAME, worldName);
-		q.planMost(true, Arrays.asList(new String[] {"realms", FieldNames.FIELD_TAGS, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_CONTROLS}));
+		q.planMost(true, Arrays.asList(new String[] {OlioFieldNames.FIELD_REALMS, FieldNames.FIELD_TAGS, FieldNames.FIELD_ATTRIBUTES, FieldNames.FIELD_CONTROLS}));
 
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	
@@ -56,20 +57,20 @@ public class WorldUtil {
 		if(rec == null) {
 			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 
-			ParameterList plist = ParameterList.newParameterList("path", groupPath);
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 			plist.parameter(FieldNames.FIELD_NAME, worldName);
 			try {
 				BaseRecord world = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_WORLD, user, null, plist);
-				world.set("features", Arrays.asList(features));
-				world.set("basis", basis);
+				world.set(OlioFieldNames.FIELD_FEATURES, Arrays.asList(features));
+				world.set(OlioFieldNames.FIELD_BASIS, basis);
 				if(useSharedLibrary) {
-					world.set("colors", LibraryUtil.getCreateSharedLibrary(user, "Colors", true));
-					world.set("occupations", LibraryUtil.getCreateSharedLibrary(user, "Occupations", true));
-					world.set("dictionary", LibraryUtil.getCreateSharedLibrary(user, "Dictionary", true));
-					world.set("words", LibraryUtil.getCreateSharedLibrary(user, "Words", true));
-					world.set("names", LibraryUtil.getCreateSharedLibrary(user, "Names", true));
-					world.set("surnames", LibraryUtil.getCreateSharedLibrary(user, "Surnames", true));
-					world.set("patterns", LibraryUtil.getCreateSharedLibrary(user, "Patterns", true));
+					world.set(OlioFieldNames.FIELD_COLORS, LibraryUtil.getCreateSharedLibrary(user, "Colors", true));
+					world.set(OlioFieldNames.FIELD_OCCUPATIONS, LibraryUtil.getCreateSharedLibrary(user, "Occupations", true));
+					world.set(OlioFieldNames.FIELD_DICTIONARY, LibraryUtil.getCreateSharedLibrary(user, "Dictionary", true));
+					world.set(OlioFieldNames.FIELD_WORDS, LibraryUtil.getCreateSharedLibrary(user, "Words", true));
+					world.set(OlioFieldNames.FIELD_NAMES, LibraryUtil.getCreateSharedLibrary(user, "Names", true));
+					world.set(OlioFieldNames.FIELD_SURNAMES, LibraryUtil.getCreateSharedLibrary(user, "Surnames", true));
+					world.set(FieldNames.FIELD_PATTERNS, LibraryUtil.getCreateSharedLibrary(user, "Patterns", true));
 				}
 				IOSystem.getActiveContext().getAccessPoint().create(user, world);
 				// rec = getWorld(user, groupPath, worldName);
@@ -79,11 +80,11 @@ public class WorldUtil {
 			}
 		}
 		else {
-			List<String> feats = rec.get("features");
+			List<String> feats = rec.get(OlioFieldNames.FIELD_FEATURES);
 			if(feats.size() != features.length) {
 				try {
-					rec.set("features", Arrays.asList(features));
-					IOSystem.getActiveContext().getAccessPoint().update(user, rec.copyRecord(new String[] {FieldNames.FIELD_ID, "features"}));
+					rec.set(OlioFieldNames.FIELD_FEATURES, Arrays.asList(features));
+					IOSystem.getActiveContext().getAccessPoint().update(user, rec.copyRecord(new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_FEATURES}));
 					
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
@@ -96,7 +97,7 @@ public class WorldUtil {
 	
 	private static int loadOccupations(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord occDir = world.get("occupations");
+		BaseRecord occDir = world.get(OlioFieldNames.FIELD_OCCUPATIONS);
 		IOSystem.getActiveContext().getReader().populate(occDir);
 
 		WordParser.loadOccupations(user, occDir.get(FieldNames.FIELD_PATH), basePath, reset);
@@ -105,16 +106,16 @@ public class WorldUtil {
 	}
 	private static boolean fastDataCheck(BaseRecord user, BaseRecord world) {
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord locDir = world.get("locations");
+		BaseRecord locDir = world.get(FieldNames.FIELD_LOCATIONS);
 		return IOSystem.getActiveContext().getSearch().count(GeoParser.getQuery(null, null, locDir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID))) > 0;
 		
 	}
 	private static int loadLocations(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
 
-		List<String> feats = world.get("features");
+		List<String> feats = world.get(OlioFieldNames.FIELD_FEATURES);
 		String[] features = feats.toArray(new String[0]);
-		BaseRecord locDir = world.get("locations");
+		BaseRecord locDir = world.get(FieldNames.FIELD_LOCATIONS);
 		IOSystem.getActiveContext().getReader().populate(locDir);
 		if(features.length > 0) {
 			GeoParser.loadInfo(user, locDir.get(FieldNames.FIELD_PATH), basePath, features, reset);
@@ -128,7 +129,7 @@ public class WorldUtil {
 	private static int loadDictionary(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord dictDir = world.get("dictionary");
+		BaseRecord dictDir = world.get(OlioFieldNames.FIELD_DICTIONARY);
 		IOSystem.getActiveContext().getReader().populate(dictDir);
 		
 		String groupPath = dictDir.get(FieldNames.FIELD_PATH);
@@ -142,7 +143,7 @@ public class WorldUtil {
 	}
 	private static int loadNames(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord nameDir = world.get("names");
+		BaseRecord nameDir = world.get(OlioFieldNames.FIELD_NAMES);
 		IOSystem.getActiveContext().getReader().populate(nameDir);
 		
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
@@ -152,7 +153,7 @@ public class WorldUtil {
 	}
 	private static int loadColors(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord colDir = world.get("colors");
+		BaseRecord colDir = world.get(OlioFieldNames.FIELD_COLORS);
 		IOSystem.getActiveContext().getReader().populate(colDir);
 		
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
@@ -162,7 +163,7 @@ public class WorldUtil {
 	}
 	private static int loadPatterns(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord colDir = world.get("patterns");
+		BaseRecord colDir = world.get(FieldNames.FIELD_PATTERNS);
 		IOSystem.getActiveContext().getReader().populate(colDir);
 		
 		String groupPath = colDir.get(FieldNames.FIELD_PATH);
@@ -182,7 +183,7 @@ public class WorldUtil {
 	}
 	private static int loadSurnames(BaseRecord user, BaseRecord world, String basePath, boolean reset) {
 		IOSystem.getActiveContext().getReader().populate(world);
-		BaseRecord nameDir = world.get("surnames");
+		BaseRecord nameDir = world.get(OlioFieldNames.FIELD_SURNAMES);
 		IOSystem.getActiveContext().getReader().populate(nameDir);
 		String groupPath = nameDir.get(FieldNames.FIELD_PATH);
 		WordParser.loadSurnames(user, groupPath, basePath, reset);
@@ -228,21 +229,21 @@ public class WorldUtil {
 		long orgId = user.get(FieldNames.FIELD_ORGANIZATION_ID);
 		IOSystem.getActiveContext().getReader().populate(world, 2);
 		long start = System.currentTimeMillis();
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_GEO_LOCATION, (long)world.get("locations.id"), orgId);
-		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_EVENT, (long)world.get("events.id"), orgId);
-		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_CHAR_PERSON, (long)world.get("population.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_GROUP, (long)world.get("population.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_ADDRESS, (long)world.get("addresses.id"), orgId);
-		totalWrites += cleanupLocation(user, ModelNames.MODEL_CONTACT, (long)world.get("contacts.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_GEO_LOCATION, (long)world.get(OlioFieldNames.FIELD_LOCATIONS_ID), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_EVENT, (long)world.get(OlioFieldNames.FIELD_EVENTS_ID), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_CHAR_PERSON, (long)world.get(OlioFieldNames.FIELD_POPULATION_ID), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_GROUP, (long)world.get(OlioFieldNames.FIELD_POPULATION_ID), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_ADDRESS, (long)world.get(OlioFieldNames.FIELD_ADDRESSES_ID), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_CONTACT, (long)world.get(OlioFieldNames.FIELD_CONTACTS_ID), orgId);
 		
 		if(!useSharedLibrary) {
-			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD_NET, (long)world.get("dictionary.id"), orgId);
-			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("words.id"), orgId);
-			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("names.id"), orgId);
-			totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get("surnames.id"), orgId);
-			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get("occupations.id"), orgId);
-			totalWrites += cleanupLocation(user, ModelNames.MODEL_COLOR, (long)world.get("colors.id"), orgId);
-			totalWrites += cleanupLocation(user, ModelNames.MODEL_DATA, (long)world.get("patterns.id"), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD_NET, (long)world.get(OlioFieldNames.FIELD_DICTIONARY_ID), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get(OlioFieldNames.FIELD_WORDS_ID), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get(OlioFieldNames.FIELD_NAMES_ID), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_CENSUS_WORD, (long)world.get(OlioFieldNames.FIELD_SURNAMES_ID), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_WORD, (long)world.get(OlioFieldNames.FIELD_OCCUPATIONS_ID), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_COLOR, (long)world.get(OlioFieldNames.FIELD_COLORS_ID), orgId);
+			totalWrites += cleanupLocation(user, ModelNames.MODEL_DATA, (long)world.get(OlioFieldNames.FIELD_PATTERNS_ID), orgId);
 		}
 		
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_TRAIT, (long)world.get("traits.id"), orgId);
@@ -257,13 +258,13 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ACTION_RESULT, (long)world.get("actionResults.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_SCHEDULE, (long)world.get("schedules.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_PERSONALITY, (long)world.get("personalities.id"), orgId);
-		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_STORE, (long)world.get("stores.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_STORE, (long)world.get(OlioFieldNames.FIELD_STORES_ID), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_BUILDER, (long)world.get("builders.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ITEM, (long)world.get("items.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ITEM_STATISTICS, (long)world.get("statistics.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_TAG, (long)world.get("tagsGroup.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_ANIMAL, (long)world.get("animals.id"), orgId);
-		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_REALM, (long)world.get("realmsGroup.id"), orgId);
+		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_REALM, (long)world.get(OlioFieldNames.FIELD_REALMS_GROUP_ID), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_INVENTORY_ENTRY, (long)world.get("inventories.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_NARRATIVE, (long)world.get("narratives.id"), orgId);
@@ -308,8 +309,8 @@ public class WorldUtil {
 		return ogrp;
 	}
 	public static List<BaseRecord> getWorldGroups(BaseRecord user, BaseRecord world){
-		IOSystem.getActiveContext().getReader().populate(world, new String[] {"population"});
-		return Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
+		IOSystem.getActiveContext().getReader().populate(world, new String[] {OlioFieldNames.FIELD_POPULATION});
+		return Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get(OlioFieldNames.FIELD_POPULATION_ID))));
 	}
 	
     

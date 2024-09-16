@@ -72,7 +72,7 @@ public class TestRealm extends BaseTest {
 
 		BaseRecord[] realms = octx.getRealms();
 		assertTrue("Expected at least one realm", realms.length > 0);
-		BaseRecord popGrp = realms[0].get("population");
+		BaseRecord popGrp = realms[0].get(OlioFieldNames.FIELD_POPULATION);
 		assertNotNull("Expected a population group", popGrp);
 
 		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(octx, popGrp);
@@ -96,7 +96,7 @@ public class TestRealm extends BaseTest {
 		// SDUtil sdu = new SDUtil();
 		// sdu.generateSDImages(octx, Arrays.asList(per1), "a park in springtime, circa 1975", "professional photograph", "full body", 1, false, false, -1);
 		
-		BaseRecord popDir = octx.getWorld().get("population");
+		BaseRecord popDir = octx.getWorld().get(OlioFieldNames.FIELD_POPULATION);
 		Query q = QueryUtil.buildQuery(testUser1, "olio.charPerson", popDir.get("objectId"), null, 0, 10);
 		q.field(FieldNames.FIELD_FIRST_NAME, per1.get(FieldNames.FIELD_FIRST_NAME));
 		BaseRecord[] qr = ioContext.getSearch().findRecords(q);
@@ -129,7 +129,7 @@ public class TestRealm extends BaseTest {
 		assertTrue("Expected to be able to update", canUp);
 		
 
-		BaseRecord cdir = LibraryUtil.getCreateSharedLibrary(testUser1, "colors", true);
+		BaseRecord cdir = LibraryUtil.getCreateSharedLibrary(testUser1, OlioFieldNames.FIELD_COLORS, true);
 		//BaseRecord[] recs = OlioUtil.randomSelections(testUser1, QueryUtil.createQuery(ModelNames.MODEL_COLOR, FieldNames.FIELD_GROUP_ID, cdir.get(FieldNames.FIELD_ID)), 30);
 		
 		//assertTrue("Expected some records", recs.length > 0);
@@ -185,7 +185,7 @@ public class TestRealm extends BaseTest {
 
 		BaseRecord[] realms = octx.getRealms();
 		assertTrue("Expected at least one realm", realms.length > 0);
-		BaseRecord popGrp = realms[0].get("population");
+		BaseRecord popGrp = realms[0].get(OlioFieldNames.FIELD_POPULATION);
 		assertNotNull("Expected a population group", popGrp);
 
 		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(octx, popGrp);

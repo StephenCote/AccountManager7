@@ -31,6 +31,7 @@ import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.junit.Test;
@@ -109,7 +110,7 @@ public class TestOlio2 extends BaseTest {
 		///octx.startOrContinueEpoch();
 		
 		BaseRecord realm = realms.get(0);
-		BaseRecord lrec = realm.get("origin");
+		BaseRecord lrec = realm.get(OlioFieldNames.FIELD_ORIGIN);
 		assertNotNull("Location was null", lrec);
 		
 		logger.info("Start/Continue Location Epoch");
@@ -147,7 +148,7 @@ public class TestOlio2 extends BaseTest {
 		logger.info(per1.get("state.id") + " " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
-		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms.get(0).get("origin")));
+		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms.get(0).get(OlioFieldNames.FIELD_ORIGIN)));
 		//BaseRecord upar = GeoLocationUtil.getParentLocation(octx, per1.get("state.currentLocation"));
 		// MapUtil.printPovLocationMap(octx, realm, per1, 3);
 		// MapUtil.printPovLocationMap(octx, realm, per2, 3);
@@ -165,8 +166,8 @@ public class TestOlio2 extends BaseTest {
 		OlioTestUtil.lookout(per1, per2);
 		OlioTestUtil.lookout(per2, per1);
 		
-		ZonedDateTime ep = cevt.get("eventProgress");
-		ZonedDateTime ee = cevt.get("eventEnd");
+		ZonedDateTime ep = cevt.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
+		ZonedDateTime ee = cevt.get(OlioFieldNames.FIELD_EVENT_END);
 		long remMin = ep.until(ee, ChronoUnit.MINUTES);
 		logger.info("Minutes remaining: " + remMin);
 		
@@ -197,7 +198,7 @@ public class TestOlio2 extends BaseTest {
 		/*
 		String filtName = "Jori Tyce Hoggan";
 		for(BaseRecord realm : realms) {
-			BaseRecord lrec = realm.get("origin");
+			BaseRecord lrec = realm.get(OlioFieldNames.FIELD_ORIGIN);
 			assertNotNull("Location was null", lrec);
 			
 			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);

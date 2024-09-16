@@ -11,6 +11,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -27,7 +28,7 @@ public class GenericLocationInitializationRule extends CommonContextRule impleme
 
 	@Override
 	public void pregenerate(OlioContext context) {
-		long id = context.getUniverse().get("locations.id");
+		long id = context.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
 		if(IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id)) > 0) {
 			logger.info("Locations already setup");
 			return;
@@ -48,7 +49,7 @@ public class GenericLocationInitializationRule extends CommonContextRule impleme
 	@Override
 	public BaseRecord[] selectLocations(OlioContext context) {
 		List<BaseRecord> recs = new ArrayList<>();
-		long id = context.getUniverse().get("locations.id");
+		long id = context.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
 
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id);
 		pq.field(FieldNames.FIELD_PARENT_ID, 0L);

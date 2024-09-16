@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
@@ -84,8 +85,8 @@ public class Clock {
 		if(!realmClocks.containsKey(rid)) {
 			Clock rc = new Clock(this);
 			rc.setRealm(realm);
-			rc.setEvent(realm.get("currentEvent"));
-			rc.setIncrement(realm.get("currentIncrement"));
+			rc.setEvent(realm.get(OlioFieldNames.FIELD_CURRENT_EVENT));
+			rc.setIncrement(realm.get(OlioFieldNames.FIELD_CURRENT_INCREMENT));
 			realmClocks.put(rid, rc);
 		}
 		Clock rc = realmClocks.get(rid);
@@ -104,16 +105,16 @@ public class Clock {
 	
 	private void setTime(BaseRecord evt) {
 		if(evt != null) {
-			this.start = evt.get("eventStart");
-			this.current = evt.get("eventProgress");
-			this.end = evt.get("eventEnd");
+			this.start = evt.get(OlioFieldNames.FIELD_EVENT_START);
+			this.current = evt.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
+			this.end = evt.get(OlioFieldNames.FIELD_EVENT_END);
 		}
 	}
 	
 	public void setEvent(BaseRecord event) {
 		this.event = event;
 		if(event != null) {
-			this.current = event.get("eventProgress");
+			this.current = event.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 		}
 		tap();
 	}
@@ -130,7 +131,7 @@ public class Clock {
 	public void setIncrement(BaseRecord increment) {
 		this.increment = increment;
 		if(increment != null) {
-			this.current = increment.get("eventProgress");
+			this.current = increment.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 		}
 		tap();
 	}

@@ -13,6 +13,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -50,7 +51,7 @@ public class Decks {
 	}
 	
 	private static void shufflePatternDeck(BaseRecord user, BaseRecord world) {
-		long patternDir = world.get("patterns.id");
+		long patternDir = world.get(OlioFieldNames.FIELD_PATTERNS_ID);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, patternDir);
 		q.setRequest(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_DESCRIPTION});
 		patternDeck = OlioUtil.randomSelections(user, q, patternDeckSize);
@@ -97,7 +98,7 @@ public class Decks {
 	} 
 	protected static BaseRecord[] getRandomColors(BaseRecord user, BaseRecord world, int count) {
 		BaseRecord[] outVal = new BaseRecord[0];
-		long groupId = world.get("colors.id");
+		long groupId = world.get(OlioFieldNames.FIELD_COLORS_ID);
 		if(groupId <= 0L) {
 			logger.warn("Invalid group id: " + groupId);
 			return outVal;
@@ -106,27 +107,27 @@ public class Decks {
 	}
 
 	private static void shuffleOccupationsDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
-		Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get("occupations.id"));
+		Query tnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_OCCUPATIONS_ID));
 		tnq.set("cache", false);
 		occupationsDeck = OlioUtil.randomSelectionNames(user, tnq, count);
 	}
 	
 	private static void shuffleMaleNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
-		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get("names.id"));
+		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_NAMES_ID));
 		mnq.field("gender", "M");
 		mnq.set("cache", false);
 		maleNamesDeck = OlioUtil.randomSelectionNames(user, mnq, count);
 	}
 	
 	private static void shuffleFemaleNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
-		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get("names.id"));
+		Query mnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_NAMES_ID));
 		mnq.field("gender", "F");
 		mnq.set("cache", false);
 		femaleNamesDeck = OlioUtil.randomSelectionNames(user, mnq, count);
 	}
 	
 	private static void shuffleSurnameNamesDeck(BaseRecord user, BaseRecord world, int count) throws FieldException, ValueException, ModelNotFoundException {
-		Query snq = QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, world.get("surnames.id"));
+		Query snq = QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, world.get(OlioFieldNames.FIELD_SURNAMES_ID));
 		snq.set("cache", false);
 		surnameNamesDeck = OlioUtil.randomSelectionNames(user, snq, count);
 	}

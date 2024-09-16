@@ -28,6 +28,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -113,7 +114,7 @@ public class GeoLocationUtil {
 	}
 	
 	public static int prepareMapGrid(OlioContext ctx) {
-    	long id = ctx.getUniverse().get("locations.id");
+    	long id = ctx.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
     	int count = IOSystem.getActiveContext().getSearch().count(QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id));
 		if(count > 0) {
 			return count;
@@ -156,9 +157,9 @@ public class GeoLocationUtil {
     }
     
 	public static void checkK100(OlioContext context) {
-		long udir = context.getUniverse().get("locations.id");
+		long udir = context.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, udir);
-		q.field("geoType", "feature");
+		q.field("geoType", FieldNames.FIELD_FEATURE);
 		if(IOSystem.getActiveContext().getSearch().count(q) == 0) {
 			Query q2 = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, udir);
 			q2.field("geoType", "admin2");
@@ -218,7 +219,7 @@ public class GeoLocationUtil {
     }
     /*
 	public static void prepareGridCells(OlioContext ctx, BaseRecord location) {
-		// ParameterList plist = ParameterList.newParameterList("path", ctx.getUniverse().get("locations.path"));
+		// ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getUniverse().get("locations.path"));
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, location.get(FieldNames.FIELD_ID));
 		
@@ -240,7 +241,7 @@ public class GeoLocationUtil {
 	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, location, GZD + " " + location.get("kident") + " " + df2.format((int)location.get("eastings")) + "" + df2.format((int)location.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
 	    			/// Location util defaults to putting new locations into the universe.  change to the world group
 	    			///
-	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID));
 	    			cell.set("area", (double)10);
 	    			cell.set("gridZone", GZD);
 	    			cell.set("kident", location.get("kident"));
@@ -279,7 +280,7 @@ public class GeoLocationUtil {
 	    			BaseRecord cell = newLocation(ctx, feature, GZD + " " + feature.get("kident") + " " + df2.format((int)feature.get("eastings")) + "" + df2.format((int)feature.get("northings")) + " " + df3.format(ie) + "" + df3.format(in), iter++);
 	    			/// Location util defaults to putting new locations into the universe.  change to the world group
 	    			///
-	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID));
 	    			cell.set("area", (double)10);
 	    			cell.set("gridZone", GZD);
 	    			cell.set("kident", feature.get("kident"));
@@ -336,7 +337,7 @@ public class GeoLocationUtil {
                     }
                     BaseRecord cell = grid[x][y];
                     String type = cell.get("geoType");
-                    if(type != null && type.equals("feature")){
+                    if(type != null && type.equals(FieldNames.FIELD_FEATURE)){
                     	// logger.error("Collided at " + x + ", " + y + " - " + type + " " + cell.get(FieldNames.FIELD_NAME));
                         collision = true;
                         break;
@@ -362,8 +363,8 @@ public class GeoLocationUtil {
             for(int i = pos.getX(); i < pos.getX() + w; i++){
                 for(int b = pos.getY(); b < pos.getY() + h; b++){
                     try {
-						grid[i][b].set("geoType", "feature");
-						grid[i][b].set("feature", regionName);
+						grid[i][b].set("geoType", FieldNames.FIELD_FEATURE);
+						grid[i][b].set(FieldNames.FIELD_FEATURE, regionName);
 						grid[i][b].set("classification", pos.getX() + "," + pos.getY() + "," + w + "," + h);
 					} catch (FieldException | ValueException | ModelNotFoundException e) {
 						logger.error(e);
@@ -524,16 +525,16 @@ public class GeoLocationUtil {
 							logger.error("Failed to find parent " + par.get(FieldNames.FIELD_PARENT_ID) + " " + peastings + ", " + pnorthings);
 						}
 						else {
-							if(!"feature".equals(padj.get("geoType"))) {
+							if(!FieldNames.FIELD_FEATURE.equals(padj.get("geoType"))) {
 								//logger.warn("Navigating outside of established realm.");
 								/*
 								if("featureless".equals(padj.get("geoType"))) {
-									long ulid = ctx.getUniverse().get("locations.id");
-									long wlid = ctx.getWorld().get("locations.id");
+									long ulid = ctx.getUniverse().get(OlioFieldNames.FIELD_LOCATIONS_ID);
+									long wlid = ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID);
 									long gid = padj.get("groupId");
 									if(gid == ulid) {
 										logger.warn("Cloning location to world from " + gid + "/" + ulid + " to " + wlid);
-										padj = OlioUtil.cloneIntoGroup(padj, ctx.getWorld().get("locations"));
+										padj = OlioUtil.cloneIntoGroup(padj, ctx.getWorld().get(FieldNames.FIELD_LOCATIONS));
 										IOSystem.getActiveContext().getRecordUtil().createRecord(padj);
 									}
 								}
@@ -674,7 +675,7 @@ public class GeoLocationUtil {
 		IOSystem.getActiveContext().getReader().populate(location);
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, id);
 		cq.field("geoType", "cell");
-		cq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get("locations.id"));
+		cq.field(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID));
 		//cq.setCache(false);
 		OlioUtil.planMost(cq);
 		List<BaseRecord> cells = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(cq));
@@ -689,7 +690,7 @@ public class GeoLocationUtil {
 		if(groupId > 0L) {
 			pq.field(FieldNames.FIELD_GROUP_ID, groupId);
 		}
-		pq.field("feature", feature);
+		pq.field(FieldNames.FIELD_FEATURE, feature);
 		OlioUtil.planMost(pq);
 
 		return IOSystem.getActiveContext().getSearch().findRecords(pq);
@@ -736,14 +737,14 @@ public class GeoLocationUtil {
 		if(ctx.getWorld() == null) {
 			return rec;
 		}
-		ParameterList plist = ParameterList.newParameterList("path", (world ? ctx.getWorld() : ctx.getUniverse()).get("locations.path"));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, (world ? ctx.getWorld() : ctx.getUniverse()).get("locations.path"));
 		plist.parameter(FieldNames.FIELD_NAME, name);
 		try {
 			rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_GEO_LOCATION, ctx.getOlioUser(), null, plist);
 			rec.set("geographyType", GeographyEnumType.PHYSICAL);
 			if(parent != null) {
 				rec.set(FieldNames.FIELD_PARENT_ID, parent.get(FieldNames.FIELD_ID));
-				rec.set("geoType", "feature");
+				rec.set("geoType", FieldNames.FIELD_FEATURE);
 				rec.set("geonameid", id);
 			}
 			else {
@@ -809,7 +810,7 @@ public class GeoLocationUtil {
 		BaseRecord loc = null;
 		BaseRecord evt = EventUtil.getRootEvent(user, world);
 		if(evt != null) {
-			loc = evt.get("location");
+			loc = evt.get(FieldNames.FIELD_LOCATION);
 		}
 		return loc;
 	}
@@ -823,16 +824,16 @@ public class GeoLocationUtil {
 			logger.error("Zero region events were found");
 		}
 		for(BaseRecord evt : evts) {
-			locs.add(evt.get("location"));
+			locs.add(evt.get(FieldNames.FIELD_LOCATION));
 		}
 		return locs;
 	}
 	
 	public static BaseRecord randomLocation(BaseRecord user, BaseRecord world) {
-		BaseRecord dir = world.get("locations");
+		BaseRecord dir = world.get(FieldNames.FIELD_LOCATIONS);
 		logger.info("Random location in " + dir.get(FieldNames.FIELD_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field("geoType", "feature");
+		q.field("geoType", FieldNames.FIELD_FEATURE);
 		return OlioUtil.randomSelection(user, q);
 	}
 	
@@ -849,7 +850,7 @@ public class GeoLocationUtil {
 		IOSystem.getActiveContext().getReader().conditionalPopulate(location, new String[] {"geonameid", FieldNames.FIELD_GROUP_ID});
 		long groupId = location.get(FieldNames.FIELD_GROUP_ID);
 		if(world != null) {
-			groupId = world.get("locations.id");
+			groupId = world.get(OlioFieldNames.FIELD_LOCATIONS_ID);
 		}
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, "altgeonameid", location.get("geonameid"));
 		q.field("geoType", "alternateName");

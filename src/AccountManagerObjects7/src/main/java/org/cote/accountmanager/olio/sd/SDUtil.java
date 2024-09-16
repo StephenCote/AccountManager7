@@ -196,7 +196,7 @@ public class SDUtil {
 				BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 
 				if(data == null) {
-					ParameterList clist = ParameterList.newParameterList("path", "~/GalleryHome/Characters/" + person.get(FieldNames.FIELD_NAME));
+					ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/GalleryHome/Characters/" + person.get(FieldNames.FIELD_NAME));
 					clist.parameter(FieldNames.FIELD_NAME, dname);
 					data = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
 					data.set(FieldNames.FIELD_BYTE_STORE, datab);
@@ -230,7 +230,7 @@ public class SDUtil {
 		q.field(FieldNames.FIELD_NAME, dname);
 		BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
 		if(data == null) {
-			ParameterList clist = ParameterList.newParameterList("path", "~/Gallery/Characters");
+			ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Gallery/Characters");
 			clist.parameter(FieldNames.FIELD_NAME, dname);
 
 			BaseRecord dat = null;

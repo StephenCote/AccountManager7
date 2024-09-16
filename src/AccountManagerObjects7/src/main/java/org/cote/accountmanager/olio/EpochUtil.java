@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.parsers.wordnet.WordNetParser;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -33,7 +34,7 @@ public class EpochUtil {
 	private static SecureRandom rand = new SecureRandom();
 	
 	public static String generateEpochTitle(BaseRecord user, BaseRecord world, AlignmentEnumType alignment) {
-		BaseRecord dir = world.get("dictionary");
+		BaseRecord dir = world.get(OlioFieldNames.FIELD_DICTIONARY);
 		return generateEpochTitle(user, (long)dir.get(FieldNames.FIELD_ID), alignment);
 	}
 	
@@ -134,14 +135,14 @@ public class EpochUtil {
 		if(title == null) {
 			title = EpochUtil.generateEpochTitle(ctx.getOlioUser(), ctx.getUniverse(), alignment);
 		}
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("events.path"));
-		ZonedDateTime startTime = ((ZonedDateTime)lastEpoch.get("eventEnd")).plusDays(1).with(LocalTime.of(0,0,0));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("events.path"));
+		ZonedDateTime startTime = ((ZonedDateTime)lastEpoch.get(OlioFieldNames.FIELD_EVENT_END)).plusDays(1).with(LocalTime.of(0,0,0));
 		logger.info("Start time: " + startTime);
 		epoch = EventUtil.newEvent(ctx, rootEvt, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), title, startTime);
 		try {
-			epoch.set("eventProgress", startTime);
+			epoch.set(OlioFieldNames.FIELD_EVENT_PROGRESS, startTime);
 			epoch.set("inProgress", true);
-			epoch.set("eventEnd", startTime.plusYears(1));
+			epoch.set(OlioFieldNames.FIELD_EVENT_END, startTime.plusYears(1));
 			epoch.set("epoch", true);
 			epoch.set("timeType", TimeEnumType.YEAR);
 			epoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
@@ -192,9 +193,9 @@ public class EpochUtil {
 	
 	
 	public static void endRealmEvent(OlioContext ctx, BaseRecord realm) {
-		endEpoch(ctx, realm.get("currentEvent"));
-		realm.setValue("currentEvent", null);
-		Queue.queueUpdate(realm, new String[]{"currentEvent"});
+		endEpoch(ctx, realm.get(OlioFieldNames.FIELD_CURRENT_EVENT));
+		realm.setValue(OlioFieldNames.FIELD_CURRENT_EVENT, null);
+		Queue.queueUpdate(realm, new String[]{OlioFieldNames.FIELD_CURRENT_EVENT});
 		Queue.processQueue();
 	}
 	
@@ -258,7 +259,7 @@ public class EpochUtil {
 		int alignmentScore = AlignmentEnumType.getValue(alignment);
 		AlignmentEnumType invertedAlignment = AlignmentEnumType.valueOf(-1 * alignmentScore);
 
-		BaseRecord popGrp = realm.get("population");
+		BaseRecord popGrp = realm.get(OlioFieldNames.FIELD_POPULATION);
 		int count = OlioUtil.countPeople(popGrp);
 		try {
 			if(count == 0){
@@ -274,10 +275,10 @@ public class EpochUtil {
 				
 				BaseRecord childEpoch = EventUtil.newEvent(ctx, cepoch, (alignmentScore < 0 ? EventEnumType.DESTABILIZE : EventEnumType.STABLIZE), childTitle, clock.getStart());
 				childEpoch.set(OlioFieldNames.FIELD_REALM, realm);
-				childEpoch.set(FieldNames.FIELD_LOCATION, realm.get("origin"));
-				childEpoch.set("eventProgress", clock.getCurrent());
+				childEpoch.set(FieldNames.FIELD_LOCATION, realm.get(OlioFieldNames.FIELD_ORIGIN));
+				childEpoch.set(OlioFieldNames.FIELD_EVENT_PROGRESS, clock.getCurrent());
 				childEpoch.set("inProgress", true);
-				childEpoch.set("eventEnd", clock.getEnd());
+				childEpoch.set(OlioFieldNames.FIELD_EVENT_END, clock.getEnd());
 				childEpoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
 				childEpoch.set("timeType", TimeEnumType.YEAR);
 
@@ -287,8 +288,8 @@ public class EpochUtil {
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(childEpoch);
 				rclock.setEvent(childEpoch);
 				
-				realm.setValue("currentEvent", childEpoch);
-				Queue.queueUpdate(realm, new String[] {"currentEvent"});
+				realm.setValue(OlioFieldNames.FIELD_CURRENT_EVENT, childEpoch);
+				Queue.queueUpdate(realm, new String[] {OlioFieldNames.FIELD_CURRENT_EVENT});
 				
 				evt = childEpoch;
 				
@@ -317,8 +318,8 @@ public class EpochUtil {
 		for(IOlioEvolveRule rule : ctx.getConfig().getEvolutionRules()) {
 			inc = rule.startRealmIncrement(ctx, realm);
 			if(inc != null) {
-				realm.setValue("currentIncrement", inc);
-				Queue.queueUpdate(realm, new String[] {"currentIncrement"});
+				realm.setValue(OlioFieldNames.FIELD_CURRENT_INCREMENT, inc);
+				Queue.queueUpdate(realm, new String[] {OlioFieldNames.FIELD_CURRENT_INCREMENT});
 				break;
 			}
 		}
@@ -360,7 +361,7 @@ public class EpochUtil {
 		int increment = 1;
 		BaseRecord world = ctx.getWorld();
 		IOSystem.getActiveContext().getReader().populate(world, 2);
-		BaseRecord parWorld = world.get("basis");
+		BaseRecord parWorld = world.get(OlioFieldNames.FIELD_BASIS);
 		if(parWorld == null) {
 			logger.error("A basis world is required");
 			return null;
@@ -389,7 +390,7 @@ public class EpochUtil {
 			
 			String title = EpochUtil.generateEpochTitle(ctx.getOlioUser(), parWorld, alignment);
 			
-			ParameterList plist = ParameterList.newParameterList("path", world.get("events.path"));
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, world.get("events.path"));
 			try {
 				epoch = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_EVENT, ctx.getOlioUser(), null, plist);
 				/// TODO: Need a way to bulk-add hierarchies
@@ -400,17 +401,17 @@ public class EpochUtil {
 				epoch.set(FieldNames.FIELD_ALIGNMENT, alignment);
 				epoch.set(FieldNames.FIELD_PARENT_ID, rootEvt.get(FieldNames.FIELD_ID));
 				epoch.set("epoch", true);
-				long startTimeMS = ((Date)lastEpoch.get("eventEnd")).getTime();
-				epoch.set("eventStart", new Date(startTimeMS));
-				epoch.set("eventEnd", new Date(startTimeMS + (OlioUtil.YEAR * increment)));
+				long startTimeMS = ((Date)lastEpoch.get(OlioFieldNames.FIELD_EVENT_END)).getTime();
+				epoch.set(OlioFieldNames.FIELD_EVENT_START, new Date(startTimeMS));
+				epoch.set(OlioFieldNames.FIELD_EVENT_END, new Date(startTimeMS + (OlioUtil.YEAR * increment)));
 				
-				logger.info("Epoch: " + alignment.toString() + " " + title + " takes place between " + CalendarUtil.exportDateAsString(epoch.get("eventStart"), "yyyy/MM/dd") + " and " + CalendarUtil.exportDateAsString(epoch.get("eventEnd"), "yyyy/MM/dd"));
+				logger.info("Epoch: " + alignment.toString() + " " + title + " takes place between " + CalendarUtil.exportDateAsString(epoch.get(OlioFieldNames.FIELD_EVENT_START), "yyyy/MM/dd") + " and " + CalendarUtil.exportDateAsString(epoch.get(OlioFieldNames.FIELD_EVENT_END), "yyyy/MM/dd"));
 				
 				IOSystem.getActiveContext().getRecordUtil().updateRecord(epoch);
 				
 				ctx.setCurrentEpoch(epoch);
 				
-				// List<BaseRecord> grps = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get("population.id"))));
+				// List<BaseRecord> grps = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, world.get(OlioFieldNames.FIELD_POPULATION_ID))));
 				for(BaseRecord loc : ctx.getLocations()) {
 					IOSystem.getActiveContext().getReader().populate(loc, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID});
 					
@@ -434,8 +435,8 @@ public class EpochUtil {
 						childEpoch.set(FieldNames.FIELD_NAME, locName + " experienced a " + useAlignment.toString() + " event: " + childTitle);
 						childEpoch.set(FieldNames.FIELD_ALIGNMENT, useAlignment);
 						childEpoch.set(FieldNames.FIELD_PARENT_ID, epoch.get(FieldNames.FIELD_ID));
-						childEpoch.set("eventStart", epoch.get("eventStart"));
-						childEpoch.set("eventEnd", epoch.get("eventEnd"));
+						childEpoch.set(OlioFieldNames.FIELD_EVENT_START, epoch.get(OlioFieldNames.FIELD_EVENT_START));
+						childEpoch.set(OlioFieldNames.FIELD_EVENT_END, epoch.get(OlioFieldNames.FIELD_EVENT_END));
 						childEpoch.set(FieldNames.FIELD_STATE, ActionResultEnumType.PENDING);
 						List<BaseRecord> lgrps = childEpoch.get("groups");
 						lgrps.add(popGrp);

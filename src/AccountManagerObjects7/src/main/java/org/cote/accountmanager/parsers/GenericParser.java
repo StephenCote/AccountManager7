@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 
@@ -86,7 +87,7 @@ public class GenericParser {
 			csvFileParser = new CSVParser(bir, csvFormat);
 			ParameterList plist = null;
 			if(groupPath != null) {
-				plist = ParameterList.newParameterList("path", groupPath);
+				plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 			}
 			int batchSize = 0;
 			int totalSize = 0;

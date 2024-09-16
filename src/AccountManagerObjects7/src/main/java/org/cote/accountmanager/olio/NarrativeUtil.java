@@ -224,7 +224,7 @@ public class NarrativeUtil {
 		}
 		String pat = (w.get("pattern.name") != null ? " " + ((String)w.get("pattern.name")).toLowerCase().replace(" pattern", "") : "");
 		String fab = (w.get("fabric") != null ? " " + ((String)w.get("fabric")).toLowerCase() : "");
-		List<String> locs = w.get("location");
+		List<String> locs = w.get(FieldNames.FIELD_LOCATION);
 		String loc = (locs.size() > 0 ? " " + locs.get(0) : "");
 		String name = w.get(FieldNames.FIELD_NAME);
 		if(name.contains("pierc")) {
@@ -1017,7 +1017,7 @@ public class NarrativeUtil {
 			}
 			else {
 				try {
-					nar = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_NARRATIVE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("narratives.path")));
+					nar = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_NARRATIVE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("narratives.path")));
 				} catch (FactoryException e) {
 					logger.error(e);
 					return null;
@@ -1346,7 +1346,7 @@ public class NarrativeUtil {
 		PersonalityProfile pp = ProfileUtil.getProfile(ctx, pov);
 
 		BaseRecord state = pov.get("state");
-		BaseRecord store = pov.get("store");
+		BaseRecord store = pov.get(FieldNames.FIELD_STORE);
 		BaseRecord cell = state.get("currentLocation");
 		List<Long> gids = group.stream().map(r -> ((long)r.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 
@@ -1407,7 +1407,7 @@ public class NarrativeUtil {
 		String names = group.stream().filter(p -> !fname.equals(p.get(FieldNames.FIELD_FIRST_NAME))).map(p -> ((String)p.get(FieldNames.FIELD_FIRST_NAME) + " (" + p.get("age") + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
 		buff.append(" " + pro + " is accompanied by " + names + ".");
 		
-		BaseRecord eloc = event.get("location");
+		BaseRecord eloc = event.get(FieldNames.FIELD_LOCATION);
 		//IOSystem.getActiveContext().getReader().populate(eloc);
 		//logger.info(eloc.toFullString());
 		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getRealmPopulation(realm).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
@@ -1465,7 +1465,7 @@ public class NarrativeUtil {
 
 		if(evt != null) {
 
-			BaseRecord realm = ctx.getRealm(evt.get("location"));
+			BaseRecord realm = ctx.getRealm(evt.get(FieldNames.FIELD_LOCATION));
 			if(realm == null) {
 				logger.error("Failed to find realm");
 			}

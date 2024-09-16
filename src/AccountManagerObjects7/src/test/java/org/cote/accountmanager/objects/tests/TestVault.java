@@ -49,7 +49,7 @@ public class TestVault extends BaseTest {
 
 		
 		String dataName = "Dump data " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", "~/Data/Dump");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Data/Dump");
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		try {
@@ -93,7 +93,7 @@ public class TestVault extends BaseTest {
 		assertNotNull("Vault is null", orgVault);
 		
 		String dataName = "Demo data " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", "~/Authorize/Create");
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Authorize/Create");
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		

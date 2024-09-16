@@ -36,7 +36,7 @@ public class TestAuthentication extends BaseTest {
 	public void TestCreatePolicy() {
 		BaseRecord rec = null;
 		ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_NAME, "Demo data - " + UUID.randomUUID().toString());
-		plist.parameter("path", "~/QA Demo");
+		plist.parameter(FieldNames.FIELD_PATH, "~/QA Demo");
 		boolean canCreate = false;
 		try {
 			rec = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, orgContext.getAdminUser(), null, plist);
@@ -133,7 +133,7 @@ public class TestAuthentication extends BaseTest {
 		// byte[] useCredBytes = "password".getBytes();
 		BaseRecord keySet = null;
 		try {
-			ParameterList plist = ParameterUtil.newParameterList("path", "~/keys");
+			ParameterList plist = ParameterUtil.newParameterList(FieldNames.FIELD_PATH, "~/keys");
 			plist.parameter("keyPair", true);
 			plist.parameter("secretKey", true);
 			keySet = mf.newInstance(ModelNames.MODEL_KEY_SET, testUser1, null, plist);

@@ -332,7 +332,7 @@ public class VaultService
 			BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(vault.getServiceUser(), ModelNames.MODEL_GROUP, ipath, "DATA", orgId);
 			recordUtil.populate(dir);
 			
-			ParameterList kslist = ParameterUtil.newParameterList("path", ipath);
+			ParameterList kslist = ParameterUtil.newParameterList(FieldNames.FIELD_PATH, ipath);
 			kslist.parameter("salt", true);
 			BaseRecord saltSet = factory.newInstance(ModelNames.MODEL_KEY_SET, vault.getServiceUser(), null, kslist);
 			saltSet.set(FieldNames.FIELD_NAME, "Salt");

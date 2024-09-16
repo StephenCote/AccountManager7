@@ -36,7 +36,7 @@ public class TestFieldLock extends BaseTest {
 		
 		String groupPath = "~/Locks/Data";
 		String dataName = "Lock Data Test - " + UUID.randomUUID().toString();
-		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 		plist.parameter(FieldNames.FIELD_NAME, dataName);
 		BaseRecord data = null;
 		try {

@@ -8,6 +8,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -35,7 +36,7 @@ public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolve
 	
 	@Override
 	public void continueEpoch(OlioContext context, BaseRecord epoch) {
-		logger.info("Continuing epoch: " + epoch.get(FieldNames.FIELD_NAME) + " at " + epoch.get("eventProgress"));
+		logger.info("Continuing epoch: " + epoch.get(FieldNames.FIELD_NAME) + " at " + epoch.get(OlioFieldNames.FIELD_EVENT_PROGRESS));
 	}
 
 

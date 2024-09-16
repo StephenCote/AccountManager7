@@ -49,9 +49,9 @@ public class AddressUtil {
 				cit.set(FieldNames.FIELD_REFERENCE_TYPE, person.getModel());
 				IOSystem.getActiveContext().getRecordUtil().applyOwnership(ctx.getOlioUser(), cit, ctx.getOlioUser().get(FieldNames.FIELD_ORGANIZATION_ID));
 				List<BaseRecord> addrs = cit.get("addresses");
-				BaseRecord addr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ADDRESS, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("addresses.path")));
+				BaseRecord addr = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_ADDRESS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("addresses.path")));
 				addr.set(FieldNames.FIELD_NAME, UUID.randomUUID().toString());
-				addr.set("location", location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
+				addr.set(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
 				addr.set("locationType", LocationEnumType.OTHER);
 				addr.set("preferred", true);
 				addrs.add(addr);
@@ -143,7 +143,7 @@ public class AddressUtil {
 
 	}
 	public static BaseRecord randomAddress(BaseRecord user, BaseRecord world, BaseRecord location, String groupPath)  {
-		ParameterList plist = ParameterList.newParameterList("path", groupPath);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
 		IOSystem.getActiveContext().getReader().populate(location);
 		IOSystem.getActiveContext().getReader().populate(user);
 		if(world != null) {
@@ -164,7 +164,7 @@ public class AddressUtil {
 			}
 			addr.set(FieldNames.FIELD_CITY, location.get(FieldNames.FIELD_NAME));
 			addr.set(FieldNames.FIELD_STREET, randomBuilding() + " " + randomStreetName());
-			addr.set("location", location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
+			addr.set(FieldNames.FIELD_LOCATION, location.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID}));
 			applyStateAndCountry(user, location, addr);
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException | ReaderException e) {
@@ -181,7 +181,7 @@ public class AddressUtil {
 		String geoType = location.get("geoType");
 		
 		if(geoType != null) {
-			if(geoType.equals("feature")) {
+			if(geoType.equals(FieldNames.FIELD_FEATURE)) {
 				checkParent = true;
 			}
 			else if(geoType.equals("admin2")) {

@@ -211,7 +211,7 @@ public class StreamUtil {
     		if(streamWrite) {
     			BaseRecord seg = getSegment(streamRec, baos.toByteArray(), 0);
     			if(streamRec == null) {
-        			ParameterList plist = ParameterList.newParameterList("path", groupPath);
+        			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
         			plist.parameter(FieldNames.FIELD_NAME, UUID.randomUUID().toString());
         			streamRec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_STREAM, user, null, plist);
         			streamRec.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
@@ -240,7 +240,7 @@ public class StreamUtil {
     	
     	if((streamRec != null || data.length > 0) && user != null){
 			try{
-    			ParameterList plist = ParameterList.newParameterList("path", groupPath);
+    			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
     			plist.parameter(FieldNames.FIELD_NAME, name);
 
     			BaseRecord newData = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);

@@ -23,6 +23,7 @@ import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -65,7 +66,7 @@ public class ActionUtil {
 	public static BaseRecord getActionEvent(OlioContext context, BaseRecord parentEvent, EventEnumType type, String eventName, BaseRecord[] actors, BaseRecord[] participants, BaseRecord[] influencers) {
 		BaseRecord actEvt = EventUtil.getEvent(context, parentEvent, eventName, type);
 		if(actEvt == null) {
-			actEvt = EventUtil.newEvent(context, parentEvent, type, eventName, parentEvent.get("eventProgress"), actors, participants, influencers, false);
+			actEvt = EventUtil.newEvent(context, parentEvent, type, eventName, parentEvent.get(OlioFieldNames.FIELD_EVENT_PROGRESS), actors, participants, influencers, false);
 			IOSystem.getActiveContext().getRecordUtil().createRecord(actEvt);
 		}
 		return actEvt;
@@ -110,7 +111,7 @@ public class ActionUtil {
 		BaseRecord state = actionResult.get("state");
 		if(state == null) {
 			try {
-				state = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList("path", ctx.getWorld().get("states.path")));
+				state = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path")));
 				actionResult.set("state", state);
 			} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 				logger.error(e);
@@ -131,7 +132,7 @@ public class ActionUtil {
 	}
 	public static BaseRecord newActionResult(OlioContext ctx, BaseRecord action, BaseRecord params, BaseRecord interaction) {
 
-		ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actionResults.path"));
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("actionResults.path"));
 		BaseRecord actionResult = null;
 		try {
 			actionResult = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION_RESULT, ctx.getOlioUser(), null, plist);
@@ -185,7 +186,7 @@ public class ActionUtil {
 		try {
 			
 			for(BaseRecord act : acts) {
-				ParameterList plist = ParameterList.newParameterList("path", ctx.getWorld().get("actions.path"));
+				ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("actions.path"));
 				plist.parameter(FieldNames.FIELD_NAME, act.get(FieldNames.FIELD_NAME));
 
 				BaseRecord actr = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_ACTION, ctx.getOlioUser(), act, plist);
