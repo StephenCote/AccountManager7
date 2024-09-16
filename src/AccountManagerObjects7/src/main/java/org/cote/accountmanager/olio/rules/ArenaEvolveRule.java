@@ -21,7 +21,6 @@ import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
-import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule {

@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio;
 
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -36,7 +35,6 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
-import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class OlioContext {
 	public static final Logger logger = LogManager.getLogger(OlioContext.class);

@@ -3,6 +3,7 @@ package org.cote.accountmanager.personality;
 import java.math.RoundingMode;
 import java.text.DecimalFormat;
 
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 
 public class OCEANUtil {

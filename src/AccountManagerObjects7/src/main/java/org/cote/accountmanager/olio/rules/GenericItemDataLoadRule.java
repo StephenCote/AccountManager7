@@ -7,7 +7,6 @@ import org.cote.accountmanager.olio.BuilderUtil;
 import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.actions.ActionUtil;
-import org.cote.accountmanager.record.BaseRecord;
 
 public class GenericItemDataLoadRule extends CommonContextRule implements IOlioContextRule {
 	public static final Logger logger = LogManager.getLogger(GenericItemDataLoadRule.class);

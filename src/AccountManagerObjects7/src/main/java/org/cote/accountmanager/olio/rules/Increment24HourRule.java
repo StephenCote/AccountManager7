@@ -12,7 +12,6 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
-import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.TimeEnumType;
 
 public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolveRule {

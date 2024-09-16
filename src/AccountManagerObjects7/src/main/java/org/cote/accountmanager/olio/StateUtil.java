@@ -16,7 +16,6 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 
 public class StateUtil {
 	public static final Logger logger = LogManager.getLogger(StateUtil.class);

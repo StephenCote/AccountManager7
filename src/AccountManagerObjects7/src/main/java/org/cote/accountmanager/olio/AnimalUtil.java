@@ -26,7 +26,6 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;

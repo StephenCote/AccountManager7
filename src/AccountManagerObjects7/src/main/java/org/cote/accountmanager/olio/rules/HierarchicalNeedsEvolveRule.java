@@ -6,7 +6,6 @@ import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.AnimalUtil;
-import org.cote.accountmanager.olio.Clock;
 import org.cote.accountmanager.olio.NeedsUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OverwatchException;

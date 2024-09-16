@@ -14,7 +14,6 @@ import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.policy.operation.Operation;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 import org.cote.accountmanager.schema.type.TerrainEnumType;
 

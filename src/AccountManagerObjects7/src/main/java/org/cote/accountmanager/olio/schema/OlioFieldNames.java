@@ -1,7 +1,5 @@
 package org.cote.accountmanager.olio.schema;
 
-import org.cote.accountmanager.olio.StatisticRule;
-
 public class OlioFieldNames {
 	// Common
 	public static final String FIELD_ORIGIN = "origin";
