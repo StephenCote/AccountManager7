@@ -147,7 +147,7 @@ public class PromptUtil {
 		}
 		templ = firstSecondWho.matcher(templ).replaceAll(whoStart);
 		templ = firstSecondToBe.matcher(templ).replaceAll(firstPerson ? "I am" : "You are");
-		templ = firstSecondName.matcher(templ).replaceAll((String)(firstPerson ? systemChar.get("firstName") : userChar.get("firstName")));
+		templ = firstSecondName.matcher(templ).replaceAll((String)(firstPerson ? systemChar.get(FieldNames.FIELD_FIRST_NAME) : userChar.get(FieldNames.FIELD_FIRST_NAME)));
 
 		String scenel = "";
 		if((boolean)chatConfig.get("includeScene")) {
@@ -248,8 +248,8 @@ public class PromptUtil {
 		templ = ratingDesc.matcher(templ).replaceAll(ESRBEnumType.getESRBShortDescription(rating));
 		templ = ratingRestrict.matcher(templ).replaceAll(ESRBEnumType.getESRBRestriction(rating));
 		templ = ratingMpa.matcher(templ).replaceAll(ESRBEnumType.getESRBMPA(rating));
-		templ = userFirstName.matcher(templ).replaceAll((String)userChar.get("firstName"));
-		templ = systemFirstName.matcher(templ).replaceAll((String)systemChar.get("firstName"));
+		templ = userFirstName.matcher(templ).replaceAll((String)userChar.get(FieldNames.FIELD_FIRST_NAME));
+		templ = systemFirstName.matcher(templ).replaceAll((String)systemChar.get(FieldNames.FIELD_FIRST_NAME));
 		templ = userFullName.matcher(templ).replaceAll((String)userChar.get("name"));
 		templ = systemFullName.matcher(templ).replaceAll((String)systemChar.get("name"));
 
@@ -312,12 +312,12 @@ public class PromptUtil {
 		boolean isLeaderContest = false;
 		String contest = "I";
 		
-		leadDesc = outLead.getRecord().get("firstName") + " is the leader.";
+		leadDesc = outLead.getRecord().get(FieldNames.FIELD_FIRST_NAME) + " is the leader.";
 		if(outLead.getId() == sysProf.getId()) {
 			isLeaderContest = GroupDynamicUtil.contestLeadership(null, null, Arrays.asList(usrProf), sysProf).size() > 0;
 		}
 		else {
-			contest = outLead.getRecord().get("firstName");
+			contest = outLead.getRecord().get(FieldNames.FIELD_FIRST_NAME);
 			isLeaderContest = GroupDynamicUtil.contestLeadership(null, null, Arrays.asList(sysProf), usrProf).size() > 0;
 		}
 		if(isLeaderContest) {

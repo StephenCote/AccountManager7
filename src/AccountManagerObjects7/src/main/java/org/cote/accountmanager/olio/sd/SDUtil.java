@@ -244,7 +244,7 @@ public class SDUtil {
 				int counter = 1;
 				for(String bai : rep.getImages()) {
 					datab = BinaryUtil.fromBase64(bai.getBytes());
-					//FileUtil.emitFile("./img-" + per1.get("firstName") + "-" + seed + "-" + (counter++) + ".png", data);
+					//FileUtil.emitFile("./img-" + per1.get(FieldNames.FIELD_FIRST_NAME) + "-" + seed + "-" + (counter++) + ".png", data);
 				}
 			}
 			catch(FactoryException e) {

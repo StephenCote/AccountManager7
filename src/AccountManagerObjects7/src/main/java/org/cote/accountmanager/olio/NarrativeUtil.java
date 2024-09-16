@@ -939,7 +939,7 @@ public class NarrativeUtil {
 		PersonalityProfile pp = ProfileUtil.getProfile(ctx, person);
 
 		String name = person.get(FieldNames.FIELD_NAME);
-		String fname = person.get("firstName");
+		String fname = person.get(FieldNames.FIELD_FIRST_NAME);
 		int age = person.get("age");
 
 		String hairColor = getColor(person, "hairColor");
@@ -1023,7 +1023,7 @@ public class NarrativeUtil {
 					return null;
 				}
 			}
-			nar.set("name", pp.getRecord().get("firstName"));
+			nar.set("name", pp.getRecord().get(FieldNames.FIELD_FIRST_NAME));
 			nar.set("fullName", pp.getRecord().get("name"));
 			nar.set("physicalDescription", describePhysical(pp));
 			nar.set("outfitDescription", describeOutfit(pp));
@@ -1351,7 +1351,7 @@ public class NarrativeUtil {
 		List<Long> gids = group.stream().map(r -> ((long)r.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 
 		String name = pov.get(FieldNames.FIELD_NAME);
-		String fname = pov.get("firstName");
+		String fname = pov.get(FieldNames.FIELD_FIRST_NAME);
 		int age = pov.get("age");
 		
 		
@@ -1404,7 +1404,7 @@ public class NarrativeUtil {
 		}
 
 
-		String names = group.stream().filter(p -> !fname.equals(p.get("firstName"))).map(p -> ((String)p.get("firstName") + " (" + p.get("age") + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
+		String names = group.stream().filter(p -> !fname.equals(p.get(FieldNames.FIELD_FIRST_NAME))).map(p -> ((String)p.get(FieldNames.FIELD_FIRST_NAME) + " (" + p.get("age") + " year old " + p.get("gender") + ")")).collect(Collectors.joining(", "));
 		buff.append(" " + pro + " is accompanied by " + names + ".");
 		
 		BaseRecord eloc = event.get("location");
@@ -1435,7 +1435,7 @@ public class NarrativeUtil {
 			PersonalityProfile pp2 = ProfileUtil.analyzePersonality(ctx, p);
 			String compatKey = OCEANUtil.getCompatibilityKey(pov.get("personality"), p.get("personality"));
 			CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(pov.get("personality.mbtiKey"), p.get("personality.mbtiKey"));
-			buff.append("\n" + p.get("firstName") + " " + getRaceDescription(p.get("race")) + " (" + p.get("age") + " year old " + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTriadDescription(pp2));
+			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get("race")) + " (" + p.get("age") + " year old " + p.get("gender") + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTriadDescription(pp2));
 		}
 		
 		return buff.toString();

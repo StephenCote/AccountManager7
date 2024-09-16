@@ -150,7 +150,7 @@ public class RollUtil {
 		int decStat = DarkTriadUtil.getDeceptionStatistic(actor);
 		int decMod = decStat - DarkTriadUtil.getDeceptionCounterStatistic(interactor);
 		if(decMod <= 0) {
-			logger.warn(actor.get("firstName") + " has no chance to deceive " + interactor.get("firstName"));
+			logger.warn(actor.get(FieldNames.FIELD_FIRST_NAME) + " has no chance to deceive " + interactor.get(FieldNames.FIELD_FIRST_NAME));
 			return RollEnumType.FAILURE;
 		}
 		return rollStat20(decMod);

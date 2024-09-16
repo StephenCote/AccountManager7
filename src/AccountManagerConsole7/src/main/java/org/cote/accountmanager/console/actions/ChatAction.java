@@ -221,13 +221,13 @@ public class ChatAction extends CommonAction implements IAction{
 			}
 			
 			if(cmd.hasOption("character1")) {
-				Optional<BaseRecord> brec = pop.stream().filter(r -> cmd.getOptionValue("character1").equals(r.get("firstName"))).findFirst();
+				Optional<BaseRecord> brec = pop.stream().filter(r -> cmd.getOptionValue("character1").equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
 				if(brec.isPresent()) {
 					char1 = brec.get();
 				}
 			}
 			if(cmd.hasOption("character2")) {
-				Optional<BaseRecord> brec = pop.stream().filter(r -> cmd.getOptionValue("character2").equals(r.get("firstName"))).findFirst();
+				Optional<BaseRecord> brec = pop.stream().filter(r -> cmd.getOptionValue("character2").equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
 				if(brec.isPresent()) {
 					char2 = brec.get();
 				}
@@ -332,7 +332,7 @@ public class ChatAction extends CommonAction implements IAction{
 			if(char1 != null && char2 != null) {
 				if(cmd.hasOption("show")) {	
 					CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(char1.get("personality.mbtiKey"), char2.get("personality.mbtiKey"));
-					logger.info(char1.get("firstName") + " has " + mbtiCompat.toString() + " compatability with " + char2.get("firstName"));
+					logger.info(char1.get(FieldNames.FIELD_FIRST_NAME) + " has " + mbtiCompat.toString() + " compatability with " + char2.get(FieldNames.FIELD_FIRST_NAME));
 				}
 				
 				if(cmd.hasOption("interact")) {

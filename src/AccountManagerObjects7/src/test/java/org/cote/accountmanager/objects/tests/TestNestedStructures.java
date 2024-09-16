@@ -50,9 +50,9 @@ public class TestNestedStructures extends BaseTest {
 		ParameterList plist = ParameterList.newParameterList("path", path);
 		try {
 			BaseRecord a1 = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, plist);
-			a1.set("firstName", "Jay");
-			a1.set("middleName", "Kippy");
-			a1.set("lastName", "Smith");
+			a1.set(FieldNames.FIELD_FIRST_NAME, "Jay");
+			a1.set(FieldNames.FIELD_MIDDLE_NAME, "Kippy");
+			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
 			a1.set("name", "Jay Kippy Smith");
 			a1.set("instinct", ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
 			a1.set("statistics", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));

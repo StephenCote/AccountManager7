@@ -98,9 +98,9 @@ public class AddressUtil {
 				}
 			}
 			
-			String firstName = person.get("firstName");
-			String middleName = person.get("middleName");
-			String lastName = person.get("lastName");
+			String firstName = person.get(FieldNames.FIELD_FIRST_NAME);
+			String middleName = person.get(FieldNames.FIELD_MIDDLE_NAME);
+			String lastName = person.get(FieldNames.FIELD_LAST_NAME);
 			
 			 email.set("contactValue", (firstName + (middleName != null ? "." + middleName : "") + "." + lastName + "@" + tradeName + ".com").toLowerCase());
 			 email.set("locationType", LocationEnumType.WORK);

@@ -127,9 +127,9 @@ public class CharacterUtil {
 				name = firstName + " " + middleName + " " + lastName;
 			}
 	
-			person.set("firstName", firstName);
-			person.set("middleName", middleName);
-			person.set("lastName", lastName);
+			person.set(FieldNames.FIELD_FIRST_NAME, firstName);
+			person.set(FieldNames.FIELD_MIDDLE_NAME, middleName);
+			person.set(FieldNames.FIELD_LAST_NAME, lastName);
 			person.set(FieldNames.FIELD_NAME, name);
 	
 			/*

@@ -184,7 +184,10 @@ public class FieldNames {
 		public static final String FIELD_ACCOUNTS = "accounts";
 		public static final String FIELD_DEPENDENTS = "dependents";
 		public static final String FIELD_PARTNERS = "partners";
-	   
+		public static final String FIELD_FIRST_NAME = "firstName";
+		public static final String FIELD_MIDDLE_NAME = "middleName";
+		public static final String FIELD_LAST_NAME = "lastName";
+		
 		// Spool
 		public static final String FIELD_SPOOL_BUCKET_TYPE = "spoolBucketType";
 		public static final String FIELD_SPOOL_BUCKET_NAME = "spoolBucketName";
@@ -299,8 +302,7 @@ public class FieldNames {
 		
 		public static final String FIELD_CONTACT_INFORMATION = "contactInformation";
 		
-		// Olio
-		public static final String FIELD_LOCATION = "location";
-		public static final String FIELD_REALM = "realm";
-		public static final String FIELD_GROUPS = "groups";
+
+		
+		//
 }

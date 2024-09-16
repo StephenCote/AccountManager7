@@ -25,7 +25,7 @@ public class ThreatUtil {
 				threats.forEach((tet, al) -> {
 					al.forEach(a -> {
 						BaseRecord inter = InteractionUtil.newInteraction(ctx, InteractionEnumType.THREATEN, increment, a, tet, pp.getRecord());
-						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get("firstName"));
+						inter.setValue("description", a.get("name") + " is a " + tet.toString() + " to " + pp.getRecord().get(FieldNames.FIELD_FIRST_NAME));
 						inters.add(inter);
 						//Queue.queue(inter);
 					});

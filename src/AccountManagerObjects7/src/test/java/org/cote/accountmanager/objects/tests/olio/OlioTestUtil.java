@@ -157,10 +157,10 @@ public class OlioTestUtil {
 		double sprintDist = AnimalUtil.sprintMeterLimit(per1);
 		double angle = GeoLocationUtil.getAngleBetweenInDegrees(per1.get("state"), per2.get("state"));
 
-		logger.info("Distance Between: " + per1.get("firstName") + " is " + dist + " meters at " + mps + "mps from " + per2.get("firstName") + " / Angle " + angle + " " + DirectionEnumType.getDirectionFromDegrees(angle));
-		logger.info("Can " + per1.get("firstName") + " see " + per2.get("firstName") + "? " + RollUtil.rollPerception(per1, per2).toString());
-		logger.info("It would take " + per1.get("firstName") + " " + time + " minutes to walk there");
-		logger.info("It would take " + per1.get("firstName") + " " + sprintTime + " seconds to sprint " + sprintDist + " meters");
+		logger.info("Distance Between: " + per1.get(FieldNames.FIELD_FIRST_NAME) + " is " + dist + " meters at " + mps + "mps from " + per2.get(FieldNames.FIELD_FIRST_NAME) + " / Angle " + angle + " " + DirectionEnumType.getDirectionFromDegrees(angle));
+		logger.info("Can " + per1.get(FieldNames.FIELD_FIRST_NAME) + " see " + per2.get(FieldNames.FIELD_FIRST_NAME) + "? " + RollUtil.rollPerception(per1, per2).toString());
+		logger.info("It would take " + per1.get(FieldNames.FIELD_FIRST_NAME) + " " + time + " minutes to walk there");
+		logger.info("It would take " + per1.get(FieldNames.FIELD_FIRST_NAME) + " " + sprintTime + " seconds to sprint " + sprintDist + " meters");
 	}
 
 	

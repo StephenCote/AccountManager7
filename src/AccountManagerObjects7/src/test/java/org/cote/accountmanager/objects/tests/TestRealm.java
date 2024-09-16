@@ -98,7 +98,7 @@ public class TestRealm extends BaseTest {
 		
 		BaseRecord popDir = octx.getWorld().get("population");
 		Query q = QueryUtil.buildQuery(testUser1, "olio.charPerson", popDir.get("objectId"), null, 0, 10);
-		q.field("firstName", per1.get("firstName"));
+		q.field(FieldNames.FIELD_FIRST_NAME, per1.get(FieldNames.FIELD_FIRST_NAME));
 		BaseRecord[] qr = ioContext.getSearch().findRecords(q);
 		if(qr.length > 0) {
 			logger.info(qr[0].toFullString());

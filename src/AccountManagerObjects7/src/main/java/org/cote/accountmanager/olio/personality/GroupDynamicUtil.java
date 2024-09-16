@@ -150,7 +150,7 @@ public class GroupDynamicUtil {
 		}
 		int rollStat = ComputeUtil.getMaximumInt(rec.get("statistics"), new String[] {"wisdom", "spirituality"}) - off;
 		if(rollStat <= 0) {
-			logger.info(rec.get("firstName") + " is not only too young, but not wise or spiritual enough to even be considered.  Who picked this person to begin with?  Sheesh.");
+			logger.info(rec.get(FieldNames.FIELD_FIRST_NAME) + " is not only too young, but not wise or spiritual enough to even be considered.  Who picked this person to begin with?  Sheesh.");
 			return RollEnumType.CATASTROPHIC_FAILURE;
 		}
 		return RollUtil.rollStat20(rollStat);
@@ -266,7 +266,7 @@ public class GroupDynamicUtil {
 	}
 	
 	public static BaseRecord evaluateContest(OlioContext ctx, PersonalityProfile challenger, PersonalityProfile defender) {
-		BaseRecord evt = EventUtil.newEvent(ctx, ctx.clock().getIncrement(), EventEnumType.DESTABILIZE, challenger.getRecord().get("firstName") + " challenges " + defender.getRecord().get("firstName"), ctx.clock().getIncrement().get("startTime"), new BaseRecord[] {challenger.getRecord(), defender.getRecord()}, null, null, true);
+		BaseRecord evt = EventUtil.newEvent(ctx, ctx.clock().getIncrement(), EventEnumType.DESTABILIZE, challenger.getRecord().get(FieldNames.FIELD_FIRST_NAME) + " challenges " + defender.getRecord().get(FieldNames.FIELD_FIRST_NAME), ctx.clock().getIncrement().get("startTime"), new BaseRecord[] {challenger.getRecord(), defender.getRecord()}, null, null, true);
 		return evt;
 	}
 	
