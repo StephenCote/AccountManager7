@@ -178,8 +178,8 @@ public class AddressUtil {
 		
 		boolean checkParent = false;
 		IOSystem.getActiveContext().getReader().populate(location);
-		//IOSystem.getActiveContext().getReader().conditionalPopulate(location, new String[] {"geoType", FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_NAME});
-		String geoType = location.get("geoType");
+		//IOSystem.getActiveContext().getReader().conditionalPopulate(location, new String[] {FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_NAME});
+		String geoType = location.get(FieldNames.FIELD_GEOTYPE);
 		
 		if(geoType != null) {
 			if(geoType.equals(FieldNames.FIELD_FEATURE)) {
@@ -190,7 +190,7 @@ public class AddressUtil {
 				checkParent = true;
 			}
 			else if(geoType.equals("admin1")) {
-				addr.set("state", location.get(FieldNames.FIELD_NAME));
+				addr.set(FieldNames.FIELD_STATE, location.get(FieldNames.FIELD_NAME));
 				checkParent = true;
 			}			
 			else if(geoType.equals("country")) {

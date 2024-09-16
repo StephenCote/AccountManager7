@@ -121,7 +121,7 @@ public class OlioService {
 			a1.set("instinct", f.newInstance(OlioModelNames.MODEL_INSTINCT, user, null, null));
 			a1.set(OlioFieldNames.FIELD_STATISTICS, f.newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, null));
 			a1.set("personality", f.newInstance(ModelNames.MODEL_PERSONALITY, user, null, null));
-			a1.set("state", f.newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, null));
+			a1.set(FieldNames.FIELD_STATE, f.newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, null));
 			a1.set(FieldNames.FIELD_STORE, f.newInstance(OlioModelNames.MODEL_STORE, user, null, null));
 			*/
 			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));

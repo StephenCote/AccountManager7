@@ -90,13 +90,13 @@ public class TestFileStore extends BaseTest {
 		/// use raw file system, and don't follow foreign keys
 		///
 		resetIO(null);
-		BaseRecord role1 = pathUtil.makePath(testUser1, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_ACCOUNT_USERS, "USER", devOrganization.get("id"));
-		BaseRecord perm1 = pathUtil.makePath(testUser1, ModelNames.MODEL_PERMISSION, "/Read", "USER", devOrganization.get("id"));
+		BaseRecord role1 = pathUtil.makePath(testUser1, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_ACCOUNT_USERS, "USER", devOrganization.get(FieldNames.FIELD_ID));
+		BaseRecord perm1 = pathUtil.makePath(testUser1, ModelNames.MODEL_PERMISSION, "/Read", "USER", devOrganization.get(FieldNames.FIELD_ID));
 		try {
 			BaseRecord part1 = RecordFactory.model(ModelNames.MODEL_PARTICIPATION).newInstance();
-			part1.set("participationId", role1.get("id"));
+			part1.set("participationId", role1.get(FieldNames.FIELD_ID));
 			part1.set("participationModel", ModelNames.MODEL_ROLE);
-			part1.set("participantId", testUser1.get("id"));
+			part1.set("participantId", testUser1.get(FieldNames.FIELD_ID));
 			part1.set("participantModel", testUser1.getModel());
 			part1.set("enabled",  true);
 			part1.set("organizationId", testUser1.get("organizationId"));

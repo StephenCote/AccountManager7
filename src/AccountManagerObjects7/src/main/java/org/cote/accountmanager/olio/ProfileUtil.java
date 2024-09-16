@@ -319,7 +319,7 @@ SLOAN Notation
 		prof.setRecord(animal);
 		prof.setGender(animal.get("gender"));
 		prof.setAge(animal.get("age"));
-		if(animal.get("state") != null) {
+		if(animal.get(FieldNames.FIELD_STATE) != null) {
 			prof.setAlive(animal.get("state.alive"));
 		}
 		prof.setAlignment(AlignmentEnumType.valueOf(animal.get(FieldNames.FIELD_ALIGNMENT)));
@@ -485,7 +485,7 @@ SLOAN Notation
 		prof.getSafetyNeeds().add(SafetyNeedsEnumType.EMPLOYMENT);
 		
 		
-		BaseRecord state = person.get("state");
+		BaseRecord state = person.get(FieldNames.FIELD_STATE);
 		if(state != null) {
 			double health = state.get("health");
 			if(health < 0.25) {

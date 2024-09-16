@@ -94,7 +94,7 @@ public class CharacterUtil {
 			person.set("instinct", inst);
 			person.set("behavior", beh);
 			person.set("personality", pper);
-			person.set("state", st);
+			person.set(FieldNames.FIELD_STATE, st);
 			person.set(FieldNames.FIELD_STORE, sto);
 			person.set("profile", pro);
 			boolean isMale = (Math.random() < 0.5);
@@ -435,7 +435,7 @@ public class CharacterUtil {
 				
 				/// Add event membership
 				List<BaseRecord> parts = new ArrayList<>();
-				// logger.info("**** Add " + actors.size() + " to " + popGrp.get("id"));
+				// logger.info("**** Add " + actors.size() + " to " + popGrp.get(FieldNames.FIELD_ID));
 				for(BaseRecord rec : actors) {
 					parts.add(ParticipationFactory.newParticipation(ctx.getOlioUser(), popGrp, null, rec));
 				}

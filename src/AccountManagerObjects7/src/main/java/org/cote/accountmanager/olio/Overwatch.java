@@ -242,10 +242,10 @@ public class Overwatch {
 				iactor = interaction.get("interactor");
 			}
 			if(actor != null) {
-				IOSystem.getActiveContext().getReader().populate(actor, new String[] {"state"});
+				IOSystem.getActiveContext().getReader().populate(actor, new String[] {FieldNames.FIELD_STATE});
 			}
 			if(iactor != null) {
-				IOSystem.getActiveContext().getReader().populate(iactor, new String[] {"state"});
+				IOSystem.getActiveContext().getReader().populate(iactor, new String[] {FieldNames.FIELD_STATE});
 			}
 			
 			/// The action implementation will set the action progress; Overwatch will adjust any external clocks/events

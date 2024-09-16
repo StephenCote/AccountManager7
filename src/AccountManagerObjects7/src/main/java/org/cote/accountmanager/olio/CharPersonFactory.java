@@ -68,7 +68,7 @@ public class CharPersonFactory extends FactoryBase {
 				newRecord.set("instinct", inst);
 				newRecord.set("behavior", beh);
 				newRecord.set("personality", pper);
-				newRecord.set("state", st);
+				newRecord.set(FieldNames.FIELD_STATE, st);
 				newRecord.set(FieldNames.FIELD_STORE, sto);
 				newRecord.set("profile", pro);
 

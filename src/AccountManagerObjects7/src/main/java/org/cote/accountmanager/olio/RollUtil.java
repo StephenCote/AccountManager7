@@ -6,6 +6,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.util.ComputeUtil;
 
@@ -175,7 +176,7 @@ public class RollUtil {
 
 		double relPerc =  ((double)iavg * rel);
 		int irelp = (int)relPerc;
-		double d = GeoLocationUtil.getDistanceToState(rec.get("state"), targ.get("state"));
+		double d = GeoLocationUtil.getDistanceToState(rec.get(FieldNames.FIELD_STATE), targ.get(FieldNames.FIELD_STATE));
 		logger.info("Contact " + d + " relativity " + rel + " / Relative reach: " + relPerc + " of " + iavg);
 		return rollStat20(irelp);
 	}
@@ -186,7 +187,7 @@ public class RollUtil {
 		int iperc = rec.get("statistics.perception");
 		double relPerc =  ((double)iperc * rel);
 		int irelp = (int)relPerc;
-		double d = GeoLocationUtil.getDistanceToState(rec.get("state"), targ.get("state"));
+		double d = GeoLocationUtil.getDistanceToState(rec.get(FieldNames.FIELD_STATE), targ.get(FieldNames.FIELD_STATE));
 		logger.info("Distance " + d + " relativity " + rel + " / Relative perception: " + relPerc + " of " + rec.get("statistics.perception"));
 		return rollStat20(irelp);
 	}

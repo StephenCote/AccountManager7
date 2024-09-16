@@ -211,7 +211,7 @@ public class ColorUtil {
 			
 			ResultSet rset = statement.executeQuery();
 			if(rset.next()) {
-				id = rset.getLong("id");
+				id = rset.getLong(FieldNames.FIELD_ID);
 			}
 			rset.close();
 			

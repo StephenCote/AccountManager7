@@ -274,19 +274,19 @@ public class Factory {
 	private void emitPermissions(BaseRecord org, BaseRecord admin) {
 		for(String p :  AccessSchema.SYSTEM_PERMISSION_NAMES) {
 			for(String s:  AccessSchema.SYSTEM_PERMISSION_TYPES) {
-				context.getPathUtil().makePath(admin, ModelNames.MODEL_PERMISSION, "/" + p, s.toUpperCase(), org.get("id"));
+				context.getPathUtil().makePath(admin, ModelNames.MODEL_PERMISSION, "/" + p, s.toUpperCase(), org.get(FieldNames.FIELD_ID));
 			}
 		}
 	}
 	
 	private void emitRoles(BaseRecord org, BaseRecord admin) {
 		for(String p : AccessSchema.SYSTEM_ROLE_NAMES) {
-			context.getPathUtil().makePath(admin, ModelNames.MODEL_ROLE, "/" + p, "USER", org.get("id"));
+			context.getPathUtil().makePath(admin, ModelNames.MODEL_ROLE, "/" + p, "USER", org.get(FieldNames.FIELD_ID));
 		}
 		
-		BaseRecord admin1 = context.getPathUtil().findPath(null, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_ACCOUNT_ADMINISTRATOR, "USER", org.get("id"));
-		BaseRecord admin2 = context.getPathUtil().findPath(null, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_DATA_ADMINISTRATOR, "USER", org.get("id"));
-		BaseRecord admin3 = context.getPathUtil().findPath(null, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_MODEL_ADMINISTRATOR, "USER", org.get("id"));
+		BaseRecord admin1 = context.getPathUtil().findPath(null, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_ACCOUNT_ADMINISTRATOR, "USER", org.get(FieldNames.FIELD_ID));
+		BaseRecord admin2 = context.getPathUtil().findPath(null, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_DATA_ADMINISTRATOR, "USER", org.get(FieldNames.FIELD_ID));
+		BaseRecord admin3 = context.getPathUtil().findPath(null, ModelNames.MODEL_ROLE, "/" + AccessSchema.ROLE_MODEL_ADMINISTRATOR, "USER", org.get(FieldNames.FIELD_ID));
 		context.getMemberUtil().member(admin, admin1, admin, null, true);
 		context.getMemberUtil().member(admin, admin2, admin, null, true);
 		context.getMemberUtil().member(admin, admin3, admin, null, true);

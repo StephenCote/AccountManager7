@@ -77,11 +77,11 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	    	BaseRecord conc = GeoLocationUtil.newLocation(ctx, arena, "Concession", iter++);
 	    	BaseRecord stage = GeoLocationUtil.newLocation(ctx, arena, "Staging", iter++);
 	    	
-	    	stands.set("geoType", "admin2");
-	    	holding.set("geoType", "admin2");
-	    	field.set("geoType", "admin2");
-	    	conc.set("geoType", "admin2");
-	    	stage.set("geoType", "admin2");
+	    	stands.set(FieldNames.FIELD_GEOTYPE, "admin2");
+	    	holding.set(FieldNames.FIELD_GEOTYPE, "admin2");
+	    	field.set(FieldNames.FIELD_GEOTYPE, "admin2");
+	    	conc.set(FieldNames.FIELD_GEOTYPE, "admin2");
+	    	stage.set(FieldNames.FIELD_GEOTYPE, "admin2");
 	    	IOSystem.getActiveContext().getRecordUtil().createRecords(new BaseRecord[] {holding, stands, field, conc, stage});
 	    	BaseRecord goodSeats = GeoLocationUtil.newLocation(ctx, stands, "Ring Side", iter++);
 	    	BaseRecord badSeats = GeoLocationUtil.newLocation(ctx, stands, "Cheap Seats", iter++);
@@ -93,18 +93,18 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 	    	BaseRecord field3 = GeoLocationUtil.newLocation(ctx, field, "Field 3", iter++);
 	    	BaseRecord staging1 = GeoLocationUtil.newLocation(ctx, stands, "Staging 1", iter++);
 	
-	    	goodSeats.set("geoType", FieldNames.FIELD_FEATURE);
-	    	badSeats.set("geoType", FieldNames.FIELD_FEATURE);
-	    	holding1.set("geoType", FieldNames.FIELD_FEATURE);
-	    	holding2.set("geoType", FieldNames.FIELD_FEATURE);
-	    	holding3.set("geoType", FieldNames.FIELD_FEATURE);
-	    	field1.set("geoType", FieldNames.FIELD_FEATURE);
+	    	goodSeats.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
+	    	badSeats.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
+	    	holding1.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
+	    	holding2.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
+	    	holding3.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
+	    	field1.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 	    	field1.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
-	    	field2.set("geoType", FieldNames.FIELD_FEATURE);
+	    	field2.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 	    	field2.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
-	    	field3.set("geoType", FieldNames.FIELD_FEATURE);
+	    	field3.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 	    	field3.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
-	    	staging1.set("geoType", FieldNames.FIELD_FEATURE);
+	    	staging1.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 	    	IOSystem.getActiveContext().getRecordUtil().createRecords(new BaseRecord[] {goodSeats, badSeats, holding1, holding2, holding3, field1, field2, field3, staging1});
 	    	
     	}
@@ -118,7 +118,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 		IOSystem.getActiveContext().getReader().populate(field);
 		Query cq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_PARENT_ID, field.get(FieldNames.FIELD_ID));
 		
-		cq.field("geoType", "cell");
+		cq.field(FieldNames.FIELD_GEOTYPE, "cell");
 		int count = IOSystem.getActiveContext().getSearch().count(cq);
 		if(count > 0) {
 			// logger.info("Location " + field.get(FieldNames.FIELD_NAME) + " is already prepared with cells");
@@ -134,10 +134,10 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 					int in = y;
 	    			BaseRecord cell = GeoLocationUtil.newLocation(ctx, field, field.get(FieldNames.FIELD_NAME) + " " + GeoLocationUtil.df3.format(ie) + "" + GeoLocationUtil.df3.format(in), iter++);
 	    			cell.set(FieldNames.FIELD_GROUP_ID, ctx.getWorld().get(OlioFieldNames.FIELD_LOCATIONS_ID));
-	    			cell.set("area", (double)10);
-	    			cell.set("eastings", x);
-	    			cell.set("northings", y);
-	    			cell.set("geoType", "cell");
+	    			cell.set(FieldNames.FIELD_AREA, (double)10);
+	    			cell.set(FieldNames.FIELD_EASTINGS, x);
+	    			cell.set(FieldNames.FIELD_NORTHINGS, y);
+	    			cell.set(FieldNames.FIELD_GEOTYPE, "cell");
 	    			cell.set("terrainType", TerrainEnumType.getArable().get(rand.nextInt(TerrainEnumType.getArable().size())));
 	    			cells.add(cell);
 				}
@@ -164,7 +164,7 @@ public class ArenaInitializationRule extends CommonContextRule implements IOlioC
 		}
 		recs.add(world);
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id);
-		lq.field("geoType", FieldNames.FIELD_FEATURE);
+		lq.field(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 		lq.field(FieldNames.FIELD_NAME, "Staging 1");
 		lq.setRequestRange(0L, context.getConfig().getBaseLocationCount());
 		recs.addAll(Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(lq)));

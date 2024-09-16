@@ -151,12 +151,12 @@ public class OlioTestUtil {
 	}
 	
 	public static void lookout(BaseRecord per1, BaseRecord per2) {
-		double dist = GeoLocationUtil.getDistanceToState(per1.get("state"), per2.get("state"));
+		double dist = GeoLocationUtil.getDistanceToState(per1.get(FieldNames.FIELD_STATE), per2.get(FieldNames.FIELD_STATE));
 		double mps = AnimalUtil.walkMetersPerSecond(per1);
 		double time = (dist / mps) / 60;
 		double sprintTime = AnimalUtil.sprintMetersPerSecond(per1);
 		double sprintDist = AnimalUtil.sprintMeterLimit(per1);
-		double angle = GeoLocationUtil.getAngleBetweenInDegrees(per1.get("state"), per2.get("state"));
+		double angle = GeoLocationUtil.getAngleBetweenInDegrees(per1.get(FieldNames.FIELD_STATE), per2.get(FieldNames.FIELD_STATE));
 
 		logger.info("Distance Between: " + per1.get(FieldNames.FIELD_FIRST_NAME) + " is " + dist + " meters at " + mps + "mps from " + per2.get(FieldNames.FIELD_FIRST_NAME) + " / Angle " + angle + " " + DirectionEnumType.getDirectionFromDegrees(angle));
 		logger.info("Can " + per1.get(FieldNames.FIELD_FIRST_NAME) + " see " + per2.get(FieldNames.FIELD_FIRST_NAME) + "? " + RollUtil.rollPerception(per1, per2).toString());
@@ -232,7 +232,7 @@ public class OlioTestUtil {
 	private static int wanderLength = 300;
 	public static void wanderAmok(OlioContext ctx, BaseRecord event, BaseRecord increment, BaseRecord realm, List<BaseRecord> pop, BaseRecord per1) {
 		/// Walk in random direction for 20Km (1km == (CellWidth * 10, or FeatureWidth/Height) * CellMultiplier - If the multiplier is 10, then the smallest distance of 1 is 10 meters, or, 100 is 1Km.) 
-		assertNotNull("Person location is null", per1.get("state.currentLocation"));
+		assertNotNull("Person location is null", per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
 		
 		/// Move person back into a random cell in the realm origin
 		BaseRecord org = realm.get(OlioFieldNames.FIELD_ORIGIN);
@@ -243,8 +243,8 @@ public class OlioTestUtil {
 			dir = OlioUtil.randomEnum(DirectionEnumType.class);
 		}
 		logger.info(per1.get(FieldNames.FIELD_NAME) + " is wandering amok " + dir.toString().toLowerCase());
-		BaseRecord state = per1.get("state");
-		state.setValue("currentLocation", ocells.get((new Random()).nextInt(ocells.size())));
+		BaseRecord state = per1.get(FieldNames.FIELD_STATE);
+		state.setValue(OlioFieldNames.FIELD_CURRENT_LOCATION, ocells.get((new Random()).nextInt(ocells.size())));
 		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
 		
 		int sx = per1.get("state.currentEast");
@@ -268,7 +268,7 @@ public class OlioTestUtil {
 		for(int i = 0; i < wanderLength; i++) {
 			moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			if(!moved) {
-				logger.warn("Unable to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
+				logger.warn("Unable to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + state.get(FieldNames.FIELD_CURRENT_NORTH));
 			}
 
 			List<BaseRecord> fpop = StateUtil.observablePopulation(pop, per1);
@@ -294,7 +294,7 @@ public class OlioTestUtil {
 		logger.info("Dest: " + sx1 + ", " + sy1 + "; #" + lid1 + ", " + rx1 + ", " + ry1);
 		
 		StateUtil.queueUpdateLocation(ctx, per1);
-		BaseRecord upar = GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation"));
+		BaseRecord upar = GeoLocationUtil.getParentLocation(ctx, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
 		AnimalUtil.checkAnimalPopulation(ctx, realm, upar);
 		Queue.processQueue();
 		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
@@ -313,13 +313,13 @@ public class OlioTestUtil {
 		//List<BaseRecord> fpop = pop.stream().filter(p -> ((long)p.get(FieldNames.FIELD_ID)) != (long)per1.get(FieldNames.FIELD_ID)).collect(Collectors.toList());
 		//Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
 		
-		BaseRecord state = per1.get("state");
+		BaseRecord state = per1.get(FieldNames.FIELD_STATE);
 		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));		
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
 			boolean moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			if(!moved) {
-				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
+				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + state.get(FieldNames.FIELD_CURRENT_NORTH));
 			}
 		}
 
@@ -337,7 +337,7 @@ public class OlioTestUtil {
 		for(int i = 0; i < 100; i++) {
 			boolean moved = StateUtil.moveByOneMeterInCell(ctx, per1, dir);
 			if(!moved) {
-				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get("currentEast") + ", " + state.get("currentNorth"));
+				logger.warn("Failed to move: " + per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + ", " + state.get("currentLocation.northings") + "; " + state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + state.get(FieldNames.FIELD_CURRENT_NORTH));
 			}
 
 		}
@@ -352,7 +352,7 @@ public class OlioTestUtil {
 		StateUtil.queueUpdateLocation(ctx, state);
 		Queue.processQueue();
 		logger.info("Print current location - " + per1.get(FieldNames.FIELD_NAME) + " " + per1.get("state.currentLocation.eastings") + ", " + per1.get("state.currentLocation.northings") + "; " + per1.get("state.currentEast") + ", " + per1.get("state.currentNorth"));
-		MapUtil.printLocationMap(ctx, GeoLocationUtil.getParentLocation(ctx, per1.get("state.currentLocation")), realm, pop);
+		MapUtil.printLocationMap(ctx, GeoLocationUtil.getParentLocation(ctx, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION)), realm, pop);
 
 	}
 	

@@ -36,7 +36,7 @@ public class GeoParser {
 	public static Query getQuery(String geoType, String isoCode, long groupId, long organizationId) {
 		Query lq = QueryUtil.getGroupQuery(ModelNames.MODEL_GEO_LOCATION, null, groupId, organizationId);
 		if(geoType != null) {
-			lq.field("geoType", geoType);
+			lq.field(FieldNames.FIELD_GEOTYPE, geoType);
 		}
 		if(isoCode != null) {
 			lq.field("iso", isoCode);
@@ -199,8 +199,8 @@ public class GeoParser {
 		BaseRecord template = null;
 		try {
 			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "country");
-			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
+			template.set(FieldNames.FIELD_GEOTYPE, "country");
+			template.set(FieldNames.FIELD_GEOGRAPHY_TYPE, GeographyEnumType.PHYSICAL.toString());
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -215,7 +215,7 @@ public class GeoParser {
 		map.add(new ParseMap("currencyCode", 10));
 		map.add(new ParseMap("currencyName", 11));
 		map.add(new ParseMap("languages", 15));
-		map.add(new ParseMap("geonameid", 16));
+		map.add(new ParseMap(FieldNames.FIELD_GEONAMEID, 16));
 		map.add(new ParseMap("neighbors", 17));
 		
 		ParseConfiguration cfg = new ParseConfiguration();
@@ -235,15 +235,15 @@ public class GeoParser {
 		logger.info("New Alternate Name Parse Configuration");
 		List<ParseMap> map = new ArrayList<>();
 		map.add(new ParseMap("altgeonameid", 1));
-		map.add(new ParseMap("geonameid", 0));
-		map.add(new ParseMap("altType", 2));
+		map.add(new ParseMap(FieldNames.FIELD_GEONAMEID, 0));
+		map.add(new ParseMap(FieldNames.FIELD_ALT_TYPE, 2));
 		map.add(new ParseMap(FieldNames.FIELD_NAME, 3));
 		
 	
 		BaseRecord template = null;
 		try {
 			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "alternateName");
+			template.set(FieldNames.FIELD_GEOTYPE, "alternateName");
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -273,7 +273,7 @@ public class GeoParser {
 		
 		map.add(new ParseMap("altName", 1));
 		map.add(new ParseMap(FieldNames.FIELD_NAME, 2));
-		map.add(new ParseMap("geonameid", 0));
+		map.add(new ParseMap(FieldNames.FIELD_GEONAMEID, 0));
 		map.add(new ParseMap("latitude", 4));
 		map.add(new ParseMap("longitude", 5));
 		map.add(new ParseMap(FieldNames.FIELD_FEATURE, 6, new ParseMap(null, 7)));
@@ -282,9 +282,9 @@ public class GeoParser {
 		BaseRecord template = null;
 		try {
 			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", FieldNames.FIELD_FEATURE);
+			template.set(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 			template.set("iso", isoCode);
-			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
+			template.set(FieldNames.FIELD_GEOGRAPHY_TYPE, GeographyEnumType.PHYSICAL.toString());
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -296,9 +296,9 @@ public class GeoParser {
 		q.field("iso", isoCode.toUpperCase());
 		QueryField or = q.field(null, ComparatorEnumType.GROUP_OR, null);
 		QueryField or1 = q.field(null, ComparatorEnumType.GROUP_AND, null, or);
-		q.field("geoType", ComparatorEnumType.EQUALS, "admin1", or1);
+		q.field(FieldNames.FIELD_GEOTYPE, ComparatorEnumType.EQUALS, "admin1", or1);
 		QueryField or2 = q.field(null, ComparatorEnumType.GROUP_AND, null, or);
-		q.field("geoType", ComparatorEnumType.EQUALS, "admin2", or2);
+		q.field(FieldNames.FIELD_GEOTYPE, ComparatorEnumType.EQUALS, "admin2", or2);
 		
 		ParseConfiguration cfg = new ParseConfiguration();
 		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
@@ -323,13 +323,13 @@ public class GeoParser {
 		map.add(new ParseMap("iso", 0, new CodeInterceptor()));
 		map.add(new ParseMap("altName", 1));
 		map.add(new ParseMap(FieldNames.FIELD_NAME, 2));
-		map.add(new ParseMap("geonameid", 3));
+		map.add(new ParseMap(FieldNames.FIELD_GEONAMEID, 3));
 	
 		BaseRecord template = null;
 		try {
 			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "admin1");
-			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
+			template.set(FieldNames.FIELD_GEOTYPE, "admin1");
+			template.set(FieldNames.FIELD_GEOGRAPHY_TYPE, GeographyEnumType.PHYSICAL.toString());
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -337,7 +337,7 @@ public class GeoParser {
 	
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field("geoType", "country");
+		q.field(FieldNames.FIELD_GEOTYPE, "country");
 		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
 
 		ParseConfiguration cfg = new ParseConfiguration();
@@ -363,13 +363,13 @@ public class GeoParser {
 		map.add(new ParseMap("iso", 0, new CodeInterceptor()));
 		map.add(new ParseMap("altName", 1));
 		map.add(new ParseMap(FieldNames.FIELD_NAME, 2));
-		map.add(new ParseMap("geonameid", 3));
+		map.add(new ParseMap(FieldNames.FIELD_GEONAMEID, 3));
 	
 		BaseRecord template = null;
 		try {
 			template = RecordFactory.newInstance(ModelNames.MODEL_GEO_LOCATION);
-			template.set("geoType", "admin2");
-			template.set("geographyType", GeographyEnumType.PHYSICAL.toString());
+			template.set(FieldNames.FIELD_GEOTYPE, "admin2");
+			template.set(FieldNames.FIELD_GEOGRAPHY_TYPE, GeographyEnumType.PHYSICAL.toString());
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -377,7 +377,7 @@ public class GeoParser {
 	
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.field("geoType", "country");
+		q.field(FieldNames.FIELD_GEOTYPE, "country");
 		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
 
 		ParseConfiguration cfg = new ParseConfiguration();

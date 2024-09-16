@@ -17,6 +17,7 @@ import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.PointOfInterestEnumType;
 import org.cote.accountmanager.olio.PointOfInterestUtil;
 import org.cote.accountmanager.olio.Rules;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -34,7 +35,7 @@ public class Gather extends CommonAction implements IAction {
 			throw new OlioException("Unable to load realm");
 		}
 		
-		BaseRecord cell = actor.get("state.currentLocation");
+		BaseRecord cell = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(cell == null) {
 			throw new OlioException("Missing current location");
 		}
@@ -77,7 +78,7 @@ public class Gather extends CommonAction implements IAction {
 		}
 		
 
-		BaseRecord cell = actor.get("state.currentLocation");
+		BaseRecord cell = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(context, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 
 		TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
@@ -128,7 +129,7 @@ public class Gather extends CommonAction implements IAction {
 		pois = GeoLocationUtil.sortByDistance(pois, "east", "north", cx, cy).stream().filter(p -> !trace.contains(p.get(FieldNames.FIELD_OBJECT_ID))).collect(Collectors.toList());
 
 		BaseRecord realm = context.clock().getRealm();
-		List<BaseRecord> zoo = realm.get("zoo");
+		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(context, zoo, cell);
 		List<BaseRecord> dzpop = zpop.stream().filter(a -> (boolean)a.get("state.alive")).collect(Collectors.toList());
 		if(pois.size() == 0 && dzpop.size() == 0) {

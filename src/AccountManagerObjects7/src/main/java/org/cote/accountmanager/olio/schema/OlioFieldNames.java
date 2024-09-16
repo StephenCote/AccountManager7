@@ -126,6 +126,10 @@ public class OlioFieldNames {
 	public static final String FIELD_EVENT_PROGRESS = "eventProgress";
 	public static final String FIELD_EVENT_END = "eventEnd";
 	
+	public static final String FIELD_CURRENT_LOCATION = "currentLocation";
+	public static final String FIELD_STATE_CURRENT_LOCATION = "state.currentLocation";
+	
+	public static final String FIELD_ZOO = "zoo";
 	// Store
 
 }

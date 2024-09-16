@@ -33,7 +33,7 @@ public class WalkTo implements IAction {
 		if(interactor == null) {
 			throw new OlioException("Expected a target");
 		}
-		ActionUtil.setDestination(context, actionResult, interactor.get("state"));
+		ActionUtil.setDestination(context, actionResult, interactor.get(FieldNames.FIELD_STATE));
 		List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
 		if(inters.size() > 0) {
 			BaseRecord inter = inters.get(0);
@@ -62,7 +62,7 @@ public class WalkTo implements IAction {
 	
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		double angle = GeoLocationUtil.getAngleBetweenInDegrees(actor.get("state"), interactor.get("state"));
+		double angle = GeoLocationUtil.getAngleBetweenInDegrees(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
 		DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(angle);
 		
 		boolean moved = StateUtil.moveByOneMeterInCell(context, actor, dir);
@@ -79,7 +79,7 @@ public class WalkTo implements IAction {
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 
 		ActionResultEnumType aret = actionResult.getEnum(FieldNames.FIELD_TYPE);
-		double dist = GeoLocationUtil.getDistanceToState(actor.get("state"), interactor.get("state"));
+		double dist = GeoLocationUtil.getDistanceToState(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
 		if(dist <= Rules.PROXIMATE_CONTACT_DISTANCE) {
 			aret = ActionResultEnumType.COMPLETE;
 			actionResult.setValue(FieldNames.FIELD_TYPE, aret);

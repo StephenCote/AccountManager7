@@ -73,7 +73,7 @@ public class ActionUtil {
 	}
 	
 	public static void updateTimeToDistance(BaseRecord actionResult, BaseRecord per1, BaseRecord per2) {
-		double dist = GeoLocationUtil.getDistanceToState(per1.get("state"), per2.get("state"));
+		double dist = GeoLocationUtil.getDistanceToState(per1.get(FieldNames.FIELD_STATE), per2.get(FieldNames.FIELD_STATE));
 		long timeSeconds = (long)(dist / AnimalUtil.walkMetersPerSecond(per1));
 		edgeSecondsUntilEnd(actionResult, timeSeconds);
 	}
@@ -108,18 +108,18 @@ public class ActionUtil {
 	}
 	
 	public static void setDestination(OlioContext ctx, BaseRecord actionResult, BaseRecord targState) {
-		BaseRecord state = actionResult.get("state");
+		BaseRecord state = actionResult.get(FieldNames.FIELD_STATE);
 		if(state == null) {
 			try {
 				state = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path")));
-				actionResult.set("state", state);
+				actionResult.set(FieldNames.FIELD_STATE, state);
 			} catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 				logger.error(e);
 			}
 		}
-		state.setValue("currentLocation", targState.get("currentLocation"));
-		state.setValue("currentNorth", targState.get("currentNorth"));
-		state.setValue("currentEast", targState.get("currentEast"));
+		state.setValue(OlioFieldNames.FIELD_CURRENT_LOCATION, targState.get(OlioFieldNames.FIELD_CURRENT_LOCATION));
+		state.setValue(FieldNames.FIELD_CURRENT_NORTH, targState.get(FieldNames.FIELD_CURRENT_NORTH));
+		state.setValue(FieldNames.FIELD_CURRENT_EAST, targState.get(FieldNames.FIELD_CURRENT_EAST));
 	}
 	
 	public static BaseRecord newActionResult(OlioContext ctx, String actionName) {

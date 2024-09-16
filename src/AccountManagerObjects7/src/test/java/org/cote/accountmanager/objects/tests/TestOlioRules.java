@@ -91,11 +91,11 @@ public class TestOlioRules extends BaseTest {
 		*/
 		
 		/*
-		List<BaseRecord> zoo = realm.get("zoo");
-		List<BaseRecord> vzoo = GeoLocationUtil.limitToAdjacent(octx, zoo, per1.get("state.currentLocation"));
+		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
+		List<BaseRecord> vzoo = GeoLocationUtil.limitToAdjacent(octx, zoo, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
 		logger.info("View Zoo: " + vzoo.size());
 		for(BaseRecord a: zoo) {
-			double dist = GeoLocationUtil.getDistanceToState(per1.get("state"), a.get("state"));
+			double dist = GeoLocationUtil.getDistanceToState(per1.get(FieldNames.FIELD_STATE), a.get(FieldNames.FIELD_STATE));
 			logger.info(a.get(FieldNames.FIELD_NAME) + " " + dist + "m");
 		}
 		*/

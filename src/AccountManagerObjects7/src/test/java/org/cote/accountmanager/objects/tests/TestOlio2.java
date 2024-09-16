@@ -149,7 +149,7 @@ public class TestOlio2 extends BaseTest {
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
 		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms.get(0).get(OlioFieldNames.FIELD_ORIGIN)));
-		//BaseRecord upar = GeoLocationUtil.getParentLocation(octx, per1.get("state.currentLocation"));
+		//BaseRecord upar = GeoLocationUtil.getParentLocation(octx, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
 		// MapUtil.printPovLocationMap(octx, realm, per1, 3);
 		// MapUtil.printPovLocationMap(octx, realm, per2, 3);
 		

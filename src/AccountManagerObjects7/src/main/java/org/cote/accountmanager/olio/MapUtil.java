@@ -95,12 +95,12 @@ public class MapUtil {
 				IOSystem.getActiveContext().getReader().populate(loc);
 				blot = true;
 			}
-			int east = loc.get("eastings");
-			int north = loc.get("northings");
+			int east = loc.get(FieldNames.FIELD_EASTINGS);
+			int north = loc.get(FieldNames.FIELD_NORTHINGS);
 			int x = east * cellWidth;
 			int y = north * cellHeight;
 
-			String type = loc.get("geoType");
+			String type = loc.get(FieldNames.FIELD_GEOTYPE);
 			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get("terrainType"));
 			if(blot) {
 				g2d.setColor(Color.RED);
@@ -140,7 +140,7 @@ public class MapUtil {
 	private static void paintPopulation(Graphics2D g2d, BaseRecord cell, List<BaseRecord> pop, int x, int y, int tileSize, int spriteSize, Color color) {
 		long cid = cell.get(FieldNames.FIELD_ID);
 
-		List<BaseRecord> lpop = pop.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+		List<BaseRecord> lpop = pop.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
 		int div = (Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER) / tileSize;
 		if(lpop.size() > 0) {
 			for(BaseRecord p : lpop) {
@@ -154,7 +154,7 @@ public class MapUtil {
 				if(pnorth > 0) {
 					pnorth = pnorth / div;
 				}
-				//logger.info(p.get("state.currentEast") + ", " + p.get("state.currentNorth") + " -> " + cell.get("eastings") + ", " + cell.get("northings") + " -> " + peast + ", " + pnorth + "; " +  " -> " + (x + peast) + ", " + (y + pnorth));
+				//logger.info(p.get("state.currentEast") + ", " + p.get("state.currentNorth") + " -> " + cell.get(FieldNames.FIELD_EASTINGS) + ", " + cell.get(FieldNames.FIELD_NORTHINGS) + " -> " + peast + ", " + pnorth + "; " +  " -> " + (x + peast) + ", " + (y + pnorth));
 				// logger.info((x + peast) + ", " + (y + pnorth));
 				g2d.setColor(color);
 				g2d.fillOval(x + peast, y + pnorth, spriteSize, spriteSize);
@@ -198,11 +198,11 @@ public class MapUtil {
 		for(BaseRecord uloc : locs) {
 			BaseRecord loc = uloc;
 			IOSystem.getActiveContext().getReader().populate(loc);
-			int east = loc.get("eastings");
-			int north = loc.get("northings");
+			int east = loc.get(FieldNames.FIELD_EASTINGS);
+			int north = loc.get(FieldNames.FIELD_NORTHINGS);
 			int x = (east - minWidth) * featureWidth;
 			int y = (north - minHeight) * featureHeight;
-			String type = loc.get("geoType");
+			String type = loc.get(FieldNames.FIELD_GEOTYPE);
 			TerrainEnumType tet = TerrainEnumType.valueOf((String)loc.get("terrainType"));
 			boolean ico = false;
 			if(useTileIcons) {
@@ -220,8 +220,8 @@ public class MapUtil {
 			
 			List<BaseRecord> cells = GeoLocationUtil.getCells(ctx, loc);
 			for(BaseRecord cell: cells) {
-				int ceast = cell.get("eastings");
-				int cnorth = cell.get("northings");
+				int ceast = cell.get(FieldNames.FIELD_EASTINGS);
+				int cnorth = cell.get(FieldNames.FIELD_NORTHINGS);
 				
 				TerrainEnumType ctet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
 				int cx = x + (ceast * cellWidth);
@@ -311,12 +311,12 @@ public class MapUtil {
 		Graphics2D g2d = image.createGraphics();
 		List<BaseRecord> zoo = new ArrayList<>();
 		if(realm != null) {
-			zoo = realm.get("zoo");
+			zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		}
 		for(BaseRecord cell : cells) {
-			String ctype = cell.get("geoType");
-			int east = cell.get("eastings");
-			int north = cell.get("northings");
+			String ctype = cell.get(FieldNames.FIELD_GEOTYPE);
+			int east = cell.get(FieldNames.FIELD_EASTINGS);
+			int north = cell.get(FieldNames.FIELD_NORTHINGS);
 			int x = east * 50;
 			int y = north * 50;
 			
@@ -337,7 +337,7 @@ public class MapUtil {
 			}
 			long cid = cell.get(FieldNames.FIELD_ID);
 
-			List<BaseRecord> lpop = pop.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+			List<BaseRecord> lpop = pop.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
 			if(lpop.size() > 0) {
 				for(BaseRecord p : lpop) {
 					int peast = p.get("state.currentEast");
@@ -356,7 +356,7 @@ public class MapUtil {
 			}
 			
 			if(realm != null) {
-				List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+				List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
 				
 				if(zpop.size() > 0) {
 					for(BaseRecord z : zpop) {
@@ -394,7 +394,7 @@ public class MapUtil {
 	
 	public static void printPovLocationMap(OlioContext ctx, BaseRecord realm, BaseRecord pov, int radius) {
 
-		BaseRecord location = pov.get("state.currentLocation");
+		BaseRecord location = pov.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(location == null) {
 			logger.error("Location is null");
 			return;
@@ -412,7 +412,7 @@ public class MapUtil {
 		
 		List<BaseRecord> zoo = new ArrayList<>();
 		if(realm != null) {
-			zoo = realm.get("zoo");
+			zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		}
 		
 		long plid = pov.get("state.currentLocation.id");
@@ -423,7 +423,7 @@ public class MapUtil {
 				if(cell == null) {
 					continue;
 				}
-				String ctype = cell.get("geoType");
+				String ctype = cell.get(FieldNames.FIELD_GEOTYPE);
 				int x = 50 * xi;
 				int y = 50 * yi;
 				
@@ -462,7 +462,7 @@ public class MapUtil {
 				}
 				
 				if(realm != null) {
-					List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get("state.currentLocation") != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
+					List<BaseRecord> zpop = zoo.stream().filter(p -> (p.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)p.get("state.currentLocation.id")) == cid)).collect(Collectors.toList());
 					
 					if(zpop.size() > 0) {
 						for(BaseRecord z : zpop) {

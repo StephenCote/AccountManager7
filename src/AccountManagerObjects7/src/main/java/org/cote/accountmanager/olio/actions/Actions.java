@@ -51,7 +51,7 @@ public class Actions {
 		return nameBuff.toString();
 	}
 	public static void pruneActionState(OlioContext context, BaseRecord actor) {
-		BaseRecord state = actor.get("state");
+		BaseRecord state = actor.get(FieldNames.FIELD_STATE);
 		List<BaseRecord> actions = state.get(OlioFieldNames.FIELD_ACTIONS);
 		Set<Long> aset = new HashSet<>();
 		for(BaseRecord a: actions) {
@@ -66,7 +66,7 @@ public class Actions {
 		
 		pruneActionState(context, actor);
 		
-		BaseRecord state = actor.get("state");
+		BaseRecord state = actor.get(FieldNames.FIELD_STATE);
 		List<BaseRecord> actions = state.get(OlioFieldNames.FIELD_ACTIONS);
 		IOSystem.getActiveContext().getMemberUtil().member(context.getOlioUser(), state, OlioFieldNames.FIELD_ACTIONS, actionResult, null, true);
 		actions.add(actionResult);

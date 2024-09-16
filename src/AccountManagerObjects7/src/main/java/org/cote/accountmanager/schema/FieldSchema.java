@@ -340,7 +340,7 @@ public class FieldSchema {
 
 	public String getForeignField() {
 		if(foreignField == null) {
-			return "id";
+			return FieldNames.FIELD_ID;
 		}
 		return foreignField;
 	}

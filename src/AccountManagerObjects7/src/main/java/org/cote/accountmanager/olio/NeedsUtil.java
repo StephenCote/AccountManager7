@@ -219,8 +219,8 @@ public class NeedsUtil {
 
 	protected static List<BaseRecord> localWildlife(BaseRecord realm, BaseRecord location){
 		long id = location.get(FieldNames.FIELD_ID);
-		List<BaseRecord> zoo = realm.get("zoo");
-		return zoo.stream().filter(zp -> (zp.get("state.currentLocation") != null && ((long)zp.get("state.currentLocation.id")) == id)).collect(Collectors.toList());
+		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
+		return zoo.stream().filter(zp -> (zp.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION) != null && ((long)zp.get("state.currentLocation.id")) == id)).collect(Collectors.toList());
 	}
 	
 	public static Map<PersonalityProfile, Map<ThreatEnumType,List<BaseRecord>>> getAgitatedThreatMap(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> map, boolean roam) {
@@ -245,34 +245,34 @@ public class NeedsUtil {
 		try {
 			for(BaseRecord p: pop) {
 				String name = p.get(FieldNames.FIELD_NAME);
-				BaseRecord state = p.get("state");
+				BaseRecord state = p.get(FieldNames.FIELD_STATE);
 				if(!roam && (boolean)state.get("agitated") == true) {
 					continue;
 				}
-				BaseRecord location = state.get("currentLocation");
+				BaseRecord location = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 				if(location == null) {
 					if(rloc == null) {
 						rloc = acells.get(random.nextInt(acells.size()));
 					}
 					location = rloc;
-					state.set("currentLocation", rloc);
+					state.set(OlioFieldNames.FIELD_CURRENT_LOCATION, rloc);
 					if(!cluster) {
 						rloc = null;
 					}
 				}
 				StateUtil.agitateLocation(ctx, p);
 				state.setValue("agitated", true);
-				// logger.info("Agitate " + p.get(FieldNames.FIELD_NAME) + " " + location.get(FieldNames.FIELD_NAME) + ", " + state.get("currentEast") + ", " + state.get("currentNorth"));
+				// logger.info("Agitate " + p.get(FieldNames.FIELD_NAME) + " " + location.get(FieldNames.FIELD_NAME) + ", " + state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + state.get(FieldNames.FIELD_CURRENT_NORTH));
 
-				String geoType = location.get("geoType");
+				String geoType = location.get(FieldNames.FIELD_GEOTYPE);
 				if(geoType.equals(FieldNames.FIELD_FEATURE)) {
 					logger.warn("Feature placement detected: Move " + name);
 				}
 				else {
 					List<String> upf = new ArrayList<>();
-					upf.add("currentLocation");
-					upf.add("currentEast");
-					upf.add("currentNorth");
+					upf.add(OlioFieldNames.FIELD_CURRENT_LOCATION);
+					upf.add(FieldNames.FIELD_CURRENT_EAST);
+					upf.add(FieldNames.FIELD_CURRENT_NORTH);
 					/// if not roaming, then persist the agitated state to prevent further location agitation
 					if(!roam) {
 						upf.add("agitated");

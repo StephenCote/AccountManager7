@@ -62,7 +62,7 @@ public class Wake implements IAction {
 	public ActionResultEnumType concludeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
 		boolean awake = actor.get("state.awake");
 		if(!awake) {
-			BaseRecord state = actor.get("state");
+			BaseRecord state = actor.get(FieldNames.FIELD_STATE);
 			state.setValue("awake", true);
 			Queue.queueUpdate(state, new String[] {"awake"});
 		}

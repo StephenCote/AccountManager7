@@ -94,7 +94,7 @@ public class TestQuery extends BaseTest {
 
 		String tmpStr2 = """
 		{
-			"id": 101
+			FieldNames.FIELD_ID: 101
 		}
 		""";
 		

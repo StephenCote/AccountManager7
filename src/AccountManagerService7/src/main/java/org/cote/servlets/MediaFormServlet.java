@@ -122,7 +122,7 @@ public class MediaFormServlet extends HttpServlet {
 			    	else if(fname.equals(FieldNames.FIELD_NAME)){
 			    		name = Streams.asString(stream);
 			    	}
-			    	else if(fname.equals("id")){
+			    	else if(fname.equals(FieldNames.FIELD_ID)){
 			    		id = Long.parseLong(Streams.asString(stream));
 			    	}
 			    } else {

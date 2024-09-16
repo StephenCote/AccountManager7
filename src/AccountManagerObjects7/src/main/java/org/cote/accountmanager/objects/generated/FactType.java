@@ -208,11 +208,11 @@ public class FactType extends LooseRecord {
 		}
 	}
 	public long getId() {
-		return get("id");
+		return get(FieldNames.FIELD_ID);
 	}
 	public void setId(long id) {
 		try {
-			set("id", id);
+			set(FieldNames.FIELD_ID, id);
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}

@@ -308,4 +308,18 @@ public class FieldNames {
 		public static final String FIELD_FEATURE = "feature";
 		public static final String FIELD_LOCATIONS = "locations";
 		public static final String FIELD_TERRAIN = "terrain";
+		public static final String FIELD_GRID_ZONE = "gridZone";
+		public static final String FIELD_AREA = "area";
+		public static final String FIELD_KIDENT = "kident";
+		public static final String FIELD_GEOTYPE = "geoType";
+		
+		public static final String FIELD_EASTINGS = "eastings";
+		public static final String FIELD_NORTHINGS = "northings";
+		public static final String FIELD_CURRENT_EAST = "currentEast";
+		public static final String FIELD_CURRENT_NORTH = "currentNorth";
+		public static final String FIELD_CLASSIFICATION = "classification";
+		
+		public static final String FIELD_GEOGRAPHY_TYPE = "geographyType";
+		public static final String FIELD_GEONAMEID = "geonameid";
+		public static final String FIELD_ALT_TYPE = "altType";
 }

@@ -29,7 +29,7 @@ public class Transfer extends CommonAction implements IAction {
 			throw new OlioException("Missing required parameters");
 		}
 		
-		double dist = GeoLocationUtil.getDistanceToState(actor.get("state"), interactor.get("state"));
+		double dist = GeoLocationUtil.getDistanceToState(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
 		if(dist > Rules.PROXIMATE_CONTACT_DISTANCE) {
 			throw new OlioException("Target is too far away");
 		}

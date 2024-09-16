@@ -232,7 +232,7 @@ public class StatementUtil {
 			String table = IOSystem.getActiveContext().getDbUtil().getTableName(smodel);
 			String matchId = "organizationId";
 			if(smodel.equals(ModelNames.MODEL_ORGANIZATION)) {
-				matchId = "id";
+				matchId = FieldNames.FIELD_ID;
 			}
 			sqls.add("DELETE FROM " + table + " WHERE " + matchId + " = " + organizationId + ";");
 			if(!smodel.equals(ModelNames.MODEL_PARTICIPATION) && ms.isDedicatedParticipation()) {

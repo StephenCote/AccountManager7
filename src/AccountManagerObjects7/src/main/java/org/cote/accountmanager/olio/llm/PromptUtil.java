@@ -284,7 +284,7 @@ public class PromptUtil {
 		}
 		templ = profileRomanceCompat.matcher(templ).replaceAll("Romantically, " + romCompat + ".");
 		
-		BaseRecord cell = userChar.get("state.currentLocation");
+		BaseRecord cell = userChar.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(settingStr != null && settingStr.length() > 0) {
 			if(settingStr.equalsIgnoreCase("random")) {
 				settingStr = NarrativeUtil.getRandomSetting();
@@ -328,7 +328,7 @@ public class PromptUtil {
 		
 		templ = profileLeader.matcher(templ).replaceAll(leadDesc);
 		
-		BaseRecord loc = userChar.get("state.currentLocation");
+		BaseRecord loc = userChar.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(loc != null) {
 			templ = locationTerrain.matcher(templ).replaceAll(loc.getEnum("terrainType").toString().toLowerCase());	
 		}

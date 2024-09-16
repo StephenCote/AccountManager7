@@ -123,12 +123,12 @@ public class ApparelUtil {
 				iteml.addAll(arms);
 			}
 
-			BaseRecord sta = p.get("state");
-			if(cell != null && sta.get("currentLocation") == null) {
+			BaseRecord sta = p.get(FieldNames.FIELD_STATE);
+			if(cell != null && sta.get(OlioFieldNames.FIELD_CURRENT_LOCATION) == null) {
 				logger.info("Agitate initial location: " + p.get(FieldNames.FIELD_NAME));;
-				sta.setValue("currentLocation", cell);
+				sta.setValue(OlioFieldNames.FIELD_CURRENT_LOCATION, cell);
 				StateUtil.agitateLocation(ctx, p);
-				Queue.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, "currentLocation", "currentEast", "currentNorth"});
+				Queue.queueUpdate(sta, new String[] {FieldNames.FIELD_ID, OlioFieldNames.FIELD_CURRENT_LOCATION, FieldNames.FIELD_CURRENT_EAST, FieldNames.FIELD_CURRENT_NORTH});
 			}
 		}
 	}

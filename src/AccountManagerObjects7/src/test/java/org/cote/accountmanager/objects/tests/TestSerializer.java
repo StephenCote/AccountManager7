@@ -66,9 +66,9 @@ public class TestSerializer extends BaseTest {
 		
 		try {
 			/// file-based ids only set when using the FileWriter
-			record.set("id",  fix.nextId());
-			record2.set("id",  fix.nextId());
-			record2.set("parentId", record.get("id"));
+			record.set(FieldNames.FIELD_ID,  fix.nextId());
+			record2.set(FieldNames.FIELD_ID,  fix.nextId());
+			record2.set("parentId", record.get(FieldNames.FIELD_ID));
 			
 			// logger.info("Adding " + JSONUtil.exportObject(record, RecordSerializerConfig.getUnfilteredModule()));
 			// logger.info("Adding " + JSONUtil.exportObject(record2, RecordSerializerConfig.getUnfilteredModule()));
@@ -96,7 +96,7 @@ public class TestSerializer extends BaseTest {
 		logger.info("** END EXPECTED ERROR");
 		error = false;
 		try {
-			record2.set("parentId", record.get("id"));
+			record2.set("parentId", record.get(FieldNames.FIELD_ID));
 			fix.updateIndexEntry(record2);
 			fix.flushIndex();
 		} catch (IndexException | FieldException | ValueException | ModelNotFoundException e) {
@@ -142,9 +142,9 @@ public class TestSerializer extends BaseTest {
 
 			fs.initialize();
 			FileIndexer fix = fs.getIndexer();
-			record.set("id",  fix.nextId());
-			record2.set("id",  fix.nextId());
-			record2.set("parentId", record.get("id"));
+			record.set(FieldNames.FIELD_ID,  fix.nextId());
+			record2.set(FieldNames.FIELD_ID,  fix.nextId());
+			record2.set("parentId", record.get(FieldNames.FIELD_ID));
 			fix.addIndexEntry(record);
 			fix.addIndexEntry(record2);
 			fs.add(new BaseRecord[] {record, record2});
@@ -223,7 +223,7 @@ public class TestSerializer extends BaseTest {
 		/// Note: getRecord uses the contextUser's org id, so if using a custom org while testing, make sure to specify the correct org id
 		/// 
 		//BaseRecord data = ioContext.getRecordUtil().getRecord(testUser1, "data", checkDataName, 0L, group.get(FieldNames.FIELD_PATH));
-		BaseRecord data = ioContext.getRecordUtil().getRecord(testUser1, "data", checkDataName, 0L, group.get("id"), orgContext.getOrganizationId());
+		BaseRecord data = ioContext.getRecordUtil().getRecord(testUser1, "data", checkDataName, 0L, group.get(FieldNames.FIELD_ID), orgContext.getOrganizationId());
 
 		long mark4 = System.currentTimeMillis();
 		assertNotNull("Data " + checkDataName + "(" + checkDataOid + ") in " + group.get(FieldNames.FIELD_PATH) + " in " + storeName + " was null", data);		
@@ -258,9 +258,9 @@ public class TestSerializer extends BaseTest {
 			BaseRecord[] results = search.findByName(ModelNames.MODEL_ORGANIZATION, record1Name);
 			assertTrue("Expected 1 result", results.length == 1);
 			search1 = results[0];
-			long id = search1.get("id");
+			long id = search1.get(FieldNames.FIELD_ID);
 			
-			record2.set("parentId", record.get("id"));
+			record2.set("parentId", record.get(FieldNames.FIELD_ID));
 			writer.write(record2);
 			writer.flush();
 			

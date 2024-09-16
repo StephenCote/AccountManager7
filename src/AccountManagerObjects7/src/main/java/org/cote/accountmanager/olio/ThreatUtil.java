@@ -114,15 +114,15 @@ public class ThreatUtil {
 	}
 	
 	public static Map<ThreatEnumType, List<AnimalProfile>> evaluateAnimalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
-		BaseRecord state = person.getRecord().get("state");
+		BaseRecord state = person.getRecord().get(FieldNames.FIELD_STATE);
 		// BaseRecord stats = person.get(OlioFieldNames.FIELD_STATISTICS);
 		//PersonalityProfile pp = group.get(person);
-		List<BaseRecord> zoo = realm.get("zoo");
+		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		// logger.info("Agitate animal threats");
 		NeedsUtil.agitateLocation(ctx, realm, event, zoo, false, true);
 		
 		/// Find animals in the current and adjacent cells
-		List<BaseRecord> zpop = GeoLocationUtil.sortByDistanceToState(GeoLocationUtil.limitToAdjacent(ctx, zoo, state.get("currentLocation")), person.getRecord().get("state"));
+		List<BaseRecord> zpop = GeoLocationUtil.sortByDistanceToState(GeoLocationUtil.limitToAdjacent(ctx, zoo, state.get(OlioFieldNames.FIELD_CURRENT_LOCATION)), person.getRecord().get(FieldNames.FIELD_STATE));
 		//List<AnimalProfile> tpop = new ArrayList<>();
 		Map<ThreatEnumType, List<AnimalProfile>> tpop = new HashMap<>();
 		//Map<BaseRecord, AnimalProfile> amap = ProfileUtil.getAnimalProfileMap(zpop);
@@ -143,7 +143,7 @@ public class ThreatUtil {
 
 	
 	public static Map<ThreatEnumType, List<PersonalityProfile>> evaluatePersonalThreat(OlioContext ctx, BaseRecord realm, BaseRecord event, Map<BaseRecord, PersonalityProfile> group, PersonalityProfile person){
-		BaseRecord state = person.getRecord().get("state");
+		BaseRecord state = person.getRecord().get(FieldNames.FIELD_STATE);
 
 		long id = person.getId();
 		
@@ -156,7 +156,7 @@ public class ThreatUtil {
 		NeedsUtil.agitateLocation(ctx, realm, event, pop, false, true);
 
 		/// Find people in the current and adjacent cells
-		List<BaseRecord> ppop = GeoLocationUtil.limitToAdjacent(ctx, pop, state.get("currentLocation"));
+		List<BaseRecord> ppop = GeoLocationUtil.limitToAdjacent(ctx, pop, state.get(OlioFieldNames.FIELD_CURRENT_LOCATION));
 
 		Map<ThreatEnumType, List<PersonalityProfile>> tpop = new HashMap<>();
 		Map<BaseRecord, PersonalityProfile> amap = ProfileUtil.getProfileMap(ctx, ppop);
@@ -181,11 +181,11 @@ public class ThreatUtil {
 		ThreatEnumType tet = ThreatEnumType.NONE;
 		RollEnumType per = RollUtil.rollStat20(rec1, statistic);
 		if(per == RollEnumType.CATASTROPHIC_FAILURE) {
-			logger.warn(rec1.get(FieldNames.FIELD_NAME) + " #" + rec1.get("id") + " made itself a target by catastrophically failing a " + statistic + " roll");
+			logger.warn(rec1.get(FieldNames.FIELD_NAME) + " #" + rec1.get(FieldNames.FIELD_ID) + " made itself a target by catastrophically failing a " + statistic + " roll");
 			tet = antiThreat;
 		}
 		else if(per == RollEnumType.NATURAL_SUCCESS) {
-			logger.warn(rec1.get(FieldNames.FIELD_NAME) + " #" + rec1.get("id") + " made itself an existential threat by naturally succeeding a " + statistic + " roll");
+			logger.warn(rec1.get(FieldNames.FIELD_NAME) + " #" + rec1.get(FieldNames.FIELD_ID) + " made itself an existential threat by naturally succeeding a " + statistic + " roll");
 			tet = ThreatEnumType.EXISTENTIAL_THREAT;
 		}
 		if(per == RollEnumType.SUCCESS) {
@@ -233,18 +233,18 @@ public class ThreatUtil {
 			BaseRecord p = pp.getRecord();
 
 			String name = p.get(FieldNames.FIELD_NAME);
-			BaseRecord state = p.get("state");
+			BaseRecord state = p.get(FieldNames.FIELD_STATE);
 			boolean immobile = state.get("immobilized");
 			boolean incap = state.get("incapacitated");
 			boolean alive = state.get("alive");
 			boolean awake = state.get("awake");
 			
-			BaseRecord location = state.get("currentLocation");
+			BaseRecord location = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 			if(location == null) {
 				logger.warn("Location is null for " + p0.get(FieldNames.FIELD_NAME));
 				continue;
 			}
-			String geoType = location.get("geoType");
+			String geoType = location.get(FieldNames.FIELD_GEOTYPE);
 			if(geoType.equals(FieldNames.FIELD_FEATURE)) {
 				logger.warn("Feature placement detected: Move " + name);
 			}

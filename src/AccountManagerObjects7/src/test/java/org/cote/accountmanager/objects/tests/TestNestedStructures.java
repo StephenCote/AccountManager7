@@ -58,7 +58,7 @@ public class TestNestedStructures extends BaseTest {
 			a1.set("instinct", ioContext.getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, testUser1, null, plist));
 			a1.set(OlioFieldNames.FIELD_STATISTICS, ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, testUser1, null, plist));
 			a1.set("personality", ioContext.getFactory().newInstance(ModelNames.MODEL_PERSONALITY, testUser1, null, plist));
-			a1.set("state", ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
+			a1.set(FieldNames.FIELD_STATE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, testUser1, null, plist));
 			a1.set(FieldNames.FIELD_STORE, ioContext.getFactory().newInstance(OlioModelNames.MODEL_STORE, testUser1, null, plist));
 			a1.set("gender", (Math.random() < 0.5 ? "male" : "female"));
 			a1.set("age", (new Random()).nextInt(7, 70));

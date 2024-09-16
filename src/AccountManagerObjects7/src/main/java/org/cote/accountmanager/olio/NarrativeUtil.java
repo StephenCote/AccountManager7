@@ -854,7 +854,7 @@ public class NarrativeUtil {
 		
 		buff.append(" of " + getSDMinPrompt(pp));
 		
-		BaseRecord cell = person.get("state.currentLocation");
+		BaseRecord cell = person.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		
 		String ujobDesc = "";
 		List<String> utrades = person.get("trades");
@@ -1346,9 +1346,9 @@ public class NarrativeUtil {
 		StringBuilder buff = new StringBuilder();
 		PersonalityProfile pp = ProfileUtil.getProfile(ctx, pov);
 
-		BaseRecord state = pov.get("state");
+		BaseRecord state = pov.get(FieldNames.FIELD_STATE);
 		BaseRecord store = pov.get(FieldNames.FIELD_STORE);
-		BaseRecord cell = state.get("currentLocation");
+		BaseRecord cell = state.get(OlioFieldNames.FIELD_CURRENT_LOCATION);
 		List<Long> gids = group.stream().map(r -> ((long)r.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
 
 		String name = pov.get(FieldNames.FIELD_NAME);
@@ -1412,7 +1412,7 @@ public class NarrativeUtil {
 		//IOSystem.getActiveContext().getReader().populate(eloc);
 		//logger.info(eloc.toFullString());
 		List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getRealmPopulation(realm).stream().filter(r -> !gids.contains(r.get(FieldNames.FIELD_ID))).toList(), cell);
-		List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
+		List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get(OlioFieldNames.FIELD_ZOO), cell);
 		String anames = apop.stream().map(a -> (String)a.get(FieldNames.FIELD_NAME)).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 		if(fpop.size() > 0) {
 			buff.append(" There are " + fpop.size() +" strangers nearby.");
@@ -1428,9 +1428,9 @@ public class NarrativeUtil {
 		}
 		
 		buff.append("\n" + fname + " (" + gender + ") compatibility with group:");
-		long id = pov.get("id");
+		long id = pov.get(FieldNames.FIELD_ID);
 		for(BaseRecord p : group) {
-			if(id == (long)p.get("id")) {
+			if(id == (long)p.get(FieldNames.FIELD_ID)) {
 				continue;
 			}
 			PersonalityProfile pp2 = ProfileUtil.analyzePersonality(ctx, p);
@@ -1444,7 +1444,7 @@ public class NarrativeUtil {
 	
 	public static String getTerrain(OlioContext ctx, BaseRecord person) {
 		String tdesc = null;
-		BaseRecord cell = person.get("state.currentLocation");
+		BaseRecord cell = person.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(cell != null) {
 			List<BaseRecord> acells = GeoLocationUtil.getAdjacentCells(ctx, cell, Rules.MAXIMUM_OBSERVATION_DISTANCE);
 			TerrainEnumType tet = TerrainEnumType.valueOf((String)cell.get("terrainType"));
@@ -1460,7 +1460,7 @@ public class NarrativeUtil {
 		String pdesc = "";
 		BaseRecord user = chatConfig.get("userCharacter");
 		BaseRecord systemUser = chatConfig.get("systemCharacter");
-		BaseRecord cell = user.get("state.currentLocation");
+		BaseRecord cell = user.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		AlignmentEnumType align = AlignmentEnumType.NEUTRAL;
 		BaseRecord evt = chatConfig.get("event");
 
@@ -1471,7 +1471,7 @@ public class NarrativeUtil {
 				logger.error("Failed to find realm");
 			}
 
-			List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get("zoo"), cell);
+			List<BaseRecord> apop = GeoLocationUtil.limitToAdjacent(ctx, realm.get(OlioFieldNames.FIELD_ZOO), cell);
 			String anames = apop.stream().map(a -> (String)a.get(FieldNames.FIELD_NAME)).collect(Collectors.toSet()).stream().collect(Collectors.joining(", "));
 			List<Long> gids = Arrays.asList(new Long[] {user.get(FieldNames.FIELD_ID), systemUser.get(FieldNames.FIELD_ID)});
 			List<BaseRecord> fpop = GeoLocationUtil.limitToAdjacent(ctx, ctx.getRealmPopulation(realm), cell);

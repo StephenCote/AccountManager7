@@ -16,6 +16,7 @@ import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.PointOfInterestEnumType;
 import org.cote.accountmanager.olio.PointOfInterestUtil;
 import org.cote.accountmanager.olio.Rules;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
@@ -29,7 +30,7 @@ public class Look  extends CommonAction implements IAction {
 			throws OlioException {
 		// TODO Auto-generated method stub
 		
-		BaseRecord cell = actor.get("state.currentLocation");
+		BaseRecord cell = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(cell == null) {
 			throw new OlioException("Missing current location");
 		}
@@ -43,12 +44,12 @@ public class Look  extends CommonAction implements IAction {
 		
 		List<String> res = actionResult.get("results");
 		
-		BaseRecord cell = actor.get("state.currentLocation");
+		BaseRecord cell = actor.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		
 		if(cell == null) {
 			logger.error("Current location is null");
 			/*
-			BaseRecord state = actor.get("state");
+			BaseRecord state = actor.get(FieldNames.FIELD_STATE);
 			logger.error(state.toFullString());
 			*/
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.ERROR);
@@ -80,7 +81,7 @@ public class Look  extends CommonAction implements IAction {
 		}
 		
 		BaseRecord realm = context.clock().getRealm();
-		List<BaseRecord> zoo = realm.get("zoo");
+		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		List<BaseRecord> zpop = GeoLocationUtil.limitToAdjacent(context, zoo, cell);
 		logger.info("Animal population: " + zoo.size() + " [visible = " + zpop.size() + "]");
 		if(zpop.size() == 0) {

@@ -38,7 +38,7 @@ public class TestValueType {
 
 			name.setValue("Test organization");
 			
-			FieldType id = org.getField("id");
+			FieldType id = org.getField(FieldNames.FIELD_ID);
 			assertNotNull("Id field is null", id);
 			id.setValue(12345L);
 

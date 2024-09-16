@@ -178,7 +178,7 @@ public class GridSquareLocationInitializationRule extends CommonContextRule impl
 		recs.add(world);
 		Query lq = QueryUtil.createQuery(ModelNames.MODEL_GEO_LOCATION, FieldNames.FIELD_GROUP_ID, id);
 
-		lq.field("geoType", FieldNames.FIELD_FEATURE);
+		lq.field(FieldNames.FIELD_GEOTYPE, FieldNames.FIELD_FEATURE);
 		lq.setRequestRange(0L, context.getConfig().getBaseLocationCount());
 		try {
 			lq.set(FieldNames.FIELD_SORT_FIELD, "random()");

@@ -151,10 +151,10 @@ public class TerrainUtil {
 			return;
 		}
 		track.add(key);
-		int x1 = loc.get("eastings");
-		int y1 = loc.get("northings");
-		int x2 = targ.get("eastings");
-		int y2 = targ.get("northings");
+		int x1 = loc.get(FieldNames.FIELD_EASTINGS);
+		int y1 = loc.get(FieldNames.FIELD_NORTHINGS);
+		int x2 = targ.get(FieldNames.FIELD_EASTINGS);
+		int y2 = targ.get(FieldNames.FIELD_NORTHINGS);
 		double at2 = Math.atan2(y2 - y1, x2 - x1);
 	     if (at2 < 0) {
 	          at2 += Math.PI * 2;
@@ -295,8 +295,8 @@ public class TerrainUtil {
 		for(BaseRecord r : irecs) {
 			TerrainEnumType utet = tet;
 			TerrainEnumType itet = TerrainEnumType.valueOf((String)r.get("terrainType"));
-			int rx = r.get("eastings");
-			int ry = r.get("northings");
+			int rx = r.get(FieldNames.FIELD_EASTINGS);
+			int ry = r.get(FieldNames.FIELD_NORTHINGS);
 			if(itet != TerrainEnumType.UNKNOWN && itet != tet) {
 				int itetVal = TerrainEnumType.valueOf(itet);
 				int diff = (int)Math.abs((tetVal - itetVal) * impact);

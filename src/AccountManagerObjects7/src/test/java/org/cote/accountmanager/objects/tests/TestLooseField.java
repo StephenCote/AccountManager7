@@ -68,7 +68,7 @@ public class TestLooseField {
 			// TODO Auto-generated catch block
 			
 		}
-		//genericInst.set("id", 123L);
+		//genericInst.set(FieldNames.FIELD_ID, 123L);
 		//genericInst.set("createdDate", new Date());
 		String ser = JSONUtil.exportObject(genericInst, RecordSerializerConfig.getUnfilteredModule());
 		assertNotNull("Serialization was null", ser);
@@ -93,7 +93,7 @@ public class TestLooseField {
 			{
 				"model": "genericObject",
 				"fields": [
-					{FieldNames.FIELD_NAME : "id", "value": 123 },
+					{FieldNames.FIELD_NAME : FieldNames.FIELD_ID, "value": 123 },
 					{FieldNames.FIELD_NAME : FieldNames.FIELD_NAME, "value": "Generic Object"}
 				]
 			}
@@ -101,7 +101,7 @@ public class TestLooseField {
 		try {
 			genObj = RecordFactory.model("genericObject").newInstance();
 			genObj.set(FieldNames.FIELD_NAME, "Generic object");
-			genObj.set("id", 123L);
+			genObj.set(FieldNames.FIELD_ID, 123L);
 			genObj.set("populated", false);
 			genObj.set("dataStore", "This is some data".getBytes());
 			String ser = JSONUtil.exportObject(genObj, RecordSerializerConfig.getUnfilteredModule());

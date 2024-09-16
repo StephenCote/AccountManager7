@@ -65,7 +65,7 @@ public class Sleep implements IAction {
 		}
 
 		ActionUtil.addProgressSeconds(actionResult, timeIncrement);
-		BaseRecord state = actor.get("state");
+		BaseRecord state = actor.get(FieldNames.FIELD_STATE);
 		state.setValue("awake", false);
 		Queue.queueUpdate(state, new String[] {"awake"});
 		
@@ -83,7 +83,7 @@ public class Sleep implements IAction {
 		ZonedDateTime prog = actionResult.get("actionProgress");
 		ZonedDateTime end = actionResult.get("actionEnd");
 		if(prog.until(end, ChronoUnit.MILLIS) <= 0L) {
-			BaseRecord state = actor.get("state");
+			BaseRecord state = actor.get(FieldNames.FIELD_STATE);
 			state.setValue("awake", true);
 			Queue.queueUpdate(state, new String[] {"awake"});
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.COMPLETE);

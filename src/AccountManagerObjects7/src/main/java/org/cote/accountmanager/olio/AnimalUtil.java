@@ -47,11 +47,11 @@ public class AnimalUtil {
 	
 	public static void checkAnimalPopulation(OlioContext context, BaseRecord realm, BaseRecord loc) {
 		BaseRecord location = OlioUtil.getFullRecord(loc);
-		/// List<BaseRecord> zoo = realm.get("zoo");
+		/// List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		long id = loc.get(FieldNames.FIELD_ID);
-		List<BaseRecord> zoo = realm.get("zoo");
+		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
 		List<BaseRecord> localZoo = zoo.stream().filter(a -> {
-			BaseRecord ac = a.get("state.currentLocation");
+			BaseRecord ac = a.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 			return ac != null && ((long)ac.get(FieldNames.FIELD_PARENT_ID)) == id;
 		}).collect(Collectors.toList());
 		
@@ -62,7 +62,7 @@ public class AnimalUtil {
 			for(String k: apop.keySet()) {
 				zoo.addAll(apop.get(k));
 				for(BaseRecord ap : apop.get(k)) {
-					BaseRecord part = ParticipationFactory.newParticipation(context.getOlioUser(), realm, "zoo", ap);
+					BaseRecord part = ParticipationFactory.newParticipation(context.getOlioUser(), realm, OlioFieldNames.FIELD_ZOO, ap);
 					if(part != null) {
 						parts.add(part);
 					}
@@ -79,10 +79,10 @@ public class AnimalUtil {
 		List<BaseRecord> oanims = new ArrayList<>();
 		for(BaseRecord anim: animals) {
 			BaseRecord oanim = anim;
-			BaseRecord state = oanim.get("state");
+			BaseRecord state = oanim.get(FieldNames.FIELD_STATE);
 			try {
 				oanim.set(FieldNames.FIELD_TYPE, "random");
-				state.set("currentLocation", location);
+				state.set(OlioFieldNames.FIELD_CURRENT_LOCATION, location);
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
@@ -94,7 +94,7 @@ public class AnimalUtil {
 	}
 	
 	public static Map<String, List<BaseRecord>> paintAnimalPopulation(OlioContext ctx, BaseRecord location) {
-		String type = location.get("geoType");
+		String type = location.get(FieldNames.FIELD_GEOTYPE);
 		Map<String, List<BaseRecord>> pap = new ConcurrentHashMap<>();
 		if(type.equals(FieldNames.FIELD_FEATURE) || type.equals("featureless")) {
 			List<BaseRecord> cells = GeoLocationUtil.getCells(ctx, location);
@@ -173,13 +173,13 @@ public class AnimalUtil {
 							for(BaseRecord it : items) {
 								it.set("type", null);
 							}
-							BaseRecord state = anim1.get("state");
+							BaseRecord state = anim1.get(FieldNames.FIELD_STATE);
 							if(total == 0 && (long)anim1.get("state.groupId") == 0L) {
 								logger.info((long)anim1.get("state.groupId"));
 								logger.info(state.toFullString());
 								ErrorUtil.printStackTrace();
 							}
-							state.setValue("currentLocation", location);
+							state.setValue(OlioFieldNames.FIELD_CURRENT_LOCATION, location);
 							StateUtil.setInitialLocation(ctx, state);
 							//StateUtil.agitateLocation(ctx, state);
 
@@ -232,7 +232,7 @@ public class AnimalUtil {
 			oanim.set(OlioFieldNames.FIELD_STATISTICS, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("statistics.path"))));
 			oanim.set(FieldNames.FIELD_STORE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_STORE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get(OlioFieldNames.FIELD_STORES_PATH))));
 			oanim.set("instinct", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_INSTINCT, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("instincts.path"))));
-			oanim.set("state", IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path"))));
+			oanim.set(FieldNames.FIELD_STATE, IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAR_STATE, ctx.getOlioUser(), null, ParameterList.newParameterList(FieldNames.FIELD_PATH, ctx.getWorld().get("states.path"))));
 		}
 		catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
@@ -357,7 +357,7 @@ public class AnimalUtil {
 	public static double walkMetersPerSecond(BaseRecord animal) {
 		double speed = (double)(int)animal.get("statistics.speed");
 		if(speed <= 0) {
-			logger.warn("Invalid speed for #" + animal.get("id") + " " + animal.get(FieldNames.FIELD_NAME) + ": Using default");
+			logger.warn("Invalid speed for #" + animal.get(FieldNames.FIELD_ID) + " " + animal.get(FieldNames.FIELD_NAME) + ": Using default");
 			speed = defaultAnimalSpeed;
 		}
 		/// Average walking speed is 1.2 meters per second

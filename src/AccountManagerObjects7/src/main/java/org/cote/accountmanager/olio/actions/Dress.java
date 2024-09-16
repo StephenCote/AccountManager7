@@ -78,7 +78,7 @@ public class Dress implements IAction {
 			canDress = true;
 		}
 		else {
-			double dist = GeoLocationUtil.getDistanceToState(actor.get("state"), interactor.get("state"));
+			double dist = GeoLocationUtil.getDistanceToState(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
 			RollEnumType ret = RollUtil.rollContact(actor, interactor); 
 			canDress = (ret == RollEnumType.SUCCESS || ret == RollEnumType.NATURAL_SUCCESS);
 			

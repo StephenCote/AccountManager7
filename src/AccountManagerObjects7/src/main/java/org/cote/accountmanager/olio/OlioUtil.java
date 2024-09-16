@@ -337,7 +337,7 @@ public class OlioUtil {
 
 	protected static List<BaseRecord> getRealmPopulation(OlioContext ctx, BaseRecord realm){
 		
-		long id = realm.get("id");
+		long id = realm.get(FieldNames.FIELD_ID);
 
 		if(!ctx.getPopulationMap().containsKey(id)) {
 			BaseRecord popGrp = realm.get(OlioFieldNames.FIELD_POPULATION);
@@ -347,7 +347,7 @@ public class OlioUtil {
 			}
 			List<BaseRecord> pop = listGroupPopulation(ctx, popGrp);
 			if(pop.size() == 0) {
-				logger.warn("Realm " + realm.get(FieldNames.FIELD_NAME) + " population is empty for group " + popGrp.get("id"));
+				logger.warn("Realm " + realm.get(FieldNames.FIELD_NAME) + " population is empty for group " + popGrp.get(FieldNames.FIELD_ID));
 				//logger.warn(q.toFullString());
 				ErrorUtil.printStackTrace();
 			}
@@ -544,7 +544,7 @@ public class OlioUtil {
 		});
 	}
 	public static void limitPlanFields(BaseRecord plan) {
-		limitPlanFields(plan, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
+		limitPlanFields(plan, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 	}
 	public static void limitPlanFields(BaseRecord plan, List<String> fields) {
 		QueryPlan.limitPlan(plan, fields);
@@ -554,12 +554,12 @@ public class OlioUtil {
 	public static void prunePlan(QueryPlan plan) {
 		List<BaseRecord> cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, "item");
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 		});
 
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_INVENTORY_ENTRY, OlioFieldNames.FIELD_APPAREL);
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 		});
 		
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_ITEM, null);
@@ -580,23 +580,23 @@ public class OlioUtil {
 		cplans.forEach(cp -> {
 			List<BaseRecord> ccplans = QueryPlan.findPlans(cp, OlioModelNames.MODEL_STORE, OlioFieldNames.FIELD_APPAREL);
 			ccplans.forEach(ccp -> {
-				QueryPlan.limitPlan(ccp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
+				QueryPlan.limitPlan(ccp, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 			});
 		});
 		
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, FieldNames.FIELD_LOCATIONS);
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 		});
 		
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_BUILDER, OlioFieldNames.FIELD_MATERIALS);
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 		});
 
 		cplans = QueryPlan.findPlans(plan, OlioModelNames.MODEL_STORE, FieldNames.FIELD_LOCATIONS);
 		cplans.forEach(cp -> {
-			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {"id", FieldNames.FIELD_NAME}));
+			QueryPlan.limitPlan(cp, Arrays.asList(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_NAME}));
 		});
 	
 	}

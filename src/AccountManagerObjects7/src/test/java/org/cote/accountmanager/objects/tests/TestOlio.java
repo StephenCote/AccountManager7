@@ -125,12 +125,12 @@ public class TestOlio extends BaseTest {
 		//List<BaseRecord> fpop = pop.stream().filter(p -> ((long)p.get(FieldNames.FIELD_ID)) != (long)per1.get(FieldNames.FIELD_ID)).collect(Collectors.toList());
 		//Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, fpop);
 		
-		BaseRecord state = per1.get("state");
-		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));		
+		BaseRecord state = per1.get(FieldNames.FIELD_STATE);
+		logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + state.get(FieldNames.FIELD_CURRENT_NORTH));		
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
 			StateUtil.moveByOneMeterInCell(ctx, per1, dir);
-			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));
+			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + state.get(FieldNames.FIELD_CURRENT_NORTH));
 		}
 
 		List<BaseRecord> fpop = observablePopulation(pop, per1);
@@ -143,7 +143,7 @@ public class TestOlio extends BaseTest {
 		logger.info("Wander " + dir.toString().toLowerCase());
 		for(int i = 0; i < 100; i++) {
 			StateUtil.moveByOneMeterInCell(ctx, per1, dir);
-			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get("currentEast") + ", " + state.get("currentNorth"));
+			logger.info(per1.get(FieldNames.FIELD_NAME) + " " + state.get("currentLocation.eastings") + " " + state.get("currentLocation.northings") + " " + state.get(FieldNames.FIELD_CURRENT_EAST) + ", " + state.get(FieldNames.FIELD_CURRENT_NORTH));
 		}
 		
 		fpop = observablePopulation(pop, per1);
@@ -159,7 +159,7 @@ public class TestOlio extends BaseTest {
 
 	private List<BaseRecord> observablePopulation(List<BaseRecord> pop, BaseRecord pov){
 		return pop.stream().filter(p -> {
-				double dist = GeoLocationUtil.getDistanceToState(pov.get("state"), p.get("state"));
+				double dist = GeoLocationUtil.getDistanceToState(pov.get(FieldNames.FIELD_STATE), p.get(FieldNames.FIELD_STATE));
 				int max = Rules.MAXIMUM_OBSERVATION_DISTANCE * Rules.MAP_EXTERIOR_CELL_WIDTH * Rules.MAP_EXTERIOR_CELL_MULTIPLIER;
 				// logger.info("Distance: " + dist + "::" + max);
 				boolean filt =(((long)p.get(FieldNames.FIELD_ID)) != (long)pov.get(FieldNames.FIELD_ID)
