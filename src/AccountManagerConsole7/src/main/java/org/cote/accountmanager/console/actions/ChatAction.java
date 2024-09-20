@@ -88,6 +88,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("promptConfig", true, "Name of user's prompt configuration file - default will be used to create it if it doesn't exist.");
 		options.addOption("iprompt", true, "Chat prompt for interactions");
 		options.addOption("model", true, "Generic name for a model");
+		options.addOption("analyzeModel", true, "Generic name for a model to use for analysis");
 		options.addOption("interact", false, "Generic bit to create a random interaction between two characters.  The -scene option must be also enabled.");
 		options.addOption("character1", true, "Name of character");
 		options.addOption("character2", true, "Name of character");
@@ -370,6 +371,7 @@ public class ChatAction extends CommonAction implements IAction{
 						cfg.set("rating", ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
 					}
 					cfg.set("llmModel", cmd.getOptionValue("model"));
+					cfg.set("llmAnalyzeModel", cmd.getOptionValue("analyzeModel"));
 					if(char1 != null && char2 != null) {
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);

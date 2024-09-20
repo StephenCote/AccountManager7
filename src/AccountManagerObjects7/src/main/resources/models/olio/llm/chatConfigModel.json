@@ -94,6 +94,11 @@
 			"default": "dolphin-llama3"
 		},
 		{
+			"name": "llmAnalyzeModel",
+			"type": "string",
+			"default": "dolphin-llama3"
+		},
+		{
 			"name": "userPrompt",
 			"type": "string"
 		},

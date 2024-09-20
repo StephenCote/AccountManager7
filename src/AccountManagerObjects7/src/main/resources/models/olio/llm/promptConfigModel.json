@@ -31,6 +31,11 @@
 			"baseType": "string"
 		},
 		{
+			"name": "assistantAnalyze",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "assistantNlp",
 			"type": "list",
 			"baseType": "string"

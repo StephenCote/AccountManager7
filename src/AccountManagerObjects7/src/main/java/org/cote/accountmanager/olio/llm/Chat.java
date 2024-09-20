@@ -192,6 +192,7 @@ Begin conversationally.
 			return null;
 		}
 		
+		String assistantAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
 		String systemAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
 		String userAnalyze = PromptUtil.getUserAnalyzeTemplate(promptConfig, chatConfig);
 		if(command == null || command.length() == 0) {
@@ -204,8 +205,11 @@ Begin conversationally.
 		}
 		
 		OllamaRequest areq = new OllamaRequest();
-		areq.setModel(req.getModel());
-		//areq.setModel("nous-local");
+		String amodel = chatConfig.get("llmAnalyzeModel");
+		if(amodel == null) {
+			amodel = req.getModel();
+		}
+		areq.setModel(amodel);
 		OllamaOptions opts = getChatOptions();
 		opts.setTemperature(0.7);
 		opts.setTopK(0);
@@ -221,11 +225,16 @@ Begin conversationally.
 		sysMsg.setContent(sys);
 		areq.getMessages().add(sysMsg);
 		
+		if(assistantAnalyze != null) {
+			OllamaMessage aaMsg = new OllamaMessage();
+			aaMsg.setRole("user");
+			aaMsg.setContent(assistantAnalyze);
+			areq.getMessages().add(aaMsg);
+		}
+		
 		
 		StringBuilder msg = new StringBuilder();
 		msg.append(command + System.lineSeparator());
-		
-		
 		msg.append(lines.subList(offset, max).stream().collect(Collectors.joining(System.lineSeparator())) + System.lineSeparator());
 
 		OllamaMessage anMsg = new OllamaMessage();
