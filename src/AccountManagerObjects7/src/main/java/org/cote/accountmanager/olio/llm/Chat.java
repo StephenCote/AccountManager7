@@ -319,7 +319,7 @@ Begin conversationally.
 		}
 		logger.info("Summarizing...");
 		String summary = null;
-		if(rsum.size() > 0) {
+		if(rsum.size() > 1 ) {
 			String sumBlock = rsum.stream().collect(Collectors.joining(System.lineSeparator()));
 			OllamaResponse oresp = chat(getReducePrompt(req, sumBlock));
 			if(oresp == null || oresp.getMessage() == null) {
@@ -328,6 +328,9 @@ Begin conversationally.
 			else {
 				summary = oresp.getMessage().getContent();
 			}
+		}
+		else {
+			summary = rsum.stream().collect(Collectors.joining(System.lineSeparator()));
 		}
 		return summary;
 	}
