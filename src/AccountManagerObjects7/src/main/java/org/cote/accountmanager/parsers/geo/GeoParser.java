@@ -31,7 +31,7 @@ public class GeoParser {
 	/// Parser for geolocation data from GeoNames Gazetteer - http://download.geonames.org/export/dump/
 
 	public static final Logger logger = LogManager.getLogger(GeoParser.class);
-	/// .Builder.create().setDelimiter('\t').setRecordSeparator("\r\n").setQuote('"').setIgnoreSurroundingSpaces(true).build()
+	/// .Builder.create().setDelimiter('\t').setRecordSeparator(System.lineSeparator()).setQuote('"').setIgnoreSurroundingSpaces(true).build()
 	private static CSVFormat defaultFormat = CSVFormat.TDF;
 	public static Query getQuery(String geoType, String isoCode, long groupId, long organizationId) {
 		Query lq = QueryUtil.getGroupQuery(ModelNames.MODEL_GEO_LOCATION, null, groupId, organizationId);

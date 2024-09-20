@@ -64,6 +64,9 @@ public class PromptUtil {
 	private static Pattern systemPro = Pattern.compile("\\$\\{system.pro\\}");
 	private static Pattern systemPPro = Pattern.compile("\\$\\{system.ppro\\}");
 
+	private static Pattern userTradePat = Pattern.compile("\\$\\{user.trade\\}");
+	private static Pattern systemTradePat = Pattern.compile("\\$\\{system.trade\\}");
+	
 	private static Pattern userPrompt = Pattern.compile("\\$\\{userPrompt\\}");
 	private static Pattern scene = Pattern.compile("\\$\\{scene\\}"); 
 	private static Pattern nlpPat = Pattern.compile("\\$\\{nlp\\}");
@@ -89,22 +92,22 @@ public class PromptUtil {
 	}
 
 	public static String getSystemChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("system")).stream().collect(Collectors.joining("\r\n")));
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("system")).stream().collect(Collectors.joining(System.lineSeparator())));
 	}
 	public static String getUserChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("user")).stream().collect(Collectors.joining("\r\n")), true);
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("user")).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
 
 	public static String getAssistChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("assistant")).stream().collect(Collectors.joining("\r\n")), true);
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("assistant")).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
 
 	public static String getSystemAnalyzeTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("systemAnalyze")).stream().collect(Collectors.joining("\r\n")), true);
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("systemAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
 
 	public static String getUserAnalyzeTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("userAnalyze")).stream().collect(Collectors.joining("\r\n")), true);
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("userAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
 	public static String getChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig, String templ) {
 		return getChatPromptTemplate(promptConfig, chatConfig, templ, false);
@@ -153,7 +156,7 @@ public class PromptUtil {
 
 		String scenel = "";
 		if((boolean)chatConfig.get("includeScene")) {
-			scenel = Matcher.quoteReplacement(((List<String>)promptConfig.get("scene")).stream().collect(Collectors.joining("\r\n")));
+			scenel = Matcher.quoteReplacement(((List<String>)promptConfig.get("scene")).stream().collect(Collectors.joining(System.lineSeparator())));
 		}
 		templ = scene.matcher(templ).replaceAll(scenel);
 		
@@ -244,6 +247,9 @@ public class PromptUtil {
 		templ = systemPro.matcher(templ).replaceAll(spro);
 		templ = systemPPro.matcher(templ).replaceAll(sppro);
 		templ = systemCPPro.matcher(templ).replaceAll(scppro);
+		
+		templ = userTradePat.matcher(templ).replaceAll((ujobDesc.length() > 0 ? ujobDesc : "unemployed"));
+		templ = systemTradePat.matcher(templ).replaceAll((sjobDesc.length() > 0 ? sjobDesc : "unemployed"));
 
 		templ = ratingName.matcher(templ).replaceAll(ESRBEnumType.getESRBName(rating));
 		templ = ratingPat.matcher(templ).replaceAll(rating.toString());

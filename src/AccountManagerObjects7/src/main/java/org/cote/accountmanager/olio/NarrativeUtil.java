@@ -813,6 +813,19 @@ public class NarrativeUtil {
         return (answer);
     }
 	
+	public static String getGenderLabel(String gender, int age) {
+		boolean isMale = gender.equals("male");
+		String mof = isMale ? "man" : "woman";
+		if(age < Rules.MAXIMUM_CHILD_AGE) {
+			mof = (isMale ? "boy" : "girl") + " child";
+		}
+		else if(age <= Rules.MINIMUM_ADULT_AGE) {
+			mof = "teenaged " + (isMale ? "boy" : "girl");
+		}
+		return mof;
+
+	}
+	
 	public static String getSDNegativePrompt(BaseRecord person) {
 
 		List<RaceEnumType> fraces = new ArrayList<>(Arrays.asList(new RaceEnumType[] {RaceEnumType.A, RaceEnumType.B, RaceEnumType.C, RaceEnumType.D, RaceEnumType.E}));
@@ -840,14 +853,8 @@ public class NarrativeUtil {
 		String gender = person.get(FieldNames.FIELD_GENDER);
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
-		boolean isMale = gender.equals("male");
-		String mof = isMale ? "man" : "woman";
-		if(age < Rules.MAXIMUM_CHILD_AGE) {
-			mof = (isMale ? "boy" : "girl") + " child";
-		}
-		else if(age <= Rules.MINIMUM_ADULT_AGE) {
-			mof = "teenaged " + (isMale ? "boy" : "girl");
-		}
+		String mof = getGenderLabel(gender, age);
+
 		int m = Rules.MINIMUM_ADULT_AGE;
 		buff.append("8k highly detailed ((" + pictureType + ")) ((highest quality)) ((ultra realistic)) ((" + bodyType + "))");
 		
@@ -902,13 +909,7 @@ public class NarrativeUtil {
 		String pro = ("male".equals(gender) ? "he" : "she");
 		String cpro = pro.substring(0,1).toUpperCase() + pro.substring(1);
 		boolean isMale = gender.equals("male");
-		String mof = isMale ? "man" : "woman";
-		if(age < Rules.MAXIMUM_CHILD_AGE) {
-			mof = (isMale ? "boy" : "girl") + " child";
-		}
-		else if(age <= Rules.MINIMUM_ADULT_AGE) {
-			mof = "teenaged " + (isMale ? "boy" : "girl");
-		}
+		String mof = getGenderLabel(gender, age);
 
 		buff.append("a " + getLooksPrettyUgly(pp) + " " + getIsPrettyAthletic(pp));
 		buff.append(" ((" + getNumberName(age).toLowerCase() + ":1.5) (" + age + "yo:1.5)");
@@ -954,7 +955,7 @@ public class NarrativeUtil {
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get(OlioFieldNames.FIELD_RACE));
-		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
 		if(includePersonality) {
 			buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
 			buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
@@ -1053,7 +1054,7 @@ public class NarrativeUtil {
 		String gender = pp.getGender();
 		
 		String raceDesc = getRaceDescription(pp.getRace());
-		buff.append(age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + " with " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
+		buff.append(age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + " with " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		return buff.toString();
 	}
 	
@@ -1372,7 +1373,7 @@ public class NarrativeUtil {
 		Set<String> stets = acells.stream().filter(c -> TerrainEnumType.valueOf((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)) != tet).map(c -> ((String)c.get(FieldNames.FIELD_TERRAIN_TYPE)).toLowerCase()).collect(Collectors.toSet());
 		
 		String raceDesc = getRaceDescription(pov.get(OlioFieldNames.FIELD_RACE));
-		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + ("male".equals(gender) ? "man" : "woman") + ".");
+		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
 		buff.append(" " + pro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
 		buff.append(" " + getDarkTriadDescription(pp));
 		buff.append(" " + pro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");

@@ -4,6 +4,7 @@ package org.cote.accountmanager.olio.llm;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -38,11 +39,14 @@ public class Chat {
 	//private int tokenBuffer = 756;
 	private String sessionName = null;
 	private String saveName = "chat.save";
-	private String analyzeName = "analyze.save";
+	//private String analyzeName = "analyze.save";
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
 	private boolean formatOutput = false;
 	private boolean includeScene = false;
+	
+	/// Depending on the system where the library is running, System.lineSeparator() may include a carriage return. Depending where the LLM is running, it may be desired to strip the carriage return off.
+	//private boolean stripCarriageReturn = true;
 
 	private String llmSystemPrompt = """
 You play the role of an assistant named Siren.
@@ -141,6 +145,7 @@ Begin conversationally.
 			addReminder(req);
 		}
 		*/
+
 		if(message != null && message.length() > 0) {
 			newMessage(req, message);
 		}
@@ -152,10 +157,12 @@ Begin conversationally.
 			ChatUtil.saveSession(user, req, sessionName);
 		}
 	}
-	private String getFormattedChatHistory(OllamaRequest req, boolean full) {
-		StringBuilder buff = new StringBuilder();
-		for(int i = (full ? 0 : (pruneSkip + 1)); i < req.getMessages().size(); i++) {
-			if(buff.length() > 0) buff.append("\r\n");
+	private List<String> getFormattedChatHistory(OllamaRequest req, boolean full) {
+		//StringBuilder buff = new StringBuilder();
+		List<String> buff = new ArrayList<>();
+		/// 1 >> (pruneSkip + 2)
+		for(int i = (full ? 0 : (pruneSkip + 2)); i < req.getMessages().size(); i++) {
+			//if(buff.length() > 0) buff.append(System.lineSeparator());
 
 			OllamaMessage msg = req.getMessages().get(i);
 			String cont = msg.getContent();
@@ -166,13 +173,25 @@ Begin conversationally.
 			if(msg.getRole().equals("user")) {
 				charPos = "#2";
 			}
+			buff.add("(" + charPos + "): " + cont);
+			/*
 			buff.append("(" + charPos + "): ");
 			buff.append(cont);
+			*/
 		}
-		return buff.toString();
+		//return buff.toString();
+		return buff;
 	}
 	
-	public OllamaRequest getAnalyzePrompt(OllamaRequest req, String command, boolean full) {
+	public OllamaRequest getAnalyzePrompt(OllamaRequest req, String command, int offset, int count, boolean full) {
+		List<String> lines = getFormattedChatHistory(req, full);
+		int max = Math.min(offset + count, lines.size());
+		if(lines.size() == 0 || offset >= lines.size()) {
+			// 92 6 90
+			// logger.warn("Invalid size or offset: " + lines.size() + ":" + max + ":" + offset);
+			return null;
+		}
+		
 		String systemAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
 		String userAnalyze = PromptUtil.getUserAnalyzeTemplate(promptConfig, chatConfig);
 		if(command == null || command.length() == 0) {
@@ -180,13 +199,19 @@ Begin conversationally.
 				command = userAnalyze;
 			}
 			else {
-				command = "Summarize the previous chat history.";
+				command = "Summarize the following chat history.";
 			}
 		}
 		
 		OllamaRequest areq = new OllamaRequest();
 		areq.setModel(req.getModel());
-		areq.setOptions(req.getOptions());
+		//areq.setModel("nous-local");
+		OllamaOptions opts = getChatOptions();
+		opts.setTemperature(0.7);
+		opts.setTopK(0);
+		opts.setTopP(0.1);
+		opts.setRepeatPenalty(1.18);
+		areq.setOptions(opts);
 		OllamaMessage sysMsg = new OllamaMessage();
 		sysMsg.setRole("system");
 		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
@@ -196,31 +221,106 @@ Begin conversationally.
 		sysMsg.setContent(sys);
 		areq.getMessages().add(sysMsg);
 		
+		
+		StringBuilder msg = new StringBuilder();
+		msg.append(command + System.lineSeparator());
+		
+		
+		msg.append(lines.subList(offset, max).stream().collect(Collectors.joining(System.lineSeparator())) + System.lineSeparator());
+
 		OllamaMessage anMsg = new OllamaMessage();
 		anMsg.setRole("user");
-		anMsg.setContent("Refer to the following content for subsequent analysis:");
-		areq.getMessages().add(anMsg);
-		
-		anMsg = new OllamaMessage();
-		anMsg.setRole("user");
-		anMsg.setContent(getFormattedChatHistory(req, full));
-		areq.getMessages().add(anMsg);
-		
-		anMsg = new OllamaMessage();
-		anMsg.setRole("user");
-		anMsg.setContent(command);
+		anMsg.setContent(msg.toString());
 		areq.getMessages().add(anMsg);
 
 		return areq;
 	}
 	
 	public String analyze(OllamaRequest req, String command, boolean full) {
-		String resp = null;
-		OllamaResponse oresp = chat(getAnalyzePrompt(req, command, full));
-		if(oresp != null && oresp.getMessage() != null) {
-			resp = oresp.getMessage().getContent();
+		List<String> resp = new ArrayList<>();
+		int offset = 0;
+		int count = 10;
+		OllamaRequest oreq = getAnalyzePrompt(req, command, offset, count, full);
+		logger.info("Analyzing...");
+		while(oreq != null) {
+			OllamaResponse oresp = chat(oreq);
+			if(oresp == null || oresp.getMessage() == null) {
+				logger.error("Unexpected response");
+				break;
+			}
+			resp.add(oresp.getMessage().getContent());
+			offset += count;
+			oreq = getAnalyzePrompt(req, command, offset, count, full);
 		}
-		return resp;
+		
+		return reduce(req, resp);
+		
+		//return resp.stream().collect(Collectors.joining(System.lineSeparator()));
+	}
+	
+	public OllamaRequest getReducePrompt(OllamaRequest req, String text) {
+		String systemAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
+		String userAnalyze = "Merge and reduce the following summaries.";
+		OllamaRequest areq = new OllamaRequest();
+		areq.setModel(req.getModel());
+		OllamaOptions opts = getChatOptions();
+		opts.setTemperature(0.7);
+		opts.setTopK(0);
+		opts.setTopP(0.1);
+		opts.setRepeatPenalty(1.18);
+		areq.setOptions(opts);
+		OllamaMessage sysMsg = new OllamaMessage();
+		sysMsg.setRole("system");
+		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
+		if(systemAnalyze != null && systemAnalyze.length() > 0) {
+			sys = systemAnalyze;
+		}
+		sysMsg.setContent(sys);
+		areq.getMessages().add(sysMsg);
+		StringBuilder msg = new StringBuilder();
+		msg.append(userAnalyze + System.lineSeparator());
+		msg.append(text);
+
+		OllamaMessage anMsg = new OllamaMessage();
+		anMsg.setRole("user");
+		anMsg.setContent(msg.toString());
+		areq.getMessages().add(anMsg);
+
+		return areq;
+	}
+	
+	public String reduce(OllamaRequest req, List<String> summaries) {
+		
+		int size = summaries.size();
+		int count = 1;
+		if(size > 1) {
+			count = Math.max(2,size/5);
+		}
+		List<String> rsum = new ArrayList<>();
+		logger.info("Reducing...");
+		for(int i = 0; i < size; i += count){
+			String sumBlock = summaries.subList(i, Math.min(size,i + count)).stream().collect(Collectors.joining(System.lineSeparator()));
+			OllamaResponse oresp = chat(getReducePrompt(req, sumBlock));
+			if(oresp == null || oresp.getMessage() == null) {
+				logger.warn("Invalid response");
+				break;
+			}
+			logger.info(oresp.getMessage().getContent());
+			rsum.add(oresp.getMessage().getContent());
+		}
+		logger.info("Summarizing...");
+		String summary = null;
+		if(rsum.size() > 0) {
+			String sumBlock = rsum.stream().collect(Collectors.joining(System.lineSeparator()));
+			OllamaResponse oresp = chat(getReducePrompt(req, sumBlock));
+			if(oresp == null || oresp.getMessage() == null) {
+				logger.warn("Invalid response");
+			}
+			else {
+				summary = oresp.getMessage().getContent();
+			}
+		}
+		return summary;
 	}
 
 	public void chatConsole(OllamaRequest req){
@@ -251,7 +351,7 @@ Begin conversationally.
 					logger.info(analyze(req, line.substring(11).trim(), true));
 					continue;
 				}
-				if(line.startsWith("/analyze")) {
+				else if(line.startsWith("/analyze")) {
 					logger.info(analyze(req, line.substring(8).trim(), false));
 					continue;
 				}
@@ -513,6 +613,15 @@ Begin conversationally.
 			logger.warn(chatConfig.toFullString());
 		}
 		
+		
+		
+		
+		req.setOptions(getChatOptions());
+
+		return req;
+	}
+	
+	public OllamaOptions getChatOptions() {
 		OllamaOptions opts = new OllamaOptions();
 		opts.setNumGpu(32);
 		opts.setNumCtx(contextSize);
@@ -539,11 +648,7 @@ Begin conversationally.
 		opts.setTopP(0.55);
 		opts.setTopK(45);
 		*/
-		
-		
-		req.setOptions(opts);
-
-		return req;
+		return opts;
 	}
 
 }

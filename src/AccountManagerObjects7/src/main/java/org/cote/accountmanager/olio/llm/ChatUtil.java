@@ -17,6 +17,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -52,6 +53,7 @@ public class ChatUtil {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_NAME, sessionName);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		q.planMost(false);
 		return q;
 	}
 	
@@ -65,7 +67,12 @@ public class ChatUtil {
 		OllamaRequest req = null;
 		if(dat != null) {
 			//req = JSONUtil.importObject(ByteModelUtil.getValueString(dat), OllamaRequest.class);
-			req = JSONUtil.importObject(new String((byte[])dat.get(FieldNames.FIELD_BYTE_STORE)), OllamaRequest.class);
+			try {
+				req = JSONUtil.importObject(ByteModelUtil.getValueString(dat), OllamaRequest.class);
+			} catch (ValueException | FieldException e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
 
 		}
 		return req;
