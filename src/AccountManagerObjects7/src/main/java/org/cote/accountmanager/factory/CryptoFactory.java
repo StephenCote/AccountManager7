@@ -101,7 +101,6 @@ public class CryptoFactory {
 	}
 
 	public CryptoFactory(){
-		Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
 		secureRandom = new SecureRandom();
 	}
 	

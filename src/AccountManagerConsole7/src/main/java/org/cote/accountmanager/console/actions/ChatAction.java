@@ -148,7 +148,8 @@ public class ChatAction extends CommonAction implements IAction{
 				logger.info("Import prompt config " + cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
 				String patch = FileUtil.getFileAsString(cmd.getOptionValue(FieldNames.FIELD_PATH));
-				IOSystem.getActiveContext().getRecordUtil().patch(RecordFactory.importRecord(OlioModelNames.MODEL_PROMPT_CONFIG, patch), prompt);
+				BaseRecord opatch = RecordFactory.importRecord(OlioModelNames.MODEL_PROMPT_CONFIG, patch);
+				IOSystem.getActiveContext().getRecordUtil().patch(opatch, prompt);
 			}
 		}
 		
@@ -408,12 +409,12 @@ public class ChatAction extends CommonAction implements IAction{
 			else if(cmd.hasOption("chatConfig")) {
 				logger.info("Export chat config " + cmd.getOptionValue("chatConfig") + " to "+ cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
-				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), cfg.toFullString());
+				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), cfg.copyDeidentifiedRecord().toFullString());
 			}
 			else if(cmd.hasOption("promptConfig")) {
 				logger.info("Export prompt config " + cmd.getOptionValue("promptConfig") + " to "+ cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
-				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), prompt.toFullString());
+				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), prompt.copyDeidentifiedRecord().toFullString());
 			}
 		}
 		

@@ -230,11 +230,18 @@ public class DBWriter extends MemoryWriter {
 				batch++;
 				if(batch >= maxBatchSize || (batch > 0 && i == (models.length - 1))){
 					processAutoCreate(autoCreate);
-					st.executeBatch();
+					/// TODO: Report back successfully updated record count
+					int[] writs = st.executeBatch();
 					st.clearBatch();
-					writeCount += batch;
+					for(int x = 0; x < writs.length; x++) {
+						writeCount += writs[x];
+					}
+					//writeCount += batch;
 					batch=0;
 				}
+	    	}
+	    	if(batch > 0) {
+	    		logger.error("Lost batch in update: " + batch);
 	    	}
 			st.close();
 			con.commit();

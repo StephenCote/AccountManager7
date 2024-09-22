@@ -1,6 +1,7 @@
 package org.cote.accountmanager.io;
 
 import java.io.File;
+import java.security.Security;
 import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
@@ -29,6 +30,10 @@ public class IOSystem {
 	private static boolean followForeignKeys = false;
 	private static IOContext activeContext = null;
 	private static boolean open = false;
+	
+	static {
+		Security.addProvider(new org.bouncycastle.jce.provider.BouncyCastleProvider());
+	}
 	
 	private IOSystem() {
 

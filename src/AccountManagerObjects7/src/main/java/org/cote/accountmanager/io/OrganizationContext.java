@@ -142,7 +142,9 @@ public class OrganizationContext {
 				// logger.info(rec.toString());
 				keyStoreBean = new KeyStoreBean(rec);
 			}
-			
+
+			/// TODO - At the moment, the security provider is loaded in the CryptoFactory constructor
+
 			BaseRecord crypto = IOSystem.getActiveContext().getRecordUtil().getCreateRecord(vaultUser, ModelNames.MODEL_KEY_SET, "Organization Cipher", "~/keys", vaultUser.get(FieldNames.FIELD_ORGANIZATION_ID));
 			IOSystem.getActiveContext().getRecordUtil().populate(crypto, 2);
 			organizationCipher = new CryptoBean(crypto);
