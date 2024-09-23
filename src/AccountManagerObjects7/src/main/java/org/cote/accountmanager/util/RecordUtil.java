@@ -80,9 +80,15 @@ public class RecordUtil {
 				}
 			}
 			if(upf.size() > 0) {
-				upf.add(FieldNames.FIELD_ID);
-				upf.add(FieldNames.FIELD_OWNER_ID);
-				upf.add(FieldNames.FIELD_ORGANIZATION_ID);
+				if(!upf.contains(FieldNames.FIELD_ID)) {
+					upf.add(FieldNames.FIELD_ID);
+				}
+				if(!upf.contains(FieldNames.FIELD_OWNER_ID)) {
+					upf.add(FieldNames.FIELD_OWNER_ID);
+				}
+				if(!upf.contains(FieldNames.FIELD_ORGANIZATION_ID)) {
+					upf.add(FieldNames.FIELD_ORGANIZATION_ID);
+				}
 				if(updateRecord((full ? targ : targ.copyRecord(upf.toArray(new String[0]))))) {
 					logger.info("Patched " + getIdentityString(targ) + " " + (full ? "object" :  upf.stream().collect(Collectors.joining(", "))));
 				}
