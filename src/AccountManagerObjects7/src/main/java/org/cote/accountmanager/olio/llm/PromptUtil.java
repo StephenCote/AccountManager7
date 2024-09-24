@@ -108,6 +108,9 @@ public class PromptUtil {
 	public static String getAssistantAnalyzeTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
 		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("assistantAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
+	public static String getUserReduceTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("userReduce")).stream().collect(Collectors.joining(System.lineSeparator())), true);
+	}
 
 	public static String getUserAnalyzeTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
 		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("userAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), true);

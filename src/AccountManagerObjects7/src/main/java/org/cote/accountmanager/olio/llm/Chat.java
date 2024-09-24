@@ -192,7 +192,7 @@ Begin conversationally.
 			return null;
 		}
 		
-		String assistantAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
+		String assistantAnalyze = PromptUtil.getAssistantAnalyzeTemplate(promptConfig, chatConfig);
 		String systemAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
 		String userAnalyze = PromptUtil.getUserAnalyzeTemplate(promptConfig, chatConfig);
 		if(command == null || command.length() == 0) {
@@ -212,8 +212,8 @@ Begin conversationally.
 		areq.setModel(amodel);
 		OllamaOptions opts = getChatOptions();
 		opts.setTemperature(0.7);
-		opts.setTopK(0);
-		opts.setTopP(0.1);
+		opts.setTopK(25);
+		opts.setTopP(0.9);
 		opts.setRepeatPenalty(1.18);
 		areq.setOptions(opts);
 		OllamaMessage sysMsg = new OllamaMessage();
@@ -227,7 +227,7 @@ Begin conversationally.
 		
 		if(assistantAnalyze != null) {
 			OllamaMessage aaMsg = new OllamaMessage();
-			aaMsg.setRole("user");
+			aaMsg.setRole("assistant");
 			aaMsg.setContent(assistantAnalyze);
 			areq.getMessages().add(aaMsg);
 		}
@@ -242,16 +242,19 @@ Begin conversationally.
 		anMsg.setContent(msg.toString());
 		areq.getMessages().add(anMsg);
 
+		// logger.info(JSONUtil.exportObject(areq));;
+		
 		return areq;
 	}
 	
 	public String analyze(OllamaRequest req, String command, boolean full) {
 		List<String> resp = new ArrayList<>();
 		int offset = 0;
-		int count = 10;
+		int count = 20;
 		OllamaRequest oreq = getAnalyzePrompt(req, command, offset, count, full);
-		logger.info("Analyzing...");
+		
 		while(oreq != null) {
+			logger.info("Analyzing ... " + offset);
 			OllamaResponse oresp = chat(oreq);
 			if(oresp == null || oresp.getMessage() == null) {
 				logger.error("Unexpected response");
@@ -269,13 +272,17 @@ Begin conversationally.
 	
 	public OllamaRequest getReducePrompt(OllamaRequest req, String text) {
 		String systemAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
-		String userAnalyze = "Merge and reduce the following summaries.";
+		String assistantAnalyze = PromptUtil.getAssistantAnalyzeTemplate(promptConfig, chatConfig);
+		String userAnalyze = PromptUtil.getUserReduceTemplate(promptConfig, chatConfig);
+		if(userAnalyze == null) {
+			userAnalyze = "Merge and reduce the following summaries.";
+		}
 		OllamaRequest areq = new OllamaRequest();
 		areq.setModel(req.getModel());
 		OllamaOptions opts = getChatOptions();
 		opts.setTemperature(0.7);
-		opts.setTopK(0);
-		opts.setTopP(0.1);
+		opts.setTopK(25);
+		opts.setTopP(0.9);
 		opts.setRepeatPenalty(1.18);
 		areq.setOptions(opts);
 		OllamaMessage sysMsg = new OllamaMessage();
@@ -286,6 +293,14 @@ Begin conversationally.
 		}
 		sysMsg.setContent(sys);
 		areq.getMessages().add(sysMsg);
+		
+		if(assistantAnalyze != null) {
+			OllamaMessage aaMsg = new OllamaMessage();
+			aaMsg.setRole("assistant");
+			aaMsg.setContent(assistantAnalyze);
+			areq.getMessages().add(aaMsg);
+		}
+		
 		StringBuilder msg = new StringBuilder();
 		msg.append(userAnalyze + System.lineSeparator());
 		msg.append(text);
@@ -295,37 +310,52 @@ Begin conversationally.
 		anMsg.setContent(msg.toString());
 		areq.getMessages().add(anMsg);
 
+		// logger.info(JSONUtil.exportObject(areq));
+		
 		return areq;
 	}
 	
 	public String reduce(OllamaRequest req, List<String> summaries) {
 		
 		int size = summaries.size();
+		if(size == 0) {
+			logger.warn("No summaries to reduce");
+			return null;
+		}
 		int count = 1;
 		if(size > 1) {
 			count = Math.max(2,size/5);
 		}
 		List<String> rsum = new ArrayList<>();
-		logger.info("Reducing...");
-		for(int i = 0; i < size; i += count){
-			String sumBlock = summaries.subList(i, Math.min(size,i + count)).stream().collect(Collectors.joining(System.lineSeparator()));
-			OllamaResponse oresp = chat(getReducePrompt(req, sumBlock));
-			if(oresp == null || oresp.getMessage() == null) {
-				logger.warn("Invalid response");
-				break;
+
+		if(size > 1) {
+			for(int i = 0; i < size; i += count){
+				logger.info("Reducing ... " + i + " of " + summaries.size());
+				String sumBlock = summaries.subList(i, Math.min(size,i + count)).stream().map(s -> "(Analysis Segment)" + System.lineSeparator() + s).collect(Collectors.joining(System.lineSeparator()));
+				OllamaRequest rreq = getReducePrompt(req, sumBlock);
+				// logger.info(JSONUtil.exportObject(rreq));
+				OllamaResponse oresp = chat(rreq);
+				if(oresp == null || oresp.getMessage() == null) {
+					logger.warn("Invalid response");
+					break;
+				}
+				// logger.info(oresp.getMessage().getContent());
+				rsum.add(oresp.getMessage().getContent());
 			}
-			logger.info(oresp.getMessage().getContent());
-			rsum.add(oresp.getMessage().getContent());
 		}
-		logger.info("Summarizing...");
+		else {
+			rsum.add(summaries.get(0));
+		}
 		String summary = null;
 		if(rsum.size() > 1 ) {
+			logger.info("Summarizing ... " + rsum.size());
 			String sumBlock = rsum.stream().collect(Collectors.joining(System.lineSeparator()));
 			OllamaResponse oresp = chat(getReducePrompt(req, sumBlock));
 			if(oresp == null || oresp.getMessage() == null) {
 				logger.warn("Invalid response");
 			}
 			else {
+				// logger.info(oresp.getMessage().getContent());
 				summary = oresp.getMessage().getContent();
 			}
 		}
@@ -646,9 +676,9 @@ Begin conversationally.
 		*/
 		
 		
-		opts.setTemperature(0.9);
+		opts.setTemperature(.9);
 		opts.setTopP(0.6);
-		opts.setTopK(35);
+		opts.setTopK(50);
 		
 		/*
 		opts.setTemperature(1.0);

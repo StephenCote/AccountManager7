@@ -286,7 +286,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        						recKey = o2.getModel() + "-#" + Long.toString(id);
 		        					}
 		        					if(recKey != null && recursionSet.contains(recKey)) {
-		        						logger.warn("Stop recursion: " + recKey);
+		        						logger.debug("Stop recursion: " + recKey);
 		        						ol = Arrays.asList(new String[] {FieldNames.FIELD_ID});
 		        					}
 		        					else {
@@ -307,7 +307,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 			        						recKey = o2.getModel() + "-#" + Long.toString(id);
 			        					}
 			        					if(recKey != null && recursionSet.contains(recKey)) {
-			        						logger.warn("Stop recursion: " + recKey);
+			        						logger.debug("Stop recursion: " + recKey);
 			        						jgen.writeObject(o2.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			        					}
 			        					else {

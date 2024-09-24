@@ -56,6 +56,11 @@
 			"baseType": "string"
 		},
 		{
+			"name": "userReduce",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "scene",
 			"type": "list",
 			"baseType": "string"
