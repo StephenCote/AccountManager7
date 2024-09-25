@@ -101,6 +101,22 @@ public class PromptUtil {
 	public static String getAssistChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
 		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("assistant")).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
+	
+	public static String getSystemNarrateTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("systemNarrate")).stream().collect(Collectors.joining(System.lineSeparator())), true);
+	}
+	public static String getAssistantNarrateTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("assistantNarrate")).stream().collect(Collectors.joining(System.lineSeparator())), true);
+	}
+	public static String getJailBreakTemplate(BaseRecord promptConfig) {
+		return ((List<String>)promptConfig.get("jailBreak")).stream().collect(Collectors.joining(System.lineSeparator()));
+	}
+	public static String getUserNarrateTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("userNarrate")).stream().collect(Collectors.joining(System.lineSeparator())), true);
+	}
+	public static String getSystemSDTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("systemSDPrompt")).stream().collect(Collectors.joining(System.lineSeparator())), true);
+	}
 
 	public static String getSystemAnalyzeTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
 		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("systemAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), true);

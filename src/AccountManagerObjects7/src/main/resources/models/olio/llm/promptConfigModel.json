@@ -21,6 +21,16 @@
 			"baseType": "string"
 		},
 		{
+			"name": "systemSDPrompt",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "systemNarrate",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "systemAnalyze",
 			"type": "list",
 			"baseType": "string"
@@ -32,6 +42,11 @@
 		},
 		{
 			"name": "assistantAnalyze",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "assistantNarrate",
 			"type": "list",
 			"baseType": "string"
 		},
@@ -56,7 +71,17 @@
 			"baseType": "string"
 		},
 		{
+			"name": "userNarrate",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "userReduce",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "jailBreak",
 			"type": "list",
 			"baseType": "string"
 		},
