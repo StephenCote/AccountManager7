@@ -275,6 +275,7 @@ public class NarrativeUtil {
 			logger.warn("Null interaction");
 			return "Nothing happened.";
 		}
+		
 		String aname = inter.get("actor.firstName");
 		InteractionEnumType type = inter.getEnum(FieldNames.FIELD_TYPE);
 		AlignmentEnumType aalign = inter.getEnum(OlioFieldNames.FIELD_ACTOR_ALIGNMENT);

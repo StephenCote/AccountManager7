@@ -96,6 +96,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("rating", true, "ESRB rating guidance for generated content (E, E10, T, M)");
 		//options.addOption("rpg", false, "Bit indicating to use the RPG prompt template");
 		options.addOption("nlp", false, "Bit indicating to use NLP in text generation to reinforce immersion");
+		options.addOption("jailbreak", false, "Bit indicating to use any JailBreak configuration from a paired prompt configuration");
 		options.addOption("assist", false, "Bit indicating to add additional guidance to the assistant");
 	}
 	@Override
@@ -346,7 +347,7 @@ public class ChatAction extends CommonAction implements IAction{
 							//break;
 						}
 					}
-					IOSystem.getActiveContext().getRecordUtil().createRecord(inter);
+					IOSystem.getActiveContext().getRecordUtil().createRecords(inters.toArray(new BaseRecord[0]));
 				}
 				
 				if(cmd.hasOption("show")) {
@@ -365,6 +366,7 @@ public class ChatAction extends CommonAction implements IAction{
 					cfg.set("startMode", "system");
 					cfg.set("assist", cmd.hasOption("assist"));
 					cfg.set("useNLP", cmd.hasOption("nlp"));
+					cfg.set("useJailBreak", cmd.hasOption("jailbreak"));
 					cfg.set("setting", cmd.getOptionValue("setting"));
 					cfg.set("includeScene", cmd.hasOption("scene"));
 					cfg.set("prune", cmd.hasOption("prune"));
@@ -377,6 +379,11 @@ public class ChatAction extends CommonAction implements IAction{
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);
 						cfg.set(OlioFieldNames.FIELD_INTERACTIONS, inters);
+						for(BaseRecord i : inters) {
+							if(i != null) {
+								IOSystem.getActiveContext().getMemberUtil().member(user, cfg, i, null, true);
+							}
+						}
 						if(cmd.hasOption("reimage")) {
 							// char1.setValue("narrative", null);
 							// char2.setValue("narrative", null);
@@ -457,6 +464,7 @@ public class ChatAction extends CommonAction implements IAction{
 				chatConfig.setValue("setting", setting);
 				chatConfig2.setValue("setting", setting);
 			}
+			chatConfig2.setValue("useNLP", false);
 			Chat chat = new Chat(user, chatConfig, promptConfig);
 			chat.setFormatOutput(true);
 			chat.setSessionName(cmd.getOptionValue("session"));

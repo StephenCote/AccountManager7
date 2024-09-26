@@ -60,6 +60,10 @@
 			"type": "boolean"
 		},
 		{
+			"name": "useJailBreak",
+			"type": "boolean"
+		},
+		{
 			"name": "prune",
 			"type": "boolean"
 		},

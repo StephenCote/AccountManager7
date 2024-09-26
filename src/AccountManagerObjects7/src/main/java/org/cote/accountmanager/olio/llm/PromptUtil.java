@@ -53,6 +53,8 @@ public class PromptUtil {
 	private static Pattern peoplePop = Pattern.compile("\\$\\{population.people\\}");
 	private static Pattern interactDesc = Pattern.compile("\\$\\{interaction.description\\}");
 
+	private static Pattern sysGen = Pattern.compile("\\$\\{system.gender\\}");
+	private static Pattern userGen = Pattern.compile("\\$\\{user.gender\\}");
 	private static Pattern userASG = Pattern.compile("\\$\\{user.asg\\}");
 	private static Pattern systemASG = Pattern.compile("\\$\\{system.asg\\}");
 	private static Pattern userCPPro = Pattern.compile("\\$\\{user.capPPro\\}");
@@ -221,6 +223,7 @@ public class PromptUtil {
 		templ = userConsent.matcher(templ).replaceAll(ucons.length() > 0 ? uconpref + ucons + ".": "");
 		
 		String ugen = userChar.get(FieldNames.FIELD_GENDER);
+		templ = userGen.matcher(templ).replaceAll(ugen);
 		String ucppro = "His";
 		String uppro = "his";
 		String ucpro = "He";
@@ -234,6 +237,7 @@ public class PromptUtil {
 		}
 
 		String sgen = systemChar.get(FieldNames.FIELD_GENDER);
+		templ = sysGen.matcher(templ).replaceAll(sgen);
 		String scppro = "His";
 		String sppro = "his";
 		String scpro = "He";
@@ -345,9 +349,9 @@ public class PromptUtil {
 		leadDesc = outLead.getRecord().get(FieldNames.FIELD_FIRST_NAME) + " is the leader.";
 		if(outLead.getId() == sysProf.getId()) {
 			isLeaderContest = GroupDynamicUtil.contestLeadership(null, null, Arrays.asList(usrProf), sysProf).size() > 0;
+			contest = usrProf.getRecord().get(FieldNames.FIELD_FIRST_NAME);
 		}
 		else {
-			contest = outLead.getRecord().get(FieldNames.FIELD_FIRST_NAME);
 			isLeaderContest = GroupDynamicUtil.contestLeadership(null, null, Arrays.asList(sysProf), usrProf).size() > 0;
 		}
 		if(isLeaderContest) {
@@ -366,6 +370,8 @@ public class PromptUtil {
 			interaction = interactions.get(rand.nextInt(interactions.size()));
 			IOSystem.getActiveContext().getReader().populate(interaction);
 		}
+
+		//logger.info("Inter: " + (interaction != null ? NarrativeUtil.describeInteraction(interaction) : ""));
 		templ = interactDesc.matcher(templ).replaceAll((interaction != null ? NarrativeUtil.describeInteraction(interaction) : ""));
 		
 		String iPrompt = chatConfig.get("userPrompt");
