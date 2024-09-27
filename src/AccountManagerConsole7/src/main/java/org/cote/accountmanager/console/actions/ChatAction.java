@@ -95,7 +95,7 @@ public class ChatAction extends CommonAction implements IAction{
 		//options.addOption("remind", true, "Bit indicating to include instruction reminders every n exchanges");
 		options.addOption("rating", true, "ESRB rating guidance for generated content (E, E10, T, M)");
 		//options.addOption("rpg", false, "Bit indicating to use the RPG prompt template");
-		options.addOption("nlp", false, "Bit indicating to use NLP in text generation to reinforce immersion");
+		options.addOption("nlp", true, "Brief command to give via NLP to reinforce immersion");
 		options.addOption("jailbreak", false, "Bit indicating to use any JailBreak configuration from a paired prompt configuration");
 		options.addOption("assist", false, "Bit indicating to add additional guidance to the assistant");
 	}
@@ -366,6 +366,7 @@ public class ChatAction extends CommonAction implements IAction{
 					cfg.set("startMode", "system");
 					cfg.set("assist", cmd.hasOption("assist"));
 					cfg.set("useNLP", cmd.hasOption("nlp"));
+					cfg.set("nlpCommand", cmd.getOptionValue("nlp"));
 					cfg.set("useJailBreak", cmd.hasOption("jailbreak"));
 					cfg.set("setting", cmd.getOptionValue("setting"));
 					cfg.set("includeScene", cmd.hasOption("scene"));

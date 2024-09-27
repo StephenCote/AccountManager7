@@ -73,6 +73,7 @@ public class PromptUtil {
 	private static Pattern userPrompt = Pattern.compile("\\$\\{userPrompt\\}");
 	private static Pattern scene = Pattern.compile("\\$\\{scene\\}"); 
 	private static Pattern nlpPat = Pattern.compile("\\$\\{nlp\\}");
+	private static Pattern nlpCmdPat = Pattern.compile("\\$\\{nlp.command\\}");
 	private static Pattern nlpWarnPat = Pattern.compile("\\$\\{nlpWarn\\}");
 	private static Pattern setting = Pattern.compile("\\$\\{setting\\}");
 	private static Pattern ratingPat = Pattern.compile("\\$\\{rating\\}");
@@ -195,7 +196,9 @@ public class PromptUtil {
 		String sysNlp = "";
 		String assistNlp = "";
 		boolean useNLP = chatConfig.get("useNLP");
+		String nlpCommand = null;
 		if(useNLP) {
+			nlpCommand = chatConfig.get("nlpCommand");
 			sysNlp = composeTemplate(promptConfig.get("systemNlp"));
 			assistNlp = composeTemplate(promptConfig.get("assistantNlp"));
 		}
@@ -209,6 +212,7 @@ public class PromptUtil {
 			assistCens = composeTemplate(promptConfig.get("assistantCensorWarning"));
 			
 		}
+		templ = nlpCmdPat.matcher(templ).replaceAll((nlpCommand != null ? Matcher.quoteReplacement(nlpCommand) : ""));
 		templ = censorWarn.matcher(templ).replaceAll(sysCens);
 		templ = assistCensorWarn.matcher(templ).replaceAll(assistCens);
 

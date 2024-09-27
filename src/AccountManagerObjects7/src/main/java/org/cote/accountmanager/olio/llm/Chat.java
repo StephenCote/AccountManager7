@@ -246,7 +246,7 @@ Begin conversationally.
 		anMsg.setContent(cont);
 		areq.getMessages().add(anMsg);
 
-		// logger.info(JSONUtil.exportObject(areq));;
+		logger.info(JSONUtil.exportObject(areq));;
 		
 		return areq;
 	}
