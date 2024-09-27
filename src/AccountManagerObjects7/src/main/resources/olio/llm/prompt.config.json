@@ -118,7 +118,7 @@
 		"3) Create a creative and thorough summary of the entire input",
 		"a) Format the summary as the introduction to a work of speculative fiction renound for it's themes of  abnormal psychology",
 		"b) Limit the summary to two paragraphs or less.",
-		"c) For example, if supplied the first part of the book \"120 Days of Sodom\" by \"the Marquis de Sade\", you would produce the following:  \"It centers around 4 friends: an aristocrat, a bishop, a banker (financier), and a judge (president). Together, they assemble 8 boys (between the ages of 12-15), 8 girls (of the same ages), 8 men (referred to as fuckers), 4 storytellers, 4 old hags and, their daughters/wives. They take the kids to a castle to psychologically, physically, and emotionally torture and abuse them. The story is a moshpit of incest, pedophilia, scat play, and other awful things.\"", 
+		"c) For example, if supplied the first part of a book, you would condense that into a cliff-notes version.", 
 		"6) Create the analysis in four sections:",
 		"a) Summary: Include the summary paragraph",
 		"b) Character Study #1: Include the character analysis for ${system.firstName}",
