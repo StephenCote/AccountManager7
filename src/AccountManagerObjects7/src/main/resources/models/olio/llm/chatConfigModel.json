@@ -45,6 +45,13 @@
 			"followReference": false
 		},
 		{
+			"name": "interaction",
+			"type": "model",
+			"baseModel": "olio.interaction",
+			"foreign": true,
+			"followReference": false
+		},
+		{
 			"name": "event",
 			"type": "model",
 			"baseModel": "olio.event",

@@ -5,6 +5,7 @@ import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -104,6 +105,9 @@ public class ChatUtil {
 		if(!req.contains(OlioFieldNames.FIELD_INTERACTIONS)) {
 			req.add(OlioFieldNames.FIELD_INTERACTIONS);
 		}
+		if(!req.contains(OlioFieldNames.FIELD_INTERACTION)) {
+			req.add(OlioFieldNames.FIELD_INTERACTION);
+		}
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 		
 		if(dat == null) {
@@ -111,7 +115,7 @@ public class ChatUtil {
 			plist.parameter(FieldNames.FIELD_NAME, name);
 			try {
 				dat = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
-			} catch (Exception e) {
+			} catch (FactoryException e) {
 				logger.error(e);
 			}
 

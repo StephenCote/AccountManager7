@@ -378,6 +378,12 @@ public class ChatAction extends CommonAction implements IAction{
 					if(char1 != null && char2 != null) {
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);
+						List<BaseRecord> ainters = cfg.get(OlioFieldNames.FIELD_INTERACTIONS);
+						for(BaseRecord i : inters) {
+							if(i != null) {
+								IOSystem.getActiveContext().getMemberUtil().member(user, cfg, i, null, false);
+							}
+						}
 						cfg.set(OlioFieldNames.FIELD_INTERACTIONS, inters);
 						for(BaseRecord i : inters) {
 							if(i != null) {

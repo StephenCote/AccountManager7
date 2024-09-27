@@ -86,6 +86,7 @@ public class OlioFieldNames {
 	public static final String FIELD_INVENTORIES = "inventories";
 	public static final String FIELD_INVENTORIES_ID = "inventories.id";
 	
+	public static final String FIELD_INTERACTION = "interaction";
 	public static final String FIELD_INTERACTIONS = "interactions";
 	public static final String FIELD_INTERACTIONS_ID = "interactions.id";
 	

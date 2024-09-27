@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AlignmentEnumType;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
@@ -364,13 +365,20 @@ public class PromptUtil {
 		if(loc != null) {
 			templ = locationTerrain.matcher(templ).replaceAll(loc.getEnum(FieldNames.FIELD_TERRAIN_TYPE).toString().toLowerCase());	
 		}
-		List<BaseRecord> interactions = chatConfig.get(OlioFieldNames.FIELD_INTERACTIONS);
-		BaseRecord interaction = null;
-		if(interactions.size() > 0) {
-			interaction = interactions.get(rand.nextInt(interactions.size()));
-			IOSystem.getActiveContext().getReader().populate(interaction);
+		BaseRecord interaction = chatConfig.get(OlioFieldNames.FIELD_INTERACTION);
+		if(interaction == null) {
+			List<BaseRecord> interactions = chatConfig.get(OlioFieldNames.FIELD_INTERACTIONS);
+		
+			if(interactions.size() > 0) {
+				interaction = interactions.get(rand.nextInt(interactions.size()));
+				IOSystem.getActiveContext().getReader().populate(interaction);
+			}
+			if(interaction != null) {
+				chatConfig.setValue(OlioFieldNames.FIELD_INTERACTION, interaction);
+				Queue.queueUpdate(interaction, new String[] {OlioFieldNames.FIELD_INTERACTION});
+				Queue.processQueue();
+			}
 		}
-
 		//logger.info("Inter: " + (interaction != null ? NarrativeUtil.describeInteraction(interaction) : ""));
 		templ = interactDesc.matcher(templ).replaceAll((interaction != null ? NarrativeUtil.describeInteraction(interaction) : ""));
 		
