@@ -397,9 +397,15 @@ Begin conversationally.
 		else {
 			oreq = getAnalyzePrompt(req, command, offset, count, full);
 		}
-		
+		String lbl = "Analyzing";
+		if(narrate) {
+			lbl = "Narrating";
+		}
+		else if(reduce) {
+			lbl = "Reducing";
+		}
 		while(oreq != null) {
-			logger.info("Analyzing ... " + offset);
+			logger.info(lbl + " ... " + offset);
 			OllamaResponse oresp = chat(oreq);
 			if(oresp == null || oresp.getMessage() == null) {
 				logger.error("Unexpected response");

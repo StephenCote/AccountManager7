@@ -212,9 +212,6 @@ public class PromptUtil {
 			assistCens = composeTemplate(promptConfig.get("assistantCensorWarning"));
 			
 		}
-		templ = nlpCmdPat.matcher(templ).replaceAll((nlpCommand != null ? Matcher.quoteReplacement(nlpCommand) : ""));
-		templ = censorWarn.matcher(templ).replaceAll(sysCens);
-		templ = assistCensorWarn.matcher(templ).replaceAll(assistCens);
 
 		String uconpref = composeTemplate(promptConfig.get("userConsentPrefix"));
 		String ucons = "";
@@ -226,6 +223,10 @@ public class PromptUtil {
 			ucons += composeTemplate(promptConfig.get("userConsentNlp"));
 		}
 		templ = userConsent.matcher(templ).replaceAll(ucons.length() > 0 ? uconpref + ucons + ".": "");
+
+		templ = nlpCmdPat.matcher(templ).replaceAll((nlpCommand != null ? Matcher.quoteReplacement(nlpCommand) : ""));
+		templ = censorWarn.matcher(templ).replaceAll(sysCens);
+		templ = assistCensorWarn.matcher(templ).replaceAll(assistCens);
 		
 		String ugen = userChar.get(FieldNames.FIELD_GENDER);
 		templ = userGen.matcher(templ).replaceAll(ugen);

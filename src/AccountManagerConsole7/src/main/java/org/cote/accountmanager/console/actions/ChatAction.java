@@ -423,7 +423,7 @@ public class ChatAction extends CommonAction implements IAction{
 			else if(cmd.hasOption("chatConfig")) {
 				logger.info("Export chat config " + cmd.getOptionValue("chatConfig") + " to "+ cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
-				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), cfg.copyDeidentifiedRecord().toFullString());
+				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), cfg.toFilteredString());
 			}
 			else if(cmd.hasOption("promptConfig")) {
 				logger.info("Export prompt config " + cmd.getOptionValue("promptConfig") + " to "+ cmd.getOptionValue(FieldNames.FIELD_PATH));

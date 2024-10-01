@@ -60,6 +60,9 @@ public class ApplicationUtil {
 			app.set(FieldNames.FIELD_USER, user);
 			app.set(FieldNames.FIELD_PERSON, getUserPerson(user));
 			List<BaseRecord> usrRoles = IOSystem.getActiveContext().getMemberUtil().getParticipations(user, ModelNames.MODEL_ROLE);
+			for(BaseRecord r: usrRoles) {
+				IOSystem.getActiveContext().getReader().populate(r, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
+			}
 			uroles.addAll(usrRoles);
 			app.set(FieldNames.FIELD_ORGANIZATION_PATH, user.get(FieldNames.FIELD_ORGANIZATION_PATH));
 		} catch (FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException e1) {
