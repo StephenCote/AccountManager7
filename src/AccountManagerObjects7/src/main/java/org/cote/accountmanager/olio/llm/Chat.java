@@ -46,6 +46,7 @@ public class Chat {
 	private int pruneSkip = 1;
 	private boolean formatOutput = false;
 	private boolean includeScene = false;
+	private boolean forceJailbreak = false;
 	
 	/// Depending on the system where the library is running, System.lineSeparator() may include a carriage return. Depending where the LLM is running, it may be desired to strip the carriage return off.
 	//private boolean stripCarriageReturn = true;
@@ -237,7 +238,7 @@ Begin conversationally.
 
 		String cont = msg.toString();
 		boolean useJB = chatConfig.get("useJailBreak");
-		if(useJB) {
+		if(useJB || forceJailbreak) {
 			String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
 			if(jbt != null && jbt.length() > 0) {
 				cont = embeddedMessage.matcher(jbt).replaceAll(msg.toString());
@@ -321,7 +322,7 @@ Begin conversationally.
 
 		String cont = msg.toString();
 		boolean useJB = chatConfig.get("useJailBreak");
-		if(useJB) {
+		if(useJB || forceJailbreak) {
 			String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
 			if(jbt != null && jbt.length() > 0) {
 				cont = embeddedMessage.matcher(jbt).replaceAll(cont);
@@ -552,6 +553,11 @@ Begin conversationally.
 				}
 				if(line.equals("/new")) {
 					req = newRequest(chatConfig.get("llmModel"));
+					continue;
+				}
+				if(line.startsWith("/jailbreak")) {
+					forceJailbreak = !forceJailbreak;
+					logger.info("Jailbreak " + (forceJailbreak ? "enabled" : "disabled"));
 					continue;
 				}
 				if(line.startsWith("/analyzeAll")) {
@@ -819,7 +825,7 @@ Begin conversationally.
 		outReq.setPrompt(inReq.getPrompt());
 		outReq.setSystem(inReq.getSystem());
 		String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
-		boolean useJB = chatConfig.get("useJailBreak");
+		boolean useJB = (forceJailbreak || (boolean)chatConfig.get("useJailBreak"));
 
 		outReq.getMessages().addAll(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
 		/*.map(s -> {
