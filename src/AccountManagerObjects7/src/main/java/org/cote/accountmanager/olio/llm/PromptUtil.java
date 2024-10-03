@@ -71,6 +71,7 @@ public class PromptUtil {
 	private static Pattern systemTradePat = Pattern.compile("\\$\\{system.trade\\}");
 	
 	private static Pattern userPrompt = Pattern.compile("\\$\\{userPrompt\\}");
+	private static Pattern autoScene = Pattern.compile("\\$\\{scene.auto\\}");
 	private static Pattern scene = Pattern.compile("\\$\\{scene\\}"); 
 	private static Pattern nlpPat = Pattern.compile("\\$\\{nlp\\}");
 	private static Pattern nlpCmdPat = Pattern.compile("\\$\\{nlp.command\\}");
@@ -87,6 +88,7 @@ public class PromptUtil {
 	private static Pattern censorWarn = Pattern.compile("\\$\\{censorWarn\\}");
 	private static Pattern userConsent = Pattern.compile("\\$\\{user.consent\\}");
 	private static Pattern assistCensorWarn = Pattern.compile("\\$\\{assistCensorWarn\\}");
+	private static Pattern firstSecondPos = Pattern.compile("\\$\\{firstSecondPos\\}");
 	private static Pattern firstSecondWho = Pattern.compile("\\$\\{firstSecondWho\\}");
 	private static Pattern firstSecondToBe = Pattern.compile("\\$\\{firstSecondToBe\\}");
 	private static Pattern firstSecondName = Pattern.compile("\\$\\{firstSecondName\\}");
@@ -176,23 +178,18 @@ public class PromptUtil {
 		if(!"system".equals(chatConfig.get("startMode"))) {
 			whoStart = "You start.";
 		}
-		templ = firstSecondWho.matcher(templ).replaceAll(whoStart);
-		templ = firstSecondToBe.matcher(templ).replaceAll(firstPerson ? "I am" : "You are");
-		templ = firstSecondName.matcher(templ).replaceAll((String)(firstPerson ? systemChar.get(FieldNames.FIELD_FIRST_NAME) : userChar.get(FieldNames.FIELD_FIRST_NAME)));
 
 		String scenel = "";
+		
+		String cscene = chatConfig.get("scene");
+		boolean auto = (cscene != null && cscene.length() > 0);
 		if((boolean)chatConfig.get("includeScene")) {
 			scenel = Matcher.quoteReplacement(((List<String>)promptConfig.get("scene")).stream().collect(Collectors.joining(System.lineSeparator())));
 		}
 		templ = scene.matcher(templ).replaceAll(scenel);
-		
-		String settingl = "";
+
 		String settingStr = chatConfig.get("setting");
-		/*
-		if(settingStr == null || settingStr.length() == 0) {
-			templ = setting.matcher(templ).replaceAll(composeTemplate(promptConfig.get("setting")));
-		}
-		*/
+
 		String sysNlp = "";
 		String assistNlp = "";
 		boolean useNLP = chatConfig.get("useNLP");
@@ -204,6 +201,7 @@ public class PromptUtil {
 		}
 		templ = nlpPat.matcher(templ).replaceAll(sysNlp);
 		templ = nlpWarnPat.matcher(templ).replaceAll(assistNlp);
+		
 		String sysCens = "";
 		String assistCens = "";
 		ESRBEnumType rating = chatConfig.getEnum("rating");
@@ -227,6 +225,11 @@ public class PromptUtil {
 		templ = nlpCmdPat.matcher(templ).replaceAll((nlpCommand != null ? Matcher.quoteReplacement(nlpCommand) : ""));
 		templ = censorWarn.matcher(templ).replaceAll(sysCens);
 		templ = assistCensorWarn.matcher(templ).replaceAll(assistCens);
+		
+		templ = firstSecondPos.matcher(templ).replaceAll(firstPerson ? "my" : "your");
+		templ = firstSecondWho.matcher(templ).replaceAll(whoStart);
+		templ = firstSecondToBe.matcher(templ).replaceAll(firstPerson ? "I am" : "You are");
+		templ = firstSecondName.matcher(templ).replaceAll((String)(firstPerson ? systemChar.get(FieldNames.FIELD_FIRST_NAME) : userChar.get(FieldNames.FIELD_FIRST_NAME)));
 		
 		String ugen = userChar.get(FieldNames.FIELD_GENDER);
 		templ = userGen.matcher(templ).replaceAll(ugen);
@@ -337,6 +340,12 @@ public class PromptUtil {
 			templ = locationTerrains.matcher(templ).replaceAll(tdesc);	
 			// templ = locationTerrain.matcher(templ).replaceAll(tet.toString().toLowerCase());
 		}
+		if(!auto) {
+			templ = autoScene.matcher(templ).replaceAll(scenel + (settingStr != null ? " " + settingStr : ""));	
+		}
+		else {
+			templ = autoScene.matcher(templ).replaceAll(cscene);
+		}
 
 		String pdesc = chatConfig.get("populationDescription");
 		String adesc = chatConfig.get("animalDescription");
@@ -380,7 +389,7 @@ public class PromptUtil {
 			}
 			if(interaction != null) {
 				chatConfig.setValue(OlioFieldNames.FIELD_INTERACTION, interaction);
-				Queue.queueUpdate(interaction, new String[] {OlioFieldNames.FIELD_INTERACTION});
+				Queue.queueUpdate(chatConfig, new String[] {OlioFieldNames.FIELD_INTERACTION});
 				Queue.processQueue();
 			}
 		}

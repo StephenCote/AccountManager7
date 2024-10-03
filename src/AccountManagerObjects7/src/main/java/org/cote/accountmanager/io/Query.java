@@ -119,6 +119,20 @@ public class Query extends LooseRecord{
 		return qp;
 	}
 	
+	public QueryPlan planField(String fieldName) {
+		QueryPlan qpf = null;
+		if(!getRequest().contains(fieldName)) {
+			QueryPlan qp = plan();
+			qpf = qp.plan(fieldName, new String[0]);
+			if(qpf != null) {
+				qpf.planForCommonFields();
+				
+			}
+			getRequest().add(fieldName);
+		}
+		return qpf;
+	}
+	
 	public QueryPlan planCommon(boolean recurse) {
 		// requestCommonFields();
 		QueryPlan qp = plan();

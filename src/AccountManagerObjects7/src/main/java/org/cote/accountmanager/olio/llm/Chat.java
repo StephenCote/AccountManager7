@@ -14,6 +14,7 @@ import javax.ws.rs.core.MediaType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOContext;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
@@ -39,8 +40,8 @@ public class Chat {
 	private int pruneLength = contextSize / 2;
 	//private int tokenBuffer = 756;
 	private String sessionName = null;
-	private String saveName = "chat.save";
-	//private String analyzeName = "analyze.save";
+	private String saveName = "chat.json";
+	//private String analyzeName = "analyze.json";
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
 	private boolean formatOutput = false;
@@ -53,7 +54,9 @@ public class Chat {
 You play the role of an assistant named Siren.
 Begin conversationally.
 """;
-	
+	public Chat() {
+		
+	}
 	public Chat(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig) {
 		this.user = user;
 		this.chatConfig = chatConfig;
@@ -246,7 +249,7 @@ Begin conversationally.
 		anMsg.setContent(cont);
 		areq.getMessages().add(anMsg);
 
-		logger.info(JSONUtil.exportObject(areq));;
+		// logger.info(JSONUtil.exportObject(areq));;
 		
 		return areq;
 	}
@@ -531,6 +534,12 @@ Begin conversationally.
 			while (line != null && line.equalsIgnoreCase("/quit") == false && line.equalsIgnoreCase("/exit") == false && line.equalsIgnoreCase("/bye") == false) {
 				if(lastRep == null && req.getMessages().size() > 0) {
 					logger.info("Initializing ...");
+					if(chatConfig.get("scene") != null) {
+						logger.info((String)chatConfig.get("scene"));
+					}
+					else if(!"random".equals(chatConfig.get("setting"))) {
+						logger.info((String)chatConfig.get("setting"));
+					}
 					lastRep = chat(req);
 					if(lastRep != null) {
 						handleResponse(req, lastRep, true);
@@ -571,6 +580,18 @@ Begin conversationally.
 				}
 				else if(line.startsWith("/sdprompt")) {
 					logger.info(SDPrompt(req, line.substring(9).trim(), false));
+					continue;
+				}
+				if(line.equals("/look")) {
+					
+					String char1 = NarrativeUtil.describe(null, chatConfig.get("systemCharacter"));
+					String char2 = NarrativeUtil.describe(null, chatConfig.get("userCharacter"));
+					logger.info("Character 1: " + char1);
+					logger.info("Character 2: " + char2);
+					OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following two characters. Include all physical, behavioral, and personality details." + System.lineSeparator() + char1 + System.lineSeparator() + char2, 0, 0, false));
+					if(oresp != null && oresp.getMessage() != null) {
+						logger.info(oresp.getMessage().getContent());
+					}
 					continue;
 				}
 				if(line.equals("/prune")) {
@@ -779,14 +800,18 @@ Begin conversationally.
 		OllamaMessage msg = new OllamaMessage();
 		msg.setRole(role);
 		msg.setContent(message);
-		
-		prune(req, false);
+		if(chatConfig != null) {
+			prune(req, false);
+		}
 		req.getMessages().add(msg);
 
 		return msg;
 	}
 	
 	public OllamaRequest getPrunedRequest(OllamaRequest inReq) {
+		if(promptConfig == null) {
+			return inReq;
+		}
 		OllamaRequest outReq = new OllamaRequest();
 		outReq.setContext(inReq.getContext());
 		outReq.setModel(inReq.getModel());

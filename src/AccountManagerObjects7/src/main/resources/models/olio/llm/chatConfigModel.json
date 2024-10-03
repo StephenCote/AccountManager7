@@ -9,7 +9,7 @@
 			"name": "rating",
 			"baseClass": "org.cote.accountmanager.olio.llm.ESRBEnumType",
 			"type": "enum",
-			"maxLength": 2,
+			"maxLength": 3,
 			"default": "E"
 		},
 		{

@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 import java.util.UUID;
 
 import org.apache.commons.cli.CommandLine;
@@ -82,7 +83,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("prompt", true, "Chat prompt");
 		options.addOption("duel", true, "Dualing chat prompts (-dual #)");
 		options.addOption("prune", false, "Bit indicating to auto-prune conversation threads.");
-		
+		options.addOption("auto", false, "Bit indicating to auto generate (create a brief narrative) of the starting scene");
 		//options.addOption("promptConfig", true, "Prompt configuration file");
 		options.addOption("chatConfig", true, "Chat configuration");
 		options.addOption("promptConfig", true, "Name of user's prompt configuration file - default will be used to create it if it doesn't exist.");
@@ -368,7 +369,8 @@ public class ChatAction extends CommonAction implements IAction{
 					cfg.set("useNLP", cmd.hasOption("nlp"));
 					cfg.set("nlpCommand", cmd.getOptionValue("nlp"));
 					cfg.set("useJailBreak", cmd.hasOption("jailbreak"));
-					cfg.set("setting", cmd.getOptionValue("setting"));
+					String set = cmd.getOptionValue("setting");
+					cfg.set("setting", set);
 					cfg.set("includeScene", cmd.hasOption("scene"));
 					cfg.set("prune", cmd.hasOption("prune"));
 					if(cmd.hasOption("rating")) {
@@ -382,14 +384,27 @@ public class ChatAction extends CommonAction implements IAction{
 						List<BaseRecord> ainters = cfg.get(OlioFieldNames.FIELD_INTERACTIONS);
 						for(BaseRecord i : inters) {
 							if(i != null) {
-								IOSystem.getActiveContext().getMemberUtil().member(user, cfg, i, null, false);
+								IOSystem.getActiveContext().getMemberUtil().member(user, cfg, OlioFieldNames.FIELD_INTERACTIONS, i, null, false);
 							}
 						}
 						cfg.set(OlioFieldNames.FIELD_INTERACTIONS, inters);
 						for(BaseRecord i : inters) {
 							if(i != null) {
-								IOSystem.getActiveContext().getMemberUtil().member(user, cfg, i, null, true);
+								IOSystem.getActiveContext().getMemberUtil().member(user, cfg, OlioFieldNames.FIELD_INTERACTIONS, i, null, true);
 							}
+						}
+						if(inters.size() > 0 && cmd.hasOption("auto")) {
+							if(set != null && set.equals("random")) {
+								set = NarrativeUtil.getRandomSetting();
+								logger.info("Random setting: " + set);
+								cfg.set("setting", set);
+							}
+							logger.info("Generating the chat scene...");
+							BaseRecord i2 = inters.get((new Random()).nextInt(inters.size()));
+							String scene = ChatUtil.generateAutoScene(octx, char1, char2, i2, cmd.getOptionValue("model"), set);
+							logger.info("Scene: " + scene);
+							cfg.set("scene", scene);
+							
 						}
 						if(cmd.hasOption("reimage")) {
 							// char1.setValue("narrative", null);
@@ -423,7 +438,7 @@ public class ChatAction extends CommonAction implements IAction{
 			else if(cmd.hasOption("chatConfig")) {
 				logger.info("Export chat config " + cmd.getOptionValue("chatConfig") + " to "+ cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
-				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), cfg.toFilteredString());
+				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), cfg.toForeignFilteredString());
 			}
 			else if(cmd.hasOption("promptConfig")) {
 				logger.info("Export prompt config " + cmd.getOptionValue("promptConfig") + " to "+ cmd.getOptionValue(FieldNames.FIELD_PATH));
@@ -492,7 +507,7 @@ public class ChatAction extends CommonAction implements IAction{
 				chat.continueChat(req1, message1);
 
 				if(cmd.hasOption("debug")) {
-					FileUtil.emitFile("./chat1.save", JSONUtil.exportObject(req1));
+					FileUtil.emitFile("./chat1.json", JSONUtil.exportObject(req1));
 				}
 				
 				message2 = req1.getMessages().get(req1.getMessages().size() - 1).getContent();
@@ -504,7 +519,7 @@ public class ChatAction extends CommonAction implements IAction{
 				*/
 				chat2.continueChat(req2, message2);
 				if(cmd.hasOption("debug")) {
-					FileUtil.emitFile("./chat2.save", JSONUtil.exportObject(req2));
+					FileUtil.emitFile("./chat2.json", JSONUtil.exportObject(req2));
 				}
 
 				message1 = req2.getMessages().get(req2.getMessages().size() - 1).getContent();

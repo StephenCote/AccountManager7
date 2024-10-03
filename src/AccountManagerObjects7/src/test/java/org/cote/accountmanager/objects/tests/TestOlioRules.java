@@ -3,21 +3,38 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import java.util.UUID;
 
+import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.InteractionUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
+import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.junit.Test;
 
@@ -79,6 +96,84 @@ public class TestOlioRules extends BaseTest {
 		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
 
+		List<BaseRecord> inters = new ArrayList<>();
+		BaseRecord inter = null;
+		for(int i = 0; i < 10; i++) {
+			inter = InteractionUtil.randomInteraction(octx, per2, per1);
+			if(inter != null) {
+				inters.add(inter);
+				//break;
+			}
+		}
+		
+		inter = inters.get((new Random()).nextInt(inters.size()));
+		/*
+		logger.info(NarrativeUtil.describe(octx, per1, true, true, false));
+		logger.info(NarrativeUtil.describe(octx, per2, true, true, false));
+		logger.info(NarrativeUtil.getRandomSetting());
+		logger.info(NarrativeUtil.describeInteraction(inter));
+		*/
+		try {
+		String scene = ChatUtil.generateAutoScene(octx, per2, per1, inter, "fim-local", NarrativeUtil.getRandomSetting());
+		logger.info("Scene: " + scene);
+		}
+		catch(Exception e) {
+			e.printStackTrace();
+		}
+		
+		/*
+		String cfgName = "chat.config - " + UUID.randomUUID().toString();
+		BaseRecord cfg = ChatUtil.getCreateChatConfig(testUser1, cfgName);
+		assertNotNull("CFG is null", cfg);
+
+		IOSystem.getActiveContext().getRecordUtil().createRecords(inters.toArray(new BaseRecord[0]));
+		try {
+			cfg.set("universeName", octx.getUniverse().get(FieldNames.FIELD_NAME));
+			cfg.set("worldName", octx.getWorld().get(FieldNames.FIELD_NAME));
+			cfg.set("startMode", "system");
+			cfg.set("assist", false);
+			cfg.set("useNLP", false);
+			cfg.set("nlpCommand", null);
+			cfg.set("useJailBreak", false);
+			cfg.set("setting", "random");
+			cfg.set("includeScene", true);
+			cfg.set("prune", false);
+			cfg.set("rating", ESRBEnumType.T);
+			cfg.set("llmModel", "fim-local");
+			cfg.set("systemCharacter", per2);
+			cfg.set("userCharacter", per1);
+			cfg.set(OlioFieldNames.FIELD_INTERACTIONS, inters);
+			for(BaseRecord i : inters) {
+				if(i != null) {
+					IOSystem.getActiveContext().getMemberUtil().member(testUser1, cfg, OlioFieldNames.FIELD_INTERACTIONS, i, null, true);
+				}
+			}
+			NarrativeUtil.describePopulation(octx, cfg);
+			cfg = IOSystem.getActiveContext().getAccessPoint().update(testUser1, cfg);
+		}
+		catch(ModelNotFoundException | FieldException | ValueException e) {
+			logger.error(e);
+		}
+		
+		
+		CacheUtil.clearCache();
+		
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Chat", "DATA", testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, cfgName);
+		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		
+		q.planCommon(false);
+		q.planField(OlioFieldNames.FIELD_INTERACTIONS);
+		q.setValue("debug", true);
+		
+		BaseRecord cfg2 = IOSystem.getActiveContext().getSearch().findRecord(q);
+		//BaseRecord cfg2 = ChatUtil.getCreateChatConfig(testUser1, cfgName);
+		inters = cfg2.get(OlioFieldNames.FIELD_INTERACTIONS);
+
+		logger.info("Inters: " + inters.size());
+		assertTrue("Expected interactions", inters.size() > 0);
+		*/
+		
 		/*
 		if(debugBreak) {
 			logger.info("Debug check");

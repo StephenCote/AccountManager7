@@ -116,6 +116,10 @@ public class RecordUtil {
 
 	}
 
+	public static String toForeignFilteredJSONString(BaseRecord rec) {
+		sortFields(rec);
+		return JSONUtil.exportObject(rec, RecordSerializerConfig.getForeignFilteredModule());
+	}
 	public static String toFilteredJSONString(BaseRecord rec) {
 		sortFields(rec);
 		return JSONUtil.exportObject(rec, RecordSerializerConfig.getFilteredModule());

@@ -13,15 +13,24 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.PersonalityProfile;
+import org.cote.accountmanager.olio.ProfileComparison;
+import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
+import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -30,6 +39,69 @@ public class ChatUtil {
 	
 	private static final Logger logger = LogManager.getLogger(ChatUtil.class);
 
+	private static String autoScenePrompt = "Create a description for a roleplay scenario to give to two people playing the following two characters, in the designated setting, in the middle of or conclusion of the specified scene. Only include character traits or details pertinent to the description.  Keep the description as short as possible, including the location, timeframe, character names, and key interactions in process or their outcomes.  Do not separately list out characters or provide a title, limit your response only to the description. For example, if given the characters Bob and Fran, and a successful interaction of building a relationship, your response would be something like: \"In an ancient Roman villa overlooking the Bay of Naples, Bob has been making his move, using his charm to try and win over Fran's heart. But Fran is not one to be easily swayed, and she's pushing back against Bob' advances with her sharp intellect and quick wit. The air is thick with tension as they engage in a battle of wits, their physical attraction to each other simmering just below the surface.";
+	public static String generateAutoScene(OlioContext octx, BaseRecord character1, BaseRecord character2, BaseRecord interaction, String model, String setting) {
+		
+		PersonalityProfile sysProf = ProfileUtil.getProfile(null, character1);
+		PersonalityProfile usrProf = ProfileUtil.getProfile(null, character2);
+		ProfileComparison profComp = new ProfileComparison(null, sysProf, usrProf);
+		
+		String ageCompat = "about the same age";
+		if(profComp.doesAgeCrossBoundary()) {
+			ageCompat = "aware of the difference in their ages";
+		}
+
+		String raceCompat = "not compatible";
+		if(CompatibilityEnumType.compare(profComp.getRacialCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
+			raceCompat = "compatible";
+		}
+
+		String romCompat = "they'd be doomed to fail";
+		if(CompatibilityEnumType.compare(profComp.getRomanticCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
+			romCompat = "there could be something between them";
+		}
+
+		String leadDesc = "Neither one is a natural leader.";
+		
+		String contest = character1.get(FieldNames.FIELD_FIRST_NAME);
+		PersonalityProfile outLead = PersonalityUtil.identifyLeaderPersonality(Arrays.asList(sysProf, usrProf));
+		boolean isLeaderContest = false;
+		
+		leadDesc = outLead.getRecord().get(FieldNames.FIELD_FIRST_NAME) + " is a natural leader.";
+		if(outLead.getId() == sysProf.getId()) {
+			isLeaderContest = GroupDynamicUtil.contestLeadership(null, null, Arrays.asList(usrProf), sysProf).size() > 0;
+			contest = usrProf.getRecord().get(FieldNames.FIELD_FIRST_NAME);
+		}
+		else {
+			isLeaderContest = GroupDynamicUtil.contestLeadership(null, null, Arrays.asList(sysProf), usrProf).size() > 0;
+		}
+		if(isLeaderContest) {
+			leadDesc += " " + contest + " may challenge the leader.";
+		}
+
+		String comp = "Character compatability: They are " + ageCompat + ". Racially, they are " + raceCompat + ". Romantically, " + romCompat + ". " + leadDesc;
+		
+		String cd1 = NarrativeUtil.describe(octx, character1, true, true, false);
+		String cd2 = NarrativeUtil.describe(octx, character2, true, true, false);
+		String id1 = NarrativeUtil.describeInteraction(interaction);
+		String set = setting;
+		String prompt = autoScenePrompt + System.lineSeparator() + cd1 + System.lineSeparator() + cd2 + System.lineSeparator() + comp + System.lineSeparator() + "Setting: " + set + System.lineSeparator() + "Scene: " + id1;
+		
+		logger.info(prompt);
+		
+		OllamaRequest req = new OllamaRequest();
+		req.setModel(model);
+		req.setStream(false);
+		Chat c = new Chat();
+		c.newMessage(req, prompt);
+		OllamaResponse rep = c.chat(req);
+		if(rep != null && rep.getMessage() != null) {
+			return rep.getMessage().getContent();
+		}
+		return null;
+		
+	}
+	
 	public static boolean saveSession(BaseRecord user, OllamaRequest req, String sessionName) {
 		
 		BaseRecord dat = getSessionData(user, sessionName);
@@ -105,9 +177,8 @@ public class ChatUtil {
 		if(!req.contains(OlioFieldNames.FIELD_INTERACTIONS)) {
 			req.add(OlioFieldNames.FIELD_INTERACTIONS);
 		}
-		if(!req.contains(OlioFieldNames.FIELD_INTERACTION)) {
-			req.add(OlioFieldNames.FIELD_INTERACTION);
-		}
+		// q.setValue("debug", true);
+
 		BaseRecord dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 		
 		if(dat == null) {
@@ -121,6 +192,14 @@ public class ChatUtil {
 
 			dat = IOSystem.getActiveContext().getAccessPoint().create(user, dat);
 		}
+
+		else {
+			//IOSystem.getActiveContext().getReader().populate(dat, new String[] {OlioFieldNames.FIELD_INTERACTIONS}, 2);
+			//List<BaseRecord> inter = dat.get(OlioFieldNames.FIELD_INTERACTIONS);
+			//logger.info("Inters: " + inter.size());
+
+		}
+
 		return dat;
 	}
 	public static BaseRecord getDefaultPrompt() {

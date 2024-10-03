@@ -269,43 +269,7 @@ public class ChatService {
 		}
 		return rep;
 	}
-	/*
-	private BaseRecord getCharacter(BaseRecord user, String name) {
-		String uname = user.get(FieldNames.FIELD_NAME);
-		String key = uname + "-" + name;
-		
-		if(chatMap.containsKey(key)) {
-			return charMap.get(key);
-		}
-		BaseRecord chart = null;
-		List<BaseRecord> pop = new ArrayList<>();
-		if(!popMap.containsKey(uname)) {
-			OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
-			octx.startOrContinueEpoch();
-			BaseRecord[] locs = octx.getLocations();
-			for(BaseRecord lrec : locs) {
-				octx.startOrContinueLocationEpoch(lrec);
-				octx.startOrContinueIncrement();
-				octx.evaluateIncrement();
-				pop.addAll(octx.getPopulation(lrec));
-				/// Depending on the staging rule, the population may not yet be dressed or have possessions
-				///
-				ApparelUtil.outfitAndStage(octx, null, pop);
-				ItemUtil.showerWithMoney(octx, pop);
-				octx.processQueue();
-			}
-			popMap.put(uname, pop);
-		}
-		else {
-			pop = popMap.get(uname);
-		}
-		Optional<BaseRecord> brec = pop.stream().filter(r -> name.equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
-		if(brec.isPresent()) {
-			chart = brec.get();
-		}
-		return chart;
-	}
-	*/
+
 	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
 		OllamaRequest req = null;
 		Chat chat = null;
@@ -338,75 +302,6 @@ public class ChatService {
 		return req;
 	}
 	
-	/*
-	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
-		String systemName = creq.getSystemCharacter();
-		String userName = creq.getUserCharacter();
-		ESRBEnumType rating = creq.getRating();
-		String key = user.get(FieldNames.FIELD_NAME) + "-" + systemName + "-" + userName;
-		//logger.info("Chat: " + key + " " + (reqMap.containsKey(key) ? "continues":"begins"));
-		if(reqMap.containsKey(key)) {
-			return reqMap.get(key);
-		}
-		
-		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
-		BaseRecord epoch = null;
-		List<BaseRecord> pop = new ArrayList<>();
-		BaseRecord char1 = null;
-		BaseRecord char2 = null;
-		BaseRecord inter = null;
-		BaseRecord evt = null;
-		BaseRecord cevt = null;
-
-		NarrativeUtil.setDescribePatterns(false);
-		NarrativeUtil.setDescribeFabrics(false);
-		// octx = OlioContextUtil.getGridContext(user, context.getInitParameter("datagen.path"), "My Grid Universe", "My Grid World", false);
-		epoch = octx.startOrContinueEpoch();
-		BaseRecord[] locs = octx.getLocations();
-		for(BaseRecord lrec : locs) {
-			evt = octx.startOrContinueLocationEpoch(lrec);
-			cevt = octx.startOrContinueIncrement();
-			octx.evaluateIncrement();
-			pop.addAll(octx.getPopulation(lrec));
-			/// Depending on the staging rule, the population may not yet be dressed or have possessions
-			///
-			ApparelUtil.outfitAndStage(octx, null, pop);
-			ItemUtil.showerWithMoney(octx, pop);
-			octx.processQueue();
-			
-		}
-
-		Optional<BaseRecord> brec = pop.stream().filter(r -> systemName.equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
-		if(brec.isPresent()) {
-			char1 = brec.get();
-		}
-
-		Optional<BaseRecord> brec2 = pop.stream().filter(r -> userName.equals(r.get(FieldNames.FIELD_FIRST_NAME))).findFirst();
-		if(brec2.isPresent()) {
-			char2 = brec2.get();
-		}
-		
-		if(char1 != null && char2 != null) {
-			for(int i = 0; i < 10; i++) {
-				inter = InteractionUtil.randomInteraction(octx, char1, char2);
-				if(inter != null) {
-					break;
-				}
-			}
-			IOSystem.getActiveContext().getRecordUtil().createRecord(inter);
-		}
-		ChatBAK chat = getChat(user, creq, key);
-
-		String prompt = "You are assistant, a superhelpful friend to all.";
-
-		OllamaRequest req = chat.getChatPrompt(octx, prompt, null, evt, cevt, char1, char2, inter, false);
-		reqMap.put(key, req);
-		octx.processQueue();
-		octx.clearCache();
-		/// chat.continueChat(req, null);
-		return req;
-	}
-	*/
 	private Chat getChat(BaseRecord user, OllamaChatRequest req, String key) {
 		if(chatMap.containsKey(key)) {
 			return chatMap.get(key);
@@ -423,43 +318,7 @@ public class ChatService {
 		}
 		return chat;
 	}
-	/*
-	private ChatBAK getChat(BaseRecord user, OllamaChatRequest req, String key) {
-		if(chatMap.containsKey(key)) {
-			return chatMap.get(key);
-		}
-		PromptConfiguration pc = null;
-		if(req.getUserPrompt() != null) {
-			pc = JSONUtil.importObject(getCreateUserPrompt(user, req.getUserPrompt()), PromptConfiguration.class);
-		}
-		else {
-			pc = JSONUtil.importObject(ResourceUtil.getResource("olio/llm/chat.config.json"), PromptConfiguration.class);
-		}
-		if(pc == null) {
-			logger.error("Failed to load prompt configuration");
-			return null;
-		}
 
-		ChatBAK chat = new ChatBAK(user);
-		chat.setPromptConfig(pc);
-		chat.setRating(req.getRating());
-		chat.setSettingStr(NarrativeUtil.getRandomSetting());
-		chat.setIncludeScene(true);
-		chat.setUseAssist(req.isAssist());
-		chat.setUseNLP(req.isUseNLP());
-		String model = req.getModel();
-		if(model == null || model.length() == 0) {
-			//model = "dolphin-llama3:8b-256k-v2.9-q5_K_M";
-			model = "dolphin-llama3:latest";
-			//model = "llama2-uncensored:7b-chat-q8_0";
-		}
-		chat.setModel(model);
-		
-		chatMap.put(key, chat);
-		return chat;
-	
-	}
-	*/
 	private String getCreateUserPrompt(BaseRecord user, String name) {
 		BaseRecord dat = getCreatePromptData(user, name);
 		IOSystem.getActiveContext().getReader().populate(dat, new String[] {FieldNames.FIELD_BYTE_STORE});

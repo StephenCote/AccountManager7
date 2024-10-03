@@ -313,7 +313,7 @@ public class InteractionUtil {
 			}
 		}
 		ReasonEnumType actorReason = inter.getEnum(OlioFieldNames.FIELD_ACTOR_REASON);
-		if(actorReasons.size() == 0 && actorReason != ReasonEnumType.UNKNOWN) {
+		if(actorReasons.size() == 0 || actorReason != ReasonEnumType.UNKNOWN) {
 			logger.warn("Failed to identify any possible reasons");
 			return null;
 		}

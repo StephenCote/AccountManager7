@@ -30,6 +30,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
+import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 
 public class AM7LoginModule implements LoginModule {
@@ -86,9 +87,7 @@ public class AM7LoginModule implements LoginModule {
     }
  
     private BaseRecord getLatestCredential(BaseRecord user) {
-    	return IOSystem.getActiveContext().getRecordUtil().getRecordByQuery(
-    		IOSystem.getActiveContext().getRecordUtil().getLatestReferenceQuery(user, ModelNames.MODEL_CREDENTIAL)
-    	);
+    	return CredentialUtil.getLatestCredential(user);
     }
     /*
 		Query query = QueryUtil.createQuery(ModelNames.MODEL_CREDENTIAL, FieldNames.FIELD_REFERENCE_TYPE, user.getModel());

@@ -64,6 +64,11 @@ public abstract class BaseRecord {
 	public String toString() {
 		return RecordUtil.toJSONString(this, true, true);
 	}
+
+	@JsonIgnore
+	public String toForeignFilteredString() {
+		return RecordUtil.toForeignFilteredJSONString(this);
+	}
 	
 	@JsonIgnore
 	public String toFilteredString() {
