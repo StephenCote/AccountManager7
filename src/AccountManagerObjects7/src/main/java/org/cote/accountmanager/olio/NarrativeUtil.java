@@ -593,6 +593,9 @@ public class NarrativeUtil {
 			case EXPRESS_INDIFFERENCE:
 				desc = "being indifferent";
 				break;
+			case HELP:
+				desc = "helping";
+				break;
 			case INTIMATE:
 				desc = "being intimate";
 				break;
@@ -707,6 +710,9 @@ public class NarrativeUtil {
 				break;
 			case EXPRESS_INDIFFERENCE:
 				desc = "try to ignore";
+				break;
+			case HELP:
+				desc = "help";
 				break;
 			case INTIMATE:
 				desc = "become intimate with";

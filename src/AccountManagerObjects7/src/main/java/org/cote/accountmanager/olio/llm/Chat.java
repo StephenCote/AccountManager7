@@ -196,6 +196,7 @@ Begin conversationally.
 		int max = Math.min(offset + count, lines.size());
 		if(lines.size() == 0 || offset >= lines.size()) {
 			// 92 6 90
+			logger.info("There is no chat history to analyze");
 			// logger.warn("Invalid size or offset: " + lines.size() + ":" + max + ":" + offset);
 			return null;
 		}
@@ -277,6 +278,7 @@ Begin conversationally.
 		}
 		int max = Math.min(offset + count, lines.size());
 		if(lines.size() == 0 || offset >= lines.size()) {
+			logger.info("There is no chat history to to narrate");
 			return null;
 		}
 		

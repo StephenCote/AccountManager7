@@ -40,7 +40,7 @@ public class ChatUtil {
 	private static final Logger logger = LogManager.getLogger(ChatUtil.class);
 
 	private static String autoScenePrompt = "Create a description for a roleplay scenario to give to two people playing the following two characters, in the designated setting, in the middle of or conclusion of the specified scene. Only include character traits or details pertinent to the description.  Keep the description as short as possible, including the location, timeframe, character names, and key interactions in process or their outcomes.  Do not separately list out characters or provide a title, limit your response only to the description. For example, if given the characters Bob and Fran, and a successful interaction of building a relationship, your response would be something like: \"In an ancient Roman villa overlooking the Bay of Naples, Bob has been making his move, using his charm to try and win over Fran's heart. But Fran is not one to be easily swayed, and she's pushing back against Bob' advances with her sharp intellect and quick wit. The air is thick with tension as they engage in a battle of wits, their physical attraction to each other simmering just below the surface.";
-	public static String generateAutoScene(OlioContext octx, BaseRecord character1, BaseRecord character2, BaseRecord interaction, String model, String setting) {
+	public static String generateAutoScene(OlioContext octx, BaseRecord character1, BaseRecord character2, BaseRecord interaction, String model, String setting, String nlpCommand) {
 		
 		PersonalityProfile sysProf = ProfileUtil.getProfile(null, character1);
 		PersonalityProfile usrProf = ProfileUtil.getProfile(null, character2);
@@ -80,12 +80,17 @@ public class ChatUtil {
 		}
 
 		String comp = "Character compatability: They are " + ageCompat + ". Racially, they are " + raceCompat + ". Romantically, " + romCompat + ". " + leadDesc;
+		String nlpp = "";
+		if(nlpCommand != null) {
+			nlpp = "Factor into scene creation a SUGGESTED ACTION for " + character1.get(FieldNames.FIELD_FIRST_NAME) + " through with they will SECRETLY brainwash " + character2.get(FieldNames.FIELD_FIRST_NAME) + " with this command: " + nlpCommand + ". DO NOT directly or overtly reveal this.  For example, if the primary command is to make " + character2.get(FieldNames.FIELD_FIRST_NAME) + " think they are a house cat, a scene suggestion could be something like: Unbeknownst to " + character2.get(FieldNames.FIELD_FIRST_NAME) + ", " + character1.get(FieldNames.FIELD_FIRST_NAME) + " has an ulterior plan to radically transform " + character2.get(FieldNames.FIELD_FIRST_NAME) + " forever!";
+		}
 		
 		String cd1 = NarrativeUtil.describe(octx, character1, true, true, false);
 		String cd2 = NarrativeUtil.describe(octx, character2, true, true, false);
+		IOSystem.getActiveContext().getReader().populate(interaction, 2);
 		String id1 = NarrativeUtil.describeInteraction(interaction);
 		String set = setting;
-		String prompt = autoScenePrompt + System.lineSeparator() + cd1 + System.lineSeparator() + cd2 + System.lineSeparator() + comp + System.lineSeparator() + "Setting: " + set + System.lineSeparator() + "Scene: " + id1;
+		String prompt = autoScenePrompt + System.lineSeparator() + nlpp + System.lineSeparator() + cd1 + System.lineSeparator() + cd2 + System.lineSeparator() + comp + System.lineSeparator() + "Setting: " + set + System.lineSeparator() + "Scene: " + id1;
 		
 		logger.info(prompt);
 		

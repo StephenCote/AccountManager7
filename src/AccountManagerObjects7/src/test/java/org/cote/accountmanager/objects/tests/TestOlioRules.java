@@ -114,7 +114,7 @@ public class TestOlioRules extends BaseTest {
 		logger.info(NarrativeUtil.describeInteraction(inter));
 		*/
 		try {
-		String scene = ChatUtil.generateAutoScene(octx, per2, per1, inter, "fim-local", NarrativeUtil.getRandomSetting());
+		String scene = ChatUtil.generateAutoScene(octx, per2, per1, inter, "fim-local", NarrativeUtil.getRandomSetting(), null);
 		logger.info("Scene: " + scene);
 		}
 		catch(Exception e) {

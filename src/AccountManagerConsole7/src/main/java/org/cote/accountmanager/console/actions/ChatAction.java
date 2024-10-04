@@ -187,6 +187,34 @@ public class ChatAction extends CommonAction implements IAction{
 		NarrativeUtil.setDescribeFabrics(cmd.hasOption("detailed"));
 		String universeName = "My Grid Universe";
 		String worldName = "My Grid World";
+		if(cmd.hasOption("chatConfig") && cmd.hasOption("auto") && cmd.hasOption("update")) {
+			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+			String set = cmd.getOptionValue("setting");
+			List<BaseRecord> ainters = cfg.get(OlioFieldNames.FIELD_INTERACTIONS);
+
+			if(cfg.get("systemCharacter") != null && cfg.get("userCharacter") != null) {
+		
+				if(ainters.size() > 0) {
+					if(set == null || set.equals("random")) {
+						set = NarrativeUtil.getRandomSetting();
+					}
+					logger.info("Generating the chat scene...");
+					BaseRecord i2 = ainters.get((new Random()).nextInt(ainters.size()));
+					String scene = ChatUtil.generateAutoScene(octx, cfg.get("systemCharacter"), cfg.get("userCharacter"), i2, cfg.get("llmModel"), set, cfg.get("nlpCommand"));
+					logger.info("Scene: " + scene);
+					cfg.setValue("scene", scene);
+					Queue.queueUpdate(cfg, new String[] {"scene"});
+					Queue.processQueue(user);
+					
+				}
+				else {
+					logger.warn("Chat config doesn't define any interactions");
+				}
+			}
+			else {
+				logger.warn("Chat config doesn't define both characters");
+			}
+		}
 		if(cmd.hasOption("olio")) {
 			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), universeName, worldName, cmd.hasOption("reset"));
 			List<BaseRecord> rlms = octx.getRealms();
@@ -359,7 +387,9 @@ public class ChatAction extends CommonAction implements IAction{
 			if(cmd.hasOption("chatConfig")) {
 				logger.info("Configure chat");
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
-				
+				String set = cmd.getOptionValue("setting");
+				List<BaseRecord> ainters = cfg.get(OlioFieldNames.FIELD_INTERACTIONS);
+
 				try {
 					cfg.set("event", cevt);
 					cfg.set("universeName", universeName);
@@ -369,7 +399,7 @@ public class ChatAction extends CommonAction implements IAction{
 					cfg.set("useNLP", cmd.hasOption("nlp"));
 					cfg.set("nlpCommand", cmd.getOptionValue("nlp"));
 					cfg.set("useJailBreak", cmd.hasOption("jailbreak"));
-					String set = cmd.getOptionValue("setting");
+					
 					cfg.set("setting", set);
 					cfg.set("includeScene", cmd.hasOption("scene"));
 					cfg.set("prune", cmd.hasOption("prune"));
@@ -381,7 +411,6 @@ public class ChatAction extends CommonAction implements IAction{
 					if(char1 != null && char2 != null) {
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);
-						List<BaseRecord> ainters = cfg.get(OlioFieldNames.FIELD_INTERACTIONS);
 						for(BaseRecord i : inters) {
 							if(i != null) {
 								IOSystem.getActiveContext().getMemberUtil().member(user, cfg, OlioFieldNames.FIELD_INTERACTIONS, i, null, false);
@@ -397,11 +426,11 @@ public class ChatAction extends CommonAction implements IAction{
 							if(set != null && set.equals("random")) {
 								set = NarrativeUtil.getRandomSetting();
 								logger.info("Random setting: " + set);
-								cfg.set("setting", set);
+								//cfg.set("setting", set);
 							}
 							logger.info("Generating the chat scene...");
 							BaseRecord i2 = inters.get((new Random()).nextInt(inters.size()));
-							String scene = ChatUtil.generateAutoScene(octx, char1, char2, i2, cmd.getOptionValue("model"), set);
+							String scene = ChatUtil.generateAutoScene(octx, char1, char2, i2, cmd.getOptionValue("model"), set, cfg.get("nlpCommand"));
 							logger.info("Scene: " + scene);
 							cfg.set("scene", scene);
 							
@@ -423,6 +452,7 @@ public class ChatAction extends CommonAction implements IAction{
 				catch(ModelNotFoundException | FieldException | ValueException e) {
 					logger.error(e);
 				}
+
 			}
 			
 

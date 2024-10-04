@@ -27,6 +27,7 @@ public enum InteractionEnumType {
 	EXCHANGE,
 	EXPRESS_GRATITUDE,
 	EXPRESS_INDIFFERENCE,
+	HELP,
 	INTIMATE,
 	INVESTIGATE,
 	MENTOR,
@@ -44,7 +45,7 @@ public enum InteractionEnumType {
 	UNKNOWN;
 
 	private static List<InteractionEnumType> positiveInteractions = Arrays.asList(new InteractionEnumType[] {
-		ACCOMMODATE, ALLY, BEFRIEND, COOPERATE, DATE, ENTERTAIN, EXPRESS_GRATITUDE, INTIMATE, MENTOR, RECREATE, ROMANCE
+		ACCOMMODATE, ALLY, BEFRIEND, COOPERATE, DATE, ENTERTAIN, EXPRESS_GRATITUDE, INTIMATE, MENTOR, RECREATE, ROMANCE, HELP
 		
 	});
 	private static List<InteractionEnumType> neutralInteractions = Arrays.asList(new InteractionEnumType[] {
