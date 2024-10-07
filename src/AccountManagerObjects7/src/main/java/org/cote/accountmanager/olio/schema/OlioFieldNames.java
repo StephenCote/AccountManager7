@@ -186,6 +186,7 @@ public class OlioFieldNames {
 	public static final String FIELD_SKILLS = "skills";
 	
 	public static final String FIELD_RACE = "race";
+	public static final String FIELD_ETHNICITY = "ethnicity";
 	
 	public static final String FIELD_EYE_COLOR = "eyeColor";
 	public static final String FIELD_HAIR_COLOR = "hairColor";
@@ -245,6 +246,8 @@ public class OlioFieldNames {
 	public static final String FIELD_PHYSICAL_ENDURANCE = "physicalEndurance";
 	public static final String FIELD_MANUAL_DEXTERITY = "manualDexterity";
 	public static final String FIELD_AGILITY = "agility";
+	public static final String FIELD_ATHLETICISM = "athleticism";
+	public static final String FIELD_MAGIC = "magic";
 	public static final String FIELD_SPEED = "speed";
 	public static final String FIELD_MENTAL_STRENGTH = "mentalStrength";
 	public static final String FIELD_MENTAL_ENDURANCE = "mentalEndurance";

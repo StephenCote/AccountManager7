@@ -40,6 +40,11 @@ public class AnimalProfile {
 	private HighEnumType maximumHealth = HighEnumType.DISREGARDED;
 	private HighEnumType luck = HighEnumType.DISREGARDED;
 	private HighEnumType perception = HighEnumType.DISREGARDED;
+	private HighEnumType physicalAppearance = HighEnumType.DISREGARDED;
+	private HighEnumType mentalHealth = HighEnumType.DISREGARDED;
+	private HighEnumType wit = HighEnumType.DISREGARDED;
+	private HighEnumType charm = HighEnumType.DISREGARDED;
+	private HighEnumType beauty = HighEnumType.DISREGARDED;
 	
 	private InstinctEnumType sleep = InstinctEnumType.STASIS;
 	private InstinctEnumType fight = InstinctEnumType.STASIS;
@@ -284,6 +289,46 @@ public class AnimalProfile {
 
 	public void setHealth(HighEnumType health) {
 		this.health = health;
+	}
+
+	public HighEnumType getPhysicalAppearance() {
+		return physicalAppearance;
+	}
+
+	public void setPhysicalAppearance(HighEnumType physicalAppearance) {
+		this.physicalAppearance = physicalAppearance;
+	}
+
+	public HighEnumType getMentalHealth() {
+		return mentalHealth;
+	}
+
+	public void setMentalHealth(HighEnumType mentalHealth) {
+		this.mentalHealth = mentalHealth;
+	}
+
+	public HighEnumType getWit() {
+		return wit;
+	}
+
+	public void setWit(HighEnumType wit) {
+		this.wit = wit;
+	}
+
+	public HighEnumType getCharm() {
+		return charm;
+	}
+
+	public void setCharm(HighEnumType charm) {
+		this.charm = charm;
+	}
+
+	public HighEnumType getBeauty() {
+		return beauty;
+	}
+
+	public void setBeauty(HighEnumType beauty) {
+		this.beauty = beauty;
 	}
 
 	public HighEnumType getMaximumHealth() {

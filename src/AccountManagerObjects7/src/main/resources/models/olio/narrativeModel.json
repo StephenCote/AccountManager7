@@ -20,6 +20,14 @@
 			"type": "string"
 		},
 		{
+			"name": "sceneDescription",
+			"type": "string"
+		},
+		{
+			"name": "interactionDescription",
+			"type": "string"
+		},
+		{
 			"name": "physicalDescription",
 			"type": "string"
 		},

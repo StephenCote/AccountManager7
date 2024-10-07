@@ -11,6 +11,8 @@ import java.util.stream.Collectors;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.olio.EthnicityEnumType;
+import org.cote.accountmanager.olio.RaceEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -20,6 +22,8 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.RecordUtil;
 
+/// TODO: QueryPlan currently won't work with $flex field types
+///
 public class QueryPlan extends LooseRecord {
 	
 	private ModelSchema schema = null;
@@ -132,7 +136,7 @@ public class QueryPlan extends LooseRecord {
 	}
 
 	
-	protected QueryPlan getSubPlan(String fieldName) {
+	public QueryPlan getSubPlan(String fieldName) {
 		if(fieldName.contains(".")) {
 			return getEmbeddedPlan(fieldName);
 		}
@@ -243,9 +247,11 @@ public class QueryPlan extends LooseRecord {
 			}
 			return ob;
 		}).collect(Collectors.toList());
+		/*
 		if(uflds.size() == 0) {
 			logger.info(flds.stream().collect(Collectors.joining(", ")));
 		}
+		*/
 		clearPlan();
 		getPlanFields().addAll(uflds);
 		
@@ -301,7 +307,7 @@ public class QueryPlan extends LooseRecord {
 		);
 	}
 	
-	protected QueryPlan plan(String fieldName, String[] fields) {
+	public QueryPlan plan(String fieldName, String[] fields) {
 		
 		QueryPlan subPlan = null;
 		FieldSchema field = schema.getFieldSchema(fieldName);
@@ -317,6 +323,7 @@ public class QueryPlan extends LooseRecord {
 		}
 		
 		if(!canPlan(field)) {
+			// logger.warn("Can't create a sub plan for " + fieldName);
 			return null;
 		}
 		
@@ -346,5 +353,56 @@ public class QueryPlan extends LooseRecord {
 	public List<BaseRecord> getPlans(){
 		return get("plans");
 	}
+	
+	public BaseRecord filterRecord(BaseRecord rec) {
+		return filterRecord(rec, false);
+	}
+	public BaseRecord filterRecord(BaseRecord rec, boolean decorate) {
+		String model = rec.getModel();
+		ModelSchema ms = RecordFactory.getSchema(model);
+		
+		// logger.info("Filter record to: " + getPlanFields().stream().collect(Collectors.joining(", ")));
+		BaseRecord orec = rec.copyRecord(getPlanFields().toArray(new String[0]));
+		for(String fn : getPlanFields()) {
+			FieldSchema fs = ms.getFieldSchema(fn);
+			if(fs.getFieldType() == FieldEnumType.MODEL || (fs.getFieldType() == FieldEnumType.LIST && "model".equals(fs.getBaseType()))){
+				QueryPlan cqp = getSubPlan(fs.getName());
+				if(cqp != null) {
+					if(fs.getFieldType() == FieldEnumType.LIST) {
+						List<BaseRecord> list = orec.get(fs.getName());
+						orec.setValue(fs.getName(), list.stream().map(li -> cqp.filterRecord(li, decorate)).collect(Collectors.toList()));
+					}
+					else {
+						// logger.info("Plan for " + fs.getName());
+						orec.setValue(fs.getName(), cqp.filterRecord(orec.get(fs.getName()), decorate));
+					}
+				}
+				else {
+					// logger.info("Null plan for " + fs.getName());
+					orec.setValue(fs.getName(), fs.getDefaultValue());
+				}
+			}
+			/// will turn this into a generic decorator if there's more than one or two
+			///
+			else if(decorate && fn.equals("race") && fs.getFieldType() == FieldEnumType.LIST && "string".equals(fs.getBaseType())) {
+				List<String> list = orec.get(fs.getName());
+				orec.setValue(fs.getName(), list.stream().map(r -> {
+					return RaceEnumType.valueOf(RaceEnumType.valueOf(r));
+				}).collect(Collectors.toList()));
+			}
+			else if(decorate && fn.equals("ethnicity") && fs.getFieldType() == FieldEnumType.LIST && "string".equals(fs.getBaseType())) {
+				List<String> list = orec.get(fs.getName());
+				orec.setValue(fs.getName(), list.stream().map(r -> {
+					return EthnicityEnumType.valueOf(EthnicityEnumType.valueOf(r));
+				}).collect(Collectors.toList()));
+			}
+			else {
+				// logger.info("Don't create child plan for " + fn);
+			}
+		}
+		// qp.getPlanFields();
+		return orec;
+	}
+	
 
 }

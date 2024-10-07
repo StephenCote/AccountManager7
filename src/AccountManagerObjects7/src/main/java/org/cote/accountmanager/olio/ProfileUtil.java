@@ -364,6 +364,12 @@ SLOAN Notation
 			prof.setMagic(HighEnumType.valueOf(((int)stats.get("magic")*5)/d1));
 			prof.setLuck(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_LUCK)*5)/d1));
 			prof.setPerception(HighEnumType.valueOf(((int)stats.get(OlioFieldNames.FIELD_PERCEPTION)*5)/d1));
+			
+			prof.setPhysicalAppearance(HighEnumType.valueOf(((int)stats.get("physicalAppearance")*5)/d1));
+			prof.setMentalHealth(HighEnumType.valueOf(((int)stats.get("mentalHealth")*5)/d1));
+			prof.setWit(HighEnumType.valueOf(((int)stats.get("wit")*5)/d1));
+			prof.setCharm(HighEnumType.valueOf(((int)stats.get("charm")*5)/d1));
+			prof.setBeauty(HighEnumType.valueOf(((int)stats.get("beauty")*5)/d1));
 		}
 	}
 	protected static void updateProfile(BaseRecord world, BaseRecord person, PersonalityProfile prof) {

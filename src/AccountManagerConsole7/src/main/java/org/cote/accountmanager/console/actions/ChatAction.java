@@ -200,11 +200,11 @@ public class ChatAction extends CommonAction implements IAction{
 					}
 					logger.info("Generating the chat scene...");
 					BaseRecord i2 = ainters.get((new Random()).nextInt(ainters.size()));
-					String scene = ChatUtil.generateAutoScene(octx, cfg.get("systemCharacter"), cfg.get("userCharacter"), i2, cfg.get("llmModel"), set, cfg.get("nlpCommand"));
-					logger.info("Scene: " + scene);
-					cfg.setValue("scene", scene);
-					Queue.queueUpdate(cfg, new String[] {"scene"});
-					Queue.processQueue(user);
+					ChatUtil.generateAutoScene(octx, cfg, i2, set, true);
+					logger.info("Scene: " + cfg.get("scene"));
+					// cfg.setValue("scene", scene);
+					//Queue.queueUpdate(cfg, new String[] {"scene"});
+					//Queue.processQueue(user);
 					
 				}
 				else {
@@ -430,9 +430,8 @@ public class ChatAction extends CommonAction implements IAction{
 							}
 							logger.info("Generating the chat scene...");
 							BaseRecord i2 = inters.get((new Random()).nextInt(inters.size()));
-							String scene = ChatUtil.generateAutoScene(octx, char1, char2, i2, cmd.getOptionValue("model"), set, cfg.get("nlpCommand"));
-							logger.info("Scene: " + scene);
-							cfg.set("scene", scene);
+							ChatUtil.generateAutoScene(octx, cfg, i2, set, true);
+							logger.info("Scene: " + cfg.get("scene"));
 							
 						}
 						if(cmd.hasOption("reimage")) {

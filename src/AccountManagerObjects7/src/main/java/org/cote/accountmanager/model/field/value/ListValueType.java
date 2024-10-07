@@ -26,7 +26,12 @@ public class ListValueType<T> extends ValueType {
 	public <T> void setValue(T value) throws ValueException {
 		/// this.value = (List)value;
 		// this.value = new ArrayList<>((List)value);
-		this.value = new CopyOnWriteArrayList<>((List)value);
+		if(value != null) {
+			this.value = new CopyOnWriteArrayList<>((List)value);
+		}
+		else {
+			this.value = new CopyOnWriteArrayList<>();
+		}
 	}
 
 }

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -16,8 +17,11 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryPlan;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.model.field.FieldType;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
@@ -33,8 +37,11 @@ import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.junit.Test;
 
@@ -75,27 +82,16 @@ public class TestOlioRules extends BaseTest {
 		assertNotNull("Pop group is null", popGroup);
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
 		
-
-		
-
-
-		
-		
-
-
-		/*
-		OlioTestUtil.outfitAndStage(octx);
-		BaseRecord lrec = octx.getLocations().get(0);
-		List<BaseRecord> pop = octx.getPopulation(lrec);
-		*/
-		
-		
 		logger.info("Imprint Characters");
 		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getLaurelPrint());
 		assertNotNull("Person was null", per1);
 		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
 
+		//logger.info(per1.toFullString());
+		// logger.info(per2.toFullString());
+		
+		
 		List<BaseRecord> inters = new ArrayList<>();
 		BaseRecord inter = null;
 		for(int i = 0; i < 10; i++) {
@@ -105,22 +101,80 @@ public class TestOlioRules extends BaseTest {
 				//break;
 			}
 		}
-		
+
 		inter = inters.get((new Random()).nextInt(inters.size()));
+		
+		logger.info(inter.toForeignFilteredString());
+
 		/*
-		logger.info(NarrativeUtil.describe(octx, per1, true, true, false));
-		logger.info(NarrativeUtil.describe(octx, per2, true, true, false));
-		logger.info(NarrativeUtil.getRandomSetting());
-		logger.info(NarrativeUtil.describeInteraction(inter));
-		*/
-		try {
 		String scene = ChatUtil.generateAutoScene(octx, per2, per1, inter, "fim-local", NarrativeUtil.getRandomSetting(), null);
 		logger.info("Scene: " + scene);
+		*/
+		
+		
+		
+
+		/*
+
+		BaseRecord pact = null;
+		try {
+			
+			pact = ActionUtil.getInAction(per1, "look");
+			if(pact != null) {
+				pact.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
+				Queue.queueUpdate(pact, new String[] {FieldNames.FIELD_TYPE});
+			}
+			/// Epochs and increments are currently pinned against the root location of a realm (which made sense at some point and now just seems like it causes more problems than it solves)
+			/// Therefore, in order to process an action for an actor, it's necessary to start or continue the epoch and increment for their root location in order for the context to be correct, such as if trying to obtain the realm based on the context location, which would return the last location processed, not the correct location
+			///
+			///
+			
+			pact = Actions.beginLook(octx, octx.clock().getIncrement(), per1);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+			
+			pact = Actions.beginGather(octx, octx.clock().getIncrement(), per1, "water", 3);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+			
+			pact = Actions.beginPeek(octx, octx.clock().getIncrement(), per1, per1);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+			
+			pact = Actions.beginUndress(octx, octx.clock().getIncrement(), per1, null, WearLevelEnumType.BASE);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+
+			pact = Actions.beginDress(octx, octx.clock().getIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
+			octx.overwatchActions();
+			logger.info(pact.toString());
+
 		}
-		catch(Exception e) {
+		catch (NullPointerException | NumberFormatException | StackOverflowError | OlioException | OverwatchException  e) {
+			logger.info(e);
 			e.printStackTrace();
 		}
+		Queue.processQueue();
+		*/
 		
+		BaseRecord eper1 = ChatUtil.getFilteredCharacter(per1);
+		logger.info(eper1.toFullString());
+
+		BaseRecord iinter = ChatUtil.getFilteredInteraction(inter);
+		logger.info(iinter.toFullString());
+
+	}
+	
+
+	
+	/*
+		MapUtil.printLocationMap(octx, lrec, realm, pop);
+		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
+		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, lrec));
+		*/
+	
+	/*
+	 	
 		/*
 		String cfgName = "chat.config - " + UUID.randomUUID().toString();
 		BaseRecord cfg = ChatUtil.getCreateChatConfig(testUser1, cfgName);
@@ -155,7 +209,6 @@ public class TestOlioRules extends BaseTest {
 			logger.error(e);
 		}
 		
-		
 		CacheUtil.clearCache();
 		
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(testUser1, ModelNames.MODEL_GROUP, "~/Chat", "DATA", testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -172,72 +225,11 @@ public class TestOlioRules extends BaseTest {
 
 		logger.info("Inters: " + inters.size());
 		assertTrue("Expected interactions", inters.size() > 0);
-		*/
-		
-		/*
-		if(debugBreak) {
-			logger.info("Debug check");
-			return;
-		}
-		*/
-		/*
-		MapUtil.printLocationMap(octx, lrec, realm, pop);
-		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
-		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, lrec));
-		*/
-		
-		/*
-		List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
-		List<BaseRecord> vzoo = GeoLocationUtil.limitToAdjacent(octx, zoo, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
-		logger.info("View Zoo: " + vzoo.size());
-		for(BaseRecord a: zoo) {
-			double dist = GeoLocationUtil.getDistanceToState(per1.get(FieldNames.FIELD_STATE), a.get(FieldNames.FIELD_STATE));
-			logger.info(a.get(FieldNames.FIELD_NAME) + " " + dist + "m");
-		}
-		*/
-		BaseRecord pact = null;
-		try {
-			
-			pact = ActionUtil.getInAction(per1, "look");
-			if(pact != null) {
-				pact.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
-				Queue.queueUpdate(pact, new String[] {FieldNames.FIELD_TYPE});
-			}
-			/// Epochs and increments are currently pinned against the root location of a realm (which made sense at some point and now just seems like it causes more problems than it solves)
-			/// Therefore, in order to process an action for an actor, it's necessary to start or continue the epoch and increment for their root location in order for the context to be correct, such as if trying to obtain the realm based on the context location, which would return the last location processed, not the correct location
-			///
-			///
-			
-			pact = Actions.beginLook(octx, octx.clock().getIncrement(), per1);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-			
-			pact = Actions.beginGather(octx, octx.clock().getIncrement(), per1, "water", 3);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-			
-			pact = Actions.beginPeek(octx, octx.clock().getIncrement(), per1, per1);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-			
-			pact = Actions.beginUndress(octx, octx.clock().getIncrement(), per1, null, WearLevelEnumType.BASE);
-			octx.overwatchActions();
-			logger.info(pact.toString());
 
-			pact = Actions.beginDress(octx, octx.clock().getIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
-			octx.overwatchActions();
-			logger.info(pact.toString());
-			
+	 */
 
-			// 
-		}
-		catch (NullPointerException | NumberFormatException | StackOverflowError | OlioException | OverwatchException  e) {
-			logger.info(e);
-			e.printStackTrace();
-		}
-		Queue.processQueue();
-		/*
-		BaseRecord mact = null;
+	/*
+	 		BaseRecord mact = null;
 		try {
 			mact = ActionUtil.getInAction(per1, "walkTo");
 			if(mact != null) {
@@ -251,11 +243,16 @@ public class TestOlioRules extends BaseTest {
 		}
 		
 		Queue.processQueue();
-		*/
-
+	 */
+	
+	/*
+	List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
+	List<BaseRecord> vzoo = GeoLocationUtil.limitToAdjacent(octx, zoo, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
+	logger.info("View Zoo: " + vzoo.size());
+	for(BaseRecord a: zoo) {
+		double dist = GeoLocationUtil.getDistanceToState(per1.get(FieldNames.FIELD_STATE), a.get(FieldNames.FIELD_STATE));
+		logger.info(a.get(FieldNames.FIELD_NAME) + " " + dist + "m");
 	}
+	*/
 	
-
-	
-
 }

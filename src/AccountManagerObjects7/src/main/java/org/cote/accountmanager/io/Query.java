@@ -120,13 +120,21 @@ public class Query extends LooseRecord{
 	}
 	
 	public QueryPlan planField(String fieldName) {
+		return planField(fieldName, new String[0]);
+	}
+	public QueryPlan planField(String fieldName, String[] subFields) {
+		return planField(fieldName, subFields, true);
+	}
+	public QueryPlan planField(String fieldName, String[] subFields, boolean includeCommon) {
 		QueryPlan qpf = null;
 		if(!getRequest().contains(fieldName)) {
 			QueryPlan qp = plan();
-			qpf = qp.plan(fieldName, new String[0]);
-			if(qpf != null) {
+			qpf = qp.plan(fieldName, subFields);
+			if(qpf != null && subFields.length == 0 && includeCommon) {
 				qpf.planForCommonFields();
-				
+			}
+			else if(qpf == null) {
+				qp.getPlanFields().add(fieldName);
 			}
 			getRequest().add(fieldName);
 		}
@@ -153,12 +161,15 @@ public class Query extends LooseRecord{
 	}
 
 	public QueryPlan plan() {
+		return plan(true);
+	}
+	public QueryPlan plan(boolean includeCommon) {
 		BaseRecord p = get("plan");
 		if(p != null) {
 			return new QueryPlan(p);
 		}
 		List<String> fields = getRequest();
-		if(fields.size() == 0) {
+		if(includeCommon && fields.size() == 0) {
 			requestCommonFields();
 			fields = getRequest();
 		}

@@ -182,7 +182,9 @@ public class OlioTestUtil {
 	public static BaseRecord getImprintedCharacter(OlioContext ctx, List<BaseRecord> pop, CharacterPrint print) {
 		Optional<BaseRecord> oper = pop.stream().filter(p -> print.getName().equals(p.get(FieldNames.FIELD_NAME))).findFirst();
 		if(oper.isPresent()) {
-			return oper.get();
+			BaseRecord ooper = oper.get();
+			ApparelUtil.outfitAndStage(ctx, null, Arrays.asList(ooper));
+			return ooper;
 		}
 		List<BaseRecord> glist = pop.stream().filter(p -> print.getGender().equals(p.get(FieldNames.FIELD_GENDER))).collect(Collectors.toList());
 		if(glist.size() == 0) {
@@ -207,6 +209,9 @@ public class OlioTestUtil {
 			appl.clear();
 			appl.add(apparel);
 			IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
+		}
+		else {
+			ApparelUtil.outfitAndStage(ctx, null, Arrays.asList(temp));
 		}
 
 

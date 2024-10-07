@@ -213,7 +213,68 @@
 			"maxValue": 20,
 			"validateRange": true,
 			"priority": 10
+		},
+		{
+			"name": "physicalAppearance",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.provider.ComputeProvider",
+			"compute": "AVG",
+			"fields": ["physicalStrength", "agility", "maximumHealth"],
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
+			"priority": 15
+		},
+		{
+			"name": "mentalHealth",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.provider.ComputeProvider",
+			"compute": "AVG",
+			"fields": ["willpower", "spirituality"],
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
+			"priority": 15
+		},
+		{
+			"name": "wit",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.provider.ComputeProvider",
+			"compute": "AVG",
+			"fields": ["intelligence", "creativity"],
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
+			"priority": 15
+		},
+		{
+			"name": "charm",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.provider.ComputeProvider",
+			"compute": "AVG",
+			"fields": ["charisma", "wit"],
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
+			"priority": 20
+		},
+		{
+			"name": "beauty",
+			"type": "int",
+			"virtual": true,
+			"provider": "org.cote.accountmanager.provider.ComputeProvider",
+			"compute": "AVG",
+			"fields": ["physicalAppearance", "charm", "manualDexterity", "mentalHealth", "perception"],
+			"minValue": 0,
+			"maxValue": 20,
+			"validateRange": true,
+			"priority": 25
 		}
 	]
 }
+
 

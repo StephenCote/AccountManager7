@@ -988,8 +988,10 @@ public class NarrativeUtil {
 	}
 	
 	public static List<BaseRecord> getCreateNarrative(OlioContext ctx, List<BaseRecord> population, String setting) {
+
 		List<BaseRecord> nar = new ArrayList<>();
 		for(BaseRecord p: population) {
+			IOSystem.getActiveContext().getReader().populate(p, new String[] {"narrative"});
 			BaseRecord onarrative = p.get("narrative");
 			BaseRecord narrative = getNarrative(ctx, p, setting);
 		
