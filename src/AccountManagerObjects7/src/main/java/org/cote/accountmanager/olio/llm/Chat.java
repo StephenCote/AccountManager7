@@ -538,7 +538,8 @@ Begin conversationally.
 				if(lastRep == null && req.getMessages().size() > 0) {
 					logger.info("Initializing ...");
 					if(chatConfig.get("scene") != null) {
-						logger.info((String)chatConfig.get("scene"));
+						String iscene = chatConfig.get("userNarrative.interactionDescription");
+						logger.info((iscene != null ? iscene : (String)chatConfig.get("scene")));
 					}
 					else if(!"random".equals(chatConfig.get("setting"))) {
 						logger.info((String)chatConfig.get("setting"));
