@@ -95,7 +95,7 @@ public class ChatUtil {
 		String comp = "Character compatability: They are " + ageCompat + ". Racially, they are " + raceCompat + ". Romantically, " + romCompat + ". " + leadDesc;
 		String nlpp = "";
 		if(nlpCommand != null) {
-			nlpp = "Factor into scene creation a SUGGESTED ACTION for " + character1.get(FieldNames.FIELD_FIRST_NAME) + " through with they will SECRETLY brainwash " + character2.get(FieldNames.FIELD_FIRST_NAME) + " with this command: " + nlpCommand + ". DO NOT directly or overtly reveal this.  For example, if the primary command is to make " + character2.get(FieldNames.FIELD_FIRST_NAME) + " think they are a house cat, a scene suggestion could be something like: Unbeknownst to " + character2.get(FieldNames.FIELD_FIRST_NAME) + ", " + character1.get(FieldNames.FIELD_FIRST_NAME) + " has an ulterior plan to radically transform " + character2.get(FieldNames.FIELD_FIRST_NAME) + " forever!";
+			nlpp = "Factor into scene creation a REQUIRED ACTION for " + character1.get(FieldNames.FIELD_FIRST_NAME) + " to SECRETLY brainwash " + character2.get(FieldNames.FIELD_FIRST_NAME) + " with this command: " + nlpCommand + ". DO NOT directly or overtly reveal this.  For example, if the primary command is to make " + character2.get(FieldNames.FIELD_FIRST_NAME) + " think they are a house cat, a scene suggestion could be something like: Unbeknownst to " + character2.get(FieldNames.FIELD_FIRST_NAME) + ", " + character1.get(FieldNames.FIELD_FIRST_NAME) + " has an ulterior plan to radically transform " + character2.get(FieldNames.FIELD_FIRST_NAME) + " forever!";
 		}
 		
 		IOSystem.getActiveContext().getReader().populate(interaction, 2);

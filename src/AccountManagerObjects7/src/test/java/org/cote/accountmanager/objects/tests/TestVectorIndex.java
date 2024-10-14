@@ -87,7 +87,7 @@ public class TestVectorIndex extends BaseTest {
 		logger.info("Output: " + output);
 	}
 	*/
-	/*
+	
 	@Test
 	public void TestVectorStore() {
 		logger.info("Testing vector store");
@@ -133,7 +133,7 @@ public class TestVectorIndex extends BaseTest {
 		}
 
 	}
-	*/
+	
 	
 	 public static final String HYBRID_SQL = """
 			    WITH semantic_search AS (
