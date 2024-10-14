@@ -21,20 +21,27 @@
 		<sonar.jacoco.reportPath>${project.basedir}/../target/jacoco.exec</sonar.jacoco.reportPath>
 		<sonar.language>java</sonar.language>
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
-	</properties>
+	</properties
+
+>
 	<repositories>
-	<repository>
-    <id>sonatypeSnapshots</id>
-    <name>Sonatype Snapshots</name>
-    <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-    <releases>
-        <enabled>false</enabled>
-    </releases>
-    <snapshots>
-        <enabled>true</enabled>
-    </snapshots>
-</repository>
-</repositories>
+	    <repository>
+        <id>djl.ai</id>
+        <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+    </repository>
+
+		<repository>
+			<id>sonatypeSnapshots</id>
+			<name>Sonatype Snapshots</name>
+			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</repository>
+	</repositories>
 	<build>
 		<pluginManagement>
 			<plugins>
@@ -46,7 +53,7 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
-		<!--
+			<!--
 		<plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
@@ -120,28 +127,32 @@
 
 				<configuration>
 					<skipTests>false</skipTests>
-					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI --module-path=${compiler.dir} --upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar ${argLine}</argLine>
+					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
+						-XX:+EnableJVMCI --module-path=${compiler.dir}
+						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
+						${argLine}</argLine>
 
 					<includes>
 						<include>**/Test*.java</include>
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestOlioRules.java</exclude>
+						<exclude>**/TestVectorIndex.java</exclude>
 						-->
+						<exclude>**/TestOlioRules.java</exclude>
 						<exclude>**/TestQueryPlan.java</exclude>
-						
+
 						<exclude>**/TestOlio2.java</exclude>
 						<exclude>**/TestOlio.java</exclude>
-					<exclude>**/TestChat.java</exclude>	
+						<exclude>**/TestChat.java</exclude>
 						<exclude>**/TestSD.java</exclude>
 						<!-- Repeatable Set -->
 						<exclude>**/TestRealm.java</exclude>
 						<exclude>**/TestNestedStructures.java</exclude>
-						
+
 						<exclude>**/TestQdrant.java</exclude>
 						<exclude>**/TestCondensedModel.java</exclude>
-						<exclude>**/TestBulkOperation.java</exclude>	
+						<exclude>**/TestBulkOperation.java</exclude>
 						<exclude>**/TestNoise.java</exclude>
 						<exclude>**/TestModelLayout.java</exclude>
 						<exclude>**/TestJournal.java</exclude>
@@ -171,15 +182,14 @@
 						<exclude>**/TestAccessApproval.java</exclude>
 						<exclude>**/TestQuery.java</exclude>
 						<exclude>**/TestValidationRules.java</exclude>
-						
+
 						<!-- Tests with unresolved errors -->
-						
-						
+
 
 						<!-- Situational Tests -->
 						<exclude>**/TestH2Database.java</exclude>
 						<exclude>**/TestPGDatabase.java</exclude>
-						
+
 						<!-- Not intended to be regularly run -->
 						<exclude>**/TestGenerator.java</exclude>
 						<exclude>**/TestNameIdMap.java</exclude>
@@ -348,9 +358,9 @@
 		</dependency>
 
 		<dependency>
-		    <groupId>org.apache.commons</groupId>
-		    <artifactId>commons-csv</artifactId>
-		    <version>1.10.0</version>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-csv</artifactId>
+			<version>1.10.0</version>
 		</dependency>
 
 		<dependency>
@@ -368,7 +378,11 @@
 			<artifactId>log4j-web</artifactId>
 			<version>2.20.0</version>
 		</dependency>
-
+<dependency>
+    <groupId>org.apache.pdfbox</groupId>
+    <artifactId>pdfbox</artifactId>
+    <version>3.0.3</version>
+</dependency>
 		<!--
 		<dependency>
 			<groupId>org.apache.tika</groupId>
@@ -403,38 +417,37 @@
 			<artifactId>jackson-jaxrs-json-provider</artifactId>
 			<version>2.15.2</version>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jsr310</artifactId>
 			<version>2.15.2</version>
 		</dependency>
 
-<dependency>
-    <groupId>javax.ws.rs</groupId>
-    <artifactId>javax.ws.rs-api</artifactId>
-    <version>2.1.1</version>
-</dependency>
+		<dependency>
+			<groupId>javax.ws.rs</groupId>
+			<artifactId>javax.ws.rs-api</artifactId>
+			<version>2.1.1</version>
+		</dependency>
 
-<dependency>
-    <groupId>org.glassfish.jersey.core</groupId>
-    <artifactId>jersey-client</artifactId>
-    <version>2.41</version>
-    <scope>test</scope>
-</dependency>
-<dependency>
-    <groupId>org.glassfish.jersey.inject</groupId>
-    <artifactId>jersey-hk2</artifactId>
-    <version>2.41</version>
-    <scope>test</scope>
-</dependency>
-<dependency>
-	<groupId>org.glassfish.jersey.media</groupId>
-	<artifactId>jersey-media-json-jackson</artifactId>
+		<dependency>
+			<groupId>org.glassfish.jersey.core</groupId>
+			<artifactId>jersey-client</artifactId>
 			<version>2.41</version>
-	<scope>test</scope>
-</dependency>
-
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jersey.inject</groupId>
+			<artifactId>jersey-hk2</artifactId>
+			<version>2.41</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jersey.media</groupId>
+			<artifactId>jersey-media-json-jackson</artifactId>
+			<version>2.41</version>
+			<scope>test</scope>
+		</dependency>
 
 
 		<!--
@@ -516,6 +529,7 @@
 			<artifactId>json</artifactId>
 			<version>20230618</version>
 		</dependency>
+		<!--
 <dependency>
     <groupId>de.articdive</groupId>
     <artifactId>jnoise-pipeline</artifactId>
@@ -526,7 +540,85 @@
   <artifactId>client</artifactId>
   <version>1.7.2</version>
 </dependency>
+-->
 
+		<dependency>
+			<groupId>ai.djl</groupId>
+			<artifactId>api</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>ai.djl</groupId>
+			<artifactId>model-zoo</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl.huggingface</groupId>
+			<artifactId>tokenizers</artifactId>
+		</dependency>
+		<!--
+		<dependency>
+    <groupId>ai.djl.onnxruntime</groupId>
+    <artifactId>onnxruntime-engine</artifactId>
+    <scope>runtime</scope>
+    <exclusions>
+        <exclusion>
+            <groupId>com.microsoft.onnxruntime</groupId>
+            <artifactId>onnxruntime</artifactId>
+        </exclusion>
+    </exclusions>
+</dependency>
+
+<dependency>
+    <groupId>com.microsoft.onnxruntime</groupId>
+    <artifactId>onnxruntime_gpu</artifactId>
+    <version>1.18.0</version>
+    <scope>runtime</scope>
+</dependency>
+-->
+		
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-model-zoo</artifactId>
+		</dependency>
+		
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-engine</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		
+				<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-jni</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		
+<!--
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-native-cu124</artifactId>
+			<classifier>win-x86_64</classifier>
+			<version>2.4.0</version>
+			<scope>runtime</scope>
+		</dependency>
+	-->
+
+		<!--
+		-->
+		<!--
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-native-auto</artifactId>
+			<version>1.9.1</version>
+			<scope>runtime</scope>
+		</dependency>
+		-->
+		<!-- pgvector (Optional) -->
+		<dependency>
+			<groupId>com.pgvector</groupId>
+			<artifactId>pgvector</artifactId>
+			<version>0.1.6</version>
+		</dependency>
 		<!--
 <dependency>
   <groupId>org.tensorflow</groupId>
@@ -535,4 +627,15 @@
 </dependency>
 -->
 	</dependencies>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>ai.djl</groupId>
+				<artifactId>bom</artifactId>
+				<version>0.30.0</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 </project>

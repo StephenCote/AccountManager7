@@ -1,0 +1,31 @@
+/// Adding Vector Extension
+https://dev.to/stephenc222/how-to-use-postgresql-to-store-and-query-vector-embeddings-h4b
+(https://github.com/pgvector/pgvector)
+(https://github.com/pgvector/pgvector#installation-notes---linux-and-mac)
+apt update
+apt install build-essential git postgresql-server-dev-17
+git clone --branch v0.7.4 https://github.com/pgvector/pgvector.git
+cd pgvector
+make
+make install
+
+CREATE EXTENSION if not exists vector;
+
+DROP SEQUENCE IF EXISTS vecdoc_id_seq;
+CREATE SEQUENCE vecdoc_id_seq;
+
+DROP TABLE IF EXISTS vecdoc;
+CREATE TABLE vecdoc (
+	id bigint not null default nextval('vecdoc_id_seq'),
+	objectId varchar(64), modelType varchar(64),
+	documentId varchar(64),
+	chunk int not null default 0,
+	chunkCount int not null default 0,
+	content TEXT,
+	embedding vector(1024),
+	primary key(id)
+);
+
+
+//// Java setup
+https://djl.ai/extensions/tokenizers/
