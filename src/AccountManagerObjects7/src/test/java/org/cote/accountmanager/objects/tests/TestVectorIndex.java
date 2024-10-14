@@ -27,6 +27,7 @@ import org.cote.accountmanager.objects.tests.olio.OlioTranslator;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.junit.Before;
 import org.junit.Test;
 import com.pgvector.PGvector;
 
@@ -47,6 +48,93 @@ import ai.djl.translate.DeferredTranslatorFactory;
 import ai.djl.translate.TranslateException;
 public class TestVectorIndex extends BaseTest {
 
+	@Before
+	public void load() {
+
+		logger.info("Loading Torch ...");
+		System.loadLibrary("torch_cuda");
+		logger.info("... Loaded Torch");
+
+	}
+	
+	/*
+	@Test
+	public void TestPDF() {
+		logger.info("Testing PDF");
+		String pdfText = getPDF("./media/CardFox.pdf");
+		assertNotNull("Text was null", pdfText);
+		logger.info("Text len: " + pdfText.length());
+
+		//logger.info("Begin translating ...");
+		if(documentExists("CardFox")) {
+			deleteDocument("CardFox");
+		}
+		loadDocument("CardFox", pdfText);
+
+	}
+	*/
+	/*
+	@Test
+	public void TestTokenizer() {
+		logger.info("Testing tokenizer");
+		String question = "When did BBC Japan start broadcasting?";
+		String resourceDocument = 
+		  "BBC Japan was a general entertainment Channel.\n" + 
+		  "Which operated between December 2004 and April 2006.\n" + 
+		  "It ceased operations after its Japanese distributor folded.";
+		
+		String output = translate(question, resourceDocument);
+		logger.info("Output: " + output);
+	}
+	*/
+	/*
+	@Test
+	public void TestVectorStore() {
+		logger.info("Testing vector store");
+		
+		// ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_DATA);
+		// logger.info(IOSystem.getActiveContext().getDbUtil().generateSchema(ms));
+		
+		try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
+	        PGvector.addVectorType(con);
+	        ZooModel<String, float[]> model = loadModel(testProperties.getProperty("test.datagen.path") + "/nlp/torchscript/bert-base-cased-squad2");
+	        String[] input = {
+	                "The dog is barking",
+	                "The cat is purring",
+	                "The bear is growling"
+	            };
+	            List<float[]> embeddings = generateEmbeddings(model, input);
+
+	            for (int i = 0; i < input.length; i++) {
+	                PreparedStatement insertStmt = con.prepareStatement("INSERT INTO vecdoc (content, embedding) VALUES (?, ?)");
+	                insertStmt.setString(1, input[i]);
+	                insertStmt.setObject(2, new PGvector(embeddings.get(i)));
+	                insertStmt.executeUpdate();
+	            }
+	            
+	            String query = "growling bear";
+	            float[] queryEmbedding = generateEmbeddings(model, new String[] {query}).get(0);
+	            double k = 60;
+
+	            PreparedStatement queryStmt = con.prepareStatement(HYBRID_SQL);
+	            queryStmt.setObject(1, new PGvector(queryEmbedding));
+	            queryStmt.setObject(2, new PGvector(queryEmbedding));
+	            queryStmt.setString(3, query);
+	            queryStmt.setDouble(4, k);
+	            queryStmt.setDouble(5, k);
+	            ResultSet rs = queryStmt.executeQuery();
+	            while (rs.next()) {
+	                System.out.println(String.format("document: %d, RRF score: %f", rs.getLong("id"), rs.getDouble("score")));
+	            }
+		}
+		catch(SQLException | IOException | ModelException | TranslateException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+
+	}
+	*/
+	
 	 public static final String HYBRID_SQL = """
 			    WITH semantic_search AS (
 			        SELECT id, RANK () OVER (ORDER BY embedding <=> ?) AS rank
@@ -77,7 +165,12 @@ public class TestVectorIndex extends BaseTest {
 	private String predict(OlioTranslator ot, QAInput input) throws ModelNotFoundException, MalformedModelException, IOException, TranslateException {
 		Criteria<QAInput, String> criteria = Criteria.builder()
 				  .setTypes(QAInput.class, String.class)
-				  .optModelPath(Paths.get(testProperties.getProperty("test.datagen.path") + "/nlp/trace_cased_bertqa.pt"))
+		          //  .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/bert-large-nli-cls-token")
+		            .optArgument("normalize", "false")
+		            .optModelPath(Paths.get(testProperties.getProperty("test.datagen.path") + "/nlp/trace_cased_bertqa.pt"))
+				  .optEngine("PyTorch")
+				  //.optDevice(Device.gpu())
+				 
 				  .optTranslator(ot)
 				  .build();
 				ZooModel<QAInput, String> model = criteria.loadModel();
@@ -110,7 +203,7 @@ public class TestVectorIndex extends BaseTest {
 	private ZooModel<String, float[]> getZooModel(){
 		if(zooModel == null) {
 			try {
-				zooModel = loadModel(testProperties.getProperty("test.datagen.path") + "/nlp/torchscript/bert-base-cased-squad2");
+				zooModel = loadModel(testProperties.getProperty("test.datagen.path") + "/nlp/trace_cased_bertqa.gz");
 			} catch (IOException | ModelException e) {
 				logger.error(e);
 				e.printStackTrace();
@@ -211,48 +304,10 @@ public class TestVectorIndex extends BaseTest {
 		}
 		return exists;
 	}
-	
-	@Test
-	public void TestPDF() {
-		logger.info("Testing PDF");
-		String pdfText = getPDF("./media/CardFox.pdf");
-		assertNotNull("Text was null", pdfText);
-		logger.info("Text len: " + pdfText.length());
 
-		//logger.info("Begin translating ...");
-		if(documentExists("CardFox")) {
-			deleteDocument("CardFox");
-		}
-		loadDocument("CardFox", pdfText);
-		
-		/*
-		List<String> chunks = chunkText(pdfText, 15);
-		logger.info("Chunks: " + chunks.size());
-		//List<String> sents = Arrays.asList(pdfText.split("\\.")).stream().map(s -> s.trim()).filter(s -> s.length() > 0).collect(Collectors.toList());
-		assertTrue("Expected chunks", chunks.size() > 0);
-		String chunk1 = chunks.get(0);
-		logger.info("Chunk 1 " + chunk1.length() + " " + chunk1);
-		//logger.info("Sents: " + sents.length);
-		
-		String output = translate("What are the character names?", chunk1);
-		logger.info("End translating ...");
-		logger.info("Translation: " + output);
-		*/
-		/*
-		try {
-			ZooModel<String, float[]> model = loadModel(testProperties.getProperty("test.datagen.path") + "/nlp/torchscript/bert-base-cased-squad2");
-
-            List<float[]> embeddings = generateEmbeddings(model, new String[] {pdfText});
-            logger.info("Emb Size: " + embeddings.size());
-            logger.info("Emb Dimen: " + embeddings.get(0).length);
-		}
-		catch(ModelException | IOException | TranslateException e) {
-			e.printStackTrace();
-		}
-		*/
-	}
-	
 	private String translate(String question, String content) {
+		// "/nlp/bert-base-cased-vocab.txt"
+		// "/nlp/vocab.json"
 		OlioTranslator ot = new OlioTranslator(testProperties.getProperty("test.datagen.path") + "/nlp/bert-base-cased-vocab.txt");
 		
 		QAInput input = new QAInput(question, content);
@@ -265,66 +320,7 @@ public class TestVectorIndex extends BaseTest {
 		}
 		return output;
 	}
-	 
-	@Test
-	public void TestTokenizer() {
-		logger.info("Testing tokenizer");
-		String question = "When did BBC Japan start broadcasting?";
-		String resourceDocument = 
-		  "BBC Japan was a general entertainment Channel.\n" + 
-		  "Which operated between December 2004 and April 2006.\n" + 
-		  "It ceased operations after its Japanese distributor folded.";
-		
-		String output = translate(question, resourceDocument);
-		logger.info("Output: " + output);
-	}
-	 
-	@Test
-	public void TestVectorStore() {
-		logger.info("Testing vector store");
-		
-		// ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_DATA);
-		// logger.info(IOSystem.getActiveContext().getDbUtil().generateSchema(ms));
-		
-		try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
-	        PGvector.addVectorType(con);
-	        ZooModel<String, float[]> model = loadModel(testProperties.getProperty("test.datagen.path") + "/nlp/torchscript/bert-base-cased-squad2");
-	        String[] input = {
-	                "The dog is barking",
-	                "The cat is purring",
-	                "The bear is growling"
-	            };
-	            List<float[]> embeddings = generateEmbeddings(model, input);
 
-	            for (int i = 0; i < input.length; i++) {
-	                PreparedStatement insertStmt = con.prepareStatement("INSERT INTO vecdoc (content, embedding) VALUES (?, ?)");
-	                insertStmt.setString(1, input[i]);
-	                insertStmt.setObject(2, new PGvector(embeddings.get(i)));
-	                insertStmt.executeUpdate();
-	            }
-	            
-	            String query = "growling bear";
-	            float[] queryEmbedding = generateEmbeddings(model, new String[] {query}).get(0);
-	            double k = 60;
-
-	            PreparedStatement queryStmt = con.prepareStatement(HYBRID_SQL);
-	            queryStmt.setObject(1, new PGvector(queryEmbedding));
-	            queryStmt.setObject(2, new PGvector(queryEmbedding));
-	            queryStmt.setString(3, query);
-	            queryStmt.setDouble(4, k);
-	            queryStmt.setDouble(5, k);
-	            ResultSet rs = queryStmt.executeQuery();
-	            while (rs.next()) {
-	                System.out.println(String.format("document: %d, RRF score: %f", rs.getLong("id"), rs.getDouble("score")));
-	            }
-		}
-		catch(SQLException | IOException | ModelException | TranslateException e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-
-	}
-	
 	/// From https://github.com/pgvector/pgvector-java/blob/master/examples/djl/src/main/java/com/example/Example.java
 	/// https://djl.ai/extensions/tokenizers/ for bert-base-cased-squad2
     private static ZooModel<String, float[]> loadModel(String id) throws IOException, ModelException {
@@ -334,11 +330,20 @@ public class TestVectorIndex extends BaseTest {
             //.optModelUrls("djl://ai.djl.huggingface.pytorch/" + id)
             // 384
            //.optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/all-MiniLM-L6-v2")
-            // 1024
-            .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/bert-large-nli-cls-token")
+
+            //.optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/all-mpnet-base-v2")
             // 768 - but produces very large dimensions 
             //.optModelUrls("djl://ai.djl.huggingface.pytorch/bert-base-uncased")
+            
+            // 1024
+            .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/bert-large-nli-cls-token")
+            .optArgument("normalize", "false")
             .optEngine("PyTorch")
+            
+            /*
+            .optEngine("MXNet")
+            .optModelUrls(id)
+            */
             //.optDevice(Device.gpu()) 
             .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
             .build()

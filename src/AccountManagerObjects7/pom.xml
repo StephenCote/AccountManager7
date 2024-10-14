@@ -126,9 +126,14 @@
 				</dependencies>
 
 				<configuration>
+				  <environmentVariables> 
+      <PATH>C:\Users\swcot\.djl.ai\pytorch\2.4.0-20240802-cu124-win-x86_64;${java.library.path}</PATH> 
+    </environmentVariables> 
 					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
+						-Djava.library.path=C:\Users\swcot\.djl.ai\pytorch\2.4.0-20240802-cu124-win-x86_64
+						-Dai.djl.default_engine=PyTorch
 						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
 						${argLine}</argLine>
 
@@ -575,7 +580,35 @@
     <scope>runtime</scope>
 </dependency>
 -->
+<!--
+		<dependency>
+			<groupId>ai.djl.mxnet</groupId>
+			<artifactId>mxnet-model-zoo</artifactId>
+		</dependency>
 		
+		<dependency>
+			<groupId>ai.djl.mxnet</groupId>
+			<artifactId>mxnet-engine</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+				<dependency>
+			<groupId>ai.djl.mxnet</groupId>
+			<artifactId>mxnet-native-auto</artifactId>
+			<version>1.8.0</version>
+			<scope>runtime</scope>
+		</dependency>
+		-->
+		<!--
+<dependency>
+    <groupId>ai.djl.mxnet</groupId>
+    <artifactId>mxnet-native-mkl</artifactId>
+    <classifier>win-x86_64</classifier>
+    <scope>runtime</scope>
+    <version>1.9.1</version>
+</dependency>
+-->
+
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-model-zoo</artifactId>
@@ -593,7 +626,7 @@
 			<scope>runtime</scope>
 		</dependency>
 		
-<!--
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-native-cu124</artifactId>
@@ -601,18 +634,18 @@
 			<version>2.4.0</version>
 			<scope>runtime</scope>
 		</dependency>
-	-->
+	
 
-		<!--
-		-->
-		<!--
+
+
+<!--
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-native-auto</artifactId>
 			<version>1.9.1</version>
 			<scope>runtime</scope>
 		</dependency>
-		-->
+-->
 		<!-- pgvector (Optional) -->
 		<dependency>
 			<groupId>com.pgvector</groupId>

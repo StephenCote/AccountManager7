@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests.olio;
 
 import java.io.IOException;
+import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -36,6 +37,7 @@ public class OlioTranslator implements Translator<QAInput, String> {
 		    vocabulary = DefaultVocabulary.builder()
 		                .optMinFrequency(1)
 		                .addFromTextFile(path)
+		                //.addFromCustomizedFile(path.toUri().toURL(), OlioMXNetVocabParser::parseToken)
 		                .optUnknownToken("[UNK]")
 		                .build();
 	    }
