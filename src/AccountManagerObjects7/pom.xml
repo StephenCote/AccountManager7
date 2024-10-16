@@ -625,13 +625,23 @@
 			<artifactId>pytorch-jni</artifactId>
 			<scope>runtime</scope>
 		</dependency>
+		<!--
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-native-auto</artifactId>
+			<version>1.9.1</version>
+			<scope>runtime</scope>
+		</dependency>
+		-->
+		
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-native-cu118</artifactId>
 			<classifier>win-x86_64</classifier>
 			<version>2.0.1</version>
 			<scope>runtime</scope>
-		</dependency>		
+		</dependency>
+			
 <!--
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>

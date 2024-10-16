@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -47,33 +48,109 @@ import ai.djl.repository.zoo.ZooModel;
 import ai.djl.translate.DeferredTranslatorFactory;
 import ai.djl.translate.TranslateException;
 public class TestVectorIndex extends BaseTest {
+	
+	 public static final String HYBRID_SQL = """
+	    WITH semantic_search AS (
+	        SELECT id, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
+	        FROM vecdoc
+	        WHERE documentId = ?
+	        ORDER BY embedding <=> ?
+	        LIMIT 20
+	    ),
+	    keyword_search AS (
+	        SELECT id, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC), content, chunk
+	        FROM vecdoc, plainto_tsquery('english', ?) query
+	        WHERE to_tsvector('english', content) @@ query
+	        ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC
+	        LIMIT 20
+	    )
+	    SELECT
+	        COALESCE(semantic_search.id, keyword_search.id) AS id,
+	        COALESCE(1.0 / (? + semantic_search.rank), 0.0) +
+	        COALESCE(1.0 / (? + keyword_search.rank), 0.0) AS score,
+	        COALESCE(semantic_search.content, keyword_search.content) as content,
+	        COALESCE(semantic_search.chunk, keyword_search.chunk) as chunk
+	    FROM semantic_search
+	    FULL OUTER JOIN keyword_search ON semantic_search.id = keyword_search.id
+	    ORDER BY score DESC
+	    LIMIT 5
+	    """;
 
 	@Before
 	public void load() {
 
 		logger.info("Loading Torch ...");
-		System.loadLibrary("torch_cuda");
+		//System.loadLibrary("torch_cuda");
 		logger.info("... Loaded Torch");
 
 	}
 	
-	/*
+	
 	@Test
 	public void TestPDF() {
-		logger.info("Testing PDF");
-		String pdfText = getPDF("./media/CardFox.pdf");
-		assertNotNull("Text was null", pdfText);
-		logger.info("Text len: " + pdfText.length());
-
+		logger.info("Testing PDF Vector");
+		String pdfId = "CardFox";
 		//logger.info("Begin translating ...");
-		if(documentExists("CardFox")) {
-			deleteDocument("CardFox");
+		if(documentExists(pdfId)) {
+			deleteDocument(pdfId);
 		}
-		loadDocument("CardFox", pdfText);
+		if(!documentExists(pdfId)) {
+			String pdfText = getPDF("./media/CardFox.pdf");
+			assertNotNull("Text was null", pdfText);
+			logger.info("Text len: " + pdfText.length());
+
+			loadDocument(pdfId, pdfText);
+			//deleteDocument("CardFox");
+		}
+		
+		String query = "Who is Kateri?";
+		//String trans = translate("Extract keywords into a comma-separated list", query);
+		//logger.info("Trans: " + trans);
+		List<Embedding> embs = findByEmbedding(getZooModel(), pdfId, query, 60);
+		List<Integer> chunks = embs.stream().map(e -> e.getChunk()).collect(Collectors.toList());
+		String docStr = null;
+		List<String> ans = new ArrayList<>();
+		logger.info(query);
+		for(Embedding e : embs) {
+			String cnt = e.getContent();
+			logger.info(cnt.length() + " " + cnt);
+			String trans = translate(query, cnt);
+			ans.add(trans);
+			logger.info(trans);
+		}
+		
+		/*
+		if(chunks.size() > 0) {
+			docStr = getDocument(pdfId, chunks.get(0), 1, true);
+		}
+		*/
+		/*
+		List<String> docs = new ArrayList<>();
+		for(int i: chunks) {
+			String doc = getDocument(pdfId, i, 1, false);
+			//logger.info(doc);
+			docs.add(doc);
+		}
+		
+		String docStr = docs.stream().collect(Collectors.joining(System.lineSeparator()));
+		*/
+		//String docStr = docs.get(0);
+		/*
+		logger.info(docStr.length());
+		String trans = translate(query, docStr);
+		logger.info(query);
+		logger.info(trans);
+		*/
+		/*
+		logger.info("Fox Embs: " + embs.size());
+		for(Embedding e : embs) {
+			logger.info(e.getId() + " " + e.getScore() + " " + e.getContent());
+		}
+		*/
 
 	}
-	*/
-	/*
+	
+	
 	@Test
 	public void TestTokenizer() {
 		logger.info("Testing tokenizer");
@@ -86,7 +163,7 @@ public class TestVectorIndex extends BaseTest {
 		String output = translate(question, resourceDocument);
 		logger.info("Output: " + output);
 	}
-	*/
+	
 	
 	@Test
 	public void TestVectorStore() {
@@ -97,7 +174,7 @@ public class TestVectorIndex extends BaseTest {
 		
 		try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
 	        PGvector.addVectorType(con);
-	        ZooModel<String, float[]> model = loadModel(testProperties.getProperty("test.datagen.path") + "/nlp/torchscript/bert-base-cased-squad2");
+	        ZooModel<String, float[]> model = getZooModel();
 	        String[] input = {
 	                "The dog is barking",
 	                "The cat is purring",
@@ -112,52 +189,88 @@ public class TestVectorIndex extends BaseTest {
 	                insertStmt.executeUpdate();
 	            }
 	            
-	            String query = "growling bear";
-	            float[] queryEmbedding = generateEmbeddings(model, new String[] {query}).get(0);
-	            double k = 60;
+	    		String query = "growling bear";
+	    		List<Embedding> embs = findByEmbedding(model, null, query, 60);
+	    		logger.info("Embs: " + embs.size());
 
-	            PreparedStatement queryStmt = con.prepareStatement(HYBRID_SQL);
-	            queryStmt.setObject(1, new PGvector(queryEmbedding));
-	            queryStmt.setObject(2, new PGvector(queryEmbedding));
-	            queryStmt.setString(3, query);
-	            queryStmt.setDouble(4, k);
-	            queryStmt.setDouble(5, k);
-	            ResultSet rs = queryStmt.executeQuery();
-	            while (rs.next()) {
-	                System.out.println(String.format("document: %d, RRF score: %f", rs.getLong("id"), rs.getDouble("score")));
-	            }
+	            
+
 		}
-		catch(SQLException | IOException | ModelException | TranslateException e) {
+		catch(SQLException | TranslateException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
+		
 
 	}
 	
+	private List<Embedding> findByEmbedding(ZooModel<String, float[]> model, String docId, String query, double k){
+		List<Embedding> content = new ArrayList<>();
+		try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
+	        float[] queryEmbedding = generateEmbeddings(model, new String[] {query}).get(0);
 	
-	 public static final String HYBRID_SQL = """
-			    WITH semantic_search AS (
-			        SELECT id, RANK () OVER (ORDER BY embedding <=> ?) AS rank
-			        FROM vecdoc
-			        ORDER BY embedding <=> ?
-			        LIMIT 20
-			    ),
-			    keyword_search AS (
-			        SELECT id, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC)
-			        FROM vecdoc, plainto_tsquery('english', ?) query
-			        WHERE to_tsvector('english', content) @@ query
-			        ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC
-			        LIMIT 20
-			    )
-			    SELECT
-			        COALESCE(semantic_search.id, keyword_search.id) AS id,
-			        COALESCE(1.0 / (? + semantic_search.rank), 0.0) +
-			        COALESCE(1.0 / (? + keyword_search.rank), 0.0) AS score
-			    FROM semantic_search
-			    FULL OUTER JOIN keyword_search ON semantic_search.id = keyword_search.id
-			    ORDER BY score DESC
-			    LIMIT 5
-			    """;
+	        PreparedStatement queryStmt = con.prepareStatement(HYBRID_SQL);
+	        queryStmt.setObject(1, new PGvector(queryEmbedding));
+	        queryStmt.setString(2, docId);
+	        queryStmt.setObject(3, new PGvector(queryEmbedding));
+	        queryStmt.setString(4, query);
+	        queryStmt.setDouble(5, k);
+	        queryStmt.setDouble(6, k);
+	        ResultSet rs = queryStmt.executeQuery();
+	        while (rs.next()) {
+	            // System.out.println(String.format("document: %d, RRF score: %f", rs.getLong("id"), rs.getDouble("score")));
+	        	content.add(new Embedding(rs.getLong("id"), rs.getDouble("score"), rs.getInt("chunk"), rs.getString("content")));
+	        }
+	        rs.close();
+		}
+		catch(SQLException | TranslateException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return content;
+	}
+	
+	class Embedding {
+		private long id = 0L;
+		private double score = 0.0;
+		private String content = null;
+		private int chunk = 0;
+		public Embedding() {
+			
+		}
+		public Embedding(long id, double score, int chunk, String content) {
+			this.id = id;
+			this.chunk = chunk;
+			this.score = score;
+			this.content = content;
+		}
+		public long getId() {
+			return id;
+		}
+		public void setId(long id) {
+			this.id = id;
+		}
+		public double getScore() {
+			return score;
+		}
+		public void setScore(double score) {
+			this.score = score;
+		}
+		public String getContent() {
+			return content;
+		}
+		public void setContent(String content) {
+			this.content = content;
+		}
+		public int getChunk() {
+			return chunk;
+		}
+		public void setChunk(int chunk) {
+			this.chunk = chunk;
+		}
+		
+	}
+
 	
 	 // https://pub.towardsai.net/deploy-huggingface-nlp-models-in-java-with-deep-java-library-e36c635b2053
 	 // https://gist.github.com/KexinFeng/97e6344556f88822650d023acfbdf4f5
@@ -166,10 +279,10 @@ public class TestVectorIndex extends BaseTest {
 		Criteria<QAInput, String> criteria = Criteria.builder()
 				  .setTypes(QAInput.class, String.class)
 		          //  .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/bert-large-nli-cls-token")
-		            .optArgument("normalize", "false")
+		           // .optArgument("normalize", "false")
 		            .optModelPath(Paths.get(testProperties.getProperty("test.datagen.path") + "/nlp/trace_cased_bertqa.pt"))
-				  .optEngine("PyTorch")
-				  //.optDevice(Device.gpu())
+				    .optEngine("PyTorch")
+				  .optDevice(Device.gpu())
 				 
 				  .optTranslator(ot)
 				  .build();
@@ -194,16 +307,52 @@ public class TestVectorIndex extends BaseTest {
 	
 	private List<String> chunkText(String block, int chunkSize) {
 		/// .map(s -> s.trim())
-		List<String> sents = Arrays.asList(block.split("((?<=\\.)|(?=\\.))")).stream().filter(s -> s.length() > 0).collect(Collectors.toList());
+		List<String> sents = Arrays.asList(block.split("((?<=\\.)|(?=\\.))"))
+				.stream()
+				.filter(s -> s.trim().length() > 0)
+				.map(s ->  s.replaceAll("[“”]", "\"").replaceAll("’", "'"))
+				.collect(Collectors.toList());
+		/*
+		List<String> sents = Arrays.asList(block.split("\\n")).stream()
+			.map(s -> s.trim())
+			.filter(s -> s.length() > 0)
+			.map(s -> s + "\\n")
+			.map(s ->  s.replaceAll("[“”]", "\""))
+			//.map(s -> s.replaceAll("[\\r\\n]"," "))
+			.collect(Collectors.toList());
+			*/
 		final AtomicInteger counter = new AtomicInteger(0);
-		return sents.stream().collect(Collectors.groupingBy(s -> counter.getAndIncrement()/chunkSize)).values().stream().flatMap(List::stream).collect(Collectors.toList());
+		List<String> sx = new ArrayList<>();
+		StringBuilder buff = new StringBuilder();
+		for(String s: sents) {
+			buff.append(s);
+			if(counter.getAndIncrement() % chunkSize == 0) {
+				sx.add(buff.toString());
+				buff = new StringBuilder();
+			}
+		}
+		if(buff.length() > 0) {
+			sx.add(buff.toString());
+		}
+		return sx;
+		/*
+		List<String> s2 = sents.stream().collect(Collectors.groupingBy(s -> counter.getAndIncrement()/chunkSize)).values().stream().flatMap(List::stream).collect(Collectors.toList());
+		logger.info(sents.size() + " -> " + s2.size());
+		return s2;
+		*/
+		/*
+		return sents.stream().collect(Collectors.groupingBy(s -> counter.getAndIncrement()/chunkSize, flatMapping(s -> s.values().stream(), ))
+			logger.info(chunkSize + " " + sents.size() + " " + gid);
+			return gid;
+		})).values().stream().flatMap(List::stream).collect(Collectors.toList());
+		*/
 	}
 	
 	private ZooModel<String, float[]> zooModel = null;
 	private ZooModel<String, float[]> getZooModel(){
 		if(zooModel == null) {
 			try {
-				zooModel = loadModel(testProperties.getProperty("test.datagen.path") + "/nlp/trace_cased_bertqa.gz");
+				zooModel = loadModel();
 			} catch (IOException | ModelException e) {
 				logger.error(e);
 				e.printStackTrace();
@@ -214,7 +363,7 @@ public class TestVectorIndex extends BaseTest {
 	
 	
 	private void loadDocument(String documentId, String documentData) {
-		List<String> chunks = chunkText(documentData, 20).stream().collect(Collectors.toList());
+		List<String> chunks = chunkText(documentData, 10).stream().collect(Collectors.toList());
 		loadDocument(documentId, chunks);
 	}
 	private void loadDocument(String documentId, List<String> chunks) {
@@ -225,6 +374,7 @@ public class TestVectorIndex extends BaseTest {
 		try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
 			PGvector.addVectorType(con);
 			logger.info("Generating " + chunks.size() + " embeddings");
+			long start = System.currentTimeMillis();
             List<float[]> embeddings = generateEmbeddings(getZooModel(), chunks.toArray(new String[0]));
             int size = chunks.size();
             for (int i = 0; i < chunks.size(); i++) {
@@ -236,6 +386,8 @@ public class TestVectorIndex extends BaseTest {
                 insertStmt.setObject(5, new PGvector(embeddings.get(i)));
                 insertStmt.executeUpdate();
             }
+            long stop = System.currentTimeMillis();
+            logger.info("Time to generate: " + (stop - start) + "ms");
             
 		}
 		catch(SQLException | TranslateException e) {
@@ -249,7 +401,7 @@ public class TestVectorIndex extends BaseTest {
 		StringBuilder sql = new StringBuilder();
 		sql.append("SELECT content FROM vecdoc WHERE documentId = ?");
 		if(length > 0) {
-			sql.append(" AND chunk => ? ANd chunk < ?");
+			sql.append(" AND chunk >= ? AND chunk < ?");
 		}
 		List<String> doc = new ArrayList<>();
 		try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
@@ -270,11 +422,12 @@ public class TestVectorIndex extends BaseTest {
 			logger.error(e);
 			e.printStackTrace();
 		}
-		return doc.stream().collect(Collectors.joining());
+		return doc.stream().collect(Collectors.joining(" "));
 	}
 	
 	private int deleteDocument(String id) {
 		int upd = 0;
+		logger.info("Delete: " + id);
 		try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
 	            PreparedStatement queryStmt = con.prepareStatement("DELETE FROM vecdoc WHERE documentId = ?");
 	            queryStmt.setString(1, id);
@@ -305,10 +458,30 @@ public class TestVectorIndex extends BaseTest {
 		return exists;
 	}
 
+	/// from https://docs.djl.ai/master/docs/demos/jupyter/pytorch/load_your_own_pytorch_bert.html
 	private String translate(String question, String content) {
 		// "/nlp/bert-base-cased-vocab.txt"
 		// "/nlp/vocab.json"
-		OlioTranslator ot = new OlioTranslator(testProperties.getProperty("test.datagen.path") + "/nlp/bert-base-cased-vocab.txt");
+		//
+		/*
+		String output = null;
+		try {
+			BertTokenizer tokenizer = new BertTokenizer();
+			List<String> tokenQ = tokenizer.tokenize(question.toLowerCase());
+			List<String> tokenA = tokenizer.tokenize(content.toLowerCase());
+			Vocabulary vocabulary = DefaultVocabulary.builder()
+		        .optMinFrequency(1)
+		        .addFromTextFile(Path.of(testProperties.getProperty("test.datagen.path") + "/nlp/bert-base-uncased.vocab.txt"))
+		        .optUnknownToken("[UNK]")
+		        .build()
+		    ;
+		}
+		catch(IOException e) {
+			logger.error(e);
+		}
+		*/
+		
+		OlioTranslator ot = new OlioTranslator(testProperties.getProperty("test.datagen.path") + "/nlp/bert-base-uncased-vocab.txt");
 		
 		QAInput input = new QAInput(question, content);
 		String output = null;
@@ -318,12 +491,13 @@ public class TestVectorIndex extends BaseTest {
 			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
+		
 		return output;
 	}
 
 	/// From https://github.com/pgvector/pgvector-java/blob/master/examples/djl/src/main/java/com/example/Example.java
 	/// https://djl.ai/extensions/tokenizers/ for bert-base-cased-squad2
-    private static ZooModel<String, float[]> loadModel(String id) throws IOException, ModelException {
+    private static ZooModel<String, float[]> loadModel() throws IOException, ModelException {
     	//logger.info(id + " / " + Paths.get(id));
         return Criteria.builder()
             .setTypes(String.class, float[].class)
@@ -344,7 +518,7 @@ public class TestVectorIndex extends BaseTest {
             .optEngine("MXNet")
             .optModelUrls(id)
             */
-            //.optDevice(Device.gpu()) 
+            .optDevice(Device.gpu()) 
             .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
             .build()
             .loadModel();
