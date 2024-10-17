@@ -828,7 +828,7 @@ Begin conversationally.
 		outReq.setPrompt(inReq.getPrompt());
 		outReq.setSystem(inReq.getSystem());
 		String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
-		boolean useJB = (forceJailbreak || (boolean)chatConfig.get("useJailBreak"));
+		boolean useJB = (forceJailbreak || chatConfig != null && (boolean)chatConfig.get("useJailBreak"));
 
 		outReq.getMessages().addAll(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
 		/*.map(s -> {
@@ -856,40 +856,51 @@ Begin conversationally.
 
 	
 	public OllamaRequest getChatPrompt() {
+		String model = null;
+		if(chatConfig != null) {
+			model = chatConfig.get("llmModel");
+		}
+		return getChatPrompt(model);
+	}
+	public OllamaRequest getChatPrompt(String model) {
 		
-		String model = chatConfig.get("llmModel");
+		
 		OllamaRequest req = newRequest(model);
-		BaseRecord systemChar = chatConfig.get("systemCharacter");
-		BaseRecord userChar = chatConfig.get("userCharacter");
+		BaseRecord systemChar = null;
+		BaseRecord userChar = null;
+		String assist = null;
+		String userTemp = null;
+		String sysTemp = null;
+		boolean useAssist = false;
+		if(chatConfig != null) {
+			useAssist = chatConfig.get("assist");
+			systemChar = chatConfig.get("systemCharacter");
+			userChar = chatConfig.get("userCharacter");
+		}
 		if(systemChar != null && userChar != null) {
-			boolean useAssist = chatConfig.get("assist");
-			String assist = null;
-
+			
 			if(useAssist) {
 				assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, chatConfig);
 			}
-			String sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
-			String userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
-			setLlmSystemPrompt(sysTemp);
-			req = newRequest(model);
-			setPruneSkip(2);
-			if(useAssist) {
-				setPruneSkip(3);
-			}
-			newMessage(req, userTemp);
-			if(useAssist && assist != null && assist.length() > 0) {
-				newMessage(req, assist, "assistant");
-			}
+			sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
+			userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
 			//setAnnotation(getAnnotateChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 			// setAssist(getAssistChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 		}
 		else {
-			logger.warn("Either system or user characters were null - Defaulting to standard chat interface");
-			logger.warn(chatConfig.toFullString());
+			sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, null);
+			assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, null);
+			userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, null);
+			
 		}
-		
-		
-		
+		setLlmSystemPrompt(sysTemp);
+		req = newRequest(model);
+		setPruneSkip(2);
+		newMessage(req, userTemp);
+		if(assist != null && assist.length() > 0) {
+			setPruneSkip(3);
+			newMessage(req, assist, "assistant");
+		}
 		
 		req.setOptions(getChatOptions());
 

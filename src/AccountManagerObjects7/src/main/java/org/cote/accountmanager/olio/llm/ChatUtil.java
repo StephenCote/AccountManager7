@@ -217,12 +217,20 @@ public class ChatUtil {
 	}
 	
 	public static String getSessionName(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, String name) {
+		String cfgName = "ucfg";
+		String pcfgName = "pcfg";
+		if(chatConfig != null) {
+			cfgName = chatConfig.get(FieldNames.FIELD_NAME);
+		}
+		if(promptConfig != null) {
+			pcfgName = promptConfig.get(FieldNames.FIELD_NAME);
+		}
 		return
 		(
 		//CryptoUtil.getDigestAsString(
 			user.get(FieldNames.FIELD_NAME)
-			+ "-" + chatConfig.get(FieldNames.FIELD_NAME) 
-			+ "-" + promptConfig.get(FieldNames.FIELD_NAME)
+			+ "-" + cfgName
+			+ "-" + pcfgName
 			+ "-" + name
 		//)
 		);

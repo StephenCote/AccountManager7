@@ -26,6 +26,7 @@ CREATE TABLE vecdoc (
 	primary key(id)
 );
 
-
+CREATE INDEX ON vecdoc USING hnsw (embedding vector_l2_ops) WITH (m = 4, ef_construction = 10)
+CREATE INDEX vector_documentId ON vecdoc(documentId)
 //// Java setup
 https://djl.ai/extensions/tokenizers/

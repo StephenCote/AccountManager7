@@ -142,11 +142,14 @@ public class PromptUtil {
 	}
 	public static String getChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig, String templ, boolean firstPerson) {
 
-		if(promptConfig == null || chatConfig == null) {
+		if(promptConfig == null) {
 			logger.error("Prompt configuration is null");
 			return null;
 		}
-		
+		if(chatConfig == null) {
+			// logger.info("No chat configuration provided");
+			return templ;
+		}
 		BaseRecord userChar = chatConfig.get("userCharacter");
 		BaseRecord systemChar = chatConfig.get("systemCharacter");
 		

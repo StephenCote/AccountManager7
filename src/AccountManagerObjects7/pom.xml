@@ -142,8 +142,9 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestVectorIndex.java</exclude>
+						<exclude>**/TestLangChain.java</exclude>
 						-->
+						<exclude>**/TestVectorIndex.java</exclude>
 						<exclude>**/TestOlioRules.java</exclude>
 						<exclude>**/TestQueryPlan.java</exclude>
 
@@ -675,6 +676,33 @@
   <version>0.3.3</version>
 </dependency>
 -->
+<!-- LangChain -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>0.35.0</version>
+        </dependency>
+                <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings</artifactId>
+            <version>0.35.0</version>
+        </dependency>
+        <!-- may not need previous -->
+<dependency>
+    <groupId>dev.langchain4j</groupId>
+    <artifactId>langchain4j-ollama</artifactId>
+    <version>0.35.0</version>
+</dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-pgvector</artifactId>
+            <version>0.35.0</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
+            <version>0.35.0</version>
+        </dependency>
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>

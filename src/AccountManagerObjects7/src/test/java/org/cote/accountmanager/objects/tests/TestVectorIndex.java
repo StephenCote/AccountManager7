@@ -92,7 +92,7 @@ public class TestVectorIndex extends BaseTest {
 		String pdfId = "CardFox";
 		//logger.info("Begin translating ...");
 		if(documentExists(pdfId)) {
-			deleteDocument(pdfId);
+			// deleteDocument(pdfId);
 		}
 		if(!documentExists(pdfId)) {
 			String pdfText = getPDF("./media/CardFox.pdf");
@@ -280,9 +280,9 @@ public class TestVectorIndex extends BaseTest {
 				  .setTypes(QAInput.class, String.class)
 		          //  .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/bert-large-nli-cls-token")
 		           // .optArgument("normalize", "false")
-		            .optModelPath(Paths.get(testProperties.getProperty("test.datagen.path") + "/nlp/trace_cased_bertqa.pt"))
+		            .optModelPath(Paths.get(testProperties.getProperty("test.datagen.path") + "/nlp/trace_bertqa/trace_bertqa.pt"))
 				    .optEngine("PyTorch")
-				  .optDevice(Device.gpu())
+				  //.optDevice(Device.gpu())
 				 
 				  .optTranslator(ot)
 				  .build();
@@ -518,7 +518,7 @@ public class TestVectorIndex extends BaseTest {
             .optEngine("MXNet")
             .optModelUrls(id)
             */
-            .optDevice(Device.gpu()) 
+            //.optDevice(Device.gpu()) 
             .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
             .build()
             .loadModel();
