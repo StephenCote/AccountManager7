@@ -537,9 +537,13 @@ Begin conversationally.
 			while (line != null && line.equalsIgnoreCase("/quit") == false && line.equalsIgnoreCase("/exit") == false && line.equalsIgnoreCase("/bye") == false) {
 				if(lastRep == null && req.getMessages().size() > 0) {
 					logger.info("Initializing ...");
-					if(chatConfig.get("scene") != null) {
-						String iscene = chatConfig.get("userNarrative.interactionDescription");
-						logger.info((iscene != null ? iscene : (String)chatConfig.get("scene")));
+					String iscene = chatConfig.get("userNarrative.interactionDescription");
+					String cscene = chatConfig.get("scene");
+					if(cscene == null) {
+						cscene = iscene;
+					}
+					if(cscene != null) {
+						logger.info(cscene);
 					}
 					else if(!"random".equals(chatConfig.get("setting"))) {
 						logger.info((String)chatConfig.get("setting"));
