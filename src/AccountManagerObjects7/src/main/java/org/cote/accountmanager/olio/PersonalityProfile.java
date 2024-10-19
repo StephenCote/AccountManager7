@@ -35,6 +35,8 @@ public class PersonalityProfile extends AnimalProfile {
 	private VeryEnumType machiavellian = VeryEnumType.DISREGARDED;
 	private VeryEnumType psychopath = VeryEnumType.DISREGARDED;
 	
+	private VeryEnumType aggressive = VeryEnumType.DISREGARDED;
+	
 	private List<PhysiologicalNeedsEnumType> physiologicalNeeds = new ArrayList<>();
 
 	private List<SafetyNeedsEnumType> safetyNeeds = new ArrayList<>();
@@ -228,4 +230,13 @@ public class PersonalityProfile extends AnimalProfile {
 	public void setNeurotic(VeryEnumType neurotic) {
 		this.neurotic = neurotic;
 	}
+
+	public VeryEnumType getAggressive() {
+		return aggressive;
+	}
+
+	public void setAggressive(VeryEnumType aggressive) {
+		this.aggressive = aggressive;
+	}
+	
 }

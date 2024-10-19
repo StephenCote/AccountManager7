@@ -235,6 +235,15 @@ public class DarkTriadUtil {
 		
 	}
 	
+	public static double getAggressiveness(BaseRecord per) {
+		double ne = per.get("personality.neuroticism");
+		double na = per.get("personality.narcissism");
+		double op = per.get("personality.openness");
+		double ag = per.get("personality.agreeableness");
+		double co = per.get("personality.conscientiousness");
+		return ((ne + (1 - op) + na - (1 - ag) + (1 - co)) / 5);
+	}
+	
 	private static boolean isNarcissist(BaseRecord per) {
 		return (
 			((double)per.get("personality.extraversion")) >= 0.8

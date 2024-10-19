@@ -388,6 +388,7 @@ SLOAN Notation
 		}
 
 		BaseRecord per = person.get(FieldNames.FIELD_PERSONALITY);
+		prof.setAggressive(VeryEnumType.valueOf(DarkTriadUtil.getAggressiveness(per)));
 		prof.setOpen(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_OPENNESS)));
 		prof.setConscientious(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_CONSCIENTIOUSNESS)));
 		prof.setExtraverted(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_EXTRAVERSION)));
