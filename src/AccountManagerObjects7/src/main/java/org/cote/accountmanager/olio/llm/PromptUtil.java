@@ -185,7 +185,11 @@ public class PromptUtil {
 		String scenel = "";
 		String iscene = chatConfig.get("userNarrative.interactionDescription");
 		// (iscene != null ? iscene + System.lineSeparator() : "") + 
-		String cscene = (iscene != null ? iscene  : chatConfig.get("scene"));
+		//String cscene = (iscene != null ? iscene  : chatConfig.get("scene"));
+		String cscene = chatConfig.get("scene");
+		if(cscene == null) {
+			cscene = iscene;
+		}
 		boolean auto = (cscene != null && cscene.length() > 0);
 		if((boolean)chatConfig.get("includeScene")) {
 			scenel = Matcher.quoteReplacement(((List<String>)promptConfig.get("scene")).stream().collect(Collectors.joining(System.lineSeparator())));
