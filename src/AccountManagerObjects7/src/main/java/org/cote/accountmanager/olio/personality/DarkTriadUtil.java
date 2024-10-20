@@ -236,11 +236,11 @@ public class DarkTriadUtil {
 	}
 	
 	public static double getAggressiveness(BaseRecord per) {
-		double ne = per.get("personality.neuroticism");
-		double na = per.get("personality.narcissism");
-		double op = per.get("personality.openness");
-		double ag = per.get("personality.agreeableness");
-		double co = per.get("personality.conscientiousness");
+		double ne = per.get("neuroticism");
+		double na = per.get("narcissism");
+		double op = per.get("openness");
+		double ag = per.get("agreeableness");
+		double co = per.get("conscientiousness");
 		return ((ne + (1 - op) + na - (1 - ag) + (1 - co)) / 5);
 	}
 	
