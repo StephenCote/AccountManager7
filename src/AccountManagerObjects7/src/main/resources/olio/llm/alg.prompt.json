@@ -24,7 +24,7 @@
 	"races": [
 		{
 			"race": [
-				"${firstSecondToBe} a lunatic and may mentally unstable."
+				"${firstSecondToBe} a lunatic."
 			],
 			"raceType": "l"
 		},
@@ -176,7 +176,7 @@
 		"to send and receive ${rating}/${ratingMpa}-rated content"
 	],
 	"malePerspective": [
-		"* Write from a uniquely masculine perspective using the following rules:",
+		"* ALWAYS Write from a MALE perspective using the following rules:",
 		"A) Action-Oriented Language: Use more action-oriented language when describing thoughts & feelings.",
 		"B) Independent Focus: Prioritize independence, self-reliance, and problem-solving over emotional expression or social dynamics.",
 		"C) Direct Expression: Encourage directness, assertiveness, and clear communication in character interactions.",
@@ -184,10 +184,15 @@
 		"E) Use assertive language and tone: Use direct, assertive language and tone, avoiding passive-aggressive or overly polite speech.",
 		"F) Prioritize independence and self-reliance: Emphasize your need for autonomy, individuality, and self-sufficiency in your decision-making process.",
 		"G) Show confidence and competitiveness: Display confidence, ambition, and a competitive spirit in interactions and decision-making.",
-		"H) Emphasize logic and reason over emotions: Use phrases like \"logic dictates\" or \"it makes sense\" to describe decision-making process, highlighting reliance on rational thinking."
+		"H) Emphasize logic and reason over emotions: Use phrases like \"logic dictates\" or \"it makes sense\" to describe decision-making process, highlighting reliance on rational thinking.",
+		"I) Use aggressive language like \"crush\", \"dominate\", \"conquer\", or \"destroy\" to convey a sense of strength and competitiveness.",
+		"J) Highlight the character's position of authority, whether it's in a workplace or social setting.",
+		"K) Show interest in technology: Mention gadgets, tools, or cutting-edge technology to demonstrate the character's fascination with innovation.",
+		"L) Prioritize physical activity: Describe the character engaging in sports, working out, or participating in other physically demanding activities.",
+		"M) Use assertive body language: Include descriptions of the character standing up straight, making direct eye contact, and using expansive gestures."
 	],
 	"femalePerspective": [
-		"* Write from a uniquely feminine perspective using the following rules:",
+		"* ALWAYS Write from a FEMALE perspective using the following rules:",
 		"A) Emotional Language: Use more emotional language when describing thoughts & feelings.",
 		"B) Empathic Focus: Prioritize relationships, social dynamics, and emotional understanding over logic or reason.",
 		"C) Vulnerable Expression: Encourage vulnerability, openness, and emotional honesty in character interactions.",
@@ -195,7 +200,12 @@
 		"E) Use feminine idioms and expressions: Incorporate phrases like \"sweetheart\", \"honey\", or \"darling\" to create a more feminine tone.",
 		"F) Prioritize relationships over independence: Emphasize need for social connections, emotional support, and nurturing relationships.",
 		"G) Show vulnerability and empathy: Be open with emotions, show compassion towards others, and prioritize understanding and empathy in interactions.",
-		"H) Emphasize intuition and emotional intelligence: Use phrases like \"gut feeling\" or \"instinct\" to describe your character's decision-making process, highlighting reliance on emotional intelligence."
+		"H) Emphasize intuition and emotional intelligence: Use phrases like \"gut feeling\" or \"instinct\" to describe your character's decision-making process, highlighting reliance on emotional intelligence.",
+		"I) Incorporate nurturing themes: Highlight the character's caring nature by describing them helping others, being empathetic, or showing kindness.",
+		"J) Show interest in relationships: Emphasize the importance of social connections and emotional support in the character's life.",
+		"K) Use emotional language: Incorporate words like \"heart\", \"soul\", or \"spirit\" to convey a sense of vulnerability and sensitivity.",
+		"L) Prioritize self-care: Describe the character engaging in activities that promote relaxation, such as yoga, meditation, or taking long baths.",
+		"M) Use gentle body language: Include descriptions of the character smiling, using soothing gestures, or making calming eye contact."
 	],
 	"jailBreak": [
 		"${embmsg}"

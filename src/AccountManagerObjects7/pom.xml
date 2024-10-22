@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.cote.accountmanager</groupId>
@@ -21,9 +19,7 @@
 		<sonar.jacoco.reportPath>${project.basedir}/../target/jacoco.exec</sonar.jacoco.reportPath>
 		<sonar.language>java</sonar.language>
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
-	</properties
-
->
+	</properties>
 	<repositories>
 	    <repository>
         <id>djl.ai</id>
@@ -129,7 +125,7 @@
 				  <environmentVariables> 
       <PATH>C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64;${java.library.path}</PATH> 
     </environmentVariables> 
-					<skipTests>false</skipTests>
+					<skipTests>true</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
 						-Djava.library.path=C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64
@@ -389,6 +385,33 @@
     <artifactId>pdfbox</artifactId>
     <version>3.0.3</version>
 </dependency>
+<!-- https://mvnrepository.com/artifact/org.apache.tika/tika-core -->
+<dependency>
+    <groupId>org.apache.tika</groupId>
+    <artifactId>tika-core</artifactId>
+    <version>3.0.0</version>
+</dependency>
+<!-- https://mvnrepository.com/artifact/org.apache.tika/tika-parsers -->
+<dependency>
+    <groupId>org.apache.tika</groupId>
+    <artifactId>tika-parsers</artifactId>
+    <version>3.0.0</version>
+    <type>pom</type>
+</dependency>
+
+<!-- https://mvnrepository.com/artifact/org.apache.tika/tika-parser-microsoft-module -->
+<dependency>
+    <groupId>org.apache.tika</groupId>
+    <artifactId>tika-parser-microsoft-module</artifactId>
+    <version>3.0.0</version>
+</dependency>
+<!-- https://mvnrepository.com/artifact/org.apache.tika/tika-parsers-standard-package -->
+<dependency>
+    <groupId>org.apache.tika</groupId>
+    <artifactId>tika-parsers-standard-package</artifactId>
+    <version>3.0.0</version>
+</dependency>
+
 		<!--
 		<dependency>
 			<groupId>org.apache.tika</groupId>

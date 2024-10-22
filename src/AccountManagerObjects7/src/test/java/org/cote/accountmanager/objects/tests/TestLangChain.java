@@ -1,10 +1,24 @@
 package org.cote.accountmanager.objects.tests;
 
 import java.io.File;
+
+import org.apache.tika.exception.TikaException;
+import org.apache.tika.metadata.Metadata;
+import org.apache.tika.parser.microsoft.ooxml.OOXMLParser;
+import org.apache.tika.parser.pdf.PDFParserConfig;
+import org.apache.tika.sax.BodyContentHandler;
+import org.apache.tika.parser.AutoDetectParser;
+import org.apache.tika.parser.ParseContext;
+import org.apache.tika.parser.Parser;
+import java.io.InputStream;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -26,6 +40,7 @@ import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ZipUtil;
 import org.junit.Test;
+import org.xml.sax.SAXException;
 
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
@@ -46,6 +61,7 @@ import dev.langchain4j.data.document.Document;
 import dev.langchain4j.data.embedding.Embedding;
 import static dev.langchain4j.data.document.loader.FileSystemDocumentLoader.*;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 public class TestLangChain extends BaseTest {
 	
 	private String url = "http://localhost:11434";
@@ -135,20 +151,52 @@ public class TestLangChain extends BaseTest {
 			FileUtil.emitFile("./media/demoprompt.txt", xcfg);
 			*/
 
-    		BaseRecord pcfg = RecordFactory.importRecord(BinaryUtil.fromBase64Str(FileUtil.getFileAsString("./media/demoprompt.txt")));
+    		BaseRecord pcfg = RecordFactory.importRecord(FileUtil.getFileAsString("./media/analyze.prompt.json"));
 			chat = new Chat(testUser1, null, pcfg);
-			String sessName = "Session 1";
+			String sessName = "Session - " + UUID.randomUUID().toString();
 			chat.setSessionName(sessName);
 			String sessDataName = ChatUtil.getSessionName(testUser1, null, pcfg, sessName);
 			OllamaRequest req = ChatUtil.getSession(testUser1, sessDataName);
 	    	if(req == null) {
-	    		req = chat.getChatPrompt("hyp-local");
+		    	
+	    		req = chat.getChatPrompt("uc-local");
+	    		req.setSystem(((List<String>)pcfg.get("systemAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())));
+	    		//chat.setLlmSystemPrompt(((List<String>)pcfg.get("systemAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())));
+	    		chat.newMessage(req, ((List<String>)pcfg.get("userAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())));
+	    		chat.newMessage(req, ((List<String>)pcfg.get("assistantAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), "assistant");
 	    	}
-	    	chat.continueChat(req, "Write a poem for me.");
+	    	logger.info(JSONUtil.exportObject(req));
+	    	String doc = getDocument("./media/HarlotsEight_Vol1_SM.docx");
+	    	assertNotNull("Document is null", doc);
+	    	
+	    	logger.info("Doc length: " + doc.length());
+	    	int index = doc.indexOf("Chapter");
+	    	assertTrue("Expected index", index > -1);
+	    	String lastCR = null;
+	    	int part = 1;
+	    	while(index > -1) {
+	    		int idx2 = doc.indexOf("Chapter", index + 8);
+	    		int edx = (idx2 > -1 ? idx2 : doc.length());
+	    		String tmp = doc.substring(index, edx);
+	    		index = idx2;
+	    		logger.info("Part " + part + " " + tmp.split(" ").length + " words");
+	    		if(req.getMessages().size() > 2) {
+	    			req.getMessages().subList(3, req.getMessages().size()).clear();
+	    		}
+	    		chat.continueChat(req, (lastCR != null ? "PREVIOUS CR:" + System.lineSeparator() + lastCR + System.lineSeparator() : "") + "CONTENT:" + System.lineSeparator() + tmp);
+		    	OllamaMessage msg = req.getMessages().get(req.getMessages().size() - 1);
+		    	lastCR = msg.getContent();
+		    	logger.info(lastCR);
+
+	    		part++;
+	    	}
+	    	
+	    	/*
+	    	chat.continueChat(req, "");
 
 	    	OllamaMessage msg = req.getMessages().get(req.getMessages().size() - 1);
 	    	logger.info(msg.getContent());
-			
+			*/
 			// NullPointerException | FieldException | ModelNotFound
 		} catch (Exception e) {
 			// TODO Auto-generated catch block
@@ -158,6 +206,28 @@ public class TestLangChain extends BaseTest {
 
     }
     
+    private String getDocument(String file) {
+    	String out = null;
+    	try {
+	    	InputStream fileStream = new FileInputStream(file);
+	    	Parser parser = new AutoDetectParser();
+	    	Metadata metadata = new Metadata();
+	    	BodyContentHandler handler = new BodyContentHandler(Integer.MAX_VALUE);
+	    	PDFParserConfig pdfConfig = new PDFParserConfig();
+	    	pdfConfig.setExtractInlineImages(true);
+	    	ParseContext parseContext = new ParseContext();
+	    	parseContext.set(PDFParserConfig.class, pdfConfig);
+	    	parseContext.set(Parser.class, parser);
+	    	parser.parse(fileStream, handler, metadata, parseContext);
+			out = handler.toString();
+			
+    	}
+    	catch(IOException | SAXException | TikaException e) {
+    		logger.error(e);
+    	}
+    	return out;
+
+    }
 	private String getPDF(String path) {
 		String output = null;
 		  PDDocument doc;
