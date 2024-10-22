@@ -17,6 +17,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileComparison;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -76,6 +77,7 @@ public class PromptUtil {
 	private static Pattern nlpPat = Pattern.compile("\\$\\{nlp\\}");
 	private static Pattern nlpCmdPat = Pattern.compile("\\$\\{nlp.command\\}");
 	private static Pattern nlpWarnPat = Pattern.compile("\\$\\{nlpWarn\\}");
+	private static Pattern perspective = Pattern.compile("\\$\\{perspective\\}");
 	private static Pattern setting = Pattern.compile("\\$\\{setting\\}");
 	private static Pattern ratingPat = Pattern.compile("\\$\\{rating\\}");
 	private static Pattern ratingName = Pattern.compile("\\$\\{ratingName\\}");
@@ -195,7 +197,7 @@ public class PromptUtil {
 			scenel = Matcher.quoteReplacement(((List<String>)promptConfig.get("scene")).stream().collect(Collectors.joining(System.lineSeparator())));
 		}
 		templ = scene.matcher(templ).replaceAll(scenel);
-
+		
 		String settingStr = chatConfig.get("setting");
 
 		String sysNlp = "";
@@ -279,9 +281,20 @@ public class PromptUtil {
 		if(strades.size() > 0) {
 			sjobDesc =" " + strades.get(0).toLowerCase();
 		}		
+		int sage = systemChar.get(FieldNames.FIELD_AGE);
+		int uage = userChar.get(FieldNames.FIELD_AGE);
+
+		String sper = "";
+		if(sgen.equals("male") || sgen.equals("female")) {
+			List<String> per = promptConfig.get(sgen + "Perspective");
+			if(per != null && per.size() > 0) {
+				sper = Matcher.quoteReplacement(per.stream().collect(Collectors.joining(System.lineSeparator())));
+			}
+		}
+		templ = perspective.matcher(templ).replaceAll(sper);
 		
-		templ = systemASG.matcher(templ).replaceAll(systemChar.get(FieldNames.FIELD_AGE) + " year old " + sgen + sjobDesc);
-		templ = userASG.matcher(templ).replaceAll(userChar.get(FieldNames.FIELD_AGE) + " year old " + ugen + ujobDesc);
+		templ = systemASG.matcher(templ).replaceAll(sage + " year old " + sgen + sjobDesc);
+		templ = userASG.matcher(templ).replaceAll(uage + " year old " + ugen + ujobDesc);
 		templ = userCPro.matcher(templ).replaceAll(ucpro);
 		templ = userPro.matcher(templ).replaceAll(upro);
 		templ = userPPro.matcher(templ).replaceAll(uppro);
@@ -327,11 +340,14 @@ public class PromptUtil {
 		}
 		templ = profileRaceCompat.matcher(templ).replaceAll("We are racially " + raceCompat + ".");
 		
-		String romCompat = "we'd be doomed to fail";
-		if(CompatibilityEnumType.compare(profComp.getRomanticCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
-			romCompat = "there could be something between us";
+		String romCompat = null;
+		if(uage >= Rules.MINIMUM_ADULT_AGE && sage >= Rules.MINIMUM_ADULT_AGE && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC || !sgen.equals(ugen))) {
+			romCompat = "we'd be doomed to fail";
+			if(CompatibilityEnumType.compare(profComp.getRomanticCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
+				romCompat = "there could be something between us";
+			}
 		}
-		templ = profileRomanceCompat.matcher(templ).replaceAll("Romantically, " + romCompat + ".");
+		templ = profileRomanceCompat.matcher(templ).replaceAll((romCompat != null ? "Romantically, " + romCompat + "." : ""));
 		
 		BaseRecord cell = userChar.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(settingStr != null && settingStr.length() > 0) {

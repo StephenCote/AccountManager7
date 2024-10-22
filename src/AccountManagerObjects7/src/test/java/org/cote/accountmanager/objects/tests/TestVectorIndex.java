@@ -92,62 +92,50 @@ public class TestVectorIndex extends BaseTest {
 		String pdfId = "CardFox";
 		//logger.info("Begin translating ...");
 		if(documentExists(pdfId)) {
-			// deleteDocument(pdfId);
+			//deleteDocument(pdfId);
 		}
 		if(!documentExists(pdfId)) {
 			String pdfText = getPDF("./media/CardFox.pdf");
 			assertNotNull("Text was null", pdfText);
+			pdfText = pdfText.replaceAll("[“”]", "\"").replaceAll("’", "'");
 			logger.info("Text len: " + pdfText.length());
-
-			loadDocument(pdfId, pdfText);
+			
+			loadDocument(pdfId, pdfText, false);
 			//deleteDocument("CardFox");
 		}
 		
-		String query = "Who is Kateri?";
+		String query = "Where is the casino located?";
+		
 		//String trans = translate("Extract keywords into a comma-separated list", query);
 		//logger.info("Trans: " + trans);
 		List<Embedding> embs = findByEmbedding(getZooModel(), pdfId, query, 60);
 		List<Integer> chunks = embs.stream().map(e -> e.getChunk()).collect(Collectors.toList());
-		String docStr = null;
+		
+		// List<String> an = analyzeEmbeddings(embs, query, 256);
+		//String docStr = null;
+		//logger.info(query);
+		
+	}
+	
+	private List<String> analyzeEmbeddings(List<Embedding> embs, String query, int chunkSize){
 		List<String> ans = new ArrayList<>();
-		logger.info(query);
 		for(Embedding e : embs) {
 			String cnt = e.getContent();
-			logger.info(cnt.length() + " " + cnt);
-			String trans = translate(query, cnt);
-			ans.add(trans);
-			logger.info(trans);
-		}
-		
-		/*
-		if(chunks.size() > 0) {
-			docStr = getDocument(pdfId, chunks.get(0), 1, true);
-		}
-		*/
-		/*
-		List<String> docs = new ArrayList<>();
-		for(int i: chunks) {
-			String doc = getDocument(pdfId, i, 1, false);
-			//logger.info(doc);
-			docs.add(doc);
-		}
-		
-		String docStr = docs.stream().collect(Collectors.joining(System.lineSeparator()));
-		*/
-		//String docStr = docs.get(0);
-		/*
-		logger.info(docStr.length());
-		String trans = translate(query, docStr);
-		logger.info(query);
-		logger.info(trans);
-		*/
-		/*
-		logger.info("Fox Embs: " + embs.size());
-		for(Embedding e : embs) {
-			logger.info(e.getId() + " " + e.getScore() + " " + e.getContent());
-		}
-		*/
+			logger.info("Content length:" + cnt.length());
+			String[] words = cnt.split(" ");
+			for(int i = 0; i < words.length; i += chunkSize) {
+				String subChunk = Arrays.asList(Arrays.copyOfRange(words, i, Math.min((i + chunkSize), words.length))).stream().collect(Collectors.joining(" "));
+				logger.info("Chunk length: " + subChunk.length());
+				String trans = translate(query, subChunk);
+				ans.add(trans);
+				logger.info(trans);
 
+			}
+			//logger.info("Word count: " + words.length);
+			/*
+			*/
+		}
+		return ans;
 	}
 	
 	
@@ -362,9 +350,14 @@ public class TestVectorIndex extends BaseTest {
 	}
 	
 	
-	private void loadDocument(String documentId, String documentData) {
-		List<String> chunks = chunkText(documentData, 10).stream().collect(Collectors.toList());
-		loadDocument(documentId, chunks);
+	private void loadDocument(String documentId, String documentData, boolean chunk) {
+		if(chunk) {
+			List<String> chunks = chunkText(documentData, 10).stream().collect(Collectors.toList());
+			loadDocument(documentId, chunks);
+		}
+		else {
+			loadDocument(documentId, Arrays.asList(new String[] {documentData}));
+		}
 	}
 	private void loadDocument(String documentId, List<String> chunks) {
 		if(documentExists(documentId)) {
@@ -378,6 +371,7 @@ public class TestVectorIndex extends BaseTest {
             List<float[]> embeddings = generateEmbeddings(getZooModel(), chunks.toArray(new String[0]));
             int size = chunks.size();
             for (int i = 0; i < chunks.size(); i++) {
+            	logger.info("Words: " + chunks.get(i).split(" ").length);
                 PreparedStatement insertStmt = con.prepareStatement("INSERT INTO vecdoc (documentId, chunk, chunkCount, content, embedding) VALUES (?, ?, ?, ?, ?)");
                 insertStmt.setString(1, documentId);
                 insertStmt.setInt(2, (i + 1));
@@ -511,7 +505,7 @@ public class TestVectorIndex extends BaseTest {
             
             // 1024
             .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/bert-large-nli-cls-token")
-            .optArgument("normalize", "false")
+            //.optArgument("normalize", "false")
             .optEngine("PyTorch")
             
             /*
@@ -527,7 +521,7 @@ public class TestVectorIndex extends BaseTest {
     private static List<float[]> generateEmbeddings(ZooModel<String, float[]> model, String[] input) throws TranslateException {
         Predictor<String, float[]> predictor = model.newPredictor();
         List<float[]> embeddings = new ArrayList<>(input.length);
-        logger.info(embeddings.size());
+        logger.info("Embedding size: " + embeddings.size());
         for (String text : input) {
         	float[] f = predictor.predict(text);
             embeddings.add(f);

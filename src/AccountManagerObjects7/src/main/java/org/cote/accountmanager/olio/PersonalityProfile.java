@@ -72,6 +72,10 @@ public class PersonalityProfile extends AnimalProfile {
 		this.narcissist = narcissist;
 	}
 	public boolean isAggressive() {
+		if(aggressive == null) {
+			System.out.println("Null aggression for " + getName());
+			return false;
+		}
 		return VeryEnumType.compare(aggressive, VeryEnumType.LESS_FREQUENTLY, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}
 	public boolean isMachiavellian() {

@@ -6,11 +6,11 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 
 public enum VeryEnumType {
 	DISREGARDED(-0.9),
     NEVER(0),
-    HARDLY(0.1),
     UNLIKELY(0.1),
     SLIGHTLY(0.2),
     NOT_USUALLY(0.3),
@@ -55,6 +55,10 @@ public enum VeryEnumType {
     
     public static ComparatorEnumType compare(VeryEnumType lvl1, VeryEnumType lvl2) {
     	ComparatorEnumType comp = ComparatorEnumType.UNKNOWN;
+    	if(lvl1 == null) {
+    		ErrorUtil.printStackTrace();
+    		return ComparatorEnumType.LESS_THAN;
+    	}
     	double val1 = lvl1.val;
     	double val2 = lvl2.val;
     	if(val1 < val2) comp = ComparatorEnumType.LESS_THAN;

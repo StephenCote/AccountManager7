@@ -200,7 +200,11 @@ public class ChatAction extends CommonAction implements IAction{
 					}
 					logger.info("Generating the chat scene...");
 					BaseRecord i2 = ainters.get((new Random()).nextInt(ainters.size()));
-					ChatUtil.generateAutoScene(octx, cfg, i2, set, true);
+					BaseRecord pcfg = null;
+					if(cmd.hasOption("promptConfig")) {
+						pcfg = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+					}
+					ChatUtil.generateAutoScene(octx, cfg, pcfg, i2, set, true);
 					logger.info("Scene: " + cfg.get("scene"));
 					// cfg.setValue("scene", scene);
 					//Queue.queueUpdate(cfg, new String[] {"scene"});
@@ -430,7 +434,12 @@ public class ChatAction extends CommonAction implements IAction{
 							}
 							logger.info("Generating the chat scene...");
 							BaseRecord i2 = inters.get((new Random()).nextInt(inters.size()));
-							ChatUtil.generateAutoScene(octx, cfg, i2, set, true);
+							BaseRecord pcfg = null;
+							if(cmd.hasOption("promptConfig")) {
+								pcfg = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+							}
+
+							ChatUtil.generateAutoScene(octx, cfg, pcfg, i2, set, true);
 							logger.info("Scene: " + cfg.get("scene"));
 							
 						}

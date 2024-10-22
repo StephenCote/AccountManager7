@@ -85,7 +85,7 @@ public class NarrativeUtil {
 		String gender = prof.getGender();
 		String pro = ("male".equals(gender) ? "He" : "She");
 		if(prof.isAggressive()) {
-			desc.append("is aggressive");
+			desc.append("is physically and verbally aggressive");
 		}
 		if(prof.isMachiavellian()) {
 			if(desc.length() > 0) desc.append(", ");

@@ -111,6 +111,16 @@
 			"baseType": "string"
 		},
 		{
+			"name": "femalePerspective",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "malePerspective",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "races",
 			"type": "list",
 			"baseType": "model",
