@@ -16,6 +16,9 @@ public class OllamaOptions {
 	
 	@JsonProperty("top_p")
 	private double topP = 0.9;
+	
+	@JsonProperty("min_p")
+	private double minP = 0.01;
 
 	@JsonProperty("typical_p")
 	private double typicalP = 0.85;
@@ -88,6 +91,14 @@ public class OllamaOptions {
 	*/
 	public OllamaOptions() {
 		
+	}
+
+	public double getMinP() {
+		return minP;
+	}
+
+	public void setMinP(double minP) {
+		this.minP = minP;
 	}
 
 	public double getRepeatPenalty() {

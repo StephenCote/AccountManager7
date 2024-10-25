@@ -15,6 +15,7 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -157,39 +158,92 @@ public class TestLangChain extends BaseTest {
 			chat.setSessionName(sessName);
 			String sessDataName = ChatUtil.getSessionName(testUser1, null, pcfg, sessName);
 			OllamaRequest req = ChatUtil.getSession(testUser1, sessDataName);
+			String userAn = ((List<String>)pcfg.get("userAnalyze")).stream().collect(Collectors.joining(System.lineSeparator()));
 	    	if(req == null) {
 		    	
 	    		req = chat.getChatPrompt("uc-local");
-	    		req.setSystem(((List<String>)pcfg.get("systemAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())));
+	    		req.getMessages().clear();
+	    		String sysPrompt2 = ((List<String>)pcfg.get("systemAnalyze")).stream().collect(Collectors.joining(System.lineSeparator()));
+	    		logger.info(sysPrompt2);
+	    		req.setSystem(sysPrompt2);
 	    		//chat.setLlmSystemPrompt(((List<String>)pcfg.get("systemAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())));
-	    		chat.newMessage(req, ((List<String>)pcfg.get("userAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())));
+	    		//chat.newMessage(req, userAn);
 	    		chat.newMessage(req, ((List<String>)pcfg.get("assistantAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), "assistant");
 	    	}
-	    	logger.info(JSONUtil.exportObject(req));
-	    	String doc = getDocument("./media/HarlotsEight_Vol1_SM.docx");
+			req.getOptions().setRepeatPenalty(1.01);
+			req.getOptions().setTemperature(0.5);
+			req.getOptions().setTopP(0.25);
+			req.getOptions().setTopK(75);
+			req.getOptions().setMinP(0.00);
+
+	    	//logger.info(JSONUtil.exportObject(req));
+	    	//String doc = getDocument("./media/HarlotsEight_Vol1_SM.docx");
+			String doc = getDocument("./media/Vore.docx");
 	    	assertNotNull("Document is null", doc);
 	    	
 	    	logger.info("Doc length: " + doc.length());
 	    	int index = doc.indexOf("Chapter");
-	    	assertTrue("Expected index", index > -1);
+
 	    	String lastCR = null;
 	    	int part = 1;
-	    	while(index > -1) {
-	    		int idx2 = doc.indexOf("Chapter", index + 8);
+	    	boolean debug = true;
+	    	
+	    	List<String> crs = new ArrayList<>();
+	    	boolean single = (index == -1);
+	    	while(index > -1 || single) {
+	    		if(single) {
+	    			index = 0;
+	    		}
+	    		int idx2 = (single ? -1 : doc.indexOf("Chapter", index + 8));
 	    		int edx = (idx2 > -1 ? idx2 : doc.length());
 	    		String tmp = doc.substring(index, edx);
 	    		index = idx2;
 	    		logger.info("Part " + part + " " + tmp.split(" ").length + " words");
-	    		if(req.getMessages().size() > 2) {
-	    			req.getMessages().subList(3, req.getMessages().size()).clear();
+
+	    		if(req.getMessages().size() > 3) {
+	    			req.getMessages().subList(4, req.getMessages().size()).clear();
 	    		}
-	    		chat.continueChat(req, (lastCR != null ? "PREVIOUS CR:" + System.lineSeparator() + lastCR + System.lineSeparator() : "") + "CONTENT:" + System.lineSeparator() + tmp);
+	    		
+
+	    		
+	    		if(tmp.length() > 2500) {
+    				String stmp = tmp.substring(0, 2500);
+    				stmp = stmp.substring(0, stmp.lastIndexOf(".") + 1);
+    				tmp = stmp;
+	    			while(tmp.length() > 2500) {
+	    				stmp = tmp.substring(0, 2500);
+	    				stmp = stmp.substring(0, stmp.lastIndexOf(".") + 1);
+	    				chat.newMessage(req, stmp);
+	    				tmp = tmp.substring(stmp.length());
+	    			}
+	    		}
+	    		chat.newMessage(req, tmp);
+	    		/*
+	    		if(lastCR != null) {
+	    			chat.newMessage(req, "PREVIOUS CR:" + System.lineSeparator() + lastCR);
+	    		}
+	    		*/
+	    		chat.newMessage(req, userAn);
+	    		chat.continueChat(req, null);
+	    		// logger.info(JSONUtil.exportObject(req));	    		
 		    	OllamaMessage msg = req.getMessages().get(req.getMessages().size() - 1);
 		    	lastCR = msg.getContent();
+		    	crs.add(lastCR);
 		    	logger.info(lastCR);
-
+		    	if(single) {
+		    		break;
+		    	}
 	    		part++;
+	    		/*
+	    		if(debug && part > 12) {
+	    			logger.warn("Debug Break at part " + part);
+	    			break;
+	    		}
+	    		*/
+	    		
 	    	}
+	    	
+	    	FileUtil.emitFile("./crs.json", JSONUtil.exportObject(crs));
 	    	
 	    	/*
 	    	chat.continueChat(req, "");
@@ -219,7 +273,7 @@ public class TestLangChain extends BaseTest {
 	    	parseContext.set(PDFParserConfig.class, pdfConfig);
 	    	parseContext.set(Parser.class, parser);
 	    	parser.parse(fileStream, handler, metadata, parseContext);
-			out = handler.toString();
+			out = handler.toString().replaceAll("[“”]", "\"").replaceAll("’", "'");
 			
     	}
     	catch(IOException | SAXException | TikaException e) {
