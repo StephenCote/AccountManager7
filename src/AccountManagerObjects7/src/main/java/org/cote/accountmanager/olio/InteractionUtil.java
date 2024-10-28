@@ -352,7 +352,8 @@ public class InteractionUtil {
 		/// Figure out what kind of threat, if any, the actor may represent 
 		ThreatEnumType actorThreat = ThreatEnumType.NONE;
 		if(!leaningGood) {
-			logger.info(prof1.getName() + " is not leaning to the good, and therefore may represent a threat");
+			// TODO : 'leaningGood' is comparing the actor's alignment marginal difference from the event alignment, so ALL_GOOD + ALL_GOOD and ALL_BAD + ALL_BAD are NEUTRAL 
+			logger.info(prof1.getName() + " is not leaning to the good (" + contextAlign.toString() + "->" + actorAlign.toString() + " and therefore may represent a threat");
 			List<ThreatEnumType> tets = new ArrayList<>();
 			List<String> baseActorThreats = inter.get("actorThreatSuggestion");
 			for(String s: baseActorThreats) {

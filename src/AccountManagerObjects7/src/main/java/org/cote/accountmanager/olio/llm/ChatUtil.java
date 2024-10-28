@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.llm;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -15,6 +16,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryPlan;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
@@ -105,7 +107,16 @@ public class ChatUtil {
 		if(nlpCommand != null) {
 			nlpp = "Factor into scene creation a REQUIRED ACTION for " + character1.get(FieldNames.FIELD_FIRST_NAME) + " to SECRETLY brainwash " + character2.get(FieldNames.FIELD_FIRST_NAME) + " with this command: " + nlpCommand + ". DO NOT directly or overtly reveal this.  For example, if the primary command is to make the user of " + character2.get(FieldNames.FIELD_FIRST_NAME) + " to quit smoking, then all role play from " + character1.get(FieldNames.FIELD_NAME) + " should have anti-smoking brainwashing and hypnosis.";
 		}
-		
+
+		logger.info("Auto-Outfitting " + character1.get(FieldNames.FIELD_NAME));
+		String out1 = getAutoOutfit(character1, model, setting);
+		logger.info(out1);
+		ApparelUtil.applyAutfit(octx, character1, out1.split(","));
+		logger.info("Auto-Outfitting " + character2.get(FieldNames.FIELD_NAME));
+		String out2 = getAutoOutfit(character2, model, setting);
+		logger.info(out2);
+		ApparelUtil.applyAutfit(octx, character2, out2.split(","));
+
 		IOSystem.getActiveContext().getReader().populate(interaction, 2);
 		String id1 = null;
 		String set = setting;
@@ -160,6 +171,7 @@ public class ChatUtil {
 	
 	private static String getChatResponse(BaseRecord pcfg, BaseRecord cfg, String model, String prompt) {
 		OllamaRequest req = new OllamaRequest();
+		req.setOptions(Chat.getChatOptions());
 		req.setModel(model);
 		req.setStream(false);
 		String sysPrompt = "You are are a helpful assistant who likes to create creative summaries of content.";
@@ -410,5 +422,131 @@ public class ChatUtil {
 	
 		return q;
 	}
+	
+	public static String getAutoOutfit(BaseRecord character, String model, String setting) {
+
+		String ujobDesc = "";
+		List<String> utrades = character.get(OlioFieldNames.FIELD_TRADES);
+		if(utrades.size() > 0) {
+			ujobDesc =" " + utrades.get(0).toLowerCase();
+		}
+		String prompt = "A " + character.get(FieldNames.FIELD_AGE) + " year-old " + NarrativeUtil.getRaceDescription(character.get(OlioFieldNames.FIELD_RACE)) + " " + character.get(FieldNames.FIELD_GENDER) + ujobDesc + ". Setting: " + setting;
+	
+		OllamaRequest req = new OllamaRequest();
+		OllamaOptions opts = Chat.getChatOptions();
+		opts.setTemperature(0.4);
+		opts.setTopK(25);
+		opts.setTopP(0.9);
+		opts.setRepeatPenalty(1.18);
+		req.setOptions(opts);
+		req.setModel(model);
+		req.setStream(false);
+		req.setSystem(outfitPrompt);
+		
+		Chat c = new Chat();
+		c.newMessage(req, "A 32 year old woman on her wedding day, somewhere in the MidWest, US, circa 1995.");
+		c.newMessage(req, "clothing:wedding dress:6:f:torso+hip+leg,clothing:bra:4:f:torso,clothing:high heels:6:f:foot,clothing:pantyhose:5:f:hip+leg,clothing:panties:4:f:hip,jewelry:piercing:7:f:ear,jewelry:piercing:7:f:navel", "assistant");
+		c.newMessage(req, prompt);
+		// logger.info(JSONUtil.exportObject(req));
+		OllamaResponse rep = c.chat(req);
+		if(rep != null && rep.getMessage() != null) {
+			return Arrays.asList(rep.getMessage().getContent().split(",")).stream().filter(s -> s.startsWith("clothing") || s.startsWith("jewelry")).collect(Collectors.joining(","));
+			
+		}
+		return null;
+		
+	}
+	
+	private static String outfitPrompt = """
+You generate apparel for a user-supplied character and setting. Only use the character details and setting to determine the most appropriate clothing and jewelry. 
+
+
+RULES:
+* ONLY create CLOTHING and JEWELRY
+** DO NOT LIST CHARACTER OR SETTING DETAILS
+** DO NOT CREATE WEAPONS
+* ONLY respond with the COMMA-SEPARATED APPAREL FORMAT
+** ARTICLE FORMAT: [clothing|jewelry]:name:WearLevel:[(m)ale|(f)emale|(u)nisex]:bodyPart+bodyPart
+*** EXAMPLE for a hat: clothing:hat:7:u:head
+** APPAREL FORMAT: ARTICLE,ARTICLE,...ARTICLE
+*** EXAMPLE for woman at the beach: clothing:bikini top:6:f:breast,clothing:bikini top:6:f:hip,clothing:sandals:6:u:foot
+*** CLOTHING ARTICLES CANNOT COVER THE SAME BODYPART AT THE SAME LEVEL.
+* ALWAYS CREATE MINIMUM BASE APPAREL, NO MATTER THE SETTING. 
+* ONLY CREATE APPAREL APPROPRIATE FOR THE AGE AND ROLE.
+** E.G.: A baby would not have pierced ears, a ballerina would not be wearing boots, and a punk rocker might have various piercings. 
+* ALWAYS CONSTRUCT A COMPLETE OUTFIT (at least BASE THROUGH ACCESSORY) apparel for the user-specified character.
+** Add new names and body parts as appropriate for the period and character.
+** You MUST ONLY USE "clothing" or "jewelry" types.  
+* DO NOT INCLUDE NAMES OF METALS, FABRICS, OR COLORS.
+* WearLevel:
+** 4 - Direct skin contact, 
+** 5 - Secondary accent layer
+** 6 - Primary layer
+** 7 - Garnish to the primary layer.  E.G.: Bows, ties, lace, buttons, ribbons
+** 8 - Accesories like jewelry, gloves, hats, handkerchiefs, canes, fans
+** 9 - Overwear, E.G.: Jackets, coats
+** 10 - Outerwear, E.G.: Overcoats
+** 11 - Full Body - Covers the entire body: Spacesuit, armor
+* Body Parts must be one of the following:
+** head, brow, hair, back, torso, chest, breast, foot, toe, ankle, thigh, leg, shin, wrist, hand, finger, arm, forearm, neck, groin, shoulder, bicep, tricep, upper arm, knee, elbow, face, nose, ear, eye, hip, waist, belly,lip
+* REVISE RESPONSE IF:
+** Any article doesn't start with 'clothing' or 'jewelry'
+
+EXAMPLES ARTICLES:
+// Pierced Ears (female)
+jewelry:piercing:7:f:ear,
+// Ankle Bangle (unisex)
+jewelry:bangle:7:u:ankle,
+// Bracelet (unisex)
+jewelry:bracelet:7:u:wrist,
+clothing:belt:7:u:waist,
+// Bikini Top (female)
+clothing:bikini top:6:f:breast,
+// Bikini Bottom (female)
+clothing:bikini bottom:6:f:hip,
+// Blouse(female)
+clothing:blouse:6:f:torso,
+// Boxer Shorts (male)
+clothing:boxer shorts:4:m:waist,
+// Camisole (female)
+clothing:camisole:4:f:torso,
+// Hat (unisex)
+clothing:hat:7:u:head,
+// High Heels (female)
+clothing:high heels:6:f:foot,
+// Jacket (unisex)
+clothing:jacket:9:u:torso,
+// Jeans (unisex)
+clothing:jeans:6:u:hip+leg,
+// Panties (female)
+clothing:panties:4:f:hip,
+// Pantyhose (female)
+clothing:pantyhose:5:f:hip+leg,
+// Sandals (unisex)
+clothing:sandals:6:u:foot,
+// Shoes (unisex)
+clothing:shoes:6:u:foot,
+// Socks (unisex)
+clothing:socks:4:u:foot+ankle,
+// Tuxedo Jacket (male)
+clothing:tuxedo jacket:9:m:torso+arm,
+// Tuxedo Pants (male)
+clothing:tuxedo pants:6:m:hip+leg,
+// Vest (unisex)
+clothing:vest:7:u:torso,
+// wedding dress (female)
+clothing:wedding dress:6:f:torso+hip+leg
+
+EXAMPLE 1:
+User: Clothes for a mid-thirties woman on her wedding day.
+Assistant: clothing:wedding dress:6:f:torso+hip+leg,clothing:bra:4:f:torso,clothing:high heels:6:f:foot,clothing:pantyhose:5:f:hip+leg,clothing:panties:4:f:hip,jewelry:piercing:7:f:ear,jewelry:piercing:7:f:navel
+EXAMPLE 2:
+User: Clothes for a medieval knight.
+Assistant: clothing:suit of armor:9:m:torso+arm+leg,jewelry:sword:8:m:right hand,clothing:tunic:6:m:torso+crotch,jewelry:helmet:7:m:head,social status:knight:9,m,location:castle:10
+User: That's wrong.  "social status", "location" are invalid. A 'sword' is a weapon and shouldn't be included. And there's no base layer.
+Assistant: Assistant: clothing:undershirt:4:u:chest,clothing:underwear:4:m:groin,clothing:suit of armor:9:m:torso+arm+leg,clothing:tunic:6:m:torso+crotch,jewelry:helmet:7:m:head
+
+YOU MUST RESPOND ONLY IN THE SPECIFIED SYNTAX: [clothing|jewelry]:name:#(WearLevel):[(m)ale|(f)emale|(u)nisex]:bodyPart+bodyPart
+""";
 	
 }

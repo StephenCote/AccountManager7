@@ -66,6 +66,25 @@ public class ApparelUtil {
 	private static String jpref = "jewelry:";
 	
 	private static SecureRandom rand = new SecureRandom();
+	
+	public static void applyAutfit(OlioContext ctx, BaseRecord character, String[] outfit) {
+		BaseRecord apparel = ApparelUtil.constructApparel(ctx, 0L, character, outfit);
+		apparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
+		List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
+		wearl.forEach(w -> {
+			w.setValue(OlioFieldNames.FIELD_IN_USE, true);
+		});
+		IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
+		BaseRecord store = character.get(FieldNames.FIELD_STORE);
+		List<BaseRecord> appl = store.get(OlioFieldNames.FIELD_APPAREL);
+		for(BaseRecord a : appl) {
+			IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, a, null, false);
+		}
+		appl.clear();
+		appl.add(apparel);
+		IOSystem.getActiveContext().getMemberUtil().member(ctx.getOlioUser(), store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
+	}
+	
 	public static BaseRecord getWearingApparel(BaseRecord per) {
 		BaseRecord app = null;
 		List<BaseRecord> appl = per.get(OlioFieldNames.FIELD_STORE_APPAREL);

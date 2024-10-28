@@ -45,6 +45,5 @@
 			"baseType": "string",
 			"limit": ["head", "brow", "hair", "back", "torso", "chest", "breast", "foot", "toe", "ankle", "thigh", "leg", "shin", "wrist", "hand", "finger", "arm", "forearm", "neck", "groin", "shoulder", "bicep", "tricep", "upper arm", "knee", "elbow", "face", "nose", "ear", "eye", "hip", "waist", "belly","lip"]
 		}
-
 	]
 }

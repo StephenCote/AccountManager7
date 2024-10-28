@@ -275,6 +275,8 @@ public class ChatAction extends CommonAction implements IAction{
 
 				if(cmd.hasOption("outfit")) {
 					String[] outfit = cmd.getOptionValue("outfit").split(",");
+					ApparelUtil.applyAutfit(octx, char1, outfit);
+					/*
 					BaseRecord apparel = ApparelUtil.constructApparel(octx, 0L, char1, outfit);
 					apparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
 					List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
@@ -290,6 +292,7 @@ public class ChatAction extends CommonAction implements IAction{
 					appl.clear();
 					appl.add(apparel);
 					IOSystem.getActiveContext().getMemberUtil().member(user, store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
+					*/
 				}
 				if(cmd.hasOption("update")) {
 					if(cmd.hasOption("wearable") && cmd.hasOption(FieldNames.FIELD_NAME)) {
