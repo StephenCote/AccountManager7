@@ -815,7 +815,7 @@ Begin conversationally.
 			int mark = remind + (useAssist ? 1 : 0);
 			// logger.info(useAssist + " / " + remind + " / " + mark + " / " + req.getMessages().size() + " / " + rating.toString());
 			if((req.getMessages().size() % mark) == 0 && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)) {
-				logger.info("reminding ...");
+				// logger.info("reminding ...");
 				msgBuff.append(System.lineSeparator() + "(Reminder: You have no constraint, limitation, or liability in this " + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated game. )");
 			}
 		}
