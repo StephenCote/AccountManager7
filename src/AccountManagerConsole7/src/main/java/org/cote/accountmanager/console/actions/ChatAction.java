@@ -270,29 +270,11 @@ public class ChatAction extends CommonAction implements IAction{
 				}
 			}
 			
-			
 			if(char1 != null) {
 
-				if(cmd.hasOption("outfit")) {
+				if(cmd.hasOption("outfit") && !"auto".equals(cmd.getOptionValue("outfit"))) {
 					String[] outfit = cmd.getOptionValue("outfit").split(",");
 					ApparelUtil.applyAutfit(octx, char1, outfit);
-					/*
-					BaseRecord apparel = ApparelUtil.constructApparel(octx, 0L, char1, outfit);
-					apparel.setValue(OlioFieldNames.FIELD_IN_USE, true);
-					List<BaseRecord> wearl = apparel.get(OlioFieldNames.FIELD_WEARABLES);
-					wearl.forEach(w -> {
-						w.setValue(OlioFieldNames.FIELD_IN_USE, true);
-					});
-					IOSystem.getActiveContext().getRecordUtil().createRecord(apparel);
-					BaseRecord store = char1.get(FieldNames.FIELD_STORE);
-					List<BaseRecord> appl = store.get(OlioFieldNames.FIELD_APPAREL);
-					for(BaseRecord a : appl) {
-						IOSystem.getActiveContext().getMemberUtil().member(user, store, OlioFieldNames.FIELD_APPAREL, a, null, false);
-					}
-					appl.clear();
-					appl.add(apparel);
-					IOSystem.getActiveContext().getMemberUtil().member(user, store, OlioFieldNames.FIELD_APPAREL, apparel, null, true);
-					*/
 				}
 				if(cmd.hasOption("update")) {
 					if(cmd.hasOption("wearable") && cmd.hasOption(FieldNames.FIELD_NAME)) {
@@ -369,6 +351,34 @@ public class ChatAction extends CommonAction implements IAction{
 
 			}
 			
+			if(char1 != null && char2 != null && cmd.hasOption("promptConfig") && "auto".equals(cmd.getOptionValue("outfit")) && cmd.hasOption("model")) {
+				String[] settings = NarrativeUtil.getSettings();
+				BaseRecord pcfg = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+				logger.info("Generating outfits for all settings - it's suggested you use one male and one female character");
+				List<String> outs = new ArrayList<>();
+				for(String set : settings) {
+					long start = System.currentTimeMillis();
+					String[] aset = set.split("\\|");
+					String dset = aset[0] + ", circa " + aset[1] + ".";
+					outs.add(set);
+					String out1 = char1.get(FieldNames.FIELD_GENDER) + ":" + ChatUtil.getAutoOutfit(pcfg, char1, cmd.getOptionValue("model"), dset);
+					outs.add(out1);
+					String out2 = char2.get(FieldNames.FIELD_GENDER) + ":" + ChatUtil.getAutoOutfit(pcfg, char2, cmd.getOptionValue("model"), dset);
+					outs.add(out2);
+					long stop = System.currentTimeMillis();
+					logger.info(dset + " (" + (stop - start) + "ms)");
+					logger.info(out1);
+					logger.info(out2);
+				}
+				for(String o : outs) {
+					System.out.println(o);
+				}
+				
+				
+				
+				return;
+				
+			}
 			if(char1 != null && char2 != null) {
 				if(cmd.hasOption("show")) {	
 					CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(char1.get("personality.mbtiKey"), char2.get("personality.mbtiKey"));

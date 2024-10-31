@@ -597,7 +597,7 @@ Begin conversationally.
 					String char2 = NarrativeUtil.describe(null, chatConfig.get("userCharacter"));
 					logger.info("Character 1: " + char1);
 					logger.info("Character 2: " + char2);
-					if(req != null) {
+					if(req != null && req.getMessages().size() > 3) {
 						OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following two characters. Include all physical, behavioral, and personality details." + System.lineSeparator() + char1 + System.lineSeparator() + char2, 0, 0, false));
 						if(oresp != null && oresp.getMessage() != null) {
 							logger.info(oresp.getMessage().getContent());
@@ -858,6 +858,9 @@ Begin conversationally.
 	}
 
 	public OllamaResponse chat(OllamaRequest req) {
+		if(req == null) {
+			return null;
+		}
 		return ClientUtil.post(OllamaResponse.class, ClientUtil.getResource(ollamaServer + "/api/" + (chatMode ? "chat" : "generate")), getPrunedRequest(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	

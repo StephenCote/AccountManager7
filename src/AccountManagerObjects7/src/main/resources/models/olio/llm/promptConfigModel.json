@@ -125,6 +125,21 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.llm.promptRaceConfig"
+		},
+		{
+			"name": "outfit",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "userOutfit",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "assistantOutfit",
+			"type": "list",
+			"baseType": "string"
 		}
 	]
 }
