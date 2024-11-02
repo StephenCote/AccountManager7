@@ -66,6 +66,11 @@
 			"baseType": "string"
 		},
 		{
+			"name": "userReminder",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "userAnalyze",
 			"type": "list",
 			"baseType": "string"

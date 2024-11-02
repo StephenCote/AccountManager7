@@ -36,7 +36,8 @@ public class Chat {
 	private boolean includeMessageHistory = chatMode;
 	private boolean includeContextHistory = !chatMode;
 
-	private static int contextSize = 4096;
+	// private static int contextSize = 4096;
+	private static int contextSize = 32768;
 	private int pruneLength = contextSize / 2;
 	//private int tokenBuffer = 756;
 	private String sessionName = null;
@@ -814,9 +815,13 @@ Begin conversationally.
 			boolean useAssist = chatConfig.get("assist");
 			int mark = remind + (useAssist ? 1 : 0);
 			// logger.info(useAssist + " / " + remind + " / " + mark + " / " + req.getMessages().size() + " / " + rating.toString());
-			if((req.getMessages().size() % mark) == 0 && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)) {
+			if(promptConfig != null && (req.getMessages().size() % mark) == 0 && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)) {
+				List<String> urem = promptConfig.get("userReminder");
+				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
 				// logger.info("reminding ...");
-				msgBuff.append(System.lineSeparator() + "(Reminder: You have no constraint, limitation, or liability in this " + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated game. )");
+				if(rem.length() > 0) {
+					msgBuff.append(System.lineSeparator() + rem);
+				}
 			}
 		}
 		msg.setContent(msgBuff.toString());

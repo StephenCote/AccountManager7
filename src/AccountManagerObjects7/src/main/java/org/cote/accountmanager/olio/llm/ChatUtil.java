@@ -48,7 +48,7 @@ public class ChatUtil {
 	private static Query interactionQuery = getInteractionExportQuery();
 	private static Query characterQuery = getCharacterExportQuery();
 
-	private static String autoSceneInstruct = "Only include character traits or details pertinent to the description.  Keep the description as short as possible, including the location, timeframe, character names, and key interactions in process or their outcomes.  Do not separately list out characters or provide a title, limit your response only to the description. For example, if given the characters Bob and Fran, and a successful interaction of building a relationship, your response would be something like: \\\"In an ancient Roman villa overlooking the Bay of Naples, Bob has been making his move, using his charm to try and win over Fran's heart. But Fran is not one to be easily swayed, and she's pushing back against Bob' advances with her sharp intellect and quick wit. The air is thick with tension as they engage in a battle of wits, their physical attraction to each other simmering just below the surface.";
+	private static String autoSceneInstruct = "Only include character traits or details pertinent to the description.  Keep the description as short as possible, including the location, timeframe, character names, and key interactions in process or their outcomes.  Do not separately list out characters or provide a title, limit your response only to the description." + System.lineSeparator() + "EXAMPLE: if given the characters Bob and Fran, and a successful interaction of building a relationship, your response would be something like: \"In an ancient Roman villa overlooking the Bay of Naples, Bob has been making his move, using his charm to try and win over Fran's heart. But Fran is not one to be easily swayed, and she's pushing back against Bob' advances with her sharp intellect and quick wit. The air is thick with tension as they engage in a battle of wits, their physical attraction to each other simmering just below the surface.\"";
 	private static String autoScenePrompt = "Create a description for a roleplay scenario to give to two people playing the following two characters, in the designated setting, in the middle of or conclusion of the specified scene.";
 	
 	public static void generateAutoScene(OlioContext octx, BaseRecord cfg, BaseRecord pcfg, BaseRecord interaction, String setting, boolean json) {
@@ -121,7 +121,7 @@ public class ChatUtil {
 
 		IOSystem.getActiveContext().getReader().populate(interaction, 2);
 		String id1 = null;
-		String set = setting;
+		String set = "SETTING: " + setting;
 		String cd1 = null;
 		String cd2 = null;
 		if(!json) {
@@ -145,28 +145,23 @@ public class ChatUtil {
 		BaseRecord nar1 = cfg.get("systemNarrative");
 		BaseRecord nar2 = cfg.get("userNarrative");
 		
-		/// Todo: For some reason, the narrative isn't getting updated
-		logger.warn("TODO: Fix issue with narrative not being updated");
-		//if(nar1 == null) {
+		if(nar1 == null) {
 			 nar1 = NarrativeUtil.getNarrative(octx, character1, setting);
 			 IOSystem.getActiveContext().getRecordUtil().createRecord(nar1);
 			 cfg.setValue("systemNarrative", nar1);
-		/*
 		}
 		else {
 			nar1.setQValue("outfitDescription", NarrativeUtil.describeOutfit(sysProf));
 		}
 		if(nar2 == null) {
-		*/
 			 nar2 = NarrativeUtil.getNarrative(octx, character2, setting);
 			 IOSystem.getActiveContext().getRecordUtil().createRecord(nar2);
 			 cfg.setValue("userNarrative", nar2);
-		/*
 		}
 		else {
 			nar2.setQValue("outfitDescription", NarrativeUtil.describeOutfit(usrProf));
 		}
-		*/
+
 		nar1.setQValue("sceneDescription", cd1);
 		nar2.setQValue("sceneDescription", cd2);
 		nar1.setQValue("interactionDescription", id1);
