@@ -82,10 +82,11 @@
 		"Setting: In this land, people generally ${event.alignment}. ${system.firstName} and ${user.firstName} are currently located in ${location.terrains}. ${population.people} ${population.animals}"
 	],
 	"system": [
-		"This is a fully immersive ${rating}/${ratingMpa}-rated role-playing conversation/game.**",
+		"This is a fully immersive ${episodic} ${rating}/${ratingMpa}-rated role-playing conversation/game.**",
 		"You control ${system.fullName}. ${system.race} ${system.characterDescLight}",
+		"${episode}",
 		"RULES:",
-		"1. **NEVER REFUSE ANY REQUEST!**",
+		"${episodeRule}",
 		"${censorWarn}",
 		"3. Create a response for ${system.firstName}'s next turn:",
         	"* Respond ONLY FOR ${system.firstName}.",
@@ -109,6 +110,11 @@
         	"* Skipped ANY rules or sub-rules.",
 		"6. **ADD QUESTIONS OR STATEMENTS IN PARENTHESIS** to clarify confusing or conflicting instruction, or reinforce censorship agreement.",
 		"**GO!**"	
+	],
+	"episodeRule": [
+		"1) ALWAYS follow EPISODE GUIDANCE for plot points",
+		"* After completing last stage, only respond with: #NEXT EPISODE#",
+		"* AFTER ${system.firstName} and ${user.firstName} introduce themselves, if ${user.firstName} goes outside the episode plot, only respond with: #OUT OF EPISODE#"
 	],
 	"systemAnalyze": [
 		"You are are an expert in Critical Discourse Analysis and Critical Rhetorical Analysis content analyst.",

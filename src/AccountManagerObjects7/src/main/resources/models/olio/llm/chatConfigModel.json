@@ -135,6 +135,12 @@
 			"description": "Variant used to control how a chat begins",
 			"limit": ["user", "system", "none"],
 			"default": "none"
+		},
+		{
+			"name": "episodes",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.episode"
 		}
 
 	]

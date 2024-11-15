@@ -1,0 +1,46 @@
+{
+	"name": "olio.llm.episode",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "theme",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "name",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "completed",
+			"type": "boolean"
+		},
+		{
+			"name": "summary",
+			"type": "string"
+		},
+		{
+			"name": "episodeAssist",
+			"type": "string"
+		},
+		{
+			"name": "number",
+			"type": "int"
+		},
+		{
+			"name": "stages",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "duration",
+			"type": "int",
+			"default": 0,
+			"description": "Number of minutes the episode should last."
+		}
+
+	]
+}

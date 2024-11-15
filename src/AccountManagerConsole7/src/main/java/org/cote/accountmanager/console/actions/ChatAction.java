@@ -34,6 +34,7 @@ import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.llm.PromptConfiguration;
+import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -58,6 +59,8 @@ public class ChatAction extends CommonAction implements IAction{
 		
 	}
 	public void addOptions(Options options) {
+		options.addOption("episode", true, "Episodic configuration");
+		options.addOption("episodeNumber", true, "Episodic configuration");
 		options.addOption("reimage", true, "Bit to regenerate SD images");
 		options.addOption("refigure", true, "Bit to regenerate SD figurines");
 		options.addOption("style", true, "Bit used to adjust style elements, such as image generation style");
@@ -187,6 +190,21 @@ public class ChatAction extends CommonAction implements IAction{
 		NarrativeUtil.setDescribeFabrics(cmd.hasOption("detailed"));
 		String universeName = "My Grid Universe";
 		String worldName = "My Grid World";
+		
+		if(cmd.hasOption("chatConfig") && cmd.hasOption("update") && cmd.hasOption("episode")) {
+			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+			BaseRecord ep = RecordFactory.importRecord(OlioModelNames.MODEL_EPISODE, cmd.getOptionValue("episode"));
+			BaseRecord lep = PromptUtil.getLastEpisode(cfg);
+			int number = 1;
+			if(lep != null) {
+				number = 1 + (int)lep.get("number");
+			}
+			ep.setValue("number", number);
+			List<BaseRecord> eps = cfg.get("episodes");
+			eps.add(ep);
+			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
+		}
+		
 		if(cmd.hasOption("chatConfig") && cmd.hasOption("auto") && cmd.hasOption("update")) {
 			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 			String set = cmd.getOptionValue("setting");

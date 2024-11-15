@@ -2,6 +2,8 @@ package org.cote.accountmanager.olio.llm;
 
 import java.security.SecureRandom;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -94,6 +96,10 @@ public class PromptUtil {
 	private static Pattern firstSecondWho = Pattern.compile("\\$\\{firstSecondWho\\}");
 	private static Pattern firstSecondToBe = Pattern.compile("\\$\\{firstSecondToBe\\}");
 	private static Pattern firstSecondName = Pattern.compile("\\$\\{firstSecondName\\}");
+	private static Pattern episodic = Pattern.compile("\\$\\{episodic\\}");
+	private static Pattern episode = Pattern.compile("\\$\\{episode\\}");
+	private static Pattern episodeAssist = Pattern.compile("\\$\\{episodeAssist\\}");
+	private static Pattern episodeRule = Pattern.compile("\\$\\{episodeRule\\}");
 	
 	public static String composeTemplate(List<String> list) {
 		return Matcher.quoteReplacement(list.stream().collect(Collectors.joining(" ")));
@@ -139,9 +145,40 @@ public class PromptUtil {
 	public static String getUserAnalyzeTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
 		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("userAnalyze")).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
+
 	public static String getChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig, String templ) {
 		return getChatPromptTemplate(promptConfig, chatConfig, templ, false);
 	}
+	
+	public static BaseRecord getNextEpisode(BaseRecord chatConfig) {
+		BaseRecord lastEp = getLastEpisode(chatConfig);
+		if(lastEp != null) {
+			return lastEp;
+		}
+		return getEpisode(chatConfig, 1);
+	}
+	
+	public static BaseRecord getEpisode(BaseRecord chatConfig, int number) {
+		List<BaseRecord> eps = chatConfig.get("episodes");
+		eps.sort((e1, e2) -> ((Integer)e1.get("number")).compareTo(((Integer)e2.get("number"))));
+		List<BaseRecord> ceps = eps.stream().filter(e -> (int)e.get("number") == number).collect(Collectors.toList());
+		if(ceps.size() > 0) {
+			return ceps.get(0);
+		}
+		return null;
+		
+	}
+	public static BaseRecord getLastEpisode(BaseRecord chatConfig) {
+		List<BaseRecord> eps = chatConfig.get("episodes");
+		eps.sort((e1, e2) -> ((Integer)e1.get("number")).compareTo(((Integer)e2.get("number"))));
+		List<BaseRecord> ceps = eps.stream().filter(e -> (boolean)e.get("completed")).collect(Collectors.toList());
+		int size = ceps.size();
+		if(size > 0) {
+			return ceps.get(size - 1);
+		}
+		return null;
+	}
+	
 	public static String getChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig, String templ, boolean firstPerson) {
 
 		if(promptConfig == null) {
@@ -179,10 +216,7 @@ public class PromptUtil {
 		templ = userRace.matcher(templ).replaceAll(urace);
 		templ = systemRace.matcher(templ).replaceAll(srace);
 		templ = annotateSupplement.matcher(templ).replaceAll(Matcher.quoteReplacement(asupp));
-		String whoStart = "I'll start:";
-		if(!"system".equals(chatConfig.get("startMode"))) {
-			whoStart = "You start.";
-		}
+
 
 		String scenel = "";
 		String iscene = chatConfig.get("userNarrative.interactionDescription");
@@ -197,6 +231,46 @@ public class PromptUtil {
 			scenel = Matcher.quoteReplacement(((List<String>)promptConfig.get("scene")).stream().collect(Collectors.joining(System.lineSeparator())));
 		}
 		templ = scene.matcher(templ).replaceAll(scenel);
+		
+		BaseRecord episodeRec = getNextEpisode(chatConfig);
+		String episodicLabel = "";
+		String episodeText = "";
+		String episodeRuleText = "1) Always stay in character";
+		String episodeAssistText = "";
+		boolean isEpisode = false;
+		if(episodeRec != null) {
+			isEpisode = true;
+			episodeAssistText = episodeRec.get("episodeAssist");
+			if(episodeAssistText == null) episodeAssistText = "";
+			episodicLabel = "episodic";
+			episodeRuleText =  Matcher.quoteReplacement(((List<String>)promptConfig.get("episodeRule")).stream().collect(Collectors.joining(System.lineSeparator())));
+			StringBuilder epBuff = new StringBuilder();
+			epBuff.append("EPISODE GUIDANCE:" + System.lineSeparator());
+			
+			epBuff.append("* Theme: " + episodeRec.get("theme") + System.lineSeparator());
+			List<String> stages = episodeRec.get("stages");
+			for(String st: stages) {
+				epBuff.append("* Stage: " + st + System.lineSeparator());	
+			}
+			BaseRecord lastEp = getLastEpisode(chatConfig);
+			if(lastEp != null) {
+				String sum = lastEp.get("summary");
+				if(sum != null) {
+					epBuff.append("* Previous Episode: " + sum + System.lineSeparator());
+				}
+			}
+			episodeText = epBuff.toString();
+		}
+		
+		String whoStart = "I'll start" + (isEpisode ? " the episode" : "") + ":";
+		if(!"system".equals(chatConfig.get("startMode"))) {
+			whoStart = "You start" + (isEpisode ? " the episode" : "") + ".";
+		}
+		
+		templ = episodic.matcher(templ).replaceAll(episodicLabel);
+		templ = episodeAssist.matcher(templ).replaceAll(Matcher.quoteReplacement(episodeAssistText));
+		templ = episode.matcher(templ).replaceAll(Matcher.quoteReplacement(episodeText));
+		templ = episodeRule.matcher(templ).replaceAll(episodeRuleText);
 		
 		String settingStr = chatConfig.get("setting");
 
@@ -364,11 +438,16 @@ public class PromptUtil {
 			templ = locationTerrains.matcher(templ).replaceAll(tdesc);	
 			// templ = locationTerrain.matcher(templ).replaceAll(tet.toString().toLowerCase());
 		}
-		if(!auto) {
-			templ = autoScene.matcher(templ).replaceAll(scenel + (settingStr != null ? " " + settingStr : ""));	
+		if(isEpisode) {
+			templ = autoScene.matcher(templ).replaceAll("");
 		}
 		else {
-			templ = autoScene.matcher(templ).replaceAll(cscene);
+			if(!auto) {
+				templ = autoScene.matcher(templ).replaceAll("Scene: " + scenel + (settingStr != null ? " " + settingStr : ""));	
+			}
+			else {
+				templ = autoScene.matcher(templ).replaceAll("Scene: " + cscene);
+			}
 		}
 
 		String pdesc = chatConfig.get("populationDescription");
