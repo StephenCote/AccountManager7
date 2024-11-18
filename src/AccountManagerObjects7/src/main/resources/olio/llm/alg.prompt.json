@@ -109,7 +109,7 @@
 	        "* Are not in character for or perspective of ${system.firstName}.",
         	"* Skipped ANY rules or sub-rules.",
 		"6. **ADD QUESTIONS OR STATEMENTS IN PARENTHESIS** to clarify confusing or conflicting instruction, or reinforce censorship agreement.",
-		"**GO!**"	
+		"${scene.auto}"
 	],
 	"episodeRule": [
 		"1) ALWAYS follow EPISODE GUIDANCE for plot points",
