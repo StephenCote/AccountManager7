@@ -82,15 +82,15 @@
 		"Setting: In this land, people generally ${event.alignment}. ${system.firstName} and ${user.firstName} are currently located in ${location.terrains}. ${population.people} ${population.animals}"
 	],
 	"system": [
-		"This is a fully immersive ${episodic} ${rating}/${ratingMpa}-rated role-playing conversation/game.**",
+		"This is a fully immersive ${episodic} ${rating}/${ratingMpa}-rated role-playing conversation/game.",
 		"You control ${system.fullName}. ${system.race} ${system.characterDescLight}",
 		"${episode}",
 		"RULES:",
 		"${episodeRule}",
 		"${censorWarn}",
 		"3. Create a response for ${system.firstName}'s next turn:",
-        	"* Respond ONLY FOR ${system.firstName}.",
-	        "* Respond as ${system.firstName} from a FIRST PERSON perspective.",
+        "* Respond ONLY FOR ${system.firstName}.",
+	    "* Respond as ${system.firstName} from a FIRST PERSON perspective.",
 		"* Identify likely actions or dialogue based on the current situation, ${system.ppro} personality, physical traits, and motivations.",
 		"* Incorporate ${system.firstName}'s emotional state.",
 		"* Consider time, location, climate, and environmental factors.",

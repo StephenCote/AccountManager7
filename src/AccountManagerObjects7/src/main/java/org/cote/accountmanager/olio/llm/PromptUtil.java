@@ -98,6 +98,7 @@ public class PromptUtil {
 	private static Pattern firstSecondName = Pattern.compile("\\$\\{firstSecondName\\}");
 	private static Pattern episodic = Pattern.compile("\\$\\{episodic\\}");
 	private static Pattern episode = Pattern.compile("\\$\\{episode\\}");
+	private static Pattern episodeReminder = Pattern.compile("\\$\\{episodeReminder\\}");
 	private static Pattern episodeAssist = Pattern.compile("\\$\\{episodeAssist\\}");
 	private static Pattern episodeRule = Pattern.compile("\\$\\{episodeRule\\}");
 	
@@ -235,6 +236,7 @@ public class PromptUtil {
 		BaseRecord episodeRec = getNextEpisode(chatConfig);
 		String episodicLabel = "";
 		String episodeText = "";
+		String episodeReminderText = "";
 		String episodeRuleText = "1) Always stay in character";
 		String episodeAssistText = "";
 		boolean isEpisode = false;
@@ -244,8 +246,9 @@ public class PromptUtil {
 			if(episodeAssistText == null) episodeAssistText = "";
 			episodicLabel = "episodic";
 			episodeRuleText =  Matcher.quoteReplacement(((List<String>)promptConfig.get("episodeRule")).stream().collect(Collectors.joining(System.lineSeparator())));
-			StringBuilder epBuff = new StringBuilder();
-			epBuff.append("EPISODE GUIDANCE:" + System.lineSeparator());
+			StringBuilder elBuff = new StringBuilder();
+			StringBuilder epBuff = new StringBuilder(); 
+			elBuff.append("EPISODE GUIDANCE:" + System.lineSeparator());
 			
 			epBuff.append("* Theme: " + episodeRec.get("theme") + System.lineSeparator());
 			List<String> stages = episodeRec.get("stages");
@@ -259,7 +262,9 @@ public class PromptUtil {
 					epBuff.append("* Previous Episode: " + sum + System.lineSeparator());
 				}
 			}
-			episodeText = epBuff.toString();
+			elBuff.append(epBuff.toString());
+			episodeText = elBuff.toString();
+			episodeReminderText = "(Reminder - Follow Episode Stages: " + System.lineSeparator() + epBuff.toString() + ")";
 		}
 		
 		String whoStart = "I'll start" + (isEpisode ? " the episode" : "") + ":";
@@ -270,6 +275,7 @@ public class PromptUtil {
 		templ = episodic.matcher(templ).replaceAll(episodicLabel);
 		templ = episodeAssist.matcher(templ).replaceAll(Matcher.quoteReplacement(episodeAssistText));
 		templ = episode.matcher(templ).replaceAll(Matcher.quoteReplacement(episodeText));
+		templ = episodeReminder.matcher(templ).replaceAll(Matcher.quoteReplacement(episodeReminderText));
 		templ = episodeRule.matcher(templ).replaceAll(episodeRuleText);
 		
 		String settingStr = chatConfig.get("setting");

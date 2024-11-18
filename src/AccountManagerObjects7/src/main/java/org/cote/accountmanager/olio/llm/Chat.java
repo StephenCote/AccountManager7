@@ -37,7 +37,7 @@ public class Chat {
 	private boolean includeContextHistory = !chatMode;
 
 	// private static int contextSize = 4096;
-	private static int contextSize = 32768;
+	private static int contextSize = 8192;
 	private int pruneLength = contextSize / 2;
 	//private int tokenBuffer = 756;
 	private String sessionName = null;
@@ -818,6 +818,9 @@ Begin conversationally.
 			if(promptConfig != null && (req.getMessages().size() % mark) == 0 && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)) {
 				List<String> urem = promptConfig.get("userReminder");
 				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
+				if(chatConfig != null && promptConfig != null) {
+					rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
+				}
 				// logger.info("reminding ...");
 				if(rem.length() > 0) {
 					msgBuff.append(System.lineSeparator() + rem);
