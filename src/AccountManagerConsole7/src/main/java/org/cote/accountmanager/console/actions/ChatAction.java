@@ -191,17 +191,46 @@ public class ChatAction extends CommonAction implements IAction{
 		String universeName = "My Grid Universe";
 		String worldName = "My Grid World";
 		
+		if(cmd.hasOption("chatConfig") && cmd.hasOption("list") && cmd.hasOption("episode")) {
+			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+			List<BaseRecord> eps = cfg.get("episodes");
+			eps.forEach(e -> {
+				int number = e.get("number");
+				String theme = e.get("theme");
+				logger.info("Episode #" + number + " - " + theme);
+				List<String> stages = e.get("stages");
+				
+				stages.forEach(s -> {
+					logger.info("Stage - " + s);	
+				});
+				logger.info("JSON: " + e.toString());
+			});
+		}
 		if(cmd.hasOption("chatConfig") && cmd.hasOption("update") && cmd.hasOption("episode")) {
 			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 			BaseRecord ep = RecordFactory.importRecord(OlioModelNames.MODEL_EPISODE, cmd.getOptionValue("episode"));
-			BaseRecord lep = PromptUtil.getLastEpisode(cfg);
-			int number = 1;
-			if(lep != null) {
-				number = 1 + (int)lep.get("number");
+			int number = ep.get("number");
+			BaseRecord mep = null;
+			if(number > 0) mep = PromptUtil.getEpisode(cfg, number);
+			if(mep != null) {
+				logger.info("Patching episode #" + number);
+				if(ep.hasField("theme")) mep.setValue("theme", ep.get("theme"));
+				if(ep.hasField("summary")) mep.setValue("summary", ep.get("summary"));
+				if(ep.hasField("stages")) mep.setValue("stages", ep.get("stages"));
+				if(ep.hasField("episodeAssist")) mep.setValue("episodeAssist", ep.get("episodeAssist"));
+				
 			}
-			ep.setValue("number", number);
-			List<BaseRecord> eps = cfg.get("episodes");
-			eps.add(ep);
+			else {
+				BaseRecord lep = PromptUtil.getLastEpisode(cfg);
+				number = 1;
+				if(lep != null) {
+					number = 1 + (int)lep.get("number");
+				}
+				logger.info("Adding episode #" + number);
+				ep.setValue("number", number);
+				List<BaseRecord> eps = cfg.get("episodes");
+				eps.add(ep);
+			}
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
 		}
 		

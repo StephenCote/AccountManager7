@@ -95,6 +95,10 @@ public class OlioFieldNames {
 	
 	public static final String FIELD_PROFILES = "profiles";
 	public static final String FIELD_PROFILES_ID = "profiles.id";
+
+	public static final String FIELD_GALLERY = "gallery";
+	public static final String FIELD_GALLERY_ID = "gallery.id";
+
 	
 	public static final String FIELD_POINTS_OF_INTEREST = "pointsOfInterest";
 	public static final String FIELD_POINTS_OF_INTEREST_ID = "pointsOfInterest.id";

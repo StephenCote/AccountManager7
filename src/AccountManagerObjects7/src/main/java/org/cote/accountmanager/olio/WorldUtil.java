@@ -269,6 +269,7 @@ public class WorldUtil {
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_INTERACTION, (long)world.get("interactions.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_NARRATIVE, (long)world.get("narratives.id"), orgId);
 		totalWrites += cleanupLocation(user, ModelNames.MODEL_PROFILE, (long)world.get("profiles.id"), orgId);
+		totalWrites += cleanupLocation(user, ModelNames.MODEL_DATA, (long)world.get("gallery.id"), orgId);
 		totalWrites += cleanupLocation(user, OlioModelNames.MODEL_POI, (long)world.get("pointsOfInterest.id"), orgId);
 		
 		RecordFactory.cleanupOrphans(null);

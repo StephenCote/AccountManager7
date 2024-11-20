@@ -198,6 +198,12 @@
 		"foreign": true
 	},
 	{
+		"name": "gallery",
+		"baseModel": "auth.group",
+		"type": "model",
+		"foreign": true
+	},
+	{
 		"name": "narratives",
 		"baseModel": "auth.group",
 		"type": "model",

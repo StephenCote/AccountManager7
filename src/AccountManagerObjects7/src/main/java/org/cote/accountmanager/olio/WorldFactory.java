@@ -74,6 +74,7 @@ public class WorldFactory extends FactoryBase {
 					newRecord.set(OlioFieldNames.FIELD_INTERACTIONS, pu.makePath(contextUser, mtype, path + "/" + name + "/Interactions", gtype, orgId));
 					newRecord.set(OlioFieldNames.FIELD_NARRATIVES, pu.makePath(contextUser, mtype, path + "/" + name + "/Narratives", gtype, orgId));
 					newRecord.set(OlioFieldNames.FIELD_PROFILES, pu.makePath(contextUser, mtype, path + "/" + name + "/Profiles", gtype, orgId));
+					newRecord.set(OlioFieldNames.FIELD_GALLERY, pu.makePath(contextUser, mtype, path + "/" + name + "/Gallery", gtype, orgId));
 					newRecord.set(OlioFieldNames.FIELD_POINTS_OF_INTEREST, pu.makePath(contextUser, mtype, path + "/" + name + "/Points of Interest", gtype, orgId));
 				} catch (FieldException | ValueException | ModelNotFoundException e) {
 					logger.error(e);
