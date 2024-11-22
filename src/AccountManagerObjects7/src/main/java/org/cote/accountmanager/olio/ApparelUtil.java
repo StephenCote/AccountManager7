@@ -623,6 +623,10 @@ public class ApparelUtil {
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";
 		String[] tmeta = embType.split(":");
+		if(tmeta.length < 5) {
+			logger.error("Unexpected embed: " + embType);
+			return;
+		}
 		try {
 			String ttype = tmeta[0];
 			

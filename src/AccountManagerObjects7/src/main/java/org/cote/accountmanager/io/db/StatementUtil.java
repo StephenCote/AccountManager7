@@ -1282,7 +1282,7 @@ public class StatementUtil {
 					break;
 				case FLEX:
 					if(!ModelNames.MODEL_MODEL.equals(fs.getType())){
-						throw new DatabaseException("Unhandled flex type:" + dataType + " for " + model + "." + fieldName + " at index " + index + " with base " + fs.getBaseModel() + " / " + fs.getValueType());
+						throw new DatabaseException("Unhandled flex type:" + dataType + " for " + model + "." + fieldName + " at index " + index + " with base " + fs.getBaseModel() + " / " + fs.getValueType() + " and value " + value);
 					}
 					else {
 						colType = IOSystem.getActiveContext().getDbUtil().getDataType(fs, FieldEnumType.valueOf(fs.getType().toUpperCase()));
