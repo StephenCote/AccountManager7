@@ -71,5 +71,19 @@ public class RecordSerializerConfig {
 		
 		return foreignFilteredModule;
 	}
+
+	
+	public static SimpleModule getForeignUnfilteredModuleRecurse() {
+		RecordSerializer ser = new RecordSerializer();
+		ser.setFilterVirtual(false);
+		ser.setFilterForeign(false);
+		ser.setFilterEphemeral(false);
+		ser.setDecompressByteStore(true);
+		ser.setStopRecursion(false);
+		SimpleModule  foreignFilteredModule = new SimpleModule();
+		foreignFilteredModule.addSerializer(LooseRecord.class, ser);
+		
+		return foreignFilteredModule;
+	}
 	
 }

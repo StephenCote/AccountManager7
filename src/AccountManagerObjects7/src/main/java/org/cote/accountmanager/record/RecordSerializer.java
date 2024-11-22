@@ -40,12 +40,27 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	private boolean condenseFields = false;
 	
 	private Set<String> recursionSet = new HashSet<>();
+	private boolean stopRecursion = true;
 	
     public RecordSerializer() {
 
     }
 
-    public boolean isDecompressByteStore() {
+    
+    
+    public boolean isStopRecursion() {
+		return stopRecursion;
+	}
+
+
+
+	public void setStopRecursion(boolean stopRecursion) {
+		this.stopRecursion = stopRecursion;
+	}
+
+
+
+	public boolean isDecompressByteStore() {
 		return decompressByteStore;
 	}
 
@@ -281,18 +296,18 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        					String recKey = null;
 		        					
 		        					List<String> ol = new ArrayList<>();
-		        					if(o2.hasField(FieldNames.FIELD_ID)) {
+		        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID)) {
 		        						long id = o2.get(FieldNames.FIELD_ID);
 		        						recKey = o2.getModel() + "-#" + Long.toString(id);
 		        					}
-		        					if(recKey != null && recursionSet.contains(recKey)) {
+		        					if(stopRecursion && recKey != null && recursionSet.contains(recKey)) {
 		        						logger.debug("Stop recursion: " + recKey);
 		        						ol = Arrays.asList(new String[] {FieldNames.FIELD_ID});
 		        					}
 		        					else {
 		        						Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
 		        						ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());
-		        						if(recKey != null) {
+		        						if(stopRecursion && recKey != null) {
 		        							recursionSet.add(recKey);
 		        						}
 		        					}
@@ -302,16 +317,16 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        					if(o instanceof BaseRecord) {
 		        						BaseRecord o2 = (BaseRecord)o;
 		        						String recKey = null;
-			        					if(o2.hasField(FieldNames.FIELD_ID)) {
+			        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID)) {
 			        						long id = o2.get(FieldNames.FIELD_ID);
 			        						recKey = o2.getModel() + "-#" + Long.toString(id);
 			        					}
-			        					if(recKey != null && recursionSet.contains(recKey)) {
+			        					if(stopRecursion && recKey != null && recursionSet.contains(recKey)) {
 			        						logger.debug("Stop recursion: " + recKey);
 			        						jgen.writeObject(o2.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			        					}
 			        					else {
-			        						recursionSet.add(recKey);
+			        						if(stopRecursion) recursionSet.add(recKey);
 			        						jgen.writeObject(o2);
 			        					}
 		        					}

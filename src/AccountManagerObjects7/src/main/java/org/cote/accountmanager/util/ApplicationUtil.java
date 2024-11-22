@@ -1,7 +1,9 @@
 package org.cote.accountmanager.util;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -16,6 +18,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -52,18 +55,33 @@ public class ApplicationUtil {
 			pquery.field(FieldNames.FIELD_NAME, ComparatorEnumType.NOT_EQUALS, AccessSchema.ROLE_HOME);
 			BaseRecord[] permissions = IOSystem.getActiveContext().getSearch().findRecords(pquery);
 			List<BaseRecord> aroles = app.get(FieldNames.FIELD_SYSTEM_ROLES);
-			List<BaseRecord> uroles = app.get(FieldNames.FIELD_USER_ROLES);
+			//List<BaseRecord> uroles = app.get(FieldNames.FIELD_USER_ROLES);
 			List<BaseRecord> aperms = app.get(FieldNames.FIELD_SYSTEM_PERMISSIONS);
 			aroles.addAll(Arrays.asList(roles));
 			aperms.addAll(Arrays.asList(permissions));
-
 			app.set(FieldNames.FIELD_USER, user);
 			app.set(FieldNames.FIELD_PERSON, getUserPerson(user));
 			List<BaseRecord> usrRoles = IOSystem.getActiveContext().getMemberUtil().getParticipations(user, ModelNames.MODEL_ROLE);
+			
+			Query uquery = QueryUtil.createQuery(ModelNames.MODEL_ROLE);
+			List<String> ids = usrRoles.stream().map(c -> Long.toString(c.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
+			uquery.field(FieldNames.FIELD_ID, ComparatorEnumType.IN, ids.stream().collect(Collectors.joining(",")));
+			uquery.setRequest(RecordUtil.getCommonFields(uquery.getType()));
+			List<BaseRecord> ur2 = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(uquery));
+			
+			/*
+			List<BaseRecord> ur2 = new ArrayList<>();
 			for(BaseRecord r: usrRoles) {
-				IOSystem.getActiveContext().getReader().populate(r, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
+				BaseRecord r2 = r;
+				IOSystem.getActiveContext().getReader().populate(r2, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
+				ur2.add(r2);
 			}
-			uroles.addAll(usrRoles);
+			*/
+			app.setValue(FieldNames.FIELD_USER_ROLES, ur2);
+			logger.info(app.toFullString());
+
+			//uroles.addAll(ur2);
+			
 			app.set(FieldNames.FIELD_ORGANIZATION_PATH, user.get(FieldNames.FIELD_ORGANIZATION_PATH));
 		} catch (FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException e1) {
 			logger.error(e1);
