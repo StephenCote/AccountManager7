@@ -22,7 +22,11 @@ import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AttributeUtil;
@@ -30,11 +34,12 @@ import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
 public class SDUtil {
 	public static final Logger logger = LogManager.getLogger(SDUtil.class);
 	private String autoserver = "http://localhost:7860";
-	private SecureRandom rand = new SecureRandom();
+	private static SecureRandom rand = new SecureRandom();
 	private int steps = 70;
 	
 	public SDResponse txt2img(SDTxt2Img req) {
@@ -207,7 +212,8 @@ public class SDUtil {
 					data.set(FieldNames.FIELD_BYTE_STORE, datab);
 					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
 					AttributeUtil.addAttribute(data, "seed", seedl);
-					AttributeUtil.addAttribute(data, "character", person.get(FieldNames.FIELD_URN));
+					// TODO: Fix issue when setting attribute flexValue on create for a null value 
+					//AttributeUtil.addAttribute(data, "character", (String)person.get(FieldNames.FIELD_OBJECT_ID));
 					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
 					IOSystem.getActiveContext().getAccessPoint().create(user, data);
 				}
@@ -323,6 +329,70 @@ public class SDUtil {
 		s2i.setOverride_settings_restore_afterwards(true);
 		
 		return s2i;
+	}
+	
+	private static BaseRecord configData = null;
+
+	public static String getSDConfigPrompt(BaseRecord cfg) {
+		StringBuilder buff = new StringBuilder();
+		
+		String style = cfg.get("style");
+		buff.append("(");
+		if(style.equals("art")) {
+			buff.append("(" + (String)cfg.get("artStyle") + ")");
+		}
+		else if(style.equals("photograph")) {
+			buff.append("(Photograph) taken with a (" + cfg.get("stillCamera") + ") camera and (" + cfg.get("lens") + ") lens using (" + cfg.get("film") + ") film processed with (" + cfg.get("colorProcess") + ") by (" + cfg.get("photographer") + ")");
+		}
+		else {
+			buff.append("(Movie still) taken with a (" + cfg.get("movieCamera") + ") camera using (" + cfg.get("movieFilm") + ") film processed with (" + cfg.get("colorProcess") + ") by (" + cfg.get("director") + ")");
+		}
+		buff.append(").");
+		return buff.toString();
+		
+	}
+	public static BaseRecord getConfigData() {
+		if(configData == null) {
+			configData = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/sd/sdConfigData.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		}
+		return configData;
+	}
+	public static BaseRecord randomSDConfig() {
+		BaseRecord sd = null;
+		try {
+			sd = RecordFactory.newInstance(OlioModelNames.MODEL_SD_CONFIG);
+		} catch (FieldException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+		
+		BaseRecord cfg = getConfigData();
+
+		String style = randomSDConfigValue(cfg, "styles");
+		sd.setValue("style", style);
+		if(style.equals("art")) {
+			sd.setValue("artStyle", randomSDConfigValue(cfg, "artStyles"));
+		}
+		else {
+			sd.setValue("colorProcess", randomSDConfigValue(cfg, "colorProcesses"));
+			if(style.equals("photograph")) {
+				sd.setValue("stillCamera", randomSDConfigValue(cfg, "stillCameras"));
+				sd.setValue("photographer", randomSDConfigValue(cfg, "photographers"));
+				sd.setValue("lens", randomSDConfigValue(cfg, "lenses"));
+				sd.setValue("film", randomSDConfigValue(cfg, "films"));
+			}
+			else {
+				sd.setValue("movieFilm", randomSDConfigValue(cfg, "movieFilms"));
+				sd.setValue("movieCamera", randomSDConfigValue(cfg, "movieCameras"));
+				sd.setValue("director", randomSDConfigValue(cfg, "directors"));
+			}
+		}
+		
+		return sd;
+	}
+
+	protected static String randomSDConfigValue(BaseRecord cfg, String fieldName) {
+		List<String> vals = cfg.get(fieldName);
+		return vals.get(rand.nextInt(vals.size()));	
 	}
 	
 }
