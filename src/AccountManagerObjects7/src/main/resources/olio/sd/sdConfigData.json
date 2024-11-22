@@ -1,0 +1,37 @@
+{
+	"model": "olio.sd.sdConfigData",
+	
+	"stillCameras": ["Korona", "Leica M3", "Canon AE-1 SLR", "Hasselblad 500C", "Rolleiflex 2.8F", "Mamiya RZ67", "Contax 645", "Polaroid SX-70,Nikon F", "Pentax 67", "Hasselblad 1600F SLR", "Minolta HI-Matic E SLR", "Olympus XA 2", "Globus M large format", "Polaroid Supercolor 1000 instant", "Kodak 35mm stereo", "Widelux F7 panoramic", "Baldafix folding", "Kodak Brownie box", "Graflex Speed Graphic press"],
+	"films": ["Black and White", "Kodak Tri-X", "Kodak Ektachrome", "Kodak Kodachrome", "Fujifilm Velvia", "Kodak Portra 400", "Fujifilm Pro 400H", "Kodak Portra 800", "Polaroid Instant", "Ilford HP5 Plus", "Fujifilm Superia 400", "Lomography 100", "Kodak Ektar 100", "Kodak Portra 160", "Kodak Gold 200"],
+	"lenses": ["Large format", "50mm Summicron", "Carl Zeiss Planar 80mm f/2.8", "Nikkor 50mm f/1.4", "Canon FD 50mm f/1.8", "SMC Pentax 105mm f/2.4", "Mamiya Sekor Z 110mm f/2.8", "116mm f/8 glass lens"],
+	"photographers":  ["David Yarrow", "Phillipe Helmsman", "Sergey Prokudin-Gorsky", "Nick Brandt", "Ansel Adams", "Annie Leibovitz", "Steve McCurry", "Dorothea Lange", "Robert Capa", "Henri Cartier-Bresson", "Edward Weston", "Diane Arbus", "Cindy Sherman", "Richard Avedon", "Andreas Gursky", "Man Ray", "Sebastião Salgado", "Elliott Erwitt", "Irving Penn", "Walker Evans", "Don McCullin", "David Bailey", "Imogen Cunningham", "Margaret Bourke-White", "David LaChapelle", "Eve Arnold", "Frans Lanting", "Yousuf Karsh", "W. Eugene Smith", "Julia Margaret Cameron", "William Eggleston", "Martin Parr", "Robert Frank", "Deana Lawson", "Robert Doisneau", "André Kertész", "Robert Mapplethorpe", "Gregory Crewdson", "Eliot Porter", "Paul Strand", "Helmut Newton", "Peter Lindbergh", "Guy Bourdin", "Philippe Halsman", "James Van Der Zee", "Michael Kenna", "Weegee", "Alfred Stieglitz", "Edward Steichen", "Doc Edgerton", "Horst P. Horst", "Nick Knight", "Arnold Newman", "Gordon Parks", "Jerry Uelsmann"],
+	"colorProcesses": ["Kinemacolor", "Prizma", "Kodachrome", "Technicolor", "Kodacolor", "Cinecolor", "Fujicolor", "Polavision", "Zone System Black and White"],
+	"movieCameras": ["Bell & Howell 2709 Standard", "Bolex H16", "Super Panavision 70", "Sony HDW-F900", "RED ONE", "IMAX", "ARRI ALEXA", "Sony CineAlta F23", "Hi8 video camera", "Mitchell BNC camera", "Technicolor three-strip camera"],
+	"movieFilms": ["Super 8", "16 mm", "35 mm", "65 mm"],
+	"directors": ["Stanley Kubrick", "Steven Spielberg", "Quentin Tarantino", "Martin Scorsese", "Stanley Kubrick", "Alfred Hitchcock", "David Lean", "Christopher Nolan", "Akira Kurosawa", "Francis Ford Coppola", "Billy Wilder", "David Fincher", "Tim Burton", "Ingmar Bergman", "Orson Welles", "Kathryn Bigelow", "Spike Lee", "Ridley Scott", "James Cameron", "Sidney Lumet", "Paul Thomas Anderson", "Federico Fellini", "John Huston", "Charlie Chaplin", "Andrei Tarkovsky", "Roman Polanski", "Fritz Lang", "Jean-Luc Godard", "John Ford", "Howard Hawks", "Peter Jackson", "Pedro Almodóvar", "David Lynch", "Woody Allen", "Miloš Forman", "Alejandro González Iñárritu", "Alfonso Cuarón", "William Oliver Stone", "Sergio Leone", "Brian De Palma", "George Lucas", "Joel Coen", "Darren Aronofsky", "Clint Eastwood", "Wes Anderson", "François Truffaut", "F. W. Murnau", "D. W. Griffith", "Jean Renoir", "Robert Altman", "John Carpenter", "Danny Boyle"],
+	"styles": ["art", "movie", "photograph"],
+	
+	"artStyles": [
+		"Impressionist painting with soft brush strokes and vibrant colors",
+		"Surrealist artwork with dream-like elements and strange juxtapositions",
+		"Realist painting with highly detailed and accurate depictions",
+		"Pop art piece with bold colors and iconic imagery",
+		"Abstract expressionist artwork with dynamic and energetic brush strokes",
+		"Minimalist art with simple and clean lines, monochrome palette",
+		"Renaissance painting with classical composition and realistic details",
+		"Art Nouveau piece with flowing lines and floral motifs",
+		"Gothic art with dark themes and intricate details",
+		"Baroque painting with dramatic lighting and grand compositions",
+		"Street art with graffiti style and urban themes",
+		"Expressionist artwork with intense emotions and bold colors",
+		"Romantic art with soft focus and nostalgic themes",
+		"Hyperrealism with incredibly detailed and lifelike images",
+		"Art Deco piece with geometric shapes and luxurious design",
+		"Dada art with absurd and unconventional elements",
+		"Post-Impressionist painting with vivid colors and distinctive brush strokes",
+		"Symbolist art with mythological and dream-like themes",
+		"Constructivist artwork with industrial and geometric forms",
+		"Contemporary art with innovative and diverse techniques"
+	]
+	
+}

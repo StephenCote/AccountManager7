@@ -1,0 +1,53 @@
+{
+	"name": "olio.sd.configData",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "stillCamera",
+			"type": "string"
+		},
+		{
+			"name": "film",
+			"type": "string"
+		},
+		{
+			"name": "lens",
+			"type": "string"
+		},
+		{
+			"name": "colorProcess",
+			"type": "string"
+		},
+		{
+			"name": "photographer",
+			"type": "string"
+		},
+		{
+			"name": "movieCamera",
+			"type": "string"
+		},
+		{
+			"name": "movieFilm",
+			"type": "string"
+		},
+		{
+			"name": "director",
+			"type": "string"
+		},
+		{
+			"name": "photoStyle",
+			"type": "string"
+		},
+		{
+			"name": "style",
+			"type": "string",
+			"limit": ["art", "movie", "photograph"]
+		},
+		{
+			"name": "artStyle",
+			"type": "string"
+		}
+	]
+}

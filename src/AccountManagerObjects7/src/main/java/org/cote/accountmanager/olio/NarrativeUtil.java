@@ -20,6 +20,7 @@ import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.personality.DarkTriadUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.personality.OCEANUtil;
@@ -867,7 +868,8 @@ public class NarrativeUtil {
 		String mof = getGenderLabel(gender, age);
 
 		int m = Rules.MINIMUM_ADULT_AGE;
-		buff.append("8k highly detailed ((" + pictureType + ")) ((highest quality)) ((ultra realistic)) ((" + bodyType + "))");
+		/// ((" + pictureType + "))
+		buff.append("8k highly detailed ((highest quality)) ((ultra realistic)) ((" + bodyType + "))");
 		
 		buff.append(" of " + getSDMinPrompt(pp));
 		
@@ -899,11 +901,13 @@ public class NarrativeUtil {
 				if(stets.size() > 0) {
 					tdesc = "a patch of " + tet.toString().toLowerCase() + " near " + stets.stream().collect(Collectors.joining(","));
 				}
-				buff.append(pref + tdesc);
+				buff.append(pref + tdesc + ".");
 			}
 		}
-		//woman (eighteen year old:1.5) (18 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat, (carrying a (Winchester rifle)) (riding a horse across the (Oklahoma (tall grass prairie))). She has (wide hips:1.5), (narrow waist:1.5). 
-		buff.append(" Sharp focus, ultra sharp image. Natural light only.  <lora:add-detail-xl:.5> <lora:xl_more_art-full_v1:1.2>");
+		//woman (eighteen year old:1.5) (18 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat, (carrying a (Winchester rifle)) (riding a horse across the (Oklahoma (tall grass prairie))). She has (wide hips:1.5), (narrow waist:1.5).
+		// Sharp focus, ultra sharp image. Natural light only.
+		buff.append(" " + SDUtil.getSDConfigPrompt(SDUtil.randomSDConfig()));
+		buff.append(" <lora:add-detail-xl:.5> <lora:xl_more_art-full_v1:1.2>");
 		return buff.toString();
 	}
 	

@@ -1,0 +1,63 @@
+{
+	"name": "olio.sd.configData",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "stillCameras",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "films",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "lenses",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "colorProcesses",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "photographers",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "movieCameras",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "movieFilms",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "directors",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "photoStyles",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "artStyles",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "styles",
+			"type": "list",
+			"baseType": "string"
+		}
+	]
+}
