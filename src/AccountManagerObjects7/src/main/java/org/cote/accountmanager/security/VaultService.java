@@ -192,8 +192,14 @@ public class VaultService
 	private byte[] getProtectedCredentialValue(BaseRecord credential){
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(credential.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(CredentialEnumType.ENCRYPTED_PASSWORD.toString().equals(credential.get(FieldNames.FIELD_TYPE))){
-			CryptoBean crypto = new CryptoBean(recordUtil.getRecordByObjectId(org.getAdminUser(), ModelNames.MODEL_KEY_SET, credential.get(FieldNames.FIELD_KEY_ID)));
-			recordUtil.populate(crypto);
+			
+			Query keyQuery = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_OBJECT_ID, credential.get(FieldNames.FIELD_KEY_ID));
+			keyQuery.planMost(true);
+			BaseRecord keySet = IOSystem.getActiveContext().getSearch().findRecord(keyQuery);
+			if(keySet == null) {
+				logger.warn("Failed to retrieve keySet");
+			}
+			CryptoBean crypto = new CryptoBean(keySet);
 			if(crypto.getSecretKey() == null){
 				logger.warn("Secret key is null");
 				return new byte[0];
@@ -202,15 +208,16 @@ public class VaultService
 		}
 		return credential.get(FieldNames.FIELD_CREDENTIAL);
 	}
+	
 	private CryptoBean getPrimarySymmetricKey(VaultBean bean) {
 		IOSystem.getActiveContext().getRecordUtil().populate(bean.getServiceUser());
-		//logger.info(bean.getServiceUser().toFullString());
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(bean.getServiceUser().get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(org != null) {
 			return org.getOrganizationCipher();
 		}
 		return null;
 	}
+	
 	private void setVaultPath(VaultBean vault, String path){
 
 		CryptoBean orgSKey = getPrimarySymmetricKey(vault);
@@ -346,11 +353,9 @@ public class VaultService
 			CryptoFactory.getInstance().generateKeyPair(sm);
 			CryptoFactory.getInstance().generateSecretKey(sm);
 
-			// logger.info("Serializing private key ...");
 			byte[] privateKeyConfig = CryptoFactory.getInstance().serialize(sm, true, false, false, false, true).getBytes(StandardCharsets.UTF_8);
 			String inPassword = null;
 			if(vault.getProtectedCredential() != null && (CredentialEnumType.ENCRYPTED_PASSWORD.toString().equals(vault.getProtectedCredential().get(FieldNames.FIELD_TYPE)) || CredentialEnumType.HASHED_PASSWORD.toString().equals(vault.getProtectedCredential().get(FieldNames.FIELD_TYPE)))){
-				// logger.info("Protect credential ...");
 				inPassword = new String(getProtectedCredentialValue(vault.getProtectedCredential()));
 			}
 
@@ -358,7 +363,6 @@ public class VaultService
 			//
 			if (vault.isProtected() && inPassword != null && inPassword.length() > 0)
 			{
-				// logger.info("Enciphering private key ...");
 				privateKeyConfig = CryptoUtil.encipher(privateKeyConfig, inPassword, saltSet.get(FieldNames.FIELD_HASH_FIELD_SALT)); 
 			}
 	
@@ -448,17 +452,19 @@ public class VaultService
 		try {
 			BaseRecord group = search.findByPath(user, ModelNames.MODEL_GROUP, "~/" + dvault.get(FieldNames.FIELD_GROUP_NAME), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			if(group == null) {
-				logger.warn("Vault group does not exist");
+				logger.warn("Vault group does not exist: " + "~/" + dvault.get(FieldNames.FIELD_GROUP_NAME));
 				return null;
 			}
-			BaseRecord[] recs = search.findByNameInGroup(ModelNames.MODEL_VAULT, group.get(FieldNames.FIELD_ID), name);
-			
-			if(recs.length == 0) {
-				logger.warn("Failed to find public vault " + name);
+
+			Query vaultQuery = QueryUtil.createQuery(ModelNames.MODEL_VAULT, FieldNames.FIELD_NAME, name);
+			vaultQuery.field(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			vaultQuery.planMost(true);
+			BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(vaultQuery);
+			if(rec == null) {
+				logger.error("Failed to retrieve vault " + name);
 				return null;
 			}
-			pvault = new VaultBean(recs[0]);
-			recordUtil.populate(pvault.getServiceUser());
+			pvault = new VaultBean(rec);
 			if(!initialize(pvault, null)) {
 				logger.error("Failed to initialize public vault");
 				return null;
@@ -562,12 +568,13 @@ public class VaultService
 			logger.error("Failed to find vault group");
 			return null;
 		}
-		BaseRecord ogrp = null;
-		BaseRecord[] recs = search.findByNameInParent(ModelNames.MODEL_GROUP, grp.get(FieldNames.FIELD_ID), vault.get(FieldNames.FIELD_NAME));
-		if(recs.length > 0) {
-			ogrp = recs[0];
-		}
-		else {
+
+		Query groupQuery = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_NAME, vault.get(FieldNames.FIELD_NAME));
+		groupQuery.field(FieldNames.FIELD_PARENT_ID, grp.get(FieldNames.FIELD_ID));
+		groupQuery.planMost(true);
+		BaseRecord ogrp = IOSystem.getActiveContext().getSearch().findRecord(groupQuery);
+
+		if(ogrp == null) {
 			logger.error("Failed to find vault group " + vault.get(FieldNames.FIELD_NAME) + " in group " + grp.get(FieldNames.FIELD_NAME));
 		}
 		return ogrp;
@@ -579,12 +586,11 @@ public class VaultService
 			logger.error("Null vault instance group");
 			return null;
 		}
-		BaseRecord[] recs = search.findByNameInGroup(ModelNames.MODEL_KEY_SET, dir.get(FieldNames.FIELD_ID), "Salt");
-		BaseRecord kset = null;
-		if(recs.length > 0) {
-			kset = recs[0];
-		}
-		return kset;
+
+		Query keyQuery = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_NAME, "Salt");
+		keyQuery.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+		keyQuery.planMost(true);
+		return IOSystem.getActiveContext().getSearch().findRecord(keyQuery);
 	}
 	
 	public CryptoBean getVaultKey(VaultBean vault)
@@ -606,7 +612,6 @@ public class VaultService
 			{
 
 				BaseRecord cred = vault.get(FieldNames.FIELD_CREDENTIAL);
-				//recordUtil.populate(cred);
 				byte[] keyBytes = new byte[0];
 				if(cred != null) {
 					keyBytes = cred.get(FieldNames.FIELD_CREDENTIAL);
@@ -623,14 +628,15 @@ public class VaultService
 					logger.info("Salt is null");
 					return null;
 				}
+				
 				recordUtil.populate(credSalt.get(FieldNames.FIELD_HASH));
 				if (vault.isProtected()){
 					decConfig = CryptoUtil.decipher(decConfig, new String(getProtectedCredentialValue(vault.getProtectedCredential())), credSalt.get(FieldNames.FIELD_HASH_FIELD_SALT));
 				}
+
 				if (decConfig.length == 0) return null;
 				CryptoBean crypto = new CryptoBean();
 				CryptoFactory.getInstance().importCryptoBean(crypto, decConfig, false);
-				// CryptoBean crypto = CryptoFactory.getInstance().createCryptoBean(decConfig, false);
 				vault.setVaultKey(crypto);
 			}
 		}
@@ -644,12 +650,13 @@ public class VaultService
 	public CryptoBean getPublicKey(VaultBean vault) {
 		CryptoBean crypto = null;
 		try {
-			//BaseRecord grp = getVaultInstanceGroup(vault);
 			BaseRecord grp = getVaultGroup(vault);
-			BaseRecord[] recs = search.findByNameInGroup(ModelNames.MODEL_VAULT, grp.get(FieldNames.FIELD_ID), vault.get(FieldNames.FIELD_NAME));
-			if(recs.length > 0) {
-				BaseRecord key = recs[0].get(FieldNames.FIELD_PUBLIC);
-				recordUtil.populate(key);
+			Query vaultQuery = QueryUtil.createQuery(ModelNames.MODEL_VAULT, FieldNames.FIELD_NAME, vault.get(FieldNames.FIELD_NAME));
+			vaultQuery.field(FieldNames.FIELD_GROUP_ID, grp.get(FieldNames.FIELD_ID));
+			vaultQuery.planMost(true);
+			BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(vaultQuery);
+			if(rec != null) {
+				BaseRecord key = rec.get(FieldNames.FIELD_PUBLIC);
 				crypto = new CryptoBean(key);
 			}
 			else {
@@ -704,6 +711,7 @@ public class VaultService
 		}
 		catch(ClassCastException | NullPointerException | ReaderException | FieldException | ValueException | ModelNotFoundException | IndexException | FactoryException e) {
 			logger.error(e);
+			e.printStackTrace();
 			
 		}
 		return true;
@@ -746,38 +754,19 @@ public class VaultService
 	public CryptoBean getVaultCipher(VaultBean vault, String keyId) {
 		
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_OBJECT_ID, keyId);
+		q.planMost(true);
 		BaseRecord key = search.findRecord(q);
 		if(key == null) {
 			logger.error("Failed to find key: " + keyId);
 			return null;
 		}
-		recordUtil.populate(key.get(FieldNames.FIELD_CIPHER));
-		// logger.info(key.toFullString());
+
+		/// TODO: Is this needed?
 		this.getVaultKey(vault);
 		CryptoBean vaultKey = getVaultKey(vault);
 		CryptoBean crypto = new CryptoBean(key, vaultKey.getPrivateKey(), vaultKey.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
 		return crypto;
-		/*
-		if(vault.getSymmetricKeyMap().containsKey(keyId)){
-			return vault.getSymmetricKeyMap().get(keyId);
-		}
 
-		// Get the encrypted keys for this data object.
-		//
-		DataType key = ((DataFactory)Factories.getFactory(FactoryEnumType.DATA)).getDataByName(keyId, getVaultInstanceGroup(vault));
-		if (key == null){
-			logger.error("Vault key " + keyId + " does not exist");
-			return null;
-		}
-
-		SecurityBean vSm = getCipherFromData(vault, key);
-		if(vSm == null){
-			logger.error("Failed to restore cipher from data");
-			return null;
-		}
-		vault.getSymmetricKeyMap().put(keyId, vSm);
-		return vSm;
-		*/
 	}
 	
 	public VaultBean getVaultByObjectId(BaseRecord user, String objectId){
@@ -869,7 +858,7 @@ public class VaultService
 		if(vaultLink != null) {
 			pvault = recordUtil.getRecordByObjectId(vault.getServiceUser(), ModelNames.MODEL_VAULT, vaultLink);
 		}
-		// logger.info(pvault.toFullString());
+
 		if (!(boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY)){
 			logger.warn("No key detected, so nothing is deleted");
 		}
@@ -922,7 +911,6 @@ public class VaultService
 			logger.info("Removing implementation data");
 			deleteVaultRecord(pvault);
 			deleteVaultRecord(vault);
-			// recordUtil.deleteRecord(vault);
 			recordUtil.deleteRecord(vaultGroup);
 		}
 		else{
@@ -1299,8 +1287,7 @@ public class VaultService
 		attr.getValues().clear();
 		af.setEncipheredAttributeValues(attr, vault.getActiveKeyBean(), values);
 	}
-	
-
 	*/
+	
 }
 
