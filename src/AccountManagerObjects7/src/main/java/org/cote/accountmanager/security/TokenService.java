@@ -68,7 +68,7 @@ import io.jsonwebtoken.SignatureAlgorithm;
 
 public class TokenService {
 	public static final Logger logger = LogManager.getLogger(TokenService.class);
-	private static final Pattern userType = Pattern.compile("^user$");
+	private static final Pattern userType = Pattern.compile("^system\\.user$");
 	private static final Pattern personaType = Pattern.compile("^(system\\.user|identity\\.person|identity\\.account)$");
 	
 	public static final String CLAIM_TOKEN_ID = "tokenId";
@@ -297,11 +297,11 @@ public class TokenService {
 	}
 	public static String createAuthorizationToken(BaseRecord authorizingUser, BaseRecord persona, BaseRecord resource, String[] resourceClaims, String tokenId, int expiryMinutes) throws ReaderException, IndexException{
 		if(!userType.matcher(authorizingUser.getModel()).find()){
-			logger.error("Unsupported user type: {0}", authorizingUser.getModel());
+			logger.error(String.format("Unsupported user type: {0}", authorizingUser.getModel()));
 			return null;
 		}
 		if(!personaType.matcher(persona.getModel()).find()){
-			logger.error("Unsupported persona type: {0}", persona.getModel());
+			logger.error(String.format("Unsupported persona type: {0}", persona.getModel()));
 			return null;
 		}
 		CryptoBean bean = getCreateCipher(authorizingUser);

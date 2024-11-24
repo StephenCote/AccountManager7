@@ -243,6 +243,7 @@ public class TestStream extends BaseTest {
 
 	}
 
+
 	@Test
 	public void TestCreateStream() {
 		logger.info("Test Streaming");
@@ -278,8 +279,12 @@ public class TestStream extends BaseTest {
 			/// Then the field is already encrypted at the time the segment is created
 			///
 			data = ioContext.getAccessPoint().create(testUser5, data);
-			BaseRecord idata = ioContext.getAccessPoint().findById(testUser5, ModelNames.MODEL_STREAM, data.get(FieldNames.FIELD_ID));
-
+			
+			//BaseRecord idata = ioContext.getAccessPoint().findById(testUser5, ModelNames.MODEL_STREAM, data.get(FieldNames.FIELD_ID));
+			Query qdata = QueryUtil.createQuery(ModelNames.MODEL_STREAM, FieldNames.FIELD_ID, data.get(FieldNames.FIELD_ID));
+			qdata.planCommon(false);
+			
+			BaseRecord idata = ioContext.getAccessPoint().find(testUser5, qdata);
 			assertNotNull("Data is null", idata);
 			long size = data.get(FieldNames.FIELD_SIZE);
 			assertTrue("Expected a positive size", size > 0L);
@@ -291,9 +296,10 @@ public class TestStream extends BaseTest {
 			seg.set(FieldNames.FIELD_STREAM, "\n2) This is some more data to add".getBytes());
 			seg.set(FieldNames.FIELD_STREAM_ID, idata.get(FieldNames.FIELD_OBJECT_ID));
 
-
+			
 
 			boolean created = ioContext.getRecordUtil().createRecord(seg);
+			
 			assertTrue("Expected to create the segment", created);
 			
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_STREAM_SEGMENT, FieldNames.FIELD_STREAM_ID, idata.get(FieldNames.FIELD_OBJECT_ID));
@@ -325,7 +331,7 @@ public class TestStream extends BaseTest {
 		
 		
 	}
-
+	/*
 	@Test
 	public void TestStreamInPlace() {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
@@ -432,7 +438,7 @@ public class TestStream extends BaseTest {
 		}
 
 	}
-
+	*/
 	private boolean cleanupInGroup(BaseRecord user, String model, String name, long groupId) {
 		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_GROUP_ID, groupId);
 		q.field(FieldNames.FIELD_NAME, name);

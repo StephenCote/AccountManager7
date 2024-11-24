@@ -19,6 +19,8 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -87,11 +89,10 @@ public class StreamSegmentUtil {
 		String streamId = segment.get(FieldNames.FIELD_STREAM_ID);
 		BaseRecord stream = null;
 		if(streamId != null) {
-			try {
-				stream = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_STREAM, streamId);
-			} catch (ReaderException e) {
-				logger.error(e);
-			}
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_STREAM, FieldNames.FIELD_OBJECT_ID, streamId);
+			q.planCommon(false);
+			stream = IOSystem.getActiveContext().getSearch().findRecord(q);
+
 		}
 		return stream;
 	}

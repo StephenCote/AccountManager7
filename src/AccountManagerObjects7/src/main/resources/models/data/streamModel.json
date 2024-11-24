@@ -2,7 +2,7 @@
 "name": "data.stream",
 "inherits": ["data.directory", "common.description", "common.dateTime", "data.contentType", "crypto.vaultExt"],
 "provider": "org.cote.accountmanager.provider.StreamProvider",
-"query": ["contentType"],
+"query": ["contentType", "type"],
 "fields": [
 	{
 		"name": "streamSource",
