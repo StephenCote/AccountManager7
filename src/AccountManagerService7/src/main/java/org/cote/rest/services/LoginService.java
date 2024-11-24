@@ -35,6 +35,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.AuthenticationResponseEnumType;
 import org.cote.accountmanager.schema.type.CredentialEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
+import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
@@ -187,9 +188,12 @@ public class LoginService {
 					logger.error("Subject " + subType + " " + name + " in " + org.get(FieldNames.FIELD_NAME) + " is null");
 				}
 				else {
+					/*
 					BaseRecord cred = IOSystem.getActiveContext().getRecordUtil().getRecordByQuery(
 			    		IOSystem.getActiveContext().getRecordUtil().getLatestReferenceQuery(sub, ModelNames.MODEL_CREDENTIAL)
 				    );
+				    */
+					BaseRecord cred = CredentialUtil.getLatestCredential(sub);
 					if(cred == null) {
 						logger.error("Credential is null");
 					}

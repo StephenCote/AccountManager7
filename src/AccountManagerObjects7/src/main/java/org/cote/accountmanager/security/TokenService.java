@@ -48,6 +48,8 @@ import org.cote.accountmanager.factory.CryptoFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.IWriter;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -108,7 +110,7 @@ public class TokenService {
 		try{
 			IReader reader = IOSystem.getActiveContext().getReader();
 			IWriter writer = IOSystem.getActiveContext().getWriter();
-			// logger.info(JSONUtil.exportObject(actor, RecordSerializerConfig.getUnfilteredModule()));
+
 			reader.populate(actor);
 			long ownerId = 0L;
 			BaseRecord dir = null;
@@ -122,12 +124,13 @@ public class TokenService {
 				ownerId = actor.get(FieldNames.FIELD_OWNER_ID);
 			}
 			
-			BaseRecord[] tokens = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_SPOOL, dir.get(FieldNames.FIELD_ID), referenceName, actor.get(FieldNames.FIELD_ORGANIZATION_ID));
-			
-			if(tokens.length > 0) {
-				tokenType = tokens[0];
-			}
-			if(tokenType == null){
+	    	Query q = QueryUtil.createQuery(ModelNames.MODEL_SPOOL, FieldNames.FIELD_NAME, referenceName);
+	    	q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+	    	q.planMost(true);
+	    	tokenType = IOSystem.getActiveContext().getRecordUtil().getRecordByQuery(q);
+
+	    	if(tokenType == null){
+
 				CryptoBean bean = new CryptoBean();
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSPEC, JWT_KEY_SPEC);
 				bean.set(FieldNames.FIELD_CIPHER_FIELD_KEYSIZE, JWT_KEY_SIZE);
@@ -141,7 +144,7 @@ public class TokenService {
 					logger.warn("Set pass key: " + key);
 					CryptoFactory.getInstance().setPassKey(bean, key, false);
 				}
-				//CryptoFactory.getInstance().generateKeyPair(bean);
+
 				tokenType = TokenService.newSecurityToken(actor.get(FieldNames.FIELD_OBJECT_ID), actor.get(FieldNames.FIELD_ORGANIZATION_ID));
 				
 				tokenType.set(FieldNames.FIELD_OWNER_ID, ownerId);
@@ -307,8 +310,7 @@ public class TokenService {
 			return null;
 		}
 		if(bean.getSecretKey() == null){
-			logger.error("Null secret key");
-			logger.error(bean.toFullString());
+			logger.error("Null secret key for Authorization Token");
 			return null;
 		}
 		
@@ -368,29 +370,21 @@ public class TokenService {
 			return null;
 		}
 		if(bean.getSecretKey() == null){
-			logger.error("Null secret key");
-			logger.error(bean.toFullString());
+			logger.error("Null secret key to create JWT Token");
 			return null;
 		}
 		
-		//BaseRecord ents = IOSystem.getActiveContext().getMemberUtil().getParticipants(persona);
+
 		List<BaseRecord> entsp = IOSystem.getActiveContext().getMemberUtil().getParticipations(persona, ModelNames.MODEL_ROLE);
-		List<BaseRecord> entsl = new ArrayList<>();
-		//logger.info(ents.toString());
-		//if(ents != null) {
-		//	List<BaseRecord> entsp = ents.get(FieldNames.FIELD_PARTS);
-			entsl = entsp.stream().filter(o -> {
-				if(o.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
-					String type = o.get(FieldNames.FIELD_TYPE);
-					return ModelNames.MODEL_ROLE.equals(type);
-				}
-				else {
-					return true;
-					/// String type = o.get(FieldNames.FIELD_PARTICIPATION_MODEL);
-					/// return ModelNames.MODEL_ROLE.equals(type);
-				}
-			}).collect(Collectors.toList());
-		//}
+		List<BaseRecord> entsl = entsp.stream().filter(o -> {
+			if(o.inherits(ModelNames.MODEL_PARTICIPATION_ENTRY)) {
+				String type = o.get(FieldNames.FIELD_TYPE);
+				return ModelNames.MODEL_ROLE.equals(type);
+			}
+			else {
+				return true;
+			}
+		}).collect(Collectors.toList());
 		
 		List<String> buff = new ArrayList<>();
 		for(BaseRecord b : entsl) {
@@ -441,7 +435,7 @@ public class TokenService {
 			return null;
 		}
 		if(bean.getSecretKey() == null){
-			logger.error("Null secret key");
+			logger.error("Null secret key for Simple JWT Token");
 			logger.error(bean.toString());
 			return null;
 		}
