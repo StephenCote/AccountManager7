@@ -58,6 +58,15 @@ import org.cote.accountmanager.schema.type.StreamEnumType;
 
 public class StreamUtil {
 	public static final Logger logger = LogManager.getLogger(StreamUtil.class);
+	private static int DEFAULT_STREAM_CUTOFF = 1048576;
+	private static int STREAM_CUTOFF = DEFAULT_STREAM_CUTOFF;
+
+	public static void setStreamCutoff(int cut) {
+		if(cut > 0) {
+			STREAM_CUTOFF = cut;
+		}
+	}
+	
 	public static long copyStream(InputStream in, OutputStream out) throws IOException{
 		return in.transferTo(out);
 	}
@@ -198,7 +207,7 @@ public class StreamUtil {
     	
     	int read = 0;
     	boolean outBool = false;
-    	int maxReadSize = 1048576;
+    	int maxReadSize = STREAM_CUTOFF;
     	byte[] data = new byte[0];
     	byte[] bytes = new byte[4096*4];
     	BaseRecord streamRec = null;

@@ -121,6 +121,11 @@ public class RestServiceConfig extends ResourceConfig{
 		private void initializeAccountManager(){
 			logger.info("Initializing Account Manager");
 			
+			String streamCut = context.getInitParameter("stream.cutoff");
+			if(streamCut != null) {
+				StreamUtil.setStreamCutoff(Integer.parseInt(streamCut));
+			}
+			
 			String path = context.getInitParameter("store.path");
 			OlioModelNames.use();
 			

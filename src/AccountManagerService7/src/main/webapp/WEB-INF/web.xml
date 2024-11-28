@@ -49,6 +49,11 @@
 		<param-value>c:/projects/data/am7</param-value>
 	</context-param>
 	<context-param>
+		<description>Stream Cutoff Size</description>
+		<param-name>stream.cutoff</param-name>
+		<param-value>5242880</param-value>
+	</context-param>
+	<context-param>
 		<description>Data Generator Path</description>
 		<param-name>datagen.path</param-name>
 		<param-value>c:/projects/DataGenerator</param-value>
