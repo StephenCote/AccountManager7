@@ -151,10 +151,33 @@ public class PromptUtil {
 		return getChatPromptTemplate(promptConfig, chatConfig, templ, false);
 	}
 	
+	public static BaseRecord moveToNextEpisode(BaseRecord chatConfig) {
+		BaseRecord nextEp = PromptUtil.getNextEpisode(chatConfig);
+		BaseRecord nextEp2 = null;
+		if(nextEp != null) {
+			// logger.info("Current episode " + nextEp.get("number") + " " + nextEp.get("theme"));
+			nextEp2 = PromptUtil.getEpisode(chatConfig, (int)nextEp.get("number") + 1);
+			if(nextEp2 != null) {
+				// logger.info("Move to episode " + nextEp2.get("number") + " " + nextEp2.get("theme"));
+				nextEp.setValue("completed", true);
+			}
+			else {
+				logger.warn("End of episodes");
+			}
+		}
+		else {
+			logger.warn("No further episodes");
+		}
+		return nextEp2;
+	}
+	
 	public static BaseRecord getNextEpisode(BaseRecord chatConfig) {
 		BaseRecord lastEp = getLastEpisode(chatConfig);
 		if(lastEp != null) {
-			return lastEp;
+			BaseRecord afterLast = getEpisode(chatConfig, (int)lastEp.get("number") + 1);
+			if(afterLast != null) {
+				return afterLast;
+			}
 		}
 		return getEpisode(chatConfig, 1);
 	}

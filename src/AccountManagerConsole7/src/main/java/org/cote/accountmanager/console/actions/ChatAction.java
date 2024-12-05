@@ -221,14 +221,12 @@ public class ChatAction extends CommonAction implements IAction{
 				
 			}
 			else {
-				BaseRecord lep = PromptUtil.getLastEpisode(cfg);
-				number = 1;
-				if(lep != null) {
-					number = 1 + (int)lep.get("number");
-				}
+				List<BaseRecord> eps = cfg.get("episodes");
+				//BaseRecord lep = PromptUtil.getLastEpisode(cfg);
+				number = eps.size() + 1;
 				logger.info("Adding episode #" + number);
 				ep.setValue("number", number);
-				List<BaseRecord> eps = cfg.get("episodes");
+				
 				eps.add(ep);
 			}
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);

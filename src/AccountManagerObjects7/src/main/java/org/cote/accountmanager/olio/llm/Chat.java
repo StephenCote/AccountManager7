@@ -545,6 +545,10 @@ Begin conversationally.
 					else if(!"random".equals(chatConfig.get("setting"))) {
 						logger.info((String)chatConfig.get("setting"));
 					}
+					BaseRecord nextEp = PromptUtil.getNextEpisode(chatConfig);
+					if(nextEp != null) {
+						logger.info("Episode #" + nextEp.get("number") + " " + nextEp.get("theme"));
+					}
 					lastRep = chat(req);
 					if(lastRep != null) {
 						handleResponse(req, lastRep, true);
@@ -614,6 +618,35 @@ Begin conversationally.
 						logger.info(unar);
 					}
 					continue;
+				}
+				if(line.equals("/next")) {
+					BaseRecord nextEp = PromptUtil.moveToNextEpisode(chatConfig);
+					if(req.getMessages().size() == 0) {
+						logger.error("No system message to replace!");
+					}
+					else if(nextEp != null) {
+						if(req.getMessages().size() > 4) {
+							logger.info("Summarizing current episode...");
+							OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following content with respect to the described episode. Include all physical, behavioral, and personality details.", 0, 0, false));
+							String summary = null;
+							if(oresp != null && oresp.getMessage() != null) {
+								summary = oresp.getMessage().getContent();
+								logger.info("Summary: " + summary);
+							}
+							nextEp.setValue("summary", summary);
+						}
+						else {
+							// logger.info("Skipping summary");
+						}
+						String newSys = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
+						req.getMessages().get(0).setContent(PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig));
+						logger.info("Begin episode #" + nextEp.get("number") + " " + nextEp.get("theme"));
+					}
+					else {
+						logger.warn("No further episodes");
+					}
+					continue;
+
 				}
 				if(line.equals("/prune")) {
 					prune(req, true);
