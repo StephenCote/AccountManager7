@@ -138,12 +138,13 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestLangChain.java</exclude>
-						-->
-						<exclude>**/TestVectorIndex.java</exclude>
 						<exclude>**/TestOlioRules.java</exclude>
+						-->
+						<exclude>**/TestLangChain.java</exclude>
+						<exclude>**/TestVectorIndex.java</exclude>
+						
 						<exclude>**/TestQueryPlan.java</exclude>
-
+						<exclude>**/TestH2Database.java</exclude>
 						<exclude>**/TestOlio2.java</exclude>
 						<exclude>**/TestOlio.java</exclude>
 						<exclude>**/TestChat.java</exclude>
@@ -151,7 +152,7 @@
 						<!-- Repeatable Set -->
 						<exclude>**/TestRealm.java</exclude>
 						<exclude>**/TestNestedStructures.java</exclude>
-
+						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestQdrant.java</exclude>
 						<exclude>**/TestCondensedModel.java</exclude>
 						<exclude>**/TestBulkOperation.java</exclude>
@@ -159,7 +160,7 @@
 						<exclude>**/TestModelLayout.java</exclude>
 						<exclude>**/TestJournal.java</exclude>
 						<exclude>**/TestVaultFields.java</exclude>
-						<exclude>**/TestStream.java</exclude>
+						
 						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestVault.java</exclude>
 						<exclude>**/TestFieldLock.java</exclude>
@@ -189,7 +190,7 @@
 
 
 						<!-- Situational Tests -->
-						<exclude>**/TestH2Database.java</exclude>
+						
 						<exclude>**/TestPGDatabase.java</exclude>
 
 						<!-- Not intended to be regularly run -->
@@ -540,7 +541,7 @@
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
-			<version>2.2.224</version>
+			<version>2.3.232</version>
 		</dependency>
 		<dependency>
 			<groupId>org.postgresql</groupId>
