@@ -5,6 +5,7 @@ import java.security.KeyStore;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
@@ -87,6 +88,7 @@ public class OrganizationContext {
 		this.organizationPath = org.get(FieldNames.FIELD_PATH);
 		this.organizationId = org.get(FieldNames.FIELD_ID);
 		this.organizationType = OrganizationEnumType.valueOf(org.get(FieldNames.FIELD_TYPE));
+
 		adminUser =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.ADMIN_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));
 		opsUser =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.OPS_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));
 		vaultUser =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.VAULT_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));

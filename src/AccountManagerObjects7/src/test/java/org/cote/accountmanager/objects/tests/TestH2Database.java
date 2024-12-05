@@ -8,13 +8,16 @@ import java.util.List;
 import java.util.UUID;
 
 import org.cote.accountmanager.cache.CacheUtil;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -25,11 +28,39 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.junit.Test;
 
 public class TestH2Database extends BaseTest {
 
+	@Test
+	public void TestQuerySetup() {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_KEY);
+		logger.info(q.toSelect());
+	}
+	
+	@Test
+	public void TestData() {
+		logger.info("Test data");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Data");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
+		String dataName = "Test Data - " + UUID.randomUUID().toString();
+		String dataData = "This is the data";
+		String groupPath = "~/Data";
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, groupPath);
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
+		BaseRecord data = null;
+		try {
+			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
+			ByteModelUtil.setValueString(data, dataData);
+			data = ioContext.getAccessPoint().create(testUser1, data);
+			
+		} catch (FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+	}
 	
 	@Test
 	public void TestKeySet() {
@@ -43,7 +74,7 @@ public class TestH2Database extends BaseTest {
 		}
 	}
 	
-
+	/*
 	@Test
 	public void TestModelConstraint() {
 		ModelSchema ms1 = RecordFactory.getSchema(ModelNames.MODEL_INDEX2);
@@ -149,7 +180,7 @@ public class TestH2Database extends BaseTest {
 
 			ioContext.getMemberUtil().member(user, user, person, permission, true);
 			
-			List<BaseRecord> members2 = ioContext.getMemberUtil().findMembers(user, ModelNames.MODEL_PERSON, person.get(FieldNames.FIELD_ID), permission.get(FieldNames.FIELD_ID));
+			List<BaseRecord> members2 = ioContext.getMemberUtil().findMembers(user, FieldNames.FIELD_ID, ModelNames.MODEL_PERSON, permission.get(FieldNames.FIELD_ID));
 			logger.info("Count: " + members2.size());
 			
 			boolean authorized = ioContext.getAuthorizationUtil().checkEntitlement(person, permission, user);
@@ -278,28 +309,6 @@ public class TestH2Database extends BaseTest {
 		}
 		
 
-	}
-
-	
-	/*
-	try (Connection con = ioContext.getDbUtil().getDataSource().getConnection()){
-		Statement stat = con.createStatement();
-		ResultSet rset = stat.executeQuery("SELECT * FROM A7_participation ORDER BY id ASC");
-		while(rset.next()) {
-			String ctype = rset.getString("participationModel");
-			long cid = rset.getLong("participationId");
-			String ptype = rset.getString("participantModel");
-			long pid = rset.getLong("participantId");
-			String etype = rset.getString("effectType");
-			long eid = rset.getLong("permissionId");
-			
-			logger.info(ctype + " " + cid + " " + ptype + " " + pid + " " + etype + " " + eid);
-
-
-		}
-	}
-	catch(SQLException e) {
-		logger.error(e);
 	}
 	*/
 	

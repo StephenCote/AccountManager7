@@ -103,11 +103,7 @@ public class DBSearch extends SearchBase {
 
 			PreparedStatement statement = con.prepareStatement(sql.getSql());
 			StatementUtil.setStatementParameters(query, statement);
-			
-			if((boolean)query.get(FieldNames.FIELD_DEBUG) == true){
-				logger.info(statement);
-			}
-			
+
 			ResultSet rset = statement.executeQuery();
 			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
 			while(rset.next()) {

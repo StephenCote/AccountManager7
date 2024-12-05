@@ -112,6 +112,7 @@ public class IOSystem {
 			}
 			if(!dbUtil.haveTable(ModelNames.MODEL_ORGANIZATION) || properties.isSchemaCheck() || properties.isReset()) {
 				logger.info("Scanning model schemas");
+				dbUtil.createExtensions();
 				checkPersistedSchema = true;
 				for(String m : ModelNames.MODELS) {
 					ModelSchema schema = RecordFactory.getSchema(m);

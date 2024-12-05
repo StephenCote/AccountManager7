@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -39,6 +40,28 @@ import org.cote.accountmanager.util.RecordUtil;
 public class DBUtil {
 	public static final Logger logger = LogManager.getLogger(DBUtil.class);
 	
+	/// H2 Base64 Extension from https://github.com/h2database/h2database/issues/2422
+	///
+	
+	private static final String h2_extension = """
+DROP SCHEMA IF EXISTS UTL_ENCODE CASCADE;
+CREATE SCHEMA UTL_ENCODE;
+CREATE ALIAS UTL_ENCODE.BASE64_ENCODE AS $$
+byte[] encode(byte[] source) {
+    return Base64.getEncoder().encode(source);
+}
+$$;
+CREATE ALIAS UTL_ENCODE.BASE64_ENCODE_STR AS $$
+String encodeStr(byte[] source) {
+    return Base64.getEncoder().encodeToString(source);
+}
+$$;
+CREATE ALIAS UTL_ENCODE.BASE64_DECODE AS $$
+byte[] decode(byte[] source) {
+    return Base64.getDecoder().decode(source);
+}
+$$;""";
+	
 	private List<String> reservedWords = new ArrayList<>(Arrays.asList("ALL", "AND", "ANY", "ARRAY", "AS", "ASYMMETRIC", "AUTHORIZATION", "BETWEEN", "BOTH", "CASE", "CAST", "CHECK", "CONSTRAINT", "CROSS", "CURRENT_CATALOG", "CURRENT_DATE", "CURRENT_PATH", "CURRENT_ROLE", "CURRENT_SCHEMA", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "DAY", "DEFAULT", "DISTINCT", "ELSE", "END", "EXCEPT", "EXISTS", "FALSE", "FETCH", "FOR", "FOREIGN", "FROM", "FULL", "GROUP", "GROUPS", "HAVING", "HOUR", "IF", "ILIKE", "IN", "INNER", "INTERSECT", "INTERVAL", "IS", "JOIN", "KEY", "LEADING", "LEFT", "LIKE", "LIMIT", "LOCALTIME", "LOCALTIMESTAMP", "MINUS", "MINUTE", "MONTH", "NATURAL", "NOT", "NULL", "OFFSET", "ON", "OR", "ORDER", "OVER", "PARTITION", "PRIMARY", "QUALIFY", "RANGE", "REGEXP", "RIGHT", "ROW", "ROWNUM", "ROWS", "SECOND", "SELECT", "SESSION_USER", "SET", "SOME", "SYMMETRIC", "SYSTEM_USER", "TABLE", "TO", "TOP", "", "TRAILING", "TRUE", "UESCAPE", "UNION", "UNIQUE", "UNKNOWN", "USER", "USING", "VALUE", "VALUES", "WHEN", "WHERE", "WINDOW", "WITH", "YEAR", "_ROWID_"));
 	private String dataPrefix = "A7";
 	
@@ -69,6 +92,19 @@ public class DBUtil {
 	public DBUtil() {
 
 	}
+	
+	public void createExtensions() {
+		if(connectionType == ConnectionEnumType.H2) {
+			logger.info("Creating H2 Extensions");
+		    try (Connection con = dataSource.getConnection(); Statement statement = con.createStatement();){
+				statement.executeUpdate(h2_extension);
+		    }
+		    catch(SQLException e) {
+		    	logger.error(e);
+		    }
+		}
+	}
+	
 	/*
 	public void release() {
 		dataSource = null;
@@ -94,7 +130,7 @@ public class DBUtil {
 	}
 
 	protected void applyDataSource() {
-		StatementUtil.setModelMode(false);
+		StatementUtil.setModelMode(true);
 		if(dataSourceUrl != null) {
 			if(dataSourceUrl.startsWith("jdbc:h2:")) {
 				dataSource = getH2DataSource();
@@ -103,7 +139,7 @@ public class DBUtil {
 			else if(dataSourceUrl.startsWith("jdbc:postgresql:")) {
 				dataSource = getPGDataSource();
 				connectionType = ConnectionEnumType.POSTGRE;
-				StatementUtil.setModelMode(true);
+				// StatementUtil.setModelMode(true);
 			}
 		}
 		else if(jndiName != null) {
@@ -111,7 +147,7 @@ public class DBUtil {
 			if(jndiName.endsWith("postgresDS")) {
 				driver = pgDriver;
 				connectionType = ConnectionEnumType.POSTGRE;
-				StatementUtil.setModelMode(true);
+				// StatementUtil.setModelMode(true);
 			}
 			else if(jndiName.endsWith("h2DS")) {
 				driver = h2Driver;

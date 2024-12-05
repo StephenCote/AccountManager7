@@ -59,7 +59,6 @@ public class StatementUtil {
 	
 	/// When dereferencing foreign keys, populate all or common fields of the foreign model reference
 	/// otherwise, only the reference id will be included
-	/// TODO: Currently have an issue with H2 when enabled
 	///
 	private static boolean modelMode = false;
 	
@@ -71,8 +70,7 @@ public class StatementUtil {
 	public static void setModelMode(boolean modelMode) {
 		StatementUtil.modelMode = modelMode;
 	}
-	/// TODO: The top-level single model reference is failing deserialization when sent through the same inner json structure as lists and child models
-	///
+	
 	public static String getForeignDeleteTemplate(BaseRecord[] recs) {
 		List<String> sqls = new ArrayList<>();
 		for(BaseRecord rec : recs) {
@@ -514,41 +512,27 @@ public class StatementUtil {
 				}
 				subQuery.setValue("plan", qp);
 				
-				//List<String> commonFields = Arrays.asList(RecordUtil.getCommonFields(schema.getBaseModel()));
-				List<String> subReqFields = subQuery.get(FieldNames.FIELD_REQUEST);
-				/*
-				if(limit) {
-					msfields = msschema.getFields().stream().filter(f -> subReqFields.contains(f.getName())).collect(Collectors.toList());
+				List<String> xfields = subQuery.get(FieldNames.FIELD_REQUEST);
+				List<String> yfields = new ArrayList<>();
+				if(xfields.size() == 0) {
+					yfields = RecordUtil.getMostRequestFields(model);
 				}
-				else if(!limit) {
-				*/
-					/// Filter blobs and foreign references to models with the same base query out of the otherwise no-limit, no-depth query
-					///
-					//List<String> xfields = query.get(FieldNames.FIELD_REQUEST);
-					List<String> xfields = subQuery.get(FieldNames.FIELD_REQUEST);
-					List<String> yfields = new ArrayList<>();
-					if(xfields.size() == 0) {
-						yfields = RecordUtil.getMostRequestFields(model);
-					}
-					List<String> rfields = (yfields.size() > 0 ? yfields : xfields);
-					msfields = msschema.getFields().stream().filter(f -> {
-						FieldSchema fs = msschema.getFieldSchema(f.getName());
-						return (
-							(rfields.size() == 0 || rfields.contains(f.getName()))
-							&&
-							(!fs.isForeign() || (!model.equals(fs.getBaseModel()) && !ModelNames.MODEL_SELF.equals(fs.getBaseModel())) && !ModelNames.MODEL_FLEX.equals(fs.getBaseModel()))
-							&&
-							!fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())
-							
-						);
-					}
-					).collect(Collectors.toList());
-				//}
+				List<String> rfields = (yfields.size() > 0 ? yfields : xfields);
+				msfields = msschema.getFields().stream().filter(f -> {
+					FieldSchema fs = msschema.getFieldSchema(f.getName());
+					return (
+						(rfields.size() == 0 || rfields.contains(f.getName()))
+						&&
+						(!fs.isForeign() || (!model.equals(fs.getBaseModel()) && !ModelNames.MODEL_SELF.equals(fs.getBaseModel())) && !ModelNames.MODEL_FLEX.equals(fs.getBaseModel()))
+						&&
+						!fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())
+						
+					);
+				}
+				).collect(Collectors.toList());
 
 			}
-			else {
-				// logger.warn("Query for " + model + " is open ended and may cause recursion");
-			}
+
 		}
 		
 		if(msfields.size() == 0) {
@@ -583,7 +567,6 @@ public class StatementUtil {
 				}
 				
 				else if(fs.getType().toUpperCase().equals(FieldEnumType.MODEL.toString())){
-					// logger.warn("Handle Model: " + fs.getName());
 					cols.add(getInnerSelectTemplate(subQuery, fs, true, true));
 					fields.add(fs.getName());
 				}
@@ -593,27 +576,20 @@ public class StatementUtil {
 					String colName = salias + "." + util.getColumnName(fs.getName());
 					if(fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())) {
 						if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-							// logger.info("Encode: " + model + "." + colName);
 							colName = "encode(" + colName + ",'base64')";
 						}
 						else if(util.getConnectionType() == ConnectionEnumType.H2) {
-							logger.warn("TODO: Add bytea encode as needed");
+							//logger.warn("TODO: Add bytea encode as needed");
+							colName = "UTL_ENCODE.BASE64_ENCODE_STR(" + colName + ")";
 						}
 					}
 					cols.add(colName);
 					fields.add(fs.getName());
 				}
 			}
-			else {
-				// logger.warn("Missed " + fs.getName());
-			}
+
 		}
 		String orderClause = getDefaultOrderClause(msschema.getName(), salias);
-		/*
-		if(msschema.getSortOrder() != OrderEnumType.UNKNOWN && msschema.getSortField() != null) {
-			orderClause = " ORDER BY " + salias + "." + msschema.getSortField() + " " + (msschema.getSortOrder() == OrderEnumType.ASCENDING ? "ASC" : "DESC");
-		}
-		*/
 		if(util.getConnectionType() == ConnectionEnumType.H2) {
 			StringBuilder ajoin = new StringBuilder();
 			for(int i = 0; i < cols.size(); i++) {
@@ -632,7 +608,7 @@ public class StatementUtil {
 					buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString()  + ", 'model': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 				else {
-					buff.append("(SELECT JSON_OBJECT(" + ajoin.toString() + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + alias + "." + util.getColumnName(schema.getName()) + " = " + salias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					buff.append("(SELECT JSON_OBJECT(" + ajoin.toString() + ", 'model': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + alias + "." + util.getColumnName(schema.getName()) + " = " + salias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
 				}
 			}
 		}
@@ -664,7 +640,6 @@ public class StatementUtil {
 			throw new FieldException("**** Unhandled inner query: " + util.getConnectionType().toString());
 		}
 
-		//subQuery.setRequest(fields.toArray(new String[0]));
 		subQuery.setRequest(msfields.stream().map(f -> f.getName()).collect(Collectors.toList()).toArray(new String[0]));
 		List<BaseRecord> queries = query.get(FieldNames.FIELD_QUERIES);
 		queries.add(subQuery);

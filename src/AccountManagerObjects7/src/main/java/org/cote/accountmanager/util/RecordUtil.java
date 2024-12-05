@@ -441,6 +441,7 @@ public class RecordUtil {
 		
 		Query q = new Query(rec.getModel());
 		q.setRequest(fields);
+
 		if(rec.hasField(FieldNames.FIELD_ID) && ((long)rec.get(FieldNames.FIELD_ID)) > 0L) {
 			q.field(FieldNames.FIELD_ID, ComparatorEnumType.EQUALS, rec.get(FieldNames.FIELD_ID));	
 		}

@@ -1,13 +1,18 @@
 package org.cote.accountmanager.io;
 
+import java.util.Arrays;
+import java.util.stream.Collectors;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.util.RecordUtil;
 
 public abstract class SearchBase implements ISearch {
 	public static final Logger logger = LogManager.getLogger(SearchBase.class);
@@ -51,16 +56,22 @@ public abstract class SearchBase implements ISearch {
 	
 	public BaseRecord findRecord(Query query) {
 		BaseRecord record = null;
+		/*
+		if(query.getType().equals(ModelNames.MODEL_GROUP)) {
+			logger.info(query.key());
+			logger.info(Arrays.asList(RecordUtil.getCommonFields(query.getType())).stream().collect(Collectors.joining(", ")));
+		}
+		*/;
 		QueryResult result = null;
 		try {
 			result = find(query);
 		} catch (NullPointerException | ReaderException e) {
 			logger.error(e);
-			
 		}
 		if(result != null && result.getCount() > 0) {
 			record = result.getResults()[0];
 		}
+
 		return record;
 	}
 	
@@ -82,6 +93,11 @@ public abstract class SearchBase implements ISearch {
 		else {
 			logger.debug("Zero results for " + query.key());
 		}
+		/*
+		if(query.getType().equals(ModelNames.MODEL_GROUP) && records.length > 0){
+			logger.info(records[0].toFullString());
+		}
+		*/
 		return records;
 	}
 	
