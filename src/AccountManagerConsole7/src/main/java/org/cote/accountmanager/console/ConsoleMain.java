@@ -2,6 +2,7 @@ package org.cote.accountmanager.console;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.util.Properties;
 
 import org.apache.commons.cli.CommandLine;
@@ -17,6 +18,7 @@ import org.cote.accountmanager.console.actions.ChatAction;
 import org.cote.accountmanager.console.actions.ExportAction;
 import org.cote.accountmanager.console.actions.IAction;
 import org.cote.accountmanager.console.actions.PatchAction;
+import org.cote.accountmanager.console.actions.TestAction;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
@@ -27,6 +29,7 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.VectorUtil;
 
 public class ConsoleMain {
 	public static final Logger logger = LogManager.getLogger(ConsoleMain.class);
@@ -39,7 +42,8 @@ public class ConsoleMain {
 	private static IAction[] actions = new IAction[] {
 		new ChatAction(),
 		new PatchAction(),
-		new ExportAction()
+		new ExportAction(),
+		new TestAction()
 	};
 	
 	public static void main(String[] args){
@@ -64,8 +68,6 @@ public class ConsoleMain {
 		options.addOption("export", false, "Generic bit");
 		options.addOption("debug", false, "Generic bit");
 		
-
-		
 		adminAction.addOptions(options);
 		adminAction.setProperties(properties);
 		for(IAction act : actions) {
@@ -83,6 +85,7 @@ public class ConsoleMain {
 			}
 
 			if(ioContext != null) {
+				
 				adminAction.handleCommand(cmd);
 
 				if(cmd.hasOption("organization") && cmd.hasOption("username") && cmd.hasOption("password")) {
@@ -117,7 +120,16 @@ public class ConsoleMain {
 		OlioModelNames.use();
 		Properties properties = loadProperties();
 		IOFactory.DEFAULT_FILE_BASE = properties.getProperty("app.basePath");
+		boolean enableVector = Boolean.parseBoolean(properties.getProperty("test.vector.enable"));
+		if(enableVector) {
+			System.setProperty("ai.djl.default_engine", properties.getProperty("test.djl.engine"));
+			String djlLibPath = properties.getProperty("test.djl.library");
+			System.setProperty("PYTORCH_LIBRARY_PATH", djlLibPath);
+		}
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));
+		
+
+		
 	}
 
 	private static void resetContext(String dataUrl, String dataUser, String dataPassword, boolean reset) {

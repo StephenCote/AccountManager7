@@ -1,13 +1,10 @@
 package org.cote.accountmanager.console.actions;
 
-import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import java.util.Random;
-import java.util.UUID;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Options;
@@ -17,9 +14,6 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.ParameterList;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
@@ -33,25 +27,19 @@ import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
-import org.cote.accountmanager.olio.llm.PromptConfiguration;
 import org.cote.accountmanager.olio.llm.PromptUtil;
-import org.cote.accountmanager.olio.personality.PersonalityUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.RecordUtil;
-import org.cote.accountmanager.util.ResourceUtil;
 
 public class ChatAction extends CommonAction implements IAction{
 	public static final Logger logger = LogManager.getLogger(ChatAction.class);

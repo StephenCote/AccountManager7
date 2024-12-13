@@ -404,17 +404,48 @@
 			<artifactId>json</artifactId>
 			<version>20230618</version>
 		</dependency>
+<!--
 <dependency>
     <groupId>de.articdive</groupId>
     <artifactId>jnoise-pipeline</artifactId>
     <version>4.1.0</version>
 </dependency>
+
 <dependency>
   <groupId>io.qdrant</groupId>
   <artifactId>client</artifactId>
   <version>1.7.2</version>
 </dependency>
-
+-->
+		<dependency>
+			<groupId>com.pgvector</groupId>
+			<artifactId>pgvector</artifactId>
+			<version>0.1.6</version>
+		</dependency>
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-model-zoo</artifactId>
+		</dependency>
+		
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-engine</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		
+				<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-jni</artifactId>
+			<scope>runtime</scope>
+		</dependency>
+		
+		<dependency>
+			<groupId>ai.djl.pytorch</groupId>
+			<artifactId>pytorch-native-cu118</artifactId>
+			<classifier>win-x86_64</classifier>
+			<version>2.0.1</version>
+			<scope>runtime</scope>
+		</dependency>
 		<!--
 <dependency>
   <groupId>org.tensorflow</groupId>
@@ -423,4 +454,15 @@
 </dependency>
 -->
 	</dependencies>
+	<dependencyManagement>
+		<dependencies>
+			<dependency>
+				<groupId>ai.djl</groupId>
+				<artifactId>bom</artifactId>
+				<version>0.28.0</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+		</dependencies>
+	</dependencyManagement>
 </project>
