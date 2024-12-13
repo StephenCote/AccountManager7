@@ -47,17 +47,18 @@ public class VectorUtil {
 		WORD
 	};
 	
-	 public static final String HYBRID_SQL = """
+	private static Pattern tablePat = Pattern.compile("\\$\\{tableName\\}");
+	private static final String HYBRID_SQL = """
 WITH semantic_search AS (
     SELECT id, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
-    FROM a7_data_vectorModelStore_0_1
+    FROM ${tableName}
     WHERE vectorReference = ? and vectorReferenceType = ?
     ORDER BY embedding <=> ?
     LIMIT 20
 ),
 keyword_search AS (
     SELECT id, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC), content, chunk
-    FROM a7_data_vectorModelStore_0_1, plainto_tsquery('english', ?) query
+    FROM ${tableName}, plainto_tsquery('english', ?) query
     WHERE to_tsvector('english', content) @@ query
     ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC
     LIMIT 20
@@ -88,10 +89,13 @@ LIMIT 10
 			id = model.get(FieldNames.FIELD_ID);
 			refType = model.getModel();
 		}
+		String tableName = IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_VECTOR_MODEL_STORE);
+		String sql = tablePat.matcher(HYBRID_SQL).replaceAll(tableName);
+
 		try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection()){
 	        float[] queryEmbedding = generateEmbeddings(zoo, new String[] {query}).get(0);
 	
-	        PreparedStatement queryStmt = con.prepareStatement(HYBRID_SQL);
+	        PreparedStatement queryStmt = con.prepareStatement(sql);
 	        queryStmt.setObject(1, new PGvector(queryEmbedding));
 	        queryStmt.setLong(2, id);
 	        queryStmt.setString(3, refType);

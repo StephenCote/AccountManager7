@@ -69,7 +69,7 @@ public class TestVectorStore extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Vector");
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
-		BaseRecord pdf1 = getCreateDocument(testUser1, "./media/The Big Way Out.doc");
+		BaseRecord pdf1 = getCreateDocument(testUser1, "./media/CardFox.pdf");
 		assertNotNull("Document is null", pdf1);
 		IOSystem.getActiveContext().getReader().populate(pdf1, new String[] {FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_CONTENT_TYPE});
 		
