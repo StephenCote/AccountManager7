@@ -13,6 +13,7 @@ import javax.ws.rs.core.MediaType;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -20,6 +21,8 @@ import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.VectorUtil;
+import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
 public class Chat {
 	
@@ -157,6 +160,15 @@ Begin conversationally.
 		}
 		if(sessionName != null) {
 			ChatUtil.saveSession(user, req, sessionName);
+			int rmc = req.getMessages().size();
+			if(VectorUtil.isVectorSupported() && rmc > 2) {
+				String cnt = req.getMessages().get(rmc - 2).getContent() + System.lineSeparator() + req.getMessages().get(rmc - 1).getContent();
+				try {
+					VectorUtil.createVectorStore(ChatUtil.getSessionData(user, sessionName), cnt, ChunkEnumType.UNKNOWN, 0);
+				} catch (FieldException e) {
+					logger.error(e);
+				}
+			}
 		}
 	}
 	private List<String> getFormattedChatHistory(OllamaRequest req, boolean full) {
@@ -696,6 +708,16 @@ Begin conversationally.
 				}
 				if(sessionName != null) {
 					ChatUtil.saveSession(user, req, sessionName);
+					int rmc = req.getMessages().size();
+					if(VectorUtil.isVectorSupported() && rmc > 2) {
+						String cnt = req.getMessages().get(rmc - 2).getContent() + System.lineSeparator() + req.getMessages().get(rmc - 1).getContent();
+						try {
+							VectorUtil.createVectorStore(ChatUtil.getSessionData(user, sessionName), cnt, ChunkEnumType.UNKNOWN, 0);
+						} catch (FieldException e) {
+							logger.error(e);
+						}
+					}
+
 				}
 			}
 			AuditUtil.setLogToConsole(true);

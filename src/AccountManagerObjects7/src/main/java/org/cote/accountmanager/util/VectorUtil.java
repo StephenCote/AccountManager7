@@ -23,10 +23,12 @@ import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ConnectionEnumType;
 
 import com.ibm.icu.util.StringTokenizer;
 import com.pgvector.PGvector;
@@ -76,6 +78,14 @@ FULL OUTER JOIN keyword_search ON semantic_search.id = keyword_search.id
 ORDER BY score DESC
 LIMIT ?
 """;
+	
+	public static boolean isVectorSupported() {
+		DBUtil du = IOSystem.getActiveContext().getDbUtil();
+		return (du.isEnableVectorExtension() && du.getConnectionType() == ConnectionEnumType.POSTGRE);
+	}
+	
+	
+
 	
 	public static List<BaseRecord> find(BaseRecord model, String query){
 		return findByEmbedding(getZooModel(), model, query, 10, 60);

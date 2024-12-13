@@ -99,8 +99,6 @@ $$;""";
 
 	}
 	
-	
-	
 	public boolean isEnableVectorExtension() {
 		return enableVectorExtension;
 	}
