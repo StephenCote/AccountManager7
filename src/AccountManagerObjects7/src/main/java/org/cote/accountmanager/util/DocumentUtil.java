@@ -65,7 +65,7 @@ public class DocumentUtil {
 		PDDocument doc;
 		try {
 			doc = Loader.loadPDF(new File(path));
-			output = new PDFTextStripper().getText(doc);
+			output = replaceSmartQuotes(new PDFTextStripper().getText(doc));
 		} catch (IOException e) {
 			logger.error(e);
 		}

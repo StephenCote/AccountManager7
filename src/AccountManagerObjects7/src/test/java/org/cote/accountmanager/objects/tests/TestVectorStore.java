@@ -61,6 +61,7 @@ import ai.djl.translate.DeferredTranslatorFactory;
 import ai.djl.translate.TranslateException;
 public class TestVectorStore extends BaseTest {
 	
+	private boolean resetStore = true;
 	
 	@Test
 	public void TestPDF() {
@@ -74,6 +75,10 @@ public class TestVectorStore extends BaseTest {
 		IOSystem.getActiveContext().getReader().populate(pdf1, new String[] {FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_CONTENT_TYPE});
 		
 		int count = VectorUtil.countVectorStore(pdf1);
+		if(resetStore && count > 0) {
+			VectorUtil.deleteVectorStore(pdf1);
+			count = 0;
+		}
 		if(count == 0) {
 		List<BaseRecord> chunks = new ArrayList<>();
 		try {
@@ -89,8 +94,12 @@ public class TestVectorStore extends BaseTest {
 		List<BaseRecord> store = VectorUtil.getVectorStore(pdf1);
 		assertTrue("Expected the store", store.size() > 0);
 		
-		List<BaseRecord> findStore = VectorUtil.find(pdf1, "Where is the casino?");
+		List<BaseRecord> findStore = VectorUtil.find(pdf1, "Where is the casino?", 5, 60);
 		logger.info("Found: " + findStore.size());
+		for(BaseRecord s : findStore) {
+			logger.info("Score: " + s.get(FieldNames.FIELD_SCORE));
+			logger.info("Content: " + s.get(FieldNames.FIELD_CONTENT));
+		}
 	}
 
 	private BaseRecord getCreateDocument(BaseRecord user, String path) {

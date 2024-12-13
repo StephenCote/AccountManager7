@@ -74,14 +74,16 @@ SELECT
 FROM semantic_search
 FULL OUTER JOIN keyword_search ON semantic_search.id = keyword_search.id
 ORDER BY score DESC
-LIMIT 10
+LIMIT ?
 """;
 	
 	public static List<BaseRecord> find(BaseRecord model, String query){
-		return findByEmbedding(getZooModel(), model, query, 60);
+		return findByEmbedding(getZooModel(), model, query, 10, 60);
 	}
-	
-	private static List<BaseRecord> findByEmbedding(ZooModel<String, float[]> zoo, BaseRecord model, String query, double k){
+	public static List<BaseRecord> find(BaseRecord model, String query, int limit, double k){
+		return findByEmbedding(getZooModel(), model, query, limit, k);
+	}	
+	private static List<BaseRecord> findByEmbedding(ZooModel<String, float[]> zoo, BaseRecord model, String query, int limit, double k){
 		List<BaseRecord> content = new ArrayList<>();
 		long id = 0L;
 		String refType = null;
@@ -103,6 +105,7 @@ LIMIT 10
 	        queryStmt.setString(5, query);
 	        queryStmt.setDouble(6, k);
 	        queryStmt.setDouble(7, k);
+	        queryStmt.setInt(8, limit);
 	        ResultSet rs = queryStmt.executeQuery();
 	        while (rs.next()) {
 	        	content.add(newVectorStore(rs.getLong("id"), rs.getLong("vectorReference"), rs.getString("vectorReferenceType"), rs.getDouble("score"), rs.getInt("chunk"), rs.getString("content")));
