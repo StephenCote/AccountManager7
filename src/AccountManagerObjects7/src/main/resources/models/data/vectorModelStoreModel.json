@@ -1,0 +1,29 @@
+{
+"name": "data.vectorModelStore",
+"inherits": ["common.objectId", "common.dateTime", "common.vectorExt", "system.organizationExt", "system.primaryKey"],
+"query": ["vectorReference", "vectorReferenceType", "chunk", "chunkCount"],
+"hints": ["vectorReference, vectorReferenceType"],
+"fields": [
+	{
+		"name": "vectorReference",
+		"baseModel": "$flex",
+		"type": "model",
+		"foreign": true,
+		"foreignType": "vectorReferenceType",
+		"access": {
+			"roles": {
+				"read": ["AccountUsers"]
+			}
+		}
+	},
+	{
+		"name": "vectorReferenceType",
+		"type": "string",
+		"maxLength": 64
+	},
+	{
+		"name": "score",
+		"type": "double",
+		"ephemeral": true
+	}
+]}

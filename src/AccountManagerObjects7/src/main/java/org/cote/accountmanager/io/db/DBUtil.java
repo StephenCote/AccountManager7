@@ -40,9 +40,15 @@ import org.cote.accountmanager.util.RecordUtil;
 public class DBUtil {
 	public static final Logger logger = LogManager.getLogger(DBUtil.class);
 	
+	private boolean enableVectorExtension = false;
+	private static final String pg_vector_extension = """
+CREATE EXTENSION if not exists vector;		
+""";
+	private static final String pg_extension = """
+""";
+
 	/// H2 Base64 Extension from https://github.com/h2database/h2database/issues/2422
 	///
-	
 	private static final String h2_extension = """
 DROP SCHEMA IF EXISTS UTL_ENCODE CASCADE;
 CREATE SCHEMA UTL_ENCODE;
@@ -93,11 +99,29 @@ $$;""";
 
 	}
 	
+	
+	
+	public boolean isEnableVectorExtension() {
+		return enableVectorExtension;
+	}
+
+	public void setEnableVectorExtension(boolean enableVectorExtension) {
+		this.enableVectorExtension = enableVectorExtension;
+	}
+
 	public void createExtensions() {
+		String ext = null;
 		if(connectionType == ConnectionEnumType.H2) {
 			logger.info("Creating H2 Extensions");
+			ext = h2_extension;
+		}
+		else if(connectionType == ConnectionEnumType.POSTGRE) {
+			logger.info("Creating PG Extensions");
+			ext = pg_extension + (enableVectorExtension ? pg_vector_extension : "");
+		}
+		if(ext != null && ext.trim().length() > 0) {
 		    try (Connection con = dataSource.getConnection(); Statement statement = con.createStatement();){
-				statement.executeUpdate(h2_extension);
+				statement.executeUpdate(ext);
 		    }
 		    catch(SQLException e) {
 		    	logger.error(e);
@@ -156,6 +180,9 @@ $$;""";
 			if(driver != null) {
 				dataSource = getJNDIDataSource(driver);
 			}
+		}
+		if(connectionType == ConnectionEnumType.POSTGRE) {
+			enableVectorExtension = true;
 		}
 	}
 	
@@ -668,6 +695,15 @@ $$;""";
 						logger.warn("Base model is not defined for " + schema.getName());
 					}
 				}
+				break;
+			case VECTOR:
+				if(connectionType != ConnectionEnumType.POSTGRE) {
+					logger.warn("Vector type is not supported by this database");
+				}
+				if(!enableVectorExtension) {
+					logger.warn("Vector extension is not enabled");
+				}
+				outType = "vector";
 				break;
 			default:
 				logger.error("Unhandled: " + fet.toString());

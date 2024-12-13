@@ -1,0 +1,25 @@
+{
+	"name": "common.vectorExt",
+	"inherits": [],
+	"abstract": true,
+	"query": [],
+	"fields": [
+		{
+			"name": "chunk",
+			"type": "int"
+		},
+		{
+			"name": "chunkCount",
+			"type": "int"
+		},
+		{
+			"name": "content",
+			"type": "string"
+		},
+		{
+			"name": "embedding",
+			"type": "vector",
+			"maxLength": 1024
+		}
+	]
+}

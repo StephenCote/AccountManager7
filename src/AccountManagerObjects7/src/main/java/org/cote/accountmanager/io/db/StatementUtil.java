@@ -53,6 +53,8 @@ import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
+import com.pgvector.PGvector;
+
 public class StatementUtil {
 	
 	public static final Logger logger = LogManager.getLogger(StatementUtil.class);
@@ -1204,6 +1206,20 @@ public class StatementUtil {
 
 		try{
 			switch(dataType){
+				case VECTOR:
+					DBUtil dbu = IOSystem.getActiveContext().getDbUtil();
+					if(dbu.isEnableVectorExtension()) {
+						if(dbu.getConnectionType() == ConnectionEnumType.POSTGRE) {
+							statement.setObject(index, new PGvector((float[])value));
+						}
+						else {
+							throw new DatabaseException("Vector extension is not supported");
+						}
+					}
+					else {
+						throw new DatabaseException("Vector extension is not enabled");
+					}
+					break;
 				case BLOB:
 					statement.setBytes(index, (byte[])value);
 					break;

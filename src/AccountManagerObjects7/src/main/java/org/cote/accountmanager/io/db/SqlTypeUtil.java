@@ -71,6 +71,9 @@ public class SqlTypeUtil {
 			case LIST:
 				outType = SqlDataEnumType.ARRAY;
 				break;
+			case VECTOR:
+				outType = SqlDataEnumType.VECTOR;
+				break;
 			default:
 				logger.error("Unhandled type: " + fet.toString());
 				break;

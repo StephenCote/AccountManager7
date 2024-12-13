@@ -15,5 +15,6 @@ public enum FieldEnumType {
 	STRING,
 	TIMESTAMP,
 	ZONETIME,
+	VECTOR,
 	UNKNOWN
 }

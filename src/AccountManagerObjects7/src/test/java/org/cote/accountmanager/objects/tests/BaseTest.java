@@ -216,11 +216,14 @@ public class BaseTest {
 	protected BaseRecord getCreateData(BaseRecord owner, String name, String path, String textContents) {
 		BaseRecord dat = null;
 		BaseRecord datT = null;
-		// ioContext.getRecordUtil().populate(owner);
-		BaseRecord group = ioContext.getPathUtil().findPath(owner, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+
+		BaseRecord group = ioContext.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(group != null) {
 			dat = ioContext.getRecordUtil().getRecord(owner, ModelNames.MODEL_DATA, name, 0, group.get(FieldNames.FIELD_ID), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 
+		}
+		else {
+			logger.warn("Group is null: " + path);
 		}
 		if(dat == null) {
 			try {

@@ -280,8 +280,8 @@ public class TestLangChain extends BaseTest {
     		logger.error(e);
     	}
     	return out;
-
     }
+    
 	private String getPDF(String path) {
 		String output = null;
 		  PDDocument doc;

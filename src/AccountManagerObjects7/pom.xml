@@ -125,7 +125,7 @@
 				  <environmentVariables> 
       <PATH>C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64;${java.library.path}</PATH> 
     </environmentVariables> 
-					<skipTests>true</skipTests>
+					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
 						-Djava.library.path=C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64
@@ -138,10 +138,12 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestOlioRules.java</exclude>
+						<exclude>**/TestVectorStore.java</exclude>
+						
 						-->
-						<exclude>**/TestLangChain.java</exclude>
 						<exclude>**/TestVectorIndex.java</exclude>
+						<exclude>**/TestLangChain.java</exclude>
+						<exclude>**/TestOlioRules.java</exclude>	
 						
 						<exclude>**/TestQueryPlan.java</exclude>
 						<exclude>**/TestH2Database.java</exclude>

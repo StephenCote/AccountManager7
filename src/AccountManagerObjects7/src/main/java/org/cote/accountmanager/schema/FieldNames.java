@@ -25,7 +25,7 @@ public class FieldNames {
 		public static final String FIELD_STATUS = "status";
 		public static final String FIELD_DESCRIPTION = "description";
 		public static final String FIELD_DEBUG = "debug";
-
+		public static final String FIELD_TEXT = "text";
 		/// Journal
 		public static final String FIELD_JOURNAL = "journal";
 		public static final String FIELD_JOURNALED = "journaled";
@@ -338,4 +338,12 @@ public class FieldNames {
 		public static final String FIELD_GEOGRAPHY_TYPE = "geographyType";
 		public static final String FIELD_GEONAMEID = "geonameid";
 		public static final String FIELD_ALT_TYPE = "altType";
+		
+		// Vector
+		public static final String FIELD_VECTOR_REFERENCE = "vectorReference";
+		public static final String FIELD_VECTOR_REFERENCE_TYPE = "vectorReferenceType";
+		public static final String FIELD_CHUNK = "chunk";
+		public static final String FIELD_CHUNK_COUNT = "chunkCount";
+		public static final String FIELD_EMBEDDING = "embedding";
+		public static final String FIELD_CONTENT = "content";
 }

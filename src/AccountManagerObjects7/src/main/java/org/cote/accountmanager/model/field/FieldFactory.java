@@ -20,6 +20,7 @@ import org.cote.accountmanager.model.field.value.ListValueType;
 import org.cote.accountmanager.model.field.value.LongValueType;
 import org.cote.accountmanager.model.field.value.ModelValueType;
 import org.cote.accountmanager.model.field.value.StringValueType;
+import org.cote.accountmanager.model.field.value.VectorValueType;
 import org.cote.accountmanager.model.field.value.ZoneTimeValueType;
 
 public class FieldFactory {
@@ -41,6 +42,9 @@ public class FieldFactory {
 	}
 	public static FieldType byteArrayFieldType(String name) throws ModelException {
 		return new FieldType(name, new ByteArrayValueType(new byte[0]));
+	}
+	public static FieldType vectorFieldType(String name) throws ModelException {
+		return new FieldType(name, new VectorValueType(new float[0]));
 	}
 	public static FieldType longFieldType(String name) throws ModelException {
 		return new FieldType(name, new LongValueType(0L));
@@ -109,6 +113,10 @@ public class FieldFactory {
 				case LIST:
 					type = listFieldType(name);
 					break;
+				case VECTOR:
+					type = vectorFieldType(name);
+					break;
+
 				default:
 					logger.error("Unhandled type: " + typen.toString());
 					break;

@@ -92,6 +92,7 @@ public enum SqlDataEnumType {
     TINYINT,
     VARBINARY,
     VARCHAR,
+    VECTOR,
     TEXT;
 
     public String value() {
