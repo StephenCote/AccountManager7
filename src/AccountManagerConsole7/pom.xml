@@ -323,7 +323,12 @@
 			<version>2.41</version>
 </dependency>
 
-
+<dependency>
+    <groupId>org.slf4j</groupId>
+    <artifactId>slf4j-simple</artifactId>
+    <version>2.0.16</version>
+    <scope>runtime</scope>
+</dependency>
 
 		<!--
 		<dependency>

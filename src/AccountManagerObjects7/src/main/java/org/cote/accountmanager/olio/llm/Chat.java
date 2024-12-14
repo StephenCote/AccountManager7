@@ -14,9 +14,13 @@ import javax.ws.rs.core.MediaType;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOContext;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -160,16 +164,52 @@ Begin conversationally.
 		}
 		if(sessionName != null) {
 			ChatUtil.saveSession(user, req, sessionName);
-			int rmc = req.getMessages().size();
-			if(VectorUtil.isVectorSupported() && rmc > 2) {
-				String cnt = req.getMessages().get(rmc - 2).getContent() + System.lineSeparator() + req.getMessages().get(rmc - 1).getContent();
-				try {
-					VectorUtil.createVectorStore(ChatUtil.getSessionData(user, sessionName), cnt, ChunkEnumType.UNKNOWN, 0);
-				} catch (FieldException e) {
-					logger.error(e);
+			createNarrativeVector(user, req, sessionName);
+		}
+	}
+	
+	private String getNarrativeForVector(OllamaMessage msg) {
+
+		if(chatConfig == null) {
+			return msg.getContent();
+		}
+		
+		BaseRecord vchar = chatConfig.get("systemCharacter");
+		if("user".equals(msg.getRole())){
+			vchar = chatConfig.get("userCharacter");
+		}
+		String ujobDesc = "";
+		List<String> utrades = vchar.get(OlioFieldNames.FIELD_TRADES);
+		if(utrades.size() > 0) {
+			ujobDesc =" " + utrades.get(0).toLowerCase();
+		}
+		return (
+			"* " + vchar.get(FieldNames.FIELD_FIRST_NAME) + " (" + vchar.get(FieldNames.FIELD_AGE) + " year-old "
+				+ NarrativeUtil.getRaceDescription(vchar.get(OlioFieldNames.FIELD_RACE)) + " "
+				+ vchar.get(FieldNames.FIELD_GENDER) + ujobDesc + ")*: "
+			//+ System.lineSeparator()
+			+ msg.getContent()
+		);
+	
+
+	}
+	private List<BaseRecord> createNarrativeVector(BaseRecord user, OllamaRequest req, String sessionName) {
+		List<BaseRecord> vect = new ArrayList<>();
+		int rmc = req.getMessages().size();
+		
+		if(VectorUtil.isVectorSupported() && rmc > 2) {
+			
+			String cnt = getNarrativeForVector(req.getMessages().get(rmc - 2)) + System.lineSeparator() + getNarrativeForVector(req.getMessages().get(rmc - 1));
+			try {
+				vect = VectorUtil.createVectorStore(ChatUtil.getSessionData(user, sessionName), cnt, ChunkEnumType.UNKNOWN, 0);
+				if(vect.size() > 0) {
+					IOSystem.getActiveContext().getWriter().write(vect.toArray(new BaseRecord[0]));
 				}
+			} catch (FieldException | WriterException e) {
+				logger.error(e);
 			}
 		}
+		return vect;
 	}
 	private List<String> getFormattedChatHistory(OllamaRequest req, boolean full) {
 		//StringBuilder buff = new StringBuilder();
@@ -708,16 +748,8 @@ Begin conversationally.
 				}
 				if(sessionName != null) {
 					ChatUtil.saveSession(user, req, sessionName);
-					int rmc = req.getMessages().size();
-					if(VectorUtil.isVectorSupported() && rmc > 2) {
-						String cnt = req.getMessages().get(rmc - 2).getContent() + System.lineSeparator() + req.getMessages().get(rmc - 1).getContent();
-						try {
-							VectorUtil.createVectorStore(ChatUtil.getSessionData(user, sessionName), cnt, ChunkEnumType.UNKNOWN, 0);
-						} catch (FieldException e) {
-							logger.error(e);
-						}
-					}
-
+					createNarrativeVector(user, req, sessionName);
+					
 				}
 			}
 			AuditUtil.setLogToConsole(true);
