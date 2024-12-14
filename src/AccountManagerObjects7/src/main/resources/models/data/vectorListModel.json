@@ -1,0 +1,12 @@
+{
+"name": "data.vectorList",
+"ephemeral": true,
+"factory": "org.cote.accountmanager.factory.VectorListFactory",
+"fields": [
+		{
+			"name": "vectors",
+			"baseType": "model",
+			"baseModel": "data.vectorModelStore",
+			"type": "list"
+		}
+]}

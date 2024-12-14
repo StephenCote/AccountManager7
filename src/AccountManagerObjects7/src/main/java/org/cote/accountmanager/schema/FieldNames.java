@@ -346,4 +346,5 @@ public class FieldNames {
 		public static final String FIELD_CHUNK_COUNT = "chunkCount";
 		public static final String FIELD_EMBEDDING = "embedding";
 		public static final String FIELD_CONTENT = "content";
+		public static final String FIELD_VECTORS = "vectors";
 }

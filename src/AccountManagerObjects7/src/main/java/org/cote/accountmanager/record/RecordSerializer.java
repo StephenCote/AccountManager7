@@ -221,6 +221,17 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        			jgen.writeBinaryField(getName(lft), data);
 	        		}
 	        		break;
+	        	case VECTOR:
+	        		float[] ddata = f.getValue();
+	        		if(ddata != null && ddata.length > 0) {
+	        			jgen.writeArrayFieldStart(getName(lft));
+	        			//jgen.writeArray(ddata, 0, ddata.length);
+	        			for(float df : ddata) {
+	        				jgen.writeNumber(df);
+	        			}
+	        			jgen.writeEndArray();
+	        		}
+	        		break;
 	        	case INT:
 	        		if(f.getValue() != null) {
 		        		int ival = f.getValue();

@@ -315,19 +315,21 @@ LIMIT ?
     	final AtomicInteger counter = new AtomicInteger(0);
     	List<String> sx = new ArrayList<>();
     	StringBuilder buff = new StringBuilder();
-
+    	int iter = 0;
     	while (st.hasMoreTokens()) {
     		String tk = st.nextToken();
     		if(tk == null || tk.trim().length() == 0) {
     			continue;
     		}
     		buff.append(tk);
+    		iter++;
     		if(st.hasMoreTokens()) {
     			buff.append(" ");
     		}
-			if(counter.getAndIncrement() % chunkSize == 0) {
+			if(counter.getAndIncrement() % chunkSize == 0 && iter > 1) {
 				sx.add(buff.toString());
 				buff = new StringBuilder();
+				iter = 0;
 			}
     	}
 		if(buff.length() > 0) {
