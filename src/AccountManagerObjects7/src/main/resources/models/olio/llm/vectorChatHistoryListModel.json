@@ -1,0 +1,12 @@
+{
+"name": "data.vectorList",
+"ephemeral": true,
+"factory": "org.cote.accountmanager.olio.llm.VectorChatHistoryListFactory",
+"fields": [
+		{
+			"name": "vectors",
+			"baseType": "model",
+			"baseModel": "olio.llm.vectorChatHistory",
+			"type": "list"
+		}
+]}

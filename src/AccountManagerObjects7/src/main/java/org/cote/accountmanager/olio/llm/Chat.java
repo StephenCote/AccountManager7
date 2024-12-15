@@ -13,12 +13,15 @@ import javax.ws.rs.core.MediaType;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.AuditUtil;
@@ -197,15 +200,27 @@ Begin conversationally.
 		List<BaseRecord> vect = new ArrayList<>();
 		int rmc = req.getMessages().size();
 		
-		if(VectorUtil.isVectorSupported() && rmc > 2) {
+		if(sessionName != null && VectorUtil.isVectorSupported() && rmc > 2) {
 			
 			String cnt = getNarrativeForVector(req.getMessages().get(rmc - 2)) + System.lineSeparator() + getNarrativeForVector(req.getMessages().get(rmc - 1));
 			try {
-				vect = VectorUtil.createVectorStore(ChatUtil.getSessionData(user, sessionName), cnt, ChunkEnumType.UNKNOWN, 0);
+				
+				BaseRecord dat = ChatUtil.getSessionData(user, sessionName);
+				ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_VECTOR_REFERENCE, dat);
+				plist.parameter(FieldNames.FIELD_CHUNK, ChunkEnumType.WORD);
+				plist.parameter(FieldNames.FIELD_CHUNK_COUNT, 200);
+				plist.parameter("chatConfig", chatConfig);
+				plist.parameter("content", cnt);
+				plist.parameter("promptConfig", promptConfig);
+				plist.parameter("systemCharacter", chatConfig.get("systemCharacter"));
+				plist.parameter("userCharacter", chatConfig.get("userCharacter"));
+				BaseRecord vlist = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_VECTOR_CHAT_HISTORY_LIST, user, null, plist);
+				vect = vlist.get(FieldNames.FIELD_VECTORS);
+
 				if(vect.size() > 0) {
 					IOSystem.getActiveContext().getWriter().write(vect.toArray(new BaseRecord[0]));
 				}
-			} catch (FieldException | WriterException e) {
+			} catch (WriterException | FactoryException e) {
 				logger.error(e);
 			}
 		}
