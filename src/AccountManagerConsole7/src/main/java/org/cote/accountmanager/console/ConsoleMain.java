@@ -123,8 +123,8 @@ public class ConsoleMain {
 		boolean enableVector = Boolean.parseBoolean(properties.getProperty("test.vector.enable"));
 		if(enableVector) {
 			System.setProperty("ai.djl.default_engine", properties.getProperty("test.djl.engine"));
-			String djlLibPath = properties.getProperty("test.djl.library");
-			System.setProperty("PYTORCH_LIBRARY_PATH", djlLibPath);
+			//String djlLibPath = properties.getProperty("test.djl.library");
+			//System.setProperty("PYTORCH_LIBRARY_PATH", djlLibPath);
 		}
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));
 		
