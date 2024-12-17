@@ -23,18 +23,18 @@
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
 	</properties>
 	<repositories>
-	<repository>
-    <id>sonatypeSnapshots</id>
-    <name>Sonatype Snapshots</name>
-    <url>https://oss.sonatype.org/content/repositories/snapshots</url>
-    <releases>
-        <enabled>false</enabled>
-    </releases>
-    <snapshots>
-        <enabled>true</enabled>
-    </snapshots>
-</repository>
-</repositories>
+		<repository>
+			<id>sonatypeSnapshots</id>
+			<name>Sonatype Snapshots</name>
+			<url>https://oss.sonatype.org/content/repositories/snapshots</url>
+			<releases>
+				<enabled>false</enabled>
+			</releases>
+			<snapshots>
+				<enabled>true</enabled>
+			</snapshots>
+		</repository>
+	</repositories>
 	<build>
 		<pluginManagement>
 			<plugins>
@@ -46,27 +46,27 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
-		<plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <version>2.10</version>
-        <executions>
-          <execution>
-            <id>copy-dependencies</id>
-            <phase>package</phase>
-            <goals>
-              <goal>copy-dependencies</goal>
-            </goals>
-            <configuration>
-              <outputDirectory>${project.build.directory}/lib</outputDirectory>
-              <overWriteReleases>false</overWriteReleases>
-              <overWriteSnapshots>false</overWriteSnapshots>
-              <overWriteIfNewer>true</overWriteIfNewer>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-		  	<plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<version>2.10</version>
+				<executions>
+					<execution>
+						<id>copy-dependencies</id>
+						<phase>package</phase>
+						<goals>
+							<goal>copy-dependencies</goal>
+						</goals>
+						<configuration>
+							<outputDirectory>${project.build.directory}/lib</outputDirectory>
+							<overWriteReleases>false</overWriteReleases>
+							<overWriteSnapshots>false</overWriteSnapshots>
+							<overWriteIfNewer>true</overWriteIfNewer>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-jar-plugin</artifactId>
 				<version>3.2.0</version>
@@ -74,7 +74,8 @@
 					<archive>
 						<manifest>
 							<addClasspath>true</addClasspath>
-							<mainClass>org.cote.accountmanager.console.ConsoleMain</mainClass>
+							<mainClass>
+								org.cote.accountmanager.console.ConsoleMain</mainClass>
 							<classpathPrefix>./lib/</classpathPrefix>
 						</manifest>
 					</archive>
@@ -117,7 +118,10 @@
 
 				<configuration>
 					<skipTests>true</skipTests>
-					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI --module-path=${compiler.dir} --upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar ${argLine}</argLine>
+					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
+						-XX:+EnableJVMCI --module-path=${compiler.dir}
+						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
+						${argLine}</argLine>
 
 					<includes>
 						<include>**/Test*.java</include>
@@ -262,9 +266,9 @@
 		</dependency>
 
 		<dependency>
-		    <groupId>org.apache.commons</groupId>
-		    <artifactId>commons-csv</artifactId>
-		    <version>1.10.0</version>
+			<groupId>org.apache.commons</groupId>
+			<artifactId>commons-csv</artifactId>
+			<version>1.10.0</version>
 		</dependency>
 
 		<dependency>
@@ -282,6 +286,11 @@
 			<artifactId>log4j-web</artifactId>
 			<version>2.20.0</version>
 		</dependency>
+		<dependency>
+			<groupId>org.apache.logging.log4j</groupId>
+			<artifactId>log4j-slf4j-impl</artifactId>
+			<version>2.20.0</version>
+		</dependency>
 
 
 		<dependency>
@@ -295,41 +304,41 @@
 			<artifactId>jackson-jaxrs-json-provider</artifactId>
 			<version>2.15.2</version>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>com.fasterxml.jackson.datatype</groupId>
 			<artifactId>jackson-datatype-jsr310</artifactId>
 			<version>2.15.2</version>
 		</dependency>
 
-<dependency>
-    <groupId>javax.ws.rs</groupId>
-    <artifactId>javax.ws.rs-api</artifactId>
-    <version>2.1.1</version>
-</dependency>
-<dependency>
-    <groupId>org.glassfish.jersey.core</groupId>
-    <artifactId>jersey-client</artifactId>
-    <version>2.41</version>
-</dependency>
-<dependency>
-    <groupId>org.glassfish.jersey.inject</groupId>
-    <artifactId>jersey-hk2</artifactId>
-    <version>2.41</version>
-</dependency>
-<dependency>
-	<groupId>org.glassfish.jersey.media</groupId>
-	<artifactId>jersey-media-json-jackson</artifactId>
+		<dependency>
+			<groupId>javax.ws.rs</groupId>
+			<artifactId>javax.ws.rs-api</artifactId>
+			<version>2.1.1</version>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jersey.core</groupId>
+			<artifactId>jersey-client</artifactId>
 			<version>2.41</version>
-</dependency>
-
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jersey.inject</groupId>
+			<artifactId>jersey-hk2</artifactId>
+			<version>2.41</version>
+		</dependency>
+		<dependency>
+			<groupId>org.glassfish.jersey.media</groupId>
+			<artifactId>jersey-media-json-jackson</artifactId>
+			<version>2.41</version>
+		</dependency>
+		<!--
 <dependency>
     <groupId>org.slf4j</groupId>
     <artifactId>slf4j-simple</artifactId>
     <version>2.0.16</version>
     <scope>runtime</scope>
 </dependency>
-
+-->
 		<!--
 		<dependency>
 			<groupId>org.cote.accountmanager</groupId>
@@ -409,7 +418,7 @@
 			<artifactId>json</artifactId>
 			<version>20230618</version>
 		</dependency>
-<!--
+		<!--
 <dependency>
     <groupId>de.articdive</groupId>
     <artifactId>jnoise-pipeline</artifactId>
@@ -431,19 +440,19 @@
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-model-zoo</artifactId>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-engine</artifactId>
 			<scope>runtime</scope>
 		</dependency>
-		
-				<dependency>
+
+		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-jni</artifactId>
 			<scope>runtime</scope>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-native-cu118</artifactId>

@@ -246,7 +246,7 @@ LIMIT ?
 		else if(chunkType == ChunkEnumType.WORD) {
 			chunks = chunkByWord(content, chunkSize).stream().collect(Collectors.toList());
 		}
-		logger.info("Generating " + chunks.size() + " embeddings");
+		// logger.info("Generating " + chunks.size() + " embeddings");
 		long start = System.currentTimeMillis();
 		try {
 	        List<float[]> embeddings = generateEmbeddings(getZooModel(), chunks.toArray(new String[0]));

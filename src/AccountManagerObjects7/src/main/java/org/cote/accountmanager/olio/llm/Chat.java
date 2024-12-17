@@ -20,6 +20,7 @@ import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;

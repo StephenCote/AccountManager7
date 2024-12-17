@@ -66,6 +66,34 @@ public class TestVectorStore extends BaseTest {
 	
 	private boolean resetStore = true;
 	
+	
+	@Test
+	public void TestOlioVectorList() {
+		logger.info("Test olio vector list");
+		Factory mf = ioContext.getFactory();
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Vector");
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		BaseRecord data = getCreateData(testUser1, "Test data 1", "text/plain", "This is the example text".getBytes(), "~/Data", testOrgContext.getOrganizationId());
+		assertNotNull("Data is null", data);
+		IOSystem.getActiveContext().getReader().populate(data, new String[] {FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_CONTENT_TYPE});
+		
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_VECTOR_REFERENCE, data);
+		plist.parameter(FieldNames.FIELD_CHUNK, ChunkEnumType.WORD);
+		plist.parameter(FieldNames.FIELD_CHUNK_COUNT, 10);
+		
+		BaseRecord vlist = null;
+		try {
+			vlist = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_VECTOR_CHAT_HISTORY_LIST, testUser1, null, plist);
+		} catch (FactoryException e) {
+			logger.error(e);
+		}
+		assertNotNull("List is null", vlist);
+		List<BaseRecord> vectors = vlist.get(FieldNames.FIELD_VECTORS);
+		assertTrue("Expected at least one vector", vectors.size() > 0);
+		logger.info(vectors.get(0).toFullString());
+	}
+	
 	@Test
 	public void TestVectorList() {
 		logger.info("Test vector list");
