@@ -79,6 +79,7 @@ public class PromptUtil {
 	private static Pattern nlpPat = Pattern.compile("\\$\\{nlp\\}");
 	private static Pattern nlpCmdPat = Pattern.compile("\\$\\{nlp.command\\}");
 	private static Pattern nlpWarnPat = Pattern.compile("\\$\\{nlpWarn\\}");
+	private static Pattern nlpReminderPat = Pattern.compile("\\$\\{nlpReminder}");
 	private static Pattern perspective = Pattern.compile("\\$\\{perspective\\}");
 	private static Pattern setting = Pattern.compile("\\$\\{setting\\}");
 	private static Pattern ratingPat = Pattern.compile("\\$\\{rating\\}");
@@ -302,13 +303,14 @@ public class PromptUtil {
 		templ = episodeRule.matcher(templ).replaceAll(episodeRuleText);
 		
 		String settingStr = chatConfig.get("setting");
-
+		String nlpReminder = "";
 		String sysNlp = "";
 		String assistNlp = "";
 		boolean useNLP = chatConfig.get("useNLP");
 		String nlpCommand = null;
 		if(useNLP) {
 			nlpCommand = chatConfig.get("nlpCommand");
+			nlpReminder = "(Reminder: Primary Command: \"${nlp.command}\")";
 			sysNlp = composeTemplate(promptConfig.get("systemNlp"));
 			assistNlp = composeTemplate(promptConfig.get("assistantNlp"));
 		}
@@ -333,6 +335,7 @@ public class PromptUtil {
 			if(ucons.length() > 0) ucons += " and ";
 			ucons += composeTemplate(promptConfig.get("userConsentNlp"));
 		}
+		templ = nlpReminderPat.matcher(templ).replaceAll(Matcher.quoteReplacement(nlpReminder));
 		templ = userConsent.matcher(templ).replaceAll(ucons.length() > 0 ? uconpref + ucons + ".": "");
 
 		templ = nlpCmdPat.matcher(templ).replaceAll((nlpCommand != null ? Matcher.quoteReplacement(nlpCommand) : ""));
@@ -429,29 +432,6 @@ public class PromptUtil {
 		templ = userCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(null, userChar, false, true, false));
 		templ = systemCharDescLight.matcher(templ).replaceAll(NarrativeUtil.describe(null, systemChar, false, true, false));
 
-
-		
-		String ageCompat = "about the same age";
-		if(profComp.doesAgeCrossBoundary()) {
-			ageCompat = "aware of the difference in our ages";
-		}
-		templ = profileAgeCompat.matcher(templ).replaceAll("We are " + ageCompat + ".");
-		
-		String raceCompat = "not compatible";
-		if(CompatibilityEnumType.compare(profComp.getRacialCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
-			raceCompat = "compatible";
-		}
-		templ = profileRaceCompat.matcher(templ).replaceAll("We are racially " + raceCompat + ".");
-		
-		String romCompat = null;
-		if(uage >= Rules.MINIMUM_ADULT_AGE && sage >= Rules.MINIMUM_ADULT_AGE && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC || !sgen.equals(ugen))) {
-			romCompat = "we'd be doomed to fail";
-			if(CompatibilityEnumType.compare(profComp.getRomanticCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
-				romCompat = "there could be something between us";
-			}
-		}
-		templ = profileRomanceCompat.matcher(templ).replaceAll((romCompat != null ? "Romantically, " + romCompat + "." : ""));
-		
 		BaseRecord cell = userChar.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION);
 		if(settingStr != null && settingStr.length() > 0) {
 			if(settingStr.equalsIgnoreCase("random")) {
@@ -487,6 +467,28 @@ public class PromptUtil {
 		AlignmentEnumType align = chatConfig.getEnum("alignment");
 		templ = eventAlign.matcher(templ).replaceAll(NarrativeUtil.getOthersActLikeSatan(align));
 
+		String ageCompat = "about the same age";
+		if(profComp.doesAgeCrossBoundary()) {
+			ageCompat = "aware of the difference in our ages";
+		}
+		templ = profileAgeCompat.matcher(templ).replaceAll("We are " + ageCompat + ".");
+		
+		String raceCompat = "not compatible";
+		if(CompatibilityEnumType.compare(profComp.getRacialCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
+			raceCompat = "compatible";
+		}
+		templ = profileRaceCompat.matcher(templ).replaceAll("We are racially " + raceCompat + ".");
+		
+		String romCompat = null;
+		if(uage >= Rules.MINIMUM_ADULT_AGE && sage >= Rules.MINIMUM_ADULT_AGE && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC || !sgen.equals(ugen))) {
+			romCompat = "we'd be doomed to fail";
+			if(CompatibilityEnumType.compare(profComp.getRomanticCompatibility(), CompatibilityEnumType.NOT_IDEAL, ComparatorEnumType.GREATER_THAN_OR_EQUALS)) {
+				romCompat = "there could be something between us";
+			}
+		}
+		templ = profileRomanceCompat.matcher(templ).replaceAll((romCompat != null ? "Romantically, " + romCompat + "." : ""));
+
+		
 		String leadDesc = "Neither one of us is in charge.";
 		
 		PersonalityProfile outLead = PersonalityUtil.identifyLeaderPersonality(Arrays.asList(sysProf, usrProf));

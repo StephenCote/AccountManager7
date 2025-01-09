@@ -918,7 +918,8 @@ Begin conversationally.
 			boolean useAssist = chatConfig.get("assist");
 			int mark = remind + (useAssist ? 1 : 0);
 			// logger.info(useAssist + " / " + remind + " / " + mark + " / " + req.getMessages().size() + " / " + rating.toString());
-			if(promptConfig != null && (req.getMessages().size() % mark) == 0 && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)) {
+			// && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)
+			if(promptConfig != null && (req.getMessages().size() % mark) == 0 ) {
 				List<String> urem = promptConfig.get("userReminder");
 				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
 				if(chatConfig != null && promptConfig != null) {
