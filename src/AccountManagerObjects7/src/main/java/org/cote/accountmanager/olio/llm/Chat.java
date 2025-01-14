@@ -158,6 +158,15 @@ Begin conversationally.
 	
 	public void continueChat(OllamaRequest req, String message){
 		OllamaResponse lastRep = null;	
+		
+		LineAction act = checkAction(req, message);
+		if(act == LineAction.BREAK || act == LineAction.CONTINUE || act == LineAction.SAVE_AND_CONTINUE) {
+			if(act == LineAction.SAVE_AND_CONTINUE && sessionName != null) {
+				ChatUtil.saveSession(user, req, sessionName);
+				createNarrativeVector(user, req, sessionName);
+			}
+			return;
+		}
 
 		if(message != null && message.length() > 0) {
 			newMessage(req, message);
@@ -592,6 +601,123 @@ Begin conversationally.
 		return summary;
 	}
 
+	enum LineAction{
+		UNKNOWN,
+		CONTINUE,
+		SAVE_AND_CONTINUE,
+		BREAK
+	}
+	
+	private LineAction checkAction(OllamaRequest req, String line) {
+		LineAction oact = LineAction.UNKNOWN;
+		if(line == null || line.equalsIgnoreCase("/bye")) {
+			oact = LineAction.BREAK;
+		}
+		
+		if(line.startsWith("/jailbreak")) {
+			forceJailbreak = !forceJailbreak;
+			logger.info("Jailbreak " + (forceJailbreak ? "enabled" : "disabled"));
+			oact = LineAction.CONTINUE;
+		}
+		if(line.startsWith("/analyzeAll")) {
+			logger.info(analyze(req, line.substring(11).trim(), false, false, true));
+			oact = LineAction.CONTINUE;
+		}
+		else if(line.startsWith("/analyze")) {
+			logger.info(analyze(req, line.substring(8).trim(), false, false, false));
+			oact = LineAction.CONTINUE;
+		}
+		else if(line.startsWith("/reduceAll")) {
+			logger.info(analyze(req, line.substring(10).trim(), false, true, true));
+			oact = LineAction.CONTINUE;
+		}
+		else if(line.startsWith("/reduce")) {
+			logger.info(analyze(req, line.substring(7).trim(), false, true, false));
+			oact = LineAction.CONTINUE;
+		}
+		else if(line.startsWith("/narrateAll")) {
+			logger.info(analyze(req, line.substring(11).trim(), true, false, true));
+			oact = LineAction.CONTINUE;
+		}
+		else if(line.startsWith("/narrate")) {
+			logger.info(analyze(req, line.substring(8).trim(), true, false, false));
+			oact = LineAction.CONTINUE;
+		}
+		else if(line.startsWith("/sdprompt")) {
+			logger.error("Feature currently disabled");
+			// logger.info(SDPrompt(req, line.substring(9).trim(), false));
+			oact = LineAction.CONTINUE;
+		}
+		if(line.equals("/look")) {
+			
+			String char1 = NarrativeUtil.describe(null, chatConfig.get("systemCharacter"));
+			String char2 = NarrativeUtil.describe(null, chatConfig.get("userCharacter"));
+			logger.info("Character 1: " + char1);
+			logger.info("Character 2: " + char2);
+			if(req != null && req.getMessages().size() > 3) {
+				OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following two characters. Include all physical, behavioral, and personality details." + System.lineSeparator() + char1 + System.lineSeparator() + char2, 0, 0, false));
+				if(oresp != null && oresp.getMessage() != null) {
+					logger.info(oresp.getMessage().getContent());
+				}
+			}
+			oact = LineAction.CONTINUE;
+		}
+		if(line.equals("/story")) {
+			String snar = chatConfig.get("systemNarrative.sceneDescription");
+			String unar = chatConfig.get("userNarrative.sceneDescription");
+			if(snar != null && unar != null) {
+				logger.info(snar);
+				logger.info(unar);
+			}
+			oact = LineAction.CONTINUE;
+		}
+		if(line.equals("/next")) {
+			BaseRecord nextEp = PromptUtil.moveToNextEpisode(chatConfig);
+			if(req.getMessages().size() == 0) {
+				logger.error("No system message to replace!");
+			}
+			else if(nextEp != null) {
+				if(req.getMessages().size() > 4) {
+					logger.info("Summarizing current episode...");
+					OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following content with respect to the described episode. Include all physical, behavioral, and personality details.", 0, 0, false));
+					String summary = null;
+					if(oresp != null && oresp.getMessage() != null) {
+						summary = oresp.getMessage().getContent();
+						logger.info("Summary: " + summary);
+					}
+					nextEp.setValue("summary", summary);
+				}
+				else {
+					// logger.info("Skipping summary");
+				}
+				IOSystem.getActiveContext().getAccessPoint().update(user, chatConfig.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, "episodes"}));
+				String newSys = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
+				req.getMessages().get(0).setContent(newSys);
+				logger.info("Begin episode #" + nextEp.get("number") + " " + nextEp.get("theme"));
+			}
+			else {
+				logger.warn("No further episodes");
+			}
+			oact = LineAction.SAVE_AND_CONTINUE;
+
+		}
+		if(line.equals("/prune")) {
+			prune(req, true);
+			oact = LineAction.CONTINUE;
+		}
+		if(line.equals("/prompt")) {
+			if(chatMode && req.getMessages().size() > 0) {
+				req.getMessages().get(0).setContent(llmSystemPrompt.trim());
+			}
+			if(!chatMode) {
+				req.setSystem(llmSystemPrompt.trim());
+			}
+			oact = LineAction.CONTINUE;
+		}
+
+		return oact;
+	}
+	
 	public void chatConsole(OllamaRequest req){
 		BufferedReader is = new BufferedReader(new InputStreamReader(System.in));
 		try{
@@ -624,117 +750,27 @@ Begin conversationally.
 				}
 				System.out.print(prompt);
 				line = is.readLine();
-				if(line == null || line.equalsIgnoreCase("/bye")) {
+				
+				LineAction act = checkAction(req, line);
+				if(act == LineAction.BREAK) {
 					break;
 				}
+				if(act == LineAction.CONTINUE || act == LineAction.SAVE_AND_CONTINUE) {
+					continue;
+				}
+				
 				if(line.equals("/new")) {
 					req = newRequest(chatConfig.get("llmModel"));
 					continue;
 				}
-				if(line.startsWith("/jailbreak")) {
-					forceJailbreak = !forceJailbreak;
-					logger.info("Jailbreak " + (forceJailbreak ? "enabled" : "disabled"));
-					continue;
-				}
-				if(line.startsWith("/analyzeAll")) {
-					logger.info(analyze(req, line.substring(11).trim(), false, false, true));
-					continue;
-				}
-				else if(line.startsWith("/analyze")) {
-					logger.info(analyze(req, line.substring(8).trim(), false, false, false));
-					continue;
-				}
-				else if(line.startsWith("/reduceAll")) {
-					logger.info(analyze(req, line.substring(10).trim(), false, true, true));
-					continue;
-				}
-				else if(line.startsWith("/reduce")) {
-					logger.info(analyze(req, line.substring(7).trim(), false, true, false));
-					continue;
-				}
-				else if(line.startsWith("/narrateAll")) {
-					logger.info(analyze(req, line.substring(11).trim(), true, false, true));
-					continue;
-				}
-				else if(line.startsWith("/narrate")) {
-					logger.info(analyze(req, line.substring(8).trim(), true, false, false));
-					continue;
-				}
-				else if(line.startsWith("/sdprompt")) {
-					logger.info(SDPrompt(req, line.substring(9).trim(), false));
-					continue;
-				}
-				if(line.equals("/look")) {
-					
-					String char1 = NarrativeUtil.describe(null, chatConfig.get("systemCharacter"));
-					String char2 = NarrativeUtil.describe(null, chatConfig.get("userCharacter"));
-					logger.info("Character 1: " + char1);
-					logger.info("Character 2: " + char2);
-					if(req != null && req.getMessages().size() > 3) {
-						OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following two characters. Include all physical, behavioral, and personality details." + System.lineSeparator() + char1 + System.lineSeparator() + char2, 0, 0, false));
-						if(oresp != null && oresp.getMessage() != null) {
-							logger.info(oresp.getMessage().getContent());
-						}
-					}
-					continue;
-				}
-				if(line.equals("/story")) {
-					String snar = chatConfig.get("systemNarrative.sceneDescription");
-					String unar = chatConfig.get("userNarrative.sceneDescription");
-					if(snar != null && unar != null) {
-						logger.info(snar);
-						logger.info(unar);
-					}
-					continue;
-				}
-				if(line.equals("/next")) {
-					BaseRecord nextEp = PromptUtil.moveToNextEpisode(chatConfig);
-					if(req.getMessages().size() == 0) {
-						logger.error("No system message to replace!");
-					}
-					else if(nextEp != null) {
-						if(req.getMessages().size() > 4) {
-							logger.info("Summarizing current episode...");
-							OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following content with respect to the described episode. Include all physical, behavioral, and personality details.", 0, 0, false));
-							String summary = null;
-							if(oresp != null && oresp.getMessage() != null) {
-								summary = oresp.getMessage().getContent();
-								logger.info("Summary: " + summary);
-							}
-							nextEp.setValue("summary", summary);
-						}
-						else {
-							// logger.info("Skipping summary");
-						}
-						String newSys = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
-						req.getMessages().get(0).setContent(PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig));
-						logger.info("Begin episode #" + nextEp.get("number") + " " + nextEp.get("theme"));
-					}
-					else {
-						logger.warn("No further episodes");
-					}
-					continue;
 
-				}
-				if(line.equals("/prune")) {
-					prune(req, true);
-					continue;
-				}
-				if(line.equals("/prompt")) {
-					if(chatMode && req.getMessages().size() > 0) {
-						req.getMessages().get(0).setContent(llmSystemPrompt.trim());
-					}
-					if(!chatMode) {
-						req.setSystem(llmSystemPrompt.trim());
-					}
-					continue;
-				}
 				if(line.equals("/truncate")) {
 					lastRep = null;
 					boolean useAssist = chatConfig.get("assist");
 					req.setMessages(req.getMessages().subList(0, useAssist ? 3 : 2));
 					continue;
 				}
+
 				if(line.equals("/save")) {
 					System.out.println("Saving ...");
 					FileUtil.emitFile("./" + saveName, JSONUtil.exportObject(req));
@@ -919,16 +955,22 @@ Begin conversationally.
 			int mark = remind + (useAssist ? 1 : 0);
 			// logger.info(useAssist + " / " + remind + " / " + mark + " / " + req.getMessages().size() + " / " + rating.toString());
 			// && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)
-			if(promptConfig != null && (req.getMessages().size() % mark) == 0 ) {
+			if(promptConfig != null && (req.getMessages().size() % remind) == 0 ) {
 				List<String> urem = promptConfig.get("userReminder");
 				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
-				if(chatConfig != null && promptConfig != null) {
+				if(chatConfig != null) {
 					rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
 				}
 				// logger.info("reminding ...");
 				if(rem.length() > 0) {
 					msgBuff.append(System.lineSeparator() + rem);
 				}
+				else {
+					logger.warn("Reminder template is empty.");
+				}
+			}
+			else {
+				logger.info("Don't remind because " + (chatConfig == null) + "/" + (promptConfig == null) + "/" + (req.getMessages().size() % remind));
 			}
 		}
 		msg.setContent(msgBuff.toString());

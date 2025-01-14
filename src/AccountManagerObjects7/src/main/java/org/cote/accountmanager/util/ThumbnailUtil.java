@@ -13,6 +13,8 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -65,7 +67,10 @@ public class ThumbnailUtil {
 		String thumbName = record.get(FieldNames.FIELD_NAME) + " " + width + "x" + height;
 		//BaseRecord thumb = ioContext.getSearch().findByPath(owner, thumbPath, thumbName,  owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		// logger.info(owner.toFullString());
-		BaseRecord thumb = ctx.getAccessPoint().findByNameInGroup(owner, ModelNames.MODEL_THUMBNAIL, thumbDir.get(FieldNames.FIELD_OBJECT_ID), thumbName);
+		//BaseRecord thumb = ctx.getAccessPoint().findByNameInGroup(owner, ModelNames.MODEL_THUMBNAIL, thumbDir.get(FieldNames.FIELD_OBJECT_ID), thumbName);
+		Query tq = QueryUtil.createQuery(ModelNames.MODEL_THUMBNAIL, FieldNames.FIELD_GROUP_ID, thumbDir.get(FieldNames.FIELD_ID), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+		tq.planMost(false);
+		BaseRecord thumb = ctx.getAccessPoint().find(owner, tq);
 		if(thumb != null) {
 			String cobj = record.get(FieldNames.FIELD_OBJECT_ID);
 			String mobj = thumb.get(FieldNames.FIELD_REFERENCE_ID);

@@ -859,6 +859,10 @@ public class NarrativeUtil {
 	}
 	
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, String setting, String pictureType, String bodyType) {
+		return getSDPrompt(ctx, pp, person, SDUtil.randomSDConfig(), setting, pictureType, bodyType);
+	}
+	
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType) {
 		StringBuilder buff = new StringBuilder();
 		
 		int age = pp.getAge();
@@ -906,7 +910,7 @@ public class NarrativeUtil {
 		}
 		//woman (eighteen year old:1.5) (18 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat, (carrying a (Winchester rifle)) (riding a horse across the (Oklahoma (tall grass prairie))). She has (wide hips:1.5), (narrow waist:1.5).
 		// Sharp focus, ultra sharp image. Natural light only.
-		buff.append(" " + SDUtil.getSDConfigPrompt(SDUtil.randomSDConfig()));
+		buff.append(" " + SDUtil.getSDConfigPrompt(sdConfig));
 		buff.append(" <lora:add-detail-xl:.5> <lora:xl_more_art-full_v1:1.2>");
 		return buff.toString();
 	}

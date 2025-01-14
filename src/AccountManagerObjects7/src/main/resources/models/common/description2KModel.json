@@ -1,0 +1,11 @@
+{
+"name": "common.description2K",
+"abstract": true,
+"fields": [
+	{
+		"name": "description",
+		"type": "string",
+		"maxLength": 2048,
+		"shortName": "dsc"
+	}
+]}

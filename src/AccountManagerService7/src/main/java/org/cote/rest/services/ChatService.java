@@ -97,7 +97,7 @@ public class ChatService {
 		}
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
 		if(chatConfig != null && promptConfig != null) {
 	
 			String key = getKey(user, chatConfig, promptConfig, chatReq);
@@ -233,7 +233,7 @@ public class ChatService {
 		
 		OllamaRequest req = getOllamaRequest(user, chatReq);
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
 		///logger.info(JSONUtil.exportObject(req));
 		// if(chatReq.getMessage() != null) {
 			//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get("systemCharacter.name") + "-" + chatConfig.get("userCharacter.name");
@@ -241,6 +241,10 @@ public class ChatService {
 			logger.info("Chat request: " + key);
 			Chat chat = getChat(user, chatReq, key);
 			chat.continueChat(req, chatReq.getMessage());
+			if(chatReq.getMessage().startsWith("/next")) {
+				/// Dump the request from the cache when moving episodes
+				forgetRequest(user, chatReq);
+			}
 		// }
 		OllamaChatResponse creq = getChatResponse(user, req, chatReq);
 		// logger.info("Chat Response:");
@@ -270,6 +274,15 @@ public class ChatService {
 		return rep;
 	}
 
+	private void forgetRequest(BaseRecord user, OllamaChatRequest creq) {
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
+		String key = getKey(user, chatConfig, promptConfig, creq);
+		if(reqMap.containsKey(key)) {
+			reqMap.remove(key);
+		}
+	}
+	
 	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
 		OllamaRequest req = null;
 		Chat chat = null;

@@ -280,10 +280,13 @@ public class ChatAction extends CommonAction implements IAction{
 			
 			if(cmd.hasOption("list")) {
 				if(cmd.hasOption("reimage")) {
-					sdu.generateSDImages(octx, pop, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					BaseRecord sdConfig = SDUtil.randomSDConfig();
+					sdu.generateSDImages(octx, pop, sdConfig, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				}
 				if(cmd.hasOption("refigure")) {
 					sdu.generateSDFigurines(octx, pop, Integer.parseInt(cmd.getOptionValue("refigure")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				}
 				for(BaseRecord p: pop) {
 					logger.info(NarrativeUtil.describe(octx, p));
@@ -342,7 +345,9 @@ public class ChatAction extends CommonAction implements IAction{
 				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
 					/// Need to overwrite the 'narrative', not just add another one
 					//char1.setValue("narrative", null);
-					sdu.generateSDImages(octx, Arrays.asList(char1), genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					BaseRecord sdConfig = SDUtil.randomSDConfig();
+					sdu.generateSDImages(octx, Arrays.asList(char1), sdConfig, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				}
 				if(cmd.hasOption("refigure") && !cmd.hasOption("chatConfig")) {
 					sdu.generateSDFigurines(octx, Arrays.asList(char1), Integer.parseInt(cmd.getOptionValue("refigure")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
@@ -370,6 +375,7 @@ public class ChatAction extends CommonAction implements IAction{
 					/// Need to overwrite the 'narrative', not just add another one
 					//char2.setValue("narrative", null);
 					sdu.generateSDImages(octx, Arrays.asList(char2), genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				}
 				if(cmd.hasOption("show")) {
 					logger.info(NarrativeUtil.describe(octx, char2));
@@ -492,7 +498,10 @@ public class ChatAction extends CommonAction implements IAction{
 						if(cmd.hasOption("reimage")) {
 							// char1.setValue("narrative", null);
 							// char2.setValue("narrative", null);
+							
 							sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+							octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+
 						}
 					}
 					cfg.set(FieldNames.FIELD_TERRAIN, NarrativeUtil.getTerrain(octx, char2));
