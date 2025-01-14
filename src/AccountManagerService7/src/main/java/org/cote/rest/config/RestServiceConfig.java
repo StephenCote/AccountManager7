@@ -30,25 +30,31 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import javax.servlet.ServletContext;
 import javax.ws.rs.core.Context;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.StreamUtil;
+import org.cote.accountmanager.util.VectorUtil;
+import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.jaas.AM7LoginModule;
 import org.cote.sockets.WebSocketService;
 import org.glassfish.jersey.server.ResourceConfig;
@@ -118,6 +124,24 @@ public class RestServiceConfig extends ResourceConfig{
     	
     	private static final String threads = "org.cote.service.threads.NotificationThread";
     	
+    	private void testVectorStore(IOContext ioContext, OrganizationContext octx) {
+			List<BaseRecord> store = new ArrayList<>();
+			DBUtil util = ioContext.getDbUtil();
+
+			if(util.isEnableVectorExtension()) {
+				try {
+					store = VectorUtil.createVectorStore(octx.getDocumentControl() , "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
+				} catch (FieldException e) {
+					logger.error(e);
+				}
+				if(store == null || store.size() == 0) {
+					logger.error("Expected a vector store.  Disabling vector store.");
+					util.setEnableVectorExtension(false);
+				}
+			}
+
+    	}
+    	
 		private void initializeAccountManager(){
 			logger.info("Initializing Account Manager");
 			
@@ -137,6 +161,7 @@ public class RestServiceConfig extends ResourceConfig{
 			props.setSchemaCheck(chkSchema);
 			try {
 				IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
+				boolean testVector = false;
 				for(String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
 					OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
 					if(!octx.isInitialized()) {
@@ -145,6 +170,9 @@ public class RestServiceConfig extends ResourceConfig{
 					}
 					else {
 						logger.info("Working with existing organization " + org);
+						if(!testVector) {
+							testVectorStore(ioContext, octx);
+						}
 					}
 				}
 				

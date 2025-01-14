@@ -33,7 +33,7 @@ filePattern="${log-path}/accountManagerConsole7-error-%d{yyyy-MM-dd}.log">
 <appender-ref ref="error-log" level="error"/>
 </Root>
     <Logger name="ai.djl" level="ERROR" additivity="false">
-      <AppenderRef ref="console"/>
+      <AppenderRef ref="console-log"/>
     </Logger>
 </Loggers>
 </Configuration>
