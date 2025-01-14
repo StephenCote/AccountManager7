@@ -125,9 +125,12 @@ public class RestServiceConfig extends ResourceConfig{
     	private static final String threads = "org.cote.service.threads.NotificationThread";
     	
     	private void testVectorStore(IOContext ioContext, OrganizationContext octx) {
-			List<BaseRecord> store = new ArrayList<>();
+    		
+			
 			DBUtil util = ioContext.getDbUtil();
-
+			util.setEnableVectorExtension(false);
+			/*
+			 List<BaseRecord> store = new ArrayList<>();
 			if(util.isEnableVectorExtension()) {
 				try {
 					store = VectorUtil.createVectorStore(octx.getDocumentControl() , "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
@@ -139,7 +142,7 @@ public class RestServiceConfig extends ResourceConfig{
 					util.setEnableVectorExtension(false);
 				}
 			}
-
+			*/
     	}
     	
 		private void initializeAccountManager(){
