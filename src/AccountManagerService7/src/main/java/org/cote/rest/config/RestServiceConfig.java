@@ -23,6 +23,7 @@
  *******************************************************************************/
 package org.cote.rest.config;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
@@ -32,6 +33,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import javax.imageio.ImageIO;
 import javax.servlet.ServletContext;
 import javax.ws.rs.core.Context;
 
@@ -154,6 +156,7 @@ public class RestServiceConfig extends ResourceConfig{
 			}
 			
 			String path = context.getInitParameter("store.path");
+			ImageIO.setCacheDirectory(new File(path));
 			OlioModelNames.use();
 			
 			IOFactory.DEFAULT_FILE_BASE = path;
