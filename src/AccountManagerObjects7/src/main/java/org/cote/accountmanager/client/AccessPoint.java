@@ -39,6 +39,10 @@ public class AccessPoint {
 	private boolean permitBulkContainerApproval = false;
 	private int maximumBatchSize = 2000;
 	
+	/// If no authorization policies are applied, then is the decision to reject or accept.
+	/// This is obviously an issue to resolve.
+	private boolean itsAllGood = true;
+	
 	private IOContext context = null;
 	
 	public AccessPoint(IOContext context) {
@@ -69,6 +73,7 @@ public class AccessPoint {
 		Query q = QueryUtil.createQuery(model);
 		q.filterParticipation(container, null, model, effect);
 		q.setRequestRange(startIndex, recordCount);
+		logger.info(q.toFullString());
 		QueryResult qr = list(user, q);
 		if(qr == null) {
 			return new ArrayList<>();
@@ -630,6 +635,11 @@ public class AccessPoint {
 		AuditUtil.closeAudit(audit, ret, msg);
 	}
 	
+	private PolicyResponseType getNewResponseType(PolicyResponseEnumType type, String message) {
+		PolicyResponseType prr = new PolicyResponseType();
+		prr.setType(type);
+		return prr;
+	}
 	
 	private PolicyResponseType authorizeQuery(BaseRecord contextUser, Query query) {
 		
@@ -639,12 +649,18 @@ public class AccessPoint {
 		}
 		PolicyResponseType[] prrs = context.getPolicyUtil().evaluateQueryToReadPolicyResponses(contextUser, query);
 		PolicyResponseType prr = null;
-
+		if (prrs.length == 0) {
+			logger.warn("No policy responses");
+			if(itsAllGood) {
+				return getNewResponseType(PolicyResponseEnumType.PERMIT, "No policy responses");
+            }
+		}
 		for(PolicyResponseType pr : prrs) {
 			prr = pr;
 			if(pr.getType() == PolicyResponseEnumType.PERMIT) {
 				break;
 			}
+			logger.error(pr.toFullString());
 		}
 		return prr;
 	}

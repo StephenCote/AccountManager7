@@ -83,10 +83,10 @@ public class RecordUtil {
 				if(!upf.contains(FieldNames.FIELD_ID)) {
 					upf.add(FieldNames.FIELD_ID);
 				}
-				if(!upf.contains(FieldNames.FIELD_OWNER_ID)) {
+				if(!upf.contains(FieldNames.FIELD_OWNER_ID) && targ.hasField(FieldNames.FIELD_OWNER_ID) && (long)targ.get(FieldNames.FIELD_OWNER_ID) > 0L) {
 					upf.add(FieldNames.FIELD_OWNER_ID);
 				}
-				if(!upf.contains(FieldNames.FIELD_ORGANIZATION_ID)) {
+				if(!upf.contains(FieldNames.FIELD_ORGANIZATION_ID) && targ.hasField(FieldNames.FIELD_ORGANIZATION_ID) && (long)targ.get(FieldNames.FIELD_ORGANIZATION_ID) > 0L) {
 					upf.add(FieldNames.FIELD_ORGANIZATION_ID);
 				}
 				if(updateRecord((full ? targ : targ.copyRecord(upf.toArray(new String[0]))))) {

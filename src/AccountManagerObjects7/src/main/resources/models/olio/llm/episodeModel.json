@@ -28,7 +28,8 @@
 		},
 		{
 			"name": "number",
-			"type": "int"
+			"type": "int",
+			"default": 0
 		},
 		{
 			"name": "stages",

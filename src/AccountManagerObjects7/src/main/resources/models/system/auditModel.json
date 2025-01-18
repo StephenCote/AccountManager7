@@ -48,7 +48,7 @@
 	{
 		"name": "message",
 		"type": "string",
-		"maxLength": 255
+		"maxLength": 512
 	},
 	{
 		"name": "query",

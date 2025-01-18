@@ -108,9 +108,13 @@ public class AuthorizationService {
 	public Response countMembers(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
+		logger.info("Counting " + actorType + " members in " + objectType + " " + objectId);
 		int count = 0;
 		if(object != null){
 			count = IOSystem.getActiveContext().getAccessPoint().countMembers(user, object, actorType, null);
+		}
+		else {
+			logger.error("Failed to read object " + objectType + " " + objectId);
 		}
 		return Response.status(200).entity(count).build();
 	}

@@ -244,17 +244,20 @@ public class OlioContext {
 		scanNestedGroups(dir, userWrite);
 	}
 	public void scanNestedGroups(BaseRecord dir, boolean userWrite) {
+
 		
-		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, dir.get(FieldNames.FIELD_ID), dir.get(FieldNames.FIELD_ORGANIZATION_ID));
+		logger.info("Configure group " + dir.get(FieldNames.FIELD_NAME));
+		String[] rperms = new String[] {"Read"};
+		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
 		IOContext ioContext = IOSystem.getActiveContext();
+		ioContext.getAuthorizationUtil().setEntitlement(olioUser, userRole, new BaseRecord[] {dir}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		ioContext.getAuthorizationUtil().setEntitlement(olioUser, adminRole, new BaseRecord[] {dir}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, dir.get(FieldNames.FIELD_ID), dir.get(FieldNames.FIELD_ORGANIZATION_ID));
+		
 		BaseRecord[] dirs = ioContext.getSearch().findRecords(pq);
 		logger.info("Scan group " + dir.get(FieldNames.FIELD_NAME));
 		for(BaseRecord group : dirs) {
-			logger.info("Configure group " + group.get(FieldNames.FIELD_NAME));
-			String[] rperms = new String[] {"Read"};
-			String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
-			ioContext.getAuthorizationUtil().setEntitlement(olioUser, userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
-			ioContext.getAuthorizationUtil().setEntitlement(olioUser, adminRole, new BaseRecord[] {group}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 			scanNestedGroups(group, userWrite);
 		}
 	}

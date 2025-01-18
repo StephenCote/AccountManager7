@@ -2,7 +2,7 @@
     	"model": "system.modelCategory",
     	"name": "gallery",
     	"prototype": true,
-        "group" : "GalleryHome",
+        "group" : "Gallery",
         "label": "Gallery",
         "limit" : ["data.data","auth.group"],
         "type" : "group",

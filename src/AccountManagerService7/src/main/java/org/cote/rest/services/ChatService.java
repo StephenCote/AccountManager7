@@ -140,6 +140,13 @@ public class ChatService {
 			if(reqMap.containsKey(key)) {
 				crep = getChatResponse(user, reqMap.get(key), chatReq);
 			}
+			else if (chatReq.getSessionName() != null){
+				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, chatReq.getSessionName());
+				OllamaRequest oreq = ChatUtil.getSession(user, sessionName);
+				if(oreq != null) {
+					crep = getChatResponse(user, oreq, chatReq);
+				}
+			}
 		}
 		else {
 			logger.error("Invalid chat or prompt configuration");

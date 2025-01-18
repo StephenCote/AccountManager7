@@ -90,6 +90,7 @@ public class ChatAction extends CommonAction implements IAction{
 		options.addOption("nlp", true, "Brief command to give via NLP to reinforce immersion");
 		options.addOption("jailbreak", false, "Bit indicating to use any JailBreak configuration from a paired prompt configuration");
 		options.addOption("assist", false, "Bit indicating to add additional guidance to the assistant");
+		options.addOption( "scan", false, "Bit indicating to perform a scan of the gallery");
 	}
 	@Override
 	public void handleCommand(CommandLine cmd) {
@@ -179,77 +180,91 @@ public class ChatAction extends CommonAction implements IAction{
 		String universeName = "My Grid Universe";
 		String worldName = "My Grid World";
 		
-		if(cmd.hasOption("chatConfig") && cmd.hasOption("list") && cmd.hasOption("episode")) {
+		if(cmd.hasOption("chatConfig")) {
+			
 			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
-			List<BaseRecord> eps = cfg.get("episodes");
-			eps.forEach(e -> {
-				int number = e.get("number");
-				String theme = e.get("theme");
-				logger.info("Episode #" + number + " - " + theme);
-				List<String> stages = e.get("stages");
-				
-				stages.forEach(s -> {
-					logger.info("Stage - " + s);	
-				});
-				logger.info("JSON: " + e.toString());
-			});
-		}
-		if(cmd.hasOption("chatConfig") && cmd.hasOption("update") && cmd.hasOption("episode")) {
-			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
-			BaseRecord ep = RecordFactory.importRecord(OlioModelNames.MODEL_EPISODE, cmd.getOptionValue("episode"));
-			int number = ep.get("number");
-			BaseRecord mep = null;
-			if(number > 0) mep = PromptUtil.getEpisode(cfg, number);
-			if(mep != null) {
-				logger.info("Patching episode #" + number);
-				if(ep.hasField("theme")) mep.setValue("theme", ep.get("theme"));
-				if(ep.hasField("summary")) mep.setValue("summary", ep.get("summary"));
-				if(ep.hasField("stages")) mep.setValue("stages", ep.get("stages"));
-				if(ep.hasField("episodeAssist")) mep.setValue("episodeAssist", ep.get("episodeAssist"));
-				
-			}
-			else {
+			if(cmd.hasOption("list") && cmd.hasOption("episode")) {
+				logger.info("List episodes");	
 				List<BaseRecord> eps = cfg.get("episodes");
-				//BaseRecord lep = PromptUtil.getLastEpisode(cfg);
-				number = eps.size() + 1;
-				logger.info("Adding episode #" + number);
-				ep.setValue("number", number);
-				
-				eps.add(ep);
+				eps.forEach(e -> {
+					int number = e.get("number");
+					String theme = e.get("theme");
+					logger.info("Episode #" + number + " - " + theme);
+					List<String> stages = e.get("stages");
+					
+					stages.forEach(s -> {
+						logger.info("Stage - " + s);	
+					});
+					logger.info("JSON: " + e.toString());
+				});
 			}
-			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
-		}
-		
-		if(cmd.hasOption("chatConfig") && cmd.hasOption("auto") && cmd.hasOption("update")) {
-			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
-			String set = cmd.getOptionValue("setting");
-			List<BaseRecord> ainters = cfg.get(OlioFieldNames.FIELD_INTERACTIONS);
-
-			if(cfg.get("systemCharacter") != null && cfg.get("userCharacter") != null) {
-		
-				if(ainters.size() > 0) {
-					if(set == null || set.equals("random")) {
-						set = NarrativeUtil.getRandomSetting();
-					}
-					logger.info("Generating the chat scene...");
-					BaseRecord i2 = ainters.get((new Random()).nextInt(ainters.size()));
-					BaseRecord pcfg = null;
-					if(cmd.hasOption("promptConfig")) {
-						pcfg = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
-					}
-					ChatUtil.generateAutoScene(octx, cfg, pcfg, i2, set, true);
-					logger.info("Scene: " + cfg.get("scene"));
-					// cfg.setValue("scene", scene);
-					//Queue.queueUpdate(cfg, new String[] {"scene"});
-					//Queue.processQueue(user);
+			
+			if(cmd.hasOption("reset") && cmd.hasOption("episode")) {
+				logger.info("Reset episode");
+				List<BaseRecord> eps = cfg.get("episodes");
+				eps.forEach(e -> {
+					e.setValue("completed", false);
+					e.setValue("summary", null);
+				});
+				cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
+			}
+			
+			if(cmd.hasOption("update") && cmd.hasOption("episode")) {
+				BaseRecord ep = RecordFactory.importRecord(OlioModelNames.MODEL_EPISODE, cmd.getOptionValue("episode"));
+				int number = ep.get("number");
+				BaseRecord mep = null;
+				if(number > 0) mep = PromptUtil.getEpisode(cfg, number);
+				if(mep != null) {
+					logger.info("Patching episode #" + number);
+					if(ep.hasField("theme")) mep.setValue("theme", ep.get("theme"));
+					if(ep.hasField("summary")) mep.setValue("summary", ep.get("summary"));
+					if(ep.hasField("stages")) mep.setValue("stages", ep.get("stages"));
+					if(ep.hasField("episodeAssist")) mep.setValue("episodeAssist", ep.get("episodeAssist"));
 					
 				}
 				else {
-					logger.warn("Chat config doesn't define any interactions");
+					logger.info("Create episode");
+					List<BaseRecord> eps = cfg.get("episodes");
+					//BaseRecord lep = PromptUtil.getLastEpisode(cfg);
+					number = eps.size() + 1;
+					logger.info("Adding episode #" + number);
+					ep.setValue("number", number);
+					
+					eps.add(ep);
 				}
+				cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
 			}
-			else {
-				logger.warn("Chat config doesn't define both characters");
+			
+			if(cmd.hasOption("auto") && cmd.hasOption("update")) {
+				String set = cmd.getOptionValue("setting");
+				List<BaseRecord> ainters = cfg.get(OlioFieldNames.FIELD_INTERACTIONS);
+	
+				if(cfg.get("systemCharacter") != null && cfg.get("userCharacter") != null) {
+			
+					if(ainters.size() > 0) {
+						if(set == null || set.equals("random")) {
+							set = NarrativeUtil.getRandomSetting();
+						}
+						logger.info("Generating the chat scene...");
+						BaseRecord i2 = ainters.get((new Random()).nextInt(ainters.size()));
+						BaseRecord pcfg = null;
+						if(cmd.hasOption("promptConfig")) {
+							pcfg = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
+						}
+						ChatUtil.generateAutoScene(octx, cfg, pcfg, i2, set, true);
+						logger.info("Scene: " + cfg.get("scene"));
+						// cfg.setValue("scene", scene);
+						//Queue.queueUpdate(cfg, new String[] {"scene"});
+						//Queue.processQueue(user);
+						
+					}
+					else {
+						logger.warn("Chat config doesn't define any interactions");
+					}
+				}
+				else {
+					logger.warn("Chat config doesn't define both characters");
+				}
 			}
 		}
 		if(cmd.hasOption("olio")) {
@@ -277,7 +292,9 @@ public class ChatAction extends CommonAction implements IAction{
 				boolean enabled = IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), olioAdminRole, user, null, true);
 				logger.info("Configuring user for olio world access: " + enabled);
 			}
-			
+			if (cmd.hasOption("scan")) {
+				octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+			}
 			if(cmd.hasOption("list")) {
 				if(cmd.hasOption("reimage")) {
 					BaseRecord sdConfig = SDUtil.randomSDConfig();
