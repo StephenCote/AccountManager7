@@ -2,7 +2,6 @@ package org.cote.accountmanager.console;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.lang.reflect.Field;
 import java.util.Properties;
 
 import org.apache.commons.cli.CommandLine;
@@ -29,7 +28,6 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.util.VectorUtil;
 
 public class ConsoleMain {
 	public static final Logger logger = LogManager.getLogger(ConsoleMain.class);

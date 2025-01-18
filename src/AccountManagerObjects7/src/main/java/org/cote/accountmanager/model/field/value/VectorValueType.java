@@ -1,7 +1,5 @@
 package org.cote.accountmanager.model.field.value;
 
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.model.field.FieldType;

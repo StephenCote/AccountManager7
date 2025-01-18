@@ -1,11 +1,9 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -13,39 +11,27 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
 import java.util.stream.Collectors;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.cote.accountmanager.io.IOFactory;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.objects.tests.olio.OlioTranslator;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.ModelSchema;
 import org.junit.Before;
 import org.junit.Test;
+
 import com.pgvector.PGvector;
 
-import ai.djl.Device;
 import ai.djl.MalformedModelException;
 import ai.djl.ModelException;
 import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
 import ai.djl.inference.Predictor;
-import ai.djl.modality.nlp.DefaultVocabulary;
-import ai.djl.modality.nlp.Vocabulary;
-import ai.djl.modality.nlp.bert.BertToken;
-import ai.djl.modality.nlp.bert.BertTokenizer;
 import ai.djl.modality.nlp.qa.QAInput;
 import ai.djl.repository.zoo.Criteria;
 import ai.djl.repository.zoo.ModelNotFoundException;
 import ai.djl.repository.zoo.ZooModel;
-import ai.djl.translate.DeferredTranslatorFactory;
 import ai.djl.translate.TranslateException;
 public class TestVectorIndex extends BaseTest {
 	

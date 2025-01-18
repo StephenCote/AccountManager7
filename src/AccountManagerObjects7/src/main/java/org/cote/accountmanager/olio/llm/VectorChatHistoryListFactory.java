@@ -14,7 +14,6 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 
 public class VectorChatHistoryListFactory extends VectorListFactory {

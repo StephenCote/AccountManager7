@@ -1,27 +1,16 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
 import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.io.InputStream;
-import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
-import org.cote.accountmanager.exceptions.IndexException;
-import org.cote.accountmanager.exceptions.ReaderException;
-import org.cote.accountmanager.io.IOFactory;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.ParameterList;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
-import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.StreamUtil;

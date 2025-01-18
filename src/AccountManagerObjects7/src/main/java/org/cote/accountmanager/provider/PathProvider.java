@@ -23,7 +23,6 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.util.ErrorUtil;
 
 public class PathProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(PathProvider.class);

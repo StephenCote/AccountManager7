@@ -1,18 +1,13 @@
 package org.cote.accountmanager.io;
 
-import java.util.Arrays;
-import java.util.stream.Collectors;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
-import org.cote.accountmanager.util.RecordUtil;
 
 public abstract class SearchBase implements ISearch {
 	public static final Logger logger = LogManager.getLogger(SearchBase.class);

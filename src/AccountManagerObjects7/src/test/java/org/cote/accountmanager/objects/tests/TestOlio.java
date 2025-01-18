@@ -26,7 +26,6 @@ import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
 
 public class TestOlio extends BaseTest {
 	

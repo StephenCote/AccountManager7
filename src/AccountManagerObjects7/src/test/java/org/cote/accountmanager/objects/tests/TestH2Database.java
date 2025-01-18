@@ -1,19 +1,12 @@
 package org.cote.accountmanager.objects.tests;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
-import java.util.List;
 import java.util.UUID;
 
-import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ReaderException;
-import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -21,13 +14,8 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.schema.type.OrganizationEnumType;
-import org.cote.accountmanager.schema.type.PermissionEnumType;
-import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.junit.Test;
 

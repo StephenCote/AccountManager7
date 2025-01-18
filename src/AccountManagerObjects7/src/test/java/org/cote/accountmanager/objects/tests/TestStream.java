@@ -1,13 +1,11 @@
 package org.cote.accountmanager.objects.tests;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.UUID;
 
@@ -18,7 +16,6 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
-import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
@@ -35,7 +32,6 @@ import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.AuditUtil;
-import org.cote.accountmanager.util.ContentTypeUtil;
 import org.cote.accountmanager.util.DirectoryUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.ThumbnailUtil;
