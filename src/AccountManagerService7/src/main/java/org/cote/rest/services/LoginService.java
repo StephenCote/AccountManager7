@@ -188,11 +188,6 @@ public class LoginService {
 					logger.error("Subject " + subType + " " + name + " in " + org.get(FieldNames.FIELD_NAME) + " is null");
 				}
 				else {
-					/*
-					BaseRecord cred = IOSystem.getActiveContext().getRecordUtil().getRecordByQuery(
-			    		IOSystem.getActiveContext().getRecordUtil().getLatestReferenceQuery(sub, ModelNames.MODEL_CREDENTIAL)
-				    );
-				    */
 					BaseRecord cred = CredentialUtil.getLatestCredential(sub);
 					if(cred == null) {
 						logger.error("Credential is null");

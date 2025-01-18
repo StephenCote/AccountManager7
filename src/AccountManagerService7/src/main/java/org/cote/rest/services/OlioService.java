@@ -117,13 +117,7 @@ public class OlioService {
 			a1.set(FieldNames.FIELD_MIDDLE_NAME, "Kippy");
 			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
 			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
-			/*
-			a1.set("instinct", f.newInstance(OlioModelNames.MODEL_INSTINCT, user, null, null));
-			a1.set(OlioFieldNames.FIELD_STATISTICS, f.newInstance(OlioModelNames.MODEL_CHAR_STATISTICS, user, null, null));
-			a1.set(FieldNames.FIELD_PERSONALITY, f.newInstance(ModelNames.MODEL_PERSONALITY, user, null, null));
-			a1.set(FieldNames.FIELD_STATE, f.newInstance(OlioModelNames.MODEL_CHAR_STATE, user, null, null));
-			a1.set(FieldNames.FIELD_STORE, f.newInstance(OlioModelNames.MODEL_STORE, user, null, null));
-			*/
+
 			a1.set(FieldNames.FIELD_GENDER, (Math.random() < 0.5 ? "male" : "female"));
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
@@ -145,29 +139,6 @@ public class OlioService {
 		return Response.status(404).entity(null).build();
 	}
 
-	/*
-	@RolesAllowed({"user"})
-	@GET
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/narrative")
-	@Produces(MediaType.APPLICATION_JSON)
-	public Response getObjectNarrative(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
-		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		Query q = QueryUtil.createQuery(type, FieldNames.FIELD_OBJECT_ID, objectId);
-		q.setValue(FieldNames.FIELD_LIMIT_FIELDS, false);
-		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-		if(rec == null) {
-			return Response.status(404).entity(null).build();
-		}
-		PersonalityProfile pp = ProfileUtil.getProfile(null, rec);
-		if(pp != null) {
-			BaseRecord nar = NarrativeUtil.getNarrative(pp);
-			if(nar != null) {
-				return Response.status(200).entity(nar.toFullString()).build();		
-			}
-		}
-		return Response.status(404).entity(null).build();
-	}
-	*/
 	
 	
 }

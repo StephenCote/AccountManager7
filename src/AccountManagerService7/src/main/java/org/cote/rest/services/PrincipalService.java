@@ -144,36 +144,5 @@ public class PrincipalService {
 		}
 		return Response.status(200).entity((user == null ? null : user.toFullString())).build();
 	}
-	
-	/*
-	private UserType getSelfUser(HttpServletRequest request){
-		Principal principal = request.getUserPrincipal();
-		UserType outUser = null;
-		if(principal != null && principal instanceof UserPrincipal){
-			UserPrincipal userp = (UserPrincipal)principal;
-			logger.info("UserPrincipal: " + userp.toString());
-			try {
-				OrganizationType org = ((OrganizationFactory)Factories.getFactory(FactoryEnumType.ORGANIZATION)).findOrganization(userp.getOrganizationPath());
 
-				UserType user = Factories.getNameIdFactory(FactoryEnumType.USER).getById(userp.getId(), org.getId());
-				if(user != null){
-					outUser = user;
-					if(BaseService.getEnableExtendedAttributes()){
-						Factories.getAttributeFactory().populateAttributes(outUser);
-					}
-				}
-				else {
-					logger.warn("User is null for " + userp.getId() + " in " + org.getId());
-				}
-			} catch (FactoryException | ArgumentException e) {
-				
-				logger.error(FactoryException.LOGICAL_EXCEPTION,e);
-			}
-		}
-		else{
-			logger.debug("Don't know what: " + (principal == null ? "Null" : "Uknown") + " principal");
-		}
-		return outUser;
-	}
-	*/
 }

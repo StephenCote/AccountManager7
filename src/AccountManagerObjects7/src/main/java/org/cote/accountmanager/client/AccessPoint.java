@@ -73,7 +73,6 @@ public class AccessPoint {
 		Query q = QueryUtil.createQuery(model);
 		q.filterParticipation(container, null, model, effect);
 		q.setRequestRange(startIndex, recordCount);
-		logger.info(q.toFullString());
 		QueryResult qr = list(user, q);
 		if(qr == null) {
 			return new ArrayList<>();
