@@ -1,0 +1,799 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+
+
+/* demo */
+.step-wizard-container > div:not(:first-child) {
+    flex-grow: 1;
+    height: 100%;
+}
+
+.step-wizard-container > div:not(:first-child) > div {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+/* end demo */
+
+    html,body{
+        @apply min-h-screen
+    }
+
+/* common */
+
+h1 {
+    @apply h-common text-5xl
+}
+h2 {
+    @apply h-common text-4xl
+}
+h3 {
+    @apply h-common text-3xl
+}
+h4 {
+    @apply h-common text-2xl
+}
+h5 {
+    @apply h-common text-xl
+}
+.h-common {
+    @apply font-medium leading-tight mt-0 mb-2 text-green-900
+}
+
+/* end common */
+    .blank {
+        @apply w-full block text-base px-4 py-2 mt-2 h-auto
+    }
+    .check-field {
+        @apply w-10 h-10 p-2 mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
+    }
+    .button-field{
+        @apply check-field
+    }
+    .button-field-full{
+        @apply w-full button-field
+    }
+    .text-field-form{
+        @apply w-full px-4 py-2 mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
+    }
+    .range-field-full {
+        @apply w-full h-2 rounded-lg cursor-pointer bg-gray-200 dark:bg-gray-700
+    }
+    .text-field-full{
+        @apply w-full text-field-form
+    }
+    .text-field-auto{
+        @apply w-auto text-field-form
+    }
+    .select-field-full{
+        @apply text-field-full bg-white
+    }
+    .text-field {
+        @apply border px-2 border-gray-300 bg-white text-base font-medium text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-600
+    }
+    .textarea-field {
+        @apply text-base font-medium shadow-sm px-2 focus:ring-blue-600 focus:ring-1 block border border-gray-300
+    }
+    .textarea-field-full {
+        @apply h-36 w-full text-field-full
+    }
+    .image-field{
+        @apply image-grid-image max-h-36
+    }
+    .field-required{
+        @apply bg-blue-100
+    }
+    .field-error{
+        @apply bg-red-100
+    }
+    .table-field{
+        @apply border-collapse w-full table-auto
+    }
+    .table-field tr.row-field {
+        @apply hover:bg-blue-100
+    }
+    .table-field tr.row-field-active{
+        @apply bg-blue-300 hover:bg-blue-400
+    }
+
+    .table-field tr th {
+        @apply border-b dark:border-gray-300 font-medium p-4 pl-8 pt-0 pb-3 text-gray-500 text-left
+    }
+    .field-disabled{
+        @apply bg-gray-300
+    }
+
+    .card-title{
+        
+        @apply block max-w-full truncate font-medium text-sm text-gray-500 font-mono mb-3 ml-8 dark:text-gray-400
+    }
+    .card-footer{
+        
+        @apply text-right align-bottom card-title
+    }
+
+    .image-grid-5{
+       @apply grid grid-cols-5 gap-3 mx-auto max-h-full h-full w-full max-w-full overflow-hidden
+    }
+
+    .image-grid-tile{
+        @apply grid grid-cols-auto-fill-150 grid-rows-auto-fill-150 gap-3 mx-auto max-h-full h-full w-full max-w-full overflow-y-auto
+    }
+
+    .image-grid-item-1{
+        @apply col-span-1 image-grid-item
+    }
+
+
+    .image-grid-item-2{
+        @apply col-span-2 image-grid-item
+    }
+
+    .image-grid-item-tile {
+        @apply border border-white bg-white p-1 shadow-lg hover:bg-blue-100 hover:border-blue-300
+        /*mx-auto max-w-fit max-h-fit border border-white bg-white p-1 shadow-lg hover:bg-blue-100 hover:border-blue-300*/
+    }
+
+
+    
+    .image-grid-item{
+        @apply mx-auto h-full max-h-full w-full max-w-full overflow-hidden border border-white bg-white p-1 shadow-lg hover:bg-blue-100 hover:border-blue-300
+    }
+    
+    .image-grid-item-content{
+        /* w-full h-full  */
+        @apply max-h-full max-w-full flex mx-auto justify-center items-center
+    }
+    .image-grid-item-content-full{
+        @apply w-full h-full image-grid-item-content
+    }
+    .image-grid-item-content-32{
+        @apply h-32 max-h-32 image-grid-item-content
+    }
+    
+    .image-grid-item-content-tile{
+        @apply /*flex mx-auto justify-center*/ flex w-full h-full max-h-full max-w-full mx-auto justify-center items-center
+    }
+    .image-grid-item-active{
+        @apply bg-blue-300 hover:bg-blue-400
+    }
+    .image-grid-image{
+        @apply block mx-auto
+    }
+
+    .full-block{
+        @apply block w-full h-full overflow-auto border-gray-100 shadow-lg
+    }
+
+    /*
+    .image-grid-image{
+        @apply block mx-auto
+    }
+    */
+    .field-grid-6{
+        @apply grid grid-cols-6 gap-1 auto-rows-max h-full grid-flow-row
+    }
+    .field-grid-item-half {
+        @apply col-span-3 pl-0
+    }
+    .field-grid-item-full {
+        @apply col-span-6
+    }
+    .field-grid-item-third{
+        @apply col-span-2
+    }
+    .field-grid-item-fifth{
+        @apply col-span-5
+    }
+    .field-grid-item-two-thirds{
+        @apply col-span-4
+    }
+    .field-grid-item-one{
+        @apply col-span-1
+    }
+  
+    .field-label{
+        @apply block text-sm font-medium text-gray-500
+    }
+    .screen-center-gray {
+        @apply flex items-center justify-center min-h-screen bg-gray-100;
+    }
+    .box-shadow-white{
+        @apply px-8 py-6 mt-4 text-left bg-white shadow-lg;
+    }
+    .box-title{
+        @apply text-2xl font-bold text-center;
+    }
+    .box-button{
+        @apply px-6 py-2 mt-4 text-white bg-green-500 rounded-lg hover:bg-green-800;
+    }
+    .dialog-container{
+        @apply absolute top-0 left-0 flex items-center justify-center min-h-screen w-full z-30
+    }
+    .dialog-button{
+        @apply inline-flex px-2 py-2 mt-4 ml-2 mr-2 text-white bg-blue-600 rounded-lg hover:bg-blue-900
+    }
+    .dialog{
+        @apply bg-white shadow-lg flex flex-grow fixed
+    }
+    .dialog.dialog-25{
+        @apply h-1/4 w-1/4
+    }
+    .dialog.dialog-50{
+        @apply h-1/2 w-1/2
+    }
+    .dialog.dialog-75{
+        @apply h-3/4 w-3/4
+    }
+    .text-content{
+        @apply pl-2 pr-2 text-left font-medium text-gray-500
+    }
+    .text-content-alert{
+        @apply pl-2 pr-2 text-left font-bold text-red-600
+    }
+    .screen-glass-gray {
+        @apply absolute inset-0 bg-black opacity-50
+    }
+    .screen-glass{
+        @apply fixed inset-0 transition-opacity
+    }
+    .screen-glass-slide{
+        @apply ease-out
+    }
+    .screen-glass-open{
+        @apply z-10 visible opacity-100
+    }
+    .screen-glass-close{
+        @apply invisible opacity-0
+    }
+    .context-menu{
+        @apply origin-top-right absolute right-0 mt-2 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none
+        overflow-y-auto max-h-96
+    }
+    .context-menu-48{
+        @apply context-menu w-48
+    }
+    .context-menu-96{
+        @apply context-menu w-96
+    }
+    .context-menu button.context-menu-item{
+        /*
+        @apply text-right block w-full pr-2 py-2 text-sm text-gray-500 hover:text-gray-800 hover:bg-blue-100
+        */
+        @apply text-right block w-full pr-2 py-2 text-sm page-button
+    }
+    .context-menu.transition{
+        @apply bg-white ease-in-out transition-all duration-300 z-30
+    }
+    .context-menu.transition-full{
+        @apply opacity-100
+    }
+    .context-menu.transition-0{
+        @apply opacity-0 hidden
+    }
+    .context-menu-button{
+      /*
+        @apply max-w-xs bg-white py-2 align-middle rounded-full flex items-center text-sm font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-blue-400 focus:ring-blue-100
+        */
+        @apply menu-button
+
+    }
+    .context-menu-container{
+        @apply relative
+    }
+    .context-menu-container-slim{
+        @apply relative p-0 m-0
+    }
+    .context-menu-container-disabled{
+        @apply bg-gray-300
+    }
+    aside.transition {
+        @apply transform top-0 left-0 w-64 bg-white fixed h-full overflow-auto ease-in-out transition-all duration-300 z-30
+    }
+    aside.transition.transition-full {
+        @apply -translate-x-0
+    }
+    aside.transition.transition-0 {
+        @apply -translate-x-full
+    }
+    .flyout-button{
+        @apply flex items-center p-2 w-full page-button
+    }
+    .flyout-banner{
+        @apply flex w-full items-center p-4 border-b
+    }
+    .flyout-gutter{
+        @apply fixed bottom-0 w-full
+    }
+
+    nav.pageNav{
+        @apply flex w-full items-center justify-between px-6 h-16 bg-white text-gray-700 border-b border-gray-200 z-10
+    }
+
+    div.menuToggle{
+        @apply flex items-center
+    }
+
+    button.menuButtonTop{
+        @apply flex items-center p-3 font-medium mr-2 text-center bg-gray-300 rounded  hover:bg-gray-400 focus:outline-none focus:bg-gray-400
+    }
+    .menu-bar {
+        @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8
+    }
+    .menu-bar-flex {
+        @apply flex items-center justify-between h-16
+    }
+    .menu-bar-flex .flex-center{
+        @apply flex items-center
+    }
+    .menu-bar-flex .flex-center2{
+        @apply ml-4 flex items-center md:ml-6
+    }
+    .menu-buttons{
+        @apply flex items-baseline
+    }
+    .menu-buttons-spaced{
+        @apply ml-10 menu-buttons space-x-4
+    }
+   
+    .menu-button{
+      /*
+        @apply align-middle text-gray-300 hover:bg-gray-700 hover:text-white px-3 py-2 rounded-md text-sm font-medium 
+        */
+        /* font-medium inline-block align-middle page-button space-x-4 px-3 py-2  */
+        /* content-center inline-flex items-center px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-blue-100 */
+        @apply content-center inline-flex items-center text-lg page-button space-x-4 px-3 py-2
+    }
+    .menu-button.active{
+        @apply border-gray-500 text-gray-700 bg-gray-200
+    }
+    .menu-button.active-red{
+        @apply border-gray-500 text-red-700 bg-red-200
+    }
+    .menu-button-slim{
+          @apply font-medium align-middle page-button pl-2 pr-2
+      }
+    div.content-outer{
+        @apply flex flex-col min-h-screen max-h-screen overflow-hidden
+    }
+    div.content-main{
+        @apply bg-white flex-grow overflow-hidden flex
+    }
+
+    div.panel-container{
+        @apply rounded-xl overflow-auto p-8 border border-black/5 w-full
+    }
+    /*
+    .panel-grid{
+        @apply grid grid-flow-col gap-8
+    }
+    */
+    .panel-grid{
+        @apply grid grid-cols-3 gap-4
+    }
+    /*
+    .panel-card{
+        @apply bg-white flex flex-col
+    }
+    */
+    .panel-card{
+        @apply flex flex-col
+    }
+
+    /*
+    ul.card-contents{
+        @apply flex flex-col list-none list-inside text-gray-700 bg-white rounded-xl shadow-lg ring-1 ring-gray-300 p-4 pl-8 dark:bg-gray-800 dark:text-gray-400
+        
+    }
+    */
+    div.card-contents{
+        @apply flex flex-col h-full text-gray-700 bg-white rounded-xl shadow-lg ring-1 ring-gray-300 p-4
+    }
+    div.card-item{
+        
+    }
+    div.card-item button{
+        @apply w-full text-left py-1 page-button
+    }
+    .page-button{
+        @apply text-gray-500 bg-white rounded-lg border-b-white border-b hover:border-solid hover:border-blue-500 hover:shadow
+    }
+    .page-select{
+        @apply appearance-none font-normal text-gray-700 bg-white bg-clip-padding rounded
+        pr-10
+        border-b
+        border-b-white
+        hover:border-solid
+        hover:border-blue-500
+        hover:shadow
+        text-gray-500
+        transition ease-in-out m-0 
+    }
+    .page-button, .page-select:focus{
+        @apply focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none
+    }
+
+    nav.breadcrumb-bar{
+        @apply w-full flex flex-wrap items-center justify-between py-3 bg-gray-100 text-gray-500 hover:text-gray-700 focus:text-gray-700 shadow-lg
+    }
+    div.breadcrumb-container{
+        @apply w-full flex flex-wrap items-center justify-between px-6
+    }
+
+    nav.breadcrumb{
+        @apply rounded-md w-full
+    }
+    ol.breadcrumb-list{
+        @apply flex
+    }
+
+    ol.breadcrumb-list li{
+        @apply mr-2
+    }
+
+    /*
+    ul.card-contents li{
+        @apply bg-blue-200 h-max 
+    }
+    */
+    .list-results-container{
+        @apply flex-grow overflow-hidden flex bg-white border border-gray-200
+    }
+    .list-results{
+        @apply flex flex-col w-full overflow-hidden /* m-4 */
+    }
+    .results-outer-container{
+        @apply bg-white max-w-7xl mx-auto flex h-screen
+        /* py-6 sm:px-6 lg:px-8 */
+        /* max-h-screen mx-auto */
+    }
+
+    .results-container{
+        @apply max-w-none flex flex-grow overflow-y-auto mx-auto;
+    }
+    .results-inner-container{
+        @apply bg-white flex-auto shadow sm:rounded-lg
+    }
+    .results-fixed{
+        @apply flex-1 overflow-hidden
+    }
+    .splitcontainer{
+        @apply max-h-full h-full flex
+    }
+    .splitcontainer .splitleftcontainer{
+        @apply flex flex-col w-1/4 p-4 overflow-hidden
+    }
+    .splitcontainer .splitfullcontainer{
+        @apply flex w-full p-4 overflow-hidden
+    }
+    .splitcontainer .splitrightcontainer{
+        @apply flex flex-col w-3/4 p-4 overflow-hidden
+    }
+    .splitoverflow{
+        @apply block flex-1 overflow-auto whitespace-nowrap
+    }
+    .results-overflow{
+        @apply flex-1 overflow-y-auto p-4
+    }
+    ul.list-results-overflow{
+        @apply results-overflow divide-gray-200 divide-y
+        /*overflow-y-auto divide-y divide-gray-200*/
+    }
+    /*
+    ul.results-list li{
+        @apply inline
+    }
+    */
+    /*
+    ul.results-list li:hover{
+        @apply bg-blue-100
+    }
+    */
+    .result-item{
+        @apply px-4 py-4 sm:px-6 hover:bg-blue-100
+    }
+    .result-item-active{
+        @apply bg-blue-300 hover:bg-blue-400
+    }
+    .hier-item-container:hover .hier-item:hover{
+        @apply bg-blue-100
+    }
+
+    .hier-item-container .hier-item .active{
+        @apply text-blue-600
+    }
+    .hier-item-container .hier-item .active-orange{
+        @apply text-orange-600
+    }
+
+    .hier-item-container:hover .hier-item:hover .flare{
+        @apply text-blue-300
+    }
+
+    .hier-item-nest{
+        @apply block ml-4
+    }
+    .hier-item .hier-item-element{
+        @apply inline-block align-middle
+    }
+    .flex-polar{
+        @apply flex items-center justify-between
+    }
+    .flex-polar-2{
+        @apply mt-2 flex justify-between
+    }
+    .flex-polar-2 .meta-container{
+        @apply sm:flex
+    }
+    .meta-container .meta-item{
+        @apply mr-6 flex items-center text-sm text-gray-500
+    }
+    .flex-polar,.flex-polar-2 .annotation{
+        @apply flex items-center text-sm text-gray-500
+    }
+    .flex-polar .label{
+        @apply text-sm font-medium text-indigo-600 truncate
+    }
+    .flex-polar .polar-label{
+        @apply ml-2 flex-shrink-0 flex
+    }
+    .flex-polar .tweak-box{
+        @apply px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-200 text-blue-800
+    }
+
+    .result-nav-outer{
+        @apply bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6
+    }
+
+    .result-nav-inner {
+        @apply sm:flex-1 sm:flex sm:items-center sm:justify-between
+    }
+
+    .result-nav-inner .count-label{
+        @apply text-sm text-gray-700
+    }
+
+    .result-nav-inner .result-nav{
+        @apply inline-flex rounded-md shadow-sm -space-x-px
+    }
+    .result-nav .nav-select{
+        @apply appearance-none inline-flex pl-2 py-2 pr-10 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-blue-100
+    }
+    .result-nav .button.warn{
+        @apply bg-pink-100 font-bold text-red-600
+    }
+    .result-nav .button{
+        @apply content-center inline-flex items-center px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-blue-100
+    }
+    .result-nav .button.active{
+        @apply border-gray-500 text-gray-700 bg-gray-200
+    }
+    .result-nav .button.focus{
+        @apply ring-1 ring-blue-600 bg-blue-300;
+    }
+    .result-nav .button.inactive{
+        @apply text-gray-300 bg-gray-100 hover:bg-gray-200
+    }
+    .result-nav .previous{
+        @apply rounded-l-md 
+    }
+    .result-nav .next{
+        @apply rounded-r-md
+    }
+
+    .result-nav .page-current{
+        @apply content-center w-12 inline-flex items-center bg-indigo-50 border-indigo-500 text-indigo-600  px-4 py-2 border text-sm font-medium
+    }
+    .result-nav .page{
+        @apply content-center w-12 inline-flex items-center border-gray-300 text-gray-500 hover:bg-blue-100 items-center px-4 py-2 border text-sm font-medium
+    }
+    .result-nav .page-span{
+        @apply inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700
+    }
+    
+    .result-nav-outer.result-bottom{
+        @apply fixed bottom-0
+    }
+
+    .window-container{
+        @apply fixed top-0 left-0 z-10 flex flex-col overflow-hidden shadow-lg border border-blue-300 rounded-md
+    }
+    .window-container-focus{
+        @apply border-indigo-500
+    }
+    .window-frame{
+        @apply fixed top-0 left-0 hidden w-0 h-0 border rounded-md border-blue-700 rounded-md
+    }
+    .window-screen{
+        @apply opacity-50 fixed top-0 left-0 z-20 bg-gray-200
+    }
+
+    .window-title-bar{
+        @apply rounded-t-md bg-gray-200 flex items-center justify-between border-t border-gray-100
+    }
+
+    .window-title-bar-focus{
+        @apply border-blue-700
+    }
+
+    .window-status-bar{
+        @apply rounded-b-md bg-gray-200 flex items-center justify-between border-t border-gray-100
+    }
+    .window-status-bar-focus{
+        @apply border-blue-700
+    }
+
+    .window-body-wrapper{
+        @apply flex-grow overflow-hidden flex bg-white border border-gray-200
+    }
+    .window-body-outer{
+        @apply flex w-full overflow-hidden
+    }
+    .window-body{
+        @apply transition-colors w-full overflow-y-auto
+    }
+
+    .window-button{
+        @apply text-gray-400 bg-gray-200 rounded-md border-b-gray-200 border-b hover:border-solid hover:border-gray-600 hover:text-gray-600 hover:shadow
+    }
+
+    .multi-button{
+        @apply px-1 py-1 items-center font-medium text-gray-500 bg-white border-b-white border-b
+    }
+    .multi-button-disabled{
+        @apply px-1 py-1 items-center font-medium text-gray-500 bg-gray-100 border-b-gray-100 border-b
+    }
+    .multi-button.rounded-r{
+        @apply rounded-r-md 
+    }
+    .multi-button.rounded-l{
+        @apply rounded-l-md 
+    }
+    .multi-button:hover{
+        @apply border-solid border-blue-500 shadow
+    }
+    .multi-button:focus{
+        @apply focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none
+    }
+
+    .carousel{
+        /* min-h-screen max-h-screen */
+        @apply  overflow-hidden flex flex-grow shadow-2xl bg-white
+        
+    }
+
+    .carousel-inner{
+        @apply relative overflow-hidden max-w-full max-h-full flex flex-col flex-grow
+        /*@apply /overflow-y-auto max-w-full flex flex-grow*/
+    }
+
+    .carousel-item-0{
+        @apply opacity-0 hidden
+    }
+    .carousel-item-100{
+        @apply opacity-100
+    }
+    .carousel-item{
+        @apply transition-opacity duration-500  ease-out hidden
+    }
+    .carousel-item-flex{
+        @apply flex max-w-full max-h-full w-full h-full bg-white
+    }
+    .carousel-item-abs{
+        @apply carousel-item-flex mx-auto absolute 
+    }
+    .carousel-article-outer{
+        @apply w-full bg-gray-100 flex
+    }
+    .carousel-article{
+        @apply results-overflow bg-white shadow-md text-lg
+    }
+    .carousel-article div{
+        @apply pt-4 pb-4
+    }
+    .carousel-article-margin{
+        @apply pl-4 pr-4 mb-20 ml-20 mr-20 mt-10 
+    }
+
+    .carousel-article ul {
+        @apply list-disc
+    }
+
+    .carousel-article ol {
+        @apply list-decimal
+    }
+
+    .carousel-ctl{
+        /* bg-white */
+        @apply w-10 h-10 absolute cursor-pointer text-3xl font-bold text-black hover:text-white rounded-full hover:bg-gray-600 leading-tight text-center z-10
+    }
+    .carousel-exit{
+        @apply carousel-ctl right-0 mr-2 md:mr-10 inset-x-0 mx-auto
+    }
+    .carousel-full{
+        @apply carousel-ctl left-0 ml-2 md:ml-10 inset-x-0 mx-auto
+    }
+    .carousel-max{
+        @apply carousel-ctl left-10 ml-2 md:ml-10 inset-x-10 mx-auto
+    }
+    .carousel-info{
+        @apply carousel-ctl left-20 ml-2 md:ml-10 inset-x-10 mx-auto
+    }
+    .carousel-edit{
+        @apply carousel-ctl left-32 ml-2 md:ml-10 inset-x-10 mx-auto
+    }
+    .carousel-prev{
+        @apply carousel-ctl left-0 ml-2 md:ml-10 inset-y-0 my-auto
+    }
+    .carousel-next{
+        @apply carousel-ctl right-0  mr-2 md:mr-10 inset-y-0 my-auto
+    }
+
+    .carousel-indicators{
+        @apply list-none m-0 p-0 absolute bottom-10 left-0 right-0 text-center z-10
+    }
+
+    .carousel-indicator{
+        @apply inline-block mr-3
+    }
+
+    .carousel-bullet{
+        @apply cursor-pointer block text-4xl text-gray-300 hover:text-blue-500 hover:shadow-lg
+    }
+
+    .carousel-bullet-active{
+        @apply text-gray-600 shadow-lg
+    }
+    
+    button.button-tab{
+        @apply inline-flex items-center w-40 px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-blue-100 text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-600
+    }
+    button.button-tab-active{
+        @apply bg-blue-100 hover:bg-blue-400
+    }
+    div.tab-pane-active{
+        @apply bg-blue-100;
+    }
+
+    
+    .CodeMirror {
+        @apply full-block border-gray-300 border
+    }
+
+    .tab-container button:first-child {
+        @apply rounded-l-md
+    }
+    .tab-container button:last-child {
+        @apply rounded-r-md
+    }
+
+    .game-grid-auto{
+        @apply border border-gray-500 grid gap-0 auto-rows-auto
+    }
+
+    .game-grid-1020{
+        @apply border border-gray-500 shadow-md grid auto-rows-auto grid-cols-10 gap-0
+    }
+    .game-grid-preview-44{
+        @apply border border-gray-500 shadow-md grid auto-rows-auto grid-cols-4 gap-0
+    }
+
+    /*
+    ul.tabstrip{
+        @apply  flex flex-row flex-wrap list-none border-b-0 pl-0 mb-4
+    }
+
+    li.tab{
+        @apply flex-grow text-center
+    }
+
+    .tablabel{
+        @apply  w-full block font-medium text-xs leading-tight uppercase border-x-0 border-t-0 border-b-2 border-transparent px-6 py-3 my-2 hover:border-transparent hover:bg-gray-100 focus:border-transparent active
+    }
+    */
+
+ }
+

@@ -1,0 +1,1 @@
+Used for any server side caching.  At the moment this is not really used except for initial authentication checks.

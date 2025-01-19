@@ -1,0 +1,7 @@
+{
+    "am7server" : "http://localhost:8080",
+    "am7service" : "/AccountManagerService7/",
+    "adminUser" : "admin",
+    "adminOrganization" : "/Development",
+    "adminCredential" : "password"
+}

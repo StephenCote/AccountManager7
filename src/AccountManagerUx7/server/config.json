@@ -1,0 +1,33 @@
+{
+    "clientPort": 8899,
+    "secret": "ABC123xyz",
+    "directories" : [
+        "/client/components",
+        "/client/view",
+        "/client",
+        "/model",
+        "/common",
+        "/media",
+        "/dist",
+        "/node_modules/@fortawesome/fontawesome-free/webfonts",
+        "/node_modules/codemirror/addon/lint",
+        "/node_modules/codemirror/lib",
+        "/node_modules/codemirror/mode/javascript",
+        "/node_modules/codemirror/mode/css",
+        "/node_modules/typeface-raleway/files",
+        "/node_modules/print-js/dist",
+        "/node_modules/material-symbols",
+        "/node_modules/material-icons/css",
+        "/node_modules/material-icons/iconfont"
+    ],
+    "files" : [
+        "/blank.html",
+        "/index.html",
+        "/styles/basiTail.css",
+        "/styles/pageStyle.css",
+        "/node_modules/big.js/big.mjs",
+        "/node_modules/mithril/mithril.js",
+        "/node_modules/mithril/mithril.min.js",
+        "/node_modules/codemirror/theme/neat.css"
+    ]
+}
