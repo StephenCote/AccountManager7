@@ -1,4 +1,4 @@
-(function(){
+(function () {
     const designer = {};
     let designStyle = 'edit';
     let designHtml = "";
@@ -9,41 +9,41 @@
     let pickDataObject = null;
     let codeMirror;
 
-    function handlePickData(dat){
-        if(dat && dat.length){
+    function handlePickData(dat) {
+        if (dat && dat.length) {
             pickDataObject = dat[0];
             pickData = true;
         }
         caller.endPicker();
     }
 
-    function insertObjectAtCaret(obj){
+    function insertObjectAtCaret(obj) {
         let frame = document.querySelector("[rid=designFrame]");
         let doc = (frame.contentWindow || frame.contentDocument);
         doc.document.body.focus();
 
         var oA = doc.document.createElement("a");
-        
+
 
         let oI;
         var sOrg = am7client.dotPath(am7client.currentOrganization);
         var sThumbUrl = g_application_path + "/thumbnail/" + sOrg + "/data.data" + obj.groupPath + "/" + obj.name + "/250x250";
         var sUrl = g_application_path + "/media/" + sOrg + "/data.data" + obj.groupPath + "/" + obj.name;
         var sIco = 0;
-        if(!obj.contentType.match(/^image/)){
+        if (!obj.contentType.match(/^image/)) {
             oI = doc.document.createElement("span");
-            oI.setAttribute("class","material-symbols-outlined material-icons-48");
+            oI.setAttribute("class", "material-symbols-outlined material-icons-48");
             oI.appendChild(document.createTextNode("widgets"));
         }
-        else{
+        else {
             oI = doc.document.createElement("img");
-            oI.setAttribute("src",sThumbUrl);
-            oI.setAttribute("title",obj.name);
+            oI.setAttribute("src", sThumbUrl);
+            oI.setAttribute("title", obj.name);
         }
         oA.appendChild(oI);
-        oA.setAttribute("href",sUrl);
-        oA.setAttribute("target","blank");
-        oA.setAttribute("title",obj.name);
+        oA.setAttribute("href", sUrl);
+        oA.setAttribute("target", "blank");
+        oA.setAttribute("title", obj.name);
         insertNodeAtCaret(oA);
     }
     function insertNodeAtCaret(oNode) {
@@ -60,68 +60,22 @@
         }
     }
 
-    function pickImage(){
-        if(pickData){
+    function pickImage() {
+        if (pickData) {
             pickData = false;
             insertObjectAtCaret(pickDataObject);
             pickDataObject = null;
         }
         else caller.preparePicker('data.data', handlePickData, "~/Gallery");
     }
-/*
-
-		ExecFontSize : function(){
-			var o = this.getTemplateObjectByName("fontsize");
-			var d = this.get_frame("designer");
-			
-			if(o.selectedIndex <= 0) return;
-			d.document.execCommand("FontSize", false, o.selectedIndex);
-			o.selectedIndex = 0;
-		},
-		ExecFont : function(){
-			var o = this.getTemplateObjectByName("fonts");
-			var d = this.get_frame("designer");
-			
-			if(o.selectedIndex <= 0) return;
-			var s = o.options[o.selectedIndex].text;
-			d.document.execCommand("FontName", false, s);
-			o.selectedIndex = 0;
-		},
-		ExecBlock : function(){
-			var o = this.getTemplateObjectByName("block");
-			var d = this.get_frame("designer");
-			
-			if(o.selectedIndex <= 0) return;
-			var s = o.options[o.selectedIndex].text;
-			d.document.execCommand("FormatBlock", false, "<" + s + ">");
-			o.selectedIndex = 0;
-		},
-		ExecFontColor : function(){
-			var o = this.getTemplateObjectByName("fontcolor");
-			var d = this.get_frame("designer");
-			
-			if(o.selectedIndex <= 0) return;
-			var s = o.options[o.selectedIndex].text;
-			d.document.execCommand("ForeColor", false, s.toLowerCase());
-			o.selectedIndex = 0;
-		},
-		ExecFill : function(){
-			var o = this.getTemplateObjectByName("fill");
-			var d = this.get_frame("designer");
-			
-			if(o.selectedIndex <= 0) return;
-			var s = o.options[o.selectedIndex].text;
-			d.document.execCommand("BackColor", false, s);
-			o.selectedIndex = 0;
-		},
-*/
-    function defAct(e, action){
+  
+    function defAct(e, action) {
         //console.log("Default action: " + e.srcElement);
         let frame = document.querySelector("[rid=designFrame]");
         let doc = (frame.contentWindow || frame.contentDocument);
         let opt;
-        doc.document.body.focus();    
-        switch(action){
+        doc.document.body.focus();
+        switch (action) {
             case "Indent":
             case "Outdent":
             case "InsertHorizontalRule":
@@ -143,64 +97,53 @@
         doc.focus();
     }
 
-    function transitionHandler(){
-        //console.log("Transfer the data buffer back to the caller");
+    function transitionHandler() {
         init = false;
         let entity = caller.getEntity();
-        if(!entity || entity.model != 'data.data'){
+        if (!entity || entity.model != 'data.data') {
             console.log("Ignoring non data or invalid entity");
             return;
         }
         let source;
-        if(designStyle == 'code'){
+        if (designStyle == 'code') {
             source = codeMirror.getValue();
         }
-        else{
+        else {
             source = refreshDesignSources();
         }
 
-        /// force the mimeType to text/plain
-        /// entity.contentType = "text/plain";
-        //entity.dataBytesStore = uwm.base64Encode(source);
-
         caller.getInstance().api.dataBytesStore(source);
-        if(caller.getInstance().api.compressionType){
+        if (caller.getInstance().api.compressionType) {
             caller.getInstance().api.compressionType("none");
         }
         designHtml = "";
 
     }
-    function alignSource(){
+    function alignSource() {
         toggled = false;
-        if(!init){
+        if (!init) {
             setupDesigner();
         }
-        else{
-            switch(designStyle){
+        else {
+            switch (designStyle) {
                 case 'source':
                     let txt = document.querySelector("[rid=designText]");
-                    if(txt){
+                    if (txt) {
                         txt.value = designHtml;
-                    }
-                    else{
-                        //console.warn("Failed to find text field");
                     }
                     break;
                 case 'edit':
                 case 'preview':
                     let frame = document.querySelector("[rid=designFrame]");
-                    if(frame){
+                    if (frame) {
                         let content = designDocumentHeader + bbConverter.import(designHtml) + designDocumentFooter;
                         writeFrame(frame, content);
-                    }
-                    else{
-                        //console.warn("Failed to find frame");
                     }
                     break;
             }
         }
     }
-    function toggleStyle(sStyle){
+    function toggleStyle(sStyle) {
         designHtml = refreshDesignSources();
         designStyle = sStyle;
         toggled = true;
@@ -231,27 +174,25 @@
 
     let designDocumentFooter = `</body></html>`;
 
-    function setupDesigner(){
-        if(init) return;
+    function setupDesigner() {
+        if (init) return;
         let entity = caller.getEntity();
-        if(!entity){
-            //console.warn("Unexpected entity");
+        if (!entity) {
             return;
         }
-        if(!entity.model || entity.model != 'data.data'){
-            console.warn("Unexpected nameType: " + entity.model);
+        if (!entity.model || entity.model != 'data.data') {
+            console.warn("Unexpected model: " + entity.model);
             return;
         }
-        if(designStyle != 'edit' && designStyle != 'code'){
+        if (designStyle != 'edit' && designStyle != 'code') {
             console.warn("Setup should only be invoked for edit or code mode");
             return;
         }
 
-        // let bytes = entity.dataBytesStore || "";
         let bytes = caller.getInstance().api.dataBytesStore();
-        if(designStyle == 'code'){
+        if (designStyle == 'code') {
             let tarea = document.querySelector("[rid=designText]");
-            if(!tarea){
+            if (!tarea) {
                 return;
             }
             tarea.value = bytes;
@@ -269,8 +210,6 @@
                 lint: {
                     globals: ["m"],
                     onUpdateLinting: function (annotations) {
-                        // Let model reference lint annoations
-                        // model.data.annotations(annotations);
                         m.redraw();
                     }
                 }
@@ -279,44 +218,29 @@
             codeMirror.setSize("100%", "100%");
             window.dbgCode = codeMirror;
         }
-        else{
+        else {
             let frame = document.querySelector("[rid=designFrame]");
-            if(!frame){
+            if (!frame) {
                 return;
             }
-            if(bytes.length){
+            if (bytes.length) {
                 console.log("Write byte store");
                 writeFrame(frame, designDocumentHeader + bbConverter.import(bytes) + designDocumentFooter);
             }
-            else{
+            else {
                 writeFrame(frame, designDocumentHeader + designDocumentDefContent + designDocumentFooter);
             }
         }
         init = true;
     }
 
-/*
-					if(o && o.dataBytesStore){
-						this.WriteContent("<html><head>" + sCSS + "</head><body>" + bbConverter.import(uwm.base64Decode(o.dataBytesStore)) + "</body></html>","designer");
-					}
-					else if(this.getProperties().designer_html){
-						this.WriteContent(this.getProperties().designer_html,"designer");
-					}
-					else if(this.getProperties().control_buffer){
-						this.WriteContent("<html><body>" + this.getProperties().control_buffer + "</body></html>","designer");
-					}
-					else{
-						this.WriteContent("<html><head>" + sCSS + "<body><h1>Title</h1><h2>Sub Title</h2><div>[ body ]</div></body></html>","designer");
-					}
-*/
-
-    function writeFrame(frame, content){
+    function writeFrame(frame, content) {
 
         //console.log("Write: " + content);
         let docType = '<!doctype html>';
         let doc = (frame.contentWindow || frame.contentDocument);
-        try{
-            if(!doc || !doc.document){
+        try {
+            if (!doc || !doc.document) {
                 console.error("WriteContent: Unable to find document; " + this.writeFrame.caller);
                 return;
             }
@@ -326,75 +250,73 @@
             d.close();
             enableDesigner(d);
         }
-        catch(e){
+        catch (e) {
             console.error("Unexpected UI Error: " + (e.message ? e.message : e.description));
         }
     }
-    function enableDesigner(doc){
-        /// console.log("Enable designer: " + doc);
-        try{
-            if(doc){
-                doc.designMode = (designStyle == 'edit' ? "on"  : "off");
+    function enableDesigner(doc) {
+        try {
+            if (doc) {
+                doc.designMode = (designStyle == 'edit' ? "on" : "off");
                 console.log("Design mode: " + doc.designMode);
                 doc.documentElement.focus();
             }
-            else{
+            else {
                 console.error("Could not find designer document to enabled");
             }
         }
-        catch(e){
+        catch (e) {
             console.error("Error enabling designer: " + (e.message ? e.message : e.description));
         }
     }
 
-    function refreshDesignSources(){
+    function refreshDesignSources() {
         let sSource;
-        switch(designStyle){
+        switch (designStyle) {
             case 'edit':
                 let frame = document.querySelector("[rid=designFrame]");
-                if(frame){
+                if (frame) {
                     var doc = (frame.contentWindow || frame.contentDocument);
-                    if(!doc || !doc.document) return null;
-                    /// sSource = "<html>" + doc.document.documentElement.innerHTML + "</html>";
+                    if (!doc || !doc.document) return null;
                     sSource = bbConverter.convertNodes(doc.document.body.childNodes);
                 }
                 break;
             case 'source':
                 let txt = document.querySelector("[rid=designText]");
-                if(txt) sSource = txt.value;
+                if (txt) sSource = txt.value;
                 break;
         }
-        if(!sSource) sSource = designHtml;
+        if (!sSource) sSource = designHtml;
         else designHtml = sSource;
         return sSource;
     }
 
-    function getDesignField(){
+    function getDesignField() {
         let field = "";
         let cls = 'full-block' + (caller.pickerEnabled() ? " hidden" : "");
-        switch(designStyle){
+        switch (designStyle) {
             case 'edit':
             case 'preview':
                 /// src : '/blank.html'
-                field = m("iframe", {src: 'about:blank', rid: 'designFrame', class : cls });
+                field = m("iframe", { src: 'about:blank', rid: 'designFrame', class: cls });
                 break;
             case 'code':
             case 'source':
-                field = m("textarea", {rid: 'designText', class : cls});
+                field = m("textarea", { rid: 'designText', class: cls });
                 break;
         }
         return field;
     }
 
-    function getDesigner(attrs){
-        if(attrs && attrs.entity){
+    function getDesigner(attrs) {
+        if (attrs && attrs.entity) {
             let mt = attrs.entity.contentType;
-            if(mt){
-                if(mt.match(/^text\//)){
-                    if(designStyle == 'code') designStyle = 'edit';
+            if (mt) {
+                if (mt.match(/^text\//)) {
+                    if (designStyle == 'code') designStyle = 'edit';
                     return getRichTextDesigner();
                 }
-                if(mt.match(/(css|javascript)$/)){
+                if (mt.match(/(css|javascript)$/)) {
                     designStyle = 'code';
                     return getCodeDesigner();
                 }
@@ -402,63 +324,63 @@
         }
         return "";
     }
-    function getCodeDesigner(){
+    function getCodeDesigner() {
         return [
-             m("div", {class: "results-overflow"}, getDesignField())
+            m("div", { class: "results-overflow" }, getDesignField())
         ];
     }
-    function getRichTextDesigner(){
+    function getRichTextDesigner() {
         return [
-            m("div", {class: "result-nav-outer" + (caller.pickerEnabled() ? " hidden" : "")}, [
-                m("div" ,{class : "result-nav-inner"}, [
-                    m("div", {class: "result-nav"}, [
-                        page.iconButton("button" + (designStyle == 'source' ? ' active' : ''),"code", "", function(){ toggleStyle('source');}),
-                        page.iconButton("button" + (designStyle == 'edit' ? ' active' : ''),"design_services", "", function(){ toggleStyle('edit');}),
-                        page.iconButton("button" + (designStyle == 'preview' ? ' active' : ''),"preview", "", function(){ toggleStyle('preview');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_italic", "", function(e){defAct(e, 'Italic');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_bold", "", function(e){defAct(e, 'Bold');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_underlined", "", function(e){defAct(e, 'Underline');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_align_left", "", function(e){defAct(e, 'JustifyLeft');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_align_center", "", function(e){defAct(e, 'JustifyCenter');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_align_justify", "", function(e){defAct(e, 'JustifyFull');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_align_right", "", function(e){defAct(e, 'JustifyRight');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_list_bulleted", "", function(e){defAct(e, 'InsertOrderedList');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_list_numbered", "", function(e){defAct(e, 'InsertUnorderedList');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_indent_increase", "", function(e){defAct(e, 'Indent');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"format_indent_decrease", "", function(e){defAct(e, 'Outdent');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"horizontal_rule", "", function(e){defAct(e, 'InsertHorizontalRule');}),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : (pickData ? ' focus'  :'')),(pickData ? "content_paste_go" : "image"), "", pickImage),
-                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''),"link", "", defAct)
+            m("div", { class: "result-nav-outer" + (caller.pickerEnabled() ? " hidden" : "") }, [
+                m("div", { class: "result-nav-inner" }, [
+                    m("div", { class: "result-nav" }, [
+                        page.iconButton("button" + (designStyle == 'source' ? ' active' : ''), "code", "", function () { toggleStyle('source'); }),
+                        page.iconButton("button" + (designStyle == 'edit' ? ' active' : ''), "design_services", "", function () { toggleStyle('edit'); }),
+                        page.iconButton("button" + (designStyle == 'preview' ? ' active' : ''), "preview", "", function () { toggleStyle('preview'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_italic", "", function (e) { defAct(e, 'Italic'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_bold", "", function (e) { defAct(e, 'Bold'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_underlined", "", function (e) { defAct(e, 'Underline'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_left", "", function (e) { defAct(e, 'JustifyLeft'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_center", "", function (e) { defAct(e, 'JustifyCenter'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_justify", "", function (e) { defAct(e, 'JustifyFull'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_align_right", "", function (e) { defAct(e, 'JustifyRight'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_list_bulleted", "", function (e) { defAct(e, 'InsertOrderedList'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_list_numbered", "", function (e) { defAct(e, 'InsertUnorderedList'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_indent_increase", "", function (e) { defAct(e, 'Indent'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "format_indent_decrease", "", function (e) { defAct(e, 'Outdent'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "horizontal_rule", "", function (e) { defAct(e, 'InsertHorizontalRule'); }),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : (pickData ? ' focus' : '')), (pickData ? "content_paste_go" : "image"), "", pickImage),
+                        page.iconButton("button" + (designStyle != 'edit' ? ' inactive' : ''), "link", "", defAct)
                     ]),
-                    (designStyle != 'edit' ? '' : m("div", {class: "result-nav"}, [
-                        m("select", {class: "nav-select reactive-arrow"}, formatOptions.map((o)=>m("option", o))),
-                        m("select", {class: "nav-select reactive-arrow"}, fontOptions.map((o)=>m("option", o))),
-                        m("select", {class: "nav-select reactive-arrow"}, fontSizeOptions.map((o)=>m("option", o))),
-                        m("select", {class: "nav-select reactive-arrow"}, fontColorOptions.map((o)=>m("option", o))),
-                        m("select", {class: "nav-select reactive-arrow"}, fillColorOptions.map((o)=>m("option", o)))
+                    (designStyle != 'edit' ? '' : m("div", { class: "result-nav" }, [
+                        m("select", { class: "nav-select reactive-arrow" }, formatOptions.map((o) => m("option", o))),
+                        m("select", { class: "nav-select reactive-arrow" }, fontOptions.map((o) => m("option", o))),
+                        m("select", { class: "nav-select reactive-arrow" }, fontSizeOptions.map((o) => m("option", o))),
+                        m("select", { class: "nav-select reactive-arrow" }, fontColorOptions.map((o) => m("option", o))),
+                        m("select", { class: "nav-select reactive-arrow" }, fillColorOptions.map((o) => m("option", o)))
                     ]))
                 ])
-             ]),
-             m("div", {class: "results-overflow"}, getDesignField())
+            ]),
+            m("div", { class: "results-overflow" }, getDesignField())
         ];
     }
 
     designer.component = {
 
-        oninit : function(x){
-            if(x.attrs.caller){
+        oninit: function (x) {
+            if (x.attrs.caller) {
                 caller = x.attrs.caller;
                 caller.transitionHandler = transitionHandler;
             }
         },
-        oncreate : function (x) {
+        oncreate: function (x) {
             alignSource();
         },
-        onupdate : function(x){
-            if(!init) setupDesigner();
-            else if(toggled) alignSource();
+        onupdate: function (x) {
+            if (!init) setupDesigner();
+            else if (toggled) alignSource();
         },
-        onremove : function(x){
+        onremove: function (x) {
             init = false;
             caller = null;
             toggled = false;
