@@ -1,6 +1,5 @@
 {
     "clientPort": 8899,
-    "secret": "ABC123xyz",
     "directories" : [
         "/client/components",
         "/client/view",

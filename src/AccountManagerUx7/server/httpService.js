@@ -10,10 +10,6 @@
     const config = new Config();
     const bodyParser = require("body-parser");
 
-    const restricted = [
-        "rest"
-    ];
-    
     let app = express();
 
     app.use(compression({filter: function(req, res) {
@@ -42,8 +38,7 @@
                     });
                 });
             }
-    
-            // Execute
+
             Promise.resolve().then(
                 getConfig
             ).then(
