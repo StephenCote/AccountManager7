@@ -129,15 +129,19 @@
           });
         }
         else if (pages.listSystem && pages.resultType.match(/^(policy\.policy|auth\.role|auth\.permission)$/gi)) {
-          let uType = pages.resultType.substring(0, 1) + pages.resultType.slice(1);
+          let ttype =  pages.resultType.substring(pages.resultType.lastIndexOf(".") + 1,  pages.resultType.length);
+
+          let uType = ttype.substring(0, 1).toUpperCase() + ttype.slice(1);
           let fType = uType + "s";
           if (uType.match(/y$/)) fType = uType.slice(0, uType.length - 1) + "ies";
-          am7client["system" + fType](function (v) {
+          let v;
+          if((v = page.application["system" + fType])){
             let i = parseInt(pages.startRecord);
             let c = parseInt(pages.recordCount);
             let modList = v.slice(i, i + c);
             handleList(modList);
-          });
+          }
+
         }
         else if (pages.resultType.match(/^request$/)) {
           console.log("List Req");
@@ -208,13 +212,15 @@
           am7client.countMembers(pages.containerType, pages.containerId, type, handleCount);
         }
         else if (bSystem && type.match(/^(policy\.policy|auth\.role|auth\.permission)$/gi)) {
-          let uType = type.substring(0, 1) + type.slice(1);
+          let ttype = type.substring(type.lastIndexOf(".") + 1, type.length);
+          let uType = ttype.substring(0, 1).toUpperCase() + ttype.slice(1);
           let fType = uType + "s";
           if (uType.match(/y$/)) fType = uType.slice(0, uType.length - 1) + "ies";
-
-          am7client["system" + fType](function (v) {
-            handleCount(v.length);
-          });
+          console.log(fType);
+          if(page.application["system" + fType]){
+            console.log("Count", fType, page.application["system" + fType].length);
+            handleCount(page.application["system" + fType].length);
+          }
         }
         else if (type.match(/^request$/gi)) {
 
