@@ -1,4 +1,4 @@
-(function(){
+(function () {
     let forms = {
         access: {},
         auth: {},
@@ -13,157 +13,157 @@
     };
 
     forms.nameIdType = {
-        fields : ["name"]
+        fields: ["name"]
     };
     forms.attribute = {
-        label : "Attribute",
-        format : "table",
-        commands : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                altIcon : 'check',
-                altCondition : ['edit'],
-                function : 'newEntry',
-                altFunction : 'checkEntry'
+        label: "Attribute",
+        format: "table",
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                altIcon: 'check',
+                altCondition: ['edit'],
+                function: 'newEntry',
+                altFunction: 'checkEntry'
             },
-            edit : {
-                label : 'Edit',
-                icon : 'edit',
-                function : 'editEntry',
-                condition : ['select']
+            edit: {
+                label: 'Edit',
+                icon: 'edit',
+                function: 'editEntry',
+                condition: ['select']
             },
-            cancel : {
-                label : 'Cancel',
-                icon : 'cancel',
-                function : 'cancelEntry',
-                condition : ['select','edit']
+            cancel: {
+                label: 'Cancel',
+                icon: 'cancel',
+                function: 'cancelEntry',
+                condition: ['select', 'edit']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteEntry',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntry',
+                condition: ['select']
             }
 
         },
-        
-        fields : {
-            valueType : {
-                layout : "one"
+
+        fields: {
+            valueType: {
+                layout: "one"
             },
-            name : {
-                layout : "third"
+            name: {
+                layout: "third"
             },
-            value : {
-                layout : "third"
+            value: {
+                layout: "third"
             }
         }
     };
 
     forms.control = {
-        label : "Control",
-        requiredAttributes : [],
+        label: "Control",
+        requiredAttributes: [],
         format: "table",
-        commands : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                altIcon : 'check',
-                altCondition : ['edit'],
-                function : 'newEntry',
-                altFunction : 'checkEntry'
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                altIcon: 'check',
+                altCondition: ['edit'],
+                function: 'newEntry',
+                altFunction: 'checkEntry'
             },
-            edit : {
-                label : 'Edit',
-                icon : 'edit',
-                function : 'editEntry',
-                condition : ['select']
+            edit: {
+                label: 'Edit',
+                icon: 'edit',
+                function: 'editEntry',
+                condition: ['select']
             },
-            cancel : {
-                label : 'Cancel',
-                icon : 'cancel',
-                function : 'cancelEntry',
-                condition : ['select','edit']
+            cancel: {
+                label: 'Cancel',
+                icon: 'cancel',
+                function: 'cancelEntry',
+                condition: ['select', 'edit']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteEntry',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntry',
+                condition: ['select']
             }
 
         },
-        
-        fields : {
-            controlType : {
-                layout : "third"
+
+        fields: {
+            controlType: {
+                layout: "third"
             },
-            controlId : {
-                layout : "third"
+            controlId: {
+                layout: "third"
             },
-            action : {
-                layout : "third"
+            action: {
+                layout: "third"
             }
         }
     };
     forms.controls = {
-        label : "Controls",
+        label: "Controls",
         format: "table",
-        fields : {
-            controls : {
-                layout : 'half',
-                form : forms.control
+        fields: {
+            controls: {
+                layout: 'half',
+                form: forms.control
             }
         }
     };
 
 
     forms.requestList = {
-        label : "Request",
-        requiredAttributes : ["objectId"],
-        commands : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                altIcon : 'check',
-                altCondition : ['edit'],
-                function : 'newEntry',
-                altFunction : 'checkEntry'
+        label: "Request",
+        requiredAttributes: ["objectId"],
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                altIcon: 'check',
+                altCondition: ['edit'],
+                function: 'newEntry',
+                altFunction: 'checkEntry'
             },
-            edit : {
-                label : 'Edit',
-                icon : 'edit',
-                function : 'editEntry',
-                condition : ['select']
+            edit: {
+                label: 'Edit',
+                icon: 'edit',
+                function: 'editEntry',
+                condition: ['select']
             },
-            cancel : {
-                label : 'Cancel',
-                icon : 'cancel',
-                function : 'cancelEntry',
-                condition : ['select','edit']
+            cancel: {
+                label: 'Cancel',
+                icon: 'cancel',
+                function: 'cancelEntry',
+                condition: ['select', 'edit']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteEntry',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntry',
+                condition: ['select']
             }
 
         },
-        
-        fields : {
-            approvalStatus : {
-                layout : "one"
+
+        fields: {
+            approvalStatus: {
+                layout: "one"
             },
-            entitlementType : {
-                layout : "one"
+            entitlementType: {
+                layout: "one"
             },
-            entitlementrel : {
-                layout : "third"
+            entitlementrel: {
+                layout: "third"
             },
-            requestorrel : {
-                layout : "third"
+            requestorrel: {
+                layout: "third"
             }
             /*
             ,
@@ -174,30 +174,30 @@
         }
     };
     forms.requestsList = {
-        label : "Requests",
-        fields : {
-            requests : {
-                layout : 'half',
-                form : forms.requestList
+        label: "Requests",
+        fields: {
+            requests: {
+                layout: 'half',
+                form: forms.requestList
             }
         }
     };
 
 
     forms.request = {
-        label : "Requests",
-        fields : {
-            approvalStatus : {
-                layout : "one"
+        label: "Requests",
+        fields: {
+            approvalStatus: {
+                layout: "one"
             },
-            entitlementType : {
-                layout : "one"
+            entitlementType: {
+                layout: "one"
             },
-            entitlementrel : {
-                layout : "third"
+            entitlementrel: {
+                layout: "third"
             },
-            requestorrel : {
-                layout : "third"
+            requestorrel: {
+                layout: "third"
             }
         },
         forms: ["dateinfo", "attributes"]
@@ -206,110 +206,110 @@
 
 
     forms.attributes = {
-        label : "Attributes",
+        label: "Attributes",
         format: "table",
         /*requiredAttributes : ["objectId"],*/
-        fields : {
-            attributes : {
-                layout : 'full',
-                form : forms.attribute
+        fields: {
+            attributes: {
+                layout: 'full',
+                form: forms.attribute
             }
         }
     };
     forms.ctlattributes = {
-        label : "Controls and Attributes",
+        label: "Controls and Attributes",
         /*requiredAttributes : ["objectId"],*/
-        fields : {
-            attributes : {
-                layout : 'half',
-                form : forms.attribute
+        fields: {
+            attributes: {
+                layout: 'half',
+                form: forms.attribute
             },
-            controls:{
+            controls: {
                 /*requiredAttributes : ["objectId"],*/
-                layout : "half",
-                form : forms.control
+                layout: "half",
+                form: forms.control
             }
         }
     };
     forms.reqattributes = {
-        label : "Requests and Attributes",
+        label: "Requests and Attributes",
         /*requiredAttributes : ["objectId"],*/
-        fields : {
-            attributes : {
-                layout : 'half',
-                form : forms.attribute
+        fields: {
+            attributes: {
+                layout: 'half',
+                form: forms.attribute
             },
-            requestsList:{
-                requiredAttributes : ["objectId"],
-                layout : "half",
-                form : forms.requestList
+            requestsList: {
+                requiredAttributes: ["objectId"],
+                layout: "half",
+                form: forms.requestList
             }
         }
     };
 
- 
+
 
     forms.elementValues = {
-        label : "Select Option",
-        requiredAttributes : ["elementType"],
-        requiredValues : ["SELECT|MULTIPLE_SELECT"],
+        label: "Select Option",
+        requiredAttributes: ["elementType"],
+        requiredValues: ["SELECT|MULTIPLE_SELECT"],
         referField: true,
-        commands : {
-            new : {
-                icon : 'add',
-                altIcon : 'check',
-                altCondition : ['edit'],
-                function : 'newEntry',
-                altFunction : 'checkEntry'
+        commands: {
+            new: {
+                icon: 'add',
+                altIcon: 'check',
+                altCondition: ['edit'],
+                function: 'newEntry',
+                altFunction: 'checkEntry'
             },
-            edit : {
-                label : 'Edit',
-                icon : 'edit',
-                function : 'editEntry',
-                condition : ['select']
+            edit: {
+                label: 'Edit',
+                icon: 'edit',
+                function: 'editEntry',
+                condition: ['select']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteEntry',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntry',
+                condition: ['select']
             }
 
         },
-        
-        fields : {
-            name : {
-                layout : "third"
+
+        fields: {
+            name: {
+                layout: "third"
             },
-            textValue : {
-                layout : "third"
+            textValue: {
+                layout: "third"
             }
         }
     };
 
     forms.dateinfo = {
-        label : "Info",
-        fields : {
-            uri : {
-                layout : "full"
+        label: "Info",
+        fields: {
+            uri: {
+                layout: "full"
             },
-            urn : {
-                layout : "third"
+            urn: {
+                layout: "third"
             },
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            organizationPath : {
-                layout : "third"
+            organizationPath: {
+                layout: "third"
             },
-            createdDate : {
-                layout : "third"
+            createdDate: {
+                layout: "third"
             },
-            modifiedDate : {
-                layout : "third"
+            modifiedDate: {
+                layout: "third"
             },
-            expiryDate : {
-                layout : "third"
+            expiryDate: {
+                layout: "third"
             }
         }
     };
@@ -353,20 +353,20 @@
             expires: {
                 layout: "one"
             },
-            uri : {
-                layout : "half"
+            uri: {
+                layout: "half"
             },
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            createdDate : {
-                layout : "third"
+            createdDate: {
+                layout: "third"
             },
-            modifiedDate : {
-                layout : "third"
+            modifiedDate: {
+                layout: "third"
             },
-            expiryDate : {
-                layout : "third"
+            expiryDate: {
+                layout: "third"
             },
             transportType: {
                 layout: "one"
@@ -383,11 +383,11 @@
         }
     };
     forms.message = {
-        label : "Message",
-        fields : {
+        label: "Message",
+        fields: {
 
             name: {
-                layout : "half"
+                layout: "half"
             },
             valueType: {
                 layout: "half"
@@ -405,133 +405,133 @@
                 layout: "full"
             }
         },
-        forms : ["messageMeta"]
+        forms: ["messageMeta"]
     };
 
 
     forms.groupdateinfo = {
-        label : "Info",
-        fields : {
-            uri : {
-                layout : "full"
+        label: "Info",
+        fields: {
+            uri: {
+                layout: "full"
             },
-            urn : {
-                layout : "third"
+            urn: {
+                layout: "third"
             },
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            organizationPath : {
-                layout : "third"
+            organizationPath: {
+                layout: "third"
             },
-            createdDate : {
-                layout : "third"
+            createdDate: {
+                layout: "third"
             },
-            modifiedDate : {
-                layout : "third"
+            modifiedDate: {
+                layout: "third"
             },
-            expiryDate : {
-                layout : "third"
+            expiryDate: {
+                layout: "third"
             },
-            groupPath : {
-                layout : "half"
+            groupPath: {
+                layout: "half"
             }
         }
     };
     forms.groupinfo = {
-        label : "Info",
-        requiredAttributes : ["objectId"],
-        fields : {
-            uri : {
-                layout : "full"
+        label: "Info",
+        requiredAttributes: ["objectId"],
+        fields: {
+            uri: {
+                layout: "full"
             },
-            urn : {
-                layout : "third"
+            urn: {
+                layout: "third"
             },
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            organizationPath : {
-                layout : "third"
+            organizationPath: {
+                layout: "third"
             },
-            groupPath : {
-                layout : "half"
+            groupPath: {
+                layout: "half"
             }
         }
     }
     forms.lightgroupinfo = {
-        label : "Info",
-        requiredAttributes : ["objectId"],
-        fields : {
-            uri : {
-                layout : "full"
+        label: "Info",
+        requiredAttributes: ["objectId"],
+        fields: {
+            uri: {
+                layout: "full"
             },
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            organizationPath : {
-                layout : "third"
+            organizationPath: {
+                layout: "third"
             },
-            groupPath : {
-                layout : "third"
+            groupPath: {
+                layout: "third"
             }
         }
     }
     forms.parentinfo = {
-        label : "Info",
-        fields : {
-            uri : {
-                layout : "full"
+        label: "Info",
+        fields: {
+            uri: {
+                layout: "full"
             },
-            urn : {
-                layout : "third"
+            urn: {
+                layout: "third"
             },
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            organizationPath : {
-                layout : "third"
+            organizationPath: {
+                layout: "third"
             },
-            path : {
-                layout : "half"
+            path: {
+                layout: "half"
             }
         }
     }
     forms.grouptypeinfo = {
-        label : "Info",
-        fields : {
-            uri : {
-                layout : "full"
+        label: "Info",
+        fields: {
+            uri: {
+                layout: "full"
             },
             /*
             urn : {
                 layout : "third"
             },
             */
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            organizationPath : {
-                layout : "third"
+            organizationPath: {
+                layout: "third"
             },
-            groupPath : {
-                layout : "third"
+            groupPath: {
+                layout: "third"
             }
         }
     }
 
     am7model.models.push(
         {
-            name : "executeExt",
+            name: "executeExt",
             fields: [
                 {
                     name: "execute",
-                    label : 'Execute',
-                    virtual : true,
+                    label: 'Execute',
+                    virtual: true,
                     ephemeral: true,
-                    type : 'form',
-                    function : 'objectExecute',
-                    format : 'form'
+                    type: 'form',
+                    function: 'objectExecute',
+                    format: 'form'
                 }
             ]
         }
@@ -540,43 +540,43 @@
 
     /// TEMPORARY: Move this directly to the form config setting to override the model, versus modifying the model definition
     ///
-    am7model.enums.mimeTypeEnumType = ["application/binhex","application/book","application/cdf","application/clariscad","application/commonground","application/drafting","application/envoy","application/excel","application/fractals","application/freeloader","application/futuresplash","application/groupwise","application/hlp","application/hta","application/i-deas","application/inf","application/json","application/lha","application/marc","application/mbedlet","application/mcad","application/mime","application/mspowerpoint","application/msword","application/mswrite","application/netmc","application/octet-stream","application/oda","application/pdf","application/pkix-cert","application/pkix-crl","application/postscript","application/ringing-tones","application/sdp","application/sea","application/set","application/sla","application/smil","application/solids","application/sounder","application/step","application/streamingmedia","application/toolbook","application/vda","application/vocaltec-media-desc","application/vocaltec-media-file","application/wordperfect","application/x-aim","application/x-authorware-bin","application/x-authorware-map","application/x-authorware-seg","application/x-bcpio","application/x-bsh","application/x-bzip","application/x-cdlink","application/x-chat","application/x-cocoa","application/x-compressed","application/x-conference","application/x-cpio","application/x-cpt","application/x-deepv","application/x-director","application/x-dvi","application/x-elc","application/x-envoy","application/x-esrehber","application/x-excel","application/x-freelance","application/x-gsp","application/x-gss","application/x-gtar","application/x-gzip","application/x-hdf","application/x-helpfile","application/x-httpd-imap","application/x-ima","application/x-inventor","application/x-java-class","application/x-java-commerce","application/x-javascript","application/x-koan","application/x-ksh","application/x-latex","application/x-livescreen","application/x-lotus","application/x-mif","application/x-mix-transfer","application/x-msexcel","application/x-navi-animation","application/x-navidoc","application/x-navimap","application/x-netcdf","application/x-newton-compatible-pkg","application/x-omc","application/x-omcdatamaker","application/x-omcregerator","application/x-pagemaker","application/x-pcl","application/x-pixclscript","application/x-project","application/x-qpro","application/x-seelogo","application/x-shockwave-flash","application/x-sprite","application/x-stuffit","application/x-tar","application/x-tbook","application/x-tcl","application/x-tex","application/x-texinfo","application/x-troff","application/x-troff-man","application/x-troff-me","application/x-troff-ms","application/x-ustar","application/x-visio","application/x-wais-source","application/x-wintalk","application/x-world","audio/aiff","audio/basic","audio/it","audio/make","audio/mid","audio/midi","audio/mod","audio/mpeg","audio/nspaudio","audio/tsp-audio","audio/tsplayer","audio/voc","audio/voxware","audio/wav","audio/weba","audio/x-au","audio/x-gsm","audio/x-jam","audio/x-liveaudio","audio/x-mpequrl","audio/x-pn-realaudio","audio/x-pn-realaudio-plugin","audio/x-psid","audio/x-realaudio","audio/x-twinvq","audio/x-twinvq-plugin","audio/xm","chemical/x-pdb","i-world/i-vrml","image/bmp","image/cmu-raster","image/fif","image/florian","image/gif","image/ief","image/jpeg","image/jutvision","image/naplps","image/pict","image/png","image/tiff","image/x-dwg","image/x-icon","image/x-jg","image/x-jps","image/x-niff","image/x-pcx","image/x-pict","image/x-portable-anymap","image/x-portable-bitmap","image/x-portable-graymap","image/x-portable-pixmap","image/x-quicktime","image/x-rgb","image/x-xpixmap","image/x-xwindowdump","image/xbm","image/xpm","model/iges","model/vrml","model/x-pov","multipart/x-zip","music/x-karaoke","paleovu/x-pv","text/asp","text/css","text/csv","text/html","text/mcf","text/pascal","text/plain","text/richtext","text/scriplet","text/sgml","text/tab-separated-values","text/uri-list","text/webviewhtml","text/x-asm","text/x-audiosoft-intra","text/x-c","text/x-component","text/x-fortran","text/x-h","text/x-java-source","text/x-la-asf","text/x-m","text/x-pascal","text/x-script","text/x-server-parsed-html","text/x-setext","text/x-speech","text/x-uil","text/x-uuencode","text/x-vcalendar","text/xml","video/animaflex","video/avi","video/avs-video","video/fli","video/gl","video/mpeg","video/quicktime","video/vdo","video/vivo","video/webm","video/webp","video/x-amt-demorun","video/x-amt-showrun","video/x-dl","video/x-dv","video/x-flv","video/x-isvideo","video/x-motion-jpeg","video/x-ms-asf","video/x-ms-wmv","video/x-qtc","video/x-scm","video/x-sgi-movie","windows/metafile","www/mime","x-conference/x-cooltalk","x-world/x-vrt","xgl/drawing","xgl/movie"];
+    am7model.enums.mimeTypeEnumType = ["application/binhex", "application/book", "application/cdf", "application/clariscad", "application/commonground", "application/drafting", "application/envoy", "application/excel", "application/fractals", "application/freeloader", "application/futuresplash", "application/groupwise", "application/hlp", "application/hta", "application/i-deas", "application/inf", "application/json", "application/lha", "application/marc", "application/mbedlet", "application/mcad", "application/mime", "application/mspowerpoint", "application/msword", "application/mswrite", "application/netmc", "application/octet-stream", "application/oda", "application/pdf", "application/pkix-cert", "application/pkix-crl", "application/postscript", "application/ringing-tones", "application/sdp", "application/sea", "application/set", "application/sla", "application/smil", "application/solids", "application/sounder", "application/step", "application/streamingmedia", "application/toolbook", "application/vda", "application/vocaltec-media-desc", "application/vocaltec-media-file", "application/wordperfect", "application/x-aim", "application/x-authorware-bin", "application/x-authorware-map", "application/x-authorware-seg", "application/x-bcpio", "application/x-bsh", "application/x-bzip", "application/x-cdlink", "application/x-chat", "application/x-cocoa", "application/x-compressed", "application/x-conference", "application/x-cpio", "application/x-cpt", "application/x-deepv", "application/x-director", "application/x-dvi", "application/x-elc", "application/x-envoy", "application/x-esrehber", "application/x-excel", "application/x-freelance", "application/x-gsp", "application/x-gss", "application/x-gtar", "application/x-gzip", "application/x-hdf", "application/x-helpfile", "application/x-httpd-imap", "application/x-ima", "application/x-inventor", "application/x-java-class", "application/x-java-commerce", "application/x-javascript", "application/x-koan", "application/x-ksh", "application/x-latex", "application/x-livescreen", "application/x-lotus", "application/x-mif", "application/x-mix-transfer", "application/x-msexcel", "application/x-navi-animation", "application/x-navidoc", "application/x-navimap", "application/x-netcdf", "application/x-newton-compatible-pkg", "application/x-omc", "application/x-omcdatamaker", "application/x-omcregerator", "application/x-pagemaker", "application/x-pcl", "application/x-pixclscript", "application/x-project", "application/x-qpro", "application/x-seelogo", "application/x-shockwave-flash", "application/x-sprite", "application/x-stuffit", "application/x-tar", "application/x-tbook", "application/x-tcl", "application/x-tex", "application/x-texinfo", "application/x-troff", "application/x-troff-man", "application/x-troff-me", "application/x-troff-ms", "application/x-ustar", "application/x-visio", "application/x-wais-source", "application/x-wintalk", "application/x-world", "audio/aiff", "audio/basic", "audio/it", "audio/make", "audio/mid", "audio/midi", "audio/mod", "audio/mpeg", "audio/nspaudio", "audio/tsp-audio", "audio/tsplayer", "audio/voc", "audio/voxware", "audio/wav", "audio/weba", "audio/x-au", "audio/x-gsm", "audio/x-jam", "audio/x-liveaudio", "audio/x-mpequrl", "audio/x-pn-realaudio", "audio/x-pn-realaudio-plugin", "audio/x-psid", "audio/x-realaudio", "audio/x-twinvq", "audio/x-twinvq-plugin", "audio/xm", "chemical/x-pdb", "i-world/i-vrml", "image/bmp", "image/cmu-raster", "image/fif", "image/florian", "image/gif", "image/ief", "image/jpeg", "image/jutvision", "image/naplps", "image/pict", "image/png", "image/tiff", "image/x-dwg", "image/x-icon", "image/x-jg", "image/x-jps", "image/x-niff", "image/x-pcx", "image/x-pict", "image/x-portable-anymap", "image/x-portable-bitmap", "image/x-portable-graymap", "image/x-portable-pixmap", "image/x-quicktime", "image/x-rgb", "image/x-xpixmap", "image/x-xwindowdump", "image/xbm", "image/xpm", "model/iges", "model/vrml", "model/x-pov", "multipart/x-zip", "music/x-karaoke", "paleovu/x-pv", "text/asp", "text/css", "text/csv", "text/html", "text/mcf", "text/pascal", "text/plain", "text/richtext", "text/scriplet", "text/sgml", "text/tab-separated-values", "text/uri-list", "text/webviewhtml", "text/x-asm", "text/x-audiosoft-intra", "text/x-c", "text/x-component", "text/x-fortran", "text/x-h", "text/x-java-source", "text/x-la-asf", "text/x-m", "text/x-pascal", "text/x-script", "text/x-server-parsed-html", "text/x-setext", "text/x-speech", "text/x-uil", "text/x-uuencode", "text/x-vcalendar", "text/xml", "video/animaflex", "video/avi", "video/avs-video", "video/fli", "video/gl", "video/mpeg", "video/quicktime", "video/vdo", "video/vivo", "video/webm", "video/webp", "video/x-amt-demorun", "video/x-amt-showrun", "video/x-dl", "video/x-dv", "video/x-flv", "video/x-isvideo", "video/x-motion-jpeg", "video/x-ms-asf", "video/x-ms-wmv", "video/x-qtc", "video/x-scm", "video/x-sgi-movie", "windows/metafile", "www/mime", "x-conference/x-cooltalk", "x-world/x-vrt", "xgl/drawing", "xgl/movie"];
     //let nameId = am7model.getModel("common.nameId");
     //nameId
     let sysId = am7model.getModel("system.primaryKey");
     sysId.fields.push({
         name: "uri",
-        label : 'URI',
-        type : 'link',
-        virtual : true,
-        ephemeral: true,
-        format : 'object-link'
-    },
-    {
-        name: "model",
-        label: "Model",
-        type: "string",
+        label: 'URI',
+        type: 'link',
         virtual: true,
         ephemeral: true,
-        function : 'getModel'
-    }
+        format: 'object-link'
+    },
+        {
+            name: "model",
+            label: "Model",
+            type: "string",
+            virtual: true,
+            ephemeral: true,
+            function: 'getModel'
+        }
 
-);
+    );
 
-    
+
     let role = am7model.getModel("auth.role");
     role.fields.push({
         name: "members",
-        label : 'Members',
-        type : 'list',
+        label: 'Members',
+        type: 'list',
         baseType: "model",
         baseModel: "$flex",
         foreignType: "type",
-        virtual : true,
+        virtual: true,
         ephemeral: true,
-        format : 'table'
+        format: 'table'
     });
-    
+
     let dataM = am7model.getModel("data.data");
     dataM.inherits.push("executeExt");
     //dataM.query.push("groupPath");
@@ -592,23 +592,23 @@
     tagf.default = am7model.enums.modelNames[0];
     tagf.enum = am7model.enums.modelNames.sort();
     forms.data = {
-        label : "Data",
-        commands : {
-            fact : {
-                label : 'Fact',
-                icon : 'fact_check',
-                function : 'makeFact',
-                requiredAttribute : "objectId"
+        label: "Data",
+        commands: {
+            fact: {
+                label: 'Fact',
+                icon: 'fact_check',
+                function: 'makeFact',
+                requiredAttribute: "objectId"
             }
         },
         query: ["stream", "compressionType", "vaulted", "enciphered"],
-        fields : {
+        fields: {
             name: {
                 label: "Name",
-                layout : "half"
+                layout: "half"
             },
             contentType: {
-                layout : "half"
+                layout: "half"
             },
             /*
             compressionType: {
@@ -623,24 +623,24 @@
                 layout: "one"
             },
             */
-            description : {
-                layout : "full"
+            description: {
+                layout: "full"
             },
-            dataBytesStore : {
-                layout : "full",
+            dataBytesStore: {
+                layout: "full",
                 dragAndDrop: true,
                 format: "contentType"
             }
         },
         //["name", "description", "createdDate", "modifiedDate", "expiryDate", "mimeType", "dataBytesStore"],
-        forms : ["groupdateinfo","tags", "ctlattributes", "execute"]
+        forms: ["groupdateinfo", "tags", "ctlattributes", "execute"]
     };
 
     forms.control = {
-        label : "Control",
-        fields : {
+        label: "Control",
+        fields: {
             controlType: {
-                layout : "one"
+                layout: "one"
             },
             action: {
                 layout: "third"
@@ -648,429 +648,430 @@
             referenceType: {
                 layout: "one"
             },
-            referenceId : {
-                layout : "third"
+            referenceId: {
+                layout: "third"
             }
         },
         //["name", "description", "createdDate", "modifiedDate", "expiryDate", "mimeType", "dataBytesStore"],
-        forms : ["info"]
+        forms: ["info"]
     };
 
     forms.info = {
-        label : "Info",
-        fields : {
-            uri : {
-                layout : "full"
+        label: "Info",
+        fields: {
+            uri: {
+                layout: "full"
             },
-            urn : {
-                layout : "third"
+            urn: {
+                layout: "third"
             },
-            objectId : {
-                layout : "third"
+            objectId: {
+                layout: "third"
             },
-            organizationPath : {
-                layout : "third"
+            organizationPath: {
+                layout: "third"
             }
         }
     }
 
     forms.user = {
-        label : "User",
-        commands : {
-            fact : {
-                label : 'Fact',
-                icon : 'fact_check',
-                function : 'makeFact',
-                requiredAttribute : "objectId"
+        label: "User",
+        commands: {
+            fact: {
+                label: 'Fact',
+                icon: 'fact_check',
+                function: 'makeFact',
+                requiredAttribute: "objectId"
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "third"
+                layout: "third"
             },
             type: {
-                layout : "third"
+                layout: "third"
             },
             status: {
-                layout : "third"
+                layout: "third"
             }
         },
-        forms : ["info", "contactinfo","tags", "reqattributes"]
+        forms: ["info", "contactinfo", "tags", "reqattributes"]
     };
 
 
     forms.person = {
-        label : "Person",
-        commands : {
-            fact : {
-                label : 'Fact',
-                icon : 'fact_check',
-                function : 'makeFact',
-                requiredAttribute : "objectId"
+        label: "Person",
+        commands: {
+            fact: {
+                label: 'Fact',
+                icon: 'fact_check',
+                function: 'makeFact',
+                requiredAttribute: "objectId"
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             gender: {
-                layout : "one"
+                layout: "one"
             },
             birthDate: {
-                layout : "one"
+                layout: "one"
             },
-            description : {
-                layout : "full"
+            description: {
+                layout: "full"
             },
             title: {
-                layout : "third"
+                layout: "third"
             },
-            prefix : {
-                layout : "third"
+            prefix: {
+                layout: "third"
             },
-            suffix : {
-                layout : "third"
+            suffix: {
+                layout: "third"
             },
-            firstName : {
-                layout : "third"
+            firstName: {
+                layout: "third"
             },
-            middleName : {
-                layout : "third"
+            middleName: {
+                layout: "third"
             },
-            lastName : {
-                layout : "third"
+            lastName: {
+                layout: "third"
             }
         },
-        forms : ["contactinfo", "personrel","groupinfo", "attributes"]
+        forms: ["contactinfo", "personrel", "groupinfo", "attributes"]
     };
 
     forms.account = {
-        label : "Account",
-        commands : {
-            fact : {
-                label : 'Fact',
-                icon : 'fact_check',
-                function : 'makeFact',
-                requiredAttribute : "objectId"
+        label: "Account",
+        commands: {
+            fact: {
+                label: 'Fact',
+                icon: 'fact_check',
+                function: 'makeFact',
+                requiredAttribute: "objectId"
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "third"
+                layout: "third"
             },
             type: {
-                layout : "third"
+                layout: "third"
             },
             status: {
-                layout : "third"
+                layout: "third"
             }
         },
-        forms : ["contactinfo", "groupinfo","tags", "reqattributes"]
+        forms: ["contactinfo", "groupinfo", "tags", "reqattributes"]
     };
 
     forms.childlist = {
-        commands  : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                function : 'addChild',
-                properties : {
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addChild',
+                properties: {
                     picker: true
                 }
             },
-            view : {
-                label : 'View',
-                icon : 'file_open',
-                function : 'openEntity',
-                condition : ['select']
+            view: {
+                label: 'View',
+                icon: 'file_open',
+                function: 'openEntity',
+                condition: ['select']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteChild',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteChild',
+                condition: ['select']
             }
         },
-        fields : {
-            name : {
-                layout  : "full"
+        fields: {
+            name: {
+                layout: "full"
             }
         }
     }
 
     forms.entitylist2 = {
-        commands  : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                function : 'addEntity',
-                properties : {
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addEntity',
+                properties: {
                     picker: true
                 }
             },
-            view : {
-                label : 'View',
-                icon : 'file_open',
-                function : 'openEntity',
-                condition : ['select']
+            view: {
+                label: 'View',
+                icon: 'file_open',
+                function: 'openEntity',
+                condition: ['select']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteEntity',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntity',
+                condition: ['select']
             }
         },
-        fields : {
-            objectId : {
-                layout  : "full"
+        fields: {
+            objectId: {
+                layout: "full"
             }
         }
     }
 
     forms.entitylist = {
-        commands  : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                function : 'addEntity',
-                properties : {
+        format: "table",
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addEntity',
+                properties: {
                     picker: true
                 }
             },
-            view : {
-                label : 'View',
-                icon : 'file_open',
-                function : 'openEntity',
-                condition : ['select']
+            view: {
+                label: 'View',
+                icon: 'file_open',
+                function: 'openEntity',
+                condition: ['select']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteEntity',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntity',
+                condition: ['select']
             }
         },
-        fields : {
-            name : {
-                layout  : "full"
+        fields: {
+            name: {
+                layout: "full"
             }
         }
     }
 
     forms.memberlist = {
-        commands  : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                function : 'addMember',
-                properties : {
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addMember',
+                properties: {
                     picker: true
                 }
             },
-            view : {
-                label : 'View',
-                icon : 'file_open',
-                function : 'openEntity',
-                condition : ['select']
+            view: {
+                label: 'View',
+                icon: 'file_open',
+                function: 'openEntity',
+                condition: ['select']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteMember',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteMember',
+                condition: ['select']
             }
         },
-        fields : {
-            name : {
-                layout  : "full"
+        fields: {
+            name: {
+                layout: "full"
             }
         }
     }
 
     forms.memberlist2 = {
-        commands  : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                function : 'addMember',
-                properties : {
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addMember',
+                properties: {
                     picker: true
                 }
             },
-            view : {
-                label : 'View',
-                icon : 'file_open',
-                function : 'openEntity',
-                condition : ['select']
+            view: {
+                label: 'View',
+                icon: 'file_open',
+                function: 'openEntity',
+                condition: ['select']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteMember',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteMember',
+                condition: ['select']
             }
         },
-        fields : {
-            objectId : {
-                layout  : "full"
+        fields: {
+            objectId: {
+                layout: "full"
             }
         }
     }
-    
+
     forms.contactinfo = {
-        label : "Contact",
-        requiredAttributes : ["objectId"],
+        label: "Contact",
+        requiredAttributes: ["objectId"],
         model: true,
         property: "contactInformation",
-        fields : {
-            contactInformation : {
-                layout : "full",
+        fields: {
+            contactInformation: {
+                layout: "full",
                 form: forms.contactInformation
             }
         }
     }
-    
+
 
     forms.contactInformation = {
-        label : "Contact",
-        fields : {
-            contacts : {
-                layout : 'half',
+        label: "Contact",
+        fields: {
+            contacts: {
+                layout: 'half',
                 format: "table",
-                form : forms.entitylist
+                form: forms.entitylist
             },
-            addresses : {
-                layout : 'half',
+            addresses: {
+                layout: 'half',
                 format: "table",
-                form : forms.entitylist
+                form: forms.entitylist
             }
         }
     };
 
     forms.address = {
-        label : "Address",
-        fields : {
-            name : {
-                layout : 'two-thirds',
+        label: "Address",
+        fields: {
+            name: {
+                layout: 'two-thirds',
             },
-            locationType  : {
-                layout : 'one'
+            locationType: {
+                layout: 'one'
             },
-            preferred : {
-                layout : 'one'
+            preferred: {
+                layout: 'one'
             },
             street: {
-                layout : 'full'
+                layout: 'full'
             },
             street2: {
-                layout : 'full'
+                layout: 'full'
             },
             city: {
                 layout: 'third'
             },
-            state : {
+            state: {
                 layout: 'third'
             },
-            postalCode : {
+            postalCode: {
                 layout: 'third'
             },
-            country : {
-                layout : 'third'
+            country: {
+                layout: 'third'
             }
 
 
 
         },
-        forms : ["groupinfo", "attributes"]
+        forms: ["groupinfo", "attributes"]
     };
 
     forms.contact = {
-        label : "Contact",
-        fields : {
-            name : {
-                layout : 'third'
+        label: "Contact",
+        fields: {
+            name: {
+                layout: 'third'
             },
-            contactType : {
-                layout : 'third'
+            contactType: {
+                layout: 'third'
             },
-            locationType  : {
-                layout : 'third'
+            locationType: {
+                layout: 'third'
             },
-            preferred : {
-                layout : 'one'
+            preferred: {
+                layout: 'one'
             },
-            contactValue  : {
-                layout : 'fifth'
+            contactValue: {
+                layout: 'fifth'
             },
-            description : {
-                layout : 'full'
+            description: {
+                layout: 'full'
             }
         },
-        forms : ["groupinfo", "attributes"]
+        forms: ["groupinfo", "attributes"]
     };
 
     forms.personrel = {
-        label : "Relations",
-        fields : {
-            partners : {
-                layout : "third",
+        label: "Relations",
+        fields: {
+            partners: {
+                layout: "third",
                 form: forms.entitylist
             },
-            dependents : {
-                layout : "third",
+            dependents: {
+                layout: "third",
                 form: forms.entitylist
             },
-            accounts : {
-                layout : "third",
+            accounts: {
+                layout: "third",
                 form: forms.entitylist
             }
         }
     };
     forms.role = {
-        label : "Role",
-        commands : {
-            fact : {
-                label : 'Fact',
-                icon : 'fact_check',
-                function : 'makeFact',
-                requiredAttribute : "objectId"
+        label: "Role",
+        commands: {
+            fact: {
+                label: 'Fact',
+                icon: 'fact_check',
+                function: 'makeFact',
+                requiredAttribute: "objectId"
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             type: {
-                layout : "half"
+                layout: "half"
             }
         },
-        forms : ["parentinfo","rolemembers", "attributes"]
+        forms: ["parentinfo", "rolemembers", "attributes"]
     };
 
     forms.permission = {
-        label : "Permission",
-        commands : {
-            fact : {
-                label : 'Fact',
-                icon : 'fact_check',
-                function : 'makeFact',
-                requiredAttribute : "objectId"
+        label: "Permission",
+        commands: {
+            fact: {
+                label: 'Fact',
+                icon: 'fact_check',
+                function: 'makeFact',
+                requiredAttribute: "objectId"
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             type: {
-                layout : "half"
+                layout: "half"
             }
         },
-        forms : ["parentinfo", "attributes"]
+        forms: ["parentinfo", "attributes"]
     };
 
     forms.event = {
-        label : "Event",
+        label: "Event",
         fields: {
             name: {
                 layout: "third"
@@ -1109,44 +1110,44 @@
         forms: ["eventpart", "eventobj", "grouptypeinfo", "attributes"]
     };
     forms.eventpart = {
-        label : "Participants",
-        requiredAttributes : ["objectId"],
-        fields : {
+        label: "Participants",
+        requiredAttributes: ["objectId"],
+        fields: {
             actors: {
-                layout : "one",
+                layout: "one",
                 form: forms.entitylist
             },
             orchestrators: {
-                layout : "one",
+                layout: "one",
                 form: forms.entitylist
             },
             influencers: {
-                layout : "one",
+                layout: "one",
                 form: forms.entitylist
             },
             observers: {
-                layout : "one",
+                layout: "one",
                 form: forms.entitylist
             }
-            
+
         }
     };
     forms.eventobj = {
-        label : "Objects",
-        requiredAttributes : ["objectId"],
-        fields : {
+        label: "Objects",
+        requiredAttributes: ["objectId"],
+        fields: {
             things: {
-                layout : "half",
+                layout: "half",
                 form: forms.entitylist
             },
             groups: {
-                layout : "half",
+                layout: "half",
                 form: forms.entitylist
             }
         }
     };
     forms.location = {
-        label : "Location",
+        label: "Location",
         fields: {
             name: {
                 layout: "half"
@@ -1192,7 +1193,7 @@
     });
 
     forms.note = {
-        label : "Note",
+        label: "Note",
         fields: {
             name: {
                 layout: "half"
@@ -1200,10 +1201,10 @@
             parent: {
                 layout: "half"
             },
-            createdDate:{
+            createdDate: {
                 layout: "half"
             },
-            modifiedDate:{
+            modifiedDate: {
                 layout: "half"
             },
 
@@ -1215,13 +1216,13 @@
         forms: ["grouptypeinfo", "attributes"]
     };
     forms.trait = {
-        label : "Trait",
-        fields : {
+        label: "Trait",
+        fields: {
             name: {
-                layout : "third"
+                layout: "third"
             },
             traitType: {
-                layout : "third"
+                layout: "third"
             },
             alignmentType: {
                 layout: "third"
@@ -1230,79 +1231,79 @@
                 layout: "full"
             }
         },
-        forms : ["grouptypeinfo", "attributes"]
+        forms: ["grouptypeinfo", "attributes"]
     };
 
     forms.tag = {
-        label : "Tag",
+        label: "Tag",
         format: "table",
-        commands : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                function : 'addMember',
-                properties : {
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addMember',
+                properties: {
                     picker: true
                 }
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteMember',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteMember',
+                condition: ['select']
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             type: {
-                layout : "half"
+                layout: "half"
             }
         },
-        forms : ["grouptypeinfo", "attributes"]
+        forms: ["grouptypeinfo", "attributes"]
     };
     forms.locationrel = {
-        label : "Relation",
-        requiredAttributes : ["objectId"],
-        fields : {
+        label: "Relation",
+        requiredAttributes: ["objectId"],
+        fields: {
             childLocations: {
-                layout : "third",
+                layout: "third",
                 form: forms.childlist
             },
             borders: {
-                layout : "third",
+                layout: "third",
                 form: forms.entitylist
             },
             boundaries: {
-                layout : "third",
+                layout: "third",
                 form: forms.entitylist
             }
         }
     };
     forms.notechildren = {
-        label : "Children",
-        requiredAttributes : ["objectId"],
-        fields : {
+        label: "Children",
+        requiredAttributes: ["objectId"],
+        fields: {
             childNotes: {
-                layout : "full",
+                layout: "full",
                 form: forms.childlist
             }
         }
     };
     forms.eventObject = {
-        label : "Events",
-        commands : {
-            view : {
-                label : 'View',
-                icon : 'file_open',
-                function : 'openEntity',
-                condition : ['select']
+        label: "Events",
+        commands: {
+            view: {
+                label: 'View',
+                icon: 'file_open',
+                function: 'openEntity',
+                condition: ['select']
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             model: {
                 layout: "half"
@@ -1310,27 +1311,27 @@
         }
     };
     forms.rolemember = {
-        label : "Member",
-        commands : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                function : 'addMember',
-                properties : {
+        label: "Member",
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                function: 'addMember',
+                properties: {
                     picker: true,
                     typeAttribute: 'type'
                 }
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteMember',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteMember',
+                condition: ['select']
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             model: {
                 layout: "half"
@@ -1344,12 +1345,12 @@
     };
 
     forms.rolemembers = {
-        label : "Members",
-        requiredAttributes : ["objectId"],
-        fields : {
-            members : {
-                layout : 'half',
-                form : forms.rolemember
+        label: "Members",
+        requiredAttributes: ["objectId"],
+        fields: {
+            members: {
+                layout: 'half',
+                form: forms.rolemember
                 /*
                 field : {
                     label : 'Members',
@@ -1371,12 +1372,12 @@
     };
 
     forms.eventtags = {
-        label : "Events and Tags",
-        requiredAttributes : ["objectId"],
-        fields : {
-            tags : {
-                layout : 'one',
-                form : forms.tag
+        label: "Events and Tags",
+        requiredAttributes: ["objectId"],
+        fields: {
+            tags: {
+                layout: 'one',
+                form: forms.tag
             },
             /*
             events : {
@@ -1384,118 +1385,118 @@
                 form : forms.eventObject
             },
             */
-            actors : {
-                layout : 'one',
-                form : forms.eventObject
+            actors: {
+                layout: 'one',
+                form: forms.eventObject
             },
-            orchestrators : {
-                layout : 'one',
-                form : forms.eventObject
+            orchestrators: {
+                layout: 'one',
+                form: forms.eventObject
             },
-            influencers : {
-                layout : 'one',
-                form : forms.eventObject
+            influencers: {
+                layout: 'one',
+                form: forms.eventObject
             },
-            observers : {
-                layout : 'one',
-                form : forms.eventObject
+            observers: {
+                layout: 'one',
+                form: forms.eventObject
             }
         }
     };
 
     forms.tags = {
-        label : "Tags",
-        requiredAttributes : [],
+        label: "Tags",
+        requiredAttributes: [],
         format: "table",
-        fields : {
-            tags : {
-                layout : 'full',
-                form : forms.tag
+        fields: {
+            tags: {
+                layout: 'full',
+                form: forms.tag
             }
         }
     };
 
     forms.group = {
-        label : "Group",
-        commands : {
-            fact : {
-                label : 'Fact',
-                icon : 'fact_check',
-                function : 'makeFact',
-                requiredAttribute : "objectId"
+        label: "Group",
+        commands: {
+            fact: {
+                label: 'Fact',
+                icon: 'fact_check',
+                function: 'makeFact',
+                requiredAttribute: "objectId"
             }
         },
-        fields : {
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
-            type : {
-                layout : "half"
+            type: {
+                layout: "half"
             }
         },
         //["name", "description", "createdDate", "modifiedDate", "expiryDate", "mimeType", "dataBytesStore"],
-        forms : ["parentinfo", "tags", "ctlattributes"]
+        forms: ["parentinfo", "tags", "ctlattributes"]
     };
 
     forms.form = {
-        label : "Form",
-        fields : {
+        label: "Form",
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             description: {
                 layout: "half"
             },
-            isTemplate : {
-                layout : "one"
+            isTemplate: {
+                layout: "one"
             },
-            isGrid : {
-                layout : "one",
-                requiredAttributes : ["isTemplate"],
-                referField : true
+            isGrid: {
+                layout: "one",
+                requiredAttributes: ["isTemplate"],
+                referField: true
             },
             viewTemplate: {
-                layout : "third",
-                requiredAttributes : ["!isTemplate"],
-                referField : true
+                layout: "third",
+                requiredAttributes: ["!isTemplate"],
+                referField: true
             },
             template: {
-                layout : "third",
-                requiredAttributes : ["!isTemplate"],
-                referField : true
+                layout: "third",
+                requiredAttributes: ["!isTemplate"],
+                referField: true
             },
             childForms: {
-                layout : "half",
+                layout: "half",
                 form: forms.entitylist
             },
             elements: {
-                layout : "half",
+                layout: "half",
                 form: forms.entitylist
             }
         },
-        forms : ["grouptypeinfo", "attributes"]
+        forms: ["grouptypeinfo", "attributes"]
     };
 
     forms.formelement = {
-        label : "Form Element",
-        fields : {
+        label: "Form Element",
+        fields: {
             name: {
-                layout : "half"
+                layout: "half"
             },
             description: {
-                layout : "half"
+                layout: "half"
             },
             elementName: {
                 layout: "third"
             },
-            elementLabel : {
-                layout : "third"
+            elementLabel: {
+                layout: "third"
             },
-            elementType : {
-                layout : "third"
+            elementType: {
+                layout: "third"
             },
             viewTemplate: {
-                layout : "half"
+                layout: "half"
             },
             validationRule: {
                 layout: "half"
@@ -1503,25 +1504,25 @@
             elementValues: {
                 layout: "full",
                 form: forms.elementValues,
-                requiredAttributes : ["elementType"],
-                requiredValues : ["SELECT|MULTIPLE_SELECT"],
+                requiredAttributes: ["elementType"],
+                requiredValues: ["SELECT|MULTIPLE_SELECT"],
                 referField: true
-            }             
+            }
         },
-        forms : ["grouptypeinfo", "attributes"]
+        forms: ["grouptypeinfo", "attributes"]
     };
 
     forms.validationRule = {
-        label : "Validation Rule",
-        fields : {
+        label: "Validation Rule",
+        fields: {
             name: {
-                layout : "third"
+                layout: "third"
             },
             validationType: {
-                layout : "third"
+                layout: "third"
             },
             description: {
-                layout : "third"
+                layout: "third"
             },
             isRuleSet: {
                 layout: "third"
@@ -1529,44 +1530,44 @@
             allowNull: {
                 layout: "third"
             },
-            comparison : {
-                layout : "third",
-                requiredAttributes : ["validationType"],
-                referField : true,
-                requiredValues : ["BOOLEAN"],
+            comparison: {
+                layout: "third",
+                requiredAttributes: ["validationType"],
+                referField: true,
+                requiredValues: ["BOOLEAN"],
             },
-            expression : {
-                layout : "third"
+            expression: {
+                layout: "third"
             },
-            replacementValue : {
-                layout : "third",
-                requiredAttributes : ["validationType"],
-                referField : true,
-                requiredValues : ["REPLACEMENT"],
+            replacementValue: {
+                layout: "third",
+                requiredAttributes: ["validationType"],
+                referField: true,
+                requiredValues: ["REPLACEMENT"],
             },
-            errorMessage : {
-                layout : "third"
+            errorMessage: {
+                layout: "third"
             },
             rules: {
-                layout : "full",
+                layout: "full",
                 form: forms.entitylist,
-                requiredAttributes : ["isRuleSet"],
-                referField : true
+                requiredAttributes: ["isRuleSet"],
+                referField: true
             }
         },
-        forms : ["grouptypeinfo", "attributes"]
+        forms: ["grouptypeinfo", "attributes"]
     };
 
     forms.policy = {
         label: "Policy Form",
         fields: {
             name: {
-                layout : "full"
+                layout: "full"
             },
-            createdDate:{
+            createdDate: {
                 layout: "third"
             },
-            modifiedDate:{
+            modifiedDate: {
                 layout: "third"
             },
             expiryDate: {
@@ -1579,22 +1580,22 @@
                 layout: "third"
             },
             enabled: {
-                layout : "one"
+                layout: "one"
             },
             decisionAge: {
                 layout: "one"
             },
-            logicalOrder: {
-                layout : "one"
+            order: {
+                layout: "one"
             },
             score: {
-                layout : "one"
+                layout: "one"
             },
             rules: {
-                layout : "full",
+                layout: "full",
                 form: forms.entitylist,
-                requiredAttributes : [],
-                referField : true
+                requiredAttributes: [],
+                referField: true
             }
         },
         forms: ["grouptypeinfo", "attributes", "evaluate"]
@@ -1604,7 +1605,7 @@
         label: "Rule Form",
         fields: {
             name: {
-                layout : "full"
+                layout: "full"
             },
             description: {
                 layout: "full"
@@ -1616,24 +1617,24 @@
                 layout: "third"
             },
             score: {
-                layout : "one"
+                layout: "one"
             },
-            logicalOrder: {
-                layout : "one"
+            order: {
+                layout: "one"
             },
 
             rules: {
-                layout : "half",
+                layout: "half",
                 form: forms.entitylist,
-                requiredAttributes : [],
-                referField : true
+                requiredAttributes: [],
+                referField: true
             },
-            
+
             patterns: {
-                layout : "half",
+                layout: "half",
                 form: forms.entitylist,
-                requiredAttributes : [],
-                referField : true
+                requiredAttributes: [],
+                referField: true
             }
         },
         forms: ["grouptypeinfo", "attributes"]
@@ -1643,42 +1644,72 @@
         label: "Pattern Form",
         fields: {
             name: {
-                layout : "full"
+                layout: "full"
             },
             description: {
                 layout: "full"
             },
-            patternType: {
+            type: {
                 layout: "third"
             },
-            operationrel: {
-                layout: "third"
+            operation: {
+                layout: 'third',
+                format: 'picker',
+                label: "Operation",
+                field: {
+                    format: "picker",
+                    pickerType: "policy.operation",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "operation"
+                    }
+                }
             },
             score: {
-                layout : "one"
+                layout: "one"
             },
-            logicalOrder: {
-                layout : "one"
+            order: {
+                layout: "one"
             },
-            factrel: {
-                layout: "third"
+            fact: {
+                layout: 'third',
+                format: 'picker',
+                label: "Fact",
+                field: {
+                    format: "picker",
+                    pickerType: "policy.fact",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "fact"
+                    }
+                }
             },
             comparator: {
                 layout: "third"
             },
-            matchrel: {
-                layout: "third"
-            }
+            match: {
+                layout: 'third',
+                format: 'picker',
+                label: "Match",
+                field: {
+                    format: "picker",
+                    pickerType: "policy.fact",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "match"
+                    }
+                }
+            },
 
         },
         forms: ["grouptypeinfo", "attributes"]
     };
-    
+
     forms.fact = {
         label: "Fact Form",
         fields: {
             name: {
-                layout : "full"
+                layout: "full"
             },
             description: {
                 layout: "full"
@@ -1686,14 +1717,14 @@
             factType: {
                 layout: "two"
             },
-            factoryType: {
+            modelType: {
                 layout: "two"
             },
             sourceDataType: {
                 layout: "one"
             },
             score: {
-                layout : "one"
+                layout: "one"
             },
             sourceUrn: {
                 layout: "half"
@@ -1712,13 +1743,13 @@
         label: "Operation Form",
         fields: {
             name: {
-                layout : "full"
+                layout: "full"
             },
             description: {
                 layout: "full"
             },
             score: {
-                layout : "third"
+                layout: "third"
             },
             operationType: {
                 layout: "third"
@@ -1735,7 +1766,7 @@
         label: "Fact Form",
         fields: {
             name: {
-                layout : "full"
+                layout: "full"
             },
             description: {
                 layout: "full"
@@ -1743,11 +1774,11 @@
             functionType: {
                 layout: "third"
             },
-            logicalOrder: {
+            order: {
                 layout: "third"
             },
             score: {
-                layout : "third"
+                layout: "third"
             },
             sourceurnrel: {
                 layout: "half"
@@ -1758,9 +1789,9 @@
         },
         forms: ["grouptypeinfo", "attributes"]
     };
-    am7model.models.push({name: "confirmation", fields: [{name: "textData", type: "string"}]});
+    am7model.models.push({ name: "confirmation", fields: [{ name: "textData", type: "string" }] });
     forms.confirmation = {
-        label : "Confirm",
+        label: "Confirm",
         fields: {
             textData: {
                 layout: "full"
@@ -1769,7 +1800,8 @@
     };
 
     am7model.models.push(
-        {name: "userProfile", icon: "work", fields: [
+        {
+            name: "userProfile", icon: "work", fields: [
                 {
                     name: "profilePortrait",
                     label: "Portrait",
@@ -1781,13 +1813,14 @@
                         entity: "profilePortrait",
                         path: "~/Gallery"
                     },
-                    virtual: true}
+                    virtual: true
+                }
             ]
         }
     );
     forms.userProfile = {
-        label : "Profile",
-        fields : {
+        label: "Profile",
+        fields: {
             profilePortrait: {
                 layout: 'full',
                 format: 'picker',
@@ -1803,81 +1836,81 @@
                 }
             }
         },
-        forms : []
+        forms: []
     };
 
 
     forms.evaluaterel = {
-        label : "Evaluate",
-        requiredRoles : ["scriptExecutor"],
-        requiredAttributes : ["objectId"],
-        commands  : {
-            exec : {
-                label : 'Evaluate',
-                icon : 'run_circle',
-                function : 'evaluate'
+        label: "Evaluate",
+        requiredRoles: ["scriptExecutor"],
+        requiredAttributes: ["objectId"],
+        commands: {
+            exec: {
+                label: 'Evaluate',
+                icon: 'run_circle',
+                function: 'evaluate'
             }
         },
-        fields : {
-            evaluate : {
-                layout : "full"
+        fields: {
+            evaluate: {
+                layout: "full"
             }
         }
     };
 
     forms.evaluate = {
-        label : "Evaluate",
-        requiredRoles : ["scriptExecutor"],
-        requiredAttributes : ["objectId"],
-        fields : {
-            evaluate : {
-                layout : "full",
+        label: "Evaluate",
+        requiredRoles: ["scriptExecutor"],
+        requiredAttributes: ["objectId"],
+        fields: {
+            evaluate: {
+                layout: "full",
                 form: forms.evaluaterel,
                 properties: {
-                    prepare:"define"
+                    prepare: "define"
                 }
             }
         }
     };
 
     forms.executerel = {
-        label : "Execute",
-        requiredRoles : ["scriptExecutor"],
-        requiredAttributes : ["contentType", "objectId"],
-        requiredValues : ["application/x-javascript"],
+        label: "Execute",
+        requiredRoles: ["scriptExecutor"],
+        requiredAttributes: ["contentType", "objectId"],
+        requiredValues: ["application/x-javascript"],
         referField: true,
-        commands  : {
-            exec : {
-                label : 'Execute',
-                icon : 'run_circle',
-                function : 'execute'
+        commands: {
+            exec: {
+                label: 'Execute',
+                icon: 'run_circle',
+                function: 'execute'
             }
         },
-        fields : {
-            execute : {
-                layout : "full"
+        fields: {
+            execute: {
+                layout: "full"
             }
         }
     };
 
     forms.execute = {
-        label : "Execute",
-        requiredRoles : ["scriptExecutor"],
-        requiredAttributes : ["contentType", "objectId"],
-        requiredValues : ["application/x-javascript"],
+        label: "Execute",
+        requiredRoles: ["scriptExecutor"],
+        requiredAttributes: ["contentType", "objectId"],
+        requiredValues: ["application/x-javascript"],
         referField: true,
-        fields : {
-            execute : {
-                layout : "full",
+        fields: {
+            execute: {
+                layout: "full",
                 form: forms.executerel
             }
         }
     };
 
-    
+
     forms.cost = {
         label: "Cost",
-        fields:{
+        fields: {
             name: {
                 layout: "third"
             },
@@ -1888,12 +1921,12 @@
                 layout: "third"
             }
         },
-        forms : ["groupinfo", "attributes", "tags"]
+        forms: ["groupinfo", "attributes", "tags"]
     };
 
     forms.time = {
         label: "Time",
-        fields:{
+        fields: {
             name: {
                 layout: "third"
             },
@@ -1904,12 +1937,12 @@
                 layout: "third"
             }
         },
-        forms : ["groupinfo","attributes", "tags"]
+        forms: ["groupinfo", "attributes", "tags"]
     };
 
     forms.estimate = {
         label: "Estimate",
-        fields:{
+        fields: {
             name: {
                 layout: "half"
             },
@@ -1919,18 +1952,18 @@
             description: {
                 layout: "full"
             },
-            time:{
+            time: {
                 layout: "half"
             },
             cost: {
                 layout: "half"
             }
         },
-        forms : ["groupinfo","attributes", "tags"]
+        forms: ["groupinfo", "attributes", "tags"]
     };
     forms.budget = {
         label: "Budget",
-        fields:{
+        fields: {
             name: {
                 layout: "half"
             },
@@ -1940,19 +1973,19 @@
             description: {
                 layout: "full"
             },
-            time:{
+            time: {
                 layout: "half"
             },
             cost: {
                 layout: "half"
             }
         },
-        forms : ["groupinfo","attributes", "tags"]
+        forms: ["groupinfo", "attributes", "tags"]
     };
 
     forms.schedule = {
         label: "Schedule",
-        fields:{
+        fields: {
             name: {
                 layout: "third"
             },
@@ -1962,16 +1995,16 @@
             endTime: {
                 layout: "third"
             },
-            goals:{
+            goals: {
                 layout: "half",
-                form : forms.entitylist
+                form: forms.entitylist
             }
         },
-        forms : ["groupinfo","attributes", "tags"]
+        forms: ["groupinfo", "attributes", "tags"]
     };
     forms.resource = {
         label: "Resource",
-        fields:{
+        fields: {
             name: {
                 layout: "third"
             },
@@ -1994,7 +2027,7 @@
                 layout: "third"
             }
         },
-        forms : ["groupinfo","attributes", "ctlattributes"]
+        forms: ["groupinfo", "attributes", "ctlattributes"]
     };
     forms.artifact = {
         label: "Artifact",
@@ -2008,26 +2041,26 @@
             artifactType: {
                 layout: "third"
             },
-            description:{
+            description: {
                 layout: "full"
             },
-            artifactDataId:{
+            artifactDataId: {
                 layout: "third"
             },
             previousTransitionId: {
                 layout: "third"
             },
-            nextTransitionId:{
+            nextTransitionId: {
                 layout: "third"
             }
-            
+
         },
-        forms : ["groupinfo","attributes", "tags"]
+        forms: ["groupinfo", "attributes", "tags"]
     };
 
     forms.requirement = {
         label: "Requirement",
-        fields:{
+        fields: {
             name: {
                 layout: "third"
             },
@@ -2037,10 +2070,10 @@
             requirementStatus: {
                 layout: "third"
             },
-            description:{
+            description: {
                 layout: "full"
             },
-            logicalOrder: {
+            order: {
                 layout: "third"
             },
             note: {
@@ -2050,55 +2083,55 @@
                 layout: "third"
             }
         },
-        forms : ["groupinfo","attributes", "tags"]
+        forms: ["groupinfo", "attributes", "tags"]
     };
 
-    
+
     forms.taskrel = {
-        label : "Relationships",
-        requiredAttributes : ["objectId"],
-        fields : {
+        label: "Relationships",
+        requiredAttributes: ["objectId"],
+        fields: {
             childTasks: {
-                layout : "third",
+                layout: "third",
                 form: forms.childlist
             },
-            actualCost : {
-                layout : "third",
+            actualCost: {
+                layout: "third",
                 form: forms.entitylist
             },
-            actualTime : {
-                layout : "third",
+            actualTime: {
+                layout: "third",
                 form: forms.entitylist
             }
-          }
+        }
     };
 
     forms.taskacts = {
-        label : "Activities",
-        requiredAttributes : ["objectId"],
-        fields : {
-            requirements : {
-                layout : "one",
+        label: "Activities",
+        requiredAttributes: ["objectId"],
+        fields: {
+            requirements: {
+                layout: "one",
                 form: forms.entitylist
             },
-            dependencies : {
-                layout : "one",
+            dependencies: {
+                layout: "one",
                 form: forms.entitylist
             },
-            resources : {
-                layout : "one",
+            resources: {
+                layout: "one",
                 form: forms.entitylist
             },
-            artifacts : {
-                layout : "one",
+            artifacts: {
+                layout: "one",
                 form: forms.entitylist
             },
-            notes : {
-                layout : "one",
+            notes: {
+                layout: "one",
                 form: forms.entitylist
             },
-            work : {
-                layout : "one",
+            work: {
+                layout: "one",
                 form: forms.entitylist
             }
         }
@@ -2106,7 +2139,7 @@
 
 
     forms.task = {
-        label : "Task",
+        label: "Task",
         fields: {
             name: {
                 layout: "third"
@@ -2117,7 +2150,7 @@
             taskStatus: {
                 layout: "one"
             },
-            logicalOrder: {
+            order: {
                 layout: "one"
             },
             startDate: {
@@ -2137,7 +2170,7 @@
     };
 
     forms.ticket = {
-        label : "Task",
+        label: "Task",
         fields: {
             name: {
                 layout: "third"
@@ -2201,7 +2234,7 @@
     };
 
     forms.model = {
-        label : "Model",
+        label: "Model",
         fields: {
             name: {
                 layout: "full"
@@ -2209,52 +2242,52 @@
             description: {
                 layout: "full"
             },
-            cases : {
-                layout : "one",
+            cases: {
+                layout: "one",
                 form: forms.entitylist
             },
-            requirements : {
-                layout : "one",
+            requirements: {
+                layout: "one",
                 form: forms.entitylist
             },
-            dependencies : {
-                layout : "one",
+            dependencies: {
+                layout: "one",
                 form: forms.entitylist
             },
-            artifacts : {
-                layout : "one",
+            artifacts: {
+                layout: "one",
                 form: forms.entitylist
             },
-            models : {
-                layout : "one",
+            models: {
+                layout: "one",
                 form: forms.entitylist
             }
         },
         forms: ["grouptypeinfo", "attributes", "tags"]
     };
-    
+
     forms.processstep = {
-        label : "Process Step",
+        label: "Process Step",
         fields: {
             name: {
                 layout: "two-thirds"
             },
-            logicalOrder: {
-                layout:"third"
+            order: {
+                layout: "third"
             },
             description: {
                 layout: "full"
             },
-            goals : {
-                layout : "third",
+            goals: {
+                layout: "third",
                 form: forms.entitylist
             },
-            budgets : {
-                layout : "third",
+            budgets: {
+                layout: "third",
                 form: forms.entitylist
             },
-            requirements : {
-                layout : "third",
+            requirements: {
+                layout: "third",
                 form: forms.entitylist
             }
         },
@@ -2262,26 +2295,26 @@
     };
 
     forms.process = {
-        label : "Process",
+        label: "Process",
         fields: {
             name: {
                 layout: "third"
             },
-            logicalOrder: {
-                layout:"third"
+            order: {
+                layout: "third"
             },
             iterates: {
-                layout:"third"
+                layout: "third"
             },
             description: {
                 layout: "full"
             },
-            steps : {
-                layout : "half",
+            steps: {
+                layout: "half",
                 form: forms.entitylist
             },
-            budgets : {
-                layout : "half",
+            budgets: {
+                layout: "half",
                 form: forms.entitylist
             }
         },
@@ -2289,7 +2322,7 @@
     };
 
     forms.methodology = {
-        label : "Methodology",
+        label: "Methodology",
         fields: {
             name: {
                 layout: "full"
@@ -2297,12 +2330,12 @@
             description: {
                 layout: "full"
             },
-            processes : {
-                layout : "half",
+            processes: {
+                layout: "half",
                 form: forms.entitylist
             },
-            budgets : {
-                layout : "half",
+            budgets: {
+                layout: "half",
                 form: forms.entitylist
             }
         },
@@ -2310,43 +2343,43 @@
     };
 
     forms.goal = {
-        label : "Goal",
+        label: "Goal",
         fields: {
             name: {
                 layout: "two-thirds"
             },
-            logicalOrder: {
+            order: {
                 layout: "third"
             },
             description: {
                 layout: "full"
             },
-            budget : {
-                layout : "third"
+            budget: {
+                layout: "third"
             },
-            schedule : {
-                layout : "third"
+            schedule: {
+                layout: "third"
             },
-            assigned : {
-                layout : "third"
+            assigned: {
+                layout: "third"
             },
-            requirements : {
-                layout : "third",
+            requirements: {
+                layout: "third",
                 form: forms.entitylist
             },
-            dependencies : {
-                layout : "third",
+            dependencies: {
+                layout: "third",
                 form: forms.entitylist
             },
-            cases : {
-                layout : "third",
+            cases: {
+                layout: "third",
                 form: forms.entitylist
             }
         },
         forms: ["grouptypeinfo", "attributes", "tags"]
     };
     forms.case = {
-        label : "Case",
+        label: "Case",
         fields: {
             name: {
                 layout: "two-thirds"
@@ -2357,20 +2390,20 @@
             description: {
                 layout: "full"
             },
-            actors : {
-                layout : "third",
+            actors: {
+                layout: "third",
                 form: forms.entitylist
             },
-            prerequisites : {
-                layout : "third",
+            prerequisites: {
+                layout: "third",
                 form: forms.entitylist
             },
-            sequence : {
-                layout : "one",
+            sequence: {
+                layout: "one",
                 form: forms.entitylist
             },
-            diagrams : {
-                layout : "one",
+            diagrams: {
+                layout: "one",
                 form: forms.entitylist
             }
         },
@@ -2378,7 +2411,7 @@
     };
 
     forms.module = {
-        label : "Module",
+        label: "Module",
         fields: {
             name: {
                 layout: "two-thirds"
@@ -2389,18 +2422,18 @@
             description: {
                 layout: "full"
             },
-            time : {
-                layout : "half"
+            time: {
+                layout: "half"
             },
-            cost : {
-                layout : "half"
+            cost: {
+                layout: "half"
             },
-            artifacts : {
-                layout : "half",
+            artifacts: {
+                layout: "half",
                 form: forms.entitylist
             },
-            work : {
-                layout : "half",
+            work: {
+                layout: "half",
                 form: forms.entitylist
             }
         },
@@ -2408,7 +2441,7 @@
     };
 
     forms.lifecycle = {
-        label : "Lifecycle",
+        label: "Lifecycle",
         fields: {
             name: {
                 layout: "full"
@@ -2416,20 +2449,20 @@
             description: {
                 layout: "full"
             },
-            goals : {
-                layout : "one",
+            goals: {
+                layout: "one",
                 form: forms.entitylist
             },
-            schedules : {
-                layout : "one",
+            schedules: {
+                layout: "one",
                 form: forms.entitylist
             },
-            budgets : {
-                layout  :"one",
-                form : forms.entitylist
+            budgets: {
+                layout: "one",
+                form: forms.entitylist
             },
-            projects : {
-                layout : "half",
+            projects: {
+                layout: "half",
                 form: forms.entitylist
             }
 
@@ -2438,7 +2471,7 @@
     };
 
     forms.project = {
-        label : "Project",
+        label: "Project",
         fields: {
             name: {
                 layout: "two-thirds"
@@ -2449,16 +2482,16 @@
             description: {
                 layout: "full"
             },
-            requirements : {
-                layout : "third",
+            requirements: {
+                layout: "third",
                 form: forms.entitylist
             },
-            modules : {
-                layout : "third",
+            modules: {
+                layout: "third",
                 form: forms.entitylist
             },
-            stages : {
-                layout : "third",
+            stages: {
+                layout: "third",
                 form: forms.entitylist
             }
         },
@@ -2466,24 +2499,24 @@
     };
 
     forms.projectassets = {
-        label : "Assets",
+        label: "Assets",
         fields: {
-            dependencies : {
-                layout : "third",
+            dependencies: {
+                layout: "third",
                 form: forms.entitylist
             },
-            artifacts : {
-                layout : "third",
+            artifacts: {
+                layout: "third",
                 form: forms.entitylist
             },
             blueprints: {
-                layout : "third",
+                layout: "third",
                 form: forms.entitylist
             }
         }
     };
     forms.work = {
-        label : "Work",
+        label: "Work",
         fields: {
             name: {
                 layout: "full"
@@ -2491,20 +2524,20 @@
             description: {
                 layout: "full"
             },
-            tasks : {
-                layout : "third",
+            tasks: {
+                layout: "third",
                 form: forms.entitylist
             },
-            resources : {
-                layout : "third",
+            resources: {
+                layout: "third",
                 form: forms.entitylist
             },
-            dependencies : {
-                layout : "one",
+            dependencies: {
+                layout: "one",
                 form: forms.entitylist
             },
-            artifacts : {
-                layout : "one",
+            artifacts: {
+                layout: "one",
                 form: forms.entitylist
             }
         },
@@ -2512,34 +2545,34 @@
     };
 
     forms.stage = {
-        label : "Stage",
+        label: "Stage",
         fields: {
             name: {
                 layout: "two-thirds"
             },
-            logicalOrder: {
+            order: {
                 layout: "third",
             },
             description: {
                 layout: "full"
             },
-            schedule : {
-                layout : "half"
+            schedule: {
+                layout: "half"
             },
-            methodology : {
-                layout : "half"
+            methodology: {
+                layout: "half"
             },
-            work : {
-                layout : "half"
+            work: {
+                layout: "half"
             },
-            budget : {
-                layout : "half"
+            budget: {
+                layout: "half"
             }
         },
         forms: ["grouptypeinfo", "attributes", "tags"]
     };
 
-    async function pickProfile(object, inst, name){
+    async function pickProfile(object, inst, name) {
         //console.log("~/GalleryHome/Characters/" + inst.api.name());
         //inst.change("portrait");
         //inst.change("profile");
@@ -2549,7 +2582,7 @@
         let p = object.caller();
         let np = "";
         console.log(p.getInstance()?.entity?.groupPath);
-        if(p && p.getInstance()?.entity?.name){
+        if (p && p.getInstance()?.entity?.name) {
             let pe = p.getInstance().entity;
             let gp = "/Gallery";
             let tp = pe.groupPath.substring(0, pe.groupPath.lastIndexOf("/"));
@@ -2558,61 +2591,61 @@
             np = tp + gp + "/Characters" + n;
         }
         /// "~/GalleryHome/Characters" + n
-        object.picker(inst.formField("portrait")?.field, undefined, undefined, np, function(objectPage, inst, field, useName, data){
-            if(p && p.getInstance()?.entity?.profile){
+        object.picker(inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
+            if (p && p.getInstance()?.entity?.profile) {
                 p.getInstance().entity.profile.portrait = data;
             }
         });
     };
 
-    async function reimage(object, inst){
-        if(!inst || inst.model.name != "olio.charPerson"){
+    async function reimage(object, inst) {
+        if (!inst || inst.model.name != "olio.charPerson") {
             console.warn("Invalid object instance");
             return;
         }
 
-        let x = await m.request({method: 'GET', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage/true", withCredentials: true});
-        if(x && x != null){
+        let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage/true", withCredentials: true });
+        if (x && x != null) {
             inst.entity.profile.portrait = x;
             m.redraw();
         }
     }
-    async function narrate(object, inst){
-        if(!inst || inst.model.name != "olio.charPerson"){
+    async function narrate(object, inst) {
+        if (!inst || inst.model.name != "olio.charPerson") {
             console.warn("Invalid object instance");
             return;
         }
 
-        let x = await m.request({method: 'GET', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/narrate", withCredentials: true});
-        if(x && x != null){
+        let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/narrate", withCredentials: true });
+        if (x && x != null) {
             inst.api.narrative(x);
             m.redraw();
         }
     }
-    async function rollCharacter(object, inst){
-        if(!inst){
+    async function rollCharacter(object, inst) {
+        if (!inst) {
             return;
         }
-        let x = await m.request({method: 'GET', url: am7client.base() + "/olio/roll", withCredentials: true});
-        if(x && x != null){
+        let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/roll", withCredentials: true });
+        if (x && x != null) {
             object.mergeEntity(x);
         }
     }
-    async function getSystemPrompt(object, inst){
-        if(!inst){
+    async function getSystemPrompt(object, inst) {
+        if (!inst) {
             return;
         }
-        let x = await m.request({method: 'GET', url: am7client.base() + "/chat/prompt", withCredentials: true});
-        if(x && x != null){
+        let x = await m.request({ method: 'GET', url: am7client.base() + "/chat/prompt", withCredentials: true });
+        if (x && x != null) {
             object.mergeEntity(x);
         }
     }
 
     forms.color = {
-        label : "Color",
-        fields : {
+        label: "Color",
+        fields: {
             name: {
-                layout : "third"
+                layout: "third"
             },
             hex: {
                 layout: "one",
@@ -2633,12 +2666,12 @@
 
 
         },
-        forms : [ "lightgroupinfo"]
+        forms: ["lightgroupinfo"]
     };
 
     forms.charPerson = {
-        label : "Character",
-        fields : {
+        label: "Character",
+        fields: {
             profile: {
                 layout: "one",
                 field: {
@@ -2647,19 +2680,19 @@
                 format: "image"
             },
             name: {
-                layout : "one"
+                layout: "one"
             },
-            firstName : {
-                layout : "one"
+            firstName: {
+                layout: "one"
             },
-            middleName : {
-                layout : "one"
+            middleName: {
+                layout: "one"
             },
-            lastName : {
-                layout : "one"
+            lastName: {
+                layout: "one"
             },
-            gender : {
-                layout : 'one',
+            gender: {
+                layout: 'one',
                 field: {
                     label: 'Gender',
                     type: 'list',
@@ -2699,13 +2732,13 @@
                 layout: 'one'
             },
             birthDate: {
-                layout : "one"
+                layout: "one"
             },
             age: {
-                layout : "one"
+                layout: "one"
             },
-            blank : {
-                layout : "one",
+            blank: {
+                layout: "one",
                 format: "blank",
                 field: {
                     label: "",
@@ -2722,23 +2755,23 @@
                 }
             },
             */
-           /*
-            pickProfile: {
-                format: "button",
-                layout: "one",
-                icon: 'run_circle',
-                requiredAttributes : ["objectId"],
-                field: {
-                    label: "Pick Profile",
-                    command: pickProfile
-                }
-            },
-            */
+            /*
+             pickProfile: {
+                 format: "button",
+                 layout: "one",
+                 icon: 'run_circle',
+                 requiredAttributes : ["objectId"],
+                 field: {
+                     label: "Pick Profile",
+                     command: pickProfile
+                 }
+             },
+             */
             reimage: {
                 format: "button",
                 layout: "one",
                 icon: 'run_circle',
-                requiredAttributes : ["objectId"],
+                requiredAttributes: ["objectId"],
                 field: {
                     label: "Reimage",
                     command: reimage
@@ -2748,7 +2781,7 @@
                 format: "button",
                 layout: "one",
                 icon: 'run_circle',
-                requiredAttributes : ["objectId"],
+                requiredAttributes: ["objectId"],
                 field: {
                     label: "Narrate",
                     command: narrate
@@ -2758,7 +2791,7 @@
                 format: "button",
                 layout: "one",
                 icon: 'run_circle',
-                requiredAttributes : ["!objectId"],
+                requiredAttributes: ["!objectId"],
                 field: {
                     label: "Roll",
                     command: rollCharacter
@@ -2766,38 +2799,38 @@
             },
 
 
-            description : {
-                layout : "full",
+            description: {
+                layout: "full",
             }
         },
-        forms : [ "personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo"]
     };
 
     forms.storeRef = {
-        label : "Store",
+        label: "Store",
         model: true,
         property: "store",
-        fields : {
-            store : {
-                layout : "full",
+        fields: {
+            store: {
+                layout: "full",
                 form: forms.store
             }
         }
     }
-    
+
 
     forms.store = {
-        label : "Store",
-        fields : {
-            apparel : {
-                layout : 'half',
+        label: "Store",
+        fields: {
+            apparel: {
+                layout: 'half',
                 format: "table",
-                form : forms.entitylist
+                form: forms.entitylist
             },
-            items : {
-                layout : 'half',
+            items: {
+                layout: 'half',
                 format: "table",
-                form : forms.entitylist
+                form: forms.entitylist
             }
         }
     };
@@ -2817,63 +2850,63 @@
         ephemeral: true
     });
     forms.apparel = {
-        label : "Apparel",
-        fields : {
-            name : {
-                layout : 'half'
+        label: "Apparel",
+        fields: {
+            name: {
+                layout: 'half'
             },
-            type : {
-                layout : 'one'
+            type: {
+                layout: 'one'
             },
-            category : {
-                layout : 'one'
+            category: {
+                layout: 'one'
             },
-            gender : {
-                layout : 'one',
+            gender: {
+                layout: 'one',
                 field: {
                     label: 'Gender',
                     type: 'list',
                     limit: ['male', 'female', 'unisex']
                 }
             },
-            inuse : {
+            inuse: {
                 layout: 'one'
             },
-            designerRef : {
+            designerRef: {
                 layout: 'third'
             },
-            manufacturer : {
+            manufacturer: {
                 layout: 'third'
             },
             wearables: {
                 layout: 'full',
                 format: "table",
-                form : forms.entitylist
+                form: forms.entitylist
             }
         },
-        forms : ["lightgroupinfo"]
+        forms: ["lightgroupinfo"]
     };
 
     forms.quality = {
-        label : "Quality",
-        fields : {
-            unit : {
-                layout : 'one'
+        label: "Quality",
+        fields: {
+            unit: {
+                layout: 'one'
             },
-            valueAdjustment : {
-                layout : 'one'
+            valueAdjustment: {
+                layout: 'one'
             },
-            width  : {
-                layout : 'one'
+            width: {
+                layout: 'one'
             },
-            height : {
-                layout : 'one'
+            height: {
+                layout: 'one'
             },
-            weight  : {
-                layout : 'one'
+            weight: {
+                layout: 'one'
             },
-            length : {
-                layout : 'one'
+            length: {
+                layout: 'one'
             },
             opacity: {
                 layout: 'one',
@@ -2895,8 +2928,8 @@
                 layout: 'one',
                 format: 'range'
             },
-            blank : {
-                layout : "one",
+            blank: {
+                layout: "one",
                 format: "blank",
                 field: {
                     label: "",
@@ -2944,53 +2977,53 @@
                 format: 'range'
             }
         },
-        forms : ["lightgroupinfo"]
+        forms: ["lightgroupinfo"]
     };
 
     forms.item = {
-        label : "Item",
-        fields : {
-            name : {
-                layout : 'third'
+        label: "Item",
+        fields: {
+            name: {
+                layout: 'third'
             },
-            quality : {
+            quality: {
                 layout: 'one',
                 format: 'range'
             },
-            category : {
-                layout : 'one'
-            },
-            type : {
-                layout : 'one'
-            },
-            inuse : {
+            category: {
                 layout: 'one'
             },
-            qualities : {
+            type: {
+                layout: 'one'
+            },
+            inuse: {
+                layout: 'one'
+            },
+            qualities: {
                 layout: 'half',
                 format: 'table',
                 form: forms.entitylist2
-                
+
             }
         },
-        forms : ["lightgroupinfo"]
+        forms: ["lightgroupinfo"]
     };
     forms.wearable = {
-        label : "Wearable",
-        fields : {
-            name : {
-                layout : 'third'
+        label: "Wearable",
+        fields: {
+            name: {
+                layout: 'third'
             },
-            gender : {
-                layout : 'one',
+            gender: {
+                layout: 'one',
                 field: {
                     label: 'Gender',
                     type: 'list',
                     limit: ['male', 'female', 'unisex']
                 }
             },
-            fabric : {
-                layout : 'one'
+            fabric: {
+                layout: 'one'
             },
             color: {
                 layout: 'one',
@@ -3005,36 +3038,36 @@
                     }
                 }
             },
-            inuse : {
+            inuse: {
                 layout: 'one'
             },
-            qualities : {
+            qualities: {
                 layout: 'half',
                 format: 'table',
                 autocreate: true,
                 form: forms.entitylist2
-                
+
             }
 
         },
-        forms : ["lightgroupinfo"]
+        forms: ["lightgroupinfo"]
     };
     forms.statisticsRef = {
-        label : "Statistics",
+        label: "Statistics",
         model: true,
         property: "statistics",
-        fields : {
-            statistics : {
-                layout : "full",
+        fields: {
+            statistics: {
+                layout: "full",
                 form: forms.statistics
             }
         }
     }
-    
+
 
     forms.statistics = {
-        label : "Statistics",
-        fields : {
+        label: "Statistics",
+        fields: {
             physicalStrength: {
                 layout: 'one',
                 format: 'range'
@@ -3130,44 +3163,44 @@
         }
     };
     forms.narrativeRef = {
-        label : "Narrative",
+        label: "Narrative",
         model: true,
         property: "narrative",
-        fields : {
-            narrative : {
-                layout : "full",
+        fields: {
+            narrative: {
+                layout: "full",
                 form: forms.narrative
             }
         }
     }
     forms.personalityRef = {
-        label : "Personality",
+        label: "Personality",
         model: true,
         property: "personality",
-        fields : {
-            personality : {
-                layout : "full",
+        fields: {
+            personality: {
+                layout: "full",
                 form: forms.personality
             }
         }
     };
-    
+
     forms.profileRef = {
-        label : "Profile",
+        label: "Profile",
         model: true,
         property: "profile",
-        fields : {
-            profile : {
-                layout : "full",
+        fields: {
+            profile: {
+                layout: "full",
                 form: forms.profile
             }
         }
     };
 
     forms.profile = {
-        label : "Personality",
-        fields : {
-            portrait : {
+        label: "Personality",
+        fields: {
+            portrait: {
                 layout: 'one',
                 format: 'image',
                 field: {
@@ -3183,7 +3216,7 @@
                 format: "button",
                 layout: "one",
                 icon: 'run_circle',
-                requiredAttributes : [],
+                requiredAttributes: [],
                 field: {
                     label: "Pick Profile",
                     command: pickProfile
@@ -3191,72 +3224,72 @@
             },
         }
     };
-    
+
     forms.personality = {
-        label : "Personality",
-        fields : {
-            openness : {
+        label: "Personality",
+        fields: {
+            openness: {
                 layout: 'one',
                 format: 'range'
             },
-            conscientiousness : {
+            conscientiousness: {
                 layout: 'one',
                 format: 'range'
             },
-            extraversion : {
+            extraversion: {
                 layout: 'one',
                 format: 'range'
             },
-            agreeableness : {
+            agreeableness: {
                 layout: 'one',
                 format: 'range'
             },
-            neuroticism : {
+            neuroticism: {
                 layout: 'one',
                 format: 'range'
             },
-            blank : {
-                layout : "one",
+            blank: {
+                layout: "one",
                 format: "blank",
                 field: {
                     label: "",
                     readOnly: true
                 }
             },
-            machiavellianism : {
+            machiavellianism: {
                 layout: 'one',
                 format: 'range'
             },
-            narcissism : {
+            narcissism: {
                 layout: 'one',
                 format: 'range'
             },
-            psychopathy : {
+            psychopathy: {
                 layout: 'one',
                 format: 'range'
             },
-            blank2 : {
-                layout : "half",
+            blank2: {
+                layout: "half",
                 format: "blank",
                 field: {
                     label: "",
                     readOnly: true
                 }
             },
-            sloanKey : {
-                layout : 'one',
+            sloanKey: {
+                layout: 'one',
                 readOnly: true
             },
-            sloanCardinal : {
-                layout : 'one',
+            sloanCardinal: {
+                layout: 'one',
                 readOnly: true
 
             },
-            mbtiKey : {
-                layout : 'one',
+            mbtiKey: {
+                layout: 'one',
                 readOnly: true
             },
-            darkTriadKey : {
+            darkTriadKey: {
                 layout: 'one',
                 readOnly: true
             }
@@ -3264,59 +3297,59 @@
     };
 
     forms.narrative = {
-        label : "Narrative",
-        fields : {
-            physicalDescription : {
+        label: "Narrative",
+        fields: {
+            physicalDescription: {
                 layout: 'full',
                 label: "Description",
                 format: 'print'
             },
-            statisticsDescription:{
+            statisticsDescription: {
                 layout: 'full',
                 label: "Statistics",
                 format: 'print'
             },
-            outfitDescription : {
+            outfitDescription: {
                 layout: 'full',
                 label: "Current Outfit",
                 format: 'print'
             },
-            armamentDescription : {
+            armamentDescription: {
                 layout: 'full',
                 label: "Armament",
                 format: 'print'
             },
-            alignmentDescription:{
+            alignmentDescription: {
                 layout: 'full',
                 label: "Alignment",
                 format: 'print'
             },
-            darkTriadDescription:{
+            darkTriadDescription: {
                 layout: 'full',
                 label: "Dark Triad",
                 format: 'print'
             },
-            sloanDescription:{
+            sloanDescription: {
                 layout: 'full',
                 label: "Sloan",
                 format: 'print'
             },
-            mbtiDescription:{
+            mbtiDescription: {
                 layout: 'full',
                 label: "Meyers-Briggs",
                 format: 'print'
             },
-            sdPrompt:{
+            sdPrompt: {
                 layout: 'full',
                 label: "SD Prompt",
                 format: 'print'
             },
-            sdNegativePrompt:{
+            sdNegativePrompt: {
                 layout: 'full',
                 label: "SD Negative Prompt",
                 format: 'print'
             },
-            objectId:{
+            objectId: {
                 layout: 'full',
                 label: "Object Id",
                 readOnly: true
@@ -3337,66 +3370,66 @@
         standardUpdate: true
     };
     forms.promptRaceConfig = {
-        label : "Race",
-        format : "table",
-        commands : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                altIcon : 'check',
-                altCondition : ['edit'],
-                function : 'newEntry',
-                altFunction : 'checkEntry'
+        label: "Race",
+        format: "table",
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                altIcon: 'check',
+                altCondition: ['edit'],
+                function: 'newEntry',
+                altFunction: 'checkEntry'
             },
-            edit : {
-                label : 'Edit',
-                icon : 'edit',
-                function : 'editEntry',
-                condition : ['select']
+            edit: {
+                label: 'Edit',
+                icon: 'edit',
+                function: 'editEntry',
+                condition: ['select']
             },
-            cancel : {
-                label : 'Cancel',
-                icon : 'cancel',
-                function : 'cancelEntry',
-                condition : ['select','edit']
+            cancel: {
+                label: 'Cancel',
+                icon: 'cancel',
+                function: 'cancelEntry',
+                condition: ['select', 'edit']
             }
 
         },
-        
-        fields : {
-            raceType : {
-                layout : "third",
-                field:{
+
+        fields: {
+            raceType: {
+                layout: "third",
+                field: {
                     type: "list",
                     label: "Race",
-                    limit : ["L", "W", "X", "Y", "Z", "R", "S"]
+                    limit: ["L", "W", "X", "Y", "Z", "R", "S"]
                 }
             },
-            race : {
-                layout : "two-thirds",
+            race: {
+                layout: "two-thirds",
                 format: "textlist"
             }
         }
     };
 
     forms.promptConfig = {
-        label : "Prompt",
-        fields : {
-            name:{
+        label: "Prompt",
+        fields: {
+            name: {
                 layout: "one"
             },
             systemPrompt: {
                 format: "button",
                 layout: "one",
                 icon: 'run_circle',
-                requiredAttributes : ["!objectId"],
+                requiredAttributes: ["!objectId"],
                 field: {
                     label: "Load Default",
                     command: getSystemPrompt
                 }
             },
-            blank : {
-                layout : "two-thirds",
+            blank: {
+                layout: "two-thirds",
                 format: "blank",
                 field: {
                     label: "",
@@ -3417,11 +3450,11 @@
                 form: forms.promptRaceConfig
             }
         },
-        forms : ["systemPromptConfig", "assistantPromptConfig", "userPromptConfig", "groupinfo", "attributes"]
+        forms: ["systemPromptConfig", "assistantPromptConfig", "userPromptConfig", "groupinfo", "attributes"]
     };
     forms.systemPromptConfig = {
-        label : "System Prompt",
-        fields : {
+        label: "System Prompt",
+        fields: {
             system: {
                 layout: "full",
                 format: "textlist"
@@ -3439,11 +3472,11 @@
                 format: "textlist"
             }
         },
-        forms : []
+        forms: []
     };
     forms.assistantPromptConfig = {
-        label : "Assistant Prompt",
-        fields : {
+        label: "Assistant Prompt",
+        fields: {
             assistant: {
                 layout: "full",
                 format: "textlist"
@@ -3457,12 +3490,12 @@
                 format: "textlist"
             }
         },
-        forms : []
+        forms: []
     };
 
     forms.userPromptConfig = {
-        label : "User Prompt",
-        fields : {
+        label: "User Prompt",
+        fields: {
             user: {
                 layout: "full",
                 format: "textlist"
@@ -3488,32 +3521,32 @@
                 format: "textlist"
             }
         },
-        forms : []
+        forms: []
     };
 
     forms.chatConfig = {
-        label : "Chat Configuration",
-        fields : {
-            name:{
+        label: "Chat Configuration",
+        fields: {
+            name: {
                 layout: "third"
             },
-            llmModel:{
+            llmModel: {
                 layout: "one",
                 label: "Model Name"
             },
 
-            rating:{
+            rating: {
                 layout: "one",
-                field:{
+                field: {
                     type: "list",
                     label: "Rating",
-                    limit : ["E", "E10", "T", "M", "AO", "RC"]
+                    limit: ["E", "E10", "T", "M", "AO", "RC"]
                 }
             },
-            assist:{
+            assist: {
                 layout: "one"
             },
-            prune:{
+            prune: {
                 layout: "one"
             },
 
@@ -3563,69 +3596,69 @@
                 layout: "one",
                 label: "Include Scene"
             },
-            useNLP:{
+            useNLP: {
                 layout: "one"
             },
             nlpCommand: {
                 layout: "third",
                 label: "Command"
             },
-          
+
         },
-        forms : ["episodectl", "groupinfo", "attributes"]
+        forms: ["episodectl", "groupinfo", "attributes"]
 
     };
 
     forms.episodes = {
-        label : "Chat Configuration",
+        label: "Chat Configuration",
         format: "table",
-        commands : {
-            new : {
-                label : 'New',
-                icon : 'add',
-                altIcon : 'check',
-                altCondition : ['edit'],
-                function : 'newEntry',
-                altFunction : 'checkEntry'
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                altIcon: 'check',
+                altCondition: ['edit'],
+                function: 'newEntry',
+                altFunction: 'checkEntry'
             },
-            edit : {
-                label : 'Edit',
-                icon : 'edit',
-                function : 'editEntry',
-                condition : ['select']
+            edit: {
+                label: 'Edit',
+                icon: 'edit',
+                function: 'editEntry',
+                condition: ['select']
             },
-            cancel : {
-                label : 'Cancel',
-                icon : 'cancel',
-                function : 'cancelEntry',
-                condition : ['select','edit']
+            cancel: {
+                label: 'Cancel',
+                icon: 'cancel',
+                function: 'cancelEntry',
+                condition: ['select', 'edit']
             },
-            delete : {
-                label : 'Delete',
-                icon : 'delete_outline',
-                function : 'deleteEntry',
-                condition : ['select']
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntry',
+                condition: ['select']
             }
 
         },
-        fields : {
-            number:{
+        fields: {
+            number: {
                 layout: "one",
                 label: "Number"
             },
-            completed:{
+            completed: {
                 layout: "one",
                 label: "Completed"
             },
-            name:{
+            name: {
                 layout: "one",
                 label: "Name"
             },
-            theme:{
+            theme: {
                 layout: "one",
                 label: "Theme"
             },
-            stages:{
+            stages: {
                 layout: "full",
                 format: "textlist",
                 label: "Stages"
@@ -3633,28 +3666,28 @@
         }
     };
     forms.episodectl = {
-        label : "Episodes",
+        label: "Episodes",
         format: "table",
-        fields : {
-            episodes : {
-                layout : 'full',
-                form : forms.episodes
+        fields: {
+            episodes: {
+                layout: 'full',
+                form: forms.episodes
             }
         }
     };
     forms.charPersonRel = {
-        label : "Relations",
-        fields : {
-            partners : {
-                layout : "third",
+        label: "Relations",
+        fields: {
+            partners: {
+                layout: "third",
                 form: forms.entitylist
             },
-            dependents : {
-                layout : "third",
+            dependents: {
+                layout: "third",
                 form: forms.entitylist
             },
-            accounts : {
-                layout : "third",
+            accounts: {
+                layout: "third",
                 form: forms.entitylist
             }
         }
@@ -3665,19 +3698,19 @@
         icon: "image",
         label: "Image",
         fields: [
-            {name: "image", type: "model", baseModel: "data.data"}
+            { name: "image", type: "model", baseModel: "data.data" }
         ]
     });
 
     forms.imageView = {
-      label : "Image",
-      fields: {
-          image: {
-              layout: "full",
-              format: "image"
-          }
-      }
-  };
+        label: "Image",
+        fields: {
+            image: {
+                layout: "full",
+                format: "image"
+            }
+        }
+    };
 
 
     am7model.forms = forms;
