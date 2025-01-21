@@ -69,6 +69,7 @@ public class ThumbnailUtil {
 		// logger.info(owner.toFullString());
 		//BaseRecord thumb = ctx.getAccessPoint().findByNameInGroup(owner, ModelNames.MODEL_THUMBNAIL, thumbDir.get(FieldNames.FIELD_OBJECT_ID), thumbName);
 		Query tq = QueryUtil.createQuery(ModelNames.MODEL_THUMBNAIL, FieldNames.FIELD_GROUP_ID, thumbDir.get(FieldNames.FIELD_ID), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+		tq.field(FieldNames.FIELD_NAME, thumbName);
 		tq.planMost(false);
 		BaseRecord thumb = ctx.getAccessPoint().find(owner, tq);
 		if(thumb != null) {
