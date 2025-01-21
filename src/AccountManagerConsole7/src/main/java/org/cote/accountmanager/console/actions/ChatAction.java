@@ -269,6 +269,8 @@ public class ChatAction extends CommonAction implements IAction{
 		}
 		if(cmd.hasOption("olio")) {
 			octx = OlioContextUtil.getGridContext(user, getProperties().getProperty("test.datagen.path"), universeName, worldName, cmd.hasOption("reset"));
+			/// Make sure user is an enrolled Olio reader
+			octx.enroleReader(user);
 			List<BaseRecord> rlms = octx.getRealms();
 			for(BaseRecord r : rlms) {
 				if(cmd.hasOption("party")) {
