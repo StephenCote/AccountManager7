@@ -9,6 +9,7 @@
     const {Config} = require("./config");
     const config = new Config();
     const bodyParser = require("body-parser");
+    const https = require('https');
 
     let app = express();
 
@@ -21,18 +22,32 @@
 
     let port;
     let cfg;
+    let clients = {};
     let clientCfg;
+    let adminSession = "000-000-000-000";
+    let serverKey;
+    let serverCert;
 
     function init() {
         return new Promise(function (resolve, reject) {
             client.init("/server/client.json").then((config)=>{
                 clientCfg = config;
+                let ctx = client.newClientContext(config.adminOrganization,config.adminUser,adminSession);
+                client.authenticate(ctx, config.adminCredential).then((token)=>{
+                    clients[adminSession] = ctx;
+                });
             });
+
             function getConfig() {
                 return new Promise(function (resolve) {
                     config.read().then(function (resp) {
                         cfg = resp;
+                        if(cfg.allowUntrustedCerts){
+                            process.env["NODE_TLS_REJECT_UNAUTHORIZED"] = 0;
+                        }
                         debug = Boolean(resp.debug);
+                        serverKey = resp.serverKey;
+                        serverCert = resp.serverCert;
                         port = process.env.PORT || resp.clientPort || 80;
                         resolve();
                     });
@@ -81,7 +96,30 @@
         });
     }
     
-    function start() {
+    async function writeFile(path, bytes) {
+        return await new Promise(function (res, rej) {
+            fs.writeFile(path, bytes, function (err) {
+                if (err) {
+                    rej(err);
+                } else {
+                    res();
+                }
+            });
+        });
+    }
+    async function readFile(path) {
+        return await new Promise(function (res, rej) {
+            fs.readFile(path, function (err, resp) {
+                if (err) {
+                    rej(resp);
+                } else {
+                    res(resp);
+                }
+            });
+        });
+    }
+
+    async function start() {
 
         app.use(bodyParser.urlencoded({
             extended: true
@@ -94,16 +132,28 @@
         app.use(bodyParser.urlencoded({extended: false}));
         
         app.use(cors({
-            origin: ['http://localhost:8080','http://localhost:8899']
+            origin: ['http://localhost:8080','http://localhost:8899','https://localhost:8443','https://localhost:8899']
         }));
 
         app.get("/", doGetFile);
         cfg.directories.forEach((dirname) => app.get(dirname + "/:filename", doGetFile));
         cfg.files.forEach((filename) => app.get(filename, doGetFile));
 
+        let svrKey = await readFile("." + serverKey);
+        let svrCert = await readFile("." + serverCert);
+        let opts = {
+            key: svrKey,
+            cert: svrCert
+        };
+        //const server = app.listen(opts, port);
+        https.createServer(opts, app).listen(port, () => {
+            console.log('Listening on ' + port + '...')
+        });
+
+        /*
         const server = app.listen(port);
-    
         console.log("Listening on port: " + port);
+        */        
     }
 
     function run(){    

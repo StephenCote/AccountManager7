@@ -884,6 +884,7 @@
                     fieldClass += " range-field-full";
                     let min = 0;
                     let max = 100;
+
                     if(typeof field.minValue == "number" && typeof field.maxValue == "number"){
                         if(field.type == "double" && field.maxValue == 1){
                             max = field.maxValue * 100;
@@ -914,6 +915,9 @@
 
                     break;
                 case "color":
+                    fieldClass += " color-field"
+                    view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName}));
+                    break;
                 case "datetime-local":
                 case "text":
                     fieldClass += " text-field-full";
@@ -2433,7 +2437,7 @@
 
                 // setEntity(x);
                 // console.log("create", objectType, inst);
-                // page.navigable.setupPendingContextMenus();
+                page.navigable.setupPendingContextMenus();
             },
             onupdate : function(x){
                 page.navigable.setupPendingContextMenus();

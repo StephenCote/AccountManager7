@@ -123,8 +123,17 @@
         },
         views: {},
         setInnerXHTML,
-        favorites
+        favorites,
+        systemLibrary
     };
+
+    async function systemLibrary(model){
+        let grp;
+        if(am7model.system.library[model]){
+            grp = await page.findObject("auth.group", "data", am7model.system.library[model]);
+        }
+        return grp;
+    }
 
     async function favorites(){
         let origin = page.user.homeDirectory;
@@ -209,7 +218,8 @@
         */
         return new Promise((res, rej) => {
             /// /" + (page?.user?.objectId)
-            webSocket = new WebSocket(g_application_path.replace(/^http[s]*/, "ws") + "/wss");
+            let wsUrl = g_application_path.replace(/^http[s]*/, "wss") + "/wss";
+            webSocket = new WebSocket(wsUrl);
     
             webSocket.onopen = function(event) {
                 res(event);

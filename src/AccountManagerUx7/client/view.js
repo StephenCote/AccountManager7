@@ -232,7 +232,7 @@
     function getFormField(form, name){
         let field;  
         if(form){
-            field = form[name];
+            field = form.fields[name];
             if(!field){
                 let ff = (form.forms || []);
                 for(let fo in ff){

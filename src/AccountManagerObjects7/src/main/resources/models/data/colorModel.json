@@ -7,7 +7,7 @@
 		"common.baseLight"
 	],
 	"group": "Colors",
-	"icon": "category",
+	"icon": "palette",
 	"label": "Color",
 	"constraints": [
 		"name, groupId, organizationId"

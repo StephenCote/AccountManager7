@@ -53,7 +53,6 @@ public class ApplicationUtil {
 			pquery.field(FieldNames.FIELD_NAME, ComparatorEnumType.NOT_EQUALS, AccessSchema.ROLE_HOME);
 			BaseRecord[] permissions = IOSystem.getActiveContext().getSearch().findRecords(pquery);
 			List<BaseRecord> aroles = app.get(FieldNames.FIELD_SYSTEM_ROLES);
-			//List<BaseRecord> uroles = app.get(FieldNames.FIELD_USER_ROLES);
 			List<BaseRecord> aperms = app.get(FieldNames.FIELD_SYSTEM_PERMISSIONS);
 			aroles.addAll(Arrays.asList(roles));
 			aperms.addAll(Arrays.asList(permissions));
@@ -67,18 +66,7 @@ public class ApplicationUtil {
 			uquery.setRequest(RecordUtil.getCommonFields(uquery.getType()));
 			List<BaseRecord> ur2 = Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(uquery));
 			
-			/*
-			List<BaseRecord> ur2 = new ArrayList<>();
-			for(BaseRecord r: usrRoles) {
-				BaseRecord r2 = r;
-				IOSystem.getActiveContext().getReader().populate(r2, new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_TYPE});
-				ur2.add(r2);
-			}
-			*/
 			app.setValue(FieldNames.FIELD_USER_ROLES, ur2);
-			logger.info(app.toFullString());
-
-			//uroles.addAll(ur2);
 			
 			app.set(FieldNames.FIELD_ORGANIZATION_PATH, user.get(FieldNames.FIELD_ORGANIZATION_PATH));
 		} catch (FieldException | ValueException | ModelNotFoundException | IndexException | ReaderException e1) {

@@ -1,5 +1,8 @@
 {
     "clientPort": 8899,
+    "serverKey": "/ssl/server.key",
+    "serverCert": "/ssl/server.cert",
+    "allowUntrustedCerts": true,
     "directories" : [
         "/client/components",
         "/client/view",

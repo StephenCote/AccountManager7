@@ -1,5 +1,5 @@
 {
-    "am7server" : "http://localhost:8080",
+    "am7server" : "https://localhost:8443",
     "am7service" : "/AccountManagerService7/",
     "adminUser" : "admin",
     "adminOrganization" : "/Development",

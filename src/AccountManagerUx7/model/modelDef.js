@@ -51,7 +51,8 @@ let am7model = {
 		  "data.data",
 		  "data.note",
 		  "auth.group",
-		  "data.tag"
+		  "data.tag",
+		  "data.color"
 		],
 		"icon": "emoji_objects",
 		"prototypes": [
@@ -111,7 +112,10 @@ let am7model = {
 		  "olio.charPerson",
 		  "olio.llm.chatConfig",
 		  "olio.llm.promptConfig",
-		  "data.trait"
+		  "data.trait",
+		  "olio.store",
+		  "olio.wearable",
+		  "olio.apparel"
 		],
 		"icon": "event_note"
 	  },
@@ -4953,7 +4957,7 @@ let am7model = {
 		  "common.baseLight"
 		],
 		"group": "Colors",
-		"icon": "category",
+		"icon": "palette",
 		"label": "Color",
 		"constraints": [
 		  "name, groupId, organizationId"

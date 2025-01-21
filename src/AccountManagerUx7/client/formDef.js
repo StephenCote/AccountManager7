@@ -3014,19 +3014,36 @@
             name: {
                 layout: 'third'
             },
+            level: {
+                layout: 'third',
+                label: "Level",
+                field: {
+                    type: "list",
+                    limit: ["NONE", "INTERNAL", "UNDER", "ON", "BASE", "ACCENT", "SUIT", "GARNITURE", "ACCESSORY", "OVER", "OUTER", "FULL_BODY", "ENCLOSURE", "UNKNOWN"],
+                    default: "BASE"
+                }
+            },
             gender: {
-                layout: 'one',
+                layout: 'third',
                 field: {
                     label: 'Gender',
                     type: 'list',
                     limit: ['male', 'female', 'unisex']
                 }
             },
+            category: {
+                layout: 'one',
+                label: "Category",
+                field: {
+                    default: "clothing"
+                }
+            },
             fabric: {
+                label: "Fabric",
                 layout: 'one'
             },
             color: {
-                layout: 'one',
+                layout: 'third',
                 format: 'picker',
                 label: "Color",
                 field: {
@@ -3039,15 +3056,19 @@
                 }
             },
             inuse: {
-                layout: 'one'
+                layout: 'third'
             },
             qualities: {
                 layout: 'half',
                 format: 'table',
                 autocreate: true,
                 form: forms.entitylist2
-
+            },
+            location: {
+                layout: "half",
+                format: "textlist"
             }
+
 
         },
         forms: ["lightgroupinfo"]
@@ -3528,13 +3549,16 @@
         label: "Chat Configuration",
         fields: {
             name: {
-                layout: "third"
+                layout: "one"
             },
             llmModel: {
                 layout: "one",
                 label: "Model Name"
             },
-
+            llmAnalyzeModel: {
+                layout: "one",
+                label: "Analyze Model"
+            },
             rating: {
                 layout: "one",
                 field: {

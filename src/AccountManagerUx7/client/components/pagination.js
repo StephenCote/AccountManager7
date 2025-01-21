@@ -60,7 +60,6 @@
     }
 
     function handleCount(v) {
-      console.log("Count: " + v);
       pages.pageResults = [];
       pages.counted = true;
       pages.totalCount = v || 0;

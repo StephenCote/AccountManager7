@@ -133,7 +133,7 @@
 		</init-param>
 		<init-param>
 			<param-name>cors.allowed.origins</param-name>
-			<param-value>http://localhost:8899,http://localhost;http://localhost:8080,http://localhost:8888</param-value>
+			<param-value>http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888</param-value>
 		</init-param>
 		<init-param>
 			<param-name>cors.allowed.headers</param-name>

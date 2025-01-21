@@ -136,7 +136,6 @@
 
                                 if (g2 && g2.results) {
                                     olio = g2.results[0];
-                                    console.log("Got olio", olio)
                                     m.redraw();
                                 }
                             })
@@ -299,7 +298,6 @@
             let nest = [];
             if (bExpand) {
                 if (!mtx.children) {
-                    console.log("List", mtx.listChildType, "in", mtx.id);
                     if (!pendingRefresh) {
                         pendingRefresh = true;
                         am7client[mtx.flist](mtx.listChildType, mtx.id, null, 0, 1000, function (v) {

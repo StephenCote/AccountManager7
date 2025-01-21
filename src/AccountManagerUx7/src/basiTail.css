@@ -74,6 +74,9 @@ h5 {
     .text-field {
         @apply border px-2 border-gray-300 bg-white text-base font-medium text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-600
     }
+    .color-field{
+        @apply box-border h-10 w-full mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
+    }
     .textarea-field {
         @apply text-base font-medium shadow-sm px-2 focus:ring-blue-600 focus:ring-1 block border border-gray-300
     }
