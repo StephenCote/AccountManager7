@@ -166,20 +166,22 @@ public class OrganizationContext {
 		return outB;
 	}
 	
-	private boolean initializeVault() {
-		boolean outB = false;
+	private VaultBean initializeVault() {
 		String vaultName = Hex.encodeHexString(CryptoUtil.getDigest(organizationPath.getBytes(), new byte[0]));
-		vault = VaultService.getInstance().getCreateVault(vaultUser, vaultName, organizationId);
+		VaultBean bvault = VaultService.getInstance().getCreateVault(vaultUser, vaultName, organizationId);
 
-		if(vault != null && vault.isInitialized()) {
-			outB = true;
+		if(bvault != null && bvault.isInitialized()) {
+			return bvault;
 		}
-		return outB;
+		else {
+			logger.error("Failed to initialize vault");
+		}
+		return null;
 	}
 	
 	public VaultBean getVault() {
 		if(vault == null) {
-			initializeVault();
+			vault = initializeVault();
 		}
 		return vault;
 	}

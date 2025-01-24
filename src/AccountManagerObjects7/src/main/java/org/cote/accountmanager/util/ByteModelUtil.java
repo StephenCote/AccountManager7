@@ -8,11 +8,18 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.CryptoFactory;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.CryptoBean;
+import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.CompressionEnumType;
+import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.security.VaultService;
 
 /*
  * ByteModelUtil is largely a holdover from the previous AccountManager 4 - 6 design, where the data object's bytearray was conditionally enciphered, encrypted, and compressed depending on the object settings
@@ -30,7 +37,64 @@ public class ByteModelUtil {
    private ByteModelUtil(){
 
    }
-  
+   
+   private static CryptoBean getCrypto(BaseRecord model) {
+	   CryptoBean ckey = null;
+		String keyId = (model.hasField(FieldNames.FIELD_KEYS) ? model.get(FieldNames.FIELD_KEYS) : null);
+		if(keyId != null) {
+			Query keyq = QueryUtil.createQuery(ModelNames.MODEL_KEY_SET, FieldNames.FIELD_OBJECT_ID, keyId);
+			keyq.planMost(true);
+			BaseRecord keys = IOSystem.getActiveContext().getSearch().findRecord(keyq);
+			if(keys != null) {
+				CryptoBean vaultKey = VaultService.getInstance().getVaultKey(getVault());
+				ckey = new CryptoBean(keys, vaultKey.getPrivateKey(), vaultKey.get(FieldNames.FIELD_PRIVATE_FIELD_KEYSPEC));
+				// ckey = new CryptoBean(keys);
+			}
+		}
+        return ckey;
+   }
+   
+   private static VaultBean getVault() {
+		OrganizationContext ctx = IOSystem.getActiveContext().getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, OrganizationEnumType.SYSTEM);
+		VaultBean vault = null;
+		if(ctx != null) {
+			vault = ctx.getVault();
+		}
+		else {
+			logger.error("Failed to find organization context");
+		}
+		return vault;
+   }
+   
+	private static CryptoBean getCipher(BaseRecord model) {
+
+		boolean enciphered = model.get(FieldNames.FIELD_ENCIPHERED, false);
+		if(!enciphered) {
+			logger.warn("Model is not marked to be enciphered");
+			return null;
+		}
+		if(RecordUtil.isIdentityRecord(model)) {
+			IOSystem.getActiveContext().getReader().populate(model, new String[] {FieldNames.FIELD_KEYS});
+		}
+		
+		CryptoBean ckey = getCrypto(model);
+		if(ckey == null) {
+			VaultBean vault = getVault();
+
+			if(vault != null) {
+				ckey = VaultService.getInstance().getActiveKey(vault);
+				if(ckey != null) {
+					model.setValue(FieldNames.FIELD_KEYS, ckey.get(FieldNames.FIELD_OBJECT_ID));
+				}
+			}
+			else {
+				logger.error("Vault is null");
+			}
+		}
+		return ckey;
+	}
+	
+  /*
    public static void clearCipher(BaseRecord model) throws FieldException, ValueException, ModelNotFoundException{
 
 	   model.set(FieldNames.FIELD_KEYS, null);
@@ -51,20 +115,7 @@ public class ByteModelUtil {
            updateCipher(model, bean);
        }
    }
-   
-   /*
-   public static void setPassword(BaseRecord model, String password) throws FieldException, ValueException, ModelNotFoundException{
-       if(password == null){
-			clearCipher(model);
-       }
-       else{
-           CryptoBean bean = new CryptoBean();
-           CryptoFactory.getInstance().setPassKey(bean, password, false);
-           updateCipher(model, bean);
-       }
-   }
-   */
-   
+
    private static void updateCipher(BaseRecord model, CryptoBean bean) throws FieldException, ValueException, ModelNotFoundException{
        if(bean == null){
            clearCipher(model);
@@ -73,6 +124,7 @@ public class ByteModelUtil {
     	   model.set(FieldNames.FIELD_KEYS, CryptoFactory.getInstance().holdKey(bean));
        }
    }
+   */
    public static void setValue(BaseRecord d, byte[] inValue) throws FieldException, ValueException, ModelNotFoundException
    {
 	   setValue(d, FieldNames.FIELD_BYTE_STORE, inValue);
@@ -98,9 +150,6 @@ public class ByteModelUtil {
        d.getField(fieldName).setValue(new byte[0]);
        d.set(FieldNames.FIELD_READ_BYTE_STORE, false);
        boolean vaulted = d.get(FieldNames.FIELD_VAULTED, false);
-      
-       //byte[] cipherKey = d.get(FieldNames.FIELD_CIPHER_KEY, null);
-       String cipherId = (d.hasField(FieldNames.FIELD_KEYS) ? d.get(FieldNames.FIELD_KEYS) : null);
 
        if(vaulted) {
     	   d.set(FieldNames.FIELD_DATA_HASH, CryptoUtil.getDigestAsString(value, new byte[0]));
@@ -108,7 +157,6 @@ public class ByteModelUtil {
            //
            if(d.hasField(FieldNames.FIELD_COMPRESSION_TYPE)) d.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.NONE.toString());
        }
-       //d.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.NONE.toString());
 
        if (!vaulted && value.length > 512 && tryCompress(d))
        {
@@ -116,15 +164,12 @@ public class ByteModelUtil {
            d.set(FieldNames.FIELD_COMPRESSION_TYPE, CompressionEnumType.GZIP.toString());
        }
 
-       if (cipherId != null)
+       CryptoBean cipher = getCipher(d);
+       if (cipher != null)
        {
-    	   CryptoBean bean = CryptoFactory.getInstance().pullKey(cipherId);
-    	   //CryptoFactory.getInstance().setMembers(bean, keys, false);
-           value = CryptoUtil.encipher(bean, value);
-           d.set(FieldNames.FIELD_ENCIPHERED, true);
-           /// Zero out the cipher key
-           d.set(FieldNames.FIELD_KEYS, null);
+           value = CryptoUtil.encipher(cipher, value);
        }
+       
        d.set(FieldNames.FIELD_SIZE, (long)value.length);
        d.getField(fieldName).setValue(value);
    }
@@ -161,32 +206,19 @@ public class ByteModelUtil {
 	   }
 	   
 	   boolean readDataBytes = d.get(FieldNames.FIELD_READ_BYTE_STORE, false);
-	   boolean enciphered = d.get(FieldNames.FIELD_ENCIPHERED, false);
 	   boolean vaulted = d.get(FieldNames.FIELD_VAULTED, false);
 	   CompressionEnumType compressionType = CompressionEnumType.valueOf(d.get(FieldNames.FIELD_COMPRESSION_TYPE, "NONE"));
-	   /// Directly get value to avoid stackoverflow
 	   
 	   byte[] dbstore = d.getField(fieldName).getValue();
-	   
 	   if (!readDataBytes && dbstore != null && dbstore.length > 0)
        {
     	   byte[] ret = dbstore;
     	   try
            {
-               
-               if (enciphered)
-               {
-                   BaseRecord keys = (d.hasField(FieldNames.FIELD_KEYS) ? d.get(FieldNames.FIELD_KEYS) : null);
-            	   if(keys == null || !keys.hasField(FieldNames.FIELD_CIPHER)){
-                       throw new ValueException("Cipher key was not specified for enciphered data.");
-                   }
-            	   CryptoBean bean = new CryptoBean();
-            	   CryptoFactory.getInstance().setMembers(bean, keys, false);
-                   // CryptoBean bean = CryptoFactory.getInstance().createCryptoBean(cipherKey, false);
-                   ret = CryptoUtil.decipher(bean, ret);
-                   d.set(FieldNames.FIELD_ENCIPHERED, false);
-                   /// Zero out the cipher key
-                   d.set(FieldNames.FIELD_KEYS, null);
+    	       CryptoBean cipher = getCipher(d);
+    	       if (cipher != null)
+    	       {
+                   ret = CryptoUtil.decipher(cipher, ret);
                }
 
                if (!vaulted && compressionType.equals(CompressionEnumType.GZIP) && ret.length > 0)

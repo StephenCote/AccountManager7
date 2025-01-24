@@ -92,21 +92,11 @@ public class StreamSegmentWriter implements IWriter {
 		
 	}
 	
-	/*
-	public void writeSegments(BaseRecord stream) throws ModelException {
-		logger.warn("REFACTOR THIS: DON'T WRITE SEGMENTS BEFORE THE STREAM OBJECT IS CREATED - MOVE TO A POST WRITE OPERATION");
-		List<BaseRecord> segments = stream.get(FieldNames.FIELD_SEGMENTS);
-		for(BaseRecord segment : segments) {
-			writeSegment(stream, segment);
-		}
-	}
-	*/
 	public void writeSegment(BaseRecord segment) throws ModelException {
 		BaseRecord stream = ssUtil.getStream(segment);
 		writeSegment(stream, segment);
 		ssUtil.updateStreamSize(stream);
 		
-
 		BaseRecord streamU = stream.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_SIZE});
 		try {
 			IOSystem.getActiveContext().getWriter().write(streamU);

@@ -678,7 +678,7 @@ public class VaultService
 	public boolean newActiveKey(VaultBean vault)  {
 		CryptoBean pubKey = getPublicKey(vault);
 		IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
-		logger.info("**** NEW ACTIVE KEY");
+
 		if(pubKey == null) {
 			logger.error("Public key could not be found");
 			return false;

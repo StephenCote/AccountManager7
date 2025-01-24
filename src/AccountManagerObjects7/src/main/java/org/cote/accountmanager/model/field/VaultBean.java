@@ -212,7 +212,6 @@ public class VaultBean extends LooseRecord {
 	@JsonIgnore
 	public CryptoBean getActiveKey() {
 		return activeKey;
-		// return get(FieldNames.FIELD_ACTIVE_KEY);
 	}
 	
 	@JsonIgnore
