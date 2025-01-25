@@ -72,7 +72,7 @@ public class StreamUtil {
 	public static final Logger logger = LogManager.getLogger(StreamUtil.class);
 	private static int DEFAULT_STREAM_CUTOFF = 1048576;
 	private static int STREAM_CUTOFF = DEFAULT_STREAM_CUTOFF;
-	private static boolean VAULT_STREAM = false;
+
 	private static StreamSegmentUtil ssUtil = new StreamSegmentUtil();
 	public static void setStreamCutoff(int cut) {
 		if(cut > 0) {
@@ -471,10 +471,6 @@ public class StreamUtil {
         			streamRec.set(FieldNames.FIELD_CONTENT_TYPE, contentType);
         			List<BaseRecord> segs = streamRec.get(FieldNames.FIELD_SEGMENTS);
         			segs.add(seg);
-        			if(VAULT_STREAM) {
-        				VaultBean vault = IOSystem.getActiveContext().findOrganizationContext(user).getVault();
-        				VaultService.getInstance().vaultModel(vault, streamRec);
-        			}
         			streamRec = IOSystem.getActiveContext().getAccessPoint().create(user, streamRec);
         			/// Bug/Patch - because stream uses a provider to automatically configure the source, and because the source is an encrypted field value, the field won't be encrypted because the field providers fire before the model provider
         			/// Therefore, it's necessary to update the stream source
