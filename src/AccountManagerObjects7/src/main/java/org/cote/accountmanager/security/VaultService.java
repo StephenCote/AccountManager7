@@ -920,10 +920,42 @@ public class VaultService
 		return true;
 	}
 	
-
+	public void vaultModel(VaultBean vault, BaseRecord obj) throws ValueException, ModelException
+	{
+		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
+			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_VAULT_EXT);
+		}
+		
+		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
+		String vlink = vault.get(FieldNames.FIELD_VAULT_LINK);
+		
+		/// Because multiple fields may be encrypted, they'll need to use the same vault and key associated with the record
+		///
+		if(vaultId != null && !vaultId.equals(vlink)) {
+			throw new ValueException("Specified vault does not match the recorded vault identifier");
+		}
+		if(vaultId != null && vlink != null && vaultId.equals(vlink)) {
+			return;
+		}
+		
+		String keyId = obj.get(FieldNames.FIELD_KEY_ID);
+		if(keyId == null) {
+			if(vault.getActiveKey() == null && getActiveKey(vault) == null) {
+				throw new ValueException("Failed to establish active key");
+			}
+			CryptoBean key = vault.getActiveKey();
+			keyId = key.get(FieldNames.FIELD_OBJECT_ID);
+		}
+		
+		obj.setValue(FieldNames.FIELD_KEY_ID, keyId);
+		obj.setValue(FieldNames.FIELD_VAULT_ID, vlink);
+		obj.setValue(FieldNames.FIELD_VAULTED, true);
+	}
 	
 	public void vaultField(VaultBean vault, BaseRecord obj, FieldType field) throws ValueException, ModelException
 	{
+		vaultModel(vault, obj);
+		
 		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
 			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_VAULT_EXT);
 		}
@@ -940,26 +972,14 @@ public class VaultService
 		
 		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
 		String vlink = vault.get(FieldNames.FIELD_VAULT_LINK);
-		
-		/// Because multiple fields may be encrypted, they'll need to use the same vault and key associated with the record
-		///
-		if(vaultId != null && !vaultId.equals(vlink)) {
-			throw new ValueException("Specified vault does not match the recorded vault identifier");
-		}
 		String keyId = obj.get(FieldNames.FIELD_KEY_ID);
-		CryptoBean key = null;
-		if(keyId != null) {
-			key = getVaultCipher(vault, keyId);
-			if(key == null) {
-				throw new ValueException("Failed to find key " + keyId);
-			}
+		if(keyId == null) {
+			throw new ValueException("Failed to find key " + keyId);
 		}
-		else {
-			if(vault.getActiveKey() == null && getActiveKey(vault) == null) {
-				throw new ValueException("Failed to establish active key");
-			}
-			key = vault.getActiveKey();
-			keyId = key.get(FieldNames.FIELD_OBJECT_ID);
+		
+		CryptoBean key = getVaultCipher(vault, keyId);
+		if(key == null) {
+			throw new ValueException("Failed to find key " + keyId);
 		}
 		recordUtil.populate(key);
 		
@@ -971,10 +991,6 @@ public class VaultService
 		}
 		
 		try {
-			obj.set(FieldNames.FIELD_KEY_ID, keyId);
-			obj.set(FieldNames.FIELD_VAULT_ID, vlink);
-			obj.set(FieldNames.FIELD_VAULTED, true);
-
 			switch(field.getValueType()) {
 				case STRING:
 					String sval = field.getValue();
@@ -997,7 +1013,7 @@ public class VaultService
 			}
 			
 		}
-		catch(ClassCastException | ModelNotFoundException | FieldException | ValueException e) {
+		catch(ClassCastException | ValueException e) {
 			logger.error(e);
 		}
 		unvaulted.remove(field.getName());
@@ -1087,7 +1103,7 @@ public class VaultService
 			case BLOB:
 				byte[] bval = field.getValue();
 				if(bval != null && bval.length > 0) {
-					field.setValue(CryptoUtil.decipher(key,  field.getValue()));
+					field.setValue(CryptoUtil.decipher(key,  bval));
 				}
 				break;
 			default:

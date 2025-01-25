@@ -22,6 +22,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.util.RecordUtil;
+import org.cote.accountmanager.util.StreamUtil;
 
 public class StreamProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(StreamProvider.class);
@@ -108,12 +109,21 @@ public class StreamProvider implements IProvider {
 			} catch (FieldException | ValueException | ModelNotFoundException e) {
 				logger.error(e);
 			}
+			long size = 0L;
 			for(BaseRecord segment : segments) {
-				ssw.writeSegment(stream, segment);
+				size += ssw.writeSegment(stream, segment);
 			}
-			logger.info("Calculating stream size");
-			ssu.updateStreamSize(stream);
+			// logger.info("Calculating stream size");
+			// ssu.updateStreamSize(stream);
+			stream.setValue(FieldNames.FIELD_SIZE, size);
 		}
+		/*
+        try {
+			StreamUtil.closeTempFile(stream, true);
+		} catch (ModelException | ValueException e) {
+            throw new ModelException(e);			
+		}
+		*/
 	}
 
 	@Override

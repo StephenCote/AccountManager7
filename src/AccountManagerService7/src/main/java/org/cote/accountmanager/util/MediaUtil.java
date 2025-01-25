@@ -284,7 +284,7 @@ public class MediaUtil {
 				data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 				//data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), objName);
 				if(data != null) {
-					logger.info(data.toFullString());
+					//logger.info(data.toFullString());
 				}
 				if(data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null && ((String)data.get(FieldNames.FIELD_CONTENT_TYPE)).startsWith("image/") && restrictSize){
 					logger.info("Redirecting to restricted image path");

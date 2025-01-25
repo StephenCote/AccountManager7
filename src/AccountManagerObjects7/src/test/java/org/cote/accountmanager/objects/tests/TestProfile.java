@@ -18,6 +18,7 @@ import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -318,7 +319,7 @@ public class TestProfile extends BaseTest {
 					}
 					iter++;
 					
-				} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException e) {
+				} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException | ModelException e) {
 					logger.error(e);
 					errorCount++;
 				}

@@ -38,6 +38,7 @@ import javax.ws.rs.core.Context;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.SystemException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOFactory;
@@ -76,6 +77,17 @@ public class RestServiceConfig extends ResourceConfig{
 
         @Override
         public void onShutdown(Container container) {
+        	
+        	int cleanup = 0;
+        	try {
+				cleanup = StreamUtil.clearUnboxedStreams();
+			} catch (ModelException e) {
+				logger.error(e);
+			}
+        	if(cleanup > 0) {
+        		logger.info("Cleaned up " + cleanup + " unboxed streams");
+        	}
+        	
         	
         	logger.info("Chirping users");
         	WebSocketService.activeSessions().forEach(session ->{

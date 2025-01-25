@@ -18,6 +18,7 @@ import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.StreamEnumType;
+import org.cote.accountmanager.util.StreamUtil;
 
 public class StreamSegmentReader implements IReader {
 	public static final Logger logger = LogManager.getLogger(StreamSegmentReader.class);
@@ -90,14 +91,13 @@ public class StreamSegmentReader implements IReader {
     
     public void readFileSegment(BaseRecord stream, BaseRecord segment) throws ModelException {
     	
-    	// logger.info("Read file segment: ");
-    	// logger.info(segment.toFullString());
-    	
 		String path = ssUtil.getFileStreamPath(stream);
 		if(ssUtil.isRestrictedPath(path)) {
 			throw new ModelException("Path " + path + " is restricted");
 		}
-	
+		
+		StreamUtil.unboxStream(stream, false);
+		
         ByteBuffer buffer = null;
  
         try (
@@ -108,12 +108,12 @@ public class StreamSegmentReader implements IReader {
         	long startPosition = segment.get(FieldNames.FIELD_START_POSITION);
         	long length = segment.get(FieldNames.FIELD_LENGTH);
         	long size = fc.size();
-        	// logger.info("Read " + startPosition + " to " + (startPosition + length));
+
         	long maxLen = Math.min(size - startPosition, length);
         	if(length == 0 && maxLen <= 0) {
         		maxLen = size - startPosition;
         	}
-        	// logger.info("Read " + startPosition + " to " + maxLen);
+
             fc.position(startPosition);
             buffer = ByteBuffer.allocate((int)maxLen);
  
@@ -129,6 +129,7 @@ public class StreamSegmentReader implements IReader {
         } catch (IOException | FieldException | ValueException | ModelNotFoundException e) {
             logger.error(e);
         }
+
     }
 
 	@Override

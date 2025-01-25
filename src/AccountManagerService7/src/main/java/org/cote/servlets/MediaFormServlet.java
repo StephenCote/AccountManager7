@@ -41,6 +41,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -133,7 +134,7 @@ public class MediaFormServlet extends HttpServlet {
 			    stream.close();
 			}
 		}
-		catch(FieldException | ValueException | ModelNotFoundException | FactoryException | NumberFormatException | FileUploadException | IndexException | ReaderException e){
+		catch(FieldException | ValueException | ModelNotFoundException | FactoryException | NumberFormatException | FileUploadException | IndexException | ReaderException | ModelException e){
 			logger.error(e);
 		}
 		

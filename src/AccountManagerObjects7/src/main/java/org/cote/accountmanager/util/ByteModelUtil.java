@@ -70,7 +70,7 @@ public class ByteModelUtil {
 
 		boolean enciphered = model.get(FieldNames.FIELD_ENCIPHERED, false);
 		if(!enciphered) {
-			logger.warn("Model is not marked to be enciphered");
+			// logger.warn("Model is not marked to be enciphered");
 			return null;
 		}
 		if(RecordUtil.isIdentityRecord(model)) {

@@ -30,10 +30,16 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -41,26 +47,33 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
+import org.cote.accountmanager.model.field.CryptoBean;
+import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.StreamEnumType;
+import org.cote.accountmanager.security.VaultService;
 
 public class StreamUtil {
 	public static final Logger logger = LogManager.getLogger(StreamUtil.class);
 	private static int DEFAULT_STREAM_CUTOFF = 1048576;
 	private static int STREAM_CUTOFF = DEFAULT_STREAM_CUTOFF;
-
+	private static boolean VAULT_STREAM = false;
+	private static StreamSegmentUtil ssUtil = new StreamSegmentUtil();
 	public static void setStreamCutoff(int cut) {
 		if(cut > 0) {
 			STREAM_CUTOFF = cut;
@@ -97,11 +110,239 @@ public class StreamUtil {
 		}
 		return baos.toByteArray();
 	}
+	
 	public static byte[] fileToBytes(String fileName){
 		File f = new File(fileName);
 		
 		return fileHandleToBytes(f);
 		
+	}
+	
+	/// box, ubox, isbox directly on the file target.
+	
+	private static String boxExt = ".box";
+	private static Map<String, Boolean> unboxedMap = new HashMap<>();
+	public static boolean isStreamUnboxed(BaseRecord stream) {
+		StreamEnumType type = stream.getEnum(FieldNames.FIELD_TYPE);
+		if(type != StreamEnumType.FILE) {
+			return true;
+		}
+		
+		String oid = stream.get(FieldNames.FIELD_OBJECT_ID);
+		if (unboxedMap.containsKey(oid)) {
+			return unboxedMap.get(oid);
+		}
+		/// Secondary check
+		File f = null;
+		try {
+			f = new File(getFileStreamPath(stream));
+		} catch (ModelException e) {
+			logger.error(e);
+		}
+		if(f != null && f.exists()) {
+			unboxedMap.put(oid, true);
+		}
+		return false;
+	}
+	public static int clearUnboxedStreams() throws ModelException {
+		StreamSegmentUtil ssu = new StreamSegmentUtil();
+		int count = 0;
+		for(String id : unboxedMap.keySet()) {
+			
+			BaseRecord stream = ssu.getStream(id);
+			if(stream != null) {
+				clearUnboxedStream(stream);
+				count++;
+			}
+		}
+		return count;
+	}
+	public static boolean clearUnboxedStream(BaseRecord stream) throws ModelException {
+		String path = getFileStreamPath(stream);
+		String bpath = getFileBoxPath(stream);
+		File f = new File(path);
+		File f2 = new File(bpath);
+		if(!f2.exists()) {
+			logger.error("Encrypted file " + bpath + " doesn't exist");
+			return false;
+		}
+		if(f.exists()) {
+			f.delete();
+		}
+		String oid = stream.get(FieldNames.FIELD_OBJECT_ID);
+		unboxedMap.remove(oid);
+		return true;
+	}
+	
+	/// Given some file that is the result of a data stream (eg: A large video file, etc), encrypt the file and discard the original
+	///
+	public static boolean boxStream(BaseRecord stream, boolean overwrite) throws ModelException {
+
+		StreamEnumType type = stream.getEnum(FieldNames.FIELD_TYPE);
+		if(type != StreamEnumType.FILE) {
+			return true;
+		}
+		String path = getFileStreamPath(stream);
+		String bpath = getFileBoxPath(stream);
+		File f = new File(path);
+		File f2 = new File(bpath);
+		
+		/// box exists
+		if(f2 != null && f2.exists() && !overwrite) {
+			/// box exists
+			logger.info("Box " + bpath + " already exists");
+			/// ubox exists too
+			if(f.exists()) {
+				logger.warn("Unencrypted file " + path + " should not exist.");
+			}
+			return true;
+		}
+		
+		/// unbox must exist
+		if(!f.exists()) {
+			logger.error("Unencrypted file " + path + " must exist");
+			return false;
+		}
+		if(f2.exists()) {
+			f2.delete();
+		}
+		return rebox(stream, f, bpath, true);
+	}
+
+	/// Given some file that is the result of a data stream (eg: A large video file, etc), encrypt the file and discard the original
+	///
+	public static boolean unboxStream(BaseRecord stream, boolean force) throws ModelException {
+
+		if(!force && isStreamUnboxed(stream)) {
+			return true;
+		}
+		
+		StreamEnumType type = stream.getEnum(FieldNames.FIELD_TYPE);
+		if(type != StreamEnumType.FILE) {
+			return true;
+		}
+		
+		String path = getFileStreamPath(stream);
+		String bpath = getFileBoxPath(stream);
+		File f = new File(path);
+		File f2 = new File(bpath);
+		
+		/// ubox exists
+		if(!force && f != null && f.exists()) {
+			logger.warn("Unencrypted file " + path + " exists and it shouldn't");
+			String oid = stream.get(FieldNames.FIELD_OBJECT_ID);
+			unboxedMap.put(oid, true);
+			return true;
+		}
+		
+		/// box must exist
+		if(!f2.exists()) {
+			logger.error("Encrypted file " + path + " must exist");
+			return false;
+		}
+		if(f.exists()) {
+			f.delete();
+		}
+		
+		return rebox(stream, f2, path, false);
+	}
+
+	private static boolean rebox(BaseRecord stream, File f1, String path, boolean enc) {
+		boolean outBool = false;
+		VaultBean vault = IOSystem.getActiveContext().findOrganizationContext(stream).getVault();
+		if(vault == null) {
+			logger.error("Failed to retrieve vault");
+			return false;
+		}
+		if(RecordUtil.isIdentityRecord(stream)) {
+			IOSystem.getActiveContext().getReader().populate(stream, new String[] {FieldNames.FIELD_KEY_ID, FieldNames.FIELD_VAULT_ID, FieldNames.FIELD_VAULTED});
+		}
+		String keyId = stream.get(FieldNames.FIELD_KEY_ID);
+		if(keyId == null) {
+			if(!enc) {
+				logger.error("Stream does not define a key.");
+				return false;
+			}
+			try {
+				VaultService.getInstance().vaultModel(vault, stream);
+				Queue.queueUpdate(stream, new String[] {FieldNames.FIELD_KEY_ID, FieldNames.FIELD_VAULT_ID, FieldNames.FIELD_VAULTED});
+				Queue.processQueue();
+			} catch (ValueException | ModelException e) {
+				logger.error(e);
+				return false;
+			}
+		}
+		
+		CryptoBean key = VaultService.getInstance().getVaultCipher(vault, keyId);
+		if(key == null) {
+			logger.error("Vault cipher is null");
+			return false;
+		}
+		
+		logger.info((enc ? "B" : "Unb") + "oxing " + path + " ...");
+
+		/// read source file
+		byte[] eval = new byte[0];
+		if(enc) {
+			eval = CryptoUtil.encipher(key,  fileHandleToBytes(f1));
+		}
+		else {
+			eval = CryptoUtil.decipher(key,  fileHandleToBytes(f1));
+		}
+		if (eval == null || eval.length == 0) {
+			logger.error("Failed to decipher file");
+			return false;
+		}
+
+		try {
+			writeFile(path, eval, 0);
+			outBool = true;
+		} catch (ValueException e) {
+			logger.error(e);
+		}
+		return outBool;
+	}
+	
+	public static String getFileBoxPath(BaseRecord stream) throws ModelException {
+		String path = getFileStreamPath(stream);
+		if(path != null) {
+			return path + boxExt;	
+		}
+		return null;
+	}
+	public static String getFileStreamPath(BaseRecord stream) throws ModelException {
+		String path = ssUtil.getFileStreamPath(stream);
+		if (ssUtil.isRestrictedPath(path)) {
+			throw new ModelException("Path " + path + " is restricted");
+		}
+        return path;		
+	}
+	
+	private static void writeFile(String path, byte[] bytes, long startPosition) throws ValueException {
+		FileUtil.makePath(path.substring(0, path.lastIndexOf("/")));
+		try (
+			RandomAccessFile writer = new RandomAccessFile(path, "rw");
+			FileChannel channel = writer.getChannel()
+		){
+            FileLock lock = channel.tryLock();
+            while (!lock.isValid()) {
+                lock = channel.tryLock();
+            }
+            if(lock.isValid()) {
+				if(startPosition == 0L) {
+					startPosition = channel.size();
+				}
+				channel.position(startPosition);
+				ByteBuffer buff = ByteBuffer.wrap(bytes);
+				channel.write(buff);
+				lock.release();
+            }
+	    } catch (IOException e) {
+	    	
+			logger.error(e);
+			throw new ValueException(e);
+		}
+
 	}
 	
 	private static BaseRecord getSegment(BaseRecord stream, byte[] data, long start) throws FieldException, ModelNotFoundException, ValueException {
@@ -149,12 +390,15 @@ public class StreamUtil {
 			stream.set(FieldNames.FIELD_STREAM_SOURCE, filePath);
 			stream.set(FieldNames.FIELD_CONTENT_TYPE, ContentTypeUtil.getTypeFromExtension(name));
 			stream.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
+			/*
 			ssUtil.updateStreamSize(stream);
+			*/
 			long size = stream.get(FieldNames.FIELD_SIZE);
 			if(size == 0L) {
 				logger.error("Failed to obtain stream size");
 				return outBool;
 			}
+			
 			// logger.info("Create stream object - " + name);
 			BaseRecord nstream = IOSystem.getActiveContext().getAccessPoint().create(user, stream);
 			if(nstream == null) {
@@ -181,7 +425,7 @@ public class StreamUtil {
 		return outBool;
 	}
 	
-	public static boolean streamToData(BaseRecord user, String name, String description, String groupPath, long groupId, InputStream stream) throws FieldException, ModelNotFoundException, ValueException, IOException, FactoryException, IndexException, ReaderException {
+	public static boolean streamToData(BaseRecord user, String name, String description, String groupPath, long groupId, InputStream stream) throws FieldException, ModelNotFoundException, ValueException, IOException, FactoryException, IndexException, ReaderException, ModelException {
     	String contentType = ContentTypeUtil.getTypeFromExtension(name);
     	if(contentType == null) {
     		throw new ValueException("Invalid content type");
@@ -227,6 +471,10 @@ public class StreamUtil {
         			streamRec.set(FieldNames.FIELD_CONTENT_TYPE, contentType);
         			List<BaseRecord> segs = streamRec.get(FieldNames.FIELD_SEGMENTS);
         			segs.add(seg);
+        			if(VAULT_STREAM) {
+        				VaultBean vault = IOSystem.getActiveContext().findOrganizationContext(user).getVault();
+        				VaultService.getInstance().vaultModel(vault, streamRec);
+        			}
         			streamRec = IOSystem.getActiveContext().getAccessPoint().create(user, streamRec);
         			/// Bug/Patch - because stream uses a provider to automatically configure the source, and because the source is an encrypted field value, the field won't be encrypted because the field providers fire before the model provider
         			/// Therefore, it's necessary to update the stream source
@@ -239,6 +487,7 @@ public class StreamUtil {
     		}
    		  	baos.write(bytes, 0, read);
     	}
+    	logger.info("Stream to data length: " + baos.size());
     	if(streamRec == null) {
     		data = baos.toByteArray();
     	}
@@ -260,6 +509,11 @@ public class StreamUtil {
 				newData.set(FieldNames.FIELD_STREAM, streamRec);
 				newData = IOSystem.getActiveContext().getAccessPoint().create(user, newData);
 				outBool = (newData != null);
+				if(streamRec != null) {
+					boxStream(streamRec, false);
+					clearUnboxedStream(streamRec);
+				}
+				
 			}
 			 catch (FieldException | ValueException | ModelNotFoundException | FactoryException e) {
 				logger.error(e);

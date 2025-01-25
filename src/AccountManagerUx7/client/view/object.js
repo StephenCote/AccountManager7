@@ -1004,7 +1004,7 @@
                     let label = "";
                     if(useEntity && useEntity.objectId){
                         if(useEntity.model.match(/^data\.data$/gi)){
-                            uri = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/Data" + useEntity.groupPath + "/" + useEntity.name;
+                            uri = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/" + useEntity.model + useEntity.groupPath + "/" + useEntity.name;
                         }
                         else{
                             uri = g_application_path + "/rest/model/" + useEntity.model + "/" + useEntity.objectId;

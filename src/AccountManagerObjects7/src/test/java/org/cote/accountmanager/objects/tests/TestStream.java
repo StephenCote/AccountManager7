@@ -12,6 +12,7 @@ import java.util.UUID;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -159,7 +160,7 @@ public class TestStream extends BaseTest {
 					}
 					iter++;
 					
-				} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException e) {
+				} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException | ModelException e) {
 					logger.error(e);
 					errorCount++;
 				}
@@ -232,7 +233,7 @@ public class TestStream extends BaseTest {
 			boolean created = StreamUtil.streamToData(testUser5, dataName, "Test stream utility", "~/Data/StreamUtil", 0L, fos);
 			assertTrue("Failed to stream into data", created);
 			
-		} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException e) {
+		} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException | ModelException e) {
 			logger.error(e);
 		}
 		

@@ -29,6 +29,7 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.security.VaultService;
 import org.cote.accountmanager.util.ContentTypeUtil;
+import org.cote.accountmanager.util.StreamUtil;
 
 public class StreamSegmentUtil {
 	public static final Logger logger = LogManager.getLogger(StreamSegmentUtil.class);
@@ -46,7 +47,15 @@ public class StreamSegmentUtil {
 	
 	public byte[] streamToEnd(String streamId, long start, long len) {
 
-		BaseRecord seg = new StreamSegmentUtil().newSegment(streamId, start, len);
+		StreamSegmentUtil ssu = new StreamSegmentUtil();
+		BaseRecord stream = ssu.getStream(streamId);
+		try {
+			StreamUtil.unboxStream(stream, false);
+		} catch (ModelException e) {
+			logger.error(e);
+		}
+		
+		BaseRecord seg = ssu.newSegment(streamId, start, len);
 		BaseRecord rseg = null;
 		long osize = 0L;
 		ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -87,6 +96,10 @@ public class StreamSegmentUtil {
 
 	protected BaseRecord getStream(BaseRecord segment) {
 		String streamId = segment.get(FieldNames.FIELD_STREAM_ID);
+		return getStream(streamId);
+	}
+	
+	public BaseRecord getStream(String streamId) {
 		BaseRecord stream = null;
 		if(streamId != null) {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_STREAM, FieldNames.FIELD_OBJECT_ID, streamId);

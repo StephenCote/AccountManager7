@@ -22,6 +22,7 @@
 		"name": "size",
 		"type": "long"
 	},
+
 	{
 		"name": "segments",
 		"type": "list",
