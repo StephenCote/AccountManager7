@@ -41,8 +41,20 @@ import org.cote.service.util.ServiceUtil;
 @DeclareRoles({"admin","user"})
 @Path("/model")
 public class ModelService {
+
 	private static final Logger logger = LogManager.getLogger(ModelService.class);
 
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/cleanup")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response cleanupOrphans(@Context HttpServletRequest request, @Context HttpServletResponse response){
+
+		RecordFactory.cleanupOrphans(null);
+		return Response.status(200).entity(true).build();
+	}
+	
+	
 	@RolesAllowed({"user"})
 	@GET
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\\\-]+}")
