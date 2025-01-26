@@ -259,10 +259,16 @@ public class ByteModelUtil {
                                contentType.equals("image/svg+xml")
                        )
                        &&
-                       contentType.startsWith("application/") == false
+                       (
+                    		   contentType.startsWith("application/") == false
+                    		   ||
+                    		   contentType.equals("application/json")
+                    		   )
                        &&
                        contentType.startsWith("audio/") == false
-                       )
+                       &&
+                       contentType.startsWith("video") == false
+            		   )
                );
 
    }

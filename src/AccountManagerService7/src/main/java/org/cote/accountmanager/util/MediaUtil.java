@@ -58,8 +58,11 @@ import org.cote.service.util.ServiceUtil;
 
 public class MediaUtil {
 	public static final Logger logger = LogManager.getLogger(MediaUtil.class);
-	private static Pattern recPattern = Pattern.compile("^\\/([\\sA-Za-z0-9\\.]+)\\/([\\w\\.]+)([%-_\\/\\s\\.A-Za-z0-9]+)$", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
-	private static Pattern dimPattern = Pattern.compile("(\\/\\d+x\\d+)$", Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+	private static Pattern recPattern = Pattern.compile(
+			"^\\/([\\sA-Za-z0-9\\.]+)\\/([\\w\\.]+)([%-_\\/\\s\\.A-Za-z0-9]+)$",
+			Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
+	private static Pattern dimPattern = Pattern.compile("(\\/\\d+x\\d+)$",
+			Pattern.CASE_INSENSITIVE | Pattern.MULTILINE);
 	private static final VaultService vaultService = null;
 	private static int maximumImageWidth = -1;
 	private static int maximumImageHeight = -1;
@@ -67,75 +70,87 @@ public class MediaUtil {
 	private static boolean allowDataPointers = false;
 	private static boolean checkConfig = false;
 	private static boolean checkConfigDataPoint = false;
-	private static Map<String,String> templateContents = new HashMap<>();
-	
-	protected static boolean getRestrictImageSize(HttpServletRequest request){
-		if(checkConfig) return restrictImageSize;
-		restrictImageSize = getBoolParam(request,"image.restrict.size");
+	private static Map<String, String> templateContents = new HashMap<>();
+
+	protected static boolean getRestrictImageSize(HttpServletRequest request) {
+		if (checkConfig)
+			return restrictImageSize;
+		restrictImageSize = getBoolParam(request, "image.restrict.size");
 		checkConfig = true;
 		return restrictImageSize;
 	}
-	protected static boolean isAllowDataPointers(HttpServletRequest request){
-		if(checkConfigDataPoint) return allowDataPointers;
+
+	protected static boolean isAllowDataPointers(HttpServletRequest request) {
+		if (checkConfigDataPoint)
+			return allowDataPointers;
 		checkConfigDataPoint = true;
-		allowDataPointers = getBoolParam(request,"data.pointers.enabled");
+		allowDataPointers = getBoolParam(request, "data.pointers.enabled");
 		return allowDataPointers;
 	}
-	protected static int getMaximumImageWidth(HttpServletRequest request){ 
-		if(maximumImageWidth >= 0) return maximumImageWidth;
+
+	protected static int getMaximumImageWidth(HttpServletRequest request) {
+		if (maximumImageWidth >= 0)
+			return maximumImageWidth;
 		maximumImageWidth = getIntParam(request, "image.maximum.width");
 		return maximumImageWidth;
 	}
-	protected static int getMaximumImageHeight(HttpServletRequest request){ 
-		if(maximumImageHeight >= 0) return maximumImageHeight;
+
+	protected static int getMaximumImageHeight(HttpServletRequest request) {
+		if (maximumImageHeight >= 0)
+			return maximumImageHeight;
 		maximumImageHeight = getIntParam(request, "image.maximum.height");
 		return maximumImageHeight;
 	}
-	protected static boolean getBoolParam(HttpServletRequest request, String name){
+
+	protected static boolean getBoolParam(HttpServletRequest request, String name) {
 		boolean ret = false;
 		String iV = request.getServletContext().getInitParameter(name);
-		if(iV != null && iV.length() > 0){
+		if (iV != null && iV.length() > 0) {
 			ret = Boolean.parseBoolean(iV);
 		}
 		return ret;
 	}
-	protected static int getIntParam(HttpServletRequest request, String name){
+
+	protected static int getIntParam(HttpServletRequest request, String name) {
 		int ret = 0;
 		String iV = request.getServletContext().getInitParameter(name);
-		if(iV != null && iV.length() > 0){
+		if (iV != null && iV.length() > 0) {
 			ret = Integer.parseInt(iV);
 		}
 		return ret;
 	}
-	public static void writeBinaryContent(HttpServletRequest request, HttpServletResponse response) throws IOException{
+
+	public static void writeBinaryContent(HttpServletRequest request, HttpServletResponse response) throws IOException {
 		writeBinaryContent(request, response, new MediaOptions());
 	}
-	public static void writeBinaryContent(HttpServletRequest request, HttpServletResponse response, MediaOptions options) throws IOException{
-		
+
+	public static void writeBinaryContent(HttpServletRequest request, HttpServletResponse response,
+			MediaOptions options) throws IOException {
+
 		String path = request.getPathInfo();
-		if(path == null || path.length() == 0){
+		if (path == null || path.length() == 0) {
 			logger.error("Path is null or empty");
 			response.sendError(404);
 			return;
 		}
 		logger.debug("Media path: " + path);
 		Matcher m = recPattern.matcher(path);
-		if(!m.find() || m.groupCount() != 3){
+		if (!m.find() || m.groupCount() != 3) {
 			logger.error("Unexpected path construct");
 			response.sendError(404);
 			return;
 		}
-		
+
 		String orgPath = "/" + m.group(1).trim().replace('.', '/');
 		String type = m.group(2).trim();
 		String subPath = m.group(3).trim();
 		String name = null;
 		int index = 0;
-		
-		if((index = subPath.lastIndexOf('/')) > -1){
+
+		if ((index = subPath.lastIndexOf('/')) > -1) {
 			logger.debug("Testing '" + subPath + "' for dimensions");
 			Matcher d = dimPattern.matcher(subPath);
-			if(d.find() && d.groupCount() == 1){
+			if (d.find() && d.groupCount() == 1) {
 				String[] dimPair = d.group(1).trim().replace("/", "").split("x");
 				options.setThumbWidth(Integer.parseInt(dimPair[0]));
 				options.setThumbHeight(Integer.parseInt(dimPair[1]));
@@ -143,15 +158,15 @@ public class MediaUtil {
 				index = subPath.lastIndexOf('/');
 				logger.debug("Adjust path for dimenion information");
 				logger.debug("New Path: " + subPath);
-			}
-			else{
+			} else {
 				logger.debug("No alternate dimensions discovered: " + d.groupCount());
 			}
-			name = subPath.substring(index+1,subPath.length()).trim();
-			subPath = subPath.substring(0,index);
+			name = subPath.substring(index + 1, subPath.length()).trim();
+			subPath = subPath.substring(0, index);
 		}
-		
-		if(orgPath.length() == 0 || type.length() == 0 || subPath.length() == 0 || name == null || name.length() == 0){
+
+		if (orgPath.length() == 0 || type.length() == 0 || subPath.length() == 0 || name == null
+				|| name.length() == 0) {
 			logger.error("Type, path, or name did not contain a value");
 			response.sendError(404);
 			return;
@@ -159,221 +174,221 @@ public class MediaUtil {
 
 		writeBinaryContent(request, response, options, type.toLowerCase(), orgPath, subPath, name);
 	}
-	public static void writeBinaryContent(
-			HttpServletRequest request,
-			HttpServletResponse response,
-			MediaOptions options,
-			String type,
-			String orgPath,
-			String objPath,
-			String objName
-	) throws IOException{
-		
+
+	public static void writeBinaryContent(HttpServletRequest request, HttpServletResponse response,
+			MediaOptions options, String type, String orgPath, String objPath, String objName) throws IOException {
+
 		OrganizationContext org = IOSystem.getActiveContext().getOrganizationContext(orgPath, null);
-		if(org == null){
+		if (org == null) {
 			logger.error("Organization is invalid: '" + orgPath + "'");
 			response.sendError(404);
 			return;
 		}
-		
+
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		
+
 		/// if(user == null) user = org.getDocumentControl();
 		BaseRecord audit = AuditUtil.startAudit(user, ActionEnumType.READ, user, null);
 		writeBinaryContent(request, response, options, audit, type, org, user, objPath, objName);
 	}
-	public static void writeBinaryContent(
-			HttpServletRequest request,
-			HttpServletResponse response,
-			MediaOptions options,
-			BaseRecord audit,
-			String type,
-			OrganizationContext org,
-			BaseRecord user,
-			String objPath,
-			String objName
-	) throws IOException{
-		
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP, objPath, GroupEnumType.DATA.toString(), org.getOrganizationId());
-		if(dir == null){
-			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Path '" + objPath + "' is invalid for " + (user == null ? "null user":user.get(FieldNames.FIELD_NAME)) + " in organization " + org.getOrganization().get(FieldNames.FIELD_NAME));
+
+	public static void writeBinaryContent(HttpServletRequest request, HttpServletResponse response,
+			MediaOptions options, BaseRecord audit, String type, OrganizationContext org, BaseRecord user,
+			String objPath, String objName) throws IOException {
+
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP, objPath,
+				GroupEnumType.DATA.toString(), org.getOrganizationId());
+		if (dir == null) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID,
+					"Path '" + objPath + "' is invalid for "
+							+ (user == null ? "null user" : user.get(FieldNames.FIELD_NAME)) + " in organization "
+							+ org.getOrganization().get(FieldNames.FIELD_NAME));
 			response.sendError(404);
 			return;
 		}
 		writeBinaryContent(request, response, options, audit, type, org, user, dir, objName);
-		
+
 	}
-	public static void writeBinaryContent(
-			HttpServletRequest request,
-			HttpServletResponse response,
-			MediaOptions options,
-			BaseRecord audit,
-			String type,
-			OrganizationContext org,
-			BaseRecord user,
-			BaseRecord group,
-			String objName
-	) throws IOException{
-		if(type.equals(ModelNames.MODEL_DATA) || type.equals(ModelNames.MODEL_THUMBNAIL)) {
-			writeBinaryData(request, response, options,audit, type, org, user, group, objName);
-		}
-		else {
+
+	public static void writeBinaryContent(HttpServletRequest request, HttpServletResponse response,
+			MediaOptions options, BaseRecord audit, String type, OrganizationContext org, BaseRecord user,
+			BaseRecord group, String objName) throws IOException {
+		if (type.equals(ModelNames.MODEL_DATA) || type.equals(ModelNames.MODEL_THUMBNAIL)) {
+			writeBinaryData(request, response, options, audit, type, org, user, group, objName);
+		} else {
 			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Unexpected target type: " + type);
 			response.sendError(404);
 		}
 	}
-	
-	public static void writeBinaryData(
-			HttpServletRequest request,
-			HttpServletResponse response,
-			MediaOptions options,
-			BaseRecord audit,
-			String type,
-			OrganizationContext org,
-			BaseRecord user,
-			BaseRecord group,
-			String objName
-	) throws IOException{
+
+	public static void writeBinaryData(HttpServletRequest request, HttpServletResponse response, MediaOptions options,
+			BaseRecord audit, String type, OrganizationContext org, BaseRecord user, BaseRecord group, String objName)
+			throws IOException {
 		BaseRecord data = null;
 		boolean can_view = false;
-		
-		
-		if(user == null){
+
+		if (user == null) {
 			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "User is null");
 			response.sendError(404);
-			return;	
+			return;
 		}
-		
-		/// If the config stipulates a maximum width and height, then force thumbnail size to be no larger
-		/// If the optional force image bit is set, force all image requests through the thumbnail mechanism to prevent delivery of the full original resolution
+
+		/// If the config stipulates a maximum width and height, then force thumbnail
+		/// size to be no larger
+		/// If the optional force image bit is set, force all image requests through the
+		/// thumbnail mechanism to prevent delivery of the full original resolution
 		///
 		int maxWidth = getMaximumImageWidth(request);
 		int maxHeight = getMaximumImageHeight(request);
 		boolean restrictSize = getRestrictImageSize(request);
-		if(maxWidth > 0 && maxHeight > 0 && options.isThumbnail()){
+		if (maxWidth > 0 && maxHeight > 0 && options.isThumbnail()) {
 			boolean bLim = false;
-			if(options.getThumbHeight() > maxHeight){
+			if (options.getThumbHeight() > maxHeight) {
 				bLim = true;
 				options.setThumbHeight(maximumImageHeight);
 			}
-			if(options.getThumbWidth() > maxWidth){
+			if (options.getThumbWidth() > maxWidth) {
 				bLim = true;
 				options.setThumbWidth(maximumImageWidth);
 			}
-			if(bLim){
+			if (bLim) {
 				logger.info("Limiting width and height to " + maxWidth + "," + maxHeight);
 			}
 		}
-	
+
 		/// If this is a thumbnail request, then:
 		/// 1) get the details only data and confirm it's an image
-		/// 
-		try{
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+		///
+		try {
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID,
+					group.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, objName);
-			if(options.isThumbnail()){
-				q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID});
+			if (options.isThumbnail()) {
+				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
+						FieldNames.FIELD_OWNER_ID });
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
 				data = ThumbnailUtil.getCreateThumbnail(sdata, options.getThumbWidth(), options.getThumbHeight());
-				if(data == null){
-					logger.warn("Thumbnail data is null for data name " + objName + " and user " + user.get(FieldNames.FIELD_NAME));
+				if (data == null) {
+					logger.warn("Thumbnail data is null for data name " + objName + " and user "
+							+ user.get(FieldNames.FIELD_NAME));
 				}
 			} /// End if thumbnail
-			else{
-				q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID});
+			else {
+				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_BYTE_STORE,
+						FieldNames.FIELD_STREAM, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
 				data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-				//data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user, ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), objName);
-				if(data != null) {
-					//logger.info(data.toFullString());
+				// data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user,
+				// ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), objName);
+				if (data != null) {
+					// logger.info(data.toFullString());
 				}
-				if(data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null && ((String)data.get(FieldNames.FIELD_CONTENT_TYPE)).startsWith("image/") && restrictSize){
+				if (data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null
+						&& ((String) data.get(FieldNames.FIELD_CONTENT_TYPE)).startsWith("image/") && restrictSize) {
 					logger.info("Redirecting to restricted image path");
 					IOSystem.getActiveContext().getReader().populate(group);
-					String dotPath = org.getOrganizationPath().substring(1,org.getOrganizationPath().length()).replace('/', '.');
-					AuditUtil.closeAudit(audit, ResponseEnumType.PENDING, "Redirecting user " + user.get(FieldNames.FIELD_NAME) + " to " + request.getServletContext().getContextPath() + "/thumbnail/" + dotPath + "/Data" + group.get(FieldNames.FIELD_PATH) + "/" + objName + "/" + maxWidth + "x" + maxHeight + " with restricted dimensions");
-					response.sendRedirect(request.getServletContext().getContextPath() + "/thumbnail/" + dotPath + "/Data" + group.get(FieldNames.FIELD_PATH) + "/" + objName + "/" + maxWidth + "x" + maxHeight);
+					String dotPath = org.getOrganizationPath().substring(1, org.getOrganizationPath().length())
+							.replace('/', '.');
+					AuditUtil.closeAudit(audit, ResponseEnumType.PENDING,
+							"Redirecting user " + user.get(FieldNames.FIELD_NAME) + " to "
+									+ request.getServletContext().getContextPath() + "/thumbnail/" + dotPath + "/Data"
+									+ group.get(FieldNames.FIELD_PATH) + "/" + objName + "/" + maxWidth + "x"
+									+ maxHeight + " with restricted dimensions");
+					response.sendRedirect(request.getServletContext().getContextPath() + "/thumbnail/" + dotPath
+							+ "/Data" + group.get(FieldNames.FIELD_PATH) + "/" + objName + "/" + maxWidth + "x"
+							+ maxHeight);
 					return;
 				}
 			}
-			if(data != null && IOSystem.getActiveContext().getPolicyUtil().readPermitted(user, user, null, data)){
+			if (data != null && IOSystem.getActiveContext().getPolicyUtil().readPermitted(user, user, null, data)) {
 				can_view = true;
 			}
-		}
-		catch(ReaderException | IndexException | FactoryException | FieldException | ValueException | ModelNotFoundException e) {
-			
+		} catch (ReaderException | IndexException | FactoryException | FieldException | ValueException
+				| ModelNotFoundException e) {
+
 			logger.error(e);
 		}
-		if(data == null){
+		if (data == null) {
 			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Data is invalid: '" + objName + "'");
 			response.sendError(404);
 			return;
 		}
-		if(can_view == false){
-			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "User '" + user.get(FieldNames.FIELD_NAME) + "' is not authorized to view data '" + data.get(FieldNames.FIELD_NAME) + "' in organization '" + org.getOrganization().get(FieldNames.FIELD_NAME) + "' because the view bit is set to false.");
+		if (can_view == false) {
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "User '" + user.get(FieldNames.FIELD_NAME)
+					+ "' is not authorized to view data '" + data.get(FieldNames.FIELD_NAME) + "' in organization '"
+					+ org.getOrganization().get(FieldNames.FIELD_NAME) + "' because the view bit is set to false.");
 			response.sendError(404);
-			return;	
+			return;
 		}
-		AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "User " + user.get(FieldNames.FIELD_NAME) + " is authorized to view  " + data.get(FieldNames.FIELD_NAME) + " in " + data.get(FieldNames.FIELD_GROUP_ID));
+		AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT,
+				"User " + user.get(FieldNames.FIELD_NAME) + " is authorized to view  " + data.get(FieldNames.FIELD_NAME)
+						+ " in " + data.get(FieldNames.FIELD_GROUP_ID));
 		response.setContentType(data.get(FieldNames.FIELD_CONTENT_TYPE));
 
 		byte[] value = new byte[0];
-			
-		if(data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
+
+		if (data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
 			BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
 			StreamSegmentUtil ssu = new StreamSegmentUtil();
 			value = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
-		}
-		else{
-			value = data.get(FieldNames.FIELD_BYTE_STORE);
+		} else {
+			// value = data.get(FieldNames.FIELD_BYTE_STORE);
+
+			try {
+				value = ByteModelUtil.getValue(data);
+			} catch (ValueException | FieldException e) {
+				logger.error(e);
+			}
 		}
 
-		if(options.isEncodeData()){
+		if (options.isEncodeData()) {
 			value = BinaryUtil.toBase64(value);
 		}
-		if(options.isUseTemplate() && options.getTemplatePath() != null){
-			
+		if (options.isUseTemplate() && options.getTemplatePath() != null) {
+
 			InputStream resourceContent = null;
 			String template = null;
-			if(templateContents.containsKey(options.getTemplatePath())) template = templateContents.get(options.getTemplatePath());
-			else{
+			if (templateContents.containsKey(options.getTemplatePath()))
+				template = templateContents.get(options.getTemplatePath());
+			else {
 				try {
 
 					resourceContent = request.getServletContext().getResourceAsStream(options.getTemplatePath());
 					template = StreamUtil.streamToString(new BufferedInputStream(resourceContent));
-					if(template != null && template.length() > 0){
+					if (template != null && template.length() > 0) {
 						templateContents.put(options.getTemplatePath(), template);
 					}
 				} catch (IOException e) {
-					
+
 					logger.error(e);
-				}
-				finally{
-					if(resourceContent != null)
+				} finally {
+					if (resourceContent != null)
 						try {
 							resourceContent.close();
 						} catch (IOException e) {
-							
+
 							logger.error(e);
 						}
 				}
 
 			}
-			if(template != null){
-				template = template.replaceAll("%TITLE%", data.get(FieldNames.FIELD_NAME) + " (" + data.get(FieldNames.FIELD_OBJECT_ID) + ") - Distributed Web Application Component");
+			if (template != null) {
+				template = template.replaceAll("%TITLE%", data.get(FieldNames.FIELD_NAME) + " ("
+						+ data.get(FieldNames.FIELD_OBJECT_ID) + ") - Distributed Web Application Component");
 				template = template.replaceAll("%CONTENT%", request.getRequestURI().replaceAll("/dwac/", "/media/"));
 				value = template.getBytes();
-				if(options.getTemplateContentType() != null) response.setContentType(options.getTemplateContentType());
-			}
-			else{
+				if (options.getTemplateContentType() != null)
+					response.setContentType(options.getTemplateContentType());
+			} else {
 				response.sendError(500);
-				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Template is invalid: '" + options.getTemplatePath() + "'");
+				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID,
+						"Template is invalid: '" + options.getTemplatePath() + "'");
 			}
 		}
 		response.setContentLength(value.length);
-		response.getOutputStream().write(value); 
+		response.getOutputStream().write(value);
 		response.flushBuffer();
 	}
 
-
-	
 }
