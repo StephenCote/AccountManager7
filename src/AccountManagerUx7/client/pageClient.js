@@ -61,6 +61,7 @@
         endDialog,
         createDialog : createDialog,
         clearServerCache,
+        cleanup,
         clearCache : clearPageCache,
         components: {},
         patchSet,
@@ -345,6 +346,10 @@
             });
         });
     }
+    async function cleanup(){
+        await am7client.cleanup();
+        await am7client.clearCache();
+    }
     function clearPageCache(){
         
         am7client.clearCache(false, true);
@@ -469,7 +474,7 @@
         obj.entity.profilePortraitPath = undefined;
         if(obj.entity.profilePortrait){
             let port = await promiseOpenObject("data", obj.entity.profilePortrait);
-            obj.entity.profilePortraitPath = am7client.dotPath(port.organizationPath) + "/Data" + port.groupPath + "/" + port.name;
+            obj.entity.profilePortraitPath = am7client.dotPath(port.organizationPath) + "/data.data" + port.groupPath + "/" + port.name;
         }
 
         if(obj.entity.profilePortraitPath){

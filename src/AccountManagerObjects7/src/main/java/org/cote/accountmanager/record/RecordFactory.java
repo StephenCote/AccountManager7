@@ -444,6 +444,7 @@ public class RecordFactory {
 	
 	public static void cleanupOrphans(String model) {
 		if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
+			
 			String sql = StatementUtil.getDeleteOrphanTemplate(model);
 			if(sql != null && sql.length() > 0) {
 				long start = System.currentTimeMillis();
@@ -456,7 +457,7 @@ public class RecordFactory {
 					logger.error(e);
 			    }
 				long stop = System.currentTimeMillis();
-				// logger.info("Cleaned up orphans in " + (stop - start) + "ms");
+				logger.info("Cleaned up orphans in " + (stop - start) + "ms");
 			}
 		}
 		else {

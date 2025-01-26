@@ -42,12 +42,51 @@ import org.junit.Test;
 
 public class TestStreamEncryption extends BaseTest {
 
+	@Test
+	public void TestStreamIntegrity() {
+		logger.info("Test Stream Integrity");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
+		String dataName = "Demo stream " + UUID.randomUUID().toString() + ".mp4";
+		
+		BaseRecord group = ioContext.getPathUtil().makePath(testUser5, ModelNames.MODEL_GROUP, "~/Data/StreamUtil", "DATA", testOrgContext.getOrganizationId());
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Data/StreamUtil");
+		plist.parameter(FieldNames.FIELD_NAME, dataName);
 
+		/// cut at 1k
+		StreamUtil.setStreamCutoff(1024);
+		String[] sampleData = new String[] {"./media/YoureFired.mp4"};
+		try(FileInputStream fos = new FileInputStream(sampleData[0])){
+			boolean created = StreamUtil.streamToData(testUser5, dataName, "Test stream utility", "~/Data/StreamUtil", 0L, fos);
+			assertTrue("Failed to stream into data", created);
+			
+		} catch (IOException | FieldException | ModelNotFoundException | ValueException | FactoryException | IndexException | ReaderException | ModelException e) {
+			logger.error(e);
+		}
+
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_NAME, dataName);
+		q.field(FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+		q.planMost(true);
+		BaseRecord data = ioContext.getSearch().findRecord(q);
+		assertNotNull("Data is null");
+		
+		byte[] dat = new byte[0];
+		try {
+			dat = ByteModelUtil.getValue(data);
+		} catch (ValueException | FieldException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		logger.info("Data length: " + dat.length);
+		FileUtil.emitFile("./tmp.mp4", dat);
+	}
+	
 	@Test
 	public void TestStreamEncrypt() {
 		logger.info("Test Streaming Encryption");
 
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream/Encryption");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Stream");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser5 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser5", testOrgContext.getOrganizationId());
 		String dataName = "Demo stream " + UUID.randomUUID().toString() + ".jpg";

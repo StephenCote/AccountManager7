@@ -136,6 +136,11 @@
 	function getCache(){
 		return cache;
 	}
+
+	function cleanup(fH){
+		return get(sModelSvc + "/cleanup",fH);
+	}
+
 	function clearCache(vType, bLocalOnly, fH){
 		var sType = vType, oObj;
 		if(vType != null && typeof vType == "object"){
@@ -774,7 +779,8 @@
 		application : getApplicationProfile,
 		userPerson : getUserPersonObject,
 		newPrimaryCredential : newPrimaryCredential,
-		clearCache : clearCache,
+		clearCache,
+		cleanup,
 		clearAuthorizationCache : function(fH){
 			return Hemi.xml.getJSON(sCache + "/clearAuthorization",fH,(fH ? 1 : 0));
 		},
