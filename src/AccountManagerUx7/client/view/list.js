@@ -227,6 +227,11 @@
       navigateToPathId(grp);
     }
 
+    async function openOlio(){
+      let og = await page.findObject("auth.group", "DATA", "/Olio/Universes");
+      navigateToPathId(og);
+    }
+
     async function openFavorites() {
       let fav = await page.favorites();
       navigateToPathId(fav);
@@ -560,7 +565,7 @@
       let cnt = pagination.pages().container;
       let buttons = [];
       let rs = page.context().roles;
-      let favSel = "";
+
 
 
       if (containerMode || type === 'auth.group' || am7model.isParent(modType)) {
@@ -593,6 +598,11 @@
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), (bBucket ? "playlist_remove" : "delete"), "", deleteSelected));
       }
 
+      let oliSel = "";
+      if (cnt && cnt.path.match(/^\/olio/gi)) oliSel = " bg-orange-200 active";
+      buttons.push(pagination.button("button" + oliSel, "globe", "", openOlio));
+
+      let favSel = "";
       if (cnt && cnt.name.match(/favorites/gi)) favSel = " bg-orange-200 active";
       buttons.push(pagination.button("button" + favSel, "favorite", "", openFavorites));
 
