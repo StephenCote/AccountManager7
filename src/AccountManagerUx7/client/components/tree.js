@@ -24,7 +24,7 @@
             if (type == "auth.role" || type == "auth.permission") {
                 entity.path = treeMatrix[selectedNode].path + "/" + treeMatrix[selectedNode].name;
             }
-            console.log(entity);
+
             let dlg = {
                 label: "New " + type,
                 entityType: type,
@@ -126,7 +126,6 @@
                     if (!olio && !checkOlio) {
                         checkOlio = true;
                         page.findObject("auth.group", "DATA", "/Olio/Universes").then((g) => {
-                            11
                             if (!g) {
                                 return;
                             }
@@ -206,9 +205,10 @@
                                         fListType = modType.type;
                                     }
                                 }
-                                builtIn = true;
+                                //builtIn = true;
                             }
-                            else if (node.path == page.user.homeDirectory.path) {
+                            else
+                            if (node.path == page.user.homeDirectory.path) {
                                 ico = "gite";
                             }
                         }
@@ -370,7 +370,6 @@
 
             let dcls = dnd.doDragDecorate(node);
             if (dcls) itemProps.class += " " + dcls;
-
             itemProps.ondragover = function (e) { dnd.doDragOver(e, node); };
             itemProps.ondragend = function (e) { dnd.doDragEnd(e, node); };
             itemProps.ondragstart = function (e) { dnd.doDragStart(e, node); };
