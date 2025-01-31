@@ -408,6 +408,9 @@
                 return rows;
             }
             let tableType = field.baseModel;
+            if(tableType == "$self"){
+                tableType = entity.model;
+            }
             let tableForm = fieldView.form;
             let bEdit = false;
             let bSel = false;
@@ -439,7 +442,6 @@
 
             let rowModel = [];
             Object.keys(tableForm.fields).forEach((k)=>{
-
                 let tableField = am7model.getModelField(tableType, k, am7view.typeToModel(entity[field.foreignType]));
                 let tableFieldView = tableForm.fields[k];
                 rowModel.push({name: k, fieldView : tableFieldView, field : tableField});
@@ -447,7 +449,10 @@
             
             if(!hidden){
                 rows.push(m("tr",rowModel.map((r)=>{
-                    if(!r.field) console.error(r);
+                    if(!r.field){
+                        r.field = am7model.getModelField(tableType, r.name);
+                        //console.error(field.baseModel, r);
+                    }
                     return m("th", r.fieldView?.label || r.field?.label);
                 })));
             }
@@ -802,7 +807,20 @@
             */
             let defVal = (inst && !altEntity && inst.api[name] ? inst.api[name]() : undefined);
             if(field.function && objectPage[field.function] && !field.foreign){
-                defVal = objectPage[field.function](name, field);
+                if(field.promise){
+                    defVal = foreignData[name];
+                    if(!defVal){
+
+                        objectPage[field.function](name, field).then((v) => {
+                            foreignData[name] = v;
+                            inst.api[name](v);
+                            m.redraw();
+                        });
+                    }
+                }
+                else{
+                    defVal = objectPage[field.function](name, field);
+                }
             }
             else if(altVal){
                 defVal = altVal;
@@ -1870,6 +1888,7 @@
         }
 
         objectPage.addEntity = function(name, field, tableType, tableForm, props){
+            console.log("Add entity " + tableType, field);
             if(props.picker){
                 return preparePicker(tableType, function(data){ pickEntity(name, field, data);});
             }
@@ -1926,26 +1945,38 @@
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
-                if(state.selected && state.foreign && foreignData[state.attribute]){
-                let obj = foreignData[state.attribute][state.index];
-                aP.push(new Promise((res, rej)=>{
+
+                /// state.foreign && 
+                if(state.selected && foreignData[state.attribute]){
+                    let obj = foreignData[state.attribute][state.index];
+                    aP.push(new Promise((res, rej)=>{
                         am7client.member(entity.model, entity.objectId, obj.model, obj.objectId, false, function(v){
-                            delete foreignData['members'];
+                            entity[name] = entity[name].filter(m => m.objectId != obj.objectId);
+                            console.log("Deleted: " + v, entity[name]);
                             res(v);
                         });
                     }));
                 }
             });
             Promise.all(aP).then(()=>{
-                delete foreignData['members'];
+                delete foreignData[name];
                 m.redraw();
             });
         };
 
         objectPage.addMember = function(name, field, tableType, tableForm, props){
             let type = tableType;
+            //console.log("Add entity " + tableType, field);
+            if(type == "$flex"){
+                if(field.foreignType){
+                    type = inst.api[field.foreignType]();
+                }
+                else{
+                    console.warn("Cannot reference a flex field without a foreign type");
+                }
+            }
             if(props.typeAttribute){
-                am7view.typeToModel(entity[props.typeAttribute]);
+                type = am7view.typeToModel(entity[props.typeAttribute]);
             }
             if(props.picker){
 
@@ -1994,24 +2025,30 @@
 
         /// Need to paginate this
         objectPage.objectMembers = function(name, field){
+            
             return new Promise((res, rej)=>{
-                if(!entity || !entity.objectId || !field || !field.typeAttribute){
+                let ftype;
+                if(field){
+                    ftype = field.typeAttribute || field.foreignType;
+                }
+                if(!entity || !entity.objectId || !field || !ftype){
                     res([]);
                 }
                 else{
-                    am7client.members(entity.model, entity.objectId, am7view.typeToModel(entity[field.typeAttribute]), 0, 100, function(v){
-                        res(v);
-                    });
+                    let type = am7view.typeToModel(entity[ftype]);
                     /*
-                    let search = new org.cote.objects.participationSearchRequest();
-                    search.startRecord = 0;
-                    search.recordCount = 100;
-                    search.participationList = [entity.objectId];
-                    search.participantFactoryType = entity[field.typeAttribute];
-                    am7client.listParticipants(entity.model, search, function(v){
+                    if(type == "$flex"){
+                        if(field.foreignType){
+                            type = inst.api[field.foreignType]();
+                        }
+                        else{
+                            console.warn("Cannot reference a flex field without a foreign type");
+                        }
+                    }
+                    */
+                    am7client.members(entity.model, entity.objectId, type, 0, 100, function(v){
                         res(v);
                     });
-                    */
                 }
             });
         };

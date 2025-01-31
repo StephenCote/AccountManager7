@@ -272,6 +272,17 @@
 		m[s].push(o);
 	};
 
+	am7model.updateListModel = function(v){
+		/// In AM7, the 'model' property may be condensed to occur in only the first result  if the remaining results are the same
+    	///
+      if (v && v.length) {
+        let m = v[0].model;
+        for (let i = 1; i < v.length; i++) {
+          if (!v[i].model) v[i].model = m;
+        }
+      }
+	}
+
 	am7model.validateInstance = function (o) {
 		let r = o.model.fields.map((f) => am7model.validateField(o, f.name));
 
