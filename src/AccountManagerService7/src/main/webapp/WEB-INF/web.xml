@@ -81,7 +81,10 @@
 		<param-name>image.maximum.height</param-name>
 		<param-value>2048</param-value>
 	</context-param>
-
+    <listener>
+        <display-name>ImageIO service provider loader/unloader</display-name>
+        <listener-class>com.twelvemonkeys.servlet.image.IIOProviderContextListener</listener-class>
+    </listener>
 	<listener>
 		<listener-class>org.cote.listeners.AccountManagerContextListener</listener-class>
 	</listener>

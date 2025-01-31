@@ -249,7 +249,7 @@ public class RecordUtil {
 	
 	public static boolean inherits(ModelSchema ms, String fieldName) {
 		boolean outBool = false;
-		if(ms.getInherits().contains(fieldName) || ms.getLikeInherits().contains(fieldName)) {
+		if(ms.getName().equals(fieldName) || ms.getInherits().contains(fieldName) || ms.getLikeInherits().contains(fieldName)) {
 			outBool = true;
 		}
 		else {

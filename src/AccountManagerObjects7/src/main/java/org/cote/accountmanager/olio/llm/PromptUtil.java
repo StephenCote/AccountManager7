@@ -308,7 +308,7 @@ public class PromptUtil {
 		String nlpCommand = null;
 		if(useNLP) {
 			nlpCommand = chatConfig.get("nlpCommand");
-			nlpReminder = "(Reminder: Primary Command: \"${nlp.command}\")";
+			nlpReminder = "(Reminder: \"${nlp.command}\")";
 			sysNlp = composeTemplate(promptConfig.get("systemNlp"));
 			assistNlp = composeTemplate(promptConfig.get("assistantNlp"));
 		}

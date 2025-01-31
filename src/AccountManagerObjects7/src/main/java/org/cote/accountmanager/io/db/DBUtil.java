@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.naming.InitialContext;
@@ -25,6 +27,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.io.IOProperties;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -66,7 +69,7 @@ byte[] decode(byte[] source) {
     return Base64.getDecoder().decode(source);
 }
 $$;""";
-	
+
 	private List<String> reservedWords = new ArrayList<>(Arrays.asList("ALL", "AND", "ANY", "ARRAY", "AS", "ASYMMETRIC", "AUTHORIZATION", "BETWEEN", "BOTH", "CASE", "CAST", "CHECK", "CONSTRAINT", "CROSS", "CURRENT_CATALOG", "CURRENT_DATE", "CURRENT_PATH", "CURRENT_ROLE", "CURRENT_SCHEMA", "CURRENT_TIME", "CURRENT_TIMESTAMP", "CURRENT_USER", "DAY", "DEFAULT", "DISTINCT", "ELSE", "END", "EXCEPT", "EXISTS", "FALSE", "FETCH", "FOR", "FOREIGN", "FROM", "FULL", "GROUP", "GROUPS", "HAVING", "HOUR", "IF", "ILIKE", "IN", "INNER", "INTERSECT", "INTERVAL", "IS", "JOIN", "KEY", "LEADING", "LEFT", "LIKE", "LIMIT", "LOCALTIME", "LOCALTIMESTAMP", "MINUS", "MINUTE", "MONTH", "NATURAL", "NOT", "NULL", "OFFSET", "ON", "OR", "ORDER", "OVER", "PARTITION", "PRIMARY", "QUALIFY", "RANGE", "REGEXP", "RIGHT", "ROW", "ROWNUM", "ROWS", "SECOND", "SELECT", "SESSION_USER", "SET", "SOME", "SYMMETRIC", "SYSTEM_USER", "TABLE", "TO", "TOP", "", "TRAILING", "TRUE", "UESCAPE", "UNION", "UNIQUE", "UNKNOWN", "USER", "USING", "VALUE", "VALUES", "WHEN", "WHERE", "WINDOW", "WITH", "YEAR", "_ROWID_"));
 	private String dataPrefix = "A7";
 	
@@ -96,34 +99,6 @@ $$;""";
 	
 	public DBUtil() {
 
-	}
-	
-	public boolean isEnableVectorExtension() {
-		return enableVectorExtension;
-	}
-
-	public void setEnableVectorExtension(boolean enableVectorExtension) {
-		this.enableVectorExtension = enableVectorExtension;
-	}
-
-	public void createExtensions() {
-		String ext = null;
-		if(connectionType == ConnectionEnumType.H2) {
-			logger.info("Creating H2 Extensions");
-			ext = h2_extension;
-		}
-		else if(connectionType == ConnectionEnumType.POSTGRE) {
-			logger.info("Creating PG Extensions");
-			ext = pg_extension + (enableVectorExtension ? pg_vector_extension : "");
-		}
-		if(ext != null && ext.trim().length() > 0) {
-		    try (Connection con = dataSource.getConnection(); Statement statement = con.createStatement();){
-				statement.executeUpdate(ext);
-		    }
-		    catch(SQLException e) {
-		    	logger.error(e);
-		    }
-		}
 	}
 	
 	/*
@@ -182,6 +157,37 @@ $$;""";
 			enableVectorExtension = true;
 		}
 	}
+
+
+	public boolean isEnableVectorExtension() {
+		return enableVectorExtension;
+	}
+
+	public void setEnableVectorExtension(boolean enableVectorExtension) {
+		this.enableVectorExtension = enableVectorExtension;
+	}
+
+	public void createExtensions() {
+		String ext = null;
+		if(connectionType == ConnectionEnumType.H2) {
+			logger.info("Creating H2 Extensions");
+			ext = h2_extension;
+		}
+		else if(connectionType == ConnectionEnumType.POSTGRE) {
+			logger.info("Creating PG Extensions");
+			ext = pg_extension + (enableVectorExtension ? pg_vector_extension : "");
+		}
+		if(ext != null && ext.trim().length() > 0) {
+		    try (Connection con = dataSource.getConnection(); Statement statement = con.createStatement();){
+				statement.executeUpdate(ext);
+		    }
+		    catch(SQLException e) {
+		    	logger.error(e);
+		    }
+		}
+	}
+	
+	
 	
 	public DataSource getJNDIDataSource(String driverClass) {
 		DataSource ds = null;

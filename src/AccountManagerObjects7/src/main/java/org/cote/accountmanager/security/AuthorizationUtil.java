@@ -3,6 +3,8 @@ package org.cote.accountmanager.security;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -14,6 +16,7 @@ import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.db.AuthorizationSchema;
 import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -38,7 +41,9 @@ public class AuthorizationUtil {
 	private final IReader reader;
 	private final MemberUtil memberUtil;
 	private boolean trace = false;
+	
 
+	
 	public AuthorizationUtil(IReader reader, IWriter writer, ISearch search) {
 		this.reader = reader;
 		memberUtil = new MemberUtil(reader, writer, search);
@@ -53,6 +58,20 @@ public class AuthorizationUtil {
 		return trace;
 	}
 
+	
+	public void createAuthorizationSchema() {
+		/// Create functions
+		ModelNames.MODELS.forEach(m -> {
+			ModelSchema ms = RecordFactory.getSchema(m);
+			if(!ms.isAbs() && ms.inherits(ModelNames.MODEL_PARENT)){
+				AuthorizationSchema.createPathFunctions(m);
+			}
+		});
+		/// Create views
+		AuthorizationSchema.createEffectiveRoleViews();
+		
+		
+	}
 
 
 	public void setTrace(boolean trace) {

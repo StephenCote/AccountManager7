@@ -297,7 +297,6 @@ public class OlioContext {
 			throw new OlioException("Root directory is null");
 		}
 		
-		
 		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), olioUser, new BaseRecord[] {rootDir}, new String[] {"Read", "Update", "Create"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 		
 		BaseRecord uDir = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_GROUP, config.getUniversePath(), GroupEnumType.DATA.toString(), octx.getOrganizationId());
@@ -309,6 +308,7 @@ public class OlioContext {
 			throw new OlioException("World directory is null");
 		}
 		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), userRole, new BaseRecord[] {rootDir, uDir, wDir}, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+		ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), adminRole, new BaseRecord[] {rootDir, uDir, wDir}, new String[] {"Read"}, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 	}
 	
 	public void initialize() {

@@ -40,6 +40,7 @@ public class AdminAction extends CommonAction implements IAction {
 		options.addOption("adminPassword",true,"AccountManager admin password");
 		options.addOption("addUser", false, "Add a new user");
 		options.addOption("setup", false, "Setup AM7");
+		options.addOption("db", false, "Apply DB schema patches");
 		options.addOption("cleanup", false, "Run cleanup routines");
 	}
 
@@ -109,6 +110,10 @@ public class AdminAction extends CommonAction implements IAction {
 					logger.warn("Failed to find admin user in " + cmd.getOptionValue("organization"));
 				}
 			}
+		}
+		if(cmd.hasOption("db") && cmd.hasOption("patch")) {
+			logger.info("Patching DB Schema");
+			IOSystem.getActiveContext().getAuthorizationUtil().createAuthorizationSchema();
 		}
 		if(cmd.hasOption("cleanup")) {
 			logger.info("Cleaning up orphans ...");
