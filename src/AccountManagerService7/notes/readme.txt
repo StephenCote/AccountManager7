@@ -27,3 +27,31 @@ LIMIT 50;
 
 /// Reset
 select * from pg_stat_statements_reset();
+
+
+/// Adding Vector Extension
+https://dev.to/stephenc222/how-to-use-postgresql-to-store-and-query-vector-embeddings-h4b
+(https://github.com/pgvector/pgvector)
+(https://github.com/pgvector/pgvector#installation-notes---linux-and-mac)
+apt update
+apt install build-essential git postgresql-server-dev-17
+git clone --branch v0.7.4 https://github.com/pgvector/pgvector.git
+cd pgvector
+make
+make install
+
+CREATE EXTENSION if not exists vector;
+
+DROP SEQUENCE IF EXISTS vecttest_id_seq;
+CREATE SEQUENCE vecttest_id_seq;
+
+DROP TABLE vecttest;
+CREATE TABLE vecttest (
+	id bigint not null default nextval('vecttest_id_seq'), objectId varchar(64), modelType varchar(64), content TEXT, embedding vector(384),
+	primary key(id)
+	
+);
+
+
+//// Java setup
+https://djl.ai/extensions/tokenizers/
