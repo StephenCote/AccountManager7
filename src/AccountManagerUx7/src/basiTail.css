@@ -496,7 +496,7 @@ h5 {
     }
     */
     .result-item{
-        @apply px-4 py-4 sm:px-6 hover:bg-blue-100
+        @apply px-1 py-1 sm:px-6 hover:bg-blue-100
     }
     .result-item-active{
         @apply bg-blue-300 hover:bg-blue-400
