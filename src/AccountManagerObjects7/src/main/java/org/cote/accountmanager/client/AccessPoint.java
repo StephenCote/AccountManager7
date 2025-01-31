@@ -264,7 +264,6 @@ public class AccessPoint {
 	
 	public BaseRecord update(BaseRecord contextUser, BaseRecord object) {
 		BaseRecord outObj = null;
-		// BaseRecord cobj = object.copyRecord();
 		BaseRecord cobj = object;
 		
 		ActionEnumType aet = ActionEnumType.ADD;
@@ -296,7 +295,8 @@ public class AccessPoint {
 				outObj = cobj;
 			}
 			else {
-				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to create record");
+				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to " + (aet.toString().toLowerCase()) + " record");
+				logger.warn(cobj.toFullString());
 			}
 		}
 		else {

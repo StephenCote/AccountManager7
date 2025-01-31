@@ -6,6 +6,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -107,7 +108,8 @@ public class DBSearch extends SearchBase {
 			ResultSet rset = statement.executeQuery();
 			boolean inspect = query.get(FieldNames.FIELD_INSPECT);
 			while(rset.next()) {
-				BaseRecord rec = RecordFactory.newInstance(model, sql.getColumns().toArray(new String[0]));
+				
+				BaseRecord rec = RecordFactory.newInstance(model, sql.getColumns().stream().distinct().collect(Collectors.toList()).toArray(new String[0]));
 				StatementUtil.populateRecord(sql, rset, rec);
 				if(inspect) {
 					memReader.inspect(rec);

@@ -81,7 +81,7 @@
         countObjects : promiseCountObjects,
         deleteObject: promiseDeleteObject,
         listObjects : promiseListObjects,
-        listObjectsInParent : promiseListObjectsInParent,
+        //listObjectsInParent : promiseListObjectsInParent,
         findObject : promiseFindObject,
         makePath: promiseMakePath,
         stream : promiseStream,
@@ -632,6 +632,7 @@
             });
         });
     }
+    /*
     async function promiseListObjectsInParent(sType, id, start, length){
         return new Promise((res, rej)=>{
             am7client.listInParent(sType, id, start, length, function(v){
@@ -639,7 +640,7 @@
             });
         });
     }
-    
+    */
     async function promiseReparentObject(child, newParent){
         let modType = am7model.getModel(child.model);
         let modType2 = am7model.getModel(newParent.model);
@@ -647,6 +648,7 @@
             console.warn("Not a parentable object");
             return false;
         }
+
         child.parentId = newParent.id;
 
         let b = await promisePatch(child);

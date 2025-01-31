@@ -220,7 +220,8 @@
                         ico = modType.icon;
                     }
                     fListType = node.model;
-                    fList = "listInParent";
+                    //fList = "listInParent";
+                    fList = "list";
                     if (node.objectId == originPermission.objectId || node.objectId == originRole.objectId) {
                         nodeName = (node.model == "auth.role" ? "Roles" : "Permissions");
                         builtIn = true;
@@ -284,6 +285,7 @@
             /// The downside is, if looking at a child node without the parent model reference, you don't know what the child type is supposed to be
             ///
             if (!node.model) {
+                //console.warn("push model to group: " + node.name);
                 node.model = 'auth.group';
             }
             if (!node.model.match(/^(auth\.role|auth\.permission|auth\.group)$/gi)) {
@@ -300,7 +302,9 @@
                 if (!mtx.children) {
                     if (!pendingRefresh) {
                         pendingRefresh = true;
+                        // console.log(mtx.flist, mtx.listChildType, mtx.id, mtx);
                         am7client[mtx.flist](mtx.listChildType, mtx.id, null, 0, 1000, function (v) {
+                            am7model.updateListModel(v);
                             mtx.children = v.filter((o) => { return !o.name.match(/^\./); });
                             if (node.objectId == origin.objectId) {
                                 page.parentType("auth.role").then((rb) => {
@@ -370,6 +374,7 @@
 
             let dcls = dnd.doDragDecorate(node);
             if (dcls) itemProps.class += " " + dcls;
+
             itemProps.ondragover = function (e) { dnd.doDragOver(e, node); };
             itemProps.ondragend = function (e) { dnd.doDragEnd(e, node); };
             itemProps.ondragstart = function (e) { dnd.doDragStart(e, node); };

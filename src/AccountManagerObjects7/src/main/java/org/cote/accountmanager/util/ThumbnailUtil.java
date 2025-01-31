@@ -44,7 +44,7 @@ public class ThumbnailUtil {
 		}
 		IOContext ctx = IOSystem.getActiveContext();
 		BaseRecord record = irecord.copyRecord();
-		ctx.getReader().populate(record);
+		//ctx.getReader().populate(record, new String[] {FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH});
 		if(!canCreateThumbnail(record)) {
 			logger.error("Unable to create a thumbnail from content type: " + record.get(FieldNames.FIELD_CONTENT_TYPE));
 			return null;
@@ -85,7 +85,8 @@ public class ThumbnailUtil {
 
 		logger.info("Creating thumbnail " + thumbName + " in " + thumbPath);
 		// ctx.getReader().populate(record);
-		byte[] imageBytes = record.get(FieldNames.FIELD_BYTE_STORE);
+		ctx.getReader().populate(record, new String[] {FieldNames.FIELD_BYTE_STORE});
+		byte[] imageBytes = ByteModelUtil.getValue(record);
 		if(imageBytes.length == 0 && record.hasField(FieldNames.FIELD_STREAM)) {
 			BaseRecord stream = record.get(FieldNames.FIELD_STREAM);
 			// logger.info("Loading stream bytes ...");

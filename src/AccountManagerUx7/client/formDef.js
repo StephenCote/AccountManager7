@@ -571,6 +571,8 @@
         type: 'list',
         baseType: "model",
         baseModel: "$flex",
+        function : 'objectMembers',
+        promise: true,
         foreignType: "type",
         virtual: true,
         ephemeral: true,
@@ -584,7 +586,7 @@
     ctf.type = "enum";
     ctf.default = "text/plain";
     ctf.enum = am7model.enums.mimeTypeEnumType;
-    ctf.filter = /(^text\/(plain|css|csv|html|xml)$|\/json$|javascript$|^video\/(webm|webp|mpeg|avi|mp4)$|^image\/(gif|jpeg|png))/;
+    ctf.filter = /(^text\/(plain|css|csv|html|xml)$|\/json$|javascript$|^video\/(webm|webp|mpeg|avi|mp4)$|^audio\/(wav|mp3)|^image\/(gif|jpeg|png))/;
 
     let tagM = am7model.getModel("data.tag");
     let tagf = am7model.getModelField(tagM, "type");
@@ -714,7 +716,12 @@
                 layout: "half"
             },
             gender: {
-                layout: "one"
+                layout: 'one',
+                field: {
+                    label: 'Gender',
+                    type: 'list',
+                    limit: ['male', 'female', 'unisex']
+                }
             },
             birthDate: {
                 layout: "one"

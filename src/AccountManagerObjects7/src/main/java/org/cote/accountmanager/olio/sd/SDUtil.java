@@ -103,6 +103,9 @@ public class SDUtil {
 		if(useStyle == null) {
 			useStyle = "professional photograph";
 		}
+		if(bodyStyle == null) {
+			bodyStyle = "full body";
+		}
 		if(setting != null && setting.equals("random")) {
 			setting = NarrativeUtil.getRandomSetting();
 		}

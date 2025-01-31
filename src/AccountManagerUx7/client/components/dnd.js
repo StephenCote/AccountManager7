@@ -150,6 +150,8 @@
         let ret = false;
         if (obj && dnd.dragTarget) {
             let dragGroup = dnd.dragTarget.model.match(/^auth\.group$/gi);
+            let dragParent = am7model.isParent(dnd.dragTarget.model);
+
             let dragModType = am7model.getModel(dnd.dragTarget.model);
             if (typeof obj === "string") {
                 if (obj === "set") {
@@ -164,8 +166,10 @@
                 }
             }
             else if (dnd.overTarget) {
-                let dropGroup = dnd.overTarget.model.match(/^auth\.group$/gi);
-                if (dragGroup && dropGroup) {
+                let overParent = am7model.isParent(dnd.overTarget.model);
+                let dropGroup = dnd.overTarget.model.match(/^auth\.[group]$/gi);
+                console.log(dnd.dragTarget, dnd.overTarget, dragParent, overParent);
+                if ((dragGroup && dropGroup) || (dragParent && overParent)) {
                     ret = await page.reparentObject(dnd.dragTarget, dnd.overTarget);
                 }
                 else if (dropGroup && am7model.isGroup(dragModType)) {

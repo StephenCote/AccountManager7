@@ -404,8 +404,9 @@ public class StatementUtil {
 		for(int i = 0; i < record.getFields().size(); i++) {
 			FieldType f = record.getFields().get(i);
 			FieldSchema fs = ms.getFieldSchema(f.getName());
+			/// BUG NOTE: Urn is marked as an identity field.  However, it is constructed from name values.  If the model name or container changes, the Urn will change, and therefore the model can't be updated using the Urn as the identity
 			if(fs.isIdentity()) {
-				if(!FieldUtil.isNullOrEmpty(record.getModel(), f)) {
+				if(ident == null && !FieldUtil.isNullOrEmpty(record.getModel(), f)) {
 					ident = f;
 				}
 				continue;

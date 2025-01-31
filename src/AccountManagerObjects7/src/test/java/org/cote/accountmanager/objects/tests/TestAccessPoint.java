@@ -32,6 +32,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.JSONUtil;
@@ -375,5 +376,27 @@ public class TestAccessPoint extends BaseTest {
 		BaseRecord group = ioContext.getAccessPoint().make(testUser1, ModelNames.MODEL_GROUP, "~/A/Place/For/My/Stuff", GroupEnumType.DATA.toString());
 		assertNotNull("Group is null", group);
 	}
+
+	@Test
+	public void TestReparentRole() {
+		logger.info("*** Test Reparent Role");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Policy");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		assertNotNull("User is null", testUser1);
+
+		logger.info("*** MAKE/FIND Role 1");
+		String roleName1 = "Role 1 - " + UUID.randomUUID().toString();
+		String roleName2 = "Role 2 - " + UUID.randomUUID().toString();
+		BaseRecord role1 = ioContext.getAccessPoint().make(testUser1, ModelNames.MODEL_ROLE, "~/Roles/" + roleName1, RoleEnumType.PERSON.toString());
+		BaseRecord role2 = ioContext.getAccessPoint().make(testUser1, ModelNames.MODEL_ROLE, "~/Roles/" + roleName2, RoleEnumType.PERSON.toString());
+		assertNotNull("Role 1 is null", role1);
+		assertNotNull("Role 2 is null", role2);
+		
+		role2.setValue(FieldNames.FIELD_PARENT_ID, role1.get(FieldNames.FIELD_ID));
+		BaseRecord upRole = ioContext.getAccessPoint().update(testUser1, role2);
+		assertNotNull("Role was not updated", upRole);
+	}
+	
 	
 }

@@ -125,10 +125,10 @@
 				  <environmentVariables> 
       <PATH>C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64;${java.library.path}</PATH> 
     </environmentVariables> 
-					<skipTests>true</skipTests>
+					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
-						-Djava.library.path=C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64
+						-Djava.library.path=C:\Users\scot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64
 						-Dai.djl.default_engine=PyTorch
 						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
 						${argLine}</argLine>
@@ -138,9 +138,13 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestVectorStore.java</exclude>
 						
+						<exclude>**/TestAccessPoint.java</exclude>
 						-->
+						<exclude>**/TestStream.java</exclude>
+						<exclude>**/TestStreamEncryption.java</exclude>
+						<exclude>**/TestCipherData.java</exclude>
+						<exclude>**/TestVectorStore.java</exclude>
 						<exclude>**/TestVectorIndex.java</exclude>
 						<exclude>**/TestLangChain.java</exclude>
 						<exclude>**/TestOlioRules.java</exclude>	
@@ -154,7 +158,7 @@
 						<!-- Repeatable Set -->
 						<exclude>**/TestRealm.java</exclude>
 						<exclude>**/TestNestedStructures.java</exclude>
-						<exclude>**/TestStream.java</exclude>
+						
 						<exclude>**/TestQdrant.java</exclude>
 						<exclude>**/TestCondensedModel.java</exclude>
 						<exclude>**/TestBulkOperation.java</exclude>
@@ -163,7 +167,7 @@
 						<exclude>**/TestJournal.java</exclude>
 						<exclude>**/TestVaultFields.java</exclude>
 						
-						<exclude>**/TestAccessPoint.java</exclude>
+						
 						<exclude>**/TestVault.java</exclude>
 						<exclude>**/TestFieldLock.java</exclude>
 						<exclude>**/TestDBPerformance.java</exclude>

@@ -265,7 +265,7 @@ public class MediaUtil {
 			q.field(FieldNames.FIELD_NAME, objName);
 			if (options.isThumbnail()) {
 				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
-						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID,
+						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID,
 						FieldNames.FIELD_OWNER_ID });
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
 				data = ThumbnailUtil.getCreateThumbnail(sdata, options.getThumbWidth(), options.getThumbHeight());

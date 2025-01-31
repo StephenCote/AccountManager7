@@ -285,7 +285,7 @@
 		};
 		return q;
 	}
-
+	/*
 	function query(m, f){
 		let r = [];
 		let r1 = am7model.queryFields(m);
@@ -306,6 +306,7 @@
 
 		};
 	}
+	*/
 
 	function search(q, fH, bCount){
 		var sKey = q.key();
@@ -387,6 +388,7 @@
 		//console.error("REFACTOR: count");
 	    return get(sList + "/" + sType + "/" + sObjectId + "/count",fc);
 	}
+	/*
 	function countInParent(sType,sObjectId,fH){
 		var o = getFromCache(sType, "COUNT", sObjectId);
 		if(o){
@@ -397,6 +399,7 @@
 		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"COUNT",sObjectId,v);} if(f) f(v);};
 	   return get(sList + "/" + sType + "/parent/" + sObjectId + "/count",fc);
 	}
+	*/
 	function list(sType, sObjectId, sFields, iStart, iLength, fH){
 		
 		var sK = "LIST-" + sType + "-" + (sObjectId ? sObjectId : "0") + "-" + sFields + "-" + iStart + "-" + iLength;
@@ -409,7 +412,7 @@
 		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,sK,sObjectId,v);} if(f) f(v);};
 		return get(sList + "/" + sType + "/" + sObjectId + "/" + (sFields ? sFields + "/" : "") + iStart + "/" + iLength,fc);
 	}
-
+	/*
 	function listInParent(sType, sObjectId, iStart, sFields, iLength, fH){
 		
 		var sK = "LIST-" + sType + "-" + (sObjectId ? sObjectId : "0") + "-" + sFields + "-" + iStart + "-" + iLength;
@@ -422,7 +425,7 @@
 		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,sK,sObjectId,v);} if(f) f(v);};
 		return get(sList + "/" + sType + "/parent/" + sObjectId + "/" + iStart + "/" + iLength,fc);
 	}
-
+	*/
 	function findTags(sType, sObjId, fH){
 		console.error("REFACTOR: findTags");
 		// return Hemi.xml.getJSON(sSearch + "/" + sType + "/tags/" + sObjId,fH,(fH ? 1 : 0));
@@ -620,7 +623,7 @@
 			return o;
 		}
 		var f = fH;
-		var fc = function(v){console.log(v);if(typeof v != "undefined" && v != null){addToCache(sType,sK,sObjectId,v);} if(f) f(v);};
+		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,sK,sObjectId,v);} if(f) f(v);};
 		return get(sAuthZ + "/" + sType + "/" + sObjectId + "/" + sActorType + "/" + iStart + "/" + iCount, fc);	
 	}
 	function countMembers(sType, sObjectId, sActorType, fH){
@@ -739,7 +742,7 @@
 		findByTag : findByTag,
 		findBy : findBy,
 		search : search,
-		query : query,
+		// query : query,
 		newQuery : newQuery,
 		searchCount : searchCount,
 		newSortQuery : newSortQuery,
@@ -749,8 +752,10 @@
 		findTags : findTags,
 		make : make,
 		mediaDataPath : mediaDataPath,
+		/*
 		listInParent : listInParent,
 		countInParent : countInParent,
+		*/
 		list : list,
 		count: count,
 		stream: stream,

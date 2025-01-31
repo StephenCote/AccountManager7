@@ -20,8 +20,8 @@ public class CacheDBSearch extends DBSearch implements ICache {
 	/// 2023/06/29 - There is a currency problem with this rather simplistic cache when put under load
 	/// For some reason, the mapped values become transposed somehow
 
-	private Map<String, QueryResult> cache = new ConcurrentHashMap<>();
-	
+	//private Map<String, QueryResult> cache = new ConcurrentHashMap<>();
+	private Map<String,  Map<String, QueryResult>> cacheMap = new ConcurrentHashMap<>();
 	private int maximumCacheSize = 10000;
 	private int maximumCacheAgeMS = 360000;
 	private long cacheRefreshed = 0L;
@@ -32,24 +32,27 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		cacheRefreshed = System.currentTimeMillis();
 	}
 
-	public void clearCache() {
-		cache.clear();
+	public synchronized void clearCache() {
+		cacheMap.clear();
 	}
-	public void clearCache(String key) {
-		cache.remove(key);
+	public synchronized void clearCache(String key) {
+		cacheMap.values().forEach(m -> {
+			m.remove(key);
+		});
 	}
+	
 	public void cleanupCache() {
 		clearCache();
 		CacheUtil.removeProvider(this);
 	}
 	
-	private void checkCache() {
+	private synchronized void checkCache() {
 		long now = System.currentTimeMillis();
 		if( (now - cacheRefreshed) > maximumCacheAgeMS
-			|| cache.size() > maximumCacheSize
+		//	|| cache.size() > maximumCacheSize
 		){
 			cacheRefreshed = now;
-			cache.clear();
+			cacheMap.clear();
 		}
 	}
 	
@@ -59,82 +62,96 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		
 	}
 	
+	private synchronized Map<String, QueryResult> getCacheMap(String model) {
+		if(!cacheMap.containsKey(model)) {
+			cacheMap.put(model, new ConcurrentHashMap<>());
+		}
+		return cacheMap.get(model);
+	}
+	
+	private synchronized QueryResult getCache(Map<String, QueryResult> cache, final Query query, String hash) {
+		
+		QueryResult qr = null;
+		if(query.isCache() && cache.containsKey(hash)) {
+			qr = cache.get(hash);
+			stats.addCache(query);
+
+			String qt = query.get(FieldNames.FIELD_TYPE);
+			String qrt = qr.get(FieldNames.FIELD_TYPE);
+			if(!qt.equals(qrt)) {
+				logger.error("****** MISMATCHED CACHED RESULT TYPE!!! " + qt + " -> " + qrt);
+				logger.error("****** " + query.key() + " -> " + qr.get(FieldNames.FIELD_QUERY_KEY));
+				logger.error(query.toFullString());
+				logger.error(qr.toFullString());
+				logger.error("****** Invalidating cache entries for both");
+				cache.remove(hash);
+				cache.remove(qr.get(FieldNames.FIELD_QUERY_HASH));
+				qr = null;
+			}
+		}
+		return qr;
+	}
+	
+	private synchronized void addToCache(Map<String, QueryResult> cache, final Query query, QueryResult qr, String hash) throws ReaderException {
+		if(query.isCache() && qr != null && qr.getCount() > 0) {
+			String qt = query.get(FieldNames.FIELD_TYPE);
+			String qrt = qr.get(FieldNames.FIELD_TYPE);
+			if(!qt.equals(qrt)) {
+				logger.error("****** MISMATCHED RESULT TYPE ENTERING CACHE!!! " + qt + " -> " + qrt);
+				throw new ReaderException("Mismatched result type entering cache: Query for " + qt + " contains " + qrt);
+			}
+			cache.put(hash, qr);
+		}
+	}
+	
 	@Override
 	public QueryResult find(final Query query) throws ReaderException {
 
-			if(query.key() == null) {
-				throw new ReaderException("Null query key");
-			}
-			String hash = query.hash();
+		if(query.key() == null) {
+			throw new ReaderException("Null query key");
+		}
+		
+		checkCache();
+		
+		Map<String, QueryResult> cache = getCacheMap(query.get(FieldNames.FIELD_TYPE));
+		final String hash = query.hash();
+		if(hash == null) {
+			throw new ReaderException("Null query hash");
+		}
+		QueryResult qr = getCache(cache, query, hash);
+		if(qr == null) {
+			qr = super.find(query);
+			addToCache(cache, query, qr, hash);
+		}
 
-			checkCache();
-			
-			if(query.isCache() && cache.containsKey(hash)) {
-				final QueryResult qr = cache.get(hash);
-				stats.addCache(query);
-
-				String qt = query.get(FieldNames.FIELD_TYPE);
-				String qrt = qr.get(FieldNames.FIELD_TYPE);
-				if(!qt.equals(qrt)) {
-					logger.error("****** MISMATCHED CACHED RESULT TYPE!!! " + qt + " -> " + qrt);
-					logger.error("****** " + query.key() + " -> " + qr.get(FieldNames.FIELD_QUERY_KEY));
-					logger.error(query.toFullString());
-					logger.error(qr.toFullString());
-					logger.error("****** Invalidating cache entries for both");
-					cache.remove(query.hash());
-					cache.remove(qr.get(FieldNames.FIELD_QUERY_HASH));
-				}
-				else {
-					return qr;
-				}
-			}
-
-			final QueryResult res = super.find(query);
-			
-			if(query.isCache() && res != null && res.getCount() > 0) {
-				String qt = query.get(FieldNames.FIELD_TYPE);
-				String qrt = res.get(FieldNames.FIELD_TYPE);
-				if(!qt.equals(qrt)) {
-					logger.error("****** MISMATCHED RESULT TYPE ENTERING CACHE!!! " + qt + " -> " + qrt);
-					throw new ReaderException("Mismatched result type entering cache: Query for " + qt + " contains " + qrt);
-				}
-				cache.put(hash, res);
-			}
-			else {
-				/*
-				logger.warn("Skip cache: " + query.isCache() + " / " + res.getCount() + " / " + (res == null) + " / " + query.key());
-				logger.warn(query.toFullString());
-				if(res != null) {
-					logger.warn(res.toFullString());
-				}
-				ErrorUtil.printStackTrace();
-				*/
-			}
-			return res;
+		return qr;
 
 	}
 
 	@Override
 	public synchronized void clearCache(BaseRecord rec) {
 		// logger.info("TODO: Clear cache by record");
-		cache.entrySet().removeIf(entry ->{
-			QueryResult mr = entry.getValue();
-			boolean match = false;
-			for(BaseRecord r : mr.getResults()) {
-				if(rec.getModel().equals(r.getModel()) && RecordUtil.matchIdentityRecords(rec, r)) {
-					// logger.info("Clear record based on query result");
-					match = true;
-					break;
+		cacheMap.values().forEach(m ->{
+			m.entrySet().removeIf(entry ->{
+		
+				QueryResult mr = entry.getValue();
+				boolean match = false;
+				for(BaseRecord r : mr.getResults()) {
+					if(rec.getModel().equals(r.getModel()) && RecordUtil.matchIdentityRecords(rec, r)) {
+						// logger.info("Clear record based on query result");
+						match = true;
+						break;
+					}
+					
 				}
-				
-			}
-			return match;
+				return match;
+			});
 		});
 	}
 	
 	@Override
 	public void clearCacheByModel(String model) {
-		cache.values().removeIf(entry -> model.equals((String)entry.get(FieldNames.FIELD_TYPE)));
+		cacheMap.remove(model);
 	}
 
 	@Override

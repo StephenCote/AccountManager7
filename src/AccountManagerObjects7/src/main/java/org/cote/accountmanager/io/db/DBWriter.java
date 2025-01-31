@@ -194,9 +194,12 @@ public class DBWriter extends MemoryWriter {
     			throw new WriterException(e.getMessage());
     		}
 	    }
-	    try (Connection con = dataSource.getConnection()){
 
-			boolean lastCommit = con.getAutoCommit();
+    	Connection con = null;
+    	boolean lastCommit = true;
+	    try{
+	    	con = dataSource.getConnection();
+			lastCommit = con.getAutoCommit();
 			con.setAutoCommit(false);
 	    	
 	    	meta = null;
@@ -245,7 +248,7 @@ public class DBWriter extends MemoryWriter {
 	    	}
 			st.close();
 			con.commit();
-			con.setAutoCommit(lastCommit);
+
 
 		}
 	    catch (SQLException | DatabaseException | FieldException | ValueException | ModelNotFoundException e) {
@@ -253,6 +256,20 @@ public class DBWriter extends MemoryWriter {
 			if(meta != null) {
 				logger.error(meta.getSql());
 			}
+	    }
+	    finally {
+	    	if(con != null) {
+				try {
+					con.setAutoCommit(lastCommit);
+				} catch (SQLException e) {
+					logger.error(e);
+				}
+				try {
+					con.close();
+				} catch (SQLException e) {
+					logger.error(e);
+				};
+	    	}
 	    }
 
 	    return writeCount;

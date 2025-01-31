@@ -1,0 +1,88 @@
+-- These should be generated for models inheriting common.parent
+--
+CREATE OR REPLACE FUNCTION groups_from_leaf(IN root_id bigint)
+	RETURNS TABLE(branchid bigint, groupid bigint, parentid bigint, organizationid bigint)
+	AS $$
+	WITH RECURSIVE group_tree(branchid,groupid, parentid, organizationid) AS (
+	   SELECT $1 as branchid, R.id as groupid, R.parentid, R.organizationid
+	      FROM a7_auth_group_0_1 R WHERE R.id = $1
+	   UNION ALL
+	   SELECT $1 as branchid, P.id, P.parentid, P.organizationid
+	      FROM group_tree RT, a7_auth_group_0_1 P
+	      WHERE RT.groupid = P.parentid
+	)
+	select * from group_tree;
+	$$ LANGUAGE 'sql';
+
+CREATE OR REPLACE FUNCTION groups_to_leaf(IN root_id bigint)
+	RETURNS TABLE(branchid bigint, groupid bigint, parentid bigint, organizationid bigint)
+	AS $$
+	WITH RECURSIVE group_tree(branchid,groupid, parentid, organizationid) AS (
+	   SELECT $1 as branchid, R.id as groupid, R.parentid, R.organizationid
+	      FROM a7_auth_group_0_1 R WHERE R.id = $1
+	   UNION ALL
+	   SELECT $1 as branchid, P.id, P.parentid, P.organizationid
+	      FROM group_tree RT, a7_auth_group_0_1 P
+	      WHERE RT.parentid = P.id
+	)
+	select * from group_tree;
+	$$ LANGUAGE 'sql';
+
+CREATE OR REPLACE FUNCTION leveled_roles_from_leaf(IN root_id bigint)
+	RETURNS TABLE(level bigint,leafid bigint, roleid bigint, parentid bigint, organizationid bigint)
+	AS $$
+	WITH RECURSIVE role_tree(level,leafid,roleid, parentid, organizationid) AS (
+	   SELECT CAST(1 AS bigint) as level,$1 as leafid, R.id as roleid, R.parentid, R.organizationid
+	      FROM a7_auth_role_0_1 R WHERE R.id = $1
+	   UNION ALL
+	   SELECT CAST((RT.level + 1) AS bigint) as level,$1 as leafid, P.id, P.parentid, P.organizationid
+	      FROM role_tree RT, a7_auth_role_0_1 P
+	      WHERE RT.roleid = P.parentid
+	)
+	select * from role_tree;
+	$$ LANGUAGE 'sql';
+
+CREATE OR REPLACE FUNCTION leveled_roles_to_leaf(IN root_id bigint)
+	RETURNS TABLE(level bigint,leafid bigint, roleid bigint, parentid bigint, organizationid bigint)
+	AS $$
+	WITH RECURSIVE role_tree(level,leafid,roleid, parentid, organizationid) AS (
+	   SELECT CAST(1 AS bigint) as level,$1 as leafid, R.id as roleid, R.parentid, R.organizationid
+	      FROM a7_auth_role_0_1 R WHERE R.id = $1
+	   UNION ALL
+	   SELECT CAST((RT.level + 1) AS bigint) as level,$1 as leafid, P.id, P.parentid, P.organizationid
+	      FROM role_tree RT, a7_auth_role_0_1 P
+	      WHERE RT.parentid = P.id
+	)
+	select * from role_tree;
+	$$ LANGUAGE 'sql';
+
+CREATE OR REPLACE FUNCTION roles_from_leaf(IN root_id bigint)
+	RETURNS TABLE(leafid bigint, roleid bigint, parentid bigint, organizationid bigint)
+	AS $$
+	WITH RECURSIVE role_tree(leafid,roleid, parentid, organizationid) AS (
+	   SELECT $1 as leafid, R.id as roleid, R.parentid, R.organizationid
+	      FROM a7_auth_role_0_1 R WHERE R.id = $1
+	   UNION ALL
+	   SELECT $1 as leafid, P.id, P.parentid, P.organizationid
+	      FROM role_tree RT, a7_auth_role_0_1 P
+	      WHERE RT.roleid = P.parentid
+	)
+	select * from role_tree;
+	$$ LANGUAGE 'sql';
+
+
+
+
+CREATE OR REPLACE FUNCTION roles_to_leaf(root_id BIGINT) 
+        RETURNS TABLE (leafid BIGINT,roleid BIGINT, parentid BIGINT, organizationid BIGINT)
+        AS $$
+	WITH RECURSIVE role_tree(leafid,roleid, parentid, organizationid) AS (
+	   SELECT $1 as leafid, R.id as roleid, R.parentid, R.organizationid
+	      FROM a7_auth_role_0_1 R WHERE R.id = $1
+	   UNION ALL
+	   SELECT $1 as leafid, P.id, P.parentid, P.organizationid
+	      FROM role_tree RT, a7_auth_role_0_1 P
+	      WHERE RT.parentid = P.id
+	)
+	select * from role_tree;
+        $$ LANGUAGE 'sql';

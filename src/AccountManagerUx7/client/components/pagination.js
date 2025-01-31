@@ -70,14 +70,7 @@
     function handleList(v) {
 
       pages.pageResults[pages.currentPage] = v;
-      /// In AM7, the 'model' property may be condensed to occur in only the first result  if the remaining results are the same
-      ///
-      if (v.length) {
-        let m = v[0].model;
-        for (let i = 1; i < v.length; i++) {
-          if (!v[i].model) v[i].model = m;
-        }
-      }
+      am7model.updateListModel(v);
       requesting = false;
       m.redraw();
     }
@@ -147,7 +140,8 @@
           am7client.listRequests("USER", page.user.objectId, pages.startRecord, pages.recordCount, handleList);
         }
         else if (pages.filter == null) {
-          am7client[pages.navigateByParent ? "listInParent" : "list"](pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
+          // [pages.navigateByParent ? "listInParent" : "list"]
+          am7client.list(pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
         }
         else {
           am7client.search(getSearchQuery(), handleList);
@@ -228,7 +222,8 @@
           });
         }
         else if (pages.filter == null) {
-          am7client[navigateByParent ? "countInParent" : "count"](type, containerId, handleCount);
+          //am7client[navigateByParent ? "countInParent" : "count"](type, containerId, handleCount);
+          am7client.count(type, containerId, handleCount);
         }
         else {
           let req = getSearchQuery();

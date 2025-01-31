@@ -582,6 +582,7 @@ public abstract class BaseRecord {
 		for(FieldType f : inFields) {
 			if(fieldMap.containsKey(f.getName())) {
 				logger.error(model + " field '" + f.getName() + "' is already specified");
+				ErrorUtil.printStackTrace();
 			}
 			else {
 				fieldMap.put(f.getName(), f);
