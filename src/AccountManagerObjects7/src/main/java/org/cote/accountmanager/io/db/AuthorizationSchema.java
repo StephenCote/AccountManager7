@@ -58,7 +58,7 @@ WITH result AS(
 select R.id,R.type, R.parentid,roles_to_leaf(R.id) ats,R.organizationid
 FROM a7_auth_role_0_1 R  
 )
-select GP.participationid as id, ${modelName} as name, GP.participationModel as model, (R.ats).leafid as effectiveRoleId,(R.ats).roleid as baseRoleId,GP.permissionId, R.organizationid from result R
+select distinct GP.participationid as id, ${modelName} as name, GP.participationModel as model, (R.ats).leafid as effectiveRoleId,(R.ats).roleid as baseRoleId,GP.permissionId, R.organizationid from result R
 JOIN ${tableName} GP ON GP.participantid = (R.ats).leafid and GP.participantmodel = 'auth.role'
 ${modelTableJoin}
 ;""";
@@ -70,12 +70,24 @@ WITH result AS(
 select R.id, R.parentid, roles_to_leaf(R.id) ats, R.organizationid
 FROM a7_auth_role_0_1 R
 )
-select '${modelName}' as model, CASE WHEN RP.participantmodel = '${modelName}' THEN U1.id WHEN RP.participantmodel = 'auth.group' AND U2.id > 0 THEN U2.id ELSE -1 END as id,(R.ats).leafid as effectiveRoleId,(R.ats).roleid as baseRoleId,R.organizationid from result R
+select distinct '${modelName}' as model, CASE WHEN RP.participantmodel = '${modelName}' THEN U1.id WHEN RP.participantmodel = 'auth.group' AND U2.id > 0 THEN U2.id ELSE -1 END as id,(R.ats).leafid as effectiveRoleId,(R.ats).roleid as baseRoleId,R.organizationid from result R
 JOIN a7_auth_role_system_participation_0_1 RP ON RP.participationid = (R.ats).roleid and (RP.participantmodel = 'auth.group' or RP.participantmodel = '${modelName}')
 LEFT JOIN ${tableName} U1 on U1.id = RP.participantid and RP.participantmodel = '${modelName}'
 LEFT JOIN a7_auth_group_system_participation_0_1 gp2 on gp2.participationid = RP.participantid and RP.participantmodel = 'auth.group' and gp2.participantmodel = '${modelName}'
 LEFT JOIN ${tableName} U2 on U2.id = gp2.participantid AND U2.organizationid = gp2.organizationid;""";
+
+	private static String effectiveGroupObjectEntitlementTemplate = """
+DROP VIEW IF EXISTS effectiveGroup${name}ObjectEntitlements CASCADE;
+CREATE OR REPLACE VIEW effectiveGroup${name}ObjectEntitlements as
+select distinct EI.model, P.name as actorName, R2.name as effectiveRoleName, R2.type as effectiveRoleType, R.name as baseRoleName, R.type as baseRoleType, PR.name as permissionName, ER.model as objectModel, ER.name as objectName from effective${name}ActorRoles EI
+inner join a7_auth_role_0_1 R on R.id = EI.effectiveRoleId
+inner join a7_auth_role_0_1 R2 on R2.id = EI.baseRoleId
+inner join ${tableName} P on EI.id = P.id
+inner join effectiveRoles ER on ER.effectiveroleid = EI.effectiveroleid
+inner join a7_auth_permission_0_1 PR on PR.id = ER.permissionid
+inner join groupedObjects GO on GO.groupId = ER.id;""";
 	
+
 	private static Pattern modelNamePat = Pattern.compile("\\$\\{modelName\\}");
 	private static Pattern modelTableJoinPat = Pattern.compile("\\$\\{modelTableJoin\\}");
 	private static Pattern functionNamePat = Pattern.compile("\\$\\{name\\}");
@@ -88,7 +100,10 @@ LEFT JOIN ${tableName} U2 on U2.id = gp2.participantid AND U2.organizationid = g
 			return;
 		}
 
+		List<String> groupedEntitlements = new ArrayList<>();
+		List<String> groupModels = new ArrayList<>();
 		List<String> schemas = new ArrayList<>();
+		List<String> schemas2 = new ArrayList<>();
 		List<String> views = new ArrayList<>();
 		List<String> actorViews = new ArrayList<>();
 
@@ -98,19 +113,37 @@ LEFT JOIN ${tableName} U2 on U2.id = gp2.participantid AND U2.organizationid = g
 			String modelName = ms.getName();
 			String tableName = du.getTableName(modelName);
 			String viewName = modelName.replaceAll("\\.", "");
+			
 			String schema = tableNamePat.matcher(effectiveActorRoleTemplate).replaceAll(Matcher.quoteReplacement(tableName));
 			schema = modelNamePat.matcher(schema).replaceAll(Matcher.quoteReplacement(modelName));
 			schema = functionNamePat.matcher(schema).replaceAll(Matcher.quoteReplacement(viewName));
 			schemas.add(schema);
 			actorViews.add("SELECT id, model, effectiveroleid, baseroleid, organizationid FROM effective" + viewName + "ActorRoles");
+			
+			String schema2 = tableNamePat.matcher(effectiveGroupObjectEntitlementTemplate).replaceAll(Matcher.quoteReplacement(tableName));
+			schema2 = modelNamePat.matcher(schema2).replaceAll(Matcher.quoteReplacement(modelName));
+			schema2 = functionNamePat.matcher(schema2).replaceAll(Matcher.quoteReplacement(viewName));
+			schemas2.add(schema2);
+			
+			groupedEntitlements.add("SELECT model, actorName, effectiveRoleName, effectiveRoleType, baseRoleName, baseRoleType, permissionName, objectModel, objectName FROM effectiveGroup" + viewName + "ObjectEntitlements");
+			
 		}
 		
 		ModelNames.MODELS.forEach(m -> {
 			ModelSchema ms = RecordFactory.getSchema(m);
+			
+			if(!ms.isAbs() && ms.inherits(ModelNames.MODEL_DIRECTORY)) {
+				
+				String name = "'null' as name";
+				if(ms.hasField(FieldNames.FIELD_NAME)) {
+					name = "name";
+				}
+				groupModels.add("SELECT '" + ms.getName() + "' as model, id, " + name + ", groupId, organizationId FROM " + du.getTableName(ms.getName()));
+			}
 			if(!ms.isAbs() && ms.isDedicatedParticipation() || ms.inherits(ModelNames.MODEL_PARTICIPATION)){
 				String modelName = ms.getName();
-
 				String tableName = du.getTableName(ms, ModelNames.MODEL_PARTICIPATION);
+				
 				String viewName = modelName.replaceAll("\\.", "");
 				// logger.info("Create effective role view for " + tableName + ", " + viewName);
 				
@@ -152,7 +185,26 @@ LEFT JOIN ${tableName} U2 on U2.id = gp2.participantid AND U2.organizationid = g
 			);
 			buff.append(";" + System.lineSeparator());
 
+			buff.append("DROP VIEW IF EXISTS groupedObjects CASCADE;" + System.lineSeparator());
+			buff.append("CREATE OR REPLACE VIEW groupedObjects as " + System.lineSeparator());
+			buff.append(
+				groupModels.stream().collect(Collectors.joining(System.lineSeparator() + "UNION ALL" + System.lineSeparator()))
+				 + ";"
+				+ System.lineSeparator()
+			);
+			buff.append(";" + System.lineSeparator());
+
+			buff.append(schemas2.stream().collect(Collectors.joining(System.lineSeparator())) + System.lineSeparator());
 			
+			buff.append("DROP VIEW IF EXISTS groupedEntitlements CASCADE;" + System.lineSeparator());
+			buff.append("CREATE OR REPLACE VIEW groupedEntitlements as " + System.lineSeparator());
+			buff.append(
+				groupedEntitlements.stream().collect(Collectors.joining(System.lineSeparator() + "UNION ALL" + System.lineSeparator()))
+				 + ";"
+				+ System.lineSeparator()
+			);
+			buff.append(";" + System.lineSeparator());
+
 			try (Connection con = du.getDataSource().getConnection(); Statement statement = con.createStatement();){
 				statement.executeUpdate(buff.toString());
 		    }

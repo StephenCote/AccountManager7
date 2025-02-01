@@ -24,7 +24,6 @@ public class VectorChatHistoryListFactory extends VectorListFactory {
 	@Override
 	public BaseRecord newInstance(BaseRecord contextUser, BaseRecord recordTemplate, ParameterList parameterList, BaseRecord... arguments) throws FactoryException
 	{
-
 		BaseRecord systemChar = null;
 		BaseRecord userChar = null;
 		BaseRecord event = null;
