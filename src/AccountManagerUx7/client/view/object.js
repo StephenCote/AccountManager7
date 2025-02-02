@@ -272,7 +272,17 @@
                 m.redraw();
             }
         }
-
+        async function doCopy(){
+            if(!entity || !entity.objectId) return;
+            if(am7model.hasField(entity.model, "name")){
+                entity.name += " Copy";
+            }
+            entity.objectId = undefined;
+            entity.id = undefined;
+            entity.urn = undefined;
+            resetEntity(entity);
+            m.redraw();
+        }
         async function doDelete(){
             if(!entity || !entity.objectId) return;
             let type = entity.model;
@@ -1447,6 +1457,7 @@
                             page.iconButton("button" + altCls,"save", "", doUpdate),
                             (designable ? page.iconButton("button" + (designMode ? " active" : ""),"design_services", "", toggleDesignMode) : ""),
                             page.iconButton("button","cancel", "", doCancel),
+                            (bNew ? "" : page.iconButton("button","content_copy", "", doCopy)),
                             (bNew ? "" : page.iconButton("button","delete_outline", "", doDelete)),
                             getFormCommands(type, form, null, false, false, true)
                         ]),
