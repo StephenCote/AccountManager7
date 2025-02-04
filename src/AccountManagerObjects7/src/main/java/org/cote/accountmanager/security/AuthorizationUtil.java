@@ -64,13 +64,11 @@ public class AuthorizationUtil {
 		ModelNames.MODELS.forEach(m -> {
 			ModelSchema ms = RecordFactory.getSchema(m);
 			if(!ms.isAbs() && ms.inherits(ModelNames.MODEL_PARENT)){
-				AuthorizationSchema.createPathFunctions(m);
+				AuthorizationSchema.createPathFunctions(AuthorizationSchema.getPathFunctions(m));
 			}
 		});
 		/// Create views
 		AuthorizationSchema.createEffectiveRoleViews();
-		
-		
 	}
 
 

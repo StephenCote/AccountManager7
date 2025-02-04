@@ -9,14 +9,18 @@ import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.AuthorizationSchema;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
+import org.cote.accountmanager.util.FileUtil;
 import org.junit.Test;
 
 public class TestAuthorization extends BaseTest{
@@ -33,6 +37,20 @@ public class TestAuthorization extends BaseTest{
 		
 		assertNotNull("Person is null", et.getPerson());
 		
+		StringBuilder buff = new StringBuilder();
+		ModelNames.MODELS.forEach(m -> {
+			ModelSchema ms = RecordFactory.getSchema(m);
+			if(!ms.isAbs() && ms.inherits(ModelNames.MODEL_PARENT)){
+				String schema = AuthorizationSchema.getPathFunctions(m);
+				if(schema != null) {
+					buff.append(schema + System.lineSeparator());
+				}
+			}
+		});
+		
+		// buff.append(AuthorizationSchema.getEffectiveRoleSchemas());
+		// FileUtil.emitFile("./authZEmit.sql", buff.toString());
+		logger.info(AuthorizationSchema.getRefreshMaterializedViewsSchema());
 		AuthorizationUtil autil = ioContext.getAuthorizationUtil();
 		autil.createAuthorizationSchema();
 	}

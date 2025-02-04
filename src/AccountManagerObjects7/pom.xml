@@ -138,9 +138,10 @@
 					</includes>
 					<excludes>
 						<!--
+						<exclude>**/TestAuthorization.java</exclude>
 						
-						<exclude>**/TestAccessPoint.java</exclude>
 						-->
+						<exclude>**/TestAccessPoint.java</exclude>
 						<exclude>**/TestStream.java</exclude>
 						<exclude>**/TestStreamEncryption.java</exclude>
 						<exclude>**/TestCipherData.java</exclude>

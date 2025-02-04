@@ -295,7 +295,9 @@ public class ChatAction extends CommonAction implements IAction{
 				logger.info("Configuring user for olio world access: " + enabled);
 			}
 			if (cmd.hasOption("scan")) {
-				octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+				//octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+				octx.scanNestedGroups(octx.getUniverse(), false);
+				octx.scanNestedGroups(octx.getWorld(), true);
 			}
 			if(cmd.hasOption("list")) {
 				if(cmd.hasOption("reimage")) {

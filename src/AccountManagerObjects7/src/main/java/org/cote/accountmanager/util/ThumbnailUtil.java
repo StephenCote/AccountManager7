@@ -50,6 +50,8 @@ public class ThumbnailUtil {
 			return null;
 		}
 		
+		//Query oq = QueryUtil.createQuery(ModelNames.MODEL_USER, FieldNames.FIELD_ID, record.get(FieldNames.FIELD_OWNER_ID));
+		//oq.planMost(false);
 		BaseRecord owner = ctx.getRecordUtil().getRecordById(null, ModelNames.MODEL_USER, record.get(FieldNames.FIELD_OWNER_ID));
 		if(owner == null) {
 			logger.error("Null owner");
@@ -62,7 +64,7 @@ public class ThumbnailUtil {
 			return null;
 		}
 		
-		String thumbPath = groupPath; // + "/.thumbnail";
+		String thumbPath = groupPath;
 		BaseRecord thumbDir = ctx.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, thumbPath, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		String thumbName = record.get(FieldNames.FIELD_NAME) + " " + width + "x" + height;
 		//BaseRecord thumb = ioContext.getSearch().findByPath(owner, thumbPath, thumbName,  owner.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -70,7 +72,7 @@ public class ThumbnailUtil {
 		//BaseRecord thumb = ctx.getAccessPoint().findByNameInGroup(owner, ModelNames.MODEL_THUMBNAIL, thumbDir.get(FieldNames.FIELD_OBJECT_ID), thumbName);
 		Query tq = QueryUtil.createQuery(ModelNames.MODEL_THUMBNAIL, FieldNames.FIELD_GROUP_ID, thumbDir.get(FieldNames.FIELD_ID), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		tq.field(FieldNames.FIELD_NAME, thumbName);
-		tq.planMost(false);
+		tq.planMost(true);
 		BaseRecord thumb = ctx.getAccessPoint().find(owner, tq);
 		if(thumb != null) {
 			String cobj = record.get(FieldNames.FIELD_OBJECT_ID);

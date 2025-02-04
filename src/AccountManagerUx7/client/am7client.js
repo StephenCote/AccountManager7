@@ -509,6 +509,9 @@
 				fH(x);
 			}
 			return x;
+		}).catch((x) =>{
+			console.error("Failed to get " + url);
+			fH();
 		});
 	}
 

@@ -296,7 +296,6 @@ public class AccessPoint {
 			}
 			else {
 				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to " + (aet.toString().toLowerCase()) + " record");
-				logger.warn(cobj.toFullString());
 			}
 		}
 		else {

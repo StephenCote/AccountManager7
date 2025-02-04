@@ -15,6 +15,7 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.AuthorizationSchema;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -41,6 +42,7 @@ public class AdminAction extends CommonAction implements IAction {
 		options.addOption("addUser", false, "Add a new user");
 		options.addOption("setup", false, "Setup AM7");
 		options.addOption("db", false, "Apply DB schema patches");
+		options.addOption("refreshViews", false, "Refresh DB materialized views");
 		options.addOption("cleanup", false, "Run cleanup routines");
 	}
 
@@ -111,30 +113,37 @@ public class AdminAction extends CommonAction implements IAction {
 				}
 			}
 		}
-		if(cmd.hasOption("db") && cmd.hasOption("patch")) {
-			logger.info("Patching DB Schema");
-			IOSystem.getActiveContext().getAuthorizationUtil().createAuthorizationSchema();
-		}
-		if(cmd.hasOption("cleanup")) {
-			logger.info("Cleaning up orphans ...");
-			RecordFactory.cleanupOrphans(null);
-			if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
-				DBUtil util = IOSystem.getActiveContext().getDbUtil();
-				
-				try (Connection con = util.getDataSource().getConnection();
-				   	Statement st = con.createStatement();
-				){
-					if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
-						logger.info("Vacuuming ...");
-
-						st.execute("vacuum(full, analyze, verbose);");
+		if(cmd.hasOption("db")) {
+			if(cmd.hasOption("patch")) {
+				logger.info("Patching DB Schema");
+				IOSystem.getActiveContext().getAuthorizationUtil().createAuthorizationSchema();
+			}
+	
+			if(cmd.hasOption("cleanup")) {
+				logger.info("Cleaning up orphans ...");
+				RecordFactory.cleanupOrphans(null);
+				if(IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
+					DBUtil util = IOSystem.getActiveContext().getDbUtil();
+					
+					try (Connection con = util.getDataSource().getConnection();
+					   	Statement st = con.createStatement();
+					){
+						if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
+							logger.info("Vacuuming ...");
+	
+							st.execute("vacuum(full, analyze, verbose);");
+							
+						}
 						
 					}
-					
+					catch (SQLException e) {
+						logger.error(e);
+				    }
 				}
-				catch (SQLException e) {
-					logger.error(e);
-			    }
+			}
+			if(cmd.hasOption("refreshViews")) {
+				logger.info("Refreshing DB Materialized Views");
+				AuthorizationSchema.refreshMaterializedViews();
 			}
 		}
 	}

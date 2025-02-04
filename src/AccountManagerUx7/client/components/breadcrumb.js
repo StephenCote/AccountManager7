@@ -35,8 +35,14 @@
             if (typeUdef || model.contextObjects[objectId] == null) {
                 model.contextObjects[objectId] = null;
                 am7client.get(objType, objectId, function (v) {
-                    model.contextObjects[objectId] = v;
-                    m.redraw();
+                    if(v && v != null){
+                        console.log(v);
+                        model.contextObjects[objectId] = v;
+                        m.redraw();
+                    }
+                    else{
+                        console.error("Failed to retrieve group", objType, objectId);
+                    }
                 });
             }
             else if (!typeUdef && model.contextObjects[objectId] != null) {

@@ -264,7 +264,7 @@ public class MediaUtil {
 					group.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, objName);
 			if (options.isThumbnail()) {
-				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_NAME,
 						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID,
 						FieldNames.FIELD_OWNER_ID });
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
@@ -275,7 +275,7 @@ public class MediaUtil {
 				}
 			} /// End if thumbnail
 			else {
-				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
 						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_BYTE_STORE,
 						FieldNames.FIELD_STREAM, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
 				data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
