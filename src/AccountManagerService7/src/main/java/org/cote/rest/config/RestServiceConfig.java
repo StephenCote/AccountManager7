@@ -67,6 +67,7 @@ import org.glassfish.jersey.server.spi.Container;
 public class RestServiceConfig extends ResourceConfig{
 	private static final Logger logger = LogManager.getLogger(RestServiceConfig.class);
 
+	private static boolean debugEnableVector = false;
     
 	public RestServiceConfig(@Context ServletContext servletContext){
 		register(StartupHandler.class);
@@ -141,21 +142,23 @@ public class RestServiceConfig extends ResourceConfig{
     		
 			
 			DBUtil util = ioContext.getDbUtil();
-			//util.setEnableVectorExtension(false);
-
-			 List<BaseRecord> store = new ArrayList<>();
-			if(util.isEnableVectorExtension()) {
-				try {
-					store = VectorUtil.createVectorStore(octx.getDocumentControl() , "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
-				} catch (FieldException e) {
-					logger.error(e);
-				}
-				if(store == null || store.size() == 0) {
-					logger.error("Expected a vector store.  Disabling vector store.");
-					util.setEnableVectorExtension(false);
+			if(!debugEnableVector) {
+				util.setEnableVectorExtension(false);
+			}
+			else {
+				List<BaseRecord> store = new ArrayList<>();
+				if(util.isEnableVectorExtension()) {
+					try {
+						store = VectorUtil.createVectorStore(octx.getDocumentControl() , "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
+					} catch (FieldException e) {
+						logger.error(e);
+					}
+					if(store == null || store.size() == 0) {
+						logger.error("Expected a vector store.  Disabling vector store.");
+						util.setEnableVectorExtension(false);
+					}
 				}
 			}
-
     	}
     	
 		private void initializeAccountManager(){
