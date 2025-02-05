@@ -965,7 +965,7 @@
                     break;
                 case "textlist":
                 case "textarea":
-                    fieldClass += " textarea-field-full";
+                    fieldClass += " textarea-field-full w-full";
                     let props = {onchange: fHandler, class : fieldClass, name : useName};
                     if(entity && !entity.objectId && fieldView.dragAndDrop){
                         props.class += " border-dotted";

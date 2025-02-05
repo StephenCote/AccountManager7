@@ -721,7 +721,7 @@
 
     async function promiseSearchObjectByName(type, id, name){
         let q = am7view.viewQuery(am7model.newInstance(type));
-        q.field("groupId", g.id);
+        q.field("groupId", id);
         return new Promise( (res, rej) => {
             page.search(q).then( (g2) => {
                 let og;

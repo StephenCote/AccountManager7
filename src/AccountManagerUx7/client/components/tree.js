@@ -71,6 +71,14 @@
             });
         }
 
+        function scrollToLast(){
+            let sel = document.getElementById("selectedNode");
+            if(sel != null){
+              //sel.scrollIntoView();
+            }
+  
+          }
+
         function deleteNode() {
             if (!selectedNode || selectedNode == origin.objectId) return;
             let node = treeMatrix[selectedNode];
@@ -355,8 +363,10 @@
 
             }
             let icoCls = "flare hier-item-element material-icons-24 material-symbols-outlined" + altCls;
+            let selId;
             if (node.objectId == selectedNode) {
                 icoCls += " filled active" + altActive;
+                selId = "selectedNode";
             }
 
             let fHandler = function () {
@@ -370,6 +380,7 @@
                 class: "hier-item",
                 ondblclick: function () { expandNode(node); },
                 onclick: fHandler,
+
             };
 
             let dcls = dnd.doDragDecorate(node);
@@ -380,7 +391,7 @@
             itemProps.ondragstart = function (e) { dnd.doDragStart(e, node); };
             itemProps.ondrop = function (e) { dnd.doDrop(e, node); };
 
-            return m("div", { class: "hier-item-container" }, [
+            return m("div", { id: selId, class: "hier-item-container" }, [
                 m("div" + attr, itemProps, [
                     m("span", { class: icoCls }, mtx.ico),
                     m("span", { class: "hier-item-element" }, label)
@@ -424,6 +435,9 @@
             },
             onremove: function (x) {
 
+            },
+            onupdate: function(x){
+                scrollToLast();
             },
 
             view: function () {

@@ -22,13 +22,13 @@
                 "name": "chat",
                 "label": "Chat Config",
                 "type": "string",
-                "default": "ad2.chat"
+                "default": "wash.chat"
                 },
                 {
                   "name": "prompt",
                   "label": "Prompt Config",
                   "type": "string",
-                  "default": "alg.prompt"
+                  "default": "wash.prompt"
                 },
                 {
                   "name": "session",
@@ -92,14 +92,16 @@
 
     }
 
-    function doCancel(){
+    async function doCancel(){
+      clearEditMode();
       chatCfg.pending = false;
       chatCfg.history = [];
-      m.request({method: 'POST', url: g_application_path + "/rest/chat/clear", withCredentials: true, body: {chatConfig:chatCfg?.chat?.objectId, promptConfig:chatCfg?.prompt?.objectId, sessionName: inst.api.session(), uid: page.uid()}}).then((r)=> {
+      return m.request({method: 'POST', url: g_application_path + "/rest/chat/clear", withCredentials: true, body: {chatConfig:chatCfg?.chat?.objectId, promptConfig:chatCfg?.prompt?.objectId, sessionName: inst.api.session(), uid: page.uid()}}).then((r)=> {
         m.redraw();
       });
     }
     function doChat(){
+      clearEditMode();
       // console.log("Chatting ...");
       if(chatCfg.pending){
         console.warn("Chat is pending");
@@ -138,6 +140,7 @@
     }
     
     function doPeek(){
+      clearEditMode();
       console.log("Peeking ...");
       chatCfg.history = undefined;
       chatCfg.system = undefined;
@@ -215,6 +218,79 @@
             am7view.form(inst)
           ]);
         }
+
+        let hideThoughts = true;
+        let editIndex = -1;
+        let editMode = false;
+        function toggleThoughts(){
+          hideThoughts = !hideThoughts;
+        }
+        function clearEditMode(){
+          editMode = false;
+          editIndex = -1;
+        }
+        async function editMessageHistory(idx, cnt){
+          let pg = await page.findObject("auth.group", "data", "~/Chat")
+          if(pg){
+              let name = page.user.name + "-" + inst.api.chat() + "-" + inst.api.prompt() + "-" + inst.api.session();
+              let hist = await page.searchByName("data.data", pg.id, name);
+              let ocnt = chatCfg.history.messages[idx];
+              window.dbgCnt = ocnt;
+              if(hist){
+                let histx = JSON.parse(Base64.decode(hist.dataBytesStore));
+                if(histx){
+                  let om = histx.messages.filter(m => m.content == ocnt.content);
+                  if(om.length){
+                    om[0].content = cnt;
+                    hist.dataBytesStore = Base64.encode(JSON.stringify(histx));
+                    let histy = {
+                      model: hist.model,
+                      id: hist.id,
+                      compressionType: "none",
+                      ownerId: hist.ownerId,
+                      groupId: hist.groupId,
+                      organizationId: hist.organizationId,
+                      dataBytesStore: hist.dataBytesStore
+                    };
+                    let patch = await page.patchObject(histy);
+                    await doCancel();
+                    await doPeek();
+                    clearEditMode();
+                  }
+                  else{
+                    console.error("Failed to find matching history");
+                  }
+                }
+                else{
+                  console.error("Failed to parse history");
+                }
+                window.dbgHist = hist;
+              }
+              else{
+                console.error("Failed to find history " + name);
+              }
+          }
+          else{
+            console.error("Failed to find chat group");
+          }
+          clearEditMode();
+        }
+        function toggleEditMode(idx){
+          if(editMode){
+            
+            /// Need to put message back in the history
+            /// The data object containing the history isn't cited here, so it needs to be retrieved, modified, and updated
+            ///
+            //clearEditMode();
+            editMessageHistory(idx, document.getElementById("editMessage").value);
+          }
+          else{
+            console.log("Edit", idx);
+            editMode = true;
+            editIndex = idx;
+          }
+        }
+
         function getResultsView(){
           let c1g = "man";
           let c1l = "Nobody";
@@ -249,8 +325,9 @@
             c2i = m("img",{class : "ml-4 rounded-full", src  : dataUrl});
         }
           
-
+          let midx = -1;
           let msgs = (chatCfg?.history?.messages || []).map((msg) => {
+            midx++;
             let align = "justify-start";
             let txt = "bg-gray-600 text-white";
             // console.log(msg);
@@ -259,15 +336,45 @@
               txt = "bg-gray-200 text-black";
             }
             let cnt = msg.content;
-            let idx = cnt.indexOf("(Reminder");
-            if(idx > -1){
-              cnt = cnt.substring(0, idx);
+            let ectl = "";
+            let ecls = "";
+            if(msg.role == "assistant"){
+              let bectl = (editMode && editIndex == midx);
+              /// text-slate-200, text-slate-700
+              ectl = m("span", {onclick: function(){ toggleEditMode(midx);}, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700)}, "edit");
+              if(hideThoughts && !editMode){
+                let rdx = cnt.indexOf("<|reserved_special_token");
+                if(rdx > -1){
+                  cnt = cnt.substring(0, rdx);
+                }
+                let tdx1 = cnt.indexOf("<thought>");
+                while(tdx1 > -1){
+                  let tdx2 = cnt.indexOf("</thought>");
+                  if(tdx1 > -1 && tdx2 > -1){
+                    cnt = cnt.substring(0,tdx1) + cnt.substring(tdx2 + 10, cnt.length);
+                  }
+                  tdx1 = cnt.indexOf("<thought>");
+                }
+              }
+
+              if(bectl){
+                //cnt = m("input", {id: "editMessage", value:cnt, class: "text-field w-[80%]"});
+                ecls = "w-full ";
+                cnt = m("textarea", {id: "editMessage", class: "text-field textarea-field-full"}, cnt);
+              }
+
+            }
+            else if(msg.role == "user"){
+              let idx = cnt.indexOf("(Reminder");
+              if(idx > -1){
+                cnt = cnt.substring(0, idx);
+              }
             }
             return  m("div", {class: "relative receive-chat flex " + align},
-              m("div", {class: "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light"},
+              [ectl,m("div", {class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light"},
                 //m("i", {class: "material-icons text-violet-400 -top-4 absolute"}, "arrow_upward_alt"),
                 m("p", cnt)
-              )
+              )]
             );
           });
           let flds = [ m("div", {class: "flex justify-between"}, [
@@ -326,6 +433,7 @@
 
                 m("div",{class: "tab-container result-nav w-full"},[
                 m("button", {class: "button", onclick: doCancel},m("span", {class: "material-symbols-outlined material-icons-24"}, "cancel")),
+                m("button", {class: "button", onclick: toggleThoughts},m("span", {class: "material-symbols-outlined material-icons-24"}, "visibility" + (hideThoughts ? "" : "_off"))),
                 m("input[" + (chatCfg.pending ? "disabled='true'":"") + "]", {type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown : function(e){ if (e.which == 13) doChat(e);}}),
                 m("button", {class: "button", onclick: doChat},m("span", {class: "material-symbols-outlined material-icons-24"}, "chat"))
                 ])
