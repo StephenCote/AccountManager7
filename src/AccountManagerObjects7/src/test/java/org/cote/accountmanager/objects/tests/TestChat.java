@@ -22,21 +22,21 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
+import org.cote.accountmanager.olio.ItemUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
+import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
-import org.cote.accountmanager.olio.llm.OllamaExchange;
-import org.cote.accountmanager.olio.llm.OllamaMessage;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
-import org.cote.accountmanager.olio.llm.OllamaResponse;
-import org.cote.accountmanager.olio.llm.OllamaUtil;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
@@ -120,7 +120,7 @@ public class TestChat extends BaseTest {
 		assertNotNull("Chat config is null", cfg);
 		
 		try {
-			cfg.set("llmModel", "dolphin-llama3");
+			cfg.set("llmModel", "fim-local");
 			
 			
 			BaseRecord cfg2 = ChatUtil.getCreateChatConfig(testUser1, cfg.get(FieldNames.FIELD_NAME));
@@ -129,23 +129,20 @@ public class TestChat extends BaseTest {
 			String stempl = PromptUtil.getSystemChatPromptTemplate(pcfg, cfg2);
 			String utempl = PromptUtil.getUserChatPromptTemplate(pcfg, cfg2);
 			String atempl = PromptUtil.getAssistChatPromptTemplate(pcfg, cfg2);
-			logger.info(stempl);
-			logger.info(utempl);
-			logger.info(atempl);
 			
 			String sessionName = "Demo Session";
 			Chat chat = new Chat(testUser1, cfg, pcfg);
 			chat.setSessionName(sessionName);
 			OllamaRequest req = chat.getChatPrompt();
+
 			String msn = ChatUtil.getSessionName(testUser1, cfg, pcfg, sessionName);
 			assertTrue("Failed to save session " + sessionName, ChatUtil.saveSession(testUser1, req, sessionName));
 			OllamaRequest sreq = ChatUtil.getSession(testUser1, sessionName);
 			assertNotNull("Failed to retrieve session " + sessionName, sreq);
-			/*
-			Chat chat = new Chat(testUser1, cfg, pcfg);
-			OllamaRequest req = chat.getChatPrompt();
-			chat.chatConsole(req);
-			*/
+			
+			chat.continueChat(req, "Hi");
+			
+			logger.info(JSONUtil.exportObject(req));
 		}
 		catch(Exception e) {
 			logger.error(e);
@@ -176,7 +173,7 @@ public class TestChat extends BaseTest {
 	public BaseRecord getRandomChatConfig(BaseRecord user) {
 		logger.info("Test LLM Chat Config");
 	
-		OlioContext ctx = getContext(user);
+		OlioContext ctx = OlioContextUtil.getGridContext(user, testProperties.getProperty("test.datagen.path"), universeName, worldName, false);
 		assertNotNull("Context is null", ctx);
 		List<BaseRecord> realms = ctx.getRealms();
 		assertTrue("Expected at least one realm", realms.size() > 0);
@@ -184,6 +181,17 @@ public class TestChat extends BaseTest {
 		assertNotNull("Expected a population group", popGrp);
 		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(ctx, popGrp);
 		assertTrue("Expected a population", pop.size() > 0);
+		
+		List<BaseRecord> rlms = ctx.getRealms();
+		for(BaseRecord r : rlms) {
+
+			/// Depending on the staging rule, the population may not yet be dressed or have possessions
+			///
+			ApparelUtil.outfitAndStage(ctx, null, pop);
+			ItemUtil.showerWithMoney(ctx, pop);
+			Queue.processQueue();
+			
+		}
 
 		BaseRecord per1 = pop.get((new Random()).nextInt(pop.size()));
 		BaseRecord per2 = pop.get((new Random()).nextInt(pop.size()));
@@ -195,14 +203,7 @@ public class TestChat extends BaseTest {
 			}
 		}
 
-		BaseRecord levt = null;
-		/// TODO: Refactor
-		/*
-		List<BaseRecord> locs = ctx.getLocations();
-		for(BaseRecord lrec : locs) {
-			levt = ctx.startOrContinueLocationEpoch(lrec);
-		}
-		*/
+		BaseRecord levt = ctx.realmClock(ctx.getRealms().get(0)).getIncrement();
 		ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		clist.parameter(FieldNames.FIELD_NAME, "Chat Config - " + UUID.randomUUID().toString());
 
@@ -211,7 +212,7 @@ public class TestChat extends BaseTest {
 		String setting = NarrativeUtil.getRandomSetting();
 		try {
 			cfg = ioContext.getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, clist);
-			cfg.set("rating", ESRBEnumType.AO);
+			cfg.set("rating", ESRBEnumType.E);
 			cfg.set("alignment", levt.get("alignment"));
 			cfg.set("systemCharacter", per1);
 			cfg.set("userCharacter", per2);
@@ -240,166 +241,7 @@ public class TestChat extends BaseTest {
 	}
 	
 	
-	private OlioContext getContext(BaseRecord user) {
-		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
-		AuditUtil.setLogToConsole(false);
-		OlioContextConfiguration cfg = new OlioContextConfiguration(
-			user,
-			testProperties.getProperty("test.datagen.path"),
-			universeName,
-			worldName,
-			new String[] {},
-			2,
-			50,
-			false,
-			false
-		);
-	
-		/// Generate a grid square structure to use with a map that can evolve during evolutionary cycles
-		///
-		cfg.getContextRules().addAll(Arrays.asList(new IOlioContextRule[] {
-			new GridSquareLocationInitializationRule(),
-			new LocationPlannerRule(),
-			new GenericItemDataLoadRule()
-		}));
-		
-		// Increment24HourRule incRule = new Increment24HourRule();
-		// incRule.setIncrementType(TimeEnumType.HOUR);
-		cfg.getEvolutionRules().addAll(Arrays.asList(new IOlioEvolveRule[] {
-			new Increment24HourRule(),
-			new HierarchicalNeedsEvolveRule()
-		}));
-
-		OlioContext octx = new OlioContext(cfg);
-		octx.initialize();
-		assertNotNull("Root location is null", octx.getRootLocation());
-		
-		BaseRecord evt = null;
-		/// octx.startOrContinueEpoch();
-		BaseRecord levt = null;
-		BaseRecord cevt = null;
-		assertNotNull("Epoch is null", evt);
-		List<BaseRecord> locs = octx.getLocations();
-		/// TODO: Refactor
-		/*
-		for(BaseRecord lrec : locs) {
-			levt = octx.startOrContinueLocationEpoch(lrec);
-			assertNotNull("Location epoch is null", levt);
-			cevt = octx.startOrContinueIncrement();
-			octx.evaluateIncrement();
-
-			/// Depending on the staging rule, the population may not yet be dressed or have possessions
-			///
-			ApparelUtil.outfitAndStage(octx, null, octx.getPopulation(lrec));
-			ItemUtil.showerWithMoney(octx, octx.getPopulation(lrec));
-			Queue.processQueue();
-		
-		}
-	*/
-		List<BaseRecord> realms = octx.getRealms();
-		assertTrue("Expected at least one realm", realms.size() > 0);
-		ioContext.getAccessPoint().setPermitBulkContainerApproval(false);
-		AuditUtil.setLogToConsole(true);
-		return octx;
-	}
-	
-	private boolean TestOllamaTags() {
-
-		logger.info("Test Ollama");
-		logger.warn("Note: Currently relies on ollama container running:");
-		logger.warn("docker exec -it ollama ollama run dolphin-mistral");
-		logger.warn("docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama");
-		
-		boolean obool = false;
-		Response rep = ClientUtil.getResponse("http://localhost:11434/api/tags");
-		if(rep.getStatus() == 200) {
-			// JSONObject obj = rep.readEntity(JSONObject.class);
-		     //StringReader stringReader = new StringReader(rep.readEntity(String.class)));
-		     JSONObject obj = new JSONObject(rep.readEntity(String.class));
-			//String objStr = rep.readEntity(String.class);
-			if(obj != null) {
-				obool = true;
-			}
-		}
-		return obool;
-	}
-	
-	
-	private boolean TestOllamaGenerate() {
-		boolean obool = false;
-		String msg = "What is the largest mammal?";
-		logger.info("Test Ollama Generate");
-		OllamaRequest req = new OllamaRequest();
-		req.setModel("dolphin-mistral");
-		req.setPrompt(msg);
-		req.setStream(false);
-		OllamaResponse rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/generate"), req, MediaType.APPLICATION_JSON_TYPE);
-		if(rep != null) {
-			logger.info(rep.getResponse());
-			req.setContext(rep.getContext());
-			req.setPrompt("What is the smallest?");
-			rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/generate"), req, MediaType.APPLICATION_JSON_TYPE);
-			if(rep != null) {
-				logger.info(rep.getResponse());
-			}
-			else {
-				logger.error("Null response");
-			}
-		}
-		return obool;
-	}
 
 	
-	@Test
-	public void TestChat() {
-		logger.info("Test Chat Console");
 
-	}
-	
-	private boolean TestOllamaChat() {
-		logger.info("Test Ollama Chat");
-		boolean obool = false;
-		OllamaRequest req = new OllamaRequest();
-		req.setModel("dolphin-mistral");
-		req.setStream(false);
-		OllamaMessage msg = new OllamaMessage();
-		msg.setRole("user");
-		msg.setContent("My name is Silas McGee.  How are you today?");
-		req.getMessages().add(msg);
-		OllamaResponse rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/chat"), req, MediaType.APPLICATION_JSON_TYPE);
-		if(rep != null) {
-			logger.info(rep.getMessage().getContent());
-			req.getMessages().add(rep.getMessage());
-			OllamaMessage msg2 = new OllamaMessage();
-			msg2.setRole("user");
-			msg2.setContent("I shall call you Bubbles.  What would be a good last name for you, Bubbles?");
-			req.getMessages().add(msg2);
-			rep = ClientUtil.post(OllamaResponse.class, ClientUtil.getResource("http://localhost:11434/api/chat"), req, MediaType.APPLICATION_JSON_TYPE);
-			if(rep != null) {
-				logger.info(rep.getMessage().getContent());
-			}
-			else {
-				logger.error("Null response");
-			}
-		}
-		else {
-			logger.error("Null response");
-		}
-		return obool;
-	}
-	private String frontMatter = """
-
-	""";
-
-	private boolean TestPromptEng() {
-		OllamaUtil ou = new OllamaUtil();
-		OllamaExchange ex = ou.chat(frontMatter);
-		if(ex.getResponse() != null) {
-			logger.info(ex.getResponse().getMessage().getContent());
-		}
-		else {
-			logger.error("Null response");
-		}
-		return false;
-	}
 }

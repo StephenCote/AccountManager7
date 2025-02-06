@@ -42,6 +42,14 @@ public class SDUtil {
 	private static SecureRandom rand = new SecureRandom();
 	private int steps = 70;
 	
+	public SDUtil() {
+		
+	}
+	
+	public SDUtil(String server) {
+		autoserver = server;
+	}
+	
 	public SDResponse txt2img(SDTxt2Img req) {
 		//SDRequest sreq = new SDRequest();
 		//sreq.setData(req);

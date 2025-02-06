@@ -68,7 +68,11 @@
 		<param-name>vault.credential.path</param-name>
 		<param-value>c:/projects/vault/credentials/</param-value>
 	</context-param>
-	
+	<context-param>
+		<description>Stable Diffusion Server</description>
+		<param-name>sd.server</param-name>
+		<param-value>http://localhost:7860</param-value>
+	</context-param>
 
 	<context-param>
 		<description>Maximum Image Width</description>

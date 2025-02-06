@@ -113,7 +113,7 @@ public class ChatAction extends CommonAction implements IAction{
 		BaseRecord cevt = null;
 		String genSet = null;
 		int seed = 0;
-		SDUtil sdu = new SDUtil();
+		SDUtil sdu = new SDUtil(this.getProperties().getProperty("sd.server"));
 		if(cmd.hasOption("seed")) {
 			seed = Integer.parseInt(cmd.getOptionValue("seed"));
 		}

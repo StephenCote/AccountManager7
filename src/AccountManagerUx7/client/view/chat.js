@@ -348,7 +348,14 @@
                   cnt = cnt.substring(0, rdx);
                 }
                 let tdx1 = cnt.indexOf("<thought>");
+                let maxCheck = 10;
+                let check = 0;
                 while(tdx1 > -1){
+                  if(check++ >= maxCheck){
+                    console.error("Break on loop!");
+                    break;
+                  }
+
                   let tdx2 = cnt.indexOf("</thought>");
                   if(tdx1 > -1 && tdx2 > -1){
                     cnt = cnt.substring(0,tdx1) + cnt.substring(tdx2 + 10, cnt.length);
