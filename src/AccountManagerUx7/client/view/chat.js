@@ -229,6 +229,9 @@
           editMode = false;
           editIndex = -1;
         }
+        /// Currently only editing the last assistant message
+        /// The reasoning: The message history returned from the chat API is not the entire history, and doesn't include any system prompt
+        /// Alternately, this could be a separate API, but that seems unnecessary at the moment
         async function editMessageHistory(idx, cnt){
           let pg = await page.findObject("auth.group", "data", "~/Chat")
           if(pg){
@@ -238,10 +241,12 @@
               window.dbgCnt = ocnt;
               if(hist){
                 let histx = JSON.parse(Base64.decode(hist.dataBytesStore));
-                if(histx){
-                  let om = histx.messages.filter(m => m.content == ocnt.content);
-                  if(om.length){
-                    om[0].content = cnt;
+                if(histx && histx.messages.length > 0){
+                  let om = histx.messages[histx.messages.length - 1];
+                  //let om = histx.messages.filter(m => m.content == ocnt.content);
+                  //if(om.length){
+                  //  om[0].content = cnt;
+                  om.content = cnt;
                     hist.dataBytesStore = Base64.encode(JSON.stringify(histx));
                     let histy = {
                       model: hist.model,
@@ -253,16 +258,19 @@
                       dataBytesStore: hist.dataBytesStore
                     };
                     let patch = await page.patchObject(histy);
+                    await am7client.clearCache();
                     await doCancel();
                     await doPeek();
                     clearEditMode();
+                  /*
                   }
                   else{
                     console.error("Failed to find matching history");
                   }
+                  */
                 }
                 else{
-                  console.error("Failed to parse history");
+                  console.error("Failed to parse history, or history contained no messages");
                 }
                 window.dbgHist = hist;
               }
@@ -340,14 +348,16 @@
             let ecls = "";
             if(msg.role == "assistant"){
               let bectl = (editMode && editIndex == midx);
-              /// text-slate-200, text-slate-700
-              ectl = m("span", {onclick: function(){ toggleEditMode(midx);}, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700)}, "edit");
+              /// Only edit last message
+              if(midx == chatCfg.history.messages.length - 1){
+                ectl = m("span", {onclick: function(){ toggleEditMode(midx);}, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700)}, "edit");
+              }
               if(hideThoughts && !editMode){
                 let rdx = cnt.indexOf("<|reserved_special_token");
                 if(rdx > -1){
                   cnt = cnt.substring(0, rdx);
                 }
-                let tdx1 = cnt.indexOf("<thought>");
+                let tdx1 = cnt.toLowerCase().indexOf("<thought>");
                 let maxCheck = 10;
                 let check = 0;
                 while(tdx1 > -1){
@@ -356,11 +366,11 @@
                     break;
                   }
 
-                  let tdx2 = cnt.indexOf("</thought>");
-                  if(tdx1 > -1 && tdx2 > -1){
+                  let tdx2 = cnt.toLowerCase().indexOf("</thought>");
+                  if(tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1){
                     cnt = cnt.substring(0,tdx1) + cnt.substring(tdx2 + 10, cnt.length);
                   }
-                  tdx1 = cnt.indexOf("<thought>");
+                  tdx1 = cnt.toLowerCase().indexOf("<thought>");
                 }
               }
 
