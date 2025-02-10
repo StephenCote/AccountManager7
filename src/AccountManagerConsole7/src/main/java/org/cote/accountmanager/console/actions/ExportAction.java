@@ -102,6 +102,9 @@ public class ExportAction extends CommonAction {
 				FileUtil.emitFile(fpath, value);
 			}
 		}
+		else if(!model.equals(ModelNames.MODEL_DATA)) {
+			FileUtil.emitFile(fspath, object.toFullString());
+		}
 	}
 
 	@Override
