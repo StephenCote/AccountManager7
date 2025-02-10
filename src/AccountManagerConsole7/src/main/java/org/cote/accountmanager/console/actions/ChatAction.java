@@ -23,6 +23,7 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
@@ -40,6 +41,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.LibraryUtil;
 
 public class ChatAction extends CommonAction implements IAction{
 	public static final Logger logger = LogManager.getLogger(ChatAction.class);
@@ -298,6 +300,9 @@ public class ChatAction extends CommonAction implements IAction{
 				//octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				octx.scanNestedGroups(octx.getUniverse(), false);
 				octx.scanNestedGroups(octx.getWorld(), true);
+				for(String s : WorldUtil.SHARED_LIBRARY_NAMES) {
+					LibraryUtil.configureLibraryReader(user, s);
+				}
 			}
 			if(cmd.hasOption("list")) {
 				if(cmd.hasOption("reimage")) {

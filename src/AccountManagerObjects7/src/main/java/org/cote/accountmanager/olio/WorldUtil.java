@@ -35,7 +35,7 @@ public class WorldUtil {
     
     /// TODO: Use the OlioContextConfiguration
     protected static boolean useSharedLibrary = true;
-    
+	public static String[] SHARED_LIBRARY_NAMES = new String[] {"Colors", "Occupations", "Dictionary", "Words", "Names", "Surnames", "Patterns"};
     
 	public static BaseRecord getWorld(BaseRecord user, String groupPath, String worldName) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -51,7 +51,7 @@ public class WorldUtil {
 	public static BaseRecord getCreateWorld(BaseRecord user, String groupPath, String worldName, String[] features) {
 		return getCreateWorld(user, null, groupPath, worldName, features);
 	}
-	
+
 	public static BaseRecord getCreateWorld(BaseRecord user, BaseRecord basis, String groupPath, String worldName, String[] features) {
 		BaseRecord rec = getWorld(user, groupPath, worldName);
 		if(rec == null) {

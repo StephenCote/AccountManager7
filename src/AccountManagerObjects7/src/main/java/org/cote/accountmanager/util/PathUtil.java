@@ -63,6 +63,7 @@ public abstract class PathUtil implements IPath {
 		if(owner != null) {
 			IOSystem.getActiveContext().getRecordUtil().populate(owner);
 		}
+
 		if(path.startsWith("~/")) {
 			if(owner != null) {
 				String homePath = owner.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_PATH);

@@ -721,7 +721,8 @@
 
         let totalUpCount = 0;
         let currentUpCount = 0;
-        function uploadFiles(files) {
+        let maxUpload = 10;
+        async function uploadFiles(files) {
 
             if(!entity){
                 return;
@@ -750,6 +751,11 @@
                     };
                     xhr.send(formData);
                 }));
+                if(i > 0 && (i % maxUpload) == 0){
+                    await Promise.all(aP);
+                    aP = [];
+                }
+
             }
             return new Promise((res2, rej2)=>{
                 Promise.all(aP).then((aD)=>{
@@ -1663,6 +1669,7 @@
                 pickerMode.handler = handler;
                 if(am7model.isGroup(model) || am7model.isParent(model)) pickerMode.pickPath = altPath || am7view.path(type);
                 if(am7model.isGroup(model)){
+                    console.warn("PICK PATH", pickerMode.pickPath);
                     am7client.make("auth.group","data", pickerMode.pickPath, function(v){
                         pickerMode.containerId = v.objectId;
                         requesting = false;

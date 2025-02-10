@@ -312,6 +312,11 @@
                         pendingRefresh = true;
                         // console.log(mtx.flist, mtx.listChildType, mtx.id, mtx);
                         am7client[mtx.flist](mtx.listChildType, mtx.id, null, 0, 1000, function (v) {
+                            if(!v || v == null){
+                                pendingRefresh = false;
+                                m.redraw();
+                                return;
+                            }
                             am7model.updateListModel(v);
                             mtx.children = v.filter((o) => { return !o.name.match(/^\./); });
                             if (node.objectId == origin.objectId) {

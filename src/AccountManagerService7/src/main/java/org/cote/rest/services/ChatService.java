@@ -330,7 +330,7 @@ public class ChatService {
 	}
 	
 	private BaseRecord getCreatePromptData(BaseRecord user, String name) {
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		BaseRecord dat = IOSystem.getActiveContext().getRecordUtil().getRecord(user, ModelNames.MODEL_DATA, name, 0L, (long)dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(dat == null) {
 			dat = newPromptData(user, name, ResourceUtil.getInstance().getResource("olio/llm/chat.config.json"));

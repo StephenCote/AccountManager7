@@ -99,9 +99,10 @@
         clearContextObject : clearContextObject,
         listByType : listByType,
         navigateToPath : navigateToPathId,
-        logout : function(){
+        logout : async function(){
             clearPageCache();
-            uwm.logout();
+            await uwm.logout();
+            m.route.set("/sig");
         },
         removeDuplicates : removeDuplicates,
         tags : getTags,

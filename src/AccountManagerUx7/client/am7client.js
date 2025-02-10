@@ -56,14 +56,10 @@
 				
 			},
 			
-			logout : function(){
+			logout : async function(){
 				return am7client.logout().then((b)=>{
-					if(typeof doLogout == "function"){
-						doLogout();
-					}
 					return b;
 				});
-
 			},
 
 			getApiTypeView : function(sType){
@@ -453,7 +449,6 @@
 
 	function makeFind(sType, sObjType, sPath, bMake,fH){
 		var sK = "FIND-" + sObjType;
-		
 		
 		/// Band-aid - need to better encode these
 		///

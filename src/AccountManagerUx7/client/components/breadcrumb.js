@@ -36,7 +36,6 @@
                 model.contextObjects[objectId] = null;
                 am7client.get(objType, objectId, function (v) {
                     if(v && v != null){
-                        console.log(v);
                         model.contextObjects[objectId] = v;
                         m.redraw();
                     }
