@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOContext;
@@ -35,6 +36,7 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
+import org.cote.accountmanager.util.AttributeUtil;
 
 public class OlioContext {
 	public static final Logger logger = LogManager.getLogger(OlioContext.class);
@@ -169,10 +171,19 @@ public class OlioContext {
 				if(group == null) {
 					throw new OlioException("Group " + fs.getName() + " is null");
 				}
+
 				String[] rperms = new String[] {"Read"};
 				String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
 				ioContext.getAuthorizationUtil().setEntitlement(olioUser, userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 				ioContext.getAuthorizationUtil().setEntitlement(olioUser, adminRole, new BaseRecord[] {group}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+				try {
+					if((boolean)AttributeUtil.getAttributeValue(group, "shared") == true) {
+						logger.warn("Need to account for shared library use");
+					}
+				}
+				catch(ModelException e) {
+					throw new OlioException(e.getMessage());
+				}
 			}
 		}
 
