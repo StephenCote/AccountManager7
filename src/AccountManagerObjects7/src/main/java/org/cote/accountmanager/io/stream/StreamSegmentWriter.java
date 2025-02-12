@@ -1,37 +1,25 @@
 package org.cote.accountmanager.io.stream;
 
-import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ModelException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
-import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.IWriter;
 import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.model.field.CryptoBean;
-import org.cote.accountmanager.model.field.VaultBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.record.RecordOperation;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.StreamEnumType;
-import org.cote.accountmanager.security.VaultService;
 import org.cote.accountmanager.util.FileUtil;
-import org.cote.accountmanager.util.StreamUtil;
-
-import com.fasterxml.jackson.core.io.IOContext;
 
 public class StreamSegmentWriter implements IWriter {
 

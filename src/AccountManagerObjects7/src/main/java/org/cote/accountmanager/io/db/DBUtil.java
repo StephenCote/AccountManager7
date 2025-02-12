@@ -12,8 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import javax.naming.InitialContext;
@@ -27,7 +25,6 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.DatabaseException;
 import org.cote.accountmanager.io.IOProperties;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;

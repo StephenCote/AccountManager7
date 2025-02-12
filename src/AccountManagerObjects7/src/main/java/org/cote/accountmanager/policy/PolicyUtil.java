@@ -56,7 +56,6 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.SystemPermissionEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
-import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;

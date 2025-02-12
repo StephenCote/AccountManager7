@@ -22,7 +22,6 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.util.RecordUtil;
-import org.cote.accountmanager.util.StreamUtil;
 
 public class StreamProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(StreamProvider.class);
