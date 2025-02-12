@@ -73,11 +73,36 @@ public class LibraryUtil {
 		}
 
 		BaseRecord usersRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS, RoleEnumType.USER.toString(), octx.getOrganizationId());
+		configureDirectoryPermissions(octx, dir, usersRole, permissions, types);
+	}
+	
+	public static void configureLibraryRootReader(BaseRecord user) {
+		configureLibraryRootPermissions(user, readOnly, dataGroupTypes);
+	}
+	
+	private static void configureLibraryRootPermissions(BaseRecord user, String[] permissions, String[] types) {
+		IOContext ctx = IOSystem.getActiveContext();
+		OrganizationContext octx = ctx.getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+		if(octx == null) {
+			logger.error("Failed to find organization context");
+			return;
+		}
+		BaseRecord bdir = ctx.getPathUtil().findPath(octx.getAdminUser(), ModelNames.MODEL_GROUP, basePath, GroupEnumType.DATA.toString(), octx.getOrganizationId());
+		if(bdir == null) {
+			logger.error("Failed to find " + basePath);
+			return;
+		}
+
+		BaseRecord usersRole = AccessSchema.getSystemRole(AccessSchema.ROLE_ACCOUNT_USERS, RoleEnumType.USER.toString(), octx.getOrganizationId());
+		configureDirectoryPermissions(octx, bdir, usersRole, permissions, types);
+	}
+	
+	private static void configureDirectoryPermissions(OrganizationContext octx, BaseRecord dir, BaseRecord role, String[] permissions, String[] types) {
+		IOContext ctx = IOSystem.getActiveContext();
 		for(String perm : permissions) {
 			for(String type : types) {
 				BaseRecord perm1 = ctx.getPathUtil().findPath(octx.getAdminUser(), ModelNames.MODEL_PERMISSION, "/" + perm, type, octx.getOrganizationId());
-				ctx.getMemberUtil().member(octx.getAdminUser(), dir, usersRole, perm1, true);
-				ctx.getMemberUtil().member(octx.getAdminUser(), bdir, usersRole, perm1, true);
+				ctx.getMemberUtil().member(octx.getAdminUser(), dir, role, perm1, true);
 			}
 		}
 	}

@@ -88,8 +88,7 @@
             props.onchange = inst.handleChange(fld);
             iprops.checked = defVal;
         }
-        return m("input", Object.assign(iprops, props)
-        );
+        return m("input", Object.assign(iprops, props));
     }
     
     function form(inst){

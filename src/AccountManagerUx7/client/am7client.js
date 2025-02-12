@@ -180,9 +180,7 @@
 		
 	}
 	function newPrimaryCredential(sType, sObjId, oAuthN, fH){
-		console.error("REFACTOR: newPrimaryCredential");
-		//return null;
-		return Hemi.xml.postJSON(sCred + "/" + sType + "/" + sObjId, oAuthN, fH,(fH ? 1 : 0));
+		return post(sCred + "/" + sType + "/" + sObjId, oAuthN, fH);
 	}
 
 	function deleteObject(sType,sObjId, fH){
@@ -449,13 +447,17 @@
 
 	function makeFind(sType, sObjType, sPath, bMake,fH){
 		var sK = "FIND-" + sObjType;
-		
+
+		if(bMake){
+			console.log("MAKE " + sPath);
+		}
+
+
 		/// Band-aid - need to better encode these
 		///
 		if(sPath.match(/^\//) || sPath.match(/\./)){
 			sPath = "B64-" + uwm.base64Encode(sPath).replace(/=/gi,"%3D");
 		}
-		
 		var o = getFromCache(sType, sK, sPath);
 		if(o){
 			if(fH) fH(o);
@@ -468,6 +470,9 @@
 	}
 	
 	function getDotPath(path, sAlt){
+		if(!path){
+			return;
+		}
 		return path.replace(/^\//,"").replace(/\//gi,(sAlt ? sAlt : "."));
 	}
 	
@@ -506,7 +511,9 @@
 			return x;
 		}).catch((x) =>{
 			console.error("Failed to get " + url);
-			fH();
+			if(fH){
+				fH();
+			}
 		});
 	}
 
@@ -534,6 +541,11 @@
 				fH(x);
 			}
 			return x;
+		}).catch((x) =>{
+			console.error("Failed to post " + url);
+			if(fH){
+				fH();
+			}
 		});
 	}
 
@@ -648,7 +660,7 @@
 					});
 				});
 			}
-			else Hemi.xml.promiseJSON(sPrincipal + "/person" + (sId ? "/" + sId : ""),fH,(fH ? 1 : 0)).then((x)=>{
+			else get(sPrincipal + "/person" + (sId ? "/" + sId : ""),fH).then((x)=>{
 				if(fH) fH("",x);
 				res(x);
 			});
@@ -785,7 +797,7 @@
 		clearCache,
 		cleanup,
 		clearAuthorizationCache : function(fH){
-			return Hemi.xml.getJSON(sCache + "/clearAuthorization",fH,(fH ? 1 : 0));
+			return get(sCache + "/clearAuthorization",fH);
 		},
 		patchAttribute: async function(o, n, v){
 			let a = am7client.getAttribute(o, n);
@@ -854,44 +866,6 @@
 		}
 	};
 
-		/*
-		var uwmServices;
-		
-		function completeLoadFramework(){
-			if(!Hemi.lookup("hemi.json.rpc") || Hemi.json.rpc.service == null){
-				setTimeout(completeLoadFramework,10);
-				return;
-			};
-			if(!window.uwmServices){
-				window.uwmServices = uwmServices = Hemi.json.rpc.service;
-				window.uwmServiceCache = uwmServiceCache = Hemi.json.rpc.cache.service;
-			}
-
-			var oSpaceSvc = Hemi.lookup("Hemi.app.space.service");
-			var oSpace = (oSpaceSvc ? oSpaceSvc.getPrimarySpace() : 0);
-			if(!oSpace || oSpace.space_state < 4){
-				Hemi.message.service.subscribe("onspaceconfigload", function (s, v){
-					if(!v.is_primary) return;
-					completeSpaceLoad();
-				});
-			}
-			else if(oSpace && oSpace.space_state == 4){
-				completeSpaceLoad();
-			}
-		}
-		
-		function completeSpaceLoad(){
-			getPrincipal(function(v){
-				principal = 0;
-				am7client.currentOrganization = sCurrentOrganization = 0;
-				if(v && v != null){
-					principal = v;
-					am7client.currentOrganization = sCurrentOrganization = principal.organizationPath;
-				}
-				uwm.processLoadHandlers();
-			});
-		}
-		*/
 	
 }());
 

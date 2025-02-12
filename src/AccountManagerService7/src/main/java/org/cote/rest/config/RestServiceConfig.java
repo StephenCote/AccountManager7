@@ -53,6 +53,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.thread.Threaded;
+import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.VectorUtil;
@@ -162,8 +163,10 @@ public class RestServiceConfig extends ResourceConfig{
     	}
     	
 		private void initializeAccountManager(){
-			logger.info("Initializing Account Manager");
+
+			AuditUtil.setLogToConsole(false);
 			
+			logger.info("Initializing Account Manager");
 			String streamCut = context.getInitParameter("stream.cutoff");
 			if(streamCut != null) {
 				StreamUtil.setStreamCutoff(Integer.parseInt(streamCut));

@@ -482,7 +482,6 @@ public class AccessPoint {
 		AuditUtil.query(audit, query.key());
 		if(qr != null && qr.getCount() > 0) {
 			BaseRecord chkRec = qr.getResults()[0];
-			//logger.info(qr.toFullString());
 			AuditUtil.auditResource(audit, rec);
 			/// Evaluating authorization on the object will
 			if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
@@ -555,8 +554,6 @@ public class AccessPoint {
 		if(type != null) {
 			query.field(FieldNames.FIELD_TYPE, type);
 		}
-		// logger.info(hierarchyFieldName + " = " + hierarchyFieldValue);
-		/// logger.info(query.toFullString());
 		return find(contextUser, query);
 	}
 	
@@ -612,7 +609,6 @@ public class AccessPoint {
 			AuditUtil.closeAudit(audit, prr, "One or more query fields were not or could not be authorized: " + query.key());
 			return getFailedResponse(query, "Query not authorized");
 		}
-		logger.info(query.toFullString());
 		qr = search(contextUser, query);
 		AuditUtil.closeAudit(audit, prr, null);
 		return qr;

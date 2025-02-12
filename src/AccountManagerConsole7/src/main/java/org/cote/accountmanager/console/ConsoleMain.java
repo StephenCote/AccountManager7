@@ -13,7 +13,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.console.actions.ActionUtil;
 import org.cote.accountmanager.console.actions.AdminAction;
-import org.cote.accountmanager.console.actions.ChatAction;
+import org.cote.accountmanager.console.actions.OlioAction;
 import org.cote.accountmanager.console.actions.ExportAction;
 import org.cote.accountmanager.console.actions.IAction;
 import org.cote.accountmanager.console.actions.PatchAction;
@@ -38,7 +38,7 @@ public class ConsoleMain {
 	
 	private static IAction adminAction = new AdminAction();
 	private static IAction[] actions = new IAction[] {
-		new ChatAction(),
+		new OlioAction(),
 		new PatchAction(),
 		new ExportAction(),
 		new TestAction()

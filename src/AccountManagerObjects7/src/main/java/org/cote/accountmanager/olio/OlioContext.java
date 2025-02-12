@@ -104,69 +104,6 @@ public class OlioContext {
 		return olioUser;
 	}
 
-	/*
-	public void setCurrentMonth(ZonedDateTime m) {
-		currentMonth = currentDay = currentHour = currentTime = m;
-	}
-	public void setCurrentDay(ZonedDateTime m) {
-		currentDay = currentHour = currentTime = m;
-	}
-	public void setCurrentHour(ZonedDateTime m) {
-		currentHour = currentTime = m;
-	}
-	public ZonedDateTime getCurrentTime() {
-		return currentTime;
-	}
-	public void setCurrentTime(ZonedDateTime currentTime) {
-		this.currentTime = currentTime;
-	}
-	public ZonedDateTime getCurrentMonth() {
-		return currentMonth;
-	}
-	public ZonedDateTime getCurrentDay() {
-		return currentDay;
-	}
-	public ZonedDateTime getCurrentHour() {
-		return currentHour;
-	}
-
-	public BaseRecord getCurrentEpoch() {
-		return currentEpoch;
-	}
-
-	public void setCurrentEpoch(BaseRecord currentEpoch) {
-		this.currentEpoch = currentEpoch;
-	}
-	
-	public BaseRecord getCurrentIncrement() {
-		return currentIncrement;
-	}
-	public void setCurrentIncrement(BaseRecord currentIncrement) {
-		this.currentIncrement = currentIncrement;
-	}
-	public BaseRecord getCurrentEvent() {
-		return currentEvent;
-	}
-
-	public void setCurrentEvent(BaseRecord currentEvent) {
-		this.currentEvent = currentEvent;
-	}
-
-	public BaseRecord getCurrentLocation() {
-		return currentLocation;
-	}
-
-	public void setCurrentLocation(BaseRecord currentLocation) {
-		this.currentLocation = currentLocation;
-	}
-	
-	*/
-	/*
-	public BaseRecord getUser() {
-		return config.getUser();
-	}
-	*/
-	
 	public OlioContextConfiguration getConfig() {
 		return config;
 	}
@@ -205,9 +142,11 @@ public class OlioContext {
 	}
 	
 	public void configureWorld(BaseRecord cfgWorld, boolean userWrite) throws OlioException {
+		/*
 		if(initConfig) {
 			return;
 		}
+		*/
 		if(cfgWorld == null) {
 			throw new OlioException("World is null");
 		}

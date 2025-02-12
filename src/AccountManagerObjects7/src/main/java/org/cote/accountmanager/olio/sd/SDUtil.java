@@ -51,13 +51,10 @@ public class SDUtil {
 	}
 	
 	public SDResponse txt2img(SDTxt2Img req) {
-		//SDRequest sreq = new SDRequest();
-		//sreq.setData(req);
 		return ClientUtil.post(SDResponse.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
 	public SDResponse txt2img(String req) {
-		/// "{\"data\":" + req + "}"
 		return ClientUtil.postJSON(SDResponse.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), req, MediaType.APPLICATION_JSON_TYPE);
 	}
 	
@@ -246,38 +243,7 @@ public class SDUtil {
 		
 		return datas;
 	}
-	/*
-	public BaseRecord createPersonImage(BaseRecord user, BaseRecord person, String name, String setting, String pictureType, int steps, int batch) {
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/GalleryHome/Characters", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		String dname = person.get(FieldNames.FIELD_NAME) + " - " + name;
-		q.field(FieldNames.FIELD_NAME, dname);
-		BaseRecord data = IOSystem.getActiveContext().getSearch().findRecord(q);
-		if(data == null) {
-			ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Gallery/Characters");
-			clist.parameter(FieldNames.FIELD_NAME, dname);
 
-			BaseRecord dat = null;
-			try {
-				dat = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, user, null, clist);
-				SDTxt2Img s2i = newTxt2Img(person, setting, pictureType, steps);
-				byte[] datab = new byte[0];
-				SDResponse rep = txt2img(s2i);
-				
-				int seed = rep.getParameters().getSeed();
-				int counter = 1;
-				for(String bai : rep.getImages()) {
-					datab = BinaryUtil.fromBase64(bai.getBytes());
-					//FileUtil.emitFile("./img-" + per1.get(FieldNames.FIELD_FIRST_NAME) + "-" + seed + "-" + (counter++) + ".png", data);
-				}
-			}
-			catch(FactoryException e) {
-				logger.error(e);
-			}
-		}
-		return data;
-	}
-	*/
 	public void applyHRRefiner(SDTxt2Img s2i) {
 		/*
 		 * 	"extra_generation_params": {

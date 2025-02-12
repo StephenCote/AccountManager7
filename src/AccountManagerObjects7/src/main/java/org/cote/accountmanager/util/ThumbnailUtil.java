@@ -28,6 +28,11 @@ public class ThumbnailUtil {
 	public static boolean canCreateThumbnail(BaseRecord record) {
 		String contentType = record.get(FieldNames.FIELD_CONTENT_TYPE);
 		if(contentType == null || !contentType.startsWith("image/")) {
+			logger.warn("Record does not define a content type");
+			return false;
+		}
+		if(!record.inherits(ModelNames.MODEL_DIRECTORY) || (long)record.get(FieldNames.FIELD_GROUP_ID) == 0L) {
+			logger.warn("Record does not define a group id");
 			return false;
 		}
 		if(!RecordUtil.isIdentityRecord(record)) {
@@ -65,11 +70,17 @@ public class ThumbnailUtil {
 		}
 		
 		String thumbPath = groupPath;
-		BaseRecord thumbDir = ctx.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, thumbPath, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+		/// Thumb path should use the same path as the record
+		///
+		//BaseRecord thumbDir = ctx.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, thumbPath, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord thumbDir = ctx.getAccessPoint().findById(owner, ModelNames.MODEL_GROUP, irecord.get(FieldNames.FIELD_GROUP_ID));
+		
 		String thumbName = record.get(FieldNames.FIELD_NAME) + " " + width + "x" + height;
 		//BaseRecord thumb = ioContext.getSearch().findByPath(owner, thumbPath, thumbName,  owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		// logger.info(owner.toFullString());
 		//BaseRecord thumb = ctx.getAccessPoint().findByNameInGroup(owner, ModelNames.MODEL_THUMBNAIL, thumbDir.get(FieldNames.FIELD_OBJECT_ID), thumbName);
+		
+		
 		Query tq = QueryUtil.createQuery(ModelNames.MODEL_THUMBNAIL, FieldNames.FIELD_GROUP_ID, thumbDir.get(FieldNames.FIELD_ID), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		tq.field(FieldNames.FIELD_NAME, thumbName);
 		tq.planMost(true);

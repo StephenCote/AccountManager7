@@ -126,7 +126,8 @@
         views: {},
         setInnerXHTML,
         favorites,
-        systemLibrary
+        systemLibrary,
+        blobUrl : toBlobUrl
     };
 
     async function systemLibrary(model){
@@ -400,7 +401,7 @@
             obj = am7model.newPrimitive("data.data");
             obj.name = ".profile";
             obj.mimeType = "application/json";
-            obj.dataBytesStore = uwm.base64Encode(JSON.stringify({}));
+            obj.dataBytesStore = uwm.base64Encode(JSON.stringify({model: "userProfile"}));
             let bUp = await promiseCreate(obj);
             obj = await promiseSearchObjectByName("data.data", grp.objectId, ".profile");
         }
@@ -725,6 +726,19 @@
     }
 
     async function promiseSearchObjectByName(type, id, name){
+        
+        if(typeof id == "string"){
+            let q = am7view.viewQuery(am7model.newInstance("auth.group"));
+            q.field("objectId", id);
+            let qr = await search(q);
+            if(qr && qr.results){
+                id = qr.results[0].id;
+            }
+        }
+        if(typeof id == "string"){
+            console.error("Expected a numeric groupId");
+            return null;
+        }
         let q = am7view.viewQuery(am7model.newInstance(type));
         q.field("groupId", id);
         return new Promise( (res, rej) => {

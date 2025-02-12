@@ -85,7 +85,7 @@ public class AuthorizationUtil {
 					if(rperm1 != null) {
 						boolean mem = IOSystem.getActiveContext().getMemberUtil().member(adminUser, obj, user, rperm1, true);
 						if(!mem && trace) {
-							logger.warn("Failed to set member entitlement: " + p + " " + entType);
+							logger.warn("Failed to set member entitlement: " + p + " " + entType + " on " + obj.get(FieldNames.FIELD_URN) + " for " + user.get(FieldNames.FIELD_URN));
 						}
 					}
 					else {

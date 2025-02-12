@@ -56,6 +56,28 @@
             }
         }
 
+        function printJSONToWindow(){
+            let s = JSON.stringify(inst.entity, null, 2);
+            let w = window.open("about:blank", inst.entity.name);
+            w.document.write(`<pre>${s}</pre>`);
+            w.document.close();
+            
+            
+            //let u = "data:x-application/json;base64," + Base64.encode(s);
+            //window.open(u, inst.entity.name);
+            /*
+            let b = new Blob(["\ufeff", s]);
+            let u = URL.createObjectURL(b);
+            let l = document.createElement("a");
+            l.href = u;
+            l.download = entity.name + ".json";
+        
+            document.body.appendChild(l);
+            l.click();
+            document.body.removeChild(l);
+            */
+        }
+
         async function toggleDesignMode(){
             if(!designMode){
                 /// Refresh the entity byte array when temporarily shifting views in the event it changed
@@ -1043,9 +1065,10 @@
                         else{
                             uri = g_application_path + "/rest/model/" + useEntity.model + "/" + useEntity.objectId;
                         }
-                        label = uri;
+                        label = useEntity.name;
                     }
-                    view.push(m("a",{href: uri}, label));
+                    view.push(m("a",{target: "new", href: uri, class: "text-blue-600"}, [m("span",{class : "material-icons-outlined mr-2"}, "link"), label]));
+                    view.push(m("span", {onclick: printJSONToWindow, class : "material-symbols-outlined ml-2"}, "file_json"));
                     break;
                 case 'table':
                     fieldClass += " table-field";

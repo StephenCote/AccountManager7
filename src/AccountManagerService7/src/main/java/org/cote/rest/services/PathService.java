@@ -26,7 +26,6 @@ public class PathService {
 	
 	private BaseRecord doMakeFind(String type, String objectType, String path, HttpServletRequest request, boolean make) {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		logger.info("Request to find object from: " + type + " " + objectType + " " + path + ", and if it doesn't exist then " + (make ? "make it" : "too bad"));
 		/// Check for base64 encoded values, prefaced with B64-
 		///
 		if(path.startsWith("B64-")) {
@@ -42,6 +41,8 @@ public class PathService {
 			}
 			logger.info("Alt path: " + path);
 		}
+
+		logger.info("Request to find object from: " + type + " " + objectType + " " + path + ", and if it doesn't exist then " + (make ? "make it" : "too bad"));
 		BaseRecord rec = null;
 		if(make) {
 			rec = IOSystem.getActiveContext().getAccessPoint().make(user, type, path, objectType.toUpperCase());
