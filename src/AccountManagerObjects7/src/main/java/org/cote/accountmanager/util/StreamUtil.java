@@ -120,6 +120,7 @@ public class StreamUtil {
 	
 	/// box, ubox, isbox directly on the file target.
 	
+
 	private static String boxExt = ".box";
 	private static Map<String, Boolean> unboxedMap = new HashMap<>();
 	public static boolean isStreamUnboxed(BaseRecord stream) {
@@ -157,6 +158,26 @@ public class StreamUtil {
 		}
 		return count;
 	}
+	
+	public static synchronized int clearAllUnboxedStreams() {
+		DirectoryUtil du = new DirectoryUtil(IOFactory.DEFAULT_FILE_BASE + "/.streams/");
+		int cleaned = 0;
+		List<File> files = du.dir(null, true);
+		for(File f : files) {
+			if(!f.isDirectory() && !f.getName().endsWith(boxExt) && f.exists()) {
+				if(f.delete()) {
+					logger.info("Cleaned up " + f.getName());
+					cleaned++;
+				}
+				else {
+					logger.warn("Failed to delete " + f.getName());
+				}
+			}
+		}
+		unboxedMap.clear();
+		return cleaned;
+	}
+	
 	public static boolean clearUnboxedStream(BaseRecord stream) throws ModelException {
 		String path = getFileStreamPath(stream);
 		String bpath = getFileBoxPath(stream);

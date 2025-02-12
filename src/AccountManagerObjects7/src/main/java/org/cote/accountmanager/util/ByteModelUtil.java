@@ -140,7 +140,7 @@ public class ByteModelUtil {
 	   if(!hasRequiredFields(d)) {
 		*/
 	   if(!d.hasField(FieldNames.FIELD_BYTE_STORE)) {
-		   throw new FieldException("Missing one or more required fields");
+		   throw new FieldException("Missing " + FieldNames.FIELD_BYTE_STORE + " field");
 	   }
 	   
        byte[] value = inValue;
@@ -202,7 +202,7 @@ public class ByteModelUtil {
 		   throw new FieldException("Model doesn't inherit from cryptoByteStore");
 	   }
 	   if(!d.hasField(FieldNames.FIELD_BYTE_STORE)) {
-		   throw new FieldException("Missing one or more required fields");
+		   throw new FieldException("Missing " + FieldNames.FIELD_BYTE_STORE + " field");
 	   }
 	   
 	   boolean readDataBytes = d.get(FieldNames.FIELD_READ_BYTE_STORE, false);

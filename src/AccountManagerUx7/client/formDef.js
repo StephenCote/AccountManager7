@@ -1835,10 +1835,10 @@
                 field: {
                     format: "picker",
                     pickerType: "data.data",
-                    path: "~/Gallery",
                     pickerProperty: {
                         selected: "objectId",
-                        entity: "profilePortrait"
+                        entity: "profilePortrait",
+                        path: "~/Gallery"
                     }
                 }
             }

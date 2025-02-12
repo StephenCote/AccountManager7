@@ -73,6 +73,7 @@ public class AccessPoint {
 		Query q = QueryUtil.createQuery(model);
 		q.filterParticipation(container, null, model, effect);
 		q.setRequestRange(startIndex, recordCount);
+		q.planCommon(false);
 		QueryResult qr = list(user, q);
 		if(qr == null) {
 			return new ArrayList<>();
@@ -611,6 +612,7 @@ public class AccessPoint {
 			AuditUtil.closeAudit(audit, prr, "One or more query fields were not or could not be authorized: " + query.key());
 			return getFailedResponse(query, "Query not authorized");
 		}
+		logger.info(query.toFullString());
 		qr = search(contextUser, query);
 		AuditUtil.closeAudit(audit, prr, null);
 		return qr;

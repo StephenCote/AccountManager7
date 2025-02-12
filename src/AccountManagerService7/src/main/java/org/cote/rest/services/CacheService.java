@@ -41,6 +41,8 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.policy.CachePolicyUtil;
+import org.cote.accountmanager.util.StreamUtil;
+import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"admin","user"})
 @Path("/cache")
@@ -63,6 +65,8 @@ public class CacheService {
 		logger.info("Request to clear all caches");
 		CacheUtil.clearCache();
 		clearAuthorizationCache(request);
+		ServiceUtil.clearCache();
+		StreamUtil.clearAllUnboxedStreams();
 		return Response.status(200).entity(true).build();
 	}
 

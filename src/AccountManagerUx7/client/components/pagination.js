@@ -68,7 +68,6 @@
       m.redraw();
     }
     function handleList(v) {
-
       pages.pageResults[pages.currentPage] = v;
       am7model.updateListModel(v);
       requesting = false;
@@ -116,7 +115,7 @@
         let sFields = getRequestFields(pages.resultType);
         if (pages.containerSubType != null && pages.containerSubType.match(/^(user|account|person|bucket)$/gi)) {
           am7client.members(pages.containerType, pages.containerId, pages.resultType, pages.startRecord, pages.recordCount, function (v) {
-            console.log(v);
+            //console.log(v);
             handleList(v);
           });
         }
@@ -140,7 +139,6 @@
           am7client.listRequests("USER", page.user.objectId, pages.startRecord, pages.recordCount, handleList);
         }
         else if (pages.filter == null) {
-          // [pages.navigateByParent ? "listInParent" : "list"]
           am7client.list(pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
         }
         else {

@@ -392,16 +392,17 @@
         let grp = await promiseMakePath("auth.group", "DATA", am7view.path("data.data"));
         let obj;
         try{
-            obj = await promiseOpenObjectByName("data.data", grp.objectId, ".profile");
-        } catch(e){}
+            obj = await promiseSearchObjectByName("data.data", grp.id, ".profile");
+        } catch(e){
+            console.error(e);
+        }
         if(!obj){
             obj = am7model.newPrimitive("data.data");
             obj.name = ".profile";
             obj.mimeType = "application/json";
             obj.dataBytesStore = uwm.base64Encode(JSON.stringify({}));
             let bUp = await promiseCreate(obj);
-            console.log("Updated: " + bUp);
-            obj = await searchByName("data.data", grp.objectId, ".profile");
+            obj = await promiseSearchObjectByName("data.data", grp.objectId, ".profile");
         }
         return obj;
     }
@@ -447,10 +448,11 @@
 
     async function profile(){
         let obj = await profileEntity();
-        let objj = {};
+        let objj = {model: "userProfile"};
         if(obj.dataBytesStore && obj.dataBytesStore.length){
             console.log(uwm.base64Decode(obj.dataBytesStore));
             objj = JSON.parse(uwm.base64Decode(obj.dataBytesStore));
+            if(!objj.model) objj.model = "userProfile";
         }
         dialogCfg = {
             label: "Profile",
@@ -460,17 +462,21 @@
                 object: obj,
                 entity: objj
             },
-            confirm: confirmObjectDialog,
+            confirm: updateProfile,
             cancel: cancelDialog,
         };
         dialogUp = true;
         m.redraw();
     }
     
-    async function confirmObjectDialog(obj){
+    /// TODO: Replace this by having system.user inherit identity.profile
+    /// Need to fix how referenced objects are created
+    /// In fact, the whole reference approach should probably just be removed in favor of participations
+    /// The new version of the back end only auto-creates when the parent object is created, and won't try to auto create 
+    async function updateProfile(obj){
 
-        am7client.removeAttribute(page.user, "v1-profile");
-        am7client.removeAttribute(page.user, "v1-profile-path");
+        let a1 = am7client.getAttribute(page.user, "v1-profile");
+        let a2 = am7client.getAttribute(page.user, "v1-profile-path");
 
         obj.entity.profilePortraitPath = undefined;
         if(obj.entity.profilePortrait){
@@ -479,17 +485,15 @@
         }
 
         if(obj.entity.profilePortraitPath){
-            am7client.addAttribute(page.user,"v1-profile-path",obj.entity.profilePortraitPath);
+            await am7client.patchAttribute(page.user, "v1-profile-path",obj.entity.profilePortraitPath);
         }
         if(obj.entity.profileId){
-            am7client.addAttribute(page.user,"v1-profile",obj.entity.profileId);
+            await am7client.patchAttribute(page.user, "v1-profile", obj.entity.profileId);
         }
 
         obj.object.dataBytesStore = uwm.base64Encode(JSON.stringify(obj.entity));
         let bUp = await promisePatch(obj.object);
-        console.log("Updated data: " + bUp);
-        bUp = await promisePatch(page.user);
-        console.log("Updated V1 attributes");
+
         dialogUp = false;
         m.redraw();
     }

@@ -29,6 +29,11 @@ import org.cote.accountmanager.schema.type.OrderEnumType;
 public class ServiceUtil {
 	public static final Logger logger = LogManager.getLogger(ServiceUtil.class);
 	private static Map<UserPrincipal, BaseRecord> principalCache = Collections.synchronizedMap(new HashMap<>());
+	
+	public static void clearCache() {
+		principalCache.clear();
+	}
+	
 	public static QueryResult generateListQueryResponse(String type, String objectId, String name, long startIndex, int recordCount, HttpServletRequest request) {
 		return generateListQueryResponse(type, objectId, name, new String[0], startIndex, recordCount, request);
 	}

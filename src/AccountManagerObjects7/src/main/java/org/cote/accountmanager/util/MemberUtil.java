@@ -65,12 +65,6 @@ public class MemberUtil implements IMember {
 	private List<BaseRecord> findMembers(BaseRecord rec, String fieldName, String model, long id, long permissionId, String nameSuffix) throws IndexException, ReaderException {
 		
 		List<BaseRecord> list = new ArrayList<>();
-		/*
-		FieldSchema fs = null;
-		if(fieldName != null) {
-			fs = RecordFactory.getSchema(rec.getModel()).getFieldSchema(fieldName);
-		}
-		*/
 		final String partModel = ParticipationFactory.getParticipantModel(rec.getModel(), fieldName, model);
 		
 		if(reader.getRecordIo() == RecordIO.FILE) {
@@ -95,6 +89,7 @@ public class MemberUtil implements IMember {
 		}
 		else if(reader.getRecordIo() == RecordIO.DATABASE) {
 			Query q = QueryUtil.createParticipationQuery(null, rec, fieldName, null, null);
+			q.planMost(false);
 			if(permissionId > 0L) {
 				q.field(FieldNames.FIELD_PERMISSION_ID, permissionId);
 				q.field(FieldNames.FIELD_EFFECT_TYPE, EffectEnumType.GRANT_PERMISSION);

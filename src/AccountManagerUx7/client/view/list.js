@@ -358,6 +358,9 @@
         }
         else if (p.contentType && p.contentType.match(/^image/)) {
           let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/" + (gridMode == 1 ? "256x256" : "512x512");
+          if(p.dataBytesStore && p.dataBytesStore.length){
+            icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
+          }
           if (gridMode == 2 && p.contentType.match(/gif$/)) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name;
           // let icoCls = "carousel-item-img";
           // image-grid-image 
@@ -445,11 +448,14 @@
         }
         if (p.profile && p.profile.portrait && p.profile.portrait.contentType) {
           let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.profile.portrait.groupPath + "/" + p.profile.portrait.name + "/48x48";
+
           icon = m("img", { height: 48, width: 48, src: icoPath });
         }
         else if (p.contentType && p.contentType.match(/^image/)) {
           let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/48x48";
-
+          if(p.dataBytesStore && p.dataBytesStore.length){
+            icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
+          }
           icon = m("img", { height: 48, width: 48, src: icoPath });
         }
         else {

@@ -642,7 +642,7 @@
 				getPrincipal().then((o)=>{
 					var o = getPrincipal();
 					if(o) sId = o.objectId;
-					Hemi.xml.promiseJSON(sPrincipal + "/person" + (sId ? "/" + sId : ""),"GET").then((x)=>{
+					get(sPrincipal + "/person" + (sId ? "/" + sId : "")).then((x)=>{
 						if(fH) fH("",x);
 						res(x);
 					});
@@ -787,6 +787,19 @@
 		clearAuthorizationCache : function(fH){
 			return Hemi.xml.getJSON(sCache + "/clearAuthorization",fH,(fH ? 1 : 0));
 		},
+		patchAttribute: async function(o, n, v){
+			let a = am7client.getAttribute(o, n);
+			if(!a){
+				a = am7client.addAttribute(o, n, v);
+				await create(a.model, a);
+			}
+			else{
+				a.model = "common.attribute";
+				a.value = v;
+				await patchObject(a.model, a);
+			}
+			return a;			
+		},
 		getAttribute : function(o,n){
 			if(!o || o == null || !o.attributes){
                 return null;
@@ -801,15 +814,18 @@
 		},
 		addAttribute : function(o,s,v){
 			if(!o.attributes) o.attributes = [];
-			o.attributes.push(am7client.newAttribute(s,v));
-			return 1;
+			let a = am7client.newAttribute(s,v);
+			a.referenceModel = o.model;
+			a.referenceId = o.id || 0;
+			o.attributes.push(a);
+			return a;
 		},
 		newAttribute : function(s, v){
-			var a = am7model.newPrimitive("common.attribute"),x=[];
+			var a = am7model.newPrimitive("common.attribute"),x=null;
 			a.valueType = "STRING";
 			a.name = s;
 			
-			if(typeof v == "string") x.push(v);
+			if(typeof v == "string") x = v;
 			else if(typeof v == "number"){
 				let vs = "" + v;
 				if(vs.match(/\./)) a.valueType = 'DOUBLE';

@@ -141,6 +141,7 @@ public class PrincipalService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		if(user != null) {
 			IOSystem.getActiveContext().getReader().populate(user, 2);
+			IOSystem.getActiveContext().getReader().populate(user, new String[] {FieldNames.FIELD_ATTRIBUTES});
 		}
 		return Response.status(200).entity((user == null ? null : user.toFullString())).build();
 	}

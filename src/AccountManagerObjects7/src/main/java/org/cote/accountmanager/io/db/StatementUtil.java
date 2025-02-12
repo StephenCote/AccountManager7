@@ -49,6 +49,7 @@ import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.schema.type.SqlDataEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
@@ -146,17 +147,6 @@ public class StatementUtil {
 				if(!ms.hasField(FieldNames.FIELD_ID)) {
 					continue;
 				}
-				
-				/// TODO: Need to cleanup orphaned participants using a custom participantModel definition
-				/*
-				List<String> pmods = new ArrayList<>();
-				pmods.add(smodel);
-				for(FieldSchema f: ms.getFields()) {
-					if(f.getParticipantModel() != null) {
-						
-					}
-				}
-				*/
 				
 				String table = IOSystem.getActiveContext().getDbUtil().getTableName(smodel);
 				String partTable = IOSystem.getActiveContext().getDbUtil().getTableName(ms, ModelNames.MODEL_PARTICIPATION);
@@ -746,6 +736,7 @@ public class StatementUtil {
 		List<String> cols = new ArrayList<>();
 		
 		if(requestFields.size() == 0) {
+			logger.warn("Unchecked query detected: " + query.key());
 			schema.getFields().forEach(f -> {
 				requestFields.add(f.getName());
 			});

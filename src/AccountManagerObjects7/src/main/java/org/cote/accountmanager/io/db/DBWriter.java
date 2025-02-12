@@ -164,11 +164,13 @@ public class DBWriter extends MemoryWriter {
 		}
 
 		Map<String, List<BaseRecord>> autoCreate = new HashMap<>();
+		/// TODO: Re-implement? = getAutoCreateList();
 		if(autoCreate.size() > 0) {
 			logger.error("TODO: Re-implement auto creation of foreign references");
 		}
 		
 		for(BaseRecord rec : models) {
+			applyAutoCreateList(rec, op, autoCreate);
 			if(op == RecordOperation.UPDATE) {
 				CacheUtil.clearCache(rec);
 			}

@@ -1551,7 +1551,7 @@
             let modType = am7model.getModel(type);
 
             if(vnode && vnode.attrs.freeForm){
-                entity = vnode.attrs.freeFormEntity || {};
+                entity = vnode.attrs.freeFormEntity || {model: objectType};
                 if(entity.model && am7model.hasIdentity(entity)){
                     //console.log(entity);
                     let q = am7view.viewQuery(am7model.newInstance(type));
@@ -1573,7 +1573,6 @@
                     });
                 }
                 else{
-                    // console.log("Set app", vnode.attrs);
                     setApp();
                 }
 
@@ -2506,13 +2505,11 @@
             },
 
             view: function (vnode) {
-                // console.warn("view", objectType, inst);
                 callerIndex = vnode.attrs.callerIndex;
                 callerActive = vnode.attrs.callerActive;
 
                 if(!page.authenticated() || !inst) return m("");
                 if(vnode.attrs.freeForm){
-                    //console.log("Free Form", vnode.attrs, inst);
                     return getForm();
                 }                    
                 else if(embeddedMode) return [getObjectViewInner(), page.loadDialog()];
