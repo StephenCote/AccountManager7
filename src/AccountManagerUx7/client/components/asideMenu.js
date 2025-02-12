@@ -74,9 +74,11 @@
                 getCategories(),
                 m("div", { class: "flyout-gutter" }, [
                     //button("Community Mode", "group_off", "icoCommunityMode", undefined, page.components.breadCrumb.toggleCommunity),
+                    
                     button("Clear Cache", "cached", null, undefined, async function(){ await am7client.clearCache();}),
-                    button("Settings", "settings", null, undefined, clicky),
-                    button("Code", "code", null, undefined, clicky)
+                    button("Cleanup", "cached", null, undefined, async function(){ await page.cleanup();})
+                    //button("Settings", "settings", null, undefined, clicky),
+                    //button("Code", "code", null, undefined, clicky)
                 ])
             ]);
             return vnode;

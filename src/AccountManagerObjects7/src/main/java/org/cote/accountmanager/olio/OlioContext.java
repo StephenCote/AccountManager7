@@ -165,26 +165,33 @@ public class OlioContext {
 		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		userRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio User", RoleEnumType.USER.toString(), octx.getOrganizationId());
 		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_WORLD);
+		List<BaseRecord> groups = new ArrayList<>();
 		for(FieldSchema fs : ms.getFields()) {
 			if(fs.getBaseModel() != null && fs.getBaseModel().equals(ModelNames.MODEL_GROUP) && fs.isForeign()) {
 				BaseRecord group = cfgWorld.get(fs.getName());
 				if(group == null) {
 					throw new OlioException("Group " + fs.getName() + " is null");
 				}
-
-				String[] rperms = new String[] {"Read"};
-				String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
-				ioContext.getAuthorizationUtil().setEntitlement(olioUser, userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
-				ioContext.getAuthorizationUtil().setEntitlement(olioUser, adminRole, new BaseRecord[] {group}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 				try {
-					if((boolean)AttributeUtil.getAttributeValue(group, "shared") == true) {
-						logger.warn("Need to account for shared library use");
+					if((boolean)AttributeUtil.getAttributeValue(group, "shared", false) == true) {
+						groups.add(group);
 					}
 				}
 				catch(ModelException e) {
 					throw new OlioException(e.getMessage());
 				}
 			}
+		}
+
+		String[] rperms = new String[] {"Read"};
+		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
+
+		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, cfgWorld.get(FieldNames.FIELD_GROUP_ID), cfgWorld.get(FieldNames.FIELD_ORGANIZATION_ID));
+		groups.addAll(Arrays.asList(ioContext.getSearch().findRecords(pq)));
+		/// use org admin to set entitlement to address use/references to shared libraries
+		for(BaseRecord group : groups) {
+			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
+			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), adminRole, new BaseRecord[] {group}, crudperms, new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
 		}
 
 	}
