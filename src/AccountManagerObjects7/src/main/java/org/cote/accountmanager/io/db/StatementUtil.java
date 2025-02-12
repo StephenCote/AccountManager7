@@ -735,7 +735,7 @@ public class StatementUtil {
 		List<String> cols = new ArrayList<>();
 		
 		if(requestFields.size() == 0) {
-			logger.warn("Unchecked query detected: " + query.key());
+			// logger.warn("Unchecked query detected: " + query.key());
 			schema.getFields().forEach(f -> {
 				requestFields.add(f.getName());
 			});
