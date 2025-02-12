@@ -1,8 +1,6 @@
 (function () {
     const asideMenu = {};
-    let space;
     let vnode;
-    let entityName = "sig";
     let app;
 
     function button(sLabel, sIco, icoId, cls, fHandler, fHold) {
@@ -75,7 +73,8 @@
                 button("Home", "home"),
                 getCategories(),
                 m("div", { class: "flyout-gutter" }, [
-                    button("Community Mode", "group_off", "icoCommunityMode", undefined, page.components.breadCrumb.toggleCommunity),
+                    //button("Community Mode", "group_off", "icoCommunityMode", undefined, page.components.breadCrumb.toggleCommunity),
+                    button("Clear Cache", "cached", null, undefined, async function(){ await am7client.clearCache();}),
                     button("Settings", "settings", null, undefined, clicky),
                     button("Code", "code", null, undefined, clicky)
                 ])

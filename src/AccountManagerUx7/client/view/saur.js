@@ -1,6 +1,5 @@
 (function(){
     const authenticatedPage = {};
-    let space;
     let vnode;
     let entityName = "sig";
     let app;

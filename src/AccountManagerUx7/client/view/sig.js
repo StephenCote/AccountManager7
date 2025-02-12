@@ -1,9 +1,6 @@
 (function(){
     const signInPage = {};
-    let space;
     let vnode;
-    let entityName = "sig";
-    let app;
 
     am7model.models.push({
         name: "login",

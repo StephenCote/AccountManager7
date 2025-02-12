@@ -1,16 +1,7 @@
 (function () {
     const breadCrumb = {};
-    let space;
-    let vnode;
-    let entityName = "sig";
-    let app;
-    let udef;
-    let requesting = false;
-    let forced = false;
-
-
-
     let crumbButtons;
+
     function modelBreadCrumb() {
         let oL = document.querySelector("#listBreadcrumb");
         let sPath = page.user.homeDirectory.path;

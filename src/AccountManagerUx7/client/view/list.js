@@ -3,8 +3,6 @@
   function newListControl() {
 
     const listPage = {};
-    let space;
-    let entityName = "sig";
     let app;
     let wentBack = false;
     let carousel = false;
@@ -119,14 +117,6 @@
           await Promise.all(aP);
           pagination.new();
           m.redraw();
-
-          /*
-          let obj = pages.pageResults[pages.currentPage][idx[0]];
-          am7client.delete(getType(obj), obj.objectId, function(s, v){
-            pagination.new();
-            m.redraw();
-          });
-          */
         }
       });
 

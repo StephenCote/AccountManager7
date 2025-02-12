@@ -1,9 +1,5 @@
 (function () {
     const navigation = {};
-    let space;
-    let vnode;
-    let entityName = "sig";
-    let app;
 
     function navigable() {
         let nav = {

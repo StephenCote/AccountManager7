@@ -1,10 +1,5 @@
 (function () {
     const tab = {};
-    let space;
-    let vnode;
-    let entityName = "tab";
-    let app;
-
     tab.component = {
         oninit: function (x) {
             model = x.attrs.model;

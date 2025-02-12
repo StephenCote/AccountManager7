@@ -1,10 +1,5 @@
 (function () {
     const panel = {};
-    let space;
-    let vnode;
-    let entityName = "sig";
-    let app;
-    let model;
 
     function modelPanel() {
         let panels = [];
@@ -117,7 +112,7 @@
     panel.component = {
         clickPanelItem,
         oninit: function (x) {
-            model = x.attrs.model;
+
         },
         oncreate: function (x) {
 

@@ -1,9 +1,7 @@
 
 (function () {
     const topMenu = {};
-    let space;
     let vnode;
-    let entityName = "sig";
     let app;
     let profileDimensions = "48x48";
     let dnd = page.components.dnd;
