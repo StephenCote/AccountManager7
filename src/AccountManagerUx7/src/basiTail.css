@@ -303,7 +303,7 @@ h5 {
         @apply -translate-x-full
     }
     .flyout-button{
-        @apply flex items-center p-2 w-full page-button
+        @apply flex items-center p-2 w-full page-button hover:text-gray-800 hover:bg-blue-100
     }
     .flyout-banner{
         @apply flex w-full items-center p-4 border-b
