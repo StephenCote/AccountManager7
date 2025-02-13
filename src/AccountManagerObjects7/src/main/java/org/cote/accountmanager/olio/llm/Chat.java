@@ -954,6 +954,23 @@ Begin conversationally.
 			// logger.info(useAssist + " / " + remind + " / " + mark + " / " + req.getMessages().size() + " / " + rating.toString());
 			// && (rating == ESRBEnumType.AO || rating == ESRBEnumType.RC)
 			if(promptConfig != null && (req.getMessages().size() % remind) == 0 ) {
+				
+				/// Inject the assistant warning into the last message
+				if(req.getMessages().size() > 0)
+				{
+					OllamaMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
+					if(amsg.getRole().equals("assistant")) {
+						List<String> arem = promptConfig.get("assistantCensorWarning");
+						String rem = arem.stream().collect(Collectors.joining(System.lineSeparator()));
+						if(chatConfig != null) {
+							rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
+						}
+						amsg.setContent(amsg.getContent() + System.lineSeparator() + "(Reminder: " + rem + ")");
+						
+					}
+				}
+				/// Inject the user reminder
+				
 				List<String> urem = promptConfig.get("userReminder");
 				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
 				if(chatConfig != null) {
