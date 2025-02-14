@@ -102,30 +102,30 @@
     }
     function doChat(){
       clearEditMode();
-      // console.log("Chatting ...");
+
       if(chatCfg.pending){
         console.warn("Chat is pending");
         return;
       }
       let msg = document.querySelector("[name='chatmessage']").value; ///e?.target?.value;
-      //if(msg && msg.length){
-        if(!chatCfg.peek){
-          doPeek().then(()=>{
-            doChat();
-          })
-        }
-        else{
-          pushHistory();
-          chatCfg.pending = true;
-          m.request({method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: {chatConfig:chatCfg.chat.objectId, promptConfig:chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid(),message: msg}}).then((r)=> {
-            if(!chatCfg.history) chatCfg.history = {};
-            // console.log(r);
-            chatCfg.history.messages = r?.messages || [];
-            chatCfg.pending = false;
-          });
-        }
-      //}
+      if(!chatCfg.peek){
+        doPeek().then(()=>{
+          doChat();
+        })
+      }
+      else{
+        pushHistory();
+        chatCfg.pending = true;
+        m.request({method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: {chatConfig:chatCfg.chat.objectId, promptConfig:chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid(),message: msg}}).then((r)=> {
+          if(!chatCfg.history) chatCfg.history = {};
+          // console.log(r);
+          chatCfg.history.messages = r?.messages || [];
+          chatCfg.pending = false;
+        });
+      }
+
     }
+
     function pushHistory(){
       let msg = document.querySelector("[name='chatmessage']").value;
       if(!chatCfg.history) chatCfg.history = {};
@@ -134,14 +134,13 @@
       document.querySelector("[name='chatmessage']").value = "";
       m.redraw();
     }
+
     function getHistory(){
-      console.log("History ...");
       return m.request({method: 'POST', url:g_application_path + "/rest/chat/history", withCredentials: true, body: {chatConfig:chatCfg.chat.objectId, promptConfig:chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid()}});
     }
     
     function doPeek(){
       clearEditMode();
-      console.log("Peeking ...");
       chatCfg.history = undefined;
       chatCfg.system = undefined;
       chatCfg.user = undefined;
@@ -382,12 +381,13 @@
               }
 
             }
-            if(!bectl && !hideThoughts){
+            if(!bectl && hideThoughts){
               let idx = cnt.indexOf("(Reminder");
               if(idx > -1){
                 cnt = cnt.substring(0, idx);
               }
             }
+
             return  m("div", {class: "relative receive-chat flex " + align},
               [ectl,m("div", {class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light"},
                 //m("i", {class: "material-icons text-violet-400 -top-4 absolute"}, "arrow_upward_alt"),

@@ -187,8 +187,8 @@
     let totalUpCount = 0;
     let currentUpCount = 0;
     let maxUpload = 10;
-    dnd.uploadFiles = async function(entity, files) {
-
+    dnd.uploadFiles = async function(inst, files) {
+        let entity = inst?.entity;
         if(!entity){
             return;
         }
@@ -259,14 +259,14 @@
     function handleDragOver(evt) {
         evt.preventDefault();
     }
-    function handleDrop(evt) {
+    function handleDrop(inst, evt) {
         evt.preventDefault();
-        dnd.uploadFiles(entity, evt.dataTransfer.files);
+        dnd.uploadFiles(inst, evt.dataTransfer.files);
     }
 
-    dnd.props = function(){
+    dnd.props = function(inst){
         return {
-            ondrop: handleDrop,
+            ondrop: function(e){ handleDrop(inst, e); },
             ondragover: handleDragOver,
             ondragenter: handleDragEnter,
             ondragleave: handleDragLeave

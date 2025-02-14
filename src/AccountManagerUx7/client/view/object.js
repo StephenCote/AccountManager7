@@ -706,7 +706,7 @@
                 defVal = getObjectProperty(name, field);
             }
 
-            let dnd = page.components.dnd.props();
+            let dnd = page.components.dnd.props(inst);
             let show = am7view.showField(inst, fieldView);
 
             if(!show) fieldClass += " hidden";

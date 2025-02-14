@@ -2598,7 +2598,8 @@
             np = tp + gp + "/Characters" + n;
         }
         /// "~/GalleryHome/Characters" + n
-        page.components.picker.fieldPicker(inst, inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
+        //page.components.picker.fieldPicker(inst, inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
+        object.picker(inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
             if (p && p.getInstance()?.entity?.profile) {
                 p.getInstance().entity.profile.portrait = data;
             }
