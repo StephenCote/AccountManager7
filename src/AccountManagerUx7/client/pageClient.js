@@ -730,7 +730,7 @@
         if(typeof id == "string"){
             let q = am7view.viewQuery(am7model.newInstance("auth.group"));
             q.field("objectId", id);
-            let qr = await search(q);
+            let qr = await promiseSearch(q);
             if(qr && qr.results){
                 id = qr.results[0].id;
             }

@@ -184,5 +184,94 @@
 
     }
 
+    let totalUpCount = 0;
+    let currentUpCount = 0;
+    let maxUpload = 10;
+    dnd.uploadFiles = async function(entity, files) {
+
+        if(!entity){
+            return;
+        }
+        totalUpCount = files.length;
+        currentUpCount = 0;
+        let aP = [];
+        for (var i = 0; i < files.length; i++) {
+            var formData = new FormData();
+            formData.append("organizationPath", am7client.currentOrganization);
+            formData.append("groupPath", entity.groupPath);
+            //formData.append("groupId", oGroup.id);
+            let fname = files[i].name;
+            formData.append("name", files[i].name);
+            formData.append("dataFile", files[i]);
+            aP.push(new Promise((res, rej)=>{
+                var xhr = new XMLHttpRequest();
+                xhr.withCredentials = true;
+                console.log("Posting: " + g_application_path + '/mediaForm');
+                xhr.open('POST', g_application_path + '/mediaForm');
+                xhr.onload = function(v){
+                    res(fname);
+                };
+                xhr.upload.onprogress = function(event){
+                    ///ctl.updateWaitingCount();
+                };
+                xhr.send(formData);
+            }));
+            if(i > 0 && (i % maxUpload) == 0){
+                await Promise.all(aP);
+                aP = [];
+            }
+
+        }
+        return new Promise((res2, rej2)=>{
+            Promise.all(aP).then((aD)=>{
+                if(aD.length == 1){
+                    page.findObject("auth.group", "data", entity.groupPath).then((oG)=>{
+                        if(!oG){
+                            console.warn("Failed to lookup group", oG);
+                        }
+                        else{
+                            page.openObjectByName("data.data", oG.objectId, aD[0]).then((oD)=>{
+                                if(!oD){
+                                    console.warn("Failed to lookup data");
+                                }
+                                else{
+                                    let uri = "/view/data.data/" + oD.objectId;
+                                    m.route.set(uri, {key: oD.objectId});
+                                    res2();
+                                }
+                            });
+                        }
+                    });
+                }
+                else{
+                    res2();
+                }
+            });
+        });
+    }
+
+    function handleDragLeave(evt) {
+        evt.preventDefault();
+    }
+    function handleDragEnter(evt) {
+        evt.preventDefault();
+    }
+    function handleDragOver(evt) {
+        evt.preventDefault();
+    }
+    function handleDrop(evt) {
+        evt.preventDefault();
+        dnd.uploadFiles(entity, evt.dataTransfer.files);
+    }
+
+    dnd.props = function(){
+        return {
+            ondrop: handleDrop,
+            ondragover: handleDragOver,
+            ondragenter: handleDragEnter,
+            ondragleave: handleDragLeave
+        };
+    }
+
     page.components.dnd = dnd;
 }());

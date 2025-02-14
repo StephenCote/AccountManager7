@@ -93,6 +93,7 @@ public class OlioAction extends CommonAction implements IAction{
 		options.addOption("jailbreak", false, "Bit indicating to use any JailBreak configuration from a paired prompt configuration");
 		options.addOption("assist", false, "Bit indicating to add additional guidance to the assistant");
 		options.addOption( "scan", false, "Bit indicating to perform a scan of the gallery");
+		options.addOption( "verb", true, "Verb phrase to use when generating images");
 	}
 	@Override
 	public void handleCommand(CommandLine cmd) {
@@ -102,6 +103,7 @@ public class OlioAction extends CommonAction implements IAction{
 	@Override
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
 		// TODO Auto-generated method stub
+
 		OlioContext octx = null;
 		BaseRecord epoch = null;
 		List<BaseRecord> pop = new ArrayList<>();
@@ -310,7 +312,7 @@ public class OlioAction extends CommonAction implements IAction{
 			if(cmd.hasOption("list")) {
 				if(cmd.hasOption("reimage")) {
 					BaseRecord sdConfig = SDUtil.randomSDConfig();
-					sdu.generateSDImages(octx, pop, sdConfig, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					sdu.generateSDImages(octx, pop, sdConfig, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), cmd.getOptionValue("verb"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 					octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				}
 				if(cmd.hasOption("refigure")) {
@@ -375,7 +377,7 @@ public class OlioAction extends CommonAction implements IAction{
 					/// Need to overwrite the 'narrative', not just add another one
 					//char1.setValue("narrative", null);
 					BaseRecord sdConfig = SDUtil.randomSDConfig();
-					sdu.generateSDImages(octx, Arrays.asList(char1), sdConfig, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					sdu.generateSDImages(octx, Arrays.asList(char1), sdConfig, genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), cmd.getOptionValue("verb"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 					octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				}
 				if(cmd.hasOption("refigure") && !cmd.hasOption("chatConfig")) {
@@ -403,7 +405,7 @@ public class OlioAction extends CommonAction implements IAction{
 				if(cmd.hasOption("reimage") && !cmd.hasOption("chatConfig")) {
 					/// Need to overwrite the 'narrative', not just add another one
 					//char2.setValue("narrative", null);
-					sdu.generateSDImages(octx, Arrays.asList(char2), genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+					sdu.generateSDImages(octx, Arrays.asList(char2), genSet, cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), cmd.getOptionValue("verb"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 					octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				}
 				if(cmd.hasOption("show")) {
@@ -528,7 +530,7 @@ public class OlioAction extends CommonAction implements IAction{
 							// char1.setValue("narrative", null);
 							// char2.setValue("narrative", null);
 							
-							sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+							sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), cmd.getOptionValue("verb"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 							octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 
 						}

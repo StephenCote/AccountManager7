@@ -21,9 +21,19 @@
     
 
     function init(){
+        window.addEventListener("beforeunload", takeDown);
         refreshApplication();
     }
+    
+    function takeDown(){
+        console.log("Unload");
+        if(page.wss){
+            page.wss.close();
+        }
+    }
+
     function refreshApplication() {
+        
         am7client.principal().then((usr) => {
             let rt = window.location.hash.slice(window.location.hash.indexOf("/"));
             page.application = undefined;

@@ -863,7 +863,19 @@ public class NarrativeUtil {
 	}
 	
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType) {
+		return getSDPrompt(ctx, pp, person, sdConfig, setting, pictureType, bodyType, null);
+	}
+	
+	private static String[] verbs = new String[] {"running in", "walking in", "sitting in", "talking in", "dancing in", "working in", "playing in", "sleeping in", "bathing in", "dressing in", "swimming in", "skiing in"};
+	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb) {
 		StringBuilder buff = new StringBuilder();
+		
+		if(verb == null) {
+			verb = verbs[rand.nextInt(verbs.length)];
+			if(rand.nextDouble() >= 0.5) {
+				verb = getInteractionGerund(OlioUtil.getRandomInteraction()) + " in";
+			}
+		}
 		
 		int age = pp.getAge();
 		String gender = person.get(FieldNames.FIELD_GENDER);
@@ -884,11 +896,8 @@ public class NarrativeUtil {
 		if(utrades.size() > 0) {
 			ujobDesc =" " + utrades.get(0).toLowerCase();
 		}
-		String[] verbs = new String[] {"running in", "walking in", "sitting in", "talking in", "dancing in", "working in", "playing in", "sleeping in", "bathing in", "dressing in", "swimming in", "skiing in"};
-		String verb = verbs[rand.nextInt(verbs.length)];
-		if(rand.nextDouble() >= 0.5) {
-			verb = getInteractionGerund(OlioUtil.getRandomInteraction()) + " in";
-		}
+
+
 		String pref = " " + cpro + " is (" + (ujobDesc.length() > 0 ? "a " + ujobDesc + " " : "") + "(" + verb + ")) ";
 		if(setting != null && setting.length() > 0) {
 			if(setting.equalsIgnoreCase("random")) {

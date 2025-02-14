@@ -98,18 +98,19 @@ public class SDUtil {
 		Queue.processQueue();
 	}
 
-	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, String style, String bodyStyle, int batchSize, boolean export, boolean hires, int seed) {
-		generateSDImages(octx, pop, randomSDConfig(), setting, style, bodyStyle, batchSize, export, hires, seed);
+	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, String setting, String style, String bodyStyle, String verb, int batchSize, boolean export, boolean hires, int seed) {
+		generateSDImages(octx, pop, randomSDConfig(), setting, style, bodyStyle, verb, batchSize, export, hires, seed);
 	}
-	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, BaseRecord sdConfig, String setting, String style, String bodyStyle, int batchSize, boolean export, boolean hires, int seed) {
+	public void generateSDImages(OlioContext octx, List<BaseRecord> pop, BaseRecord sdConfig, String setting, String style, String bodyStyle, String verb, int batchSize, boolean export, boolean hires, int seed) {
+
 		SecureRandom rand = new SecureRandom();
 		String useStyle = style;
 		String useBodyStyle = bodyStyle;
 		if(useStyle == null) {
 			useStyle = "professional photograph";
 		}
-		if(bodyStyle == null) {
-			bodyStyle = "full body";
+		if(useBodyStyle == null) {
+			useBodyStyle = "full body";
 		}
 		if(setting != null && setting.equals("random")) {
 			setting = NarrativeUtil.getRandomSetting();
@@ -125,7 +126,7 @@ public class SDUtil {
 			String path = basePath + "/Characters/" + per.get(FieldNames.FIELD_NAME);
 			//List<BaseRecord> images = nar.get("images");
 			//if(images.size() == 0) {
-				List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useStyle, useBodyStyle, steps, batchSize, hires, seed);
+				List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useStyle, useBodyStyle, verb, steps, batchSize, hires, seed);
 			
 				if(bl.size() > 0) {
 					// if(prof.get("portrait") == null) {
@@ -150,11 +151,12 @@ public class SDUtil {
 		return createPersonImage(user, person, groupPath, name, null, "professional portrait", 50, 1);
 	}
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, String setting, String pictureType, int steps, int batch) {
-		return createPersonImage(user, person, groupPath, randomSDConfig(), name, null, pictureType, "full body", steps, batch, false, 0);
+		return createPersonImage(user, person, groupPath, randomSDConfig(), name, null, pictureType, "full body", null, steps, batch, false, 0);
 	}
 		
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, int steps, int batch, boolean hires, int seed) {
-		SDTxt2Img s2i = newTxt2Img(person, sdConfig, setting, pictureType, bodyType, steps);
+	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
+
+		SDTxt2Img s2i = newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
 		if(seed > 0) {
 			s2i.setSeed(seed);
 		}
@@ -168,7 +170,7 @@ public class SDUtil {
 	}
 	
 	public List<BaseRecord> createPersonFigurine(BaseRecord user, BaseRecord person, String groupPath, String name, int steps, int batch, boolean hires, int seed) {
-		SDTxt2Img s2i = newTxt2Img(person, randomSDConfig(), "random", "professional portrait", "full body", steps);
+		SDTxt2Img s2i = newTxt2Img(person, randomSDConfig(), "random", "professional portrait", "full body", null, steps);
 		
 		s2i.setPrompt(NarrativeUtil.getSDFigurinePrompt(ProfileUtil.getProfile(null, person)));
 		if(seed > 0) {
@@ -286,9 +288,9 @@ public class SDUtil {
 		
 		
 	}
-	public SDTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, int steps) {
+	public SDTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb, int steps) {
 		SDTxt2Img s2i = new SDTxt2Img();
-		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, pictureType, bodyType));
+		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, pictureType, bodyType, verb));
 		s2i.setNegative_prompt(NarrativeUtil.getSDNegativePrompt(person));
 		s2i.setSeed(Math.abs(rand.nextInt()));
 		s2i.setSteps(steps);

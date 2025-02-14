@@ -143,12 +143,8 @@ public class OlioContext {
 
 	}
 	
-	public void configureWorld(BaseRecord cfgWorld, boolean userWrite) throws OlioException {
-		/*
-		if(initConfig) {
-			return;
-		}
-		*/
+	public void configureWorldAuthorization(BaseRecord cfgWorld, boolean userWrite) throws OlioException {
+
 		if(cfgWorld == null) {
 			throw new OlioException("World is null");
 		}
@@ -159,7 +155,9 @@ public class OlioContext {
 		if(octx == null) {
 			throw new OlioException("Failed to find organization context");
 		}
-		
+		if(trace) {
+			logger.info("CONFIGURE WORLD " + cfgWorld.get(FieldNames.FIELD_NAME));
+		}
 		IOContext ioContext = IOSystem.getActiveContext();
 
 		adminRole = ioContext.getPathUtil().makePath(olioUser, ModelNames.MODEL_ROLE, "~/Roles/Olio Admin", RoleEnumType.USER.toString(), octx.getOrganizationId());
@@ -186,8 +184,17 @@ public class OlioContext {
 		String[] rperms = new String[] {"Read"};
 		String[] crudperms = new String[] {"Read", "Update", "Create", "Delete"};
 
+		/// Find the parent group where the world is located
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, cfgWorld.get(FieldNames.FIELD_GROUP_ID), cfgWorld.get(FieldNames.FIELD_ORGANIZATION_ID));
-		groups.addAll(Arrays.asList(ioContext.getSearch().findRecords(pq)));
+		BaseRecord pdir = ioContext.getSearch().findRecord(pq);
+		if(pdir == null) {
+			throw new OlioException("Failed to find parent group");
+		}
+		Query ppq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, pdir.get(FieldNames.FIELD_ID), cfgWorld.get(FieldNames.FIELD_ORGANIZATION_ID));
+		
+		List<BaseRecord> recs = Arrays.asList(ioContext.getSearch().findRecords(ppq));
+		groups.addAll(recs);
+		
 		/// use org admin to set entitlement to address use/references to shared libraries
 		for(BaseRecord group : groups) {
 			ioContext.getAuthorizationUtil().setEntitlement(octx.getAdminUser(), userRole, new BaseRecord[] {group}, (userWrite ? crudperms : rperms), new String[] {PermissionEnumType.DATA.toString(), PermissionEnumType.GROUP.toString()});
@@ -287,7 +294,7 @@ public class OlioContext {
 				throw new OlioException("Failed to load universe " + config.getUniverseName());
 			}
 			IOSystem.getActiveContext().getReader().populate(universe, 2);
-			configureWorld(universe, false);
+			
 			if(trace) {
 				logger.info("Check/Load World Data ...");
 			}
@@ -299,7 +306,6 @@ public class OlioContext {
 			if(world == null) {
 				throw new OlioException("Failed to load world " + config.getWorldName());
 			}
-			configureWorld(world, true);
 			if(config.isResetWorld()) {
 				if(trace) {
 					logger.info("Reset World ...");
@@ -359,6 +365,9 @@ public class OlioContext {
 			if(!startOrContinueRealmEvents()) {
 				logger.error("Failed to start realms");
 			}
+			
+			configureWorldAuthorization(universe, false);
+			configureWorldAuthorization(world, true);
 			
 			if(trace) {
 				long stop = System.currentTimeMillis();

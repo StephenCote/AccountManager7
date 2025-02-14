@@ -8034,6 +8034,11 @@ let am7model = {
 			"baseType": "string"
 		  },
 		  {
+			"name": "assistantReminder",
+			"type": "list",
+			"baseType": "string"
+		  },
+		  {
 			"name": "userReminder",
 			"type": "list",
 			"baseType": "string"

@@ -346,8 +346,9 @@
             let cnt = msg.content;
             let ectl = "";
             let ecls = "";
+            let bectl = false;
             if(msg.role == "assistant"){
-              let bectl = (editMode && editIndex == midx);
+              bectl = (editMode && editIndex == midx);
               /// Only edit last message
               if(midx == chatCfg.history.messages.length - 1){
                 ectl = m("span", {onclick: function(){ toggleEditMode(midx);}, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700)}, "edit");
@@ -381,7 +382,7 @@
               }
 
             }
-            else if(msg.role == "user"){
+            if(!bectl && !hideThoughts){
               let idx = cnt.indexOf("(Reminder");
               if(idx > -1){
                 cnt = cnt.substring(0, idx);

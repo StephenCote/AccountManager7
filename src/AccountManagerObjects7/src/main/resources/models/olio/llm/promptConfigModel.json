@@ -61,6 +61,12 @@
 			"baseType": "string"
 		},
 		{
+			"name": "assistantReminder",
+			"type": "list",
+			"baseType": "string"
+		},
+
+		{
 			"name": "user",
 			"type": "list",
 			"baseType": "string"

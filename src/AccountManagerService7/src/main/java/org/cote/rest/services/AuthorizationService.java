@@ -52,7 +52,9 @@ public class AuthorizationService {
 			outBool = IOSystem.getActiveContext().getAccessPoint().member(user, object, actor, null, enable);
 		}
 		else {
-			logger.warn("Object or actor was null");
+			String objKey = objectType + " " + objectId;
+			String actKey = actorType + " " + actorId;
+			logger.warn((object == null ? objKey + " was null. ": "") + (actor == null ? actKey + " was null.": ""));
 		}
 		return Response.status(200).entity(outBool).build();
 	}

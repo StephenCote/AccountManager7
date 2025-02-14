@@ -97,7 +97,7 @@
 
         else {
             objView = m("div", "Working on it: " + object.urn);
-            console.warn(object);
+            //console.warn(object);
         }
         let useCls = cls + " carousel-item-" + (active ? "100" : "0");
         return m("div", { class: useCls }, objView);

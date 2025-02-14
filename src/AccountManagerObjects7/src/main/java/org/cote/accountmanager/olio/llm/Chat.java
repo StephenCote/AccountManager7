@@ -960,12 +960,12 @@ Begin conversationally.
 				{
 					OllamaMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
 					if(amsg.getRole().equals("assistant")) {
-						List<String> arem = promptConfig.get("assistantCensorWarning");
+						List<String> arem = promptConfig.get("assistantReminder");
 						String rem = arem.stream().collect(Collectors.joining(System.lineSeparator()));
 						if(chatConfig != null) {
 							rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
 						}
-						amsg.setContent(amsg.getContent() + System.lineSeparator() + "(Reminder: " + rem + ")");
+						amsg.setContent(amsg.getContent() + System.lineSeparator() + rem);
 						
 					}
 				}

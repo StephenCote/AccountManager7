@@ -19,6 +19,29 @@
         return v;
     }
 
+    
+    function getFormatForType(type){
+        let format = "text";
+        switch(type){
+            case "list":
+            case "enum":
+                format = "select";
+                break;
+            case "zonetime":
+            case "timestamp":
+            case "datetime":
+                format = "datetime-local";
+                break;
+            case "boolean":
+                format = "checkbox";
+                break;
+            default:
+                /// console.log("Default " + type + " to " + format);
+                break;
+        }
+        return format;
+    }
+
     function getActionView(fld, inst){
         let a = inst.form.commands[fld];
         return m("div",[
@@ -268,6 +291,93 @@
         return ot;
     }
 
+            /// TODO: There's currently a bug where if a picker is based on a type, and restricted by the type value, then if the type list displays initially without being redrawn, the type
+        /// value will still be the default - currently the work around is display these fields on a secondary tab
+        function showField(inst, ref, useName){
+            let show = true;
+            let entity = inst?.entity;
+            if(useName && useName.match(/(sender|recipient)/)){
+                //console.log(useName, ref);
+            }
+            /*
+            if(useName){
+                refer = false;
+            }
+            */
+            if(ref.requiredRoles){
+                show = false;
+                let rctx = page.context().roles;
+                ref.requiredRoles.forEach((a, i) =>{
+                    if(rctx[a] === true) show = true;
+                });
+            }
+            if(show && entity && ref.requiredAttributes){
+                let showCount = 0;
+                ref.requiredAttributes.forEach((a, i)=>{
+                    let a2 = a;
+                    let invert = (a2.match(/^!/) != null);
+                    if(invert){
+                        a2 = a2.replace(/^!/,"");
+                    }
+
+                    let reqVal;
+                    if(ref.requiredValues){
+                        reqVal = ref.requiredValues[i];
+                    }
+                    if(ref.referField){
+                        let mat;
+                        if(useName && (mat = useName.match(/(-\d+)$/)) != null){
+                            a2 = a2 + mat[1];
+                        }
+                        let e = document.querySelector('[name=' + a2 + ']');
+                        if(e && e.type == 'checkbox'){
+                            //show = e.checked;
+                            if(e.checked || invert) showCount++;
+                        }
+                        else if(e) {
+                            let reqVals = (reqVal ? reqVal.split("|") : [undefined]);
+                            let showTotal = 0;
+                            reqVals.forEach((v2)=>{
+                                //console.log(a2, "Scan: " + v2, e.value);
+                                if(
+                                    (v2 && e.value == v2)
+                                    ||
+                                    (!v2 && e.value)
+                                ){
+                                    showTotal++;
+                                }
+                            });
+                            // show = (reqVal && reqVal.indexOf("|") > -1 ? showTotal > 0 : showTotal == reqVals.length);
+                            //showCount += (reqVal && reqVal.indexOf("|") > -1 ? showTotal > 0 : showTotal == reqVals.length) ? 1 : 0;
+                            if(reqVal){
+                                if(reqVal.indexOf("|") > -1 && showTotal > 0) showCount++;
+                                else if(showTotal == reqVals.length) showCount++;
+                            }
+                            else if(showTotal > 0){
+                                showCount++;
+                            }
+                            //console.log(a2, showCount, showTotal, ref.requiredAttributes.length);
+                        }
+                        else{
+                            //console.log("Else: " + a2);
+                        }
+                        //if(invert) show = !show;
+                        //console.log("Match " + a2 + " == " + reqVal + " / " + entity[a] + " == " + show);
+                    }
+                    else if((reqVal && entity[a2] != reqVal) || (!reqVal && ((!invert && !entity[a2]) || (invert && entity[a2])))){
+                        //console.log("Else...");
+                        //show = false;
+                    }
+                    else{
+                        showCount++;
+                    }
+                });
+                show = ref.requiredAttributes.length == showCount;
+            }
+            //console.log(show, ref);
+            return show;
+        }
+
     let am7view = {
         form,
         fieldView:getFieldView,
@@ -282,6 +392,8 @@
         typeByPath: getTypeByPath,
         typeToModel,
         defaultValuesForField: getDefaultValuesForField,
+        getFormatForType,
+        showField,
         basePath: (s) => {
             if(s){
                 basePath = s;

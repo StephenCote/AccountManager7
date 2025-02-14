@@ -329,27 +329,6 @@
             return m("div",{class : "tab-panel" + (!active ? " hidden" : "")}, modelForm(active, type, form));
         }
 
-        function getFormatForType(type){
-            let format = "text";
-            switch(type){
-                case "list":
-                case "enum":
-                    format = "select";
-                    break;
-                case "zonetime":
-                case "timestamp":
-                case "datetime":
-                    format = "datetime-local";
-                    break;
-                case "boolean":
-                    format = "checkbox";
-                    break;
-                default:
-                    /// console.log("Default " + type + " to " + format);
-                    break;
-            }
-            return format;
-        }
         function getFormatForContentType(format){
             if(!entity || !entity.contentType){
                 return "textarea";
@@ -586,7 +565,7 @@
             else if(fieldView.layout == "one") className = "field-grid-item-one";
             if(fieldView.rows) className += " " + spans[fieldView.rows-1];
             let labelClass = "field-label";
-            let show = showField(fieldView);
+            let show = am7view.showField(inst, fieldView);
             
             if(!show){
                 labelClass += " text-gray-300"
@@ -630,188 +609,12 @@
             }
         }
 
-        /// TODO: There's currently a bug where if a picker is based on a type, and restricted by the type value, then if the type list displays initially without being redrawn, the type
-        /// value will still be the default - currently the work around is display these fields on a secondary tab
-        function showField(ref, useName){
-            let show = true;
-            let refer = ref.referField;
-            if(useName && useName.match(/(sender|recipient)/)){
-                //console.log(useName, ref);
-            }
-            /*
-            if(useName){
-                refer = false;
-            }
-            */
-            if(ref.requiredRoles){
-                show = false;
-                let rctx = page.context().roles;
-                ref.requiredRoles.forEach((a, i) =>{
-                    if(rctx[a] === true) show = true;
-                });
-            }
-            if(show && entity && ref.requiredAttributes){
-                let showCount = 0;
-                ref.requiredAttributes.forEach((a, i)=>{
-                    let a2 = a;
-                    let invert = (a2.match(/^!/) != null);
-                    if(invert){
-                        a2 = a2.replace(/^!/,"");
-                    }
 
-                    let reqVal;
-                    if(ref.requiredValues){
-                        reqVal = ref.requiredValues[i];
-                    }
-                    if(ref.referField){
-                        let mat;
-                        if(useName && (mat = useName.match(/(-\d+)$/)) != null){
-                            a2 = a2 + mat[1];
-                        }
-                        let e = document.querySelector('[name=' + a2 + ']');
-                        if(e && e.type == 'checkbox'){
-                            //show = e.checked;
-                            if(e.checked || invert) showCount++;
-                        }
-                        else if(e) {
-                            let reqVals = (reqVal ? reqVal.split("|") : [undefined]);
-                            let showTotal = 0;
-                            reqVals.forEach((v2)=>{
-                                //console.log(a2, "Scan: " + v2, e.value);
-                                if(
-                                    (v2 && e.value == v2)
-                                    ||
-                                    (!v2 && e.value)
-                                ){
-                                    showTotal++;
-                                }
-                            });
-                            // show = (reqVal && reqVal.indexOf("|") > -1 ? showTotal > 0 : showTotal == reqVals.length);
-                            //showCount += (reqVal && reqVal.indexOf("|") > -1 ? showTotal > 0 : showTotal == reqVals.length) ? 1 : 0;
-                            if(reqVal){
-                                if(reqVal.indexOf("|") > -1 && showTotal > 0) showCount++;
-                                else if(showTotal == reqVals.length) showCount++;
-                            }
-                            else if(showTotal > 0){
-                                showCount++;
-                            }
-                            //console.log(a2, showCount, showTotal, ref.requiredAttributes.length);
-                        }
-                        else{
-                            //console.log("Else: " + a2);
-                        }
-                        //if(invert) show = !show;
-                        //console.log("Match " + a2 + " == " + reqVal + " / " + entity[a] + " == " + show);
-                    }
-                    else if((reqVal && entity[a2] != reqVal) || (!reqVal && ((!invert && !entity[a2]) || (invert && entity[a2])))){
-                        //console.log("Else...");
-                        //show = false;
-                    }
-                    else{
-                        showCount++;
-                    }
-                });
-                show = ref.requiredAttributes.length == showCount;
-            }
-            //console.log(show, ref);
-            return show;
-        }
-        function validateFormat(field, format, useName){
-            if(format === "picker" && field.pickerProperty && field.pickerProperty.requiredAttributes){
-                let req = field.pickerProperty;
-                if(!showField(req, useName)){
-                    format = "text";
-                }
-                //console.log("Test show field", showField(req, useName));
-            }
-            return format;
-        }
-
-        function handleDragLeave(evt) {
-            evt.preventDefault();
-        }
-        function handleDragEnter(evt) {
-            evt.preventDefault();
-        }
-        function handleDragOver(evt) {
-            evt.preventDefault();
-        }
-        function handleDrop(evt) {
-            evt.preventDefault();
-            uploadFiles(evt.dataTransfer.files);
-        }
-
-        let totalUpCount = 0;
-        let currentUpCount = 0;
-        let maxUpload = 10;
-        async function uploadFiles(files) {
-
-            if(!entity){
-                return;
-            }
-            totalUpCount = files.length;
-            currentUpCount = 0;
-            let aP = [];
-            for (var i = 0; i < files.length; i++) {
-                var formData = new FormData();
-                formData.append("organizationPath", am7client.currentOrganization);
-                formData.append("groupPath", entity.groupPath);
-                //formData.append("groupId", oGroup.id);
-                let fname = files[i].name;
-                formData.append("name", files[i].name);
-                formData.append("dataFile", files[i]);
-                aP.push(new Promise((res, rej)=>{
-                    var xhr = new XMLHttpRequest();
-                    xhr.withCredentials = true;
-                    console.log("Posting: " + g_application_path + '/mediaForm');
-                    xhr.open('POST', g_application_path + '/mediaForm');
-                    xhr.onload = function(v){
-                        res(fname);
-                    };
-                    xhr.upload.onprogress = function(event){
-                        ///ctl.updateWaitingCount();
-                    };
-                    xhr.send(formData);
-                }));
-                if(i > 0 && (i % maxUpload) == 0){
-                    await Promise.all(aP);
-                    aP = [];
-                }
-
-            }
-            return new Promise((res2, rej2)=>{
-                Promise.all(aP).then((aD)=>{
-                    if(aD.length == 1){
-                        page.findObject("auth.group", "data", entity.groupPath).then((oG)=>{
-                            if(!oG){
-                                console.warn("Failed to lookup group", oG);
-                            }
-                            else{
-                                page.openObjectByName("data.data", oG.objectId, aD[0]).then((oD)=>{
-                                    if(!oD){
-                                        console.warn("Failed to lookup data");
-                                    }
-                                    else{
-                                        let uri = "/view/data.data/" + oD.objectId;
-                                        m.route.set(uri, {key: oD.objectId});
-                                        res2();
-                                    }
-                                });
-                            }
-                        });
-                    }
-                    else{
-                        res2();
-                    }
-                });
-            });
-        }
-        
 
         function modelField(name, fieldView, field, altName, altVal, noChange, altEntity){
             let useEntity = altEntity || entity;
 
-            let format = (fieldView?.form?.format || fieldView.format || field.format || getFormatForType(field.type));
+            let format = (fieldView?.form?.format || fieldView.format || field.format || am7view.getFormatForType(field.type));
             let useName = altName || name;
             let view = [];
             let disabled = false;
@@ -903,13 +706,8 @@
                 defVal = getObjectProperty(name, field);
             }
 
-            let dnd = {
-                ondrop: handleDrop,
-                ondragover: handleDragOver,
-                ondragenter: handleDragEnter,
-                ondragleave: handleDragLeave,
-            };
-            let show = showField(fieldView);
+            let dnd = page.components.dnd.props();
+            let show = am7view.showField(inst, fieldView);
 
             if(!show) fieldClass += " hidden";
             switch(format){
@@ -1082,7 +880,7 @@
                     break;
                 case 'picker':
                     fieldClass += " text-field-full";
-                    let valPick = (validateFormat(field, format, useName) === "picker");
+                    let valPick = (page.components.picker.validateFormat(inst, field, format, useName) === "picker");
                     if(valPick && useEntity && field.pickerProperty){
                         let findVal = useEntity[field.pickerProperty.entity];
                         let ctx = page.context();
@@ -1437,7 +1235,7 @@
                     console.warn("Failed to find form to construct tab " + f);
                 }
                 else{
-                    let show = showField(cForm);
+                    let show = am7view.showField(inst, cForm);
                     if(show) tabs.push(buttonTab(active, cForm.label || f, function(){ switchTab(i + 1);}));
                 }
             });
