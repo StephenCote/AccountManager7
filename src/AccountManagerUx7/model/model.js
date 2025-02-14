@@ -517,15 +517,19 @@
 
 	am7model.queryFields = function (type) {
 		let r1 = am7model.inheritsFrom(type).filter(m => m.query).map(m => m.query).flat(1);
-		if (am7model.inherits(m, "system.organizationExt")) {
+		if (am7model.inherits(type, "system.organizationExt")) {
 			r1.push("organizationId");
 			r1.push("organizationPath");
 		}
-		if (am7model.isParent(m)) {
+		if (am7model.inherits(type, "common.dateTime")) {
+			r1.push("createdDate");
+			r1.push("modifiedDate");
+		}
+		if (am7model.isParent(type)) {
 			if (am7model.hasField(m, "path")) r1.push("path");
 			r1.push("parentId");
 		}
-		if (am7model.isGroup(m) && m != 'auth.group') {
+		if (am7model.isGroup(type) && m != 'auth.group') {
 			r1.push("groupPath");
 			r1.push("groupId");
 		}

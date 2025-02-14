@@ -44,7 +44,7 @@
       q.order = "asc";
       return q;
     }
-
+    /*
     function handleMemberList(v) {
       let aL = v || [];
       pages.pageResults = [];
@@ -58,7 +58,7 @@
       }
       m.redraw();
     }
-
+    */
     function handleCount(v) {
       pages.pageResults = [];
       pages.counted = true;

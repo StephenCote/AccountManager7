@@ -68,7 +68,7 @@ import org.glassfish.jersey.server.spi.Container;
 public class RestServiceConfig extends ResourceConfig{
 	private static final Logger logger = LogManager.getLogger(RestServiceConfig.class);
 
-	private static boolean debugEnableVector = false;
+	private static boolean debugEnableVector = true;
     
 	public RestServiceConfig(@Context ServletContext servletContext){
 		register(StartupHandler.class);

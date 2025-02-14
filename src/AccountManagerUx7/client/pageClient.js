@@ -97,7 +97,7 @@
         iconButton : iconButton,
         context : function(){ return contextModel;},
         clearContextObject : clearContextObject,
-        listByType : listByType,
+        listByType,
         navigateToPath : navigateToPathId,
         logout : async function(){
             clearPageCache();

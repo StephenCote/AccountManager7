@@ -91,7 +91,7 @@ public class OlioService {
 		q.planMost(true);
 		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if(a1 != null) {
-			sdu.generateSDImages(octx, Arrays.asList(a1), "random", "professional photograph", "full body", 1, false, hires, -1);
+			sdu.generateSDImages(octx, Arrays.asList(a1), "random", "professional photograph", "full body", null, 1, false, hires, -1);
 		}
 		BaseRecord oi = a1.get("profile.portrait");
 

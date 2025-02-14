@@ -58,6 +58,8 @@ public class Chat {
 	private boolean includeScene = false;
 	private boolean forceJailbreak = false;
 	private int remind = 5;
+	private int messageTrim = 10;
+	private int keyFrameEvery = 10;
 	
 	/// Depending on the system where the library is running, System.lineSeparator() may include a carriage return. Depending where the LLM is running, it may be desired to strip the carriage return off.
 	//private boolean stripCarriageReturn = true;
@@ -870,6 +872,29 @@ Begin conversationally.
 		return req;
 	}
 	
+	private void pruneCount(OllamaRequest req, int messageCount) {
+		boolean enablePrune = chatConfig.get("prune");
+		if(messageCount <= 0 || !enablePrune || !chatMode) {
+			return;
+		}
+		
+		/// Target count = system + pruneSkip
+		///
+		int idx = pruneSkip + 1;
+		int len = req.getMessages().size() - messageCount;
+		logger.info("Prune size: " + (len - idx));
+		for(int i = idx; i < len; i++) {
+			req.getMessages().get(i).setPruned(true);
+		}
+		
+		if(req.getMessages().size() % keyFrameEvery == 0) {
+			logger.info("(Adding key frame)");
+			addKeyFrame(req);
+		}
+		
+
+	}
+	
 	private void prune(OllamaRequest req, boolean force) {
 		boolean enablePrune = chatConfig.get("prune");
 		if((!force && !enablePrune) || !chatMode) {
@@ -917,6 +942,8 @@ Begin conversationally.
 			*/
 
 		}
+		
+		logger.info("Found " + curLength + " tokens. " + (marker > -1 ? "Will":"Won't") + " prune.");
 		/*
 		if(force) {
 			System.out.println("Found " + curLength + " tokens. " + (marker > -1 ? "Will":"Won't") + " prune.");
@@ -928,7 +955,7 @@ Begin conversationally.
 			for(int i = pruneSkip; i <= im; i++) {
 				req.getMessages().get(i).setPruned(true);
 			}
-			System.out.println("(Adding key frame)");
+			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 			/*
 			List<OllamaMessage> msgs = Arrays.asList(Arrays.copyOfRange(req.getMessages().toArray(new OllamaMessage[0]), marker, req.getMessages().size()));
@@ -989,9 +1016,11 @@ Begin conversationally.
 			}
 		}
 		msg.setContent(msgBuff.toString());
+
 		if(chatConfig != null) {
-			prune(req, false);
+			pruneCount(req, messageTrim);
 		}
+
 		req.getMessages().add(msg);
 
 		return msg;

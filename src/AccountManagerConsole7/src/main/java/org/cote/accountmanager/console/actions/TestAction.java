@@ -22,9 +22,13 @@ public class TestAction extends CommonAction {
 	public void handleCommand(CommandLine cmd, BaseRecord user) {
 		// TODO Auto-generated method stub
 		if(cmd.hasOption("test") && cmd.hasOption("vector")) {
+			logger.info("Testing vector store");
 			List<BaseRecord> store = new ArrayList<>();
 			try {
 				store = VectorUtil.createVectorStore(user, "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
+				if(store != null) {
+					logger.info("Created: " + store.size());
+				}
 			} catch (FieldException e) {
 				logger.error(e);
 			}
