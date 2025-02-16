@@ -498,6 +498,7 @@ Begin conversationally.
 			offset += count;
 			oreq = getAnalyzePrompt(req, command, offset, count, full);
 		}
+		logger.info("Finished analysis");
 		if(reduce) {
 			return reduce(req, resp);
 		}
@@ -882,12 +883,12 @@ Begin conversationally.
 		///
 		int idx = pruneSkip + 1;
 		int len = req.getMessages().size() - messageCount;
-		logger.info("Prune size: " + (len - idx));
+
 		for(int i = idx; i < len; i++) {
 			req.getMessages().get(i).setPruned(true);
 		}
 		
-		if(req.getMessages().size() % keyFrameEvery == 0) {
+		if((req.getMessages().size() - idx) % keyFrameEvery == 0) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}
@@ -1040,18 +1041,8 @@ Begin conversationally.
 		boolean useJB = (forceJailbreak || chatConfig != null && (boolean)chatConfig.get("useJailBreak"));
 
 		outReq.getMessages().addAll(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
-		/*.map(s -> {
-			String cont = s.getContent();
-			if(useJB) {
-
-				if(jbt != null && jbt.length() > 0) {
-					cont = embeddedMessage.matcher(jbt).replaceAll(cont);
-				}
-				s.setContent(cont);
-			}
-			return s;
-		})*/
 		.collect(Collectors.toList()));
+		
 		return outReq;
 	}
 

@@ -36,12 +36,15 @@
 
       let q = am7client.newQuery(pages.resultType);
       q.entity.request = getRequestFields(pages.resultType);
-      let qf = q.field("name", pages.filter);
-      qf.comparator = "like";
+      if(pages.filter != null){
+        let qf = q.field("name", pages.filter);
+        qf.comparator = "like";
+      }
       q.recordCount = pages.recordCount;
       q.startRecord = pages.startRecord;
       q.sortField = "name";
       q.order = "asc";
+      q.field("organizationId", page.user.organizationId);
       return q;
     }
     /*
@@ -138,10 +141,12 @@
           console.log("List Req");
           am7client.listRequests("USER", page.user.objectId, pages.startRecord, pages.recordCount, handleList);
         }
+
         else if (pages.filter == null) {
           am7client.list(pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
         }
         else {
+
           am7client.search(getSearchQuery(), handleList);
         }
       }
@@ -224,6 +229,7 @@
           am7client.count(type, containerId, handleCount);
         }
         else {
+
           let req = getSearchQuery();
           /// Set record count to 0 because searchCount operates differently than the regular count, counting authorized identifiers outside of a view versus counting rows
           ///

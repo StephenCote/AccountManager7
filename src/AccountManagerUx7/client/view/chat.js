@@ -358,7 +358,7 @@
                   cnt = cnt.substring(0, rdx);
                 }
                 let tdx1 = cnt.toLowerCase().indexOf("<thought>");
-                let maxCheck = 10;
+                let maxCheck = 20;
                 let check = 0;
                 while(tdx1 > -1){
                   if(check++ >= maxCheck){
@@ -386,6 +386,11 @@
               if(idx > -1){
                 cnt = cnt.substring(0, idx);
               }
+              idx = cnt.indexOf("(KeyFrame");
+              if(idx > -1){
+                cnt = cnt.substring(0, idx);
+              }
+
             }
 
             return  m("div", {class: "relative receive-chat flex " + align},
