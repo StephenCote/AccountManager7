@@ -439,8 +439,15 @@
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-model-zoo</artifactId>
+			
 		</dependency>
-
+	<!--
+  <dependency>
+        <groupId>ai.djl.pytorch</groupId>
+        <artifactId>pytorch-native-auto</artifactId>
+        <version>1.9.1</version>
+    </dependency>
+    -->
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-engine</artifactId>
