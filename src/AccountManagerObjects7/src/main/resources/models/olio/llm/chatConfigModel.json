@@ -141,6 +141,11 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.llm.episode"
+		},
+		{
+			"name": "chatOptions",
+			"type": "model",
+			"baseModel": "olio.llm.chatOptions"
 		}
 
 	]

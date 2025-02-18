@@ -41,7 +41,11 @@ public class SDUtil {
 	private String autoserver = "http://localhost:7860";
 	private static SecureRandom rand = new SecureRandom();
 	private int steps = 70;
-	
+	private String modelCheckpoint = "sdXL_v10VAEFix";
+	private String modelVae = "sdxl_vae.safetensors";
+	private String refiner = "juggernautXL_juggXIByRundiffusion";
+	private String scheduler = "Karras";
+	private String sampler = "DPM++ SDE"; 
 	public SDUtil() {
 		
 	}
@@ -50,6 +54,48 @@ public class SDUtil {
 		autoserver = server;
 	}
 	
+	
+	
+	public String getScheduler() {
+		return scheduler;
+	}
+
+	public void setScheduler(String scheduler) {
+		this.scheduler = scheduler;
+	}
+
+	public String getSampler() {
+		return sampler;
+	}
+
+	public void setSampler(String sampler) {
+		this.sampler = sampler;
+	}
+
+	public String getModelCheckpoint() {
+		return modelCheckpoint;
+	}
+
+	public void setModelCheckpoint(String modelCheckpoint) {
+		this.modelCheckpoint = modelCheckpoint;
+	}
+
+	public String getModelVae() {
+		return modelVae;
+	}
+
+	public void setModelVae(String modelVae) {
+		this.modelVae = modelVae;
+	}
+
+	public String getRefiner() {
+		return refiner;
+	}
+
+	public void setRefiner(String refiner) {
+		this.refiner = refiner;
+	}
+
 	public SDResponse txt2img(SDTxt2Img req) {
 		return ClientUtil.post(SDResponse.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
 	}
@@ -177,12 +223,13 @@ public class SDUtil {
 			s2i.setSeed(seed);
 		}
 		s2i.setBatch_size(batch);
-		s2i.setScheduler("Karras");
-		s2i.setSampler_name("DPM++ SDE");
+		s2i.setScheduler(scheduler);
+		s2i.setSampler_name(sampler);
 
 		SDOverrideSettings sos = new SDOverrideSettings();
 		//sos.setSd_model_checkpoint("Juggernaut_X_RunDiffusion_Hyper");
-		sos.setSd_model_checkpoint("dreamshaperXL_v21TurboDPMSDE");		sos.setSd_vae(null);
+		sos.setSd_model_checkpoint("dreamshaperXL_v21TurboDPMSDE");
+		sos.setSd_vae(null);
 		s2i.setOverride_settings(sos);
 		s2i.setOverride_settings_restore_afterwards(true);
 
@@ -270,7 +317,7 @@ public class SDUtil {
 		//sgp.setDenoisingStrength(0.45);
 		//sgp.setHiresUpscale(2);
 		//sgp.setHiresUpscaler("Latent");
-		sgp.setRefiner("juggernautXL_juggXIByRundiffusion");
+		sgp.setRefiner(refiner);
 		sgp.setRefinerSwitchAt(0.75);
 		
 		s2i.setDenoising_strength(0.45);
@@ -282,7 +329,7 @@ public class SDUtil {
 		
 		SDAlwaysOnScripts sas = new SDAlwaysOnScripts();
 		SDRefiner sdr = new SDRefiner();
-		sdr.setArgs(new Object[] {true, "juggernautXL_juggXIByRundiffusion", 0.8});
+		sdr.setArgs(new Object[] {true, refiner, 0.8});
 		sas.setRefiner(sdr);
 		s2i.setAlwayson_scripts(sas);
 		
@@ -304,8 +351,8 @@ public class SDUtil {
 		s2i.setCfg_scale(8);
 		
 		SDOverrideSettings sos = new SDOverrideSettings();
-		sos.setSd_model_checkpoint("sdXL_v10VAEFix");
-		sos.setSd_vae("sdxl_vae.safetensors");
+		sos.setSd_model_checkpoint(modelCheckpoint);
+		sos.setSd_vae(modelVae);
 		s2i.setOverride_settings(sos);
 		s2i.setOverride_settings_restore_afterwards(true);
 		

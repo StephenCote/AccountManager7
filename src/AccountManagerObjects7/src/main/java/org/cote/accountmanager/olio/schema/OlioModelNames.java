@@ -36,6 +36,7 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_PROMPT_CONFIG = "olio.llm.promptConfig";
 	public static final String MODEL_PROMPT_RACE_CONFIG = "olio.llm.promptRaceConfig";
 	public static final String MODEL_EPISODE = "olio.llm.episode";
+	public static final String MODEL_CHAT_OPTIONS = "olio.llm.chatOptions";
 	
 	public static final String MODEL_SD_CONFIG = "olio.sd.sdConfig";
 	public static final String MODEL_SD_CONFIG_DATA = "olio.sd.sdConfigData";
@@ -51,7 +52,7 @@ public class OlioModelNames extends ModelNames {
 		MODEL_QUALITY, MODEL_ITEM, MODEL_WEARABLE, MODEL_APPAREL, MODEL_EVENT, MODEL_CHAR_STATISTICS, MODEL_CHAR_STATE,
 		MODEL_ACTION, MODEL_ACTION_RESULT, MODEL_ACTION_PARAMETERS, MODEL_SCHEDULE, MODEL_INVENTORY_ENTRY, MODEL_STORE, MODEL_BUILDER, MODEL_ITEM_STATISTICS, MODEL_ANIMAL, MODEL_REALM, MODEL_INTERACTION,
 		MODEL_NARRATIVE, MODEL_CHAT_CONFIG, MODEL_PROMPT_CONFIG, MODEL_PROMPT_RACE_CONFIG, MODEL_POI, MODEL_WORLD, MODEL_EPISODE, MODEL_SD_CONFIG, MODEL_SD_CONFIG_DATA,
-		MODEL_VECTOR_CHAT_HISTORY, MODEL_VECTOR_CHAT_HISTORY_LIST
+		MODEL_VECTOR_CHAT_HISTORY, MODEL_VECTOR_CHAT_HISTORY_LIST, MODEL_CHAT_OPTIONS
 	);
 	
 	public static void use() {

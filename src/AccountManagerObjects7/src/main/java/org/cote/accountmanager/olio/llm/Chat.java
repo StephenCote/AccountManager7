@@ -1111,32 +1111,35 @@ Begin conversationally.
 	}
 	
 	public static OllamaOptions getChatOptions() {
+		return getChatOptions(null);
+	}
+	
+	public static OllamaOptions getChatOptions(BaseRecord cfg) {
 		OllamaOptions opts = new OllamaOptions();
-		opts.setNumGpu(32);
-		opts.setNumCtx(contextSize);
-		opts.setRepeatPenalty(1.3);
-		opts.setRepeatLastN(512);
-		/*
-		opts.setTemperature(1);
-		opts.setTopP(1);
-		opts.setTopK(0);
-		*/
-		
-		
-		opts.setTemperature(0.9);
-		opts.setTopP(0.5);
-		opts.setTopK(50);
-		
-		/*
-		opts.setTemperature(1.0);
-		opts.setTopP(0.6);
-		opts.setTopK(35);
-		*/
-		/*
-		opts.setTemperature(0.55);
-		opts.setTopP(0.55);
-		opts.setTopK(45);
-		*/
+		BaseRecord cfgOpts = null;
+		if(cfg != null) {
+			cfgOpts = cfg.get("chatOptions");
+		}
+		if(cfgOpts != null) {
+			opts.setTopK(cfgOpts.get("top_k"));
+			opts.setTopP(cfgOpts.get("top_p"));
+			opts.setMinP(cfgOpts.get("min_p"));
+			opts.setTypicalP(cfgOpts.get("typical_p"));
+			opts.setRepeatLastN(cfgOpts.get("repeat_last_n"));
+			opts.setTemperature(cfgOpts.get("temperature"));
+			opts.setRepeatPenalty(cfgOpts.get("repeat_penalty"));
+			opts.setNumCtx(cfgOpts.get("num_ctx"));
+			opts.setNumGpu(cfgOpts.get("num_gpu"));
+		}
+		else {
+			opts.setNumGpu(32);
+			opts.setNumCtx(contextSize);
+			opts.setRepeatPenalty(1.3);
+			opts.setRepeatLastN(512);
+			opts.setTemperature(0.9);
+			opts.setTopP(0.5);
+			opts.setTopK(50);
+		}
 		return opts;
 	}
 

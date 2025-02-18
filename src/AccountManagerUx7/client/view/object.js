@@ -112,19 +112,7 @@
             return m("input",{onkeydown: fKeyHandler, rid: id, type: "text", class: sClass});
         }
         */
-        function isBinary(mt){
-            let contentType = mt;
-            if(contentType || (entity && (contentType = entity.contentType))){
-                return (
-                    !contentType.match(/^text/gi)
-                    &&
-                    !contentType.match(/application\/json/)
-                    &&
-                    !contentType.match(/javascript$/gi)
-                );
-            }
-            return false;
-        }
+
         function doUpdate(){
             if(!entity){
                 console.error("No entity defined");
@@ -147,7 +135,7 @@
             /// Synchronize the form with the entity
             /// 
             if(entity.model.match(/^data\.data$/i)){
-                if(isBinary()){
+                if(am7view.isBinary(entity)){
                     console.log("Don't update binary content via form.");
                     inst.api.dataBytesStore("");
                     inst.unchange("dataBytesStore")
@@ -340,7 +328,7 @@
             }
             */
             let mt = entity.contentType;
-            if(!isBinary(mt)) format = 'textarea';
+            if(!am7view.isBinary(entity, mt)) format = 'textarea';
             else if(mt.match(/^image/)) format = 'image';
             else{
                 console.warn("Unhandled contentType: " + mt);
@@ -2268,7 +2256,7 @@
                     if(am7model.hasIdentity(inst.entity)){
                         /// create cinst
                         /// check for reference
-                        /// console.warn("Create " + pname + ". not currently implemented");
+
                     }
                     else{
                         /// nothing to do, let it be picked up by default nested create
@@ -2278,6 +2266,26 @@
                 }
                 else{
                     /// Handled as patch operation in doUpdate
+                    let fld = am7model.getModelField(cinst.entity.model, cname);
+                    if(fld && fld.type == "list" && fld.foreign && fld.baseType == "model"){
+                        console.log("Patch member", obj);
+                        let members = cinst.api[cname]();
+                        let aP = [];
+                        members.forEach((t)=>{
+                            aP.push(new Promise((res, rej)=>{
+                                console.log(cinst.entity.model, inst.api[pname]().objectId, t.model, t.objectId);
+                                am7client.member(cinst.entity.model, inst.api[pname]().objectId, t.model, t.objectId, true, function(v){
+                                    res(v);
+                                })
+                            }));
+                        });
+                        Promise.all(aP).then(()=>{
+                            m.redraw();
+                        });
+                    }
+                    else{
+                        console.warn("Handle patch", fld);
+                    }
                 }
                 
             }

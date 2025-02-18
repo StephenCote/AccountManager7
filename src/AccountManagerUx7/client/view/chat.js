@@ -322,14 +322,14 @@
               let pp = chatCfg.system.profile.portrait;
               let dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
               // h-8 w-8 
-              c1i = m("img",{class : "mr-4 rounded-full", src  : dataUrl});
+              c1i = m("img",{onclick:function(){page.imageView(pp);}, class : "mr-4 rounded-full", src  : dataUrl});
           }
 
           if(chatCfg.user?.profile?.portrait){
             let pp = chatCfg.user.profile.portrait;
             let dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
             // h-8 w-8 
-            c2i = m("img",{class : "ml-4 rounded-full", src  : dataUrl});
+            c2i = m("img",{onclick:function(){page.imageView(pp);}, class : "ml-4 rounded-full", src  : dataUrl});
         }
           
           let midx = -1;

@@ -2805,10 +2805,16 @@
                     command: rollCharacter
                 }
             },
-
-
             description: {
-                layout: "full",
+                layout: "third",
+            },
+            trades: {
+                layout: "third",
+                format: "textlist"
+            },
+            race: {
+                layout: "third",
+                format: "textlist"
             }
         },
         forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo"]

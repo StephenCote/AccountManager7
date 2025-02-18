@@ -49,6 +49,7 @@ public class OlioAction extends CommonAction implements IAction{
 		
 	}
 	public void addOptions(Options options) {
+		
 		options.addOption("episode", true, "Episodic configuration");
 		options.addOption("episodeNumber", true, "Episodic configuration");
 		options.addOption("reimage", true, "Bit to regenerate SD images");
@@ -70,6 +71,11 @@ public class OlioAction extends CommonAction implements IAction{
 		options.addOption("party", false, "Generic bit to restrict parties");
 		options.addOption("show", false, "Generic bit");
 		options.addOption("showSD", false, "Generic bit to show stable-diffusion prompt");
+		options.addOption("checkpoint", true, "Name of SD Model Checkpoint");
+		options.addOption("vae", true, "Name of SD Modeler VAE");
+		options.addOption("refiner", true, "Name of SD Refiner");
+		options.addOption("scheduler", true, "Name of SD Scheduler");
+		options.addOption("sampler", true, "Name of SD Sampler");
 		options.addOption("detailed", false, "Generic bit used to enable pattern and fabric descriptions of clothes.");
 		options.addOption("setting", true, "Generic bit to create a random setting instead of the character's context location");
 		options.addOption("scene", false, "Generic bit to include a basic scene guidance (including any interaction)");
@@ -118,6 +124,12 @@ public class OlioAction extends CommonAction implements IAction{
 		String genSet = null;
 		int seed = 0;
 		SDUtil sdu = new SDUtil(this.getProperties().getProperty("sd.server"));
+		if(cmd.hasOption("checkpoint")) sdu.setModelCheckpoint(cmd.getOptionValue("checkpoint"));
+		if(cmd.hasOption("vae")) sdu.setModelVae(cmd.getOptionValue("vae"));
+		if(cmd.hasOption("refiner")) sdu.setRefiner(cmd.getOptionValue("refiner"));
+		if(cmd.hasOption("scheduler")) sdu.setScheduler(cmd.getOptionValue("scheduler"));
+		if(cmd.hasOption("sampler")) sdu.setSampler(cmd.getOptionValue("sampler"));
+		
 		if(cmd.hasOption("seed")) {
 			seed = Integer.parseInt(cmd.getOptionValue("seed"));
 		}

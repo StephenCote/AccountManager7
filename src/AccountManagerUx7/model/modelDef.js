@@ -7027,6 +7027,7 @@ let am7model = {
 		"group": "Stores",
 		"icon": "category",
 		"label": "Store",
+		"query": ["id", "objectId", "ownerId", "organizationId"],
 		"dedicatedParticipation": true,
 		"sortField": "name",
 		"sortOrder": "ASCENDING",
