@@ -114,18 +114,20 @@
               )
             ]);
         }
+        
         navigator.toggleFullMode = function(){
           fullMode = !fullMode;
           m.redraw();
         }
+
         navigator.cancelView = function(){
           altView = undefined;
           fullMode = false;
           m.redraw();
         };
+
         navigator.editItem = function(object){
           if(!object) return;
-          console.log("Edit", object);
           altView = {
             fullMode,
             view: page.views.object(),
@@ -134,6 +136,7 @@
           };
           m.redraw();
         };
+
         navigator.addNew = function(type, containerId, parentNew){
           altView = {
             fullMode,
