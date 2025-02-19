@@ -51,10 +51,13 @@ public class ChatService {
 	private static Set<String> chatTrack = new HashSet<>();
 	private static HashMap<String, OllamaRequest> reqMap = new HashMap<>();
 	private static HashMap<String, Chat> chatMap = new HashMap<>();
-	//private static HashMap<String, BaseRecord> charMap = new HashMap<>();
 	private static HashMap<String, BaseRecord> configMap = new HashMap<>();
-	//private static HashMap<String, List<BaseRecord>> popMap = new HashMap<>();
-	//private static HashMap<String, BaseRecord> dataMap = new HashMap<>();
+	
+	public static void clearCache() {
+		chatTrack.clear();
+		reqMap.clear();
+		configMap.clear();
+	}
 	
 	private String getKey(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, OllamaChatRequest request) {
 		String sess = "";
@@ -62,6 +65,15 @@ public class ChatService {
 			sess = "-" + request.getSessionName();
 		}
 		return user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get(FieldNames.FIELD_NAME) + "-" + promptConfig.get(FieldNames.FIELD_NAME) + sess;
+	}
+	
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/clearAll")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response clearAll(@Context HttpServletRequest request){
+		clearCache();
+		return Response.status(200).entity(true).build();
 	}
 	
 	@RolesAllowed({"admin","user"})

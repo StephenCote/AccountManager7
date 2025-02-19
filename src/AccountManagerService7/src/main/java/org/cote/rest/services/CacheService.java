@@ -63,6 +63,7 @@ public class CacheService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response clearFactoryCaches(@PathParam("type") String type, @Context HttpServletRequest request){
 		logger.info("Request to clear all caches");
+		ChatService.clearCache();
 		CacheUtil.clearCache();
 		clearAuthorizationCache(request);
 		ServiceUtil.clearCache();

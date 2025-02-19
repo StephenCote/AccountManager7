@@ -3590,6 +3590,10 @@
                 layout: 'third',
                 format: "range"
             },
+            min_p: {
+                layout: 'third',
+                format: "range"
+            },
             repeat_last_n: {
                 layout: 'third',
                 format: "range"
