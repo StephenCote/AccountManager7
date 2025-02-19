@@ -446,7 +446,7 @@
 
 	let rangeDecorator = {
 		decorateOut: function (i, f, v) {
-			if (typeof v == "number" && f.type == "double" && f.maxValue == 1) {
+			if (typeof v == "number" && f.type == "double" && f.maxValue >= 1) {
 				v = parseInt(v * 100);
 			}
 			else if (v == undefined) {
@@ -455,7 +455,7 @@
 			return v;
 		},
 		decorateIn: function (i, f, v) {
-			if (f.type == "double" && f.maxValue == 1) {
+			if (f.type == "double" && f.maxValue >= 1) {
 				if (v != 0) {
 					v = parseFloat(v / 100);
 				}

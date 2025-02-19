@@ -169,29 +169,35 @@
             /// Eg: Object.childObject.property
             let aP = [];
             Object.keys(pinst).forEach(k => {
-                let e = pinst[k];
-                let upatch = e.hasIdentity();
-                let puint = (upatch ? e.patch() : e.entity);
-                /// Make sure to create the object, even if it has no changes
-                /// OR - if nothing has changed, it needs to be stripped off the entity, pinst, and oinst 
-                //if(puint && (!upatch || e.changes.length)){
-                
-                if(puint && bpatch && (!upatch || e.changes.length)){
-  
-                    aP.push(am7client[upatch ? "patch" : "create"](e.entity.model, puint, function(v){
-                        e.resetChanges();
-                        if(!upatch){
-                            for(let i in v){
-                                e.entity[i] = v[i];
+                if(!inst.field(k).foreign){
+                    console.log("Field not foreign: " + k);
+                    inst.change(k);
+                }
+                else{
+                    let e = pinst[k];
+                    let upatch = e.hasIdentity();
+                    let puint = (upatch ? e.patch() : e.entity);
+                    /// Make sure to create the object, even if it has no changes
+                    /// OR - if nothing has changed, it needs to be stripped off the entity, pinst, and oinst 
+                    //if(puint && (!upatch || e.changes.length)){
+                    
+                    if(puint && bpatch && (!upatch || e.changes.length)){
+    
+                        aP.push(am7client[upatch ? "patch" : "create"](e.entity.model, puint, function(v){
+                            e.resetChanges();
+                            if(!upatch){
+                                for(let i in v){
+                                    e.entity[i] = v[i];
+                                }
+                                /// For create operations, substitute the whole object for the minimal id reference received in the response
+                                // e.entity
+                                inst.api[k](v);
                             }
-                            /// For create operations, substitute the whole object for the minimal id reference received in the response
-                            // e.entity
-                            inst.api[k](v);
-                        }
-                        else{
-                            inst.unchange(k);
-                        }
-                    }));
+                            else{
+                                inst.unchange(k);
+                            }
+                        }));
+                    }
                 }
             });
             if(aP.length){
@@ -728,7 +734,7 @@
                     let max = 100;
 
                     if(typeof field.minValue == "number" && typeof field.maxValue == "number"){
-                        if(field.type == "double" && field.maxValue == 1){
+                        if(field.type == "double" && field.maxValue >= 1){
                             max = field.maxValue * 100;
                             if(min != 0){
                                 min = field.minValue * 100;
@@ -1358,11 +1364,9 @@
             let bNew = objectNew;//(m.route.get().match(/^\/new/gi) != null);
             let bPNew = parentNew; //(m.route.get().match(/^\/pnew/gi) != null);
             let modType = am7model.getModel(type);
-
             if(vnode && vnode.attrs.freeForm){
                 entity = vnode.attrs.freeFormEntity || {model: objectType};
                 if(entity.model && am7model.hasIdentity(entity)){
-                    //console.log(entity);
                     let q = am7view.viewQuery(am7model.newInstance(type));
                     if(entity.id){
                         q.field("id", entity.id);    

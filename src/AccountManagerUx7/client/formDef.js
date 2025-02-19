@@ -3562,7 +3562,45 @@
         },
         forms: []
     };
+    forms.chatOptionsRef = {
+        label: "Options",
+        model: true,
+        property: "chatOptions",
+        fields: {
+            chatOptions: {
+                layout: "full",
+                form: forms.chatOptions
+            }
+        }
+    }
 
+
+    forms.chatOptions = {
+        label: "Options",
+        fields: {
+            temperature: {
+                layout: 'third',
+                format: "range"
+            },
+            top_k: {
+                layout: 'third',
+                format: "range"
+            },
+            top_p: {
+                layout: 'third',
+                format: "range"
+            },
+            repeat_last_n: {
+                layout: 'third',
+                format: "range"
+            },
+            repeat_penalty: {
+                layout: 'third',
+                format: "range"
+            }
+
+        }
+    };
     forms.chatConfig = {
         label: "Chat Configuration",
         fields: {
@@ -3647,7 +3685,7 @@
             },
 
         },
-        forms: ["episodectl", "groupinfo", "attributes"]
+        forms: ["episodectl", "chatOptionsRef", "groupinfo", "attributes"]
 
     };
 
