@@ -107,8 +107,10 @@ public class AccessPoint {
 		
 		return outBool;
 	}
-	
 	public boolean member(BaseRecord user, BaseRecord object, BaseRecord actor, BaseRecord effect, boolean enable) {
+		return member(user, object, null, actor, effect, enable);
+	}
+	public boolean member(BaseRecord user, BaseRecord object, String fieldName, BaseRecord actor, BaseRecord effect, boolean enable) {
 		ActionEnumType aet = ActionEnumType.MODIFY;
 		BaseRecord audit = AuditUtil.startAudit(user, aet, user, object);
 		boolean outBool = false;
@@ -119,7 +121,7 @@ public class AccessPoint {
 		else {
 			PolicyResponseType prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, object);
 			if(prr.getType() == PolicyResponseEnumType.PERMIT) {
-				outBool = IOSystem.getActiveContext().getMemberUtil().member(user, object, actor, effect, enable);
+				outBool = IOSystem.getActiveContext().getMemberUtil().member(user, object, fieldName, actor, effect, enable);
 				if(outBool) {
 					AuditUtil.closeAudit(audit, prr, null);	
 				}

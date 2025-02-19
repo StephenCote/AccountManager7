@@ -314,8 +314,8 @@
 		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fH);
 	}
 
-	function member(sObjectType, sObjectId, sActorType, sActorId, bEnable, fH){
-		return get(sAuthZ + "/" + sObjectType + "/" + sObjectId + "/member/" + sActorType + "/" + sActorId + "/" + bEnable, fH);
+	function member(sObjectType, sObjectId, sField, sActorType, sActorId, bEnable, fH){
+		return get(sAuthZ + "/" + sObjectType + "/" + sObjectId + "/member/" + sField + "/" + sActorType + "/" + sActorId + "/" + bEnable, fH);
 	}
 	function getApplicationProfile(fH){
 		return get(sPrincipal + "/application", fH);

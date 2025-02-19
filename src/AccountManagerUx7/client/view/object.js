@@ -1607,12 +1607,12 @@
             });
         };
 
-        function pickMember(members){
+        function pickMember(field, members){
             let aP = [];
             if(am7model.hasIdentity(entity)){
                 members.forEach((t)=>{
                     aP.push(new Promise((res, rej)=>{
-                        am7client.member(entity.model, entity.objectId, t.model, t.objectId, true, function(v){
+                        am7client.member(entity.model, entity.objectId, field?.name, t.model, t.objectId, true, function(v){
                             res(v);
                         })
                     }));
@@ -1706,7 +1706,7 @@
                 if(am7model.hasIdentity(entity)){
                     let aP = [];
                     data.forEach(v => {
-                        aP.push(am7client.member(entity.model, entity.objectId, v.model, v.objectId, true));
+                        aP.push(am7client.member(entity.model, entity.objectId, name, v.model, v.objectId, true));
                     });
                     Promise.all(aP);
                 }
@@ -1758,7 +1758,7 @@
                 if(state.selected && vProp[name]){
                 let per = vProp[name][state.index];
                 if(am7model.hasIdentity(entity)){
-                    aP.push(am7client.member(entity.model, entity.objectId, per.model, per.objectId, false));
+                    aP.push(am7client.member(entity.model, entity.objectId, name, per.model, per.objectId, false));
                 }
                 vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
                 }
@@ -1780,7 +1780,7 @@
                 if(state.selected && foreignData[state.attribute]){
                     let obj = foreignData[state.attribute][state.index];
                     aP.push(new Promise((res, rej)=>{
-                        am7client.member(entity.model, entity.objectId, obj.model, obj.objectId, false, function(v){
+                        am7client.member(entity.model, entity.objectId, name, obj.model, obj.objectId, false, function(v){
                             entity[name] = entity[name].filter(m => m.objectId != obj.objectId);
                             console.log("Deleted: " + v, entity[name]);
                             res(v);
@@ -1810,7 +1810,7 @@
             }
             if(props.picker){
 
-                return preparePicker(type, pickMember);
+                return preparePicker(type, function(members){ pickMember(field, members);});
             }
             else{
                 console.log("Not a picker");
@@ -2278,7 +2278,7 @@
                         members.forEach((t)=>{
                             aP.push(new Promise((res, rej)=>{
                                 console.log(cinst.entity.model, inst.api[pname]().objectId, t.model, t.objectId);
-                                am7client.member(cinst.entity.model, inst.api[pname]().objectId, t.model, t.objectId, true, function(v){
+                                am7client.member(cinst.entity.model, inst.api[pname]().objectId, cname, t.model, t.objectId, true, function(v){
                                     res(v);
                                 })
                             }));

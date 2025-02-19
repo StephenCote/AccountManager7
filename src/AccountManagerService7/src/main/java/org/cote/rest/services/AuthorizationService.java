@@ -41,15 +41,18 @@ public class AuthorizationService {
 
 	@RolesAllowed({"admin","user"})
 	@GET
-	@Path("/{objectId:[0-9A-Za-z\\-]+}/member/{actorType:[\\.A-Za-z]+}/{actorId:[0-9A-Za-z\\-]+}/{enable:(true|false)}")
+	@Path("/{objectId:[0-9A-Za-z\\-]+}/member/{fieldName:[0-9A-Za-z\\\\-]+}/{actorType:[\\.A-Za-z]+}/{actorId:[0-9A-Za-z\\-]+}/{enable:(true|false)}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response enableMember(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("actorType") String actorType, @PathParam("actorId") String actorId, @PathParam("enable") boolean enable, @Context HttpServletRequest request){
+	public Response enableMember(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("fieldName") String fieldName, @PathParam("actorType") String actorType, @PathParam("actorId") String actorId, @PathParam("enable") boolean enable, @Context HttpServletRequest request){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
 		BaseRecord actor = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, actorType, actorId);
 		boolean outBool = false;
+		if(fieldName != null && fieldName.length() == 0) {
+			fieldName = null;
+		}
 		if(object != null && actor != null) {
-			outBool = IOSystem.getActiveContext().getAccessPoint().member(user, object, actor, null, enable);
+			outBool = IOSystem.getActiveContext().getAccessPoint().member(user, object, fieldName, actor, null, enable);
 		}
 		else {
 			String objKey = objectType + " " + objectId;

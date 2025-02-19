@@ -46,7 +46,7 @@
                         }
                     case "auth.role":
                         if (actor && b.type == b2.model) {
-                            aP.push(page.member(b.model, b.objectId, b2.model, b2.objectId, true));
+                            aP.push(page.member(b.model, b.objectId, null, b2.model, b2.objectId, true));
                             filt[b2.objectId] = true;
                         }
                         else {
@@ -55,7 +55,7 @@
                         break;
                     case "auth.group":
                         if ((actor && b2.model == b.type) || (b.type == "bucket" && b2.model != "auth.group")) {
-                            aP.push(page.member(b.model, b.objectId, b2.model, b2.objectId, true));
+                            aP.push(page.member(b.model, b.objectId, null, b2.model, b2.objectId, true));
                             filt[b2.objectId] = true;
                         }
                         else {
@@ -65,7 +65,7 @@
                     case "data.tag":
                         if ((actor || b2.model.match(/^data\.data$/gi)) && b2.model == b.type) {
                             // aP.push(page.tag(b2, b, true));
-                            aP.push(am7client.member(b2.model, b2.objectId, b.model, b.objectId, true));
+                            aP.push(am7client.member(b2.model, b2.objectId, null, b.model, b.objectId, true));
                             filt[b2.objectId] = true;
                         }
                         else {

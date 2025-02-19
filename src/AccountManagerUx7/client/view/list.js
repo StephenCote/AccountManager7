@@ -108,7 +108,7 @@
 
             if (bBucket) {
               console.log(label, contType, listContainerId, getType(obj), obj.objectId);
-              aP.push(page.member(contType, listContainerId, getType(obj), obj.objectId, false));
+              aP.push(page.member(contType, listContainerId, null, getType(obj), obj.objectId, false));
             }
             else {
               aP.push(page.deleteObject(getType(obj), obj.objectId));

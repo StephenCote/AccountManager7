@@ -664,7 +664,7 @@
 
     async function promiseMember(object, actor, enabled){
         return new Promise((res, rej)=>{
-            am7client.member(object.model, object.objectId, actor.model, actor.objectId, enabled, function(v){
+            am7client.member(object.model, object.objectId, null, actor.model, actor.objectId, enabled, function(v){
                 res(v);
             })
 
@@ -704,7 +704,7 @@
 
       async function promiseMember(sType, sId, sActorType, sActorId, bEnable){
         return new Promise((res, rej)=>{
-            am7client.member(sType, sId, sActorType, sActorId, bEnable, function(v){
+            am7client.member(sType, sId, null, sActorType, sActorId, bEnable, function(v){
                 res(v);
             });
         });
