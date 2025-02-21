@@ -39,7 +39,18 @@ public class NarrativeUtil {
 	private static boolean describePatterns = true;
 	private static boolean describeFabrics = true;
 	private static boolean describeApparelColors = true;
+	private static boolean describeMagic = false;
 	
+	
+	
+	public static boolean isDescribeMagic() {
+		return describeMagic;
+	}
+
+	public static void setDescribeMagic(boolean describeMagic) {
+		NarrativeUtil.describeMagic = describeMagic;
+	}
+
 	public static boolean isDescribeApparelColors() {
 		return describeApparelColors;
 	}
@@ -983,7 +994,7 @@ public class NarrativeUtil {
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get(OlioFieldNames.FIELD_RACE));
-		String magicStr = ""; // ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp);
+		String magicStr = (describeMagic ? ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) : "");
 		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + magicStr + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
 		if(includePersonality) {
 			buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
@@ -1005,7 +1016,7 @@ public class NarrativeUtil {
 	
 	public static String describeStatistics(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
-		String magicStr = ""; // "magic-wise " + getIsPrettyMagic(pp) + ", ";
+		String magicStr = (describeMagic ? "magic-wise " + getIsPrettyMagic(pp) + ", " : "");
 		buff.append(getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + " and " + getIsPrettyEndurable(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, " + magicStr + getIsPrettyLucky(pp) + ", and is " + getLooksPrettyUgly(pp) + " looking.");
 		return buff.toString();
 	}

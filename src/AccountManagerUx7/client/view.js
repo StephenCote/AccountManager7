@@ -88,13 +88,16 @@
             defVal = inst.api[fld]();
         }
 
-        let type = inst.formField(fld, "type") || "text";
-
+        let type = inst.formField(fld, "format") || inst.formField(fld, "type") || "text";
         let cls = "text-field-full";
         let useType = type;
         if (type == "list") {
+            let ofld = inst.formField(fld, "limit") || inst.formField(fld, "values") || [];
+            if(inst.field(fld).type == "list" && ofld.length == 0 && defVal instanceof Array){
+                ofld = defVal;
+            }
             return m("select", { onchange: inst.handleChange(fld), class: "select-field-full" },
-                (inst.formField(fld, "values") || []).map((o, i) => m("option", { value: o, selected: (o == inst.api[fld]()) }, o)),
+                ofld.map((o, i) => m("option", { value: o, selected: (o == inst.api[fld]()) }, o)),
             );
         }
         if (type == "boolean") {

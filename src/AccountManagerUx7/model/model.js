@@ -653,7 +653,8 @@
 			let x = inst?.form?.fields[n];
 			if (v) {
 				let z;
-				if (x) z = x[v];
+				if (x && x[v]) z = x[v];
+				else if(inst.field(n)) z = inst.field(n)[v];
 				return z;
 			}
 			return x;
@@ -666,7 +667,7 @@
 			if (!o && inst.actions[n]) {
 				inst.actions[n](inst, n);
 			}
-			else {
+			else if(o) {
 				inst.actions[n] = o;
 			}
 		};
@@ -767,6 +768,7 @@
 				inst.api[n](v);
 				let r;
 				if (fh) fh(e);
+				inst.action(n);
 			}
 		}
 

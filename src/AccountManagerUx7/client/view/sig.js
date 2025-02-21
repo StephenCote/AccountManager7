@@ -48,10 +48,6 @@
     let inst = am7model.newInstance("login", am7model.forms.login);
     inst.action("login", doLogin);
 
-    function getCustomOrganization(){
-        if(!document.querySelector("#selOrganizationList").selectedIndex) return document.querySelector("#specifyOrganizationPath").value;
-        return document.querySelector("#selOrganizationList").value;
-    };
     function doLogin(){
         uwm.login(inst.api.organization(), inst.api.userName(), inst.api.password(), 0, function(s, v){
             page.router.refresh();
