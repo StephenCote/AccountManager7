@@ -63,12 +63,12 @@
           cmdPeek: {
             label: 'Peek',
             icon: 'man',
-            action: 'peek'
+            action: 'doPeek'
           },
           cmdChat: {
             label: 'Chat',
             icon: 'chat',
-            action: 'chat'
+            action: 'doChat'
           }
         },
         fields: {
@@ -97,8 +97,8 @@
     inst.api.session(sessionName());
     inst.api.sessions(inst.api.session());
     window.dbgInst = inst;
-    inst.action("cmdPeek", doPeek);
-    inst.action("cmdChat", doChat);
+    inst.action("doPeek", doPeek);
+    inst.action("doChat", doChat);
 
     function pickSession(i, n){
       doClear();
@@ -260,6 +260,10 @@
     };
 
     function getSplitLeftContainerView() {
+      let sess = inst.api.sessions().split("-").length == 4;
+      inst.formField("prompt").hide = sess;
+      inst.formField("chat").hide = sess;
+      inst.formField("session").hide = sess;
 
       return m("div", {
         class: "splitleftcontainer",
@@ -445,6 +449,9 @@
           }
 
         }
+        if(typeof cnt == "string"){
+          cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
+        }
 
         return m("div", { class: "relative receive-chat flex " + align },
           [ectl, m("div", { class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light" },
@@ -528,6 +535,17 @@
       */
     }
 
+    function navKey(e) {
+      switch (e.keyCode) {
+        /// ESC
+        case 27:
+          if (fullMode) toggleFullMode();
+          break;
+      }
+
+      // }
+    }
+
     let lastCount = -1;
     function scrollToLast() {
 
@@ -544,16 +562,16 @@
       let dir = await page.findObject("auth.group", "DATA", "~/Chat");
       if (aPCfg == undefined) {
         aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
-        if(aPCfg.length && inst.api.prompt() == null) inst.api.prompt(aPCfg[0].name);
+        if(aPCfg && aPCfg.length && inst.api.prompt() == null) inst.api.prompt(aPCfg[0].name);
       }
       if (aCCfg == undefined) {
         aCCfg = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
-        if(aCCfg.length && inst.api.chat() == null) inst.api.chat(aCCfg[0].name);
+        if(aCCfg && aCCfg.length && inst.api.chat() == null) inst.api.chat(aCCfg[0].name);
 
       }
       if (aSess == undefined) {
         aSess = await am7client.list("data.data", dir.objectId, null, 0, 0);
-        if(aSess.length && inst.api.sessions().length == 1) inst.api.sessions(inst.api.sessions().concat(aSess.map((s)=>{return s.name})));
+        if(aSess && aSess.length && inst.api.sessions().length == 1) inst.api.sessions(inst.api.sessions().concat(aSess.map((s)=>{return s.name})));
       }
 
     }
@@ -620,6 +638,7 @@
       };
       m.redraw();
     };
+
     chat.view = {
       oninit: function (vnode) {
         let ctx = page.user.homeDirectory;
@@ -632,6 +651,7 @@
           inst.api.chat(chatCfg.chat.name);
           inst.api.prompt(chatCfg.prompt.name);
         }
+        document.documentElement.addEventListener("keydown", navKey);
 
       },
       oncreate: function (x) {
@@ -644,6 +664,7 @@
       onremove: function (x) {
         page.navigable.cleanupContextMenus();
         pagination.stop();
+        document.documentElement.removeEventListener("keydown", navKey);
       },
 
       view: function (vnode) {

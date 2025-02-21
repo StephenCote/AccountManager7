@@ -883,12 +883,16 @@ Begin conversationally.
 		///
 		int idx = pruneSkip + 1;
 		int len = req.getMessages().size() - messageCount;
-
+		int kfc = 0;
 		for(int i = idx; i < len; i++) {
-			req.getMessages().get(i).setPruned(true);
+			OllamaMessage msg = req.getMessages().get(i);
+			msg.setPruned(true);
+			if(msg.getContent() != null && msg.getContent().startsWith("(KeyFrame:")) {
+				kfc++;
+			}
 		}
 		
-		if((req.getMessages().size() - idx) % keyFrameEvery == 0) {
+		if((req.getMessages().size() - idx - kfc) % keyFrameEvery == 0) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}

@@ -63,6 +63,10 @@
 
     function getFieldView(fld, inst) {
         let f = inst.field(fld);
+        let ff = inst.formField(fld);
+        if(ff && ff.hide){
+            return m("span", "");
+        }
         return m("div", [
             m("label", {
                 class: "block",
