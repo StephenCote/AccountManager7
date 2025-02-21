@@ -983,7 +983,8 @@ public class NarrativeUtil {
 		boolean uarm = NeedsUtil.isUnarmed(person);
 		
 		String raceDesc = getRaceDescription(person.get(OlioFieldNames.FIELD_RACE));
-		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
+		String magicStr = ""; // ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp);
+		buff.append(fname + " is " + getIsPrettySmart(pp) + ", physically is " + getIsPrettyAthletic(pp) + magicStr + ", and is a " + getLooksPrettyUgly(pp) + " looking " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
 		if(includePersonality) {
 			buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
 			buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
@@ -1004,7 +1005,8 @@ public class NarrativeUtil {
 	
 	public static String describeStatistics(PersonalityProfile pp) {
 		StringBuilder buff = new StringBuilder();
-		buff.append(getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + " and " + getIsPrettyEndurable(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, magic-wise " + getIsPrettyMagic(pp) + ", " + getIsPrettyLucky(pp) + ", and is " + getLooksPrettyUgly(pp) + " looking.");
+		String magicStr = ""; // "magic-wise " + getIsPrettyMagic(pp) + ", ";
+		buff.append(getIsPrettySmart(pp) + ", physically is " + getIsPrettyRipped(pp) + " and " + getIsPrettyEndurable(pp) + ", has " + pp.getWisdom().toString().toLowerCase() + " wisdom, " + magicStr + getIsPrettyLucky(pp) + ", and is " + getLooksPrettyUgly(pp) + " looking.");
 		return buff.toString();
 	}
 	

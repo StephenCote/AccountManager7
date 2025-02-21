@@ -220,7 +220,6 @@ public class ChatService {
 	@Path("/text")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chatRPG(String json, @Context HttpServletRequest request){
-		// logger.info(json);
 		OllamaChatRequest chatReq = JSONUtil.importObject(json, OllamaChatRequest.class);
 		if(chatReq.getUid() == null) {
 			logger.warn("A uid is required for every chat");

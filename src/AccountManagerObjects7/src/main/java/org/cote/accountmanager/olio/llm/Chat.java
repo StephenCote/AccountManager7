@@ -1105,7 +1105,7 @@ Begin conversationally.
 			newMessage(req, assist, "assistant");
 		}
 		
-		req.setOptions(getChatOptions());
+		req.setOptions(getChatOptions(chatConfig));
 
 		return req;
 	}
