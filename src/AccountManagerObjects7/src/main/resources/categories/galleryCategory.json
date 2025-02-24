@@ -1,5 +1,5 @@
     {
-    	"model": "system.modelCategory",
+    	"ammodel": "system.modelCategory",
     	"name": "gallery",
     	"prototype": true,
         "group" : "Gallery",

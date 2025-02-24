@@ -10,14 +10,6 @@
 			"type": "string"
 		},
 		{
-			"name": "response",
-			"type": "string"
-		},
-		{
-			"name": "done",
-			"type": "boolean"
-		},
-		{
 			"name": "context",
 			"type": "list",
 			"baseType": "int"

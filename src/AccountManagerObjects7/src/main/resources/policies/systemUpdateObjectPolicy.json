@@ -1,5 +1,5 @@
 {
-	"model": "policy.policy",
+	"ammodel": "policy.policy",
 	"urn": "resource.policy.systemupdateobject",
 	"enabled": true,
 	"condition": "all",

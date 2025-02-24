@@ -4,7 +4,10 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestChat2 extends BaseTest {
@@ -20,6 +23,11 @@ public class TestChat2 extends BaseTest {
 		}
 		
 		String ser = aireq.toFullString();
+		
+		logger.info(ser);
+		
+		BaseRecord req2 = JSONUtil.importObject(ser, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		assertNotNull("Record is null", req2);
 		
 	}
 	

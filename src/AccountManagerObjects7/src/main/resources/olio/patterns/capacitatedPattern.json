@@ -1,5 +1,5 @@
 {
-	"model": "policy.pattern",
+	"ammodel": "policy.pattern",
 	"urn": "resource.olio.pattern.capacitated",
 	"type": "expression",
 	"comparator": "not_equals",

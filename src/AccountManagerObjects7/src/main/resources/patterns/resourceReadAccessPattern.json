@@ -1,5 +1,5 @@
 {
-	"model": "policy.pattern",
+	"ammodel": "policy.pattern",
 	"type": "authorization",
 	"urn": "resource.policy.pattern.resourceReadAccess",
 	"name": "Read Object Access Pattern",

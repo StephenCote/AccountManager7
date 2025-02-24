@@ -31,6 +31,7 @@ import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.AttributeUtil;
 import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -45,6 +46,10 @@ public abstract class BaseRecord {
 	private Map<String, FieldType> fieldMap = new ConcurrentHashMap<>();
 	private List<FieldType> fields = new CopyOnWriteArrayList<>();
 
+	public static BaseRecord importRecord(String serial) {
+		return JSONUtil.importObject(serial, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+	}
+	
 	public BaseRecord(String name, FieldType[] inFields) {
 		model = name;
 		setFields(Arrays.asList(inFields));

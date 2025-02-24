@@ -1,5 +1,5 @@
 {
-	"model": "system.modelCategory",
+	"ammodel": "system.modelCategory",
 	"name": "policy",
     "label" : "Policy",
     "order" : ["policy.policy","policy.rule","policy.pattern","policy.fact","policy.operation","policy.function"],

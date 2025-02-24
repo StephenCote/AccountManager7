@@ -1,5 +1,5 @@
 {
-	"model": "policy.validationRule",
+	"ammodel": "policy.validationRule",
 	"name": "trimBegin",
 	"expression": "^\\s+",
 	"type": "replacement",

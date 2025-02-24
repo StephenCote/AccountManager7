@@ -1,5 +1,5 @@
 {
-	"model": "system.modelCategory",
+	"ammodel": "system.modelCategory",
 	"name": "process",
     "label" : "Process",
     "order" : ["access.accessRequest", "methodology","process","processstep"],

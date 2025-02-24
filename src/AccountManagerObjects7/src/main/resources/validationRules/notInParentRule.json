@@ -1,5 +1,5 @@
 {
-	"model": "policy.validationRule",
+	"ammodel": "policy.validationRule",
 	"name": "notInParent",
 	"type": "function",
 	"function": "!{notInParent}"

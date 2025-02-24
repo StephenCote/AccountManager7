@@ -3,6 +3,7 @@
 	"ioConstraints": [
 		"unknown"
 	],
+	"abstract": true,
 	"fields": [
 		{
 			"name": "model",
@@ -12,11 +13,6 @@
 		{
 			"name": "response",
 			"type": "string"
-		},
-		{
-			"name": "message",
-			"type": "model",
-			"baseModel": "olio.llm.message"
 		}
 	]
 }

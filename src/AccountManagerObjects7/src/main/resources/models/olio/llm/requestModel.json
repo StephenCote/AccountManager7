@@ -3,6 +3,7 @@
 	"ioConstraints": [
 		"unknown"
 	],
+	"abstract": true,
 	"fields": [
 		{
 			"name": "model",

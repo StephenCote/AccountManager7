@@ -1,5 +1,5 @@
 {
-	"model": "olio.apparel",
+	"ammodel": "olio.apparel",
 	"name": "polyester base for swimming",
 	"type": "swim",
 	"gender": "female",

@@ -41,7 +41,7 @@ public class RecordFactory {
 	public static final Logger logger = LogManager.getLogger(RecordFactory.class);
 	
 	public static String GENERATED_PACKAGE_NAME = "org.cote.accountmanager.objects.generated";
-	public static final String JSON_MODEL_KEY = "model";
+	public static final String JSON_MODEL_KEY = "ammodel";
 	public static final String JSON_MODEL_SHORT_KEY = "m";
 
 	private static Map<String, String> looseImports = new ConcurrentHashMap<>();

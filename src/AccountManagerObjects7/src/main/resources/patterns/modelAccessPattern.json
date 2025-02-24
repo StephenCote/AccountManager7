@@ -1,5 +1,5 @@
 {
-	"model": "policy.pattern",
+	"ammodel": "policy.pattern",
 	"urn": "resource.policy.pattern.modelaccess",
 	"type": "authorization",
 	"name": "Model Access Role Pattern",

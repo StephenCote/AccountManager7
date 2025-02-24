@@ -1,5 +1,5 @@
 {
-	"model": "system.modelCategory",
+	"ammodel": "system.modelCategory",
     "label" : "Assets",
     "name": "asset",
     "order" : ["identity.application", "gallery","article", "data.data", "data.note", "auth.group", "data.tag"],

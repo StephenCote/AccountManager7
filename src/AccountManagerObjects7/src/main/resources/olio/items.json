@@ -1,6 +1,6 @@
 [
 	{
-		"model": "olio.item",
+		"ammodel": "olio.item",
 		"category": "weapon",
 		"description": "Basic knife template",
 		"name": "knife",

@@ -93,10 +93,10 @@ public class TestData extends BaseTest {
 		///
 		String authReq = """
 			{
-				"model": "auth.authenticationRequest",
+				"ammodel": "auth.authenticationRequest",
 				"subjectType": "user",
 				"subject":{
-					"model": "system.user",
+					"ammodel": "system.user",
 					FieldNames.FIELD_NAME: "Admin",
 					"organizationPath": "/Development"
 				}
