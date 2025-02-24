@@ -1,0 +1,22 @@
+{
+	"name": "olio.llm.ollama.ollamaRequest",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": ["olio.llm.request"],
+	"fields": [
+		{
+			"name": "prompt",
+			"type": "string"
+		},
+		{
+			"name": "system",
+			"type": "string"
+		},
+		{
+			"name": "context",
+			"type": "list",
+			"baseType": "int"
+		}
+	]
+}

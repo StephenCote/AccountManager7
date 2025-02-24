@@ -44,6 +44,18 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_VECTOR_CHAT_HISTORY = "olio.llm.vectorChatHistory";
 	public static final String MODEL_VECTOR_CHAT_HISTORY_LIST = "olio.llm.vectorChatHistoryList";
 	
+	public static final String OLLAMA_MESSAGE = "olio.llm.ollama.ollamaMessage";
+	public static final String OLLAMA_REQUEST = "olio.llm.ollama.ollamaRequest";
+	public static final String OLLAMA_RESPONSE = "olio.llm.ollama.ollamaResponse";
+	
+	public static final String OPENAI_MESSAGE = "olio.llm.openai.openaiMessage";
+	public static final String OPENAI_REQUEST = "olio.llm.openai.openaiRequest";
+	public static final String OPENAI_RESPONSE = "olio.llm.openai.openaiResponse";
+	public static final String OPENAI_CHOICE = "olio.llm.openai.openaiChoice";
+	public static final String OPENAI_CONTEXT = "olio.llm.openai.openaiContext";
+	public static final String OPENAI_CITATION = "olio.llm.openai.openaiCitation";
+	public static final String OPENAI_USAGE = "olio.llm.openai.openaiUsage";
+	
 	//static {
 	private static boolean prep = false; 
 
@@ -52,7 +64,7 @@ public class OlioModelNames extends ModelNames {
 		MODEL_QUALITY, MODEL_ITEM, MODEL_WEARABLE, MODEL_APPAREL, MODEL_EVENT, MODEL_CHAR_STATISTICS, MODEL_CHAR_STATE,
 		MODEL_ACTION, MODEL_ACTION_RESULT, MODEL_ACTION_PARAMETERS, MODEL_SCHEDULE, MODEL_INVENTORY_ENTRY, MODEL_STORE, MODEL_BUILDER, MODEL_ITEM_STATISTICS, MODEL_ANIMAL, MODEL_REALM, MODEL_INTERACTION,
 		MODEL_NARRATIVE, MODEL_CHAT_CONFIG, MODEL_PROMPT_CONFIG, MODEL_PROMPT_RACE_CONFIG, MODEL_POI, MODEL_WORLD, MODEL_EPISODE, MODEL_SD_CONFIG, MODEL_SD_CONFIG_DATA,
-		MODEL_VECTOR_CHAT_HISTORY, MODEL_VECTOR_CHAT_HISTORY_LIST, MODEL_CHAT_OPTIONS
+		MODEL_VECTOR_CHAT_HISTORY, MODEL_VECTOR_CHAT_HISTORY_LIST, MODEL_CHAT_OPTIONS, OLLAMA_MESSAGE, OLLAMA_REQUEST, OLLAMA_RESPONSE, OPENAI_MESSAGE, OPENAI_REQUEST, OPENAI_RESPONSE, OPENAI_CHOICE, OPENAI_CONTEXT, OPENAI_CITATION, OPENAI_USAGE 
 	);
 	
 	public static void use() {

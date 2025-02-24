@@ -1,0 +1,17 @@
+{
+	"name": "olio.llm.message",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "role",
+			"type": "string",
+			"maxLength": 32
+		},
+		{
+			"name": "content",
+			"type": "string"
+		}
+	]
+}

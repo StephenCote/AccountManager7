@@ -1,0 +1,20 @@
+{
+	"name": "olio.llm.openai.openaiContext",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "citations",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.openai.openaiCitation"
+		},
+		{
+			"name": "intent",
+			"type": "list",
+			"baseType": "string"
+		}
+
+	]
+}

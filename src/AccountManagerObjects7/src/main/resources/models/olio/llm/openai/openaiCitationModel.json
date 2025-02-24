@@ -1,0 +1,28 @@
+{
+	"name": "olio.llm.openai.openaiCitation",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "content",
+			"type": "string"
+		},
+		{
+			"name": "title",
+			"type": "string"
+		},
+		{
+			"name": "url",
+			"type": "string"
+		},
+		{
+			"name": "filepath",
+			"type": "string"
+		},
+		{
+			"name": "chunk_id",
+			"type": "int"
+		}
+	]
+}

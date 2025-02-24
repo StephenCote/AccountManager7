@@ -1,0 +1,20 @@
+{
+	"name": "olio.llm.openai.openaiUsage",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "completion_tokens",
+			"type": "int"
+		},
+		{
+			"name": "prompt_tokens",
+			"type": "int"
+		},
+		{
+			"name": "total_tokens",
+			"type": "int"
+		}
+	]
+}

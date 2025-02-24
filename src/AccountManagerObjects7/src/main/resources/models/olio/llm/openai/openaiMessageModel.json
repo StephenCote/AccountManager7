@@ -1,0 +1,20 @@
+{
+	"name": "olio.llm.openai.openaiMessage",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": ["olio.llm.message"],
+	"fields": [
+		{
+			"name": "end_turn",
+			"type": "boolean"
+		},
+		{
+			"name": "context",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.openai.openaiCitation"
+		}
+
+	]
+}

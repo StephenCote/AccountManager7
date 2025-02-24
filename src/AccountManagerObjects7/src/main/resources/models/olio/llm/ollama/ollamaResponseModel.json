@@ -1,0 +1,63 @@
+{
+	"name": "olio.llm.ollama.ollamaResponse",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": ["olio.llm.response"],
+	"fields": [
+		{
+			"name": "created_at",
+			"type": "string"
+		},
+		{
+			"name": "response",
+			"type": "string"
+		},
+		{
+			"name": "done",
+			"type": "boolean"
+		},
+		{
+			"name": "context",
+			"type": "list",
+			"baseType": "int"
+		},
+		{
+			"name": "done",
+			"type": "boolean"
+		},
+		{
+			"name": "total_duration",
+			"type": "long"
+		},
+		{
+			"name": "load_duration",
+			"type": "long"
+		},
+		{
+			"name": "done_reason",
+			"type": "string"
+		},
+		{
+			"name": "prompt_eval_count",
+			"type": "int"
+		},
+		{
+			"name": "prompt_eval_duration",
+			"type": "long"
+		},
+		{
+			"name": "eval_count",
+			"type": "int"
+		},
+		{
+			"name": "eval_duration",
+			"type": "long"
+		},
+		{
+			"name": "message",
+			"type": "model",
+			"baseModel": "olio.llm.ollama.ollamaMessage"
+		}
+	]
+}

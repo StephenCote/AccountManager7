@@ -1,0 +1,33 @@
+{
+	"name": "olio.llm.openai.openaiResponse",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": ["olio.llm.response"],
+	"fields": [
+		{
+			"name": "id",
+			"type": "string"
+		},
+		{
+			"name": "created",
+			"type": "long"
+		},
+		{
+			"name": "object",
+			"type": "string"
+		},
+		{
+			"name": "usage",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiUsage"
+		},
+		{
+			"name": "message",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiMessage"
+		}
+		
+
+	]
+}

@@ -1,0 +1,15 @@
+{
+	"name": "olio.llm.ollama.ollamaMessage",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": ["olio.llm.message"],
+	"fields": [
+		{
+			"name": "images",
+			"type": "string",
+			"description": "Not currently used or correct"
+		}
+
+	]
+}

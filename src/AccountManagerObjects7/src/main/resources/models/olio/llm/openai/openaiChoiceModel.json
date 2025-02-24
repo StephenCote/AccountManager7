@@ -1,0 +1,21 @@
+{
+	"name": "olio.llm.openai.openaiChoice",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "finish_reason",
+			"type": "string"
+		},
+		{
+			"name": "index",
+			"type": "int"
+		},
+		{
+			"name": "message",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiMessage"
+		}
+	]
+}
