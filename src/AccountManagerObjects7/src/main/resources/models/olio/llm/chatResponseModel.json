@@ -1,0 +1,19 @@
+{
+	"name": "olio.llm.chatResponseModel",
+	"ioConstraints": [
+		"unknown"
+	],
+	"description": "Used for proxying responses",
+	"fields": [
+		{
+			"name": "messages",
+			"type": "list",
+			"baseModel": "olio.llm.message"
+		},
+		{
+			"name": "actor",
+			"type": "string",
+			"maxLength": 32
+		}
+	]
+}

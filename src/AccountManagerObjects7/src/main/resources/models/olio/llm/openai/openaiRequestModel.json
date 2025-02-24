@@ -21,11 +21,6 @@
 			"default": 0.5
 		},
 		{
-			"name": "top_k",
-			"type": "int",
-			"default": 50
-		},
-		{
 			"name": "frequency_penalty",
 			"type": "double",
 			"default": 1.1
@@ -36,9 +31,10 @@
 			"default": 1.1
 		},
 		{
-			"name": "stop",
-			"type": "boolean",
-			"default": false
+			"name": "messages",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.openai.openaiMessage"
 		}
 	]
 }

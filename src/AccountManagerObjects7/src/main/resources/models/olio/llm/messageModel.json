@@ -3,7 +3,6 @@
 	"ioConstraints": [
 		"unknown"
 	],
-	"abstract": true,
 	"fields": [
 		{
 			"name": "role",
@@ -13,6 +12,11 @@
 		{
 			"name": "content",
 			"type": "string"
+		},
+		{
+			"name": "pruned",
+			"type": "boolean",
+			"ephemeral": true
 		}
 	]
 }

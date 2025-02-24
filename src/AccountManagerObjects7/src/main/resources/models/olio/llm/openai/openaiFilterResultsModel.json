@@ -1,0 +1,44 @@
+{
+	"name": "olio.llm.openai.openaiFilterResults",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": ["olio.llm.response"],
+	"fields": [
+		{
+			"name": "hate",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResult"
+		},
+		{
+			"name": "protected_material_code",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResult"
+		},
+		{
+			"name": "protected_material_text",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResult"
+		},
+		{
+			"name": "self_harm",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResult"
+		},
+		{
+			"name": "sexual",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResult"
+		},
+		{
+			"name": "violence",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResult"
+		},
+		{
+			"name": "jailbreak",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResult"
+		}
+	]
+}

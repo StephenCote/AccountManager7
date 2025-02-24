@@ -16,6 +16,11 @@
 			"name": "message",
 			"type": "model",
 			"baseModel": "olio.llm.openai.openaiMessage"
+		},
+		{
+			"name": "content_filter_results",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiFilterResults"
 		}
 	]
 }

@@ -702,8 +702,8 @@ public class RecordFactory {
 			logger.error("Expected string to start with a JSON construct");
 			return null;
 		}
-		if(!contents.contains("\"model\"")) {
-			contents = contents.replaceFirst("\\{", "{\"model\": \"" + modelName + "\", ");
+		if(!contents.contains("\"" + JSON_MODEL_KEY + "\"")) {
+			contents = contents.replaceFirst("\\{", "{\"" + JSON_MODEL_KEY + "\": \"" + modelName + "\", ");
 		}
 		return importRecord(contents);
 	}

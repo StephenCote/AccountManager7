@@ -71,6 +71,19 @@ public class RecordSerializerConfig {
 		
 		return foreignFilteredModule;
 	}
+	
+	public static SimpleModule getHiddenForeignUnfilteredModule() {
+		RecordSerializer ser = new RecordSerializer();
+		ser.setFilterVirtual(true);
+		ser.setFilterForeign(false);
+		ser.setFilterEphemeral(true);
+		ser.setDecompressByteStore(true);
+		ser.setHideEmitModel(true);
+		SimpleModule  foreignFilteredModule = new SimpleModule();
+		foreignFilteredModule.addSerializer(LooseRecord.class, ser);
+		
+		return foreignFilteredModule;
+	}
 
 	
 	public static SimpleModule getForeignUnfilteredModuleRecurse() {

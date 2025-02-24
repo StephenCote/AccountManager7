@@ -13,6 +13,13 @@
 			"default": "E"
 		},
 		{
+			"name": "serviceType",
+			"baseClass": "org.cote.accountmanager.olio.llm.LLMServiceType",
+			"type": "enum",
+			"maxLength": 10,
+			"default": "OLLAMA"
+		},
+		{
 			"name": "systemCharacter",
 			"type": "model",
 			"baseModel": "olio.charPerson",

@@ -5,10 +5,7 @@
 	],
 	"inherits": ["olio.llm.message"],
 	"fields": [
-		{
-			"name": "end_turn",
-			"type": "boolean"
-		},
+
 		{
 			"name": "context",
 			"type": "list",

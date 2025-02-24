@@ -10,12 +10,7 @@
 			"type": "string",
 			"maxLength": 64
 		},
-		{
-			"name": "messages",
-			"type": "list",
-			"baseType": "model",
-			"baseModel": "olio.llm.message"
-		},
+
 		{
 			"name": "options",
 			"type": "model",

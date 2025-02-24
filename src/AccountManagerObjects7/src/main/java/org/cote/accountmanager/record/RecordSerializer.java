@@ -38,6 +38,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	private boolean condenseDeclarations = false;
 	private boolean stopCondensing = false;
 	private boolean condenseFields = false;
+	private boolean hideEmitModel = false;
 	
 	private Set<String> recursionSet = new HashSet<>();
 	private boolean stopRecursion = true;
@@ -46,19 +47,21 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 
     }
 
-    
-    
-    public boolean isStopRecursion() {
-		return stopRecursion;
+    public boolean isHideEmitModel() {
+		return hideEmitModel;
 	}
 
+	public void setHideEmitModel(boolean hideEmitModel) {
+		this.hideEmitModel = hideEmitModel;
+	}
 
+	public boolean isStopRecursion() {
+		return stopRecursion;
+	}
 
 	public void setStopRecursion(boolean stopRecursion) {
 		this.stopRecursion = stopRecursion;
 	}
-
-
 
 	public boolean isDecompressByteStore() {
 		return decompressByteStore;
@@ -136,7 +139,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
     	
         jgen.writeStartObject();
 
-        if(ltype.isEmitModel() || stopCondensing || !condenseModelDeclarations || !condenseDeclarations) {
+        if(!hideEmitModel && (ltype.isEmitModel() || stopCondensing || !condenseModelDeclarations || !condenseDeclarations)) {
         	/// allow the emit specification to cascade down to the next object level
         	///
         	if(ltype.isEmitModel()) {

@@ -1,0 +1,33 @@
+{
+	"name": "olio.llm.chatRequest",
+	"ioConstraints": [
+		"unknown"
+	],
+	"description": "Used for proxying requests",
+	"fields": [
+		{
+			"name": "message",
+			"type": "string"
+		},
+		{
+			"name": "uid",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "chatConfig",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "promptConfig",
+			"type": "string",
+			"maxLength": 128
+		},
+		{
+			"name": "sessionName",
+			"type": "string",
+			"maxLength": 128
+		}
+	]
+}

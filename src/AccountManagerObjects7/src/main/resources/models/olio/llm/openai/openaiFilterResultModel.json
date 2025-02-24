@@ -1,0 +1,22 @@
+{
+	"name": "olio.llm.openai.openaiFilterResult",
+	"ioConstraints": [
+		"unknown"
+	],
+	
+	"fields": [
+		{
+			"name": "filtered",
+			"type": "boolean"
+		},
+		{
+			"name": "detected",
+			"type": "boolean"
+		},
+		{
+			"name": "severity",
+			"type": "string",
+			"maxLength": 64
+		}
+	]
+}

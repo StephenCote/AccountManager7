@@ -3,10 +3,16 @@
 	"ioConstraints": [
 		"unknown"
 	],
-	"inherits": ["olio.llm.response"],
+	"inherits": [
+		"olio.llm.response"
+	],
 	"fields": [
 		{
 			"name": "id",
+			"type": "string"
+		},
+		{
+			"name": "system_fingerprint",
 			"type": "string"
 		},
 		{
@@ -23,11 +29,16 @@
 			"baseModel": "olio.llm.openai.openaiUsage"
 		},
 		{
-			"name": "message",
+			"name": "choices",
+			"type": "list",
+			"baseModel": "olio.llm.openai.openaiChoice"
+		},
+		{
+			"name": "prompt_filter_results",
 			"type": "model",
-			"baseModel": "olio.llm.openai.openaiMessage"
+			"baseModel": "olio.llm.openai.openaiFilterResults"
 		}
 		
-
 	]
 }
+

@@ -26,11 +26,13 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.llm.OllamaChatRequest;
-import org.cote.accountmanager.olio.llm.OllamaChatResponse;
+import org.cote.accountmanager.olio.llm.ChatRequest;
+import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.OllamaRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -59,7 +61,7 @@ public class ChatService {
 		configMap.clear();
 	}
 	
-	private String getKey(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, OllamaChatRequest request) {
+	private String getKey(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, ChatRequest request) {
 		String sess = "";
 		if(request.getSessionName() != null && request.getSessionName().length() > 0) {
 			sess = "-" + request.getSessionName();
@@ -82,7 +84,7 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response clear(String json, @Context HttpServletRequest request){
 		logger.info("Clear ....");
-		OllamaChatRequest chatReq = JSONUtil.importObject(json, OllamaChatRequest.class);
+		ChatRequest chatReq = ChatRequest.importRecord(json);
 		if(chatReq.getUid() == null) {
 			logger.warn("A uid is required for every chat");
 			return Response.status(404).entity(null).build();
@@ -116,7 +118,7 @@ public class ChatService {
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chatHistory(String json, @Context HttpServletRequest request){
 		logger.info("History ....");
-		OllamaChatRequest chatReq = JSONUtil.importObject(json, OllamaChatRequest.class);
+		ChatRequest chatReq = ChatRequest.importRecord(json);
 		if(chatReq.getUid() == null) {
 			logger.warn("A uid is required for every chat");
 			logger.warn(JSONUtil.exportObject(chatReq));
@@ -126,13 +128,13 @@ public class ChatService {
 			logger.warn("Uid already used in a chat");
 			return Response.status(404).entity(null).build();
 		}
-		OllamaChatResponse crep = null;
+		ChatResponse crep = null;
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
 		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
 		if(chatConfig != null && promptConfig != null) {
 			String key = getKey(user, chatConfig, promptConfig, chatReq);
-			crep = new OllamaChatResponse();
+			crep = new ChatResponse();
 			if(reqMap.containsKey(key)) {
 				crep = getChatResponse(user, reqMap.get(key), chatReq);
 			}
@@ -220,7 +222,7 @@ public class ChatService {
 	@Path("/text")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chatRPG(String json, @Context HttpServletRequest request){
-		OllamaChatRequest chatReq = JSONUtil.importObject(json, OllamaChatRequest.class);
+		ChatRequest chatReq = ChatRequest.importRecord(json);
 		if(chatReq.getUid() == null) {
 			logger.warn("A uid is required for every chat");
 			return Response.status(404).entity(null).build();
@@ -248,19 +250,19 @@ public class ChatService {
 				forgetRequest(user, chatReq);
 			}
 		// }
-		OllamaChatResponse creq = getChatResponse(user, req, chatReq);
+		ChatResponse creq = getChatResponse(user, req, chatReq);
 		// logger.info("Chat Response:");
 		// logger.info((creq != null ? JSONUtil.exportObject(creq) : null));
 		
 		return Response.status((creq != null ? 200 : 404)).entity(creq).build();
 	}
 	
-	private OllamaChatResponse getChatResponse(BaseRecord user, OllamaRequest req, OllamaChatRequest creq) {
+	private ChatResponse getChatResponse(BaseRecord user, OllamaRequest req, ChatRequest creq) {
 		if(req == null || creq == null) {
 			return null;
 		}
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
-		OllamaChatResponse rep = new OllamaChatResponse();
+		ChatResponse rep = new ChatResponse();
 		rep.setUid(creq.getUid());
 		rep.setModel(chatConfig.get("llmModel"));
 		/// Current template structure for chat and rpg defines prompt and initial user message
@@ -276,7 +278,7 @@ public class ChatService {
 		return rep;
 	}
 
-	private void forgetRequest(BaseRecord user, OllamaChatRequest creq) {
+	private void forgetRequest(BaseRecord user, ChatRequest creq) {
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
 		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
 		String key = getKey(user, chatConfig, promptConfig, creq);
@@ -285,7 +287,7 @@ public class ChatService {
 		}
 	}
 	
-	private OllamaRequest getOllamaRequest(BaseRecord user, OllamaChatRequest creq) {
+	private OllamaRequest getOllamaRequest(BaseRecord user, ChatRequest creq) {
 		OllamaRequest req = null;
 		Chat chat = null;
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
@@ -317,7 +319,7 @@ public class ChatService {
 		return req;
 	}
 	
-	private Chat getChat(BaseRecord user, OllamaChatRequest req, String key) {
+	private Chat getChat(BaseRecord user, ChatRequest req, String key) {
 		if(chatMap.containsKey(key)) {
 			return chatMap.get(key);
 		}

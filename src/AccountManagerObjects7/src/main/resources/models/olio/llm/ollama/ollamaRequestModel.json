@@ -17,6 +17,12 @@
 			"name": "context",
 			"type": "list",
 			"baseType": "int"
+		},
+		{
+			"name": "messages",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.ollama.ollamaMessage"
 		}
 	]
 }
