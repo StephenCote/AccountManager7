@@ -119,5 +119,49 @@ public class TestVectorStore extends BaseTest {
 		}
 	}
 	
+	@Test
+	public void TestVectorChunk() {
+		
+		logger.info("Test VectorChunk with DOCX");
+		logger.info("NOTE: Currently depends on uncommitted example content");
+		Factory mf = ioContext.getFactory();
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Vector");
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		String path = "./media/The Verse.docx";
+		BaseRecord doc = getCreateDocument(testUser1, path);
+		IOSystem.getActiveContext().getReader().populate(doc, new String[] {FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_CONTENT_TYPE});
+		
+		int count = VectorUtil.countVectorStore(doc);
+		if(resetStore && count > 0) {
+			VectorUtil.deleteVectorStore(doc);
+			count = 0;
+		}
+		if(count == 0) {
+			List<BaseRecord> chunks = new ArrayList<>();
+			try {
+				 chunks = VectorUtil.createVectorStore(doc, ChunkEnumType.CHAPTER, 20);
+				logger.info("Retrieved " + chunks.size());
+				assertTrue("Expected chunks", chunks.size() > 0);
+				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
+	
+			} catch (FieldException | WriterException e) {
+				logger.error(e);
+			}
+		}
+		List<BaseRecord> store = VectorUtil.getVectorStore(doc);
+		assertTrue("Expected the store", store.size() > 0);
+		
+		List<BaseRecord> findStore = VectorUtil.find(doc, "Who is Mark Lucean?", 10, 60);
+		logger.info("Found: " + findStore.size());
+		for(BaseRecord s : findStore) {
+			logger.info("Score: " + s.get(FieldNames.FIELD_SCORE));
+			logger.info("Content: " + s.get(FieldNames.FIELD_CONTENT));
+		}
+	
+	}
+
+	
+	
 	
 }
