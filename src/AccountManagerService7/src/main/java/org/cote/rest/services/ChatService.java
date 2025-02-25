@@ -28,7 +28,7 @@ import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
-import org.cote.accountmanager.olio.llm.OllamaRequest;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -51,7 +51,7 @@ public class ChatService {
 	ServletContext context;
 	
 	private static Set<String> chatTrack = new HashSet<>();
-	private static HashMap<String, OllamaRequest> reqMap = new HashMap<>();
+	private static HashMap<String, OpenAIRequest> reqMap = new HashMap<>();
 	private static HashMap<String, Chat> chatMap = new HashMap<>();
 	private static HashMap<String, BaseRecord> configMap = new HashMap<>();
 	
@@ -140,7 +140,7 @@ public class ChatService {
 			}
 			else if (chatReq.getSessionName() != null){
 				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, chatReq.getSessionName());
-				OllamaRequest oreq = ChatUtil.getSession(user, sessionName);
+				OpenAIRequest oreq = ChatUtil.getSession(user, sessionName);
 				if(oreq != null) {
 					crep = getChatResponse(user, oreq, chatReq);
 				}
@@ -235,7 +235,7 @@ public class ChatService {
 		
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		
-		OllamaRequest req = getOllamaRequest(user, chatReq);
+		OpenAIRequest req = getOpenAIRequest(user, chatReq);
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
 		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
 		///logger.info(JSONUtil.exportObject(req));
@@ -257,7 +257,7 @@ public class ChatService {
 		return Response.status((creq != null ? 200 : 404)).entity(creq).build();
 	}
 	
-	private ChatResponse getChatResponse(BaseRecord user, OllamaRequest req, ChatRequest creq) {
+	private ChatResponse getChatResponse(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
 		if(req == null || creq == null) {
 			return null;
 		}
@@ -287,8 +287,8 @@ public class ChatService {
 		}
 	}
 	
-	private OllamaRequest getOllamaRequest(BaseRecord user, ChatRequest creq) {
-		OllamaRequest req = null;
+	private OpenAIRequest getOpenAIRequest(BaseRecord user, ChatRequest creq) {
+		OpenAIRequest req = null;
 		Chat chat = null;
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
 		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
@@ -301,7 +301,7 @@ public class ChatService {
 
 			if(creq.getSessionName() != null && creq.getSessionName().length() > 0) {
 				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, creq.getSessionName());
-				OllamaRequest oreq = ChatUtil.getSession(user, sessionName);
+				OpenAIRequest oreq = ChatUtil.getSession(user, sessionName);
 				if(oreq != null) {
 					req = oreq;
 				}

@@ -179,8 +179,8 @@ public class ChatUtil {
 	}
 	
 	private static String getChatResponse(BaseRecord pcfg, BaseRecord cfg, String model, String prompt) {
-		OllamaRequest req = new OllamaRequest();
-		req.setOptions(Chat.getChatOptions());
+		OpenAIRequest req = new OpenAIRequest();
+		// req.setOptions(Chat.getChatOptions());
 		req.setModel(model);
 		req.setStream(false);
 		String sysPrompt = "You are are a helpful assistant who likes to create creative summaries of content.";
@@ -191,14 +191,14 @@ public class ChatUtil {
 			asPrompt = PromptUtil.getAssistantNarrateTemplate(pcfg, cfg);
 			uPrompt = PromptUtil.getUserNarrateTemplate(pcfg, cfg);
 		}
-		req.setSystem(sysPrompt);
+		// req.setSystem(sysPrompt);
 		
 		Chat c = new Chat();
 		c.newMessage(req, uPrompt, "user");
 		c.newMessage(req, asPrompt, "assistant");
 
 		c.newMessage(req, prompt);
-		OllamaResponse rep = c.chat(req);
+		OpenAIResponse rep = c.chat(req);
 		// logger.info(JSONUtil.exportObject(rep));
 		if(rep != null && rep.getMessage() != null) {
 			return rep.getMessage().getContent();
@@ -206,7 +206,7 @@ public class ChatUtil {
 		return null;
 	}
 	
-	public static boolean saveSession(BaseRecord user, OllamaRequest req, String sessionName) {
+	public static boolean saveSession(BaseRecord user, OpenAIRequest req, String sessionName) {
 		
 		BaseRecord dat = getSessionData(user, sessionName);
 		boolean upd = false;
@@ -242,14 +242,14 @@ public class ChatUtil {
 		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_BYTE_STORE});
 		return IOSystem.getActiveContext().getSearch().findRecord(getSessionDataQuery(user, sessionName));
 	}
-	public static OllamaRequest getSession(BaseRecord user, String sessionName) {
+	public static OpenAIRequest getSession(BaseRecord user, String sessionName) {
 		
 		BaseRecord dat = getSessionData(user, sessionName);
-		OllamaRequest req = null;
+		OpenAIRequest req = null;
 		if(dat != null) {
-			//req = JSONUtil.importObject(ByteModelUtil.getValueString(dat), OllamaRequest.class);
+			//req = JSONUtil.importObject(ByteModelUtil.getValueString(dat), OpenAIRequest.class);
 			try {
-				req = JSONUtil.importObject(ByteModelUtil.getValueString(dat), OllamaRequest.class);
+				req = OpenAIRequest.importRecord(ByteModelUtil.getValueString(dat));
 			} catch (ValueException | FieldException e) {
 				logger.error(e);
 				e.printStackTrace();
@@ -457,24 +457,24 @@ public class ChatUtil {
 		}
 		String prompt = "A " + character.get(FieldNames.FIELD_AGE) + " year-old " + NarrativeUtil.getRaceDescription(character.get(OlioFieldNames.FIELD_RACE)) + " " + character.get(FieldNames.FIELD_GENDER) + ujobDesc + ". Setting: " + setting;
 	
-		OllamaRequest req = new OllamaRequest();
+		OpenAIRequest req = new OpenAIRequest();
 		OllamaOptions opts = Chat.getChatOptions();
 		opts.setTemperature(0.4);
 		opts.setTopK(25);
 		opts.setTopP(0.9);
 		opts.setRepeatPenalty(1.18);
-		req.setOptions(opts);
+		// req.setOptions(opts);
 		req.setModel(model);
 		req.setStream(false);
 		
-		req.setSystem(outfit);
+		// req.setSystem(outfit);
 		
 		Chat c = new Chat();
 		c.newMessage(req, userOutfit);
 		c.newMessage(req, assistantOutfit, "assistant");
 		c.newMessage(req, prompt);
 		// logger.info(JSONUtil.exportObject(req));
-		OllamaResponse rep = c.chat(req);
+		OpenAIResponse rep = c.chat(req);
 		String gender = character.get(FieldNames.FIELD_GENDER);
 		if(rep != null && rep.getMessage() != null) {
 			return Arrays.asList(

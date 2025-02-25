@@ -27,7 +27,7 @@ import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
-import org.cote.accountmanager.olio.llm.OllamaRequest;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -145,7 +145,7 @@ public class OlioAction extends CommonAction implements IAction{
 				logger.info("Import session " + cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
-				OllamaRequest req = JSONUtil.importObject(FileUtil.getFileAsString(cmd.getOptionValue(FieldNames.FIELD_PATH)), OllamaRequest.class);
+				OpenAIRequest req = JSONUtil.importObject(FileUtil.getFileAsString(cmd.getOptionValue(FieldNames.FIELD_PATH)), OpenAIRequest.class);
 				ChatUtil.saveSession(user, req, ChatUtil.getSessionName(user, cfg, prompt, cmd.getOptionValue("session")));
 			}
 			else if(cmd.hasOption("chatConfig")) {
@@ -568,7 +568,7 @@ public class OlioAction extends CommonAction implements IAction{
 				logger.info("Export chat request " + cmd.getOptionValue("session") + " to "+ cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
-				OllamaRequest req = ChatUtil.getSession(user, ChatUtil.getSessionName(user, cfg, prompt, cmd.getOptionValue("session")));
+				OpenAIRequest req = ChatUtil.getSession(user, ChatUtil.getSessionName(user, cfg, prompt, cmd.getOptionValue("session")));
 				FileUtil.emitFile(cmd.getOptionValue(FieldNames.FIELD_PATH), JSONUtil.exportObject(req));
 			}
 			else if(cmd.hasOption("chatConfig")) {
@@ -592,10 +592,10 @@ public class OlioAction extends CommonAction implements IAction{
 			chat.setFormatOutput(true);
 			chat.setSessionName(cmd.getOptionValue("session"));
 
-			OllamaRequest req = null;
+			OpenAIRequest req = null;
 			if(cmd.hasOption("session")) {
 				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, cmd.getOptionValue("session"));
-				OllamaRequest oreq = ChatUtil.getSession(user, sessionName);
+				OpenAIRequest oreq = ChatUtil.getSession(user, sessionName);
 				if(oreq != null) {
 					req = oreq;
 				}
@@ -628,8 +628,8 @@ public class OlioAction extends CommonAction implements IAction{
 			chat.setSessionName(cmd.getOptionValue("session"));
 			Chat chat2 = new Chat(user, chatConfig2, promptConfig);
 			chat2.setFormatOutput(true);
-			OllamaRequest req1 = chat.getChatPrompt();
-			OllamaRequest req2 = chat2.getChatPrompt();
+			OpenAIRequest req1 = chat.getChatPrompt();
+			OpenAIRequest req2 = chat2.getChatPrompt();
 			if(cmd.hasOption("debug")) {
 				logger.info(chatConfig.get("systemCharacter.firstName") + ":");
 				logger.info(JSONUtil.exportObject(req1));

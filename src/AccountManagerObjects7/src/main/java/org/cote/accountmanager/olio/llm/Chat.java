@@ -156,8 +156,8 @@ Begin conversationally.
 		chatConsole(newRequest(chatConfig.get("llmModel")));
 	}
 	
-	public void continueChat(OllamaRequest req, String message){
-		OllamaResponse lastRep = null;	
+	public void continueChat(OpenAIRequest req, String message){
+		OpenAIResponse lastRep = null;	
 		
 		LineAction act = checkAction(req, message);
 		if(act == LineAction.BREAK || act == LineAction.CONTINUE || act == LineAction.SAVE_AND_CONTINUE) {
@@ -181,7 +181,7 @@ Begin conversationally.
 		}
 	}
 	
-	private String getNarrativeForVector(OllamaMessage msg) {
+	private String getNarrativeForVector(OpenAIMessage msg) {
 
 		if(chatConfig == null) {
 			return msg.getContent();
@@ -206,7 +206,7 @@ Begin conversationally.
 	
 
 	}
-	private List<BaseRecord> createNarrativeVector(BaseRecord user, OllamaRequest req, String sessionName) {
+	private List<BaseRecord> createNarrativeVector(BaseRecord user, OpenAIRequest req, String sessionName) {
 		List<BaseRecord> vect = new ArrayList<>();
 		int rmc = req.getMessages().size();
 		
@@ -236,14 +236,14 @@ Begin conversationally.
 		}
 		return vect;
 	}
-	private List<String> getFormattedChatHistory(OllamaRequest req, boolean full) {
+	private List<String> getFormattedChatHistory(OpenAIRequest req, boolean full) {
 		//StringBuilder buff = new StringBuilder();
 		List<String> buff = new ArrayList<>();
 		/// 1 >> (pruneSkip + 2)
 		for(int i = (full ? 0 : (pruneSkip + 2)); i < req.getMessages().size(); i++) {
 			//if(buff.length() > 0) buff.append(System.lineSeparator());
 
-			OllamaMessage msg = req.getMessages().get(i);
+			OpenAIMessage msg = req.getMessages().get(i);
 			String cont = msg.getContent();
 			if(cont != null && cont.startsWith("(KeyFrame")) {
 				continue;
@@ -262,7 +262,7 @@ Begin conversationally.
 		return buff;
 	}
 	
-	public OllamaRequest getAnalyzePrompt(OllamaRequest req, String command, int offset, int count, boolean full) {
+	public OpenAIRequest getAnalyzePrompt(OpenAIRequest req, String command, int offset, int count, boolean full) {
 		List<String> lines = getFormattedChatHistory(req, full);
 		if(count == 0) {
 			count = lines.size();
@@ -287,10 +287,10 @@ Begin conversationally.
 			}
 		}
 		
-		OllamaRequest areq = new OllamaRequest();
+		OpenAIRequest areq = new OpenAIRequest();
 		applyAnalyzeOptions(req, areq);
 		
-		OllamaMessage sysMsg = new OllamaMessage();
+		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole("system");
 		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
 		if(systemAnalyze != null && systemAnalyze.length() > 0) {
@@ -300,7 +300,7 @@ Begin conversationally.
 		areq.getMessages().add(sysMsg);
 		
 		if(assistantAnalyze != null) {
-			OllamaMessage aaMsg = new OllamaMessage();
+			OpenAIMessage aaMsg = new OpenAIMessage();
 			aaMsg.setRole("assistant");
 			aaMsg.setContent(assistantAnalyze);
 			areq.getMessages().add(aaMsg);
@@ -320,7 +320,7 @@ Begin conversationally.
 			}
 		}
 		
-		OllamaMessage anMsg = new OllamaMessage();
+		OpenAIMessage anMsg = new OpenAIMessage();
 		anMsg.setRole("user");
 		anMsg.setContent(cont);
 		areq.getMessages().add(anMsg);
@@ -330,22 +330,24 @@ Begin conversationally.
 		return areq;
 	}
 	
-	private void applyAnalyzeOptions(OllamaRequest req, OllamaRequest areq) {
+	private void applyAnalyzeOptions(OpenAIRequest req, OpenAIRequest areq) {
 		String amodel = chatConfig.get("llmAnalyzeModel");
 		if(amodel == null) {
 			amodel = req.getModel();
 		}
 		areq.setModel(amodel);
+		/*
 		OllamaOptions opts = getChatOptions();
 		opts.setTemperature(0.7);
 		opts.setTopK(25);
 		opts.setTopP(0.9);
 		opts.setRepeatPenalty(1.18);
 		areq.setOptions(opts);
+		*/
 	}
 	
 	private static Pattern embeddedMessage = Pattern.compile("\\$\\{embmsg\\}");
-	public OllamaRequest getNarratePrompt(OllamaRequest req, String command, int offset, int count, boolean full) {
+	public OpenAIRequest getNarratePrompt(OpenAIRequest req, String command, int offset, int count, boolean full) {
 		List<String> lines = getFormattedChatHistory(req, full);
 		if(count == 0) {
 			count = lines.size();
@@ -368,14 +370,16 @@ Begin conversationally.
 			}
 		}
 		
-		OllamaRequest areq = new OllamaRequest();
+		OpenAIRequest areq = new OpenAIRequest();
 		applyAnalyzeOptions(req, areq);
+		/*
 		OllamaOptions opts = areq.getOptions();
 		opts.setTemperature(0.9);
 		opts.setTopK(50);
 		opts.setTopP(0.5);
+		*/
 		
-		OllamaMessage sysMsg = new OllamaMessage();
+		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole("system");
 		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
 		if(systemNarrate != null && systemNarrate.length() > 0) {
@@ -385,7 +389,7 @@ Begin conversationally.
 		areq.getMessages().add(sysMsg);
 		
 		if(assistantNarrate != null) {
-			OllamaMessage aaMsg = new OllamaMessage();
+			OpenAIMessage aaMsg = new OpenAIMessage();
 			aaMsg.setRole("assistant");
 			aaMsg.setContent(assistantNarrate);
 			areq.getMessages().add(aaMsg);
@@ -405,7 +409,7 @@ Begin conversationally.
 			}
 		}
 		
-		OllamaMessage anMsg = new OllamaMessage();
+		OpenAIMessage anMsg = new OpenAIMessage();
 		anMsg.setRole("user");
 		anMsg.setContent(cont);
 		// anMsg.setContent(msg.toString());
@@ -416,25 +420,27 @@ Begin conversationally.
 		return areq;
 	}
 	
-	public OllamaRequest getSDPrompt(OllamaRequest req, String command, boolean full) {
+	public OpenAIRequest getSDPrompt(OpenAIRequest req, String command, boolean full) {
 		List<String> lines = getFormattedChatHistory(req, full);
 		
 		String systemSD = PromptUtil.getSystemSDTemplate(promptConfig, chatConfig);
 		command = "Create an SD prompt based on the most recent roleplay scene.";
 		
-		OllamaRequest areq = new OllamaRequest();
+		OpenAIRequest areq = new OpenAIRequest();
 		String amodel = chatConfig.get("llmAnalyzeModel");
 		if(amodel == null) {
 			amodel = req.getModel();
 		}
 		areq.setModel(amodel);
+		/*
 		OllamaOptions opts = getChatOptions();
 		opts.setTemperature(0.9);
 		opts.setTopK(75);
 		opts.setTopP(0.9);
 		opts.setRepeatPenalty(1.18);
 		areq.setOptions(opts);
-		OllamaMessage sysMsg = new OllamaMessage();
+		*/
+		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole("system");
 		sysMsg.setContent(systemSD);
 		areq.getMessages().add(sysMsg);
@@ -443,7 +449,7 @@ Begin conversationally.
 		msg.append(command + System.lineSeparator());
 		msg.append(lines.stream().collect(Collectors.joining(System.lineSeparator())));
 
-		OllamaMessage anMsg = new OllamaMessage();
+		OpenAIMessage anMsg = new OpenAIMessage();
 		anMsg.setRole("user");
 		anMsg.setContent(msg.toString());
 		areq.getMessages().add(anMsg);
@@ -453,12 +459,12 @@ Begin conversationally.
 		return areq;
 	}
 	
-	public String SDPrompt(OllamaRequest req, String command, boolean full) {
+	public String SDPrompt(OpenAIRequest req, String command, boolean full) {
 		List<String> resp = new ArrayList<>();
-		OllamaRequest oreq = getSDPrompt(req, command, full);
+		OpenAIRequest oreq = getSDPrompt(req, command, full);
 
 		logger.info("Creating SD Prompt ... ");
-		OllamaResponse oresp = chat(oreq);
+		OpenAIResponse oresp = chat(oreq);
 		if(oresp == null || oresp.getMessage() == null) {
 			logger.error("Unexpected response");
 			return null;
@@ -466,11 +472,11 @@ Begin conversationally.
 		return oresp.getMessage().getContent();
 	}
 	
-	public String analyze(OllamaRequest req, String command, boolean narrate, boolean reduce, boolean full) {
+	public String analyze(OpenAIRequest req, String command, boolean narrate, boolean reduce, boolean full) {
 		List<String> resp = new ArrayList<>();
 		int offset = 0;
 		int count = (reduce ? 20 : 0);
-		OllamaRequest oreq = null;
+		OpenAIRequest oreq = null;
 		if(narrate) {
 			oreq = getNarratePrompt(req, command, offset, count, full);
 		}
@@ -486,7 +492,7 @@ Begin conversationally.
 		}
 		while(oreq != null) {
 			logger.info(lbl + " ... " + offset);
-			OllamaResponse oresp = chat(oreq);
+			OpenAIResponse oresp = chat(oreq);
 			if(oresp == null || oresp.getMessage() == null) {
 				logger.error("Unexpected response");
 				break;
@@ -507,22 +513,24 @@ Begin conversationally.
 		//return resp.stream().collect(Collectors.joining(System.lineSeparator()));
 	}
 	
-	public OllamaRequest getReducePrompt(OllamaRequest req, String text) {
+	public OpenAIRequest getReducePrompt(OpenAIRequest req, String text) {
 		String systemAnalyze = PromptUtil.getSystemAnalyzeTemplate(promptConfig, chatConfig);
 		String assistantAnalyze = PromptUtil.getAssistantAnalyzeTemplate(promptConfig, chatConfig);
 		String userAnalyze = PromptUtil.getUserReduceTemplate(promptConfig, chatConfig);
 		if(userAnalyze == null) {
 			userAnalyze = "Merge and reduce the following summaries.";
 		}
-		OllamaRequest areq = new OllamaRequest();
+		OpenAIRequest areq = new OpenAIRequest();
 		areq.setModel(req.getModel());
+		/*
 		OllamaOptions opts = getChatOptions();
 		opts.setTemperature(0.7);
 		opts.setTopK(25);
 		opts.setTopP(0.9);
 		opts.setRepeatPenalty(1.18);
 		areq.setOptions(opts);
-		OllamaMessage sysMsg = new OllamaMessage();
+		*/
+		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole("system");
 		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
 		if(systemAnalyze != null && systemAnalyze.length() > 0) {
@@ -532,7 +540,7 @@ Begin conversationally.
 		areq.getMessages().add(sysMsg);
 		
 		if(assistantAnalyze != null) {
-			OllamaMessage aaMsg = new OllamaMessage();
+			OpenAIMessage aaMsg = new OpenAIMessage();
 			aaMsg.setRole("assistant");
 			aaMsg.setContent(assistantAnalyze);
 			areq.getMessages().add(aaMsg);
@@ -542,7 +550,7 @@ Begin conversationally.
 		msg.append(userAnalyze + System.lineSeparator());
 		msg.append(text);
 
-		OllamaMessage anMsg = new OllamaMessage();
+		OpenAIMessage anMsg = new OpenAIMessage();
 		anMsg.setRole("user");
 		anMsg.setContent(msg.toString());
 		areq.getMessages().add(anMsg);
@@ -552,7 +560,7 @@ Begin conversationally.
 		return areq;
 	}
 	
-	public String reduce(OllamaRequest req, List<String> summaries) {
+	public String reduce(OpenAIRequest req, List<String> summaries) {
 		
 		int size = summaries.size();
 		if(size == 0) {
@@ -569,9 +577,9 @@ Begin conversationally.
 			for(int i = 0; i < size; i += count){
 				logger.info("Reducing ... " + i + " of " + summaries.size());
 				String sumBlock = summaries.subList(i, Math.min(size,i + count)).stream().map(s -> "(Analysis Segment)" + System.lineSeparator() + s).collect(Collectors.joining(System.lineSeparator()));
-				OllamaRequest rreq = getReducePrompt(req, sumBlock);
+				OpenAIRequest rreq = getReducePrompt(req, sumBlock);
 				// logger.info(JSONUtil.exportObject(rreq));
-				OllamaResponse oresp = chat(rreq);
+				OpenAIResponse oresp = chat(rreq);
 				if(oresp == null || oresp.getMessage() == null) {
 					logger.warn("Invalid response");
 					break;
@@ -587,7 +595,7 @@ Begin conversationally.
 		if(rsum.size() > 1 ) {
 			logger.info("Summarizing ... " + rsum.size());
 			String sumBlock = rsum.stream().collect(Collectors.joining(System.lineSeparator()));
-			OllamaResponse oresp = chat(getReducePrompt(req, sumBlock));
+			OpenAIResponse oresp = chat(getReducePrompt(req, sumBlock));
 			if(oresp == null || oresp.getMessage() == null) {
 				logger.warn("Invalid response");
 			}
@@ -609,7 +617,7 @@ Begin conversationally.
 		BREAK
 	}
 	
-	private LineAction checkAction(OllamaRequest req, String line) {
+	private LineAction checkAction(OpenAIRequest req, String line) {
 		LineAction oact = LineAction.UNKNOWN;
 		if(line == null || line.equalsIgnoreCase("/bye")) {
 			oact = LineAction.BREAK;
@@ -656,7 +664,7 @@ Begin conversationally.
 			logger.info("Character 1: " + char1);
 			logger.info("Character 2: " + char2);
 			if(req != null && req.getMessages().size() > 3) {
-				OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following two characters. Include all physical, behavioral, and personality details." + System.lineSeparator() + char1 + System.lineSeparator() + char2, 0, 0, false));
+				OpenAIResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following two characters. Include all physical, behavioral, and personality details." + System.lineSeparator() + char1 + System.lineSeparator() + char2, 0, 0, false));
 				if(oresp != null && oresp.getMessage() != null) {
 					logger.info(oresp.getMessage().getContent());
 				}
@@ -680,7 +688,7 @@ Begin conversationally.
 			else if(nextEp != null) {
 				if(req.getMessages().size() > 4) {
 					logger.info("Summarizing current episode...");
-					OllamaResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following content with respect to the described episode. Include all physical, behavioral, and personality details.", 0, 0, false));
+					OpenAIResponse oresp = chat(getNarratePrompt(req, "Write a brief narrative description of the following content with respect to the described episode. Include all physical, behavioral, and personality details.", 0, 0, false));
 					String summary = null;
 					if(oresp != null && oresp.getMessage() != null) {
 						summary = oresp.getMessage().getContent();
@@ -707,25 +715,28 @@ Begin conversationally.
 			oact = LineAction.CONTINUE;
 		}
 		if(line.equals("/prompt")) {
-			if(chatMode && req.getMessages().size() > 0) {
+			// if(chatMode && req.getMessages().size() > 0) {
 				req.getMessages().get(0).setContent(llmSystemPrompt.trim());
+			/*
 			}
+			
 			if(!chatMode) {
 				req.setSystem(llmSystemPrompt.trim());
 			}
+			*/
 			oact = LineAction.CONTINUE;
 		}
 
 		return oact;
 	}
 	
-	public void chatConsole(OllamaRequest req){
+	public void chatConsole(OpenAIRequest req){
 		BufferedReader is = new BufferedReader(new InputStreamReader(System.in));
 		try{
 			AuditUtil.setLogToConsole(false);
 			String prompt = "> ";
 			String line = "";
-			OllamaResponse lastRep = null;
+			OpenAIResponse lastRep = null;
 			while (line != null && line.equalsIgnoreCase("/quit") == false && line.equalsIgnoreCase("/exit") == false && line.equalsIgnoreCase("/bye") == false) {
 				if(lastRep == null && req.getMessages().size() > 0) {
 					logger.info("Initializing ...");
@@ -781,19 +792,20 @@ Begin conversationally.
 					System.out.println("Loading ...");
 					String sav = FileUtil.getFileAsString("./" + saveName);
 					if(sav != null && sav.length() > 0) {
-						req = JSONUtil.importObject(sav, OllamaRequest.class);
+						req = JSONUtil.importObject(sav, OpenAIRequest.class);
 					}
 					continue;
 				}
 				// System.out.println("'" + line + "'");
 				
-				if(chatMode) {
+				//if(chatMode) {
 					newMessage(req, line);
+				/*
 				}
 				else {
 					req.setPrompt(line);
 				}
-				
+				*/
 				/// System.out.println(JSONUtil.exportObject(req));
 				lastRep = chat(req);
 				if(lastRep != null) {
@@ -813,8 +825,8 @@ Begin conversationally.
 		} 
 	}
 	
-	private void addKeyFrame(OllamaRequest req) {
-		OllamaMessage msg = new OllamaMessage();
+	private void addKeyFrame(OpenAIRequest req) {
+		OpenAIMessage msg = new OpenAIMessage();
 		msg.setRole("assistant");
 		ESRBEnumType rating = chatConfig.getEnum("rating");
 
@@ -823,15 +835,17 @@ Begin conversationally.
 
 		String lab = systemChar.get("firstName") + " and " + userChar.get("firstName");
 		msg.setContent("(KeyFrame: (Summary of " + lab + " in a" + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating) + "-rated roleplay) " + analyze(req, null, false, false, false) + ")");
-		List<OllamaMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame")).collect(Collectors.toList());
+		List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame")).collect(Collectors.toList());
 		msgs.add(msg);
 		req.setMessages(msgs);
 	}
 
-	private void handleResponse(OllamaRequest req, OllamaResponse rep, boolean emitResponse) {
+	private void handleResponse(OpenAIRequest req, OpenAIResponse rep, boolean emitResponse) {
+		/*
 		if(includeContextHistory) {
 			req.setContext(rep.getContext());
 		}
+		*/
 
 		/// System.out.println(JSONUtil.exportObject(lastRep));
 		if(rep.getMessage() != null) {
@@ -857,23 +871,25 @@ Begin conversationally.
 		String output = input.replace('’', '\'');
 		return output;
 	}
-	public OllamaRequest newRequest(String model) {
-		OllamaRequest req = new OllamaRequest();
+	public OpenAIRequest newRequest(String model) {
+		OpenAIRequest req = new OpenAIRequest();
 		req.setModel(model);
 		req.setStream(false);
-		if(chatMode) {
-			OllamaMessage msg = new OllamaMessage();
+		//if(chatMode) {
+			OpenAIMessage msg = new OpenAIMessage();
 			msg.setRole("system");
 			msg.setContent(llmSystemPrompt.trim());
 			req.getMessages().add(msg);
+		/*
 		}
 		else {
 			req.setSystem(llmSystemPrompt.trim());
 		}
+		*/
 		return req;
 	}
 	
-	private void pruneCount(OllamaRequest req, int messageCount) {
+	private void pruneCount(OpenAIRequest req, int messageCount) {
 		boolean enablePrune = chatConfig.get("prune");
 		if(messageCount <= 0 || !enablePrune || !chatMode) {
 			return;
@@ -885,7 +901,7 @@ Begin conversationally.
 		int len = req.getMessages().size() - messageCount;
 		int kfc = 0;
 		for(int i = idx; i < len; i++) {
-			OllamaMessage msg = req.getMessages().get(i);
+			OpenAIMessage msg = req.getMessages().get(i);
 			msg.setPruned(true);
 			if(msg.getContent() != null && msg.getContent().startsWith("(KeyFrame:")) {
 				kfc++;
@@ -900,7 +916,7 @@ Begin conversationally.
 
 	}
 	
-	private void prune(OllamaRequest req, boolean force) {
+	private void prune(OpenAIRequest req, boolean force) {
 		boolean enablePrune = chatConfig.get("prune");
 		if((!force && !enablePrune) || !chatMode) {
 			return;
@@ -908,7 +924,7 @@ Begin conversationally.
 		if(req.getMessages().size() <= pruneSkip) {
 			return;
 		}
-		OllamaMessage ctxMsg = req.getMessages().get(0);
+		OpenAIMessage ctxMsg = req.getMessages().get(0);
 		/// Including the system prompt
 		///
 		
@@ -921,7 +937,7 @@ Begin conversationally.
 		///
 		/// pruneSkip
 		for(int i = 0; i < req.getMessages().size(); i++) {
-			OllamaMessage msg = req.getMessages().get(i);
+			OpenAIMessage msg = req.getMessages().get(i);
 			if(msg.isPruned()) continue;
 			if(msg.getContent() != null) {
 				curLength += msg.getContent().split("\\W+").length;
@@ -963,7 +979,7 @@ Begin conversationally.
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 			/*
-			List<OllamaMessage> msgs = Arrays.asList(Arrays.copyOfRange(req.getMessages().toArray(new OllamaMessage[0]), marker, req.getMessages().size()));
+			List<OpenAIMessage> msgs = Arrays.asList(Arrays.copyOfRange(req.getMessages().toArray(new OpenAIMessage[0]), marker, req.getMessages().size()));
 			req.getMessages().clear();
 			req.getMessages().add(ctxMsg);
 			req.getMessages().addAll(msgs);
@@ -971,11 +987,11 @@ Begin conversationally.
 		}
 	}
 
-	public OllamaMessage newMessage(OllamaRequest req, String message) {
+	public OpenAIMessage newMessage(OpenAIRequest req, String message) {
 		return newMessage(req, message, "user");
 	}
-	public OllamaMessage newMessage(OllamaRequest req, String message, String role) {
-		OllamaMessage msg = new OllamaMessage();
+	public OpenAIMessage newMessage(OpenAIRequest req, String message, String role) {
+		OpenAIMessage msg = new OpenAIMessage();
 		msg.setRole(role);
 		StringBuilder msgBuff = new StringBuilder();
 		msgBuff.append(message);
@@ -990,7 +1006,7 @@ Begin conversationally.
 				/// Inject the assistant warning into the last message
 				if(req.getMessages().size() > 0)
 				{
-					OllamaMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
+					OpenAIMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
 					if(amsg.getRole().equals("assistant")) {
 						List<String> arem = promptConfig.get("assistantReminder");
 						String rem = arem.stream().collect(Collectors.joining(System.lineSeparator()));
@@ -1031,16 +1047,16 @@ Begin conversationally.
 		return msg;
 	}
 	
-	public OllamaRequest getPrunedRequest(OllamaRequest inReq) {
+	public OpenAIRequest getPrunedRequest(OpenAIRequest inReq) {
 		if(promptConfig == null) {
 			return inReq;
 		}
-		OllamaRequest outReq = new OllamaRequest();
-		outReq.setContext(inReq.getContext());
+		OpenAIRequest outReq = new OpenAIRequest();
+		// outReq.setContext(inReq.getContext());
 		outReq.setModel(inReq.getModel());
-		outReq.setOptions(inReq.getOptions());
-		outReq.setPrompt(inReq.getPrompt());
-		outReq.setSystem(inReq.getSystem());
+		// outReq.setOptions(inReq.getOptions());
+		// outReq.setPrompt(inReq.getPrompt());
+		// outReq.setSystem(inReq.getSystem());
 		String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
 		boolean useJB = (forceJailbreak || chatConfig != null && (boolean)chatConfig.get("useJailBreak"));
 
@@ -1050,11 +1066,11 @@ Begin conversationally.
 		return outReq;
 	}
 
-	public OllamaResponse chat(OllamaRequest req) {
+	public OpenAIResponse chat(OpenAIRequest req) {
 		if(req == null) {
 			return null;
 		}
-		return ClientUtil.post(OllamaResponse.class, ClientUtil.getResource(ollamaServer + "/api/" + (chatMode ? "chat" : "generate")), getPrunedRequest(req), MediaType.APPLICATION_JSON_TYPE);
+		return ClientUtil.post(OpenAIResponse.class, ClientUtil.getResource(ollamaServer + "/api/" + (chatMode ? "chat" : "generate")), getPrunedRequest(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
 	
@@ -1062,17 +1078,17 @@ Begin conversationally.
 
 
 	
-	public OllamaRequest getChatPrompt() {
+	public OpenAIRequest getChatPrompt() {
 		String model = null;
 		if(chatConfig != null) {
 			model = chatConfig.get("llmModel");
 		}
 		return getChatPrompt(model);
 	}
-	public OllamaRequest getChatPrompt(String model) {
+	public OpenAIRequest getChatPrompt(String model) {
 		
 		
-		OllamaRequest req = newRequest(model);
+		OpenAIRequest req = newRequest(model);
 		BaseRecord systemChar = null;
 		BaseRecord userChar = null;
 		String assist = null;
@@ -1109,7 +1125,7 @@ Begin conversationally.
 			newMessage(req, assist, "assistant");
 		}
 		
-		req.setOptions(getChatOptions(chatConfig));
+		// req.setOptions(getChatOptions(chatConfig));
 
 		return req;
 	}
