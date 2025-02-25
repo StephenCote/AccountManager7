@@ -4,6 +4,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
@@ -34,6 +35,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.junit.After;
@@ -240,6 +242,19 @@ public class BaseTest {
 			}
 		}
 		return dat;
+	}
+	
+	protected BaseRecord getCreateDocument(BaseRecord user, String path) {
+		File f = new File(path);
+		String content = null;
+		if(path.endsWith(".pdf")) {
+			content = DocumentUtil.readPDF(path);
+		}
+		else {
+			content = DocumentUtil.readDocument(path);
+		}
+		assertTrue("Content was null", content != null && content.trim().length() > 0);
+		return getCreateData(user, f.getName(), "~/Data", content);
 	}
 	
 }

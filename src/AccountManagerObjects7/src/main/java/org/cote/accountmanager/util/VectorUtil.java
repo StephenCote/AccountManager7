@@ -5,9 +5,11 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.text.BreakIterator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -25,6 +27,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
@@ -45,7 +48,8 @@ public class VectorUtil {
 	public enum ChunkEnumType {
 		UNKNOWN,
 		SENTENCE,
-		WORD
+		WORD,
+		CHAPTER
 	};
 	
 	private static Pattern tablePat = Pattern.compile("\\$\\{tableName\\}");
@@ -240,10 +244,13 @@ LIMIT ?
 		}
 		
 		if(chunkType == ChunkEnumType.SENTENCE) {
-			chunks = chunkBySentence(content, chunkSize).stream().collect(Collectors.toList());
+			chunks = chunkBySentence(content, chunkSize);
 		}
 		else if(chunkType == ChunkEnumType.WORD) {
-			chunks = chunkByWord(content, chunkSize).stream().collect(Collectors.toList());
+			chunks = chunkByWord(content, chunkSize);
+		}
+		else if(chunkType == ChunkEnumType.CHAPTER) {
+			chunks = chunkByChapter(model.get(FieldNames.FIELD_NAME), null, content, chunkSize);
 		}
 		// logger.info("Generating " + chunks.size() + " embeddings");
 		long start = System.currentTimeMillis();
@@ -337,9 +344,88 @@ LIMIT ?
 		return sx;
 	}
     
+    /*
+    private static List<String> getSentences(String content){
+		return Arrays.asList(content.split("((?<=\\.)|(?=\\.))"))
+			.stream()
+			.filter(s -> s.trim().length() > 0)
+			.map(s ->  s.replaceAll("[“”]", "\"").replaceAll("’", "'"))
+			.map(l -> l.replaceAll("[\\x93-\\x94]", "'")
+			.collect(Collectors.toList());
+    }
+    */
+    
+    public static List<String> chunkByChapter(String name, String path, String block, int chunkSize) {
+    	List<BaseRecord> vchunks = new ArrayList<>();
+    	
+    	List<String> chunks = new ArrayList<>();
+    	
+    	int chapter = 0;
+    	int chunk = 0;
+    	
+    	String[] output = block.split("\\r?\\n");
+    	StringBuilder buff = new StringBuilder();
+    	String chapterTitle = null;
+    	for(String line : output) {
+    		String tmp = line.trim();
+    		if(tmp.length() == 0) {
+    			continue;
+    		}
+    		if(tmp.startsWith("Chapter ")) {
+    			//logger.info("Chapter mark: " + tmp);
+    			vchunks.addAll(chunkChapter(buff.toString(), chapterTitle, chapter, chunkSize));
+    			buff = new StringBuilder();
+    			chapter++;
+    			chapterTitle = tmp;
+    		}
+    		buff.append(tmp + System.lineSeparator());
+    	}
+    	if(buff.length() > 0) {
+    		vchunks.addAll(chunkChapter(buff.toString(), chapterTitle, chapter, chunkSize));
+    	}
+    	for(BaseRecord v: vchunks) {
+    		chunk++;
+    		v.setValue(FieldNames.FIELD_NAME, name);
+    		v.setValue("path", path);
+    		v.setValue("chunk", chunk);
+    		v.setValue("chunkCount", vchunks.size());
+    		chunks.add(JSONUtil.exportObject(v, RecordSerializerConfig.getHiddenForeignUnfilteredModule()));
+    	}
+    	return chunks;
+    }
+    
+    private static List<BaseRecord> chunkChapter(String content, String chapterTitle, int chapter, int chunkSize) {
+    	List<BaseRecord> vchunks = new ArrayList<>();
+    	List<String> strChunks = chunkBySentence(content, chunkSize);
+    	for(String s: strChunks) {
+    		BaseRecord vchunk = null;
+    		try {
+				vchunk = RecordFactory.newInstance(ModelNames.MODEL_VECTOR_CHUNK);
+				vchunk.setValue("content", s);
+				vchunk.setValue("chapter", chapter);
+				vchunk.setValue("chapterTitle", chapterTitle);
+				vchunks.add(vchunk);
+			} catch (FieldException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+    	}
+    	return vchunks;
+    }
     
     private static List<String> chunkBySentence(String block, int chunkSize) {
-		List<String> sents = Arrays.asList(block.split("((?<=\\.)|(?=\\.))"))
+    	
+    	
+    	BreakIterator iterator = BreakIterator.getSentenceInstance(Locale.US);
+    	iterator.setText(block);
+    	int start = iterator.first();
+    	List<String> bsents = new ArrayList<>();
+    	
+    	for (int end = iterator.next(); end != BreakIterator.DONE; end = iterator.next()) {
+    	    bsents.add(block.substring(start,end));
+    	    start = end;
+    	}
+    	/// Arrays.asList(block.split("((?<=\\.)|(?=\\.))"))
+		List<String> sents = bsents
 			.stream()
 			.filter(s -> s.trim().length() > 0)
 			.map(s ->  s.replaceAll("[“”]", "\"").replaceAll("’", "'"))

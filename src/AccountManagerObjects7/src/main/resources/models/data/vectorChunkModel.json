@@ -1,0 +1,38 @@
+{
+	"name": "data.vectorChunk",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": [],
+	"query": [],
+	"fields": [
+		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "chapter",
+			"type": "int"
+		},
+		{
+			"name": "chapterTitle",
+			"type": "string"
+		},
+		{
+			"name": "path",
+			"type": "string"
+		},
+		{
+			"name": "chunk",
+			"type": "int"
+		},
+		{
+			"name": "chunkCount",
+			"type": "int"
+		},
+		{
+			"name": "content",
+			"type": "string"
+		}
+	]
+}

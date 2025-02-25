@@ -118,20 +118,6 @@ public class TestVectorStore extends BaseTest {
 			logger.info("Content: " + s.get(FieldNames.FIELD_CONTENT));
 		}
 	}
-
-	private BaseRecord getCreateDocument(BaseRecord user, String path) {
-		File f = new File(path);
-		String content = null;
-		if(path.endsWith(".pdf")) {
-			content = DocumentUtil.readPDF(path);
-		}
-		else {
-			content = DocumentUtil.readDocument(path);
-		}
-		assertTrue("Content was null", content != null && content.trim().length() > 0);
-		return getCreateData(user, f.getName(), "~/Data", content);
-	}
-	
 	
 	
 }

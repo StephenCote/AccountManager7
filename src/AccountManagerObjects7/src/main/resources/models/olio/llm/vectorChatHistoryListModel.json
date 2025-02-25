@@ -1,5 +1,5 @@
 {
-"name": "data.vectorList",
+"name": "olio.llm.vectorChatHistoryList",
 "ephemeral": true,
 "factory": "org.cote.accountmanager.olio.llm.VectorChatHistoryListFactory",
 "fields": [

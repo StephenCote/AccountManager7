@@ -130,6 +130,7 @@
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
 						-Djava.library.path=C:\Users\scot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64
 						-Dai.djl.default_engine=PyTorch
+						-Dai.djl.offline=true
 						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
 						${argLine}</argLine>
 
