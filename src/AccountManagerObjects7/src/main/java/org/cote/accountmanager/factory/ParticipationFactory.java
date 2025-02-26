@@ -21,10 +21,10 @@ public class ParticipationFactory {
 	public static String getParticipantModel(BaseRecord model, String fieldName, BaseRecord actor) {
 		String partModel = null;
 		if(actor != null) {
-			partModel = actor.getModel();
+			partModel = actor.getAMModel();
 		}
 		if(model != null && fieldName != null) {
-			partModel = getParticipantModel(model.getModel(), fieldName, partModel);
+			partModel = getParticipantModel(model.getAMModel(), fieldName, partModel);
 		}
 		return partModel;
 	}
@@ -53,7 +53,7 @@ public class ParticipationFactory {
 	
 	public static BaseRecord newParticipation(BaseRecord owner, BaseRecord partc, String fieldName, BaseRecord partp, EffectEnumType effect, BaseRecord perm) {
 		BaseRecord part1 = null;
-		String partModel = getParticipantModel(partc.getModel(), fieldName, partp.getModel());
+		String partModel = getParticipantModel(partc.getAMModel(), fieldName, partp.getAMModel());
 		/*
 		String ppid = partc.get(FieldNames.FIELD_OBJECT_ID);
 		String paid = partp.get(FieldNames.FIELD_OBJECT_ID);
@@ -70,15 +70,15 @@ public class ParticipationFactory {
 		/// Allow a user to be assigned participation to itself for purposes of assigning individual rights to the user object
 		///
 		//else if(ppid.equals(paid) && !partc.getModel().equals(ModelNames.MODEL_USER)) {
-		else if(ppid == paid && partc.getModel().equals(partp.getModel()) && !partc.getModel().equals(ModelNames.MODEL_USER)) {
-			logger.error("Participation and partipant identifiers should not match: " + partc.getModel() + "/" + partp.getModel() + " " + ppid + "/" + paid);
+		else if(ppid == paid && partc.getAMModel().equals(partp.getAMModel()) && !partc.getAMModel().equals(ModelNames.MODEL_USER)) {
+			logger.error("Participation and partipant identifiers should not match: " + partc.getAMModel() + "/" + partp.getAMModel() + " " + ppid + "/" + paid);
 			return null;
 		}
 		
 		try{
 			part1 = RecordFactory.model(ModelNames.MODEL_PARTICIPATION).newInstance();
 			part1.set(FieldNames.FIELD_PARTICIPATION_ID, partc.get(FieldNames.FIELD_ID));
-			part1.set(FieldNames.FIELD_PARTICIPATION_MODEL, partc.getModel());
+			part1.set(FieldNames.FIELD_PARTICIPATION_MODEL, partc.getAMModel());
 			part1.set(FieldNames.FIELD_PARTICIPANT_ID, partp.get(FieldNames.FIELD_ID));
 			part1.set(FieldNames.FIELD_PARTICIPANT_MODEL, partModel);
 			part1.set(FieldNames.FIELD_ENABLED,  true);

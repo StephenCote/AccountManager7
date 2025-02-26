@@ -14,6 +14,8 @@ import javax.ws.rs.core.Response;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 
 import com.fasterxml.jackson.core.util.JacksonFeature;
 
@@ -77,8 +79,18 @@ public class ClientUtil {
 		}
 		return outObj;
 	}
+	
 	public static <T> T post(Class<T> cls, WebTarget resource, Object object, MediaType responseType){
-		Response response = getRequestBuilder(resource).accept(responseType).post(Entity.entity(object, MediaType.APPLICATION_JSON_TYPE));
+		return post(cls, resource, null, object, responseType);
+	}
+	
+	public static <T> T post(Class<T> cls, WebTarget resource, String authorizationToken, Object object, MediaType responseType){
+		Builder bld = getRequestBuilder(resource).accept(responseType);
+		//logger.info(resource.getUri() + " -- " + authorizationToken);
+		if(authorizationToken != null) {
+			bld.header("api-key", authorizationToken);
+		}
+		Response response = bld.post(Entity.entity(object, MediaType.APPLICATION_JSON_TYPE));
 
 		T outObj = null;
 		if(response != null) {
@@ -87,9 +99,35 @@ public class ClientUtil {
 			}
 			else {
 				logger.warn("Received response: " + response.getStatus());
+				logger.warn(response.readEntity(String.class));
 			}
 		}
 		else {
+			logger.warn("Null response");
+		}
+		return outObj;
+	}
+	
+	public static BaseRecord postToRecord(String modelName, WebTarget resource, String authZ, String json, MediaType responseType) {
+
+		Builder bld = ClientUtil.getRequestBuilder(resource).accept(responseType);
+
+		if (authZ != null) {
+			bld.header("api-key", authZ);
+		}
+		Response response = bld.post(Entity.entity(json, MediaType.APPLICATION_JSON_TYPE));
+
+		BaseRecord outObj = null;
+		if (response != null) {
+			if (response.getStatus() == 200) {
+
+				String ser = response.readEntity(String.class);
+				outObj = RecordFactory.importRecord(modelName, ser);
+			} else {
+				logger.warn("Received response: " + response.getStatus());
+				logger.warn(response.readEntity(String.class));
+			}
+		} else {
 			logger.warn("Null response");
 		}
 		return outObj;

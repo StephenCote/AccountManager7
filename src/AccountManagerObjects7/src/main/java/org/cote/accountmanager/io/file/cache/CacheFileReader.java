@@ -42,7 +42,7 @@ public class CacheFileReader extends FileReader implements ICache {
 
 	@Override
 	public void clearCacheByModel(String model) {
-		cache.values().removeIf(entry -> model.equals(entry.getModel()));
+		cache.values().removeIf(entry -> model.equals(entry.getAMModel()));
 	}
 	
 	@Override
@@ -81,7 +81,7 @@ public class CacheFileReader extends FileReader implements ICache {
 		String type = idx.get(FieldNames.FIELD_TYPE);
 		cache.entrySet().removeIf(entry ->{
 			BaseRecord mr = entry.getValue();
-			if(type.equals(mr.getModel()) && RecordUtil.matchIdentityRecordsByIdx(idx, mr)) {
+			if(type.equals(mr.getAMModel()) && RecordUtil.matchIdentityRecordsByIdx(idx, mr)) {
 				// logger.info("Clear record from cache");
 				return true;
 			}

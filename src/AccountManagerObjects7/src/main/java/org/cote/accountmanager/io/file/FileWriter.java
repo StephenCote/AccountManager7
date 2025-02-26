@@ -105,13 +105,13 @@ public class FileWriter extends MemoryWriter {
 		long id = (model.hasField(FieldNames.FIELD_ID) ? model.get(FieldNames.FIELD_ID) : 0L);
 
 		if(objectId == null && id <= 0L) {
-			throw new WriterException(String.format(IndexException.NOT_INDEXABLE, model.getModel() + " model to delete", "id or objectId"));
+			throw new WriterException(String.format(IndexException.NOT_INDEXABLE, model.getAMModel() + " model to delete", "id or objectId"));
 		}
 	
 		try {
-			FileIndexer fix = IOSystem.getActiveContext().getIndexManager().getInstance(model.getModel());
+			FileIndexer fix = IOSystem.getActiveContext().getIndexManager().getInstance(model.getAMModel());
 			//IndexEntry2[] idxs = fix.findIndexEntriesDEPRECATE(id, 0L, 0L, 0L, objectId, null, null, null);
-			Query query = QueryUtil.createQuery(model.getModel(), FieldNames.FIELD_ID, id);
+			Query query = QueryUtil.createQuery(model.getAMModel(), FieldNames.FIELD_ID, id);
 			query.field(FieldNames.FIELD_OBJECT_ID, objectId);
 			query.setComparator(ComparatorEnumType.GROUP_OR);
 			IndexEntry[] idxs = fix.findIndexEntries(query);
@@ -153,11 +153,11 @@ public class FileWriter extends MemoryWriter {
 		try {
 			if(model.hasField(FieldNames.FIELD_OBJECT_ID)) {
 				String oid = model.get(FieldNames.FIELD_OBJECT_ID);
-				outModel = IOSystem.getActiveContext().getReader().read(model.getModel(), oid);
+				outModel = IOSystem.getActiveContext().getReader().read(model.getAMModel(), oid);
 			}
 			else if(model.hasField(FieldNames.FIELD_ID)) {
 				long id = model.get(FieldNames.FIELD_ID);
-				outModel = IOSystem.getActiveContext().getReader().read(model.getModel(), id);
+				outModel = IOSystem.getActiveContext().getReader().read(model.getAMModel(), id);
 			}
 			if(outModel == null) {
 				logger.error("Failed to load update model");
@@ -167,7 +167,7 @@ public class FileWriter extends MemoryWriter {
 					logger.warn("CACHE CONFLICT WARNING");
 					outModel = model.copyRecord();
 				}
-				ModelSchema schema = RecordFactory.getSchema(model.getModel());
+				ModelSchema schema = RecordFactory.getSchema(model.getAMModel());
 				//model.getFields().forEach(f -> {
 				for(FieldType f : model.getFields()) {
 					FieldSchema fs = schema.getFieldSchema(f.getName());
@@ -212,7 +212,7 @@ public class FileWriter extends MemoryWriter {
 		super.write(model);
 		//prepareTranscription(op, model);
 		
-		FileIndexer idx = IOSystem.getActiveContext().getIndexManager().getInstance(model.getModel());
+		FileIndexer idx = IOSystem.getActiveContext().getIndexManager().getInstance(model.getAMModel());
 		try {
 			String path = null;
 			String oldPath = null;
@@ -223,7 +223,7 @@ public class FileWriter extends MemoryWriter {
 
 			}
 			else {
-				Query query = QueryUtil.createQuery(model.getModel(), FieldNames.FIELD_ID, id);
+				Query query = QueryUtil.createQuery(model.getAMModel(), FieldNames.FIELD_ID, id);
 				if(model.hasField(FieldNames.FIELD_OBJECT_ID)) {
 					query.field(FieldNames.FIELD_OBJECT_ID, objectId);
 				}

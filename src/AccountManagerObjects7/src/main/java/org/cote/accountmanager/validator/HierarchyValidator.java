@@ -21,7 +21,7 @@ public class HierarchyValidator implements IExecutable {
 	}
 	
 	public static boolean checkHierarchy(BaseRecord record, String hierarchyField) {
-		boolean inHier = inHierarchy(record.getModel(), hierarchyField, record.get(FieldNames.FIELD_ID), record.get(hierarchyField));
+		boolean inHier = inHierarchy(record.getAMModel(), hierarchyField, record.get(FieldNames.FIELD_ID), record.get(hierarchyField));
 		
 		return (inHier == false);
 	}

@@ -358,7 +358,7 @@ public class QueryPlan extends LooseRecord {
 		return filterRecord(rec, false);
 	}
 	public BaseRecord filterRecord(BaseRecord rec, boolean decorate) {
-		String model = rec.getModel();
+		String model = rec.getAMModel();
 		ModelSchema ms = RecordFactory.getSchema(model);
 		
 		// logger.info("Filter record to: " + getPlanFields().stream().collect(Collectors.joining(", ")));

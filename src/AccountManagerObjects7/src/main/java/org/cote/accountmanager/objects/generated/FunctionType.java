@@ -29,7 +29,7 @@ public class FunctionType extends LooseRecord {
 		}
 	}
 	public FunctionType(BaseRecord rec){
-		this.setModel(rec.getModel());
+		this.setAMModel(rec.getAMModel());
 		setFieldList(rec.getFields());
 		setFieldMap(rec.getFieldMap());
 	}

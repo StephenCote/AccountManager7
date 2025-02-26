@@ -21,7 +21,7 @@ public class RecordValidator {
 		return validate(RecordOperation.CREATE, record);
 	}
 	public static boolean validate(RecordOperation operation, BaseRecord record) {
-		return validate(operation, RecordFactory.getSchema(record.getModel()), record);
+		return validate(operation, RecordFactory.getSchema(record.getAMModel()), record);
 		/*
 		ModelSchema schema = RecordFactory.getSchema(record.getModel());
 		int valid = 0;

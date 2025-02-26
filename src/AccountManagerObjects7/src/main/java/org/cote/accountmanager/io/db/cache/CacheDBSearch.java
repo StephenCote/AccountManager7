@@ -137,7 +137,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 				QueryResult mr = entry.getValue();
 				boolean match = false;
 				for(BaseRecord r : mr.getResults()) {
-					if(rec.getModel().equals(r.getModel()) && RecordUtil.matchIdentityRecords(rec, r)) {
+					if(rec.getAMModel().equals(r.getAMModel()) && RecordUtil.matchIdentityRecords(rec, r)) {
 						// logger.info("Clear record based on query result");
 						match = true;
 						break;

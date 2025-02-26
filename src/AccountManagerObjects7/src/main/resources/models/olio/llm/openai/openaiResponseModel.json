@@ -28,17 +28,60 @@
 			"type": "model",
 			"baseModel": "olio.llm.openai.openaiUsage"
 		},
+	    {
+			"name": "message",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiMessage"
+		},
 		{
 			"name": "choices",
 			"type": "list",
+			"baseType": "model",
 			"baseModel": "olio.llm.openai.openaiChoice"
 		},
 		{
 			"name": "prompt_filter_results",
 			"type": "model",
 			"baseModel": "olio.llm.openai.openaiFilterResults"
+		},
+	
+		{
+			"name": "created_at",
+			"type": "string"
+		},
+		{
+			"name": "done",
+			"type": "boolean"
+		},
+		{
+			"name": "total_duration",
+			"type": "long"
+		},
+		{
+			"name": "load_duration",
+			"type": "long"
+		},
+		{
+			"name": "done_reason",
+			"type": "string"
+		},
+		{
+			"name": "prompt_eval_count",
+			"type": "int"
+		},
+		{
+			"name": "prompt_eval_duration",
+			"type": "long"
+		},
+		{
+			"name": "eval_count",
+			"type": "int"
+		},
+		{
+			"name": "eval_duration",
+			"type": "long"
 		}
-		
+	
 	]
 }
 

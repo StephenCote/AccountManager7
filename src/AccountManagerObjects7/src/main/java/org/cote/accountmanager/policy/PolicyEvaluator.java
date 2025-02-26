@@ -326,12 +326,12 @@ public class PolicyEvaluator {
 			throw new ValueException("Match fact is null");
 		}
 		
-		reader.populate(fact, RecordUtil.getPossibleFields(fact.getModel(), FIELD_POPULATION));
-		reader.populate(mfact, RecordUtil.getPossibleFields(mfact.getModel(), FIELD_POPULATION));
+		reader.populate(fact, RecordUtil.getPossibleFields(fact.getAMModel(), FIELD_POPULATION));
+		reader.populate(mfact, RecordUtil.getPossibleFields(mfact.getAMModel(), FIELD_POPULATION));
 
 		FactEnumType mtype = FactEnumType.valueOf(mfact.get(FieldNames.FIELD_TYPE));
 		pfact = getFactParameter(pfact, facts);
-		reader.populate(pfact, RecordUtil.getPossibleFields(pfact.getModel(), FIELD_POPULATION));
+		reader.populate(pfact, RecordUtil.getPossibleFields(pfact.getAMModel(), FIELD_POPULATION));
 		
 		if(ptype == PatternEnumType.PARAMETER){
 			opr = OperationResponseEnumType.SUCCEEDED;

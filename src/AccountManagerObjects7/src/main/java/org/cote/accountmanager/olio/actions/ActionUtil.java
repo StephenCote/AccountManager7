@@ -192,7 +192,7 @@ public class ActionUtil {
 				List<BaseRecord> tags = actr.get(FieldNames.FIELD_TAGS);
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
-					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getModel()));
+					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getAMModel()));
 				}
 				actr.set(FieldNames.FIELD_TAGS, itags);
 				Queue.queue(actr);

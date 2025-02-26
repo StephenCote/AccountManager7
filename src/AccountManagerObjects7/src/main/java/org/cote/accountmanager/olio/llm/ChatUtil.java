@@ -54,9 +54,9 @@ public class ChatUtil {
 	public static void generateAutoScene(OlioContext octx, BaseRecord cfg, BaseRecord pcfg, BaseRecord interaction, String setting, boolean json) {
 		BaseRecord character1 = cfg.get("systemCharacter");
 		BaseRecord character2 = cfg.get("userCharacter");
-		String model = cfg.get("llmAnalyzeModel");
+		String model = cfg.get("analyzeModel");
 		if(model == null) {
-			model = cfg.get("llmModel");
+			model = cfg.get("model");
 		}
 		String nlpCommand = cfg.get("nlpCommand");
 		
@@ -458,11 +458,13 @@ public class ChatUtil {
 		String prompt = "A " + character.get(FieldNames.FIELD_AGE) + " year-old " + NarrativeUtil.getRaceDescription(character.get(OlioFieldNames.FIELD_RACE)) + " " + character.get(FieldNames.FIELD_GENDER) + ujobDesc + ". Setting: " + setting;
 	
 		OpenAIRequest req = new OpenAIRequest();
+		/*
 		OllamaOptions opts = Chat.getChatOptions();
 		opts.setTemperature(0.4);
 		opts.setTopK(25);
 		opts.setTopP(0.9);
 		opts.setRepeatPenalty(1.18);
+		*/
 		// req.setOptions(opts);
 		req.setModel(model);
 		req.setStream(false);

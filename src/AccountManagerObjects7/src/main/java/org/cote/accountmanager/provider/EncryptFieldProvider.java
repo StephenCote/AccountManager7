@@ -33,14 +33,14 @@ public class EncryptFieldProvider implements IProvider {
 	
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) throws ModelException, FieldException, ValueException, ModelNotFoundException {
 		if(!model.inherits(ModelNames.MODEL_VAULT_EXT)) {
-			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getModel(), ModelNames.MODEL_VAULT_EXT));
+			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getAMModel(), ModelNames.MODEL_VAULT_EXT));
 		}
 		
 		if(!RecordOperation.CREATE.equals(operation) && !RecordOperation.UPDATE.equals(operation) && !RecordOperation.READ.equals(operation)) {
 			return;
 		}
 
-		String[] fields = RecordUtil.getPossibleFields(model.getModel(), provideFields);
+		String[] fields = RecordUtil.getPossibleFields(model.getAMModel(), provideFields);
 		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);
 
 		OrganizationContext org = IOSystem.getActiveContext().findOrganizationContext(model);

@@ -17,12 +17,14 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
@@ -34,6 +36,7 @@ import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
+import org.cote.accountmanager.olio.OlioContextUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
 import org.cote.accountmanager.olio.ProfileUtil;
@@ -55,10 +58,14 @@ import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 
 public class OlioTestUtil {
 	public static final Logger logger = LogManager.getLogger(OlioTestUtil.class);
@@ -388,7 +395,7 @@ public class OlioTestUtil {
 			cfg.set("prune", true);
 			cfg.set("rating", ESRBEnumType.E);
 
-			cfg.set("llmModel", "fim-local");
+			cfg.set("model", "fim-local");
 			cfg.set("systemCharacter", per2);
 			cfg.set("userCharacter", per1);
 			cfg.set(OlioFieldNames.FIELD_INTERACTIONS, inters);
@@ -413,6 +420,95 @@ public class OlioTestUtil {
 			ItemUtil.showerWithMoney(ctx, ctx.getRealmPopulation(lrec));
 		}
 		Queue.processQueue();
+	}
+	
+	public static BaseRecord getPromptConfig(BaseRecord user) {
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, "Prompt Config - " + UUID.randomUUID().toString());
+
+		BaseRecord pcfg = null;
+		BaseRecord opcfg = null;
+		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+
+		try {
+			pcfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, ipcfg, plist);
+			opcfg = IOSystem.getActiveContext().getAccessPoint().create(user, pcfg);
+		}
+		catch(NullPointerException | FactoryException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return opcfg;
+	}
+	
+	public static BaseRecord getRandomChatConfig(BaseRecord user, String dataPath) {
+		logger.info("Test LLM Chat Config");
+	
+		OlioContext ctx = OlioContextUtil.getGridContext(user, dataPath, universeName, worldName, false);
+		assertNotNull("Context is null", ctx);
+		List<BaseRecord> realms = ctx.getRealms();
+		assertTrue("Expected at least one realm", realms.size() > 0);
+		BaseRecord popGrp = realms.get(0).get(OlioFieldNames.FIELD_POPULATION);
+		assertNotNull("Expected a population group", popGrp);
+		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(ctx, popGrp);
+		assertTrue("Expected a population", pop.size() > 0);
+		
+		List<BaseRecord> rlms = ctx.getRealms();
+		for(BaseRecord r : rlms) {
+
+			/// Depending on the staging rule, the population may not yet be dressed or have possessions
+			///
+			ApparelUtil.outfitAndStage(ctx, null, pop);
+			ItemUtil.showerWithMoney(ctx, pop);
+			Queue.processQueue();
+			
+		}
+
+		BaseRecord per1 = pop.get((new Random()).nextInt(pop.size()));
+		BaseRecord per2 = pop.get((new Random()).nextInt(pop.size()));
+		BaseRecord inter = null;
+		for(int i = 0; i < 10; i++) {
+			inter = InteractionUtil.randomInteraction(ctx, per1, per2);
+			if(inter != null) {
+				break;
+			}
+		}
+
+		BaseRecord levt = ctx.realmClock(ctx.getRealms().get(0)).getIncrement();
+		ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		clist.parameter(FieldNames.FIELD_NAME, "Chat Config - " + UUID.randomUUID().toString());
+
+		BaseRecord cfg = null;
+		BaseRecord ocfg = null;
+		String setting = NarrativeUtil.getRandomSetting();
+		try {
+			cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, clist);
+			cfg.set("rating", ESRBEnumType.E);
+			cfg.set("alignment", levt.get("alignment"));
+			cfg.set("systemCharacter", per1);
+			cfg.set("userCharacter", per2);
+			cfg.set(OlioFieldNames.FIELD_INTERACTIONS, Arrays.asList(new BaseRecord[] {inter}));
+			cfg.set("assist", true);
+			cfg.set("useNLP", false);
+			cfg.set("prune", true);
+			cfg.set("setting", null);
+			cfg.set("includeScene", true);
+			cfg.set("event", ctx.clock().getIncrement());
+			cfg.set(FieldNames.FIELD_TERRAIN, NarrativeUtil.getTerrain(ctx, per2));
+			cfg.set("systemNarrative", NarrativeUtil.getNarrative(ctx, per1, setting));
+			cfg.set("userNarrative", NarrativeUtil.getNarrative(ctx, per2, setting));
+			NarrativeUtil.describePopulation(ctx, cfg);
+			ocfg = IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
+			
+		}
+		catch(NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		assertNotNull("CFG was null", ocfg);
+		
+		return ocfg;
+	
 	}
 }
 

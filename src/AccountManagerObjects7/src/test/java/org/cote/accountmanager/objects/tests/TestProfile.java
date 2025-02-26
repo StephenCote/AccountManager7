@@ -80,7 +80,7 @@ public class TestProfile extends BaseTest {
 		try {
 			newGroup.set(FieldNames.FIELD_PARENT_ID, testUser1.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID));
 			newGroup.set(FieldNames.FIELD_NAME, "New Group - " + UUID.randomUUID().toString());
-			cleanObj = mf.newInstance(newGroup.getModel(), testUser1, newGroup, null);
+			cleanObj = mf.newInstance(newGroup.getAMModel(), testUser1, newGroup, null);
 		}
 		catch(ModelNotFoundException | FieldException | ValueException | FactoryException e) {
 			logger.error(e);

@@ -156,7 +156,7 @@ public class DBWriter extends MemoryWriter {
 		
 		RecordOperation op = RecordOperation.CREATE;
 		BaseRecord firstModel = models[0];
-		ModelSchema schema = RecordFactory.getSchema(firstModel.getModel());
+		ModelSchema schema = RecordFactory.getSchema(firstModel.getAMModel());
 		String objectId = (firstModel.hasField(FieldNames.FIELD_OBJECT_ID) ? firstModel.get(FieldNames.FIELD_OBJECT_ID) : null);
 		long id = (firstModel.hasField(FieldNames.FIELD_ID) ? firstModel.get(FieldNames.FIELD_ID) : 0L);
 		if(id > 0L || objectId != null) {
@@ -175,7 +175,7 @@ public class DBWriter extends MemoryWriter {
 		}
 		
 		if(!RecordUtil.isIdentityRecord(firstModel) && (op != RecordOperation.CREATE || !RecordUtil.isIdentityModel(schema))) { 
-			throw new WriterException("Model " + firstModel.getModel() + " does not define an identity field");
+			throw new WriterException("Model " + firstModel.getAMModel() + " does not define an identity field");
 		}
 		DBUtil dbUtil = IOSystem.getActiveContext().getDbUtil();
 
@@ -183,7 +183,7 @@ public class DBWriter extends MemoryWriter {
     	List<Long> ids = new ArrayList<>();
     	if(op == RecordOperation.CREATE) {
     		try {
-    			ids = dbUtil.getNextIds(firstModel.getModel(), models.length);
+    			ids = dbUtil.getNextIds(firstModel.getAMModel(), models.length);
     			if(ids.size() != models.length) {
     				throw new WriterException("Failed to obtain next identifier");
     			}
@@ -323,22 +323,22 @@ public class DBWriter extends MemoryWriter {
 
 				for(BaseRecord erec : vals) {
 					if(!erec.inherits(ModelNames.MODEL_REFERENCE)) {
-						logger.error("Model " + erec.getModel() + " does not inherit from the reference model");
+						logger.error("Model " + erec.getAMModel() + " does not inherit from the reference model");
 						continue;
 					}
-					if(FieldUtil.isNullOrEmpty(erec.getModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
+					if(FieldUtil.isNullOrEmpty(erec.getAMModel(), erec.getField(FieldNames.FIELD_REFERENCE_ID))) {
 						erec.set(FieldNames.FIELD_REFERENCE_ID, rid);
-						erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getModel());
+						erec.set(FieldNames.FIELD_REFERENCE_TYPE, model.getAMModel());
 						if(erec.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {
 							erec.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
 						}
-						if(!autoCreate.containsKey(erec.getModel())) {
-							autoCreate.put(erec.getModel(), new ArrayList<>());
+						if(!autoCreate.containsKey(erec.getAMModel())) {
+							autoCreate.put(erec.getAMModel(), new ArrayList<>());
 						}
-						autoCreate.get(erec.getModel()).add(erec);
+						autoCreate.get(erec.getAMModel()).add(erec);
 					}
 					else {
-						logger.info("Field " + erec.getModel() + ".referenceId is not null or empty");
+						logger.info("Field " + erec.getAMModel() + ".referenceId is not null or empty");
 					}
 				}
 
@@ -365,7 +365,7 @@ public class DBWriter extends MemoryWriter {
 	}
 	
 	protected void applyAutoCreateList(BaseRecord model, RecordOperation op, Map<String, List<BaseRecord>> autoCreate){
-		ModelSchema schema = RecordFactory.getSchema(model.getModel());
+		ModelSchema schema = RecordFactory.getSchema(model.getAMModel());
 		if(schema.isAutoCreateForeignReference()) {
 			for(FieldType f : model.getFields()) {
 				FieldSchema fs = schema.getFieldSchema(f.getName());
@@ -383,17 +383,17 @@ public class DBWriter extends MemoryWriter {
 								try {
 									bf.set(FieldNames.FIELD_OWNER_ID, model.get(FieldNames.FIELD_OWNER_ID));
 									bf.set(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
-									if(!autoCreate.containsKey(bf.getModel())) {
-										autoCreate.put(bf.getModel(), new ArrayList<>());
+									if(!autoCreate.containsKey(bf.getAMModel())) {
+										autoCreate.put(bf.getAMModel(), new ArrayList<>());
 									}
-									autoCreate.get(bf.getModel()).add(bf);
+									autoCreate.get(bf.getAMModel()).add(bf);
 								}
 								catch(ValueException | FieldException | ModelNotFoundException e) {
 									logger.error(e);
 								}
 							}
 							else {
-								logger.error("Will not update " + model.getModel() + " foreign child " + f.getName() + " without an identity reference");
+								logger.error("Will not update " + model.getAMModel() + " foreign child " + f.getName() + " without an identity reference");
 							}
 						}
 					}

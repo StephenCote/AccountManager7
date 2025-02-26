@@ -88,7 +88,7 @@ public class TestFileIndexerVer2 extends BaseTest {
 					// fix.setTrace(true);
 					ioContext.getRecordUtil().createRecord(data, true);
 					// fix.setTrace(false);
-					BaseRecord checkData = ioContext.getRecordUtil().getRecordById(volumeUser, data.getModel(), data.get(FieldNames.FIELD_ID));
+					BaseRecord checkData = ioContext.getRecordUtil().getRecordById(volumeUser, data.getAMModel(), data.get(FieldNames.FIELD_ID));
 					assertNotNull("Check data was null", checkData);
 
 				}

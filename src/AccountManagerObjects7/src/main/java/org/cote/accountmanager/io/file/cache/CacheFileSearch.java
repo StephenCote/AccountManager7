@@ -64,7 +64,7 @@ public class CacheFileSearch extends FileSearch implements ICache {
 	public void clearCache(BaseRecord rec) {
 		IndexEntry idx = null;
 		try {
-			idx = IOSystem.getActiveContext().getIndexManager().getInstance(rec.getModel()).findIndexEntry(rec);
+			idx = IOSystem.getActiveContext().getIndexManager().getInstance(rec.getAMModel()).findIndexEntry(rec);
 		} catch (IndexException e) {
 			logger.error(e);
 		}
@@ -83,7 +83,7 @@ public class CacheFileSearch extends FileSearch implements ICache {
 			QueryResult mr = entry.getValue();
 			boolean match = false;
 			for(BaseRecord r : mr.getResults()) {
-				if(type.equals(r.getModel()) && RecordUtil.matchIdentityRecordsByIdx(idx, r)) {
+				if(type.equals(r.getAMModel()) && RecordUtil.matchIdentityRecordsByIdx(idx, r)) {
 					// logger.info("Clear record based on query result");
 					match = true;
 					break;

@@ -65,7 +65,7 @@ public class MemberUtil implements IMember {
 	private List<BaseRecord> findMembers(BaseRecord rec, String fieldName, String model, long id, long permissionId, String nameSuffix) throws IndexException, ReaderException {
 		
 		List<BaseRecord> list = new ArrayList<>();
-		final String partModel = ParticipationFactory.getParticipantModel(rec.getModel(), fieldName, model);
+		final String partModel = ParticipationFactory.getParticipantModel(rec.getAMModel(), fieldName, model);
 		
 		if(reader.getRecordIo() == RecordIO.FILE) {
 			BaseRecord plist = getFileMembers(rec, nameSuffix);
@@ -114,7 +114,7 @@ public class MemberUtil implements IMember {
 	}
 	
 	public int deleteMembers(BaseRecord rec, BaseRecord effect) {
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_PARTICIPATION, FieldNames.FIELD_PARTICIPATION_MODEL, rec.getModel());
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_PARTICIPATION, FieldNames.FIELD_PARTICIPATION_MODEL, rec.getAMModel());
 		q.field(FieldNames.FIELD_PARTICIPATION_ID, rec.get(FieldNames.FIELD_ID));
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, rec.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(effect == null) {
@@ -236,14 +236,14 @@ public class MemberUtil implements IMember {
 		boolean outBool = false;
 		
 		try {
-			List<BaseRecord> parts = findMembers(object, fieldName, actor.getModel(), actor.get(FieldNames.FIELD_ID));
+			List<BaseRecord> parts = findMembers(object, fieldName, actor.getAMModel(), actor.get(FieldNames.FIELD_ID));
 			if(parts.size() > 0) {
 				outBool = true;
 			}
 			else if(browseHierarchy && object.inherits(ModelNames.MODEL_PARENT)){
 				long parentId = object.get(FieldNames.FIELD_PARENT_ID);
 				if(parentId > 0L) {
-					BaseRecord oparent =reader.read(object.getModel(), parentId);
+					BaseRecord oparent =reader.read(object.getAMModel(), parentId);
 					if(oparent != null) {
 						outBool = isMember(actor, oparent, fieldName, browseHierarchy);
 					}

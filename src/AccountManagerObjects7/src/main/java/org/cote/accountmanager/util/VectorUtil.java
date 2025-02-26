@@ -102,7 +102,7 @@ LIMIT ?
 		String refType = null;
 		if(model != null) {
 			id = model.get(FieldNames.FIELD_ID);
-			refType = model.getModel();
+			refType = model.getAMModel();
 		}
 		String tableName = IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_VECTOR_MODEL_STORE);
 		String sql = tablePat.matcher(HYBRID_SQL).replaceAll(tableName);
@@ -149,14 +149,14 @@ LIMIT ?
 
 	public static int countVectorStore(BaseRecord model){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getModel());
+		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getAMModel());
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}
 	
 	public static int deleteVectorStore(BaseRecord model){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getModel());
+		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getAMModel());
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
 		int del = 0;
 		try {
@@ -169,7 +169,7 @@ LIMIT ?
 	
 	public static List<BaseRecord> getVectorStore(BaseRecord model){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
-		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getModel());
+		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getAMModel());
 		List<BaseRecord> recs = new ArrayList<>();
 		try {
 			recs = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q));
@@ -206,7 +206,7 @@ LIMIT ?
 			content = model.get(FieldNames.FIELD_TEXT);
 		}
 		else {
-			logger.warn("Unhandled model: " + model.getModel());
+			logger.warn("Unhandled model: " + model.getAMModel());
 		}
 		return content;
 	}
@@ -225,7 +225,7 @@ LIMIT ?
 		}
 		
 		if(countVectorStore(model) > 0) {
-			logger.info("Replacing vector store for " + model.getModel());
+			logger.info("Replacing vector store for " + model.getAMModel());
 			if(deleteVectorStore(model) == 0) {
 				throw new FieldException("Vector store already exists and was not deleted.  Alternately, specify the content directly to append.");
 			}
@@ -264,7 +264,7 @@ LIMIT ?
 	        	chunkModel.setValue(FieldNames.FIELD_CONTENT, chunks.get(i));
 	        	chunkModel.setValue(FieldNames.FIELD_EMBEDDING, embeddings.get(i));
 	        	chunkModel.setValue(FieldNames.FIELD_VECTOR_REFERENCE, model);
-	        	chunkModel.setValue(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getModel());
+	        	chunkModel.setValue(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getAMModel());
 	        	chunkModel.setValue(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
 	        	chunkRecs.add(chunkModel);
 	        }

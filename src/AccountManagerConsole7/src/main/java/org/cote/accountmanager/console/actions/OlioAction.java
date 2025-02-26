@@ -27,6 +27,7 @@ import org.cote.accountmanager.olio.WorldUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -98,8 +99,14 @@ public class OlioAction extends CommonAction implements IAction{
 		options.addOption("nlp", true, "Brief command to give via NLP to reinforce immersion");
 		options.addOption("jailbreak", false, "Bit indicating to use any JailBreak configuration from a paired prompt configuration");
 		options.addOption("assist", false, "Bit indicating to add additional guidance to the assistant");
-		options.addOption( "scan", false, "Bit indicating to perform a scan of the gallery");
-		options.addOption( "verb", true, "Verb phrase to use when generating images");
+		options.addOption("scan", false, "Bit indicating to perform a scan of the gallery");
+		options.addOption("verb", true, "Verb phrase to use when generating images");
+		
+		options.addOption("serviceType", true, "Type of LLM Service (Ollama, OpenAI)");
+		options.addOption("serverUrl", true, "Url to use for a specific LLM server");
+		options.addOption("apiVersion", true, "API Version to use with the serverURL");
+		options.addOption("apiKey", true, "Authorization key to use with the LLM server");
+		
 	}
 	@Override
 	public void handleCommand(CommandLine cmd) {
@@ -145,7 +152,7 @@ public class OlioAction extends CommonAction implements IAction{
 				logger.info("Import session " + cmd.getOptionValue(FieldNames.FIELD_PATH));
 				BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
 				BaseRecord prompt = ChatUtil.getCreatePromptConfig(user, cmd.getOptionValue("promptConfig"));
-				OpenAIRequest req = JSONUtil.importObject(FileUtil.getFileAsString(cmd.getOptionValue(FieldNames.FIELD_PATH)), OpenAIRequest.class);
+				OpenAIRequest req = OpenAIRequest.importRecord(FileUtil.getFileAsString(cmd.getOptionValue(FieldNames.FIELD_PATH)));
 				ChatUtil.saveSession(user, req, ChatUtil.getSessionName(user, cfg, prompt, cmd.getOptionValue("session")));
 			}
 			else if(cmd.hasOption("chatConfig")) {
@@ -199,6 +206,7 @@ public class OlioAction extends CommonAction implements IAction{
 		if(cmd.hasOption("chatConfig")) {
 			
 			BaseRecord cfg = ChatUtil.getCreateChatConfig(user, cmd.getOptionValue("chatConfig"));
+
 			if(cmd.hasOption("list") && cmd.hasOption("episode")) {
 				logger.info("List episodes");	
 				List<BaseRecord> eps = cfg.get("episodes");
@@ -505,8 +513,16 @@ public class OlioAction extends CommonAction implements IAction{
 					if(cmd.hasOption("rating")) {
 						cfg.set("rating", ESRBEnumType.valueOf(cmd.getOptionValue("rating")));
 					}
-					cfg.set("llmModel", cmd.getOptionValue("model"));
-					cfg.set("llmAnalyzeModel", cmd.getOptionValue("analyzeModel"));
+					cfg.set("model", cmd.getOptionValue("model"));
+					cfg.set("analyzeModel", cmd.getOptionValue("analyzeModel"));
+					
+					if(cmd.hasOption("serviceType")) {
+						cfg.setValue("serviceType", LLMServiceEnumType.valueOf(cmd.getOptionValue("serviceType")));
+					}
+					cfg.setValue("serverUrl", cmd.getOptionValue("serverUrl"));
+					cfg.setValue("apiVersion", cmd.getOptionValue("apiVersion"));
+					cfg.setValue("apiKey", cmd.getOptionValue("apiKey"));
+					
 					if(char1 != null && char2 != null) {
 						cfg.set("systemCharacter", char1);
 						cfg.set("userCharacter", char2);
@@ -598,6 +614,9 @@ public class OlioAction extends CommonAction implements IAction{
 				OpenAIRequest oreq = ChatUtil.getSession(user, sessionName);
 				if(oreq != null) {
 					req = oreq;
+				}
+				else {
+					logger.warn("Null request for " + cmd.getOptionValue("session"));
 				}
 			}
 			if(req == null) {

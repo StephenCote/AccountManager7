@@ -103,7 +103,7 @@ public class PathProvider implements IProvider {
 		}
 		else if(model.inherits(ModelNames.MODEL_PARENT) && model.hasField(FieldNames.FIELD_PARENT_ID)) {
 			if(mname == null) {
-				logger.error(String.format(FieldException.FIELD_NOT_FOUND, model.getModel(), FieldNames.FIELD_NAME));
+				logger.error(String.format(FieldException.FIELD_NOT_FOUND, model.getAMModel(), FieldNames.FIELD_NAME));
 				return;
 			}
 			long parentId = model.get(FieldNames.FIELD_PARENT_ID);
@@ -112,7 +112,7 @@ public class PathProvider implements IProvider {
 				if(IOSystem.getActiveContext().getIoType() == RecordIO.FILE || IOSystem.getActiveContext().getIoType() == RecordIO.DATABASE) {
 					List<String> pathList = new ArrayList<>();
 					pathList.add(mname);
-					String base = model.getModel();
+					String base = model.getAMModel();
 
 					if(lfield.getBaseModel() != null) {
 						base = lfield.getBaseModel();
@@ -124,7 +124,7 @@ public class PathProvider implements IProvider {
 						while(parentId > 0L) {
 							parR = IOSystem.getActiveContext().getReader().read(base, parentId);
 							if(parR == null) {
-								throw new ReaderException("Parent " + model.getModel() + " index not found for id " + parentId);
+								throw new ReaderException("Parent " + model.getAMModel() + " index not found for id " + parentId);
 							}
 							// IOSystem.getActiveContext().getReader().populate(parR);
 							
@@ -153,20 +153,20 @@ public class PathProvider implements IProvider {
 				}
 			}
 			else {
-				logger.debug("Parent ID not found on " + model.getModel() + " " + mname);
+				logger.debug("Parent ID not found on " + model.getAMModel() + " " + mname);
 			}
 		}
 
 		if(path == null && mname != null) {
 			path = "/" + mname;
-			logger.debug("Unhandled: Model " + model.getModel() + " " + model.get(FieldNames.FIELD_NAME) + " does not define a parent");
+			logger.debug("Unhandled: Model " + model.getAMModel() + " " + model.get(FieldNames.FIELD_NAME) + " does not define a parent");
 		}
 		if(path == null) {
 			//logger.warn("Empty path value");
 			logger.debug(model.toString());
 		}
 		if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
-			logger.info("Apply path to " + model.getModel() + " " + lfield.getName() + " == " + path);
+			logger.info("Apply path to " + model.getAMModel() + " " + lfield.getName() + " == " + path);
 		}
 		model.set(lfield.getName(), path);
 	}

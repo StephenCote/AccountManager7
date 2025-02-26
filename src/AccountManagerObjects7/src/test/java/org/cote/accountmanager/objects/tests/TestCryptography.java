@@ -66,7 +66,7 @@ public class TestCryptography extends BaseTest {
 			ioContext.getRecordUtil().populate(ciph2);
 			
 			logger.info(ciph2.toFullString());
-			logger.info("**** NOE: " + ciph2.getField(FieldNames.FIELD_ENCRYPT).isNullOrEmpty(ciph2.getModel()));
+			logger.info("**** NOE: " + ciph2.getField(FieldNames.FIELD_ENCRYPT).isNullOrEmpty(ciph2.getAMModel()));
 			
 			
 		} catch (FieldException | ModelNotFoundException | ValueException e) {

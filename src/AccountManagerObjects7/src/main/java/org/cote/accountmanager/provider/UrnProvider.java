@@ -45,14 +45,14 @@ public class UrnProvider implements IProvider {
 			return;
 		}
 		
-		String[] fields = RecordUtil.getPossibleFields(model.getModel(), provideFields);
+		String[] fields = RecordUtil.getPossibleFields(model.getAMModel(), provideFields);
 		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);
 		if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
 			logger.info(model.toFullString());
 		}
 		StringBuilder buff = new StringBuilder();
 		boolean skipName = false;
-		buff.append(urnPrefix + urnSeparator + model.getModel());
+		buff.append(urnPrefix + urnSeparator + model.getAMModel());
 		if(model.hasField(FieldNames.FIELD_TYPE)) {
 			buff.append(urnSubSeparator + model.get(FieldNames.FIELD_TYPE));
 		}
@@ -63,7 +63,7 @@ public class UrnProvider implements IProvider {
 		else if(model.inherits(ModelNames.MODEL_ORGANIZATION_EXT)) {
 			//buff.append(urnSeparator + getDotPath(model, "organizationPath"));
 			if((long)model.get(FieldNames.FIELD_ORGANIZATION_ID) == 0L) {
-				logger.warn("Skipping urn update on incomplete " + model.getModel() + " model - missing organizationId");
+				logger.warn("Skipping urn update on incomplete " + model.getAMModel() + " model - missing organizationId");
 				return;
 			}
 			long orgId = (long)model.get("organizationId");
@@ -78,7 +78,7 @@ public class UrnProvider implements IProvider {
 		}
 		if(!model.inherits(ModelNames.MODEL_ORGANIZATION) && model.inherits(ModelNames.MODEL_PATH)) {
 			if(model.get(FieldNames.FIELD_PATH) == null) {
-				logger.warn("Skipping urn update on incomplete " + model.getModel() + " model - missing path");
+				logger.warn("Skipping urn update on incomplete " + model.getAMModel() + " model - missing path");
 				return;
 			}
 			if(IOSystem.getActiveContext().getPathUtil().isTrace()) {
@@ -89,7 +89,7 @@ public class UrnProvider implements IProvider {
 		}
 		else if(model.inherits(ModelNames.MODEL_DIRECTORY)) {
 			if(model.get(FieldNames.FIELD_GROUP_PATH) == null) {
-				logger.warn("Skipping urn update on incomplete " + model.getModel() + " model - missing groupPath");
+				logger.warn("Skipping urn update on incomplete " + model.getAMModel() + " model - missing groupPath");
 				logger.warn(model.toString());
 				return;
 			}

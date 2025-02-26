@@ -23,7 +23,7 @@ public class StateUtil {
 	
 	public static void queueUpdateLocation(OlioContext context, BaseRecord obj) {
 		BaseRecord state = obj;
-		if(!obj.getModel().equals(OlioModelNames.MODEL_CHAR_STATE)) {
+		if(!obj.getAMModel().equals(OlioModelNames.MODEL_CHAR_STATE)) {
 			state = obj.get(FieldNames.FIELD_STATE);
 		}
 		Queue.queueUpdate(state, new String[] { OlioFieldNames.FIELD_CURRENT_LOCATION, FieldNames.FIELD_CURRENT_EAST, FieldNames.FIELD_CURRENT_NORTH });

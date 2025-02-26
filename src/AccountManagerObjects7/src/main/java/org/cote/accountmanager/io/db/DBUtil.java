@@ -268,10 +268,10 @@ $$;""";
 	}
 	protected long getNextIdForRecord(BaseRecord record) throws DatabaseException {
 		ModelSchema schema = null;
-		if(record.getModel().equals(ModelNames.MODEL_PARTICIPATION) && record.hasField(FieldNames.FIELD_PARTICIPATION_MODEL)) {
+		if(record.getAMModel().equals(ModelNames.MODEL_PARTICIPATION) && record.hasField(FieldNames.FIELD_PARTICIPATION_MODEL)) {
 			schema = RecordFactory.getSchema(record.get(FieldNames.FIELD_PARTICIPATION_MODEL));
 		}
-		return getNextId(schema, record.getModel());
+		return getNextId(schema, record.getAMModel());
 	}
 	protected long getNextId(String modelName) throws DatabaseException {
 		return getNextId(null, modelName);
@@ -322,7 +322,7 @@ $$;""";
 
 	public String getTableNameByRecord(BaseRecord record, String modelName) {
 		ModelSchema schema = null;
-		if(record != null && record.getModel().equals(ModelNames.MODEL_PARTICIPATION) && record.hasField(FieldNames.FIELD_PARTICIPATION_MODEL)) {
+		if(record != null && record.getAMModel().equals(ModelNames.MODEL_PARTICIPATION) && record.hasField(FieldNames.FIELD_PARTICIPATION_MODEL)) {
 			String ppType = record.get(FieldNames.FIELD_PARTICIPATION_MODEL);
 			if(ppType != null) {
 				schema = RecordFactory.getSchema(ppType);

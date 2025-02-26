@@ -184,23 +184,23 @@ public class AccessPoint {
 				
 				long setId = 0L;
 				boolean useParent = false;
-				if(obj.inherits(ModelNames.MODEL_PARENT) && !FieldUtil.isNullOrEmpty(obj.getModel(), obj.getField(FieldNames.FIELD_PARENT_ID))) {
+				if(obj.inherits(ModelNames.MODEL_PARENT) && !FieldUtil.isNullOrEmpty(obj.getAMModel(), obj.getField(FieldNames.FIELD_PARENT_ID))) {
 					setId = obj.get(FieldNames.FIELD_PARENT_ID);
-					setKey = obj.getModel() + "-parent-" + aet.toString() + "-" + Long.toString(setId);
+					setKey = obj.getAMModel() + "-parent-" + aet.toString() + "-" + Long.toString(setId);
 					useParent = true;
 					
 				}
-				else if(obj.inherits(ModelNames.MODEL_DIRECTORY) && !FieldUtil.isNullOrEmpty(obj.getModel(), obj.getField(FieldNames.FIELD_GROUP_ID))) {
+				else if(obj.inherits(ModelNames.MODEL_DIRECTORY) && !FieldUtil.isNullOrEmpty(obj.getAMModel(), obj.getField(FieldNames.FIELD_GROUP_ID))) {
 					setId = obj.get(FieldNames.FIELD_GROUP_ID);
-					setKey = obj.getModel() + "-group-" + aet.toString() + "-" + Long.toString(setId);
+					setKey = obj.getAMModel() + "-group-" + aet.toString() + "-" + Long.toString(setId);
 					
 				}
 				if(setKey != null) {
 					if(!containerSet.containsKey(setKey)) {
 						if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
-							logger.warn("Find - " + (useParent ? obj.getModel() : ModelNames.MODEL_GROUP) + " " + setId);
+							logger.warn("Find - " + (useParent ? obj.getAMModel() : ModelNames.MODEL_GROUP) + " " + setId);
 						}
-						BaseRecord cont = findById(contextUser, (useParent ? obj.getModel() : ModelNames.MODEL_GROUP), setId);
+						BaseRecord cont = findById(contextUser, (useParent ? obj.getAMModel() : ModelNames.MODEL_GROUP), setId);
 						if(cont != null) {
 							prr = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(contextUser, contextUser, cont);
 							containerSet.put(setKey, prr);
@@ -219,7 +219,7 @@ public class AccessPoint {
 					}
 				}
 				else {
-					logger.warn("Model " + obj.getModel() + " not able to use bulk approvals");
+					logger.warn("Model " + obj.getAMModel() + " not able to use bulk approvals");
 					// permitBulkApproval = false;
 				}
 			}

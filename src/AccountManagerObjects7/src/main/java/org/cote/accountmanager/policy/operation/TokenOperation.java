@@ -102,7 +102,7 @@ public class TokenOperation extends Operation {
 				String recType = claims.get(TokenService.CLAIM_RESOURCE_TYPE, String.class);
 				String recId = claims.get(TokenService.CLAIM_RESOURCE_ID, String.class);
 				if(recType != null && recId != null) {
-					if(mrec.getModel().equals(recType) && recId.equals(mrec.get(FieldNames.FIELD_OBJECT_ID))) {
+					if(mrec.getAMModel().equals(recType) && recId.equals(mrec.get(FieldNames.FIELD_OBJECT_ID))) {
 						
 						List<String> scope = (List<String>)claims.get(TokenService.CLAIM_SCOPES);
 						if(scope != null && scope.contains(sdat)) {

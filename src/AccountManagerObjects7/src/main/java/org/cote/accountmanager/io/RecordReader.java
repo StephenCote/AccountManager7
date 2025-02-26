@@ -46,7 +46,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 	}
 	
 	public BaseRecord readAlternate(BaseRecord rec) {
-		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+		ModelSchema ms = RecordFactory.getSchema(rec.getAMModel());
 		if(ms != null && ms.getIo() != null && ms.getIo().getReader() != null) {
 			IReader altReader = RecordFactory.getClassInstance(ms.getIo().getReader());
 			try {
@@ -56,13 +56,13 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 			}
 		}
 		else {
-			logger.error("Model schema " + rec.getModel() + " does not define an alternate reader interface");
+			logger.error("Model schema " + rec.getAMModel() + " does not define an alternate reader interface");
 		}
 		return rec;
 	}
 	
 	public boolean useAlternateIO(BaseRecord rec) {
-		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+		ModelSchema ms = RecordFactory.getSchema(rec.getAMModel());
 		boolean outBool = false;
 		if(ms != null && ms.getIo() != null && ms.getIo().getSearch() != null) {
 			outBool = true;
@@ -93,7 +93,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 				if(
 					!rec.hasField(f)
 					||
-					rec.getField(f).isNullOrEmpty(rec.getModel())
+					rec.getField(f).isNullOrEmpty(rec.getAMModel())
 					||
 					(rec.getField(f).getValueType() == FieldEnumType.ENUM && "UNKNOWN".equals(rec.get(f)))
 				){
@@ -140,7 +140,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 			}
 
 			if(!pop) {
-				ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+				ModelSchema ms = RecordFactory.getSchema(rec.getAMModel());
 				try {
 					/// Clear any cache when using FILE IO
 					/// It is currently using the record-based cache pattern vs. the query based cache pattern, so it won't open the source for any additional fields
@@ -158,7 +158,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 									
 									!rec.hasField(f.getName())
 									||
-									rec.getField(f.getName()).isNullOrEmpty(rec.getModel())
+									rec.getField(f.getName()).isNullOrEmpty(rec.getAMModel())
 									||
 									(f.getValueType() == FieldEnumType.ENUM && "UNKNOWN".equals(rec.get(f.getName())))
 									
@@ -223,7 +223,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 
 		}
 		else {
-			logger.debug("Not a populatable record: " + rec.getModel());
+			logger.debug("Not a populatable record: " + rec.getAMModel());
 		}
 	}
 	
@@ -241,7 +241,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 	}
 	public void prepareTranslation(RecordOperation operation, BaseRecord model) {
 		
-		ModelSchema lbm = RecordFactory.getSchema(model.getModel());
+		ModelSchema lbm = RecordFactory.getSchema(model.getAMModel());
 		
 		//lbm.getFields().forEach(f->{
 		/// Use a sorted list of the fields based on the field provider priority

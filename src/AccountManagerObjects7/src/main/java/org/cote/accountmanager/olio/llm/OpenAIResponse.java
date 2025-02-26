@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.llm;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -21,7 +22,7 @@ public class OpenAIResponse extends LooseRecord {
 	public OpenAIResponse() {
 		
 		try {
-			RecordFactory.newInstance(OlioModelNames.MODEL_OPENAI_REQUEST, this, null);
+			RecordFactory.newInstance(OlioModelNames.MODEL_OPENAI_RESPONSE, this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -84,11 +85,8 @@ public class OpenAIResponse extends LooseRecord {
 	}
 	
 	public List<OpenAIChoice> getChoices() {
-		return TypeUtil.convertList(get("choices"));
+		List<BaseRecord> chs = get("choices");
+		return chs.stream().map(msg -> new OpenAIChoice(msg)).collect(Collectors.toList());
 	}
-	
-	public void setChoices(List<BaseRecord> choices) {
-		setValue("choices", choices);
-	}
-	
+
 }

@@ -170,7 +170,7 @@ public class RecordFactory {
 	public static BaseRecord newInstance(String name, BaseRecord lbm, String[] fieldNames) throws FieldException, ModelNotFoundException {
 		List<FieldType> fields = new CopyOnWriteArrayList<>();
 		List<FieldType> instFields = new CopyOnWriteArrayList<>();
-		lbm.setModel(name);
+		lbm.setAMModel(name);
 		BaseRecord lbmb = looseBaseModels.get(name);
 		
 		if(fieldNames != null && fieldNames.length > 0) {
@@ -241,7 +241,7 @@ public class RecordFactory {
 	
 	private static LooseRecord getBaseModel(ModelSchema lmod) {
 		LooseRecord mod = new LooseRecord();
-		mod.setModel(lmod.getName());
+		mod.setAMModel(lmod.getName());
 		List<FieldType> fields = new CopyOnWriteArrayList<>();
 		int errors = 0;
 		for(FieldSchema lft : lmod.getFields()) {

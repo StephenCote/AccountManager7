@@ -8,6 +8,7 @@
 		{
 			"name": "messages",
 			"type": "list",
+			"baseType": "model",
 			"baseModel": "olio.llm.message"
 		},
 		{

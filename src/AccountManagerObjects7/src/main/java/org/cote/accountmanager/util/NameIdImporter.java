@@ -39,7 +39,7 @@ public class NameIdImporter {
 	public static <T> T importModel(BaseRecord model) {
 		Object outObj = null;
 		
-		String name = model.getModel();
+		String name = model.getAMModel();
 		String tname = name + FieldNames.FIELD_TYPE;
 		Optional<Class<?>> ocls = NameIdExporter.nameIdTypes.stream().filter(o -> o.getSimpleName().toLowerCase().equals(tname)).findFirst();
 		Class<?> cls = null;

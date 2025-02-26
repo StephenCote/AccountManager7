@@ -464,7 +464,7 @@ public class ItemUtil {
 				List<BaseRecord> tags = itm.get(FieldNames.FIELD_TAGS);
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
-					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), item.getModel()));
+					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), item.getAMModel()));
 				}
 				itm.set(FieldNames.FIELD_TAGS, itags);
 				

@@ -47,7 +47,7 @@ public abstract class RecordTranslator {
 	///
 	protected void translateField(RecordOperation operation, RecordIO io, ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) {
 		
-		FieldType bfield = RecordFactory.model(model.getModel()).getField(lfield.getName());
+		FieldType bfield = RecordFactory.model(model.getAMModel()).getField(lfield.getName());
 		
 		if(lfield.getProvider() != null && lfield.getProvider().length() > 0) {
 			IProvider prov = ProviderUtil.getProviderInstance(lfield.getProvider());
@@ -67,7 +67,7 @@ public abstract class RecordTranslator {
 							cid = model.get(lfield.getName());
 						}
 						if(cid <= 0L) {
-							long id = IOSystem.getActiveContext().getIndexManager().getInstance(model.getModel()).nextId();
+							long id = IOSystem.getActiveContext().getIndexManager().getInstance(model.getAMModel()).nextId();
 							model.set(lfield.getName(), id);
 						}
 					}

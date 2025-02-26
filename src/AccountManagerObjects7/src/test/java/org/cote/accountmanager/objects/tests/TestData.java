@@ -143,7 +143,7 @@ public class TestData extends BaseTest {
 			/// Try passing the new attribute through the factory layer
 			//attr.set(FieldNames.FIELD_NAME, "Demo attribute 2 - " + UUID.randomUUID().toString());
 			logger.info(attr.toFullString());
-			BaseRecord attr2 = IOSystem.getActiveContext().getFactory().newInstance(attr.getModel(), attrUser, attr, null);
+			BaseRecord attr2 = IOSystem.getActiveContext().getFactory().newInstance(attr.getAMModel(), attrUser, attr, null);
 
 			assertNotNull("New attribute was null", attr2);
 			logger.info(attr2.toFullString());

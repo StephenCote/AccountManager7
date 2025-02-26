@@ -91,7 +91,7 @@ public class FileStore {
 			name = rec.get(FieldNames.FIELD_OBJECT_ID);
 		}
 		else if(rec.hasField(FieldNames.FIELD_ID)) {
-			name = rec.getModel() + "-" + Long.toString(rec.get(FieldNames.FIELD_ID));
+			name = rec.getAMModel() + "-" + Long.toString(rec.get(FieldNames.FIELD_ID));
 		}
 		return name;
 		
@@ -236,7 +236,7 @@ public class FileStore {
 			return false;
 		}
 		for(BaseRecord rec : records) {
-			String mod = rec.getModel();
+			String mod = rec.getAMModel();
 			if(rec.hasField(FieldNames.FIELD_INDEX_MODEL) && rec.get(FieldNames.FIELD_INDEX_MODEL) != null) {
 				mod = rec.get(FieldNames.FIELD_INDEX_MODEL);
 			}
@@ -523,7 +523,7 @@ public class FileStore {
 				byte[] data = buff[idx];
 				IndexEntry entry = null;
 				try {
-					String mod = rec.getModel();
+					String mod = rec.getAMModel();
 					if(rec.hasField(FieldNames.FIELD_INDEX_MODEL) && rec.get(FieldNames.FIELD_INDEX_MODEL) != null) {
 						mod = rec.get(FieldNames.FIELD_INDEX_MODEL);
 					}

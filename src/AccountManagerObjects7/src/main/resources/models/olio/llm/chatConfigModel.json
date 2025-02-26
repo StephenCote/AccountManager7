@@ -1,6 +1,6 @@
 {
 	"name": "olio.llm.chatConfig",
-	"inherits": ["data.directory", "common.description", "common.alignment"],
+	"inherits": ["data.directory", "common.description", "common.alignment", "crypto.vaultExt"],
 	"group": "Chat",
 	"icon": "chat",
 	"label": "Chat Configuration",
@@ -14,10 +14,10 @@
 		},
 		{
 			"name": "serviceType",
-			"baseClass": "org.cote.accountmanager.olio.llm.LLMServiceType",
+			"baseClass": "org.cote.accountmanager.olio.llm.LLMServiceEnumType",
 			"type": "enum",
 			"maxLength": 10,
-			"default": "OLLAMA"
+			"default": "OPENAI"
 		},
 		{
 			"name": "systemCharacter",
@@ -112,12 +112,12 @@
 			"default": "random"
 		},
 		{
-			"name": "llmModel",
+			"name": "model",
 			"type": "string",
 			"default": "dolphin-llama3"
 		},
 		{
-			"name": "llmAnalyzeModel",
+			"name": "analyzeModel",
 			"type": "string",
 			"default": "dolphin-llama3"
 		},
@@ -153,7 +153,25 @@
 			"name": "chatOptions",
 			"type": "model",
 			"baseModel": "olio.llm.chatOptions"
+		},
+		{
+			"name": "apiVersion",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "serverUrl",
+			"type": "string",
+			"maxLength": 512
+		},
+		{
+			"name": "apiKey",
+			"type": "string",
+			"maxLength": 128,
+			"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+			"encrypt": true
 		}
+		
 
 	]
 }

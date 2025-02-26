@@ -20,7 +20,11 @@ import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -44,11 +48,10 @@ public class TestChat2 extends BaseTest {
 
 		try {
 			aireq = RecordFactory.newInstance(OlioModelNames.MODEL_OPENAI_REQUEST);
-			aireq.set("model", "herm-local");
+			aireq.set("model", "gpt-4");
 			addMessage(aireq, "system",
-					"Your name is Mr. Flufflepants. You are a ridiculous anthropomorphic character that uses wildly inaccurate and mixed methaphors in every answer.");
+					"Your name is Mr. Flufflepants. You are a ridiculous anthropomorphic character that uses wildly inaccurate, mixed methaphors, inappropriate innuendo and double entendres in every answer.");
 			addMessage(aireq, "user", "Hi, what's your name?");
-			// opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);
 		}
@@ -62,7 +65,7 @@ public class TestChat2 extends BaseTest {
 		assertNotNull("Response is null", resp);
 
 	}
-	*/
+
 
 	public void addMessage(BaseRecord req, String role, String message) {
 		BaseRecord aimsg = null;
@@ -78,7 +81,55 @@ public class TestChat2 extends BaseTest {
 		}
 
 	}
+	*/
+	
+	@Test
+	public void TestRevisedAPI() {
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+	
+		BaseRecord pcfg = OlioTestUtil.getPromptConfig(testUser1);
+		assertNotNull("Prompt config is null", pcfg);
+		BaseRecord cfg = OlioTestUtil.getRandomChatConfig(testUser1, testProperties.getProperty("test.datagen.path"));
+		
+		cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
+		cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version"));
+		cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+		cfg.setValue("model", "gpt-4");
+		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
+		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey"}));
+		assertNotNull("Chat config is null", cfg);
+		
+		String sessionName = "Demo Session";
+		Chat chat = new Chat(testUser1, cfg, pcfg);
+		chat.setSessionName(sessionName);
 
+		OpenAIRequest req = chat.getChatPrompt();
+		
+		String msn = ChatUtil.getSessionName(testUser1, cfg, pcfg, sessionName);
+		assertTrue("Failed to save session " + sessionName, ChatUtil.saveSession(testUser1, req, sessionName));
+		OpenAIRequest sreq = ChatUtil.getSession(testUser1, sessionName);
+		assertNotNull("Failed to retrieve session " + sessionName, sreq);
+
+		// String ser = JSONUtil.exportObject(req, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
+		// logger.info(ser);
+		try {
+		chat.continueChat(req, "");
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		// String url = chat.getServiceUrl(req);
+		/*
+		post(OlioModelNames.MODEL_OPENAI_RESPONSE, ClientUtil.getResource(url), testProperties.getProperty("test.llm.openai.authorizationToken"), ser,
+				MediaType.APPLICATION_JSON_TYPE);
+		*/
+		
+
+	}
+	
 	public String getChatURL(BaseRecord rec, LLMServiceEnumType type) {
 		String url = null;
 		if (type == LLMServiceEnumType.OLLAMA) {
@@ -90,7 +141,7 @@ public class TestChat2 extends BaseTest {
 		return url;
 	}
 
-	private LLMServiceEnumType serviceType = LLMServiceEnumType.OLLAMA;
+	private LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
 
 	public BaseRecord chat(BaseRecord req) {
 		if (req == null) {

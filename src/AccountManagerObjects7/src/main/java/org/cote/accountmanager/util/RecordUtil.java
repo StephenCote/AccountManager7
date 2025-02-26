@@ -141,7 +141,7 @@ public class RecordUtil {
 	public static String hash(BaseRecord rec) {
 		List<String> fieldNames = new ArrayList<>();
 		RecordUtil.sortFields(rec);
-		ModelSchema lbm = RecordFactory.getSchema(rec.getModel());
+		ModelSchema lbm = RecordFactory.getSchema(rec.getAMModel());
 
 		for(FieldType f : rec.getFields()) {
 			FieldSchema lbf = lbm.getFieldSchema(f.getName());
@@ -276,10 +276,10 @@ public class RecordUtil {
 	public static boolean isIdentityRecord(BaseRecord rec) {
 
 		boolean isId = false;
-		ModelSchema schema = RecordFactory.getSchema(rec.getModel());
+		ModelSchema schema = RecordFactory.getSchema(rec.getAMModel());
 		for(FieldType f : rec.getFields()) {
 			FieldSchema fs = schema.getFieldSchema(f.getName());
-			if(fs.isIdentity() && !f.isNullOrEmpty(rec.getModel())) {
+			if(fs.isIdentity() && !f.isNullOrEmpty(rec.getAMModel())) {
 				isId = true;
 				break;
 			}
@@ -288,7 +288,7 @@ public class RecordUtil {
 	}
 	
 	public static boolean matchIdentityRecordsByIdx(IndexEntry idx, BaseRecord rec) {
-		if(!rec.getModel().equals(idx.get(FieldNames.FIELD_TYPE))) {
+		if(!rec.getAMModel().equals(idx.get(FieldNames.FIELD_TYPE))) {
 			logger.warn("Wrong model");
 			return false;
 		}
@@ -439,7 +439,7 @@ public class RecordUtil {
 			return orec;
 		}
 		
-		Query q = new Query(rec.getModel());
+		Query q = new Query(rec.getAMModel());
 		q.setRequest(fields);
 
 		if(rec.hasField(FieldNames.FIELD_ID) && ((long)rec.get(FieldNames.FIELD_ID)) > 0L) {
@@ -503,7 +503,7 @@ public class RecordUtil {
 		return createRecord(rec, flush, false);
 	}
 	public boolean createRecord(BaseRecord rec, boolean flush, boolean skipCustomIO) {
-		ModelSchema ms = RecordFactory.getSchema(rec.getModel());
+		ModelSchema ms = RecordFactory.getSchema(rec.getAMModel());
 		IWriter useWriter = null;
 		if(!skipCustomIO && ms.getIo() != null && ms.getIo().getWriter() != null) {
 			IWriter modelWriter = RecordFactory.getClassInstance(ms.getIo().getWriter());
@@ -539,7 +539,7 @@ public class RecordUtil {
 			return true;
 		}
 		
-		Set<String> mlist = Arrays.asList(models).stream().map(m -> m.getModel()).collect(Collectors.toSet());
+		Set<String> mlist = Arrays.asList(models).stream().map(m -> m.getAMModel()).collect(Collectors.toSet());
 		BaseRecord firstModel = models[0];
 		final long id;
 		if(firstModel.hasField(FieldNames.FIELD_ID)) {
@@ -550,7 +550,7 @@ public class RecordUtil {
 		}
 		
 		final String partModel;
-		if(firstModel.getModel().equals(ModelNames.MODEL_PARTICIPATION)) {
+		if(firstModel.getAMModel().equals(ModelNames.MODEL_PARTICIPATION)) {
 			partModel = firstModel.get(FieldNames.FIELD_PARTICIPATION_MODEL);
 		}
 		else {
@@ -571,7 +571,7 @@ public class RecordUtil {
 					}
 					boolean partCheck = ((partModel == null && check != null) || (partModel != null && !partModel.equals(check)));
 					if((size || ids || partCheck)) {
-						logger.warn(firstModel.getModel() + " " + size + " " +  m.getFields().size() + " <> " + firstModel.getFields().size() + " " + ids + " " + rid + " <> " + id + " Part " + partCheck);
+						logger.warn(firstModel.getAMModel() + " " + size + " " +  m.getFields().size() + " <> " + firstModel.getFields().size() + " " + ids + " " + rid + " <> " + id + " Part " + partCheck);
 						logger.warn(firstModel.toFullString());
 						logger.warn(m.toFullString());
 					}
@@ -605,10 +605,10 @@ public class RecordUtil {
 			return 0;
 		}
 		if(!isSimilar(recs)) {
-			logger.error("Models (" + recs[0].getModel() + ") are not similar enough to be processed concurrently");
+			logger.error("Models (" + recs[0].getAMModel() + ") are not similar enough to be processed concurrently");
 			return 0;
 		}
-		ModelSchema ms = RecordFactory.getSchema(recs[0].getModel());
+		ModelSchema ms = RecordFactory.getSchema(recs[0].getAMModel());
 		IWriter useWriter = null;
 		if(!skipCustomIO && ms.getIo() != null && ms.getIo().getWriter() != null) {
 			IWriter modelWriter = RecordFactory.getClassInstance(ms.getIo().getWriter());
@@ -795,7 +795,7 @@ public class RecordUtil {
 	}
 	
     public Query getLatestReferenceQuery(BaseRecord ref, String modelName) {
-		Query query = QueryUtil.createQuery(modelName, FieldNames.FIELD_REFERENCE_TYPE, ref.getModel());
+		Query query = QueryUtil.createQuery(modelName, FieldNames.FIELD_REFERENCE_TYPE, ref.getAMModel());
 		try {
 			query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CREATED_DATE);
 			query.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING);

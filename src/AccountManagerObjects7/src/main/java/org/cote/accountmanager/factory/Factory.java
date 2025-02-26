@@ -66,7 +66,7 @@ public class Factory {
 		if(path.startsWith("~/")) {
 			BaseRecord homeDir = user.get(FieldNames.FIELD_HOME_DIRECTORY);
 			
-			String[] fields = RecordUtil.getPossibleFields(homeDir.getModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_PARENT_ID});
+			String[] fields = RecordUtil.getPossibleFields(homeDir.getAMModel(), new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_PARENT_ID});
 			context.getRecordUtil().conditionalPopulate(homeDir, fields);
 			
 			String homePath = homeDir.get(FieldNames.FIELD_PATH);
@@ -351,7 +351,7 @@ public class Factory {
 				facts.get(0).implement(contextUser, rec, parameterList, arguments);
 			}
 		}
-		ModelSchema lbm = RecordFactory.getSchema(rec.getModel());
+		ModelSchema lbm = RecordFactory.getSchema(rec.getAMModel());
 		for(int i = 0; i < rec.getFields().size(); i++) {
 			FieldType f = rec.getFields().get(i);
 			FieldSchema lf = lbm.getFieldSchema(f.getName());
@@ -377,7 +377,7 @@ public class Factory {
 		return verify(contextUser, rec, parameterList, (BaseRecord)null);
 	}
 	public VerificationEnumType verify(BaseRecord contextUser, BaseRecord rec, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
-		IFactory fact = getFactory(rec.getModel());
+		IFactory fact = getFactory(rec.getAMModel());
 		VerificationEnumType vet = VerificationEnumType.NOT_VERIFIED;
 		if(fact != null) {
 			vet = fact.verify(contextUser, rec, parameterList, arguments); 

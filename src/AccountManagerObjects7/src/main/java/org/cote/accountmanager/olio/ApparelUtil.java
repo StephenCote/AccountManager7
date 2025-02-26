@@ -692,15 +692,15 @@ public class ApparelUtil {
 		BaseRecord qual = quals.get(0);
 		String[] tmat = emb.split(":");
 		try {
-			if(rec.getModel().equals(OlioModelNames.MODEL_WEARABLE)) {
+			if(rec.getAMModel().equals(OlioModelNames.MODEL_WEARABLE)) {
 				rec.set(OlioFieldNames.FIELD_FABRIC, tmat[0]);
 			}
-			else if(rec.getModel().equals(OlioModelNames.MODEL_ITEM)) {
+			else if(rec.getAMModel().equals(OlioModelNames.MODEL_ITEM)) {
 				List<String> mats = rec.get(OlioFieldNames.FIELD_MATERIALS);
 				mats.add(tmat[0]);
 			}
 			else {
-				logger.warn("Unhandled model for fab type: " + rec.getModel());
+				logger.warn("Unhandled model for fab type: " + rec.getAMModel());
 			}
 			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_OPACITY, Double.parseDouble(tmat[3]));
 			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_ELASTICITY, Double.parseDouble(tmat[4]));

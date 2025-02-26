@@ -58,7 +58,7 @@ public class ComputeUtil {
 				val += (int)model.get(f);
 			}
 			else {
-				logger.error("(getAverage) Field is missing: " + model.getModel() + "." + f);
+				logger.error("(getAverage) Field is missing: " + model.getAMModel() + "." + f);
 				//ErrorUtil.printStackTrace();
 			}
 		}
@@ -78,7 +78,7 @@ public class ComputeUtil {
 				val += (double)model.get(f);
 			}
 			else {
-				logger.error("(getDblAverage) Field is missing: " + model.getModel() + "." + f);
+				logger.error("(getDblAverage) Field is missing: " + model.getAMModel() + "." + f);
 			}
 		}
 		if(val > 0) {
@@ -91,7 +91,7 @@ public class ComputeUtil {
 	public static void addDouble(BaseRecord model, String fieldName, double val) {
 		double cval = model.get(fieldName);
 		double mval = val + cval;
-		FieldSchema fs = RecordFactory.getSchema(model.getModel()).getFieldSchema(fieldName);
+		FieldSchema fs = RecordFactory.getSchema(model.getAMModel()).getFieldSchema(fieldName);
 		if(fs.isValidateRange()) {
 			if(mval > fs.getMaxValue()) mval = fs.getMaxValue();
 			if(mval < fs.getMinValue()) mval = fs.getMinValue();

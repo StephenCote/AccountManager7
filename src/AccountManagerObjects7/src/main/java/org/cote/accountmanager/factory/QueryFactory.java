@@ -25,7 +25,7 @@ public class QueryFactory extends FactoryBase {
 		try {
 			query.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
 			if(arguments.length > 0 && arguments[0] != null) {
-				query.set(FieldNames.FIELD_TYPE, arguments[0].getModel());
+				query.set(FieldNames.FIELD_TYPE, arguments[0].getAMModel());
 				QueryUtil.createQueryGroup(query, query, arguments);
 			}
 			else if(parameterList != null) {

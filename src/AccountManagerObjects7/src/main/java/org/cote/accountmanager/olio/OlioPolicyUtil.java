@@ -75,7 +75,7 @@ public class OlioPolicyUtil {
 			fp.set("valueType", fieldType);
 			fp.setFlex("value", value);
 			if(fieldType == FieldEnumType.MODEL && value != null) {
-				fp.set("valueModel", ((BaseRecord)value).getModel());
+				fp.set("valueModel", ((BaseRecord)value).getAMModel());
 			}
 		} catch (FieldException | ModelNotFoundException | ValueException e) {
 			logger.error(e);

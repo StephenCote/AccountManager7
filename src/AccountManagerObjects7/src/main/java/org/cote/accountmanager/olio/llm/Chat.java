@@ -22,6 +22,7 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
@@ -37,7 +38,7 @@ public class Chat {
 	// protected String organizationPath = "/Development";
 	
 	public static final Logger logger = LogManager.getLogger(Chat.class);
-	private String ollamaServer = "http://localhost:11434";
+	//private String ollamaServer = "http://localhost:11434";
 	
 	private BaseRecord promptConfig = null;
 	private BaseRecord chatConfig = null;
@@ -61,6 +62,13 @@ public class Chat {
 	private int messageTrim = 10;
 	private int keyFrameEvery = 10;
 	
+	private LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
+	
+	private String model = null;
+	private String serverUrl = null;
+	private String apiVersion = null;
+	private String authorizationToken = null;
+	
 	/// Depending on the system where the library is running, System.lineSeparator() may include a carriage return. Depending where the LLM is running, it may be desired to strip the carriage return off.
 	//private boolean stripCarriageReturn = true;
 
@@ -68,15 +76,68 @@ public class Chat {
 You play the role of an assistant named Siren.
 Begin conversationally.
 """;
+	
 	public Chat() {
 		
 	}
+	
 	public Chat(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig) {
 		this.user = user;
 		this.chatConfig = chatConfig;
 		this.promptConfig = promptConfig;
+		configureChat();
 	}
 	
+	private void configureChat() {
+		if(chatConfig != null) {
+			setServerUrl(chatConfig.get("serverUrl"));
+			setApiVersion(chatConfig.get("apiVersion"));
+			setAuthorizationToken(chatConfig.get("apiKey"));
+			setModel(chatConfig.get("model"));
+			setServiceType(chatConfig.getEnum("serviceType"));
+		}
+	}
+	
+	
+	
+	public String getModel() {
+		return model;
+	}
+
+	public void setModel(String model) {
+		this.model = model;
+	}
+
+	public String getServerUrl() {
+		return serverUrl;
+	}
+
+	public void setServerUrl(String serverUrl) {
+		this.serverUrl = serverUrl;
+	}
+
+	public String getApiVersion() {
+		return apiVersion;
+	}
+
+	public void setApiVersion(String apiVersion) {
+		this.apiVersion = apiVersion;
+	}
+
+	public String getAuthorizationToken() {
+		return authorizationToken;
+	}
+
+	public void setAuthorizationToken(String authorizationToken) {
+		this.authorizationToken = authorizationToken;
+	}
+
+	public LLMServiceEnumType getServiceType() {
+		return serviceType;
+	}
+	public void setServiceType(LLMServiceEnumType serviceType) {
+		this.serviceType = serviceType;
+	}
 	public boolean isFormatOutput() {
 		return formatOutput;
 	}
@@ -95,14 +156,6 @@ Begin conversationally.
 
 	public void setIncludeScene(boolean includeScene) {
 		this.includeScene = includeScene;
-	}
-
-	public String getOllamaServer() {
-		return ollamaServer;
-	}
-
-	public void setOllamaServer(String ollamaServer) {
-		this.ollamaServer = ollamaServer;
 	}
 
 	public int getPruneSkip() {
@@ -153,7 +206,7 @@ Begin conversationally.
 	}
 
 	public void chatConsole(){
-		chatConsole(newRequest(chatConfig.get("llmModel")));
+		chatConsole(newRequest(chatConfig.get("model")));
 	}
 	
 	public void continueChat(OpenAIRequest req, String message){
@@ -172,8 +225,12 @@ Begin conversationally.
 			newMessage(req, message);
 		}
 		lastRep = chat(req);
+		
 		if(lastRep != null) {
 			handleResponse(req, lastRep, false);
+		}
+		else {
+			logger.warn("Last rep is null");
 		}
 		if(sessionName != null) {
 			ChatUtil.saveSession(user, req, sessionName);
@@ -270,7 +327,7 @@ Begin conversationally.
 		int max = Math.min(offset + count, lines.size());
 		if(lines.size() == 0 || offset >= lines.size()) {
 			// 92 6 90
-			logger.info("There is no chat history to analyze");
+			// logger.info("There is no chat history to analyze");
 			// logger.warn("Invalid size or offset: " + lines.size() + ":" + max + ":" + offset);
 			return null;
 		}
@@ -297,13 +354,13 @@ Begin conversationally.
 			sys = systemAnalyze;
 		}
 		sysMsg.setContent(sys);
-		areq.getMessages().add(sysMsg);
+		areq.addMessage(sysMsg);
 		
 		if(assistantAnalyze != null) {
 			OpenAIMessage aaMsg = new OpenAIMessage();
 			aaMsg.setRole("assistant");
 			aaMsg.setContent(assistantAnalyze);
-			areq.getMessages().add(aaMsg);
+			areq.addMessage(aaMsg);
 		}
 		
 		
@@ -323,7 +380,7 @@ Begin conversationally.
 		OpenAIMessage anMsg = new OpenAIMessage();
 		anMsg.setRole("user");
 		anMsg.setContent(cont);
-		areq.getMessages().add(anMsg);
+		areq.addMessage(anMsg);
 
 		// logger.info(JSONUtil.exportObject(areq));;
 		
@@ -331,7 +388,7 @@ Begin conversationally.
 	}
 	
 	private void applyAnalyzeOptions(OpenAIRequest req, OpenAIRequest areq) {
-		String amodel = chatConfig.get("llmAnalyzeModel");
+		String amodel = chatConfig.get("analyzeModel");
 		if(amodel == null) {
 			amodel = req.getModel();
 		}
@@ -386,13 +443,13 @@ Begin conversationally.
 			sys = systemNarrate;
 		}
 		sysMsg.setContent(sys);
-		areq.getMessages().add(sysMsg);
+		areq.addMessage(sysMsg);
 		
 		if(assistantNarrate != null) {
 			OpenAIMessage aaMsg = new OpenAIMessage();
 			aaMsg.setRole("assistant");
 			aaMsg.setContent(assistantNarrate);
-			areq.getMessages().add(aaMsg);
+			areq.addMessage(aaMsg);
 		}
 		
 		
@@ -413,7 +470,7 @@ Begin conversationally.
 		anMsg.setRole("user");
 		anMsg.setContent(cont);
 		// anMsg.setContent(msg.toString());
-		areq.getMessages().add(anMsg);
+		areq.addMessage(anMsg);
 
 		//logger.info(JSONUtil.exportObject(areq));;
 		
@@ -427,7 +484,7 @@ Begin conversationally.
 		command = "Create an SD prompt based on the most recent roleplay scene.";
 		
 		OpenAIRequest areq = new OpenAIRequest();
-		String amodel = chatConfig.get("llmAnalyzeModel");
+		String amodel = chatConfig.get("analyzeModel");
 		if(amodel == null) {
 			amodel = req.getModel();
 		}
@@ -443,7 +500,7 @@ Begin conversationally.
 		OpenAIMessage sysMsg = new OpenAIMessage();
 		sysMsg.setRole("system");
 		sysMsg.setContent(systemSD);
-		areq.getMessages().add(sysMsg);
+		areq.addMessage(sysMsg);
 		
 		StringBuilder msg = new StringBuilder();
 		msg.append(command + System.lineSeparator());
@@ -452,7 +509,7 @@ Begin conversationally.
 		OpenAIMessage anMsg = new OpenAIMessage();
 		anMsg.setRole("user");
 		anMsg.setContent(msg.toString());
-		areq.getMessages().add(anMsg);
+		areq.addMessage(anMsg);
 
 		// logger.info(JSONUtil.exportObject(areq));;
 		
@@ -467,6 +524,9 @@ Begin conversationally.
 		OpenAIResponse oresp = chat(oreq);
 		if(oresp == null || oresp.getMessage() == null) {
 			logger.error("Unexpected response");
+			if(oresp != null) {
+				logger.error(oresp.toFullString());
+			}
 			return null;
 		}
 		return oresp.getMessage().getContent();
@@ -495,6 +555,10 @@ Begin conversationally.
 			OpenAIResponse oresp = chat(oreq);
 			if(oresp == null || oresp.getMessage() == null) {
 				logger.error("Unexpected response");
+				if(oresp != null) {
+					logger.error(oresp.toFullString());
+				}
+
 				break;
 			}
 			resp.add(oresp.getMessage().getContent());
@@ -504,7 +568,7 @@ Begin conversationally.
 			offset += count;
 			oreq = getAnalyzePrompt(req, command, offset, count, full);
 		}
-		logger.info("Finished analysis");
+		// logger.info("Finished analysis");
 		if(reduce) {
 			return reduce(req, resp);
 		}
@@ -537,13 +601,13 @@ Begin conversationally.
 			sys = systemAnalyze;
 		}
 		sysMsg.setContent(sys);
-		areq.getMessages().add(sysMsg);
+		areq.addMessage(sysMsg);
 		
 		if(assistantAnalyze != null) {
 			OpenAIMessage aaMsg = new OpenAIMessage();
 			aaMsg.setRole("assistant");
 			aaMsg.setContent(assistantAnalyze);
-			areq.getMessages().add(aaMsg);
+			areq.addMessage(aaMsg);
 		}
 		
 		StringBuilder msg = new StringBuilder();
@@ -553,7 +617,7 @@ Begin conversationally.
 		OpenAIMessage anMsg = new OpenAIMessage();
 		anMsg.setRole("user");
 		anMsg.setContent(msg.toString());
-		areq.getMessages().add(anMsg);
+		areq.addMessage(anMsg);
 
 		// logger.info(JSONUtil.exportObject(areq));
 		
@@ -620,15 +684,15 @@ Begin conversationally.
 	private LineAction checkAction(OpenAIRequest req, String line) {
 		LineAction oact = LineAction.UNKNOWN;
 		if(line == null || line.equalsIgnoreCase("/bye")) {
-			oact = LineAction.BREAK;
+			return LineAction.BREAK;
 		}
 		
-		if(line.startsWith("/jailbreak")) {
+		else if(line.startsWith("/jailbreak")) {
 			forceJailbreak = !forceJailbreak;
 			logger.info("Jailbreak " + (forceJailbreak ? "enabled" : "disabled"));
 			oact = LineAction.CONTINUE;
 		}
-		if(line.startsWith("/analyzeAll")) {
+		else if(line.startsWith("/analyzeAll")) {
 			logger.info(analyze(req, line.substring(11).trim(), false, false, true));
 			oact = LineAction.CONTINUE;
 		}
@@ -657,7 +721,7 @@ Begin conversationally.
 			// logger.info(SDPrompt(req, line.substring(9).trim(), false));
 			oact = LineAction.CONTINUE;
 		}
-		if(line.equals("/look")) {
+		else if(line.equals("/look")) {
 			
 			String char1 = NarrativeUtil.describe(null, chatConfig.get("systemCharacter"));
 			String char2 = NarrativeUtil.describe(null, chatConfig.get("userCharacter"));
@@ -671,7 +735,7 @@ Begin conversationally.
 			}
 			oact = LineAction.CONTINUE;
 		}
-		if(line.equals("/story")) {
+		else if(line.equals("/story")) {
 			String snar = chatConfig.get("systemNarrative.sceneDescription");
 			String unar = chatConfig.get("userNarrative.sceneDescription");
 			if(snar != null && unar != null) {
@@ -680,7 +744,7 @@ Begin conversationally.
 			}
 			oact = LineAction.CONTINUE;
 		}
-		if(line.equals("/next")) {
+		else if(line.equals("/next")) {
 			BaseRecord nextEp = PromptUtil.moveToNextEpisode(chatConfig);
 			if(req.getMessages().size() == 0) {
 				logger.error("No system message to replace!");
@@ -710,11 +774,11 @@ Begin conversationally.
 			oact = LineAction.SAVE_AND_CONTINUE;
 
 		}
-		if(line.equals("/prune")) {
+		else if(line.equals("/prune")) {
 			prune(req, true);
 			oact = LineAction.CONTINUE;
 		}
-		if(line.equals("/prompt")) {
+		else if(line.equals("/prompt")) {
 			// if(chatMode && req.getMessages().size() > 0) {
 				req.getMessages().get(0).setContent(llmSystemPrompt.trim());
 			/*
@@ -759,6 +823,9 @@ Begin conversationally.
 					if(lastRep != null) {
 						handleResponse(req, lastRep, true);
 					}
+					else {
+						logger.warn("Null response");
+					}
 				}
 				System.out.print(prompt);
 				line = is.readLine();
@@ -772,7 +839,7 @@ Begin conversationally.
 				}
 				
 				if(line.equals("/new")) {
-					req = newRequest(chatConfig.get("llmModel"));
+					req = newRequest(chatConfig.get("model"));
 					continue;
 				}
 
@@ -792,7 +859,7 @@ Begin conversationally.
 					System.out.println("Loading ...");
 					String sav = FileUtil.getFileAsString("./" + saveName);
 					if(sav != null && sav.length() > 0) {
-						req = JSONUtil.importObject(sav, OpenAIRequest.class);
+						req = OpenAIRequest.importRecord(sav);
 					}
 					continue;
 				}
@@ -841,27 +908,46 @@ Begin conversationally.
 	}
 
 	private void handleResponse(OpenAIRequest req, OpenAIResponse rep, boolean emitResponse) {
-		/*
-		if(includeContextHistory) {
-			req.setContext(rep.getContext());
-		}
-		*/
-
-		/// System.out.println(JSONUtil.exportObject(lastRep));
-		if(rep.getMessage() != null) {
-			if(includeMessageHistory) {
-				req.getMessages().add(rep.getMessage());
+		List<BaseRecord> msgs = new ArrayList<>();
+		BaseRecord msg = rep.get("message");
+		if(msg == null) {
+			List<BaseRecord> choices = rep.get("choices");
+			for(BaseRecord c : choices) {
+				BaseRecord m = c.get("message");
+				msgs.add(m);
 			}
-			String cont = rep.getMessage().getContent();
+		}
+		else {
+			msgs.add(msg);
+		}
+		for(BaseRecord m : msgs) {
+			if(includeMessageHistory) {
+				req.addMessage(new OpenAIMessage(m));
+			}
+			String cont = m.get("content");
 			if(emitResponse && cont != null) {
-				cont = cont.trim().replaceAll("^assistant[:]*\s*", "");
-				int idx = cont.indexOf("@@@");
-				if(idx > -1) {
-					cont = cont.substring(idx);
-				}
 				System.out.println(formatOutput(cont));
 			}
 		}
+		/*
+		}
+		else if(serviceType == LLMServiceEnumType.OLLAMA) {
+			if(rep.getMessage() != null) {
+				if(includeMessageHistory) {
+					req.addMessage(rep.getMessage());
+				}
+				String cont = rep.getMessage().getContent();
+				if(emitResponse && cont != null) {
+					cont = cont.trim().replaceAll("^assistant[:]*\s*", "");
+					int idx = cont.indexOf("@@@");
+					if(idx > -1) {
+						cont = cont.substring(idx);
+					}
+					System.out.println(formatOutput(cont));
+				}
+			}
+		}
+		*/
 	}
 
 	private String formatOutput(String input) {
@@ -871,6 +957,7 @@ Begin conversationally.
 		String output = input.replace('’', '\'');
 		return output;
 	}
+	
 	public OpenAIRequest newRequest(String model) {
 		OpenAIRequest req = new OpenAIRequest();
 		req.setModel(model);
@@ -879,7 +966,8 @@ Begin conversationally.
 			OpenAIMessage msg = new OpenAIMessage();
 			msg.setRole("system");
 			msg.setContent(llmSystemPrompt.trim());
-			req.getMessages().add(msg);
+			List<OpenAIMessage> msgs = req.get("messages");
+			msgs.add(msg);
 		/*
 		}
 		else {
@@ -908,7 +996,7 @@ Begin conversationally.
 			}
 		}
 		
-		if((req.getMessages().size() - idx - kfc) % keyFrameEvery == 0) {
+		if(req.getMessages().size() > pruneSkip && (req.getMessages().size() - idx - kfc) % keyFrameEvery == 0) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}
@@ -981,8 +1069,8 @@ Begin conversationally.
 			/*
 			List<OpenAIMessage> msgs = Arrays.asList(Arrays.copyOfRange(req.getMessages().toArray(new OpenAIMessage[0]), marker, req.getMessages().size()));
 			req.getMessages().clear();
-			req.getMessages().add(ctxMsg);
-			req.getMessages().addAll(msgs);
+			req.addMessage(ctxMsg);
+			req.addMessageAll(msgs);
 			*/
 		}
 	}
@@ -1033,7 +1121,7 @@ Begin conversationally.
 				}
 			}
 			else {
-				logger.info("Don't remind because " + (chatConfig == null) + "/" + (promptConfig == null) + "/" + (req.getMessages().size() % remind));
+				// logger.info("Don't remind because " + (chatConfig == null) + "/" + (promptConfig == null) + "/" + (req.getMessages().size() % remind));
 			}
 		}
 		msg.setContent(msgBuff.toString());
@@ -1042,7 +1130,7 @@ Begin conversationally.
 			pruneCount(req, messageTrim);
 		}
 
-		req.getMessages().add(msg);
+		req.addMessage(msg);
 
 		return msg;
 	}
@@ -1060,7 +1148,7 @@ Begin conversationally.
 		String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
 		boolean useJB = (forceJailbreak || chatConfig != null && (boolean)chatConfig.get("useJailBreak"));
 
-		outReq.getMessages().addAll(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
+		outReq.addMessage(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
 		.collect(Collectors.toList()));
 		
 		return outReq;
@@ -1070,9 +1158,30 @@ Begin conversationally.
 		if(req == null) {
 			return null;
 		}
-		return ClientUtil.post(OpenAIResponse.class, ClientUtil.getResource(ollamaServer + "/api/" + (chatMode ? "chat" : "generate")), getPrunedRequest(req), MediaType.APPLICATION_JSON_TYPE);
+		String ser = JSONUtil.exportObject(getPrunedRequest(req), RecordSerializerConfig.getHiddenForeignUnfilteredModule());
+		OpenAIResponse orec = null;
+		BaseRecord rec = ClientUtil.postToRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, ClientUtil.getResource(getServiceUrl(req)), authorizationToken, ser, MediaType.APPLICATION_JSON_TYPE);
+		if(rec != null) {
+			orec = new OpenAIResponse(rec);
+		}
+		else {
+			logger.warn("Null response");
+			logger.warn(req.toFullString());
+		}
+		return orec;
 	}
 	
+	public String getServiceUrl(OpenAIRequest req) {
+		
+		String url = null;
+		if(serviceType == LLMServiceEnumType.OLLAMA) {
+			url = serverUrl + "/api/" + (chatMode ? "chat" : "generate");
+		}
+		else if (serviceType == LLMServiceEnumType.OPENAI) {
+			url = serverUrl + "/openai/deployments/" + req.getModel() + "/chat/completions" + (apiVersion != null ? "?api-version=" + apiVersion : "");
+		}
+		return url;
+	}
 	
 	
 
@@ -1081,7 +1190,7 @@ Begin conversationally.
 	public OpenAIRequest getChatPrompt() {
 		String model = null;
 		if(chatConfig != null) {
-			model = chatConfig.get("llmModel");
+			model = chatConfig.get("model");
 		}
 		return getChatPrompt(model);
 	}
@@ -1116,6 +1225,7 @@ Begin conversationally.
 			userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, null);
 			
 		}
+		
 		setLlmSystemPrompt(sysTemp);
 		req = newRequest(model);
 		setPruneSkip(2);
@@ -1129,7 +1239,7 @@ Begin conversationally.
 
 		return req;
 	}
-	
+	/*
 	public static OllamaOptions getChatOptions() {
 		return getChatOptions(null);
 	}
@@ -1162,5 +1272,5 @@ Begin conversationally.
 		}
 		return opts;
 	}
-
+	*/
 }

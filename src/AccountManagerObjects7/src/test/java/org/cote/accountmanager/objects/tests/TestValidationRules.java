@@ -154,7 +154,7 @@ public class TestValidationRules extends BaseTest {
 	private BaseRecord recursiveCreate(BaseRecord owner, BaseRecord dir, BaseRecord obj) {
 
 		applyGroupOwnership(owner, dir, obj);
-		ModelSchema schema = RecordFactory.getSchema(obj.getModel());
+		ModelSchema schema = RecordFactory.getSchema(obj.getAMModel());
 		for(FieldType f : obj.getFields()) {
 			FieldSchema fs = schema.getFieldSchema(f.getName());
 			//List<BaseRecord> cobjs = new ArrayList<>();
@@ -190,7 +190,7 @@ public class TestValidationRules extends BaseTest {
 			obj.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 			obj.set(FieldNames.FIELD_GROUP_PATH, dir.get(FieldNames.FIELD_PATH));
 			logger.info("Path: " + dir.get(FieldNames.FIELD_PATH));
-			ModelSchema schema = RecordFactory.getSchema(obj.getModel());
+			ModelSchema schema = RecordFactory.getSchema(obj.getAMModel());
 			for(FieldType f : obj.getFields()) {
 				FieldSchema fs = schema.getFieldSchema(f.getName());
 				if(fs.isForeign()) {

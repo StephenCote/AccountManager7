@@ -145,7 +145,7 @@ public class QueryUtil {
 					}
 					else if(f.getField(FieldNames.FIELD_VALUE).getValueType().equals(FieldEnumType.MODEL)) {
 						BaseRecord mod = (BaseRecord)value;
-						value = mod.copyRecord(RecordUtil.getPossibleFields(mod.getModel(), keyFields));
+						value = mod.copyRecord(RecordUtil.getPossibleFields(mod.getAMModel(), keyFields));
 					}
 					buff.append(" " + quote + value + quote);
 				}
@@ -183,7 +183,7 @@ public class QueryUtil {
 		Query query = null;
 		try {
 			query = new Query(IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_QUERY));
-			query.set(FieldNames.FIELD_TYPE, records[0].getModel());
+			query.set(FieldNames.FIELD_TYPE, records[0].getAMModel());
 			query.set(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
 			createQueryGroup(query, query, records);
 			
@@ -219,7 +219,7 @@ public class QueryUtil {
 
 		QueryField or = part.field(null, ComparatorEnumType.GROUP_OR, null);
 		for(String f : fieldNames) {
-			String actorType = ParticipationFactory.getParticipantModel(model, f, actor.getModel());
+			String actorType = ParticipationFactory.getParticipantModel(model, f, actor.getAMModel());
 			part.field(FieldNames.FIELD_PARTICIPANT_MODEL, ComparatorEnumType.EQUALS, actorType, or);
 		}
 		/*
@@ -242,7 +242,7 @@ public class QueryUtil {
 	
 	public static void filterParticipation(Query query, BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
 		Query part = createParticipationQuery(null, object, fieldName, null, effect);
-		actorType = ParticipationFactory.getParticipantModel(object.getModel(), fieldName, actorType);
+		actorType = ParticipationFactory.getParticipantModel(object.getAMModel(), fieldName, actorType);
 
 		part.field(FieldNames.FIELD_PARTICIPANT_MODEL, actorType);
 		try {
@@ -265,7 +265,7 @@ public class QueryUtil {
 
 		if(object != null) {
 			q.field(FieldNames.FIELD_PARTICIPATION_ID, ComparatorEnumType.EQUALS, object.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_PARTICIPATION_MODEL, ComparatorEnumType.EQUALS, object.getModel());
+			q.field(FieldNames.FIELD_PARTICIPATION_MODEL, ComparatorEnumType.EQUALS, object.getAMModel());
 		}
 		if(actor != null) {
 			q.field(FieldNames.FIELD_PARTICIPANT_ID, ComparatorEnumType.EQUALS, actor.get(FieldNames.FIELD_ID));

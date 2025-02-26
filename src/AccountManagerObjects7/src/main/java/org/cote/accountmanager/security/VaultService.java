@@ -959,13 +959,13 @@ public class VaultService
 		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
 			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_VAULT_EXT);
 		}
-		ModelSchema ms = RecordFactory.getSchema(obj.getModel());
+		ModelSchema ms = RecordFactory.getSchema(obj.getAMModel());
 		FieldSchema fs = ms.getFieldSchema(field.getName());
 		
 		if(!fs.isEncrypt()) {
-			throw new ModelException("Model " + obj.getModel() + " field " + field.getName() + " is not configured to be encrypted");
+			throw new ModelException("Model " + obj.getAMModel() + " field " + field.getName() + " is not configured to be encrypted");
 		}
-		if(FieldUtil.isNullOrEmpty(obj.getModel(), field)) {
+		if(FieldUtil.isNullOrEmpty(obj.getAMModel(), field)) {
 			logger.warn("Do not vault null or empty value");
 			return;
 		}
@@ -1045,7 +1045,7 @@ public class VaultService
 		List<String> vaulted = obj.get(FieldNames.FIELD_VAULTED_FIELDS);
 		List<String> unvaulted = obj.get(FieldNames.FIELD_UNVAULTED_FIELDS);
 		
-		if(FieldUtil.isNullOrEmpty(obj.getModel(), field)) {
+		if(FieldUtil.isNullOrEmpty(obj.getAMModel(), field)) {
 			logger.warn("Marking null or empty field as being decrypted");
 			vaulted.remove(field.getName());
 			unvaulted.add(field.getName());
@@ -1055,11 +1055,11 @@ public class VaultService
 		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
 			throw new ModelException("Model does not inherit from " + ModelNames.MODEL_VAULT_EXT);
 		}
-		ModelSchema ms = RecordFactory.getSchema(obj.getModel());
+		ModelSchema ms = RecordFactory.getSchema(obj.getAMModel());
 		FieldSchema fs = ms.getFieldSchema(field.getName());
 		
 		if(!fs.isEncrypt()) {
-			throw new ModelException("Model " + obj.getModel() + " field " + field.getName() + " is not configured to be encrypted");
+			throw new ModelException("Model " + obj.getAMModel() + " field " + field.getName() + " is not configured to be encrypted");
 		}
 		
 		boolean isVaulted = obj.get(FieldNames.FIELD_VAULTED);

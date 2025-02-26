@@ -9,6 +9,11 @@
 			"type": "string"
 		},
 		{
+			"name": "logprobs",
+			"type": "double",
+			"default": 0.0
+		},
+		{
 			"name": "index",
 			"type": "int"
 		},

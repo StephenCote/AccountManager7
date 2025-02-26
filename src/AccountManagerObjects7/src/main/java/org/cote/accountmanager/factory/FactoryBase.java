@@ -34,7 +34,7 @@ public class FactoryBase implements IFactory {
 		BaseRecord rec = null;
 		try {
 			rec = RecordFactory.newInstance(schema.getName());
-			if(recordTemplate != null && (schema.getName().equals(recordTemplate.getModel()) || schema.inherits(recordTemplate.getModel()))) {
+			if(recordTemplate != null && (schema.getName().equals(recordTemplate.getAMModel()) || schema.inherits(recordTemplate.getAMModel()))) {
 				// logger.info("Apply template");
 				//for(FieldType f : recordTemplate.getFields()) {
 				for(int i = 0; i < recordTemplate.getFields().size(); i++) {

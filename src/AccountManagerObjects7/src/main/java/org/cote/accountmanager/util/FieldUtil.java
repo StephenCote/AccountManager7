@@ -107,7 +107,7 @@ public class FieldUtil {
 			}
 		} catch (Exception e) {
 			logger.error(e);
-			logger.error("Error setting flex " + type.toString() + " " + fieldName + " in " + record.getModel());
+			logger.error("Error setting flex " + type.toString() + " " + fieldName + " in " + record.getAMModel());
 			e.printStackTrace();
 		}
 	}

@@ -146,7 +146,7 @@ public class NarrativeUtil {
 		List<String> desc = new ArrayList<>();
 		boolean alive = targ.get("state.alive");
 		
-		if(targ.getModel().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
+		if(targ.getAMModel().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
 			int age = targ.get(FieldNames.FIELD_AGE);
 			String gender = targ.get(FieldNames.FIELD_GENDER);
 			desc.add("Race: " + NarrativeUtil.getRaceDescription(targ.get(OlioFieldNames.FIELD_RACE)));
@@ -179,7 +179,7 @@ public class NarrativeUtil {
 			}
 
 		}
-		else if(targ.getModel().equals(OlioModelNames.MODEL_ANIMAL)) {
+		else if(targ.getAMModel().equals(OlioModelNames.MODEL_ANIMAL)) {
 			desc.add((alive ? "" : "Dead ") + targ.get(FieldNames.FIELD_NAME));
 		}
 		
@@ -291,7 +291,7 @@ public class NarrativeUtil {
 			logger.warn("Null interaction");
 			return "Nothing happened.";
 		}
-		
+		IOSystem.getActiveContext().getReader().populate(inter, 2);
 		String aname = inter.get("actor.firstName");
 		InteractionEnumType type = inter.getEnum(FieldNames.FIELD_TYPE);
 		AlignmentEnumType aalign = inter.getEnum(OlioFieldNames.FIELD_ACTOR_ALIGNMENT);

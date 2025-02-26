@@ -2,6 +2,7 @@ package org.cote.accountmanager.olio.llm;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -31,23 +32,37 @@ public class OpenAIRequest extends LooseRecord {
 	}
 	
 	public static OpenAIRequest importRecord(String json) {
-		return new OpenAIRequest(JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()));
+		return new OpenAIRequest(RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_REQUEST, json));
 	}
 	
-	public List<OpenAIMessage> getMessages() {
-		return TypeUtil.convertRecordList(get("messages"));
+	public void addMessage(OpenAIMessage msg) {
+		List<OpenAIMessage> msgs = get("messages");
+		msgs.add(msg);
+	}
+	
+	public void addMessage(List<OpenAIMessage> amsg) {
+		List<OpenAIMessage> msgs = get("messages");
+		msgs.addAll(amsg);
+	}
+	
+	public final List<OpenAIMessage> getMessages() {
+		List<BaseRecord> msgs = get("messages");
+		return msgs.stream().map(msg -> new OpenAIMessage(msg)).collect(Collectors.toList());
 	}
 
 	public void setMessages(List<OpenAIMessage> messages) {
 		setValue("messages", messages);
 	}
 
+	/// TODO: Conflicts with 'model' in BaseRecord, which needs to be refactored after changing the key name
+	
 	public String getModel() {
 		return get("model");
 	}
 	public void setModel(String model) {
 		setValue("model", model);
 	}
+	
 	public boolean isStream() {
 		return get("stream");
 	}

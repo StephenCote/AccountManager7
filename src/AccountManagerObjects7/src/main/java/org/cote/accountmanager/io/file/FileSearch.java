@@ -82,7 +82,7 @@ public class FileSearch extends SearchBase {
 			urecs = new BaseRecord[recs.length];
 			for(int i = 0; i < recs.length; i++) {
 				try {
-					urecs[i] = RecordFactory.newInstance(recs[i].getModel(), requestFields.toArray(new String[0]));
+					urecs[i] = RecordFactory.newInstance(recs[i].getAMModel(), requestFields.toArray(new String[0]));
 					List<FieldType> ufields = recs[i].getFields().stream().filter(o -> {
 						return requestFields.contains(o.getName());
 					}).collect(Collectors.toList());
