@@ -10,7 +10,7 @@
 		"policies": {
 			"bind": {
 				"objectId": "streamId",
-				"model": "data.stream",
+				"schema": "data.stream",
 				"description": "Defer to the object identified by 'propertyName' when performing policy evaluations.  This is to allow for ephemeral objects to be authorized and audited in a uniform fashion"
 			}
 		}

@@ -173,7 +173,7 @@ public class LoginService {
 						logger.error("Invalid subject");
 					}
 				}
-				String subType = subject.getAMModel();
+				String subType = subject.getSchema();
 				if(subType == null) {
 					subType = ModelNames.MODEL_USER;
 				}

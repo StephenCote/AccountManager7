@@ -692,15 +692,15 @@ public class ApparelUtil {
 		BaseRecord qual = quals.get(0);
 		String[] tmat = emb.split(":");
 		try {
-			if(rec.getAMModel().equals(OlioModelNames.MODEL_WEARABLE)) {
+			if(rec.getSchema().equals(OlioModelNames.MODEL_WEARABLE)) {
 				rec.set(OlioFieldNames.FIELD_FABRIC, tmat[0]);
 			}
-			else if(rec.getAMModel().equals(OlioModelNames.MODEL_ITEM)) {
+			else if(rec.getSchema().equals(OlioModelNames.MODEL_ITEM)) {
 				List<String> mats = rec.get(OlioFieldNames.FIELD_MATERIALS);
 				mats.add(tmat[0]);
 			}
 			else {
-				logger.warn("Unhandled model for fab type: " + rec.getAMModel());
+				logger.warn("Unhandled model for fab type: " + rec.getSchema());
 			}
 			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_OPACITY, Double.parseDouble(tmat[3]));
 			ComputeUtil.addDouble(qual, OlioFieldNames.FIELD_ELASTICITY, Double.parseDouble(tmat[4]));
@@ -715,105 +715,7 @@ public class ApparelUtil {
 			logger.error(emb);
 		}
 	}
-	/*
-	private static void applyParameters(BaseRecord user, BaseRecord world, BaseRecord rec, String parms) {
-		if(parms != null) {
-			String[] pairs = parms.substring(1, parms.length() - 1).split(",");
-			for(String pair : pairs) {
-				String[] kv = pair.split("=");
-				if(kv.length == 2) {
-					logger.info(rec.getModel() + " - " + kv[0].trim() + " = " + kv[1].trim());
-					String fname = kv[0].trim();
-					if(fname.startsWith("$")) {
-						continue;
-					}
-					FieldType f = null;
-					if(fname.contains(".")) {
-						String[] fp = fname.split("\\.");
-						BaseRecord r1 = null;
-						if(rec.getField(fp[0]).getValueType() == FieldEnumType.MODEL) {
-							r1 = rec.get(fp[0]);
-						}
-						else if (rec.getField(fp[0]).getValueType() == FieldEnumType.LIST) {
-							List<BaseRecord> rrecs = rec.get(fp[0]);
-							if(rrecs.size() > 0) {
-								r1 = rrecs.get(0);
-							}
-						}
-						if(r1 != null) {
-							f = r1.getField(fp[1]);
-						}
-					}
-					else {
-						f = rec.getField(kv[0].trim());
-					}
-					String val = kv[1].trim();
-					try {
-						switch(f.getValueType()) {
-							case STRING:
-								f.setValue(val);
-								break;
-							case LIST:
-								List<String> lst = f.getValue();
-								lst.add(val);
-								break;
-							case DOUBLE:
-								f.setValue(Double.parseDouble(val));
-								break;
-							default:
-								logger.error("Unhandled type: " + f.getValueType().toString() + " " + val);
-								break;
-						}
-					}
-					catch(ValueException e) {
-						logger.error(e);
-					}
-				}
-			}
-		}
-	}
-	*/
-	/*
-	public static String getOlioResource(BaseRecord user, BaseRecord world, String apparelBase, String gender) {
 
-		String appStr = replaceTokens(ResourceUtil.getInstance().getResource(apparelBase));
-		Matcher m = parameterTokenPattern.matcher(appStr);
-		int idx = 0;
-		StringBuilder rep = new StringBuilder();
-		
-		while(m.find()) {
-			String type = m.group(1);
-			String wear = m.group(2);
-			String parms = null;
-			if(m.groupCount() > 2) {
-				parms = m.group(3);
-			}
-			String resStr = null;
-			if(wear.equals("random")) {
-				resStr = getRandomType(user, world, type, gender, parms);
-				parms = null;
-			}
-			else {
-				resStr = ResourceUtil.getInstance().getResource("./olio/" + type + "/" + wear + ".json");
-			}
-			String wearx = replaceTokens(resStr);
-			String repStr = "null";
-			if(resStr != null && resStr.length() > 0 && !resStr.equals("null")) {
-				BaseRecord temp1 = IOSystem.getActiveContext().getFactory().template("olio." + type, wearx);
-				applyParameters(user, world, temp1, parms);
-				OlioUtil.applyRandomOlioValues(user, world, temp1);
-				repStr = temp1.toFullString();
-			}
-		    rep.append(appStr, idx, m.start()).append(repStr);
-		    idx = m.end();
-		}
-		if (idx < appStr.length()) {
-		    rep.append(appStr, idx, appStr.length());
-		}
-
-		return rep.toString();
-	}
-	*/
 	public BaseRecord newApparel(BaseRecord user, BaseRecord world, String name, BaseRecord[] wearables) {
 		String wpath = world.get(OlioFieldNames.FIELD_APPAREL_PATH);
 		BaseRecord temp1 = IOSystem.getActiveContext().getFactory().template(OlioModelNames.MODEL_APPAREL, "{\"name\": \"" + name + "\"}");

@@ -46,7 +46,7 @@ public class CredentialFactory extends FactoryBase {
 			if(tid == 0L || oid == 0L) throw new ModelException("Invalid identifiers");
 			
 			cred.set(FieldNames.FIELD_TYPE, CredentialEnumType.UNKNOWN.toString());
-			cred.set(FieldNames.FIELD_REFERENCE_TYPE, targetObject.getAMModel());
+			cred.set(FieldNames.FIELD_REFERENCE_TYPE, targetObject.getSchema());
 			cred.set(FieldNames.FIELD_REFERENCE_ID, tid);
 			if(parameterList != null) {
 				String type = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_TYPE, String.class, null);

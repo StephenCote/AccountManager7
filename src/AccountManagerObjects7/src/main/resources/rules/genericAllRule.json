@@ -1,5 +1,5 @@
 {
-	"ammodel": "policy.rule",
+	"schema": "policy.rule",
 	"urn": "generic.policy.rule.allrequired",
 	"type": "permit",
 	"condition": "all",

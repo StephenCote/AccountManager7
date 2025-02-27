@@ -23,12 +23,12 @@ public class ModelValueType extends ValueType {
 		
 		if(inValue != null && (this.getBaseModel() == null || !this.getBaseModel().equals(ModelNames.MODEL_FLEX))) {
 			BaseRecord m = (BaseRecord)inValue;
-			this.setBaseModel(m.getAMModel());
+			this.setBaseModel(m.getSchema());
 			if(this.getBaseModel() == null || RecordFactory.getSchema(this.getBaseModel()) == null) {
 				throw new ValueException(String.format(ValueException.MODEL_VALUE_EXCEPTION, this.getBaseModel()));
 			}
-			else if(!this.getBaseModel().equals(m.getAMModel())) {
-				throw new ValueException(String.format(ValueException.INVALID_MODEL_EXCEPTION, m.getAMModel(), this.getBaseModel()));
+			else if(!this.getBaseModel().equals(m.getSchema())) {
+				throw new ValueException(String.format(ValueException.INVALID_MODEL_EXCEPTION, m.getSchema(), this.getBaseModel()));
 			}
 			
 		}

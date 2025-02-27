@@ -27,7 +27,7 @@ public abstract class RecordWriter extends RecordTranslator implements IWriter {
 	
 	protected void prepareTranscription(RecordOperation operation, BaseRecord model) {
 		
-		ModelSchema lbm = RecordFactory.getSchema(model.getAMModel());
+		ModelSchema lbm = RecordFactory.getSchema(model.getSchema());
 		
 		/// If the operation is a write, and the schema defines an identity field and that field is missing on the model, then add it back in
 		/// This can happen when setting embedded properties (eg: property.property.property) where the default behavior isn't to automatically add all identity fields

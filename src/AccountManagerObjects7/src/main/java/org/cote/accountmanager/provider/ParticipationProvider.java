@@ -38,13 +38,9 @@ public class ParticipationProvider implements IProvider {
 			|| IOSystem.getActiveContext().getIoType() != RecordIO.FILE
 			|| !model.inherits(ModelNames.MODEL_PARTICIPATION)
 		) {
-			// logger.warn("Skip " + model.getModel());
 			return;
 		}
-		
-		//logger.info("Process " + model.getModel());
-		//logger.info(JSONUtil.exportObject(model, RecordSerializerConfig.getUnfilteredModule()));
-		
+
 		if(IOSystem.getActiveContext().getWriter() == null) {
 			throw new ModelException("Missing write controller");
 		}

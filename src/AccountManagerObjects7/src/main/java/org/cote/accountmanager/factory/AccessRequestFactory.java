@@ -80,19 +80,19 @@ public class AccessRequestFactory extends FactoryBase {
 			}
 			if(requester != null) {
 				access.set(FieldNames.FIELD_REQUESTER, requester.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
-				access.set(FieldNames.FIELD_REQUESTER_TYPE, requester.getAMModel());
+				access.set(FieldNames.FIELD_REQUESTER_TYPE, requester.getSchema());
 			}			
 			if(subject != null) {
 				access.set(FieldNames.FIELD_SUBJECT, subject.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
-				access.set(FieldNames.FIELD_SUBJECT_TYPE, subject.getAMModel());
+				access.set(FieldNames.FIELD_SUBJECT_TYPE, subject.getSchema());
 			}
 			if(submitter != null) {
 				access.set(FieldNames.FIELD_SUBMITTER, submitter.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
-				access.set(FieldNames.FIELD_SUBMITTER_TYPE, submitter.getAMModel());
+				access.set(FieldNames.FIELD_SUBMITTER_TYPE, submitter.getSchema());
 			}
 			if(entitlement != null) {
 				access.set(FieldNames.FIELD_ENTITLEMENT, entitlement.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID}));
-				access.set(FieldNames.FIELD_ENTITLEMENT_TYPE, entitlement.getAMModel());
+				access.set(FieldNames.FIELD_ENTITLEMENT_TYPE, entitlement.getSchema());
 			}
 			/*
 			if(parentId > 0L) {
@@ -106,7 +106,7 @@ public class AccessRequestFactory extends FactoryBase {
 				else {
 					access.set(FieldNames.FIELD_RESOURCE_DATA, resource);
 				}
-				access.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getAMModel());
+				access.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getSchema());
 			}
 			access.set(FieldNames.FIELD_ACTION, aet);
 			access.set(FieldNames.FIELD_APPROVAL_STATUS, apet);

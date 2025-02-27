@@ -218,6 +218,7 @@ Begin conversationally.
 				ChatUtil.saveSession(user, req, sessionName);
 				createNarrativeVector(user, req, sessionName);
 			}
+			logger.info("Continue...");
 			return;
 		}
 
@@ -779,8 +780,15 @@ Begin conversationally.
 			oact = LineAction.CONTINUE;
 		}
 		else if(line.equals("/prompt")) {
+			if (line.length() > 7) {
+				String newPrompt = line.substring(8).trim();
+				req.getMessages().get(0).setContent(newPrompt);
+				logger.info("New prompt: " + newPrompt);
+			} else {
+				logger.info("Current prompt: " + req.getMessages().get(0).getContent());
+			}
 			// if(chatMode && req.getMessages().size() > 0) {
-				req.getMessages().get(0).setContent(llmSystemPrompt.trim());
+				//req.getMessages().get(0).setContent(llmSystemPrompt.trim());
 			/*
 			}
 			
@@ -996,7 +1004,7 @@ Begin conversationally.
 			}
 		}
 		
-		if(req.getMessages().size() > pruneSkip && (req.getMessages().size() - idx - kfc) % keyFrameEvery == 0) {
+		if(req.getMessages().size() > (pruneSkip + keyFrameEvery) && (req.getMessages().size() - idx - kfc) % keyFrameEvery == 0) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}

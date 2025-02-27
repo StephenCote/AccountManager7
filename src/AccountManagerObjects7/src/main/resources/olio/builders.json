@@ -1,6 +1,6 @@
 [
 	{
-		"ammodel": "olio.builder",
+		"schema": "olio.builder",
 		"materials": [
 			{
 				"name": "stick"

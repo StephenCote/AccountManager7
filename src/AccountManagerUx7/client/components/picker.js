@@ -16,7 +16,7 @@
             return;
         }
         let mat;
-        let type = (entity.model ? entity.model : undefined);
+        let type = (entity[am7model.jsonModelKey] ? entity[am7model.jsonModelKey] : undefined);
         let setType = false;
         /// Special handling for embedding pickers in disconnected tables
         ///
@@ -93,9 +93,9 @@
                     }
                     /// Clear the server cache because the parent may have a cached copy of the child
                     ///
-                    if(!useEntity.model || useEntity.model.match(/message/i)) m.redraw();
+                    if(!useEntity[am7model.jsonModelKey] || useEntity[am7model.jsonModelKey].match(/message/i)) m.redraw();
                     else{
-                        am7client.clearCache(useEntity.model, false, function(){
+                        am7client.clearCache(useEntity[am7model.jsonModelKey], false, function(){
                             m.redraw();
                         });
                     }

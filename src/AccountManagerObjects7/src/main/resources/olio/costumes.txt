@@ -1,0 +1,438 @@
+Prehistoric cave settlement during the Ice Age|10,000 BC
+male:clothing:loin cloth:5:m:waist,clothing:fur loincloth:4:m:waist,jewelry:spear point:7:m:hand
+female:clothing:fur loincloth:8:f:lower body,jewelry:pelt necklace:7:f:neck,jewelry:bone pendant:5:f:chest,clothing:animal hide boots:6:f:foot
+Ancient Egyptian marketplace along the Nile River|2500 BC
+male:clothing:tattered linen tunic:8:m:torso,clothing:sandals:6:m:foot,jewelry:crude gold earring:5:m:ear,jewelry:worn leather belt:4:m:waist
+female:clothing:tunica:3:f:torso,clothing:sash:2:f:wast,jewelry:ankh pendant:5:f:neck,jewelry:crown of Isis:8:f:head
+Bronze Age city in the Indus Valley|2000 BC
+male:clothing:tunic:3:m:torso,clothing:sandals:6:m:foot,jewelry:necklace:6:m:throat,jewelry:earring:7:m:ear
+female:clothing:tunic:6:f:torso,clothing:sash:5:f:waist,jewelry:pendant:8:f:neck,jewelry:earrings:7:f:ear,jewelry:bangles:9:f:arm
+Classical Greek agora in Athens|5th century BC
+male:clothing:toga:9:m:torso,clothing:sandals:8:m:foot,jewelry:girdle:6:m:waist
+female:clothing:toga:8:f:torso+legs,clothing:sandals:6:f:foot,jewelry:amulet:7:f:neck,jewelry:papyrus scroll:9:f:hand
+Ancient Persian palace gardens of Persepolis|500 BC
+male:clothing:toga:9:m:torso+leg,clothing:sandals:8:m:foot,jewelry:helmet:7:m:head,jewelry:shield:6:m:left arm,jewelry:sword:5:m:right hand
+female:clothing:tunica with gold trim:8:f:torso,clothing:sandal:6:f:foot,jewelry:girdle:7:f:waist,jewelry:crown:9:f:head,jewelry:earring:7:f:ear
+Roman Colosseum during a gladiatorial contest|100 AD
+male:clothing:toga:8:m:torso,clothing:sandal:6:m:foot,jewelry:armlet:7:m:upper arm,jewelry:necklace:5:m:throat
+female:clothing:toga:8:f:torso+legs,clothing:sandal:6:f:foot,jewelry:pendant:9:f:neck,clothing:belt:7:f:waist
+Medieval castle overlooking a feudal village|1100 AD
+male:clothing:tunic:9:m:chest,clothing:breeches:8:m:leg,clothing:surcoat:7:m:shoulder,clothing:girdle:6:m:waist,jewelry:sword belt buckle:5:m:hips
+female:clothing:tunic:8:f:torso,clothing:breeches:6:f:leg+hip,clothing:leather belt:5:f:waist+jewelry,clothing:cowl hooded cloak:7:f:head+neck,jewelry:pendant cross:8:f:chest,jewelry:rings:6:f:hand
+Renaissance-era Florence's bustling piazza|1500 AD
+male:clothing:doublet:8:m:chest,clothing:breeches:6:m:leg,clothing:hose:5:m:foot,clothing:tunic:7:m:back,jewelry:sword:9:m:right hand,jewelry:pouch of gold coins:10:m:left hip
+female:clothing:gown:6:f:waist,clothing:hooded cloak:5:f:shoulder,clothing:knee-high leather boots:6:f:foot,jewelry:crucifix:3:f:neck,jewelry:sapphire ring:2:f:right hand
+Elizabethan London theater district|1600 AD
+male:clothing:ruffled shirt:8:m:neck,clothing:breeches:9:m:leg,clothing:tight-fitting doublet:10:m:chest,jewelry:sword at side:7:m:waist
+female:clothing:gown:9:f:wrist+ankle,clothing:bodice:8:f:waist,jewelry:crown:5:f:head,jewelry:pendant:6:f:neck,jewelry:rings:7:f:hands
+Colonial-era harbor town in the Americas|1700 AD
+male:clothing:tattered military uniform:8:m:torso+legs,clothing:buckled belt:6:m:wast,jewelry:sword at side:9:m:right hand,jewelry:pistol holstered:7:m:left hip
+female:clothing:bodice and skirt:8:f:waist+hip,clothing:wimple or coif:7:f:head,jewelry:pendant:9:f:neck+jawline
+Wild West frontier town during the Gold Rush|1850 AD
+male:clothing:duster coat:8:m:shoulder+waist,clothing:pantaloons:7:m:waist+calf,clothing:tall hat:9:m:head,clothing:suspenders:5:m:chest+waist,jewelry:belt buckle:6:m:waist
+female:clothing:buckskin dress:8:f:waist,clothing:hunter's hat:6:f:head,jewelry:crystal pendant:7:f:neck,jewelry:silver ring:5:f:right hand
+Victorian-era London street illuminated by gas lamps|1880 AD
+male:clothing:uniform:9:m:torso+legs,clothing:greatcoat:8:m:shoulder+back,clothing:gloves:7:m:hands,jewelry:pistol holstered at hip:6:m:waist
+female:clothing:gloves:3:f:wrist,clothing:dress:8:f:waist+skirt,clothing:bustle:7:f:hindquarters,jewelry:pendant:9:f:chest,jewelry:rings:5:f:right hand
+Art Deco district of New York City|1930 AD
+male:clothing:suit with shoulder pads:6:m:shoulder,clothing:fedora hat:5:m:head,clothing:white dress shirt with wingtips:7:m:collar+neck,jewelry:gold pocket watch chain:8:m:pocket
+female:clothing:silk evening gown:8:f:waist+skirt,clothing:garter belt:6:f:hosiery+jewelry,clothing:pumps:7:f:foot,jewelry:pearl necklace:9:f:neck,jewelry:ring:5:f:right hand
+Soviet-era Moscow during the Cold War|1960 AD
+male:clothing:military uniform:8:m:torso+leg,clothing:russian ushanka hat:5:m:head,jewelry:pistol:9:m:hand
+female:clothing:knee-length coat with fur trim:8:f:shoulder+hip,clothing:tight-fitting dress:7:f:wrist+knees,jewelry:candlestick earrings:5:f:ears,jewelry:black leather gloves:6:f:hands
+Post-apocalyptic waistland inhabited by survivors|2100 AD
+male:clothing:tattered military uniform:8:m:torso+legs,jewelry:rusted dog tags:6:m:neck,jewelry:silver earring with skull pendant:7:m:ear
+female:clothing:tattered black robes:8:f:torso+arms,clothing:belt with silver buckle:5:f:wrist+calf,jewelry:crown of thorns:9:f:head,jewelry:pendant containing a small crystal orb:7:f:neck
+Cyberpunk cityscape with neon lights and towering skyscrapers|2200 AD
+male:clothing:tattered military fatigues:8:m:torso+legs,jewelry:circuitry implant:9:m:forehead,jewelry:metallic prosthetic arm:10:m:right arm
+female:clothing:jumpsuit:6:f:body,clothing:leather jacket:5:f:shoulder,clothing:goggles:7:f:face,jewelry:piercing:8:f:nose,jewelry:piercing:8:f:ear
+Underwater city built on the ocean floor|2300 AD
+male:
+female:clothing:cult robes:9:f:torso,clothing:amulet necklace:8:f:neck,jewelry:pendant:7:f:chest
+Martian colony with domed habitats and terraforming efforts|2400 AD
+male:clothing:tactical jumpsuit:8:m:torso+leg+,jewelry:piercing:7:m:nose,jewelry:piercing:7:m:ear,jewelry:implant:10:m:brain
+female:clothing:tattered white robes:9:f:torso+arms,clothing:silver circlet:8:f:head,jewelry:pocket watch chain:6:f:wrist,jewelry:garnet pendant:7:f:chest
+Interstellar space station serving as a hub for galactic travelers|2600 AD
+male:clothing:tattered military uniform:8:m:chest+arm,clothing:belt with numerous tools:7:m:wrist+jaw,clothing:goggles:5:m:face,jewelry:pistol on hip:9:m:hypogastric region
+female:clothing:silicone jumpsuit:9:f:body,clothing:crystal pendant:8:f:neck,jewelry:circlet of small gemstones:7:f:forehead
+Dyson Sphere megastructure harnessing the energy of a star|3000 AD
+male:clothing:tactical jumpsuit:8:m:torso+leg,clothing:battle helmet:7:m:head,jewelry:pistol grip pendant:5:m:neck,clothing:goggles:6:m:face,clothing:knee pads:4:m:leg
+female:clothing:tattered black robes:9:f:torso+legs,jewelry:crown of thorns:8:f:head,jewelry:eclipse pendant:7:f:neck,clothing:starlight-infused cloak:10:f:body
+Neolithic stone circle used for rituals and ceremonies|3000 BC
+male:clothing:animal hide loincloth:8:m:waist,clothing:belt with bone and fur trim:6:m:waist,jewelry:tusk necklace:5:m:neck,jewelry:rude wooden pendant:7:m:chest
+female:clothing:tunic:8:f:torso,clothing:belt:6:f:waist,jewelry:pendant:7:f:neck
+Ancient Mayan temple complex in the jungle|600 AD
+male:clothing:tunic:5:m:torso,clothing:belted pants:6:m:waist+leg,jewelry:sword hilt:8:m:hand,jewelry:pectoral armor:9:m:chest,jewelry:helmet crest:10:m:head
+female:clothing:tunic:4:f:chest,clothing:sash:6:f:waist,jewelry:crown:8:f:head,jewelry:earrings:7:f:ear,jewelry:nose ring:5:f:nose,jewelry:anklets:9:f:ankle
+Viking longhouse settlement along a fjord|800 AD
+male:clothing:tunic:9:m:torso,clothing:breeches:8:m:leg+hip,clothing:sword belt:7:m:waist,jewelry:pendant:4:m:neck
+female:clothing:woven woolen tunic:9:f:torso,clothing:belted apron:8:f:waist+hip,clothing:fur-lined cloak:7:f:shoulder+back,jewelry:amulet:5:f:neck
+Medieval Islamic souk in Baghdad|1000 AD
+male:clothing:tunic:8:m:torso,clothing:breeches:6:m:leg,clothing:sandals:5:m:foot,jewelry:hilt:7:m:hand
+female:clothing:tunica:5:f:torso,clothing:sash:4:f:waist,jewelry:papyrus amulet:7:f:right shoulder,jewelry:onion talisman:8:f:left wrist
+Feudal Japanese samurai castle overlooking rice paddies|1200 AD
+male:clothing:kimono:8:m:torso,clothing:geta sandals:6:m:foot,jewelry:samurai sword:9:m:hilt+jawbone,jewelry:bushido tattoo sleeve:10:m:arm+shoulder
+female:clothing:kimono:9:f:torso+legs,jewelry:pendant:8:f:neck,clothing:geta sandals:6:f:foot,clothing:sash:7:f:waist,clothing:hachimaki headband:5:f:head
+Mongol horde camp on the steppes of Central Asia|1300 AD
+male:clothing:tunic:8:m:torso,clothing:pants:7:m:leg,jewelry:belt buckle:4:m:waist
+female:clothing:leather tunic:8:f:torso,clothing:pants:7:f:leg,clothing:belted cloak:9:f:shoulder+back,jewelry:talisman:6:f:wrist,jewelry:crown of antlers:5:f:head
+Renaissance-era Venetian canal lined with palazzos|1500 AD
+male:clothing:tunic:8:m:torso,clothing:breeches:6:m:leg,clothing:doublet:7:m:chest,jewelry:pendant cross:3
+female:clothing:gown:9:f:waist+skirt,jewelry:pendant:8:f:neck,clothing:cowl:7:f:head+collar,jewelry:rings:6:f:right hand
+Tudor-era English countryside manor and its surrounding estate|1600 AD
+male:clothing:doublet:8:m:chest
+female:clothing:long gown:6:f:wrist+hip,clothing:bodice:5:f:chest,jewelry:talisman:7:f:neck,jewelry:amulet:8:f:waist
+Dutch Golden Age canal district of Amsterdam|1650 AD
+male:clothing:tricorn hat:8:m:head,clothing:sword belt:6:m:wast,jewelry:pouch watch:7:m:wrist,jewelry:buckled boots:5:m:foot,clothing:dress uniform:9:m:body
+female:clothing:bodice and hoop skirt:8:f:wast+hip,clothing:wide-brimmed hat with veil:7:f:face,jewelry:pendant cross:6:f:neck,jewelry:girdle or belt buckle:5:f:waist
+Ottoman Empire's bustling bazaar in Istanbul|1700 AD
+male:clothing:turban:6:m:head,clothing:jubba:8:m:torso+legs,jewelry:sword hilt:7:m:right hand,jewelry:pistol holster:5:m:left hip,jewelry:girdle with pouches:4:m:waist
+female:clothing:turban:8:f:head,clothing:vestments:9:f:body,jewelry:symbolic pendant:6:f:chest
+French Revolution-era Parisian streets during turmoil|1789 AD
+male:clothing:tattered tricorn hat:6:m:head,clothing:torn and stained greatcoat:5:m:body,clothing:buckled boots:6:m:foot,jewelry:soldier's badge:7:m:left shoulder,jewelry:pistol at side:8:m:right hip
+female:clothing:gown:8:f:waist+skirt,clothing:bodice:6:f:waist,clothing:cape:7:f:shoulder,clothing:hair ribbon:5:f:hair,jewelry:pendant:4:f:neck
+Victorian-era San Francisco during the California Gold Rush|1850 AD
+male:clothing:khaki uniform:8:m:torso+legs,jewelry:pistol:6:m:hand,clothing:turbans:4:m:head
+female:clothing:gloves:5:f:hand,clothing:bustle skirt:8:f:waist+skirt,clothing:tight corset:9:f:chest+waist,clothing:hair updo:7:f:head,jewelry:crystal pendant:6:f:neck,jewelry:copper ring:4:f:ring finger
+Industrial Revolution-era factory town with smokestacks and mills|1880 AD
+male:clothing:ragged overalls:8:m:waist,clothing:tattered flannel shirt:7:m:chest,jewelry:pocket watch chain:5:m:left pocket
+female:clothing:long coat:6:f:shoulder+waist,clothing:white blouse:4:f:neck+chest,clothing:high-necked dress:5:f:wrist+ankle,jewelry:crystal pendant:7:f:throat
+World War II-era European city under occupation|1940 AD
+male:clothing:military uniform:9:m:chest+arm,clothing:trench coat:8:m:back,clothing:rifle:7:m:shoulder,clothing:helmet:6:m:head,jewelry:pistol:5:m:hip
+female:clothing:tattered coat:8:f:shoulder,clothing:long skirt:9:f:knee,clothing:white blouse:7:f:neck,clothing:black gloves:5:f:wrist,jewelry:candlestick brooch:6:f:bust
+Post-war American suburbia with neat rows of identical houses|1950 AD
+male:clothing:military uniform:8:m:chest+waist+jaw,jewelry:watches:4:m:wrist,jewelry:pins:3:m:jacket,clothing:hat:6:m:head
+female:clothing:dress:4:f:wrist+waist,clothing:girdle:5:f:waist,clothing:knee-high stockings:6:f:calf,clothing:pumps:7:f:foot,jewelry:belt buckle:8:f:hip
+Disco-era New York upscale night club|1977 AD
+male:clothing:suit:8:m:chest+waist,clothing:tie:6:m:neck,clothing:shoes:9:m:foot,jewelry:watches:5:m:wrist,jewelry:glasses:4:m:face
+female:clothing:satin jumpsuit:8:f:chest+waist,clothing:gown with train:9:f:shoulder to floor,jewelry:pendant:6:f:neck,jewelry:earring:5:f:ear,jewelry:rings:4:f:hands
+Seedy Los Angeles street near Hollywood|1977 AD
+male:clothing:torn denim jacket:5:m:shoulder,clothing:ripped jeans:6:m:leg,clothing:soldier boots:8:m:foot,jewelry:pistol:9:m:hand
+female:clothing:torn jeans:5:f:waist+leg,clothing:brown leather jacket:6:f:shoulder,clothing:black tank top:4:f:chest,jewelry:copper pentagram necklace:8:f:neck,jewelry:silver ring with gemstone:7:f:right hand
+Contemporary Brazilian favela sprawling up a hillside|2000 AD
+male:clothing:torn camouflage fatigues:8:m:torso+legs,jewelry:rifle strap:5:m:shoulder+jaw,clothing:sunglasses:4:m:face
+female:clothing:tattered black dress:8:f:chest+waist,clothing:sandals:5:f:foot,jewelry:copper pentagram necklace:7:f:neck,clothing:black leather jacket with silver studs:9:f:shoulder
+Futuristic megacity skyline with flying cars and holographic billboards|2300 AD
+male:clothing:jumpsuit:9:m:calf+ankle,clothing:goggles:8:m:eye+calf,jewelry:tattoo:5:m:forehead,clothing:boots with built-in armor plating:9:m:calf+ankle
+female:clothing:holographic cloak:9:f:torso+arms,clothing:tattered black robes:8:f:torso+jacket,clothing:silver choker with gemstone pendant:7:f:neck,jewelry:copper ring on left index finger:6:f:right hand
+Oceanic research station studying underwater ecosystems|2500 AD
+male:clothing:jumpsuit:9:m:torso+leg,clothing:helmet:8:m:head,clothing:goggles:7:m:face,jewelry:piercing:6:m:nose,jewelry:tattoo:5:m:right arm
+female:clothing:suit:6:f:waist+leg,clothing:jacket:5:f:shoulder,clothing:gloves:4:f:hand,clothing:helmet:7:f:head,jewelry:pendant:8:f:chest
+Terraformed colony on a distant exoplanet with alien flora and fauna|2700 AD
+male:clothing:tattered power armor:9:m:torso+arms+legs,jewelry:surgical scar:8:m:scalp,jewelry:bionic eye implant:7:m:eye,jewelry:dental implants:6:m:teeth
+female:clothing:tattered black robe:9:f:torso+arms,clothing:belted at waist:8:f:waist,jewelry:crystal pendant:6:f:neck,jewelry:orbital tattoo:7:f:right eyebrow
+Transcendent digital realm where consciousnesses merge with AI|3000 AD
+male:
+female:clothing:elegant white robe:9:f:torso+arms,clothing:crown of interlocking circuitry:8:f:head,jewelry:glowing crystal pendant:7:f:chest,jewelry:rings adorned with microchips:6:f:hands
+Paleolithic hunter-gatherer campsite beside a freshwater river|20,000 BC
+male:clothing:loin cloth:3:m:waist,jewelry:belt made of animal hide:4:m:wrist,clothing:fur loincloth:5:m:thighs+hips
+female:clothing:bear fur loincloth:8:f:waist,clothing:woven reed cloak:9:f:shoulders,clothing:leather thong sandals:7:f:foot,jewelry:paleolithic pendant:5:f:neck,jewelry:bone necklace:6:f:throat
+Ancient Sumerian ziggurat rising from the Mesopotamian plains|3000 BC
+male:clothing:toga:9:m:torso,clothing:sandal:8:m:foot,jewelry:collarbone pendant:5:m:neck,jewelry:wrist cuff:4:m:wrists
+female:clothing:tunics:8:f:torso,clothing:sandals:7:f:foot,jewelry:pendant:9:f:neck,jewelry:crown:10:f:head
+Shang Dynasty palace complex in ancient China|1200 BC
+male:clothing:tunic:9:m:torso,clothing:belted pants:8:m:waist+leg,jewelry:sword hilt:7:m:hand,jewelry:helmet crest:6:m:head
+female:clothing:silk robes:9:f:torso+arms,clothing:belted sash:6:f:waist,jewelry:jade pendant:8:f:neck,jewelry:gilded circlet:7:f:head
+Carthaginian port city bustling with trade in the Mediterranean|500 BC
+male:clothing:toga:8:m:torso+legs,jewelry:sword:9:m:right hip,jewelry:pouch of daggers:7:m:left hip
+female:clothing:tunica:5:f:torso,clothing:sandal:6:f:foot,jewelry:amulet:8:f:neck,jewelry:pendant:7:f:chest,jewelry:earring:6:f:ear
+Roman bathhouse in a provincial town along the frontier|100 AD
+male:clothing:toga praetexta:8:m:torso,clothing:sandal:6:m:foot,jewelry:armlet:5:m:upper arm
+female:clothing:toga:4:f:torso,clothing:sandal:5:f:foot,jewelry:amulet:6:f:neck,jewelry:pendant:7:f:chest,clothing:belt:3:f:wast
+Byzantine-era Hagia Sophia in Constantinople|600 AD
+male:clothing:tunic:8:m:torso,clothing:belted tunic:9:m:waist+thighs,jewelry:sword belt buckle:7:m:waist+jaw
+female:clothing:tunica:6:f:torso,clothing:schola:5:f:waist+legs,jewelry:pectoral cross:8:f:chest,jewelry:ring:7:f:finger
+Viking raiding party setting sail from a Scandinavian fjord|800 AD
+male:clothing:tunic:9:m:torso,clothing:breeches:8:m:leg+hip,jewelry:helmet:10:m:head,jewelry:sword belt:9:m:waist,jewelry:pouches:7:m:waist
+female:clothing:tunic:8:f:torso,clothing:breeches:6:f:leg,clothing:leather belt:5:f:waist,jewelry:silver arm ring:7:f:arm,jewelry:amber necklace:9:f:neck
+Medieval cathedral town during a religious festival|1200 AD
+male:clothing:tunic:9:m:torso,clothing:breeches:8:m:leg,clothing:girdle:7:m:wast,jewelry:pendant cross:8:m:chest
+female:clothing:tunicle:9:f:torso,clothing:cincture:8:f:wast,jewelry:pectoral cross:7:f:chest,jewelry:girdle of keys:6:f:hands+waist
+Moorish palace gardens of Alhambra in Andalusia|1400 AD
+male:clothing:tunic:8:m:torso,clothing:pants:7:m:leg,clothing:belt:5:m:waist,jewelry:rings:4:m:fingers
+female:clothing:tunica:8:f:torso,clothing:himation:9:f:shoulder+arm,clothing:knee-high boots:7:f:foot+calf,jewelry:pendant:6:f:neck,jewelry:crown:10:f:head
+Renaissance-era castle overlooking the Loire Valley in France|1500 AD
+male:clothing:tunic:8:m:torso,clothing:breeches:6:m:leg,clothing:garter belt:4:m:waist+joint,clothing:hose:5:m:ankle+foot,jewelry:sword at side:7:m:hip
+female:clothing:gown:8:f:wrist+hip,clothing:bodice:9:f:chest,jewelry:crown:10:f:head,jewelry:pendant:11:f:neck
+Dutch colonial settlement on the shores of the Hudson River|1600 AD
+male:clothing:breeches:9:m:leg,clothing:doublet:8:m:torso,clothing:hose:7:m:foot+leg,clothing:sword belt:6:m:waistbelt,jewelry:pistol holster:5:m:waist
+female:clothing:bodice and farthingale:9:f:waist+hip,clothing:knee-length skirt:8:f:lower body,jewelry:amulet:6:f:neck,jewelry:pendant:7:f:chest,jewelry:rings:5:f:right hand
+Baroque-era Vienna's opulent palace district|1700 AD
+male:clothing:buckled shoes:8:m:foot,clothing:gartered stockings:6:m:leg,clothing:knee-high breeches:7:m:hip+thigh,clothing:tight-fitting waistcoat:9:m:chest,jewelry:noble's signet ring:8:m:finger
+female:clothing:gown:9:f:waist+skirt,clothing:court shoes:8:f:foot,jewelry:bib necklace:7:f:neck,jewelry:pendant:6:f:chest,jewelry:diamond ring:5:f:right hand
+Georgian-era English countryside estate with landscaped gardens|1800 AD
+male:clothing:soldiers uniform:8:m:torso+legs,jewelry:braid:6:m:head
+female:clothing:gown:9:f:wrist+hip,clothing:bodice:8:f:waist,jewelry:amulet:5:f:neck,jewelry:rings:4:f:hand
+Victorian-era railway station bustling with steam locomotives|1850 AD
+male:clothing:military uniform:9:m:chest+head,clothing:boots:8:m:foot,jewelry:pocket watch:6:m:wrist,jewelry:soldier's insignia:7:m:left shoulder
+female:clothing:long coat:5:f:waist+shoulder,clothing:top hat:6:f:head,clothing:gloves:4:f:hand,clothing:crinoline skirt:7:f:wais+t,jewelry:amulet:9:f:neck
+Belle Époque Parisian boulevard lined with cafes and theaters|1900 AD
+male:clothing:top hat:8:m:head,clothing:tailcoat:9:m:torso+legs,jewelry:pocket watch chain:7:m:waist,jewelry:silver cufflinks:6:m:wrist
+female:clothing:bustled skirt:8:f:waist+hip,clothing:white blouse:7:f:chest,jewelry:pendant:9:f:neck
+Prohibition-era speakeasy hidden beneath a city street|1920 AD
+male:clothing:suit:8:m:chest+waist+jaw,clothing:trench coat:7:m:shoulder+collar+belt,clothing:homburg hat:6:m:head,jewelry:pistol:9:m:hip
+female:clothing:gown:5:f:waist+skirt,jewelry:pendant:8:f:neck,clothing:vampy hair style:7:f:head
+Mid-century modern suburban neighborhood with atomic-age architecture|1950 AD
+male:clothing:khaki uniform:9:m:chest,clothing:brown leather belt:8:m:wast,jewelry:pistol holster:7:m:hip,jewelry:dog tags:6:m:neck
+female:clothing:turquoise sweater set:5:f:warmth,clothing:white gloves:4:f:hand+cold protection,clothing:black fitted skirt:6:f:knee length,clothing:brown low-heeled shoes:7:f:foot comfort,jewelry:pendant:8:f:neck warmth
+Contemporary Hong Kong skyline illuminated by skyscrapers|2020 AD
+male:clothing:military uniform:8:m:torso+arms,clothing:tactical vest:7:m:chest+crotch,jewelry:pistol:9:m:right hand,jewelry:rifle scope:9:m:left eye,jewelry: combat knife:9:m:waist
+female:clothing:long black coat with hood:8:f:shoulder+back,jewelry:pendant:9:f:neck,clothing:black leggings:7:f:leg,clothing:sneakers:6:f:foot,clothing:tight white tank top:5:f:chest
+Post-apocalyptic desert waistland dotted with remnants of civilization|2200 AD
+male:clothing:tattered military fatigues:8:m:torso+legs,clothing:rusted combat helmet:7:m:head,jewelry:surgical scar:5:m:forehead,jewelry:bullet wound:6:m:left arm
+female:clothing:tattered robes:8:f:torso+legs,jewelry:crown:9:f:head,clothing:sandals:5:f:foot,clothing:pouches:6:f:hands,clothing:staff:7:f:hand
+Extraterrestrial colony on a distant moon with biodomes and underground tunnels|2800 AD
+male:clothing:jumpsuit:8:m:chest+arm,clothing:helmet:9:m:head,jewelry:tattoo:10:m:right arm
+female:clothing:biodome jumpsuit:9:f:torso+arm,clothing:hooded cloak:8:f:head+shoulder,jewelry:circlet:10:f:forehead,jewelry:pendant:9:f:chest,jewelry:rings:6:f:hand
+Prehistoric tribal gathering around a communal fire|30,000 BC
+male:clothing:fur loincloth:8:m:waist,jewelry:bone necklace:7:m:neck,clothing:wild animal hide cloak:6:m:shoulder+calf
+female:clothing:mammoth hide loincloth:8:f:waist,clothing:woven grass skirt:7:f:hipline,jewelry:bone necklace:6:f:neck,jewelry:tusk pendant:5:f:chest
+Ancient Babylonian hanging gardens overlooking the Euphrates River|600 BC
+male:clothing:toga:8:m:torso+legs,jewelry:sword at side:9:m:hands+jaw,clothing:leather armor:7:m:torso+arms+crotch,jewelry:helmet with plume:10:m:head,clothing:pouches and belts:5:m:waist+belt
+female:clothing:tunica:8:f:torso,clothing:sandal:6:f:foot,jewelry:crown of uruk:9:f:brow,jewelry:pendant of ishtar:7:f:neck,jewelry:earrings of lapis lazuli:5:f:ear
+Mauryan Empire's grand capital city of Pataliputra|300 BC
+male:clothing:toga:8:m:torso,clothing:sandals:5:m:foot,clothing:kilt:6:m:waist,jewelry:earring:7:m:ear,jewelry:pendant:7:m:neck
+female:clothing:saree:5:f:waist+skirt,jewelry:nose ring:7:f:nose,jewelry:anklet:8:f:ankle,clothing:turban:6:f:head
+Celtic hillfort perched atop a verdant hill|100 BC
+male:clothing:tunic:8:m:torso,clothing:breeches:6:m:leg+hip,clothing:sandals:5:m:foot,jewelry:helmet:9:m:head,jewelry:shield:10:m:left arm
+female:clothing:tunic:5:f:torso,clothing:belted cloak:4:f:shoulder+waist,jewelry:crescent moon pendant:6:f:neck,jewelry:druidic symbol ring:7:f:right hand
+Ancient Roman villa overlooking the Mediterranean coast|50 AD
+male:clothing:toga:8:m:torso,clothing:sandal:6:m:foot,jewelry:armlet:4:m:upper arm,jewelry:pendant:5:m:neck
+female:clothing:toga:9:f:torso,clothing:sandal:8:f:foot,jewelry:amulet:7:f:neck,jewelry:crown of laurel leaves:6:f:head
+Gupta Empire's bustling market town along the Silk Road|400 AD
+male:clothing:tunic:8:m:torso,clothing:belted pants:6:m:waist+leg,jewelry:sword hilt:5:m:hand,jewelry:pouches of various sizes:7:m:hips+jaw
+female:clothing:tunica:8:f:torso,clothing:sash:6:f:waist,jewelry:amulet:7:f:neck,jewelry:bangles:5:f:arm+jawline
+Viking trading port on the shores of the Baltic Sea|900 AD
+male:clothing:tunic:9:m:torso,clothing:breeches:8:m:leg,clothing:leather belt:7:m:waist,jewelry:sword hilt:6:m:hand,jewelry:shield boss:5:m:shoulder
+female:clothing:tunic:8:f:torso,clothing:breeches:6:f:leg,clothing:fur-lined cloak:7:f:shoulder+jaw,clothing:helmet:9:f:head,jewelry:silver arm ring:5:f:arm
+Medieval monastery nestled in the mountains|1100 AD
+male:clothing:tunic:9:m:chest,clothing:breeches:8:m:leg,clothing:leather belt:7:m:wast,jewelry:sword hilt:6:m:fist,jewelry:chain mail armor:5:m:torso
+female:clothing:tunic:8:f:torso,clothing:belted tights:6:f:waist+leg,clothing:cowl hood cloak:7:f:head+back,jewelry:parchment amulet:5:f:wrist,jewelry:silver ring:4:f:right hand
+Mughal Emperor's opulent palace complex in Agra|1600 AD
+male:clothing:turban:8:m:head,clothing:saffron robe:9:m:torso+legs,jewelry:hilted sword:10:m:right hand,jewelry:pistol:7:m:left hip,jewelry:belt buckle:6:m:waist
+female:clothing:saree:9:f:waist+hip,jewelry:turban:8:f:head,jewelry:anklet:7:f:ankle,clothing:jodhpur:6:f:foot,clothing:kurti:5:f:chest
+Baroque-era palace gardens of Versailles|1700 AD
+male:clothing:tricorn hat:8:m:head,clothing:sword belt:9:m:waist,clothing:buckled boots:7:m:foot,clothing:fine silk coat:10:m:body,jewelry:pocket watch:6:m:left pocket,jewelry:gilded sword hilt:5:m:right hand
+female:clothing:gown:8:f:waist+skirt,clothing:bodice:6:f:wast,jewelry:crown:9:f:head,jewelry:necklace:7:f:throat,jewelry:earring:5:f:ear
+Georgian-era London's theater district during a Shakespearean performance|1800 AD
+male:clothing:suit:9:m:waist+leg,clothing:gloves:7:m:hand,clothing:hats:8:m:head,jewelry:pocket watch chain:6:m:waist
+female:clothing:gown:8:f:torso+skirt,clothing:bodice:7:f:wrist+chest,jewelry:pendant:9:f:neck,jewelry:rings:10:f:hand
+Wild West saloon in a frontier town on the American prairie|1870 AD
+male:clothing:buckskin duster coat:8:m:chest+back,clothing:cotton undershirt:5:m:torso,clothing:dungarees:7:m:leg+waist,clothing:hats:6:m:head
+female:clothing:buckskin fringe dress:8:f:wrist+ankle,clothing:wide leather belt with silver buckle:7:f+w:m+belt,clothing:tall cowboy hat:6:f:head,jewelry:silver pendant of crescent moon:9:f:+chest,jewelry:stacked turquoise rings:10:f+:finger
+Jazz Age speakeasy hidden beneath the streets of Chicago|1925 AD
+male:clothing:suit with a vest:6:m:torso,clothing:tie:4:m:neck,clothing:hats:7:m:head,jewelry:pocket watch chain:8:m:waist
+female:clothing:gown:9:f:waist+skirt,jewelry:pendant:8:w:nape,jewelry:rings:7:f:hands
+Mid-century modernist skyscraper in bustling Manhattan|1955 AD
+male:clothing:suit:9:m:chest+waist+jawline,clothing:tie:8:m:neck+face,jewelry:watches:7:m:wrist,jewelry:rings:6:m:fingers
+female:clothing:suit:6:f:waist+shoulder,clothing:white blouse with billowy sleeves:7:f:chest+cuff,jewelry:pendant:8:f:neck
+Space-age lunar colony with domed habitats and lunar rovers|2100 AD
+male:clothing:space suit:9:m:head+torso+joints,clothing:lunar rover jumpsuit:8:m:torso+joints,clothing:utility belt:7:m:wrist+calf,jewelry:tattoo:5:m:right arm
+female:clothing:nebula-pattern jumpsuit:8:f:chest+arm,clothing:lunar rover jacket:7:f:back,clothing:silver-tipped gloves:6:f:hand,jewelry:citrine pendant:9:f:neck
+Post-apocalyptic city reclaimed by nature, with vines growing over skyscrapers|2300 AD
+male:clothing:tattered military uniform:8:m:torso+legs,jewelry:rusted dog tags:5:m:neck
+female:clothing:vines and flowers woven into her hair:9:f:hair,clothing:tattered black robes:8:f:body,jewelry:copper circlet adorned with gemstones:7:f:head,jewelry:silver pendant in the shape of a crescent moon:6:f:chest
+Futuristic underwater metropolis powered by geothermal energy|2500 AD
+male:clothing:tactical diving suit:8:m:torso+arms+legs,jewelry:cybernetic implant:9:m:forehead,jewelry:gold tooth:7:m:mouth,clothing:soldier's hat:6:m:head
+female:clothing:silicone bodysuit:9:f:body,clothing:tentacle-like appendages:8:f:arm+leg,jewelry:crown of coral and pearls:10:f:head,jewelry:pierced septum with a glowing gemstone:9:f:nose
+Transhumanist city where humans coexist with augmented beings|2600 AD
+male:clothing:military uniform:8:m:torso+leg,clothing:surgical mask:6:m:face,jewelry:circuitry implant:9:m:head
+female:clothing:tattered velvet cloak:8:f:shoulder+back,clothing:laser-cut bodysuit:9:f:wrist+ankle,clothing:synthetic leather gloves:7:f:hand,clothing:augmented reality visor:10:f:forehead,jewelry:crystal pendant:8:f:chest,jewelry:rune tattoo:9:f:wrist
+Interstellar trading post on the edge of explored space|2800 AD
+male:clothing:tattered power armor:9:m:torso+arms+legs,jewelry:pistol:8:m:right hip,jewelry:knife:7:m:left side,jewelry:badges:5:m:chest
+female:clothing:tattered robes:9:f:shoulder+waist,jewelry:crystal pendant:8:f:neck,clothing:black leather gloves:7:f:hand,clothing:belt with pouches:6:f:waistband
+Utopian society living harmoniously with nature on a terraformed planet|3000 AD
+male:clothing:brown utility jumpsuit:8:m:chest+arm,clothing:tactical vest:9:m:torso+crotch,jewelry:circuitry implant:10:m:scalp
+female:clothing:silken robes:9:f:torso+arms,clothing:crown of flowers:8:f:head,jewelry:pendant crystal:6:f:neck,jewelry:wrist cuffs:5:f:wrist
+Neolithic village at the dawn of agriculture, with fields of wheat and barley|8000 BC
+male:clothing:tunic made from animal hide:8:m:torso,clothing:leather belt:6:m:waist,jewelry:spearhead pendant:9:m:neck,jewelry:animal tooth necklace:7:m:chest
+female:clothing:tunic:3:f:torso,clothing:belted waist:4:f:waist,jewelry:pendant:6:f:chest,jewelry:armlet:5:f:upper arm
+Ancient Greek amphitheater during a dramatic performance|400 BC
+male:clothing:toga:8:m:torso+legs,clothing:sandals:6:m:foot,jewelry:armlet:5:m:upper arm,jewelry:pendant:4:m:neck,jewelry:belt buckle:3:m:waist
+female:clothing:toga:8:f:torso,clothing:sandal:5:f:foot,jewelry:amulet:6:f:wrist,jewelry:crown:7:f:head
+Ancient Roman villa overlooking the Bay of Naples, with Mount Vesuvius in the distance|100 AD
+male:clothing:toga:9:m:torso,clothing:sandals:8:m:foot,jewelry:papyrus scroll:6:m:hand
+female:clothing:toga:9:f:torso,clothing:sandal:8:f:foot,jewelry:amulet:6:f:wrist,jewelry:crown:5:f:head,jewelry:earring:4:f:ear
+Byzantine marketplace in Constantinople, bustling with traders from the Silk Road|600 AD
+male:clothing:tunic:8:m:torso,clothing:pantaloons:7:m:leg,clothing:sandals:6:m:foot,jewelry:amulet:9:m:neck,jewelry:ring:8:m:finger
+female:clothing:toga:8:f:torso,clothing:sandal:5:f:foot,jewelry:amulet:7:f:neck,jewelry:pendant:6:f:chest,jewelry:rings:4:f:hands+feet
+Moorish palace of Alcazar in Cordoba, Spain, adorned with intricate tilework and gardens|900 AD
+male:clothing:tunic:8:m:torso,clothing:pants:7:m:leg,clothing:sandal:6:m:foot,jewelry:hilted sword:9:m:right hand,jewelry:belt buckle:8:m:waist,jewelry:amulet:5:m:neck
+female:clothing:tunica:8:f:torso,clothing:pantalones:7:f:leg+foot,clothing:belted tunic:9:f:waist,clothing:silk stockings:6:f:ankle+calf,jewelry:amulet:5:f:wrist
+Medieval Viking longship navigating icy waters of the North Atlantic|1000 AD
+male:clothing:tunic:8:m:torso,clothing:breeches:6:m:thigh+leg,clothing:sword belt:7:m:wast,jewelry:helmet:9:m:head,jewelry:shield emblem:5:m:left arm
+female:clothing:worn leather tunic:6:f:torso,clothing:tattered cloak:5:f:back,clothing:fur-lined boots:7:f:foot,jewelry:rune necklace:8:f:neck,jewelry:iron circlet:9:f:head
+Gothic cathedral under construction, with stone masons and artisans at work|1200 AD
+male:clothing:tunic:9:m:torso,clothing:breeches:8:m:leg,jewelry:pouch:6:m:waist,jewelry:dagger sheath:5:m:hilt,jewelry:helmet:4:m:head
+female:clothing:tunic:8:f:chest+arm,clothing:belt:6:f:waist,jewelry:amulet:5:f:neck,jewelry:crown:9:f:head
+Renaissance-era botanical garden filled with exotic plants and sculptures|1500 AD
+male:clothing:tunic:8:m:chest+arm,clothing:breeches:6:m:leg,clothing:sword belt:7:m:waist,jewelry:chain mail gauntlets:4:m:hand
+female:clothing:gown:5:f:waist+skirt,clothing:corset:6:f:chest,jewelry:crown:8:f:head,jewelry:pendant:7:f:neck,jewelry:bangles:9:f:wrist
+Elizabethan-era Globe Theatre in London, with Shakespeare's plays performed on stage|1600 AD
+male:
+female:clothing:gown:8:f:waist+skirt,clothing:ruffles:7:f:sleeve,clothing:bodice:6:f:chest,jewelry:crown:9:f:head,jewelry:pendant:5:f:neck,jewelry:ring:4:f:right hand
+Dutch Golden Age windmill amidst tulip fields in the Netherlands|1650 AD
+male:clothing:breeches:8:m:waist+leg,clothing:tricorn hat:9:m:head,clothing:suspenders:6:m:waist+jacket,clothing:jacket with gold trim:7:m:waist+collar,jewelry:pistol holster:5:m:hip
+female:clothing:broad-brimmed hat:8:f:head,clothing:white linen dress:9:f:body,jewelry:black onyx pendant:5:f:chest,jewelry:silver ring with gemstone:6:f:right hand,jewelry:copper circlet:7:f:forehead
+Colonial-era plantation in the Caribbean, with sugar cane fields and slave quarters|1700 AD
+male:clothing:tattered military uniform:8:m:torso+legs,jewelry:sword hilt:7:m:right hand,jewelry:buckled leather boots:5:m:foot,clothing:dusty tricorn hat:4:m:head
+female:clothing:worn linen dress:8:f:waist+skirt,clothing:laced corset:7:f:torso,jewelry:tignon:6:f:head,jewelry:silver pendant:5:f:neck
+Victorian-era seaside resort town on the English coast, with promenades and pier attractions|1850 AD
+male:clothing:tunic:8:m:torso,clothing:breeches:7:m:leg,clothing:gaiters:6:m:ankle+foot,clothing:top hat:5:m:head,jewelry:sword hilt:9:m:right hand
+female:clothing:gown:9:f:waist+skirt,jewelry:pendant:8:f:neck,jewelry:bangles:7:f:wrist,clothing:hairnet:6:f:hair,clothing:gloves:2:f:hand
+Wild West frontier fort overlooking vast plains, with buffalo roaming in the distance|1875 AD
+male:clothing:civil war era uniform:8:m:chest+arm,clothing:duster coat:7:m:back
+female:clothing:buckskin dress:8:f:waist+leg,clothing:pantaloons:7:f:hip+jacket,clothing:leather corset:9:f:chest,jewelry:garter belt:6:f:thigh
+Gilded Age mansion in Newport, Rhode Island, hosting lavish parties for the elite|1900 AD
+male:clothing:tailcoat:9:m:chest+waist,jewelry:wristwatch:8:m:wrists,clothing:gloves:7:m:hands,clothing:top hat:6:m:head,jewelry:pocket watch:5:m:vest
+female:clothing:gown:8:f:waist+skirt,clothing:bustle:7:f:wais+calf,jewelry:diamond necklace:9:f:neck,jewelry:sapphire ring:8:f:right hand
+Roaring Twenties speakeasy in Chicago, with jazz bands and flapper dancers|1925 AD
+male:clothing:suit:9:m:torso+legs,jewelry:pistol:8:m:right hip
+female:clothing:gown:9:f:waist+skirt,clothing:headband:8:f:hair,clothing:anklet:6:f:foot,jewelry:earring:7:f:ear,jewelry:pendant:8:f:neck
+Post-World War II suburban neighborhood with Levittown-style homes and manicured lawns|1950 AD
+male:clothing:military uniform:9:m:chest+arm,clothing:belt buckle:7:m:wrist+crotch,jewelry:pocket watch:6:m:left pocket,jewelry:tattoo:8:m:right arm
+female:clothing:housecoat:4:f:waist,clothing:pajamas:5:f:ankle,clothing:slipper:6:f:foot,jewelry:biblical necklace:7:f:neck
+Contemporary Scandinavian eco-village powered by renewable energy|2025 AD
+male:clothing:camouflage fatigues:8:m:torso+legs,clothing:rugged hiking boots:7:m:foot,jewelry:tattoo:9:m:right arm
+female:clothing:tunic with embroidery:8:f:torso+arms,clothing:sustainable leggings:9:f:thighs+legs,jewelry:copper pendant:7:f:neck,jewelry:natural fiber cord necklace:6:f:throat
+Cyberpunk megacity with towering skyscrapers and bustling street markets|2200 AD
+male:clothing:military fatigues:8:m:torso+legs,jewelry:cybernetic eye implant:9:m:eye,jewelry:tattoo:10:m:forehead+jawline
+female:clothing:tattered black trenchcoat:9:f:shoulder,clothing:black leather gloves:8:f:hand,clothing:high-collared white shirt:7:f:neck,clothing:skin-tight silver jumpsuit:10:f:torso+leg,jewelry:piercing:9:f:nose,jewelry:piercing:8:f:left eyebrow
+Spacefaring nomadic fleet traversing the galaxy in search of habitable planets|2700 AD
+male:clothing:tattered military jumpsuit:8:m:chest+arm,clothing:scuffed combat boots:7:m:foot,jewelry:surgical scar:5:m:forehead,jewelry:bionic eye implant:9:m:eye
+female:clothing:tattered robes:8:f:body,jewelry:circuitry implant:9:f:brain,jewelry:crystal pendant:6:f:neck,clothing:leather corset:7:f:wrist+chest,jewelry:silver ring:5:f:right hand
+Post-scarcity society where technology fulfills all human needs|3000 AD
+male:clothing:tattered military fatigues:3:m:chest,clothing:silver jumpsuit with gold accents:6:m:body,jewelry:bionic eye implant:9:m:eye,jewelry:flesh-colored earpiece:8:m:ear
+female:clothing:voluminous white robes with intricate silver embroidery:8:f:torso+arms,clothing:silver circlet on forehead:7:f:head,jewelry:twin crystal pendants around neck:9:f:chest,jewelry:dangling silver earrings shaped like crescent moons:6:f:ears
+Mesolithic hunter-gatherer camp near a glacial lake|8000 BC
+male:clothing:loincloth:3:m:waist,jewelry:pelt headband:4:m:head,clothing:fur cloak:5:m:shoulders+back
+female:clothing:animal hide loincloth:4:f:waist,clothing:fur-lined cloak:5:f:shoulders,clothing:bare feet:3:f:foot,jewelry:pierced nose stud:6:f:nose,jewelry:woven leather thong necklace:7:f:neck
+Ancient Minoan palace complex on the island of Crete|1500 BC
+male:clothing:tunic:8:m:torso,clothing:sandals:6:m:foot,jewelry:helmet:9:m:head,jewelry:belt buckle:7:m:waist,jewelry:armlet:8:m:upper arm
+female:clothing:tunica:8:f:torso,clothing:sash:5:f:wast,jewelry:crown:9:f:head,jewelry:pendant:7:f:neck,jewelry:bangles:6:f:wrists,jewelry:earrings:6:f:ears
+Assyrian military camp preparing for a siege|700 BC
+male:clothing:tunic:8:m:torso,clothing:sandals:6:m:foot,jewelry:anklet:5:m:ankle
+female:clothing:toga:5:f:torso,clothing:sandals:3:f:foot,jewelry:crown of thorns:7:f:brow,jewelry:pendant:6:f:neck
+Ancient Chinese imperial court during the Han Dynasty|200 BC
+male:clothing:tunic with sash:9:m:torso,clothing:sandal:6:m:foot,jewelry:belt buckle:8:m:wrist
+female:clothing:silk robe:8:f:torso,clothing:jade belt buckle:9:f:waist,jewelry:tiger eye pendant:7:f:neck
+Nazca civilization's geoglyphs being created in the Peruvian desert|100 AD
+male:clothing:tunic:9:m:torso,clothing:sandals:8:m:foot,jewelry:necklace:6:m:throat,jewelry:earring:5:m:ear
+female:clothing:tunic:6:f:torso,clothing:sash:5:f:wrist+waist,jewelry:pendant:7:f:neck,clothing:sandals:6:f:foot
+Incan highland village in the Andes Mountains|1400 AD
+male:clothing:tattered leather armor:8:m:torso,clothing:sword belt:7:m:waist,clothing:helm with face guard:9:m:head,jewelry:belt buckle:6:m:waist
+female:clothing:tunic:8:f:torso,clothing:sash:6:f:wrist+waist,clothing:pants:7:f:leg,jewelry:rattles:5:f:ankle+jaw,jewelry:feathered headdress:9:f:head
+Medieval European university town during the Scholastic period|1300 AD
+male:clothing:tunic:9:m:torso,clothing:breeches:8:m:leg,clothing:leather belt:7:m:waist,jewelry:sword:10:m:right hand,jewelry:helmet:11:m:head
+female:clothing:tunic:8:f:chest+abdomen,clothing:kirtle:6:f:waist+joints,clothing:cowl:7:f:head+collarbone,jewelry:crucifix:4:f:neck,jewelry:parchment scroll:5:f:wrist
+Ottoman Empire's bustling harbor in Izmir|1600 AD
+male:clothing:tunic:8:m:chest+arm,clothing:breeches:6:m:leg,clothing:leather belt:5:m:wast,jewelry:sword hilt:7:m:right hand,jewelry:pistol holster:4:m:left hip
+female:clothing:turban:8:f:head,clothing:white robe:9:f:bodysuit,jewelry:girdle of gold coins:6:f:wrist+waist,jewelry:pendant with gemstone:7:f:neck,jewelry:earring with tassel:5:f:ear
+Enlightenment-era Parisian salon hosting philosophers and scientists|1750 AD
+male:clothing:tricorn hat:8:m:head,clothing:suit with waistcoat:9:m:torso+crotch,jewelry:pocket watch chain:7:m:wrist+jawline
+female:clothing:gown:8:f:wrist+hip,clothing:bodice:9:f:chest,jewelry:pendant:11:f:neck
+Georgian-era Bath in England with its elegant spa and social gatherings|1800 AD
+male:clothing:bicorn hat:8:m:head,clothing:single-breasted tailcoat:9:m:body,clothing:white waistcoat:7:m:chest,clothing:pantaloons:6:m:leg,jewelry:watches:5:m:left wrist
+female:clothing:bodice corset:8:f:chest+waist,clothing:silk gown:9:f:wrist+knee,jewelry:pendant:7:f:throat,jewelry:rings:6:f:hand
+Industrial Revolution-era Manchester with factories and soot-filled skies|1850 AD
+male:clothing:tattered greatcoat:8:m:back,clothing:dirt-stained breeches:7:m:leg,clothing:ragged shirt:6:m:chest,jewelry:soldier's uniform insignia:5:m:left shoulder,jewelry:pistol holster:4:m:right hip
+female:clothing:gown:8:f:waist+skirt,clothing:bustle underskirt:7:f:knee,clothing:pantalettes:6:f:calf,jewelry:cameo brooch:5:f:neck,jewelry:tassel earrings:4:f:ear
+Belle Époque era World's Fair in Paris with innovative exhibits|1900 AD
+male:clothing:military uniform:8:m:chest+arm,clothing:top hat:5:m:head,jewelry:pocket watch:6:m:hand
+female:clothing:gown:9:f:waist+skirt,jewelry:pendant:8:f:neck,clothing:bouffant hairpiece:6:f:head
+Harlem Renaissance jazz club in New York City|1920 AD
+male:clothing:suit:9:m:waist+leg,clothing:tie:8:m:neck,jewelry:pistol:10:m:hip
+female:clothing:gown:9:f:waist+skirt,clothing:feathered headpiece:8:f:head,jewelry:amulet:7:f:neck,jewelry:pendant:6:f:chest,jewelry:rings:5:f:hand
+Great Depression-era Dust Bowl farmstead struggling to survive|1930 AD
+male:clothing:overalls:8:m:waist+leg,clothing:flannel shirt:7:m:chest,jewelry:rings:5:m:fingers
+female:clothing:tattered flannel shirt:8:f:chest,clothing:overalls:9:f:wrist+waist,clothing:burlap sack dress:7:f:hip+jawline,jewelry:string of dried beans:6:f:wrist
+Cold War-era Berlin divided by the Berlin Wall|1960 AD
+male:clothing:military uniform:9:m:chest+arm,clothing:rifle:8:m:shoulder,clothing:trenchcoat:7:m:back,jewelry:pocket watch:4:m:wrist
+female:clothing:black leather trenchcoat:8:f:shoulder,clothing:white peasant blouse:6:f:bust,clothing:high-waisted black skirt:7:f:knee,jewelry:cross necklace:5:f:neck,jewelry:pentagram ring:4:f:right hand
+Hippie commune in Northern California during the Summer of Love|1967 AD
+male:clothing:bell-bottom jeans:8:m:waist+leg,clothing:sunglasses:9:m:face,jewelry:pendant:10:m:chest,clothing:t-shirt with peace sign:6:m:torso
+female:clothing:tunics:6:f:torso,clothing:sandals:5:f:foot,clothing:dreads:3:f:hair,jewelry:crystals:4:f:wrist,jewelry:bangles:2:f:arm
+Urban skatepark in a bustling city center|2020 AD
+male:clothing:t-shirt:6:m:torso,clothing:sweatpants:5:m:leg+hip,clothing:jacket:4:m:shoulder+chest,jewelry:watch:3:m:wrist,jewelry:earring:2:m:ear
+female:clothing:tight-fitting black tank top:6:f:chest,clothing:silver chain wallet necklace:5:f:wrist+calf,jewelry:piercing:7:f:nose,jewelry:piercing:7:f:left eyebrow,jewelry:piercing:7:f:right ear
+Orbital habitat ring around Earth serving as a research and trade hub|2100 AD
+male:clothing:standard-issue jumpsuit:8:m:torso+legs,jewelry:tattoo:9:m:right arm,jewelry:tattoo:9:m:left shoulder,jewelry:surgical implant:10:m:brain
+female:clothing:cult robes:9:f:torso+arms,clothing:silver pendant:8:f:neck,jewelry:lapis lazuli ring:7:f:right hand
+Floating city on a water-covered Earth, with advanced desalination technology|2200 AD
+male:clothing:tattered military uniform:8:m:torso+arms,clothing:soldier's boots:7:m:foot,clothing:rusted helmet:6:m:head,jewelry:medal of honor:9:m:chest,jewelry:wound stripes:5:m:arm
+female:clothing:toga-style robe:9:f:torso+arms,clothing:crown of interlocking silver filigree:8:f:head,jewelry:pendant containing small crystal orb:7:f:chest,jewelry:dangling earring with tiny
+Galactic core research station studying a supermassive black hole|2800 AD
+male:clothing:suit:9:m:torso+legs,clothing:tie:8:m:neck,clothing:glasses:7:m:face,jewelry:pistol:10:m:waist
+female:clothing:tattered labcoat:9:f:torso+arms,clothing:silver jumpsuit:8:f:body,jewelry:circlet with gemstones:7:f:head,jewelry:pierced left eyebrow:6:f:brow
+Prehistoric settlement beneath a towering, active volcano|50,000 BC
+male:clothing:mammoth hide loincloth:8:m:waist,jewelry:worn bear claw necklace:9:m:neck,clothing:fur-lined leather tunic:7:m:chest
+female:clothing:animal hides:8:f:body,clothing:belt made from animal sinew:6:f:waist,jewelry:pierced bone necklace:7:f:neck,jewelry:tattoos:9:f:arms+torso
+Mythical Atlantis with crystal towers and advanced technology|10,000 BC
+male:clothing:tunic:9:m:torso,clothing:belt:8:m:waist,jewelry:sword:7:m:right hand,jewelry:helmet:6:m:head
+female:clothing:tunics:8:f:torso,clothing:sash:6:f:waist,jewelry:crown:9:f:head,jewelry:pendant:7:f:chest,jewelry:earring:5:f:ear
+Ancient Phoenician port bustling with traders and exotic goods|1000 BC
+male:clothing:tunic:8:m:torso,clothing:sandals:6:m:foot,jewelry:helmet:7:m:head,jewelry:belt:5:m:waist,jewelry:pouches:4:m:waist
+female:clothing:tunica:8:f:torso,clothing:sandal:6:f:foot,jewelry:anklet:5:f:ankle,jewelry:crown:9:f:head,jewelry:pendant:7:f:neck
+Lost city of El Dorado deep in the Amazon rainforest|1500 AD
+male:clothing:tattered leather armor:8:m:torso+arms+legs,jewelry:sword at side:7:m:hands+jaw,clothing:fur loincloth:6:m:genitalia
+female:clothing:tattered loincloth:3:f:waist,clothing:sackcloth tunic:4:f:torso,jewelry:copper pendant:5:f:neck,jewelry:bone necklace:6:f:throat
+Camelot's grand castle with King Arthur's court|500 AD
+male:clothing:tunic:8:m:torso,clothing:breeches:6:m:leg,clothing:sword belt:7:m:waist,jewelry:pendant cross:4:m:neck
+female:clothing:tunic:8:f:torso,clothing:belted cloak:9:f:shoulder+waist,jewelry:crystal pendant:6:f:neck,jewelry:copper circlet:7:f:head,jewelry:garnet ring:5:f:right hand
+Feudal Japanese ninja village hidden in a misty mountain valley|1200 AD
+male:clothing:kimono:8:m:body,clothing:geta sandals:6:m:foot,jewelry:sword at waist:9:m:hara
+female:clothing:kimono:5:f:waist,clothing:sash:4:f:wrist,clothing:geta sandals:6:f:foot,jewelry:yin-yang pendant:7:f:neck
+Enchanted medieval forest inhabited by mythical creatures|1300 AD
+male:clothing:tunic:8:m:torso,clothing:chainmail armor:9:m:torso+limbs,jewelry:sword at side:7:m:hands
+female:clothing:tunic:4:f:chest,clothing:breeches:5:f:leg,jewelry:pendant:6:f:neck
+Steampunk Victorian London with airships and mechanical marvels|1890 AD
+male:clothing:top hat:5:m:head,clothing:gloves:6:m:hand,clothing:suit jacket:7:m:torso,clothing:pantaloons:8:m:leg,clothing:black leather corset:9:m:chest
+female:clothing:bustled skirt:8:f:waist+foot,clothing:tight corset:9:f:chest,jewelry:aetherial pendant:7:f:neck,jewelry:crystal ring:6:f:hand,jewelry:goggles:5:f:head
+Gothic vampire's castle on a stormy night in Transylvania|1700 AD
+male:clothing:tattered greatcoat:8:m:torso,clothing:ruffled shirt:7:m:neck+face,clothing:buckled breeches:6:m:leg,clothing:high boots:5:m:foot,jewelry:sword at side:9:m:hands
+female:clothing:black velvet cloak with crimson lining:9:f:back+shoulder,clothing:white lace gloves:8:f:hand,clothing:tight-fitting white shirt with billowy sleeves:7:f:chest+arm,clothing:high-waisted black leather pants:6:f:waist+bib,jewelry:silver pentagram ring on left hand:8:l:handside,jewelry:diamond stud earrings:7:e:ear
+Dystopian mega-prison city with cybernetic guards|2100 AD
+male:clothing:tattered fatigues:3:m:torso,clothing:rusted combat boots:5:m:foot,jewelry:circuitry implant:8:m:skull,jewelry:surgical scar:7:m:forehead
+female:clothing:tattered black robes:8:f:torso+arms,clothing:silver pendant:5:f:neck,jewelry:copper wire circlet:4:f:head,jewelry:black onyx ring:3:f:right hand
+Futuristic pleasure dome on an exotic alien planet|2300 AD
+male:clothing:tattered military uniform:8:m:torso+legs,jewelry:circuitry implants:9:m:forehead+jaw,clothing:goggles:7:m:face
+female:clothing:gown with iridescent fabric and holographic accents:9:f:torso+arms,clothing:silver circlet with gemstones:8:f:head,jewelry:holographic pendant:9:f:neck
+High fantasy elven city with silver spires and ancient magic|1500 AD
+male:clothing:tattered armor:8:m:torso+leg,clothing:sword belt:7:m:waist,jewelry:blood-stained pendant:6:m:chest,jewelry:dented helmet:5:m:head
+female:clothing:tunicle:8:f:chest+arm,clothing:girdle:7:f:waist,clothing:sandal:6:f:foot,clothing:amulet:6:f:neck,jewelry:pendant:5:f:neck
+Sword and sorcery pulp fantasy encampment on the outskirts of a large city|1300 AD
+male:clothing:tunic:8:m:torso,clothing:breeches:7:m:leg,clothing:girdle:6:m:waist,jewelry:pendant:9:m:neck,jewelry:ring:10:m:right hand
+female:clothing:tunic:6:f:chest,clothing:pants:5:f:leg,clothing:sandals:6:f:foot,jewelry:crown:7:f:head,jewelry:amulet:8:f:neck,jewelry:rings:9:f:hands
+Modern-day occult underground club in New Orleans|2025 AD
+male:clothing:black leather trenchcoat:8:m:chest+leg,clothing:torn denim jeans:7:m:hip+calf,jewelry:silver pentagram necklace:9:m:neck,jewelry:gargoyle earrings:10:m:ear
+female:clothing:black leather corset:8:f:chest,clothing:tattered fishnet stockings:9:f:leg,clothing:knee-high combat boots:7:f:foot,jewelry:silver pentagram pendant:6:f:neck,jewelry:dangling silver earrings:5:f:ear
+Dark, sprawling necropolis ruled by a lich king|1200 AD
+male:clothing:tattered chainmail:9:m:torso+arms,clothing:splintered wooden shield:7:m:arm,clothing:dagger:6:m:right hand,jewelry:crowns of skulls:8:m:head
+female:clothing:tattered black robe:8:f:torso+arms,clothing:worn leather gloves:6:f:hands,jewelry:candle pendant:7:f:neck,jewelry:silver ring with gemstone:5:f:right hand,jewelry:black onyx necklace:4:f:throat
+Post-apocalyptic underground bunker community|2200 AD
+male:clothing:tattered military uniform:9:m:torso+arms+legs,jewelry:surgical scar:8:m:face,jewelry:implanted microchip:10:m:skull
+female:clothing:tattered robe:8:f:torso+arms,clothing:brown leather gloves:6:f:hands,jewelry:pentagram pendant:9:f:chest,jewelry:glasses with a silver frame:7:f:face,clothing:tattered lab coat:9:f:torso+arms
+Interdimensional crossroads where beings from multiple realities meet|2800 AD
+male:clothing:tattered power armor:8:m:torso+arms,clothing:blood-stained combat fatigues:7:m:legs+calf,jewelry:piercing:9:m:nose,jewelry:piercing:9:m:left eyebrow
+female:clothing:luminous robes:8:f:torso+arms,clothing:crown of twisted metals and gemstones:9:f:head,jewelry:tattoos:10:f:full body
+Floating wizard's academy above a vast ocean|1700 AD
+male:clothing:tattered military uniform:8:m:torso+legs,jewelry:sword hilt pendant:5:m:neck,clothing:bicorn hat:7:m:head,clothing:garters:6:m:calfs
+female:clothing:tattered black robes:8:f:body,clothing:broad-brimmed hat:6:f:head,jewelry:onyx ring:5:f:right hand,jewelry:silver pendant:4:f:neck
+Sinister corporate enclave in a cyberpunk metropolis|2150 AD
+male:clothing:suit,clothing:gloves,clothing:boots,jewelry:pistol,jewelry:knife
+female:clothing:black jumpsuit with silver trim:8:f:torso+arms,clothing:goggles with UV filter:6:f:face,jewelry:silver pentagram necklace:7:f:chest,jewelry:diamond stud earrings:9:f:ears
+Submersible cruise ship in the South Pacific|2050 AD
+male:clothing:tactical jumpsuit:8:m:torso+legs,clothing:brown leather jacket:6:m:torso,jewelry:pistol pendant:7:m:neck
+female:clothing:long white robe with golden trim:8:f:chest+waist,jewelry:silver pentagram pendant:7:f:neck,clothing:black leather gloves:6:f:hand,jewelry:diamond stud earrings:5:f:ear
+A US National Park at the height of tourist season|1995 AD
+male:clothing:military uniform:9:m:torso+arm+jaw,clothing:sunglasses:4:m:face,jewelry:pistol:8:m:waist
+female:clothing:toga:2:f:torso,clothing:sandal:3:f:foot,jewelry:pendant:8:f:chest
+A shopping mall parking lot|1985 AD
+male:clothing:military uniform:9:m:chest,clothing:sunglasses:8:m:face,jewelry:pistol:10:m:hip
+female:clothing:tight black jeans:6:f:waist+leg,clothing:white peasant blouse with lace trim:4:f:chest,clothing:black leather jacket:7:f:shoulder,jewelry:silver pentagram necklace:8:f:neck
+Ruins of an ancient, star-faring civilization on a distant planet|3000 AD
+male:clothing:tattered military fatigues:8:m:torso+legs,jewelry:dented combat helmet:6:m:head,jewelry:rusted rifle slung over shoulder:7:m:shoulder+jaw,clothing:sun-bleached leather jacket:5:m:chest
+female:clothing:tattered robes:8:f:torso+legs,jewelry:pendant:9:f:neck,clothing:satchel:7:f:hands,jewelry:ring:6:f:right hand
+Shadowy resistance headquarters in an authoritarian dystopia|2250 AD
+male:clothing:tattered military fatigues:8:m:torso+arm,clothing:rusted combat boots:7:m:foot,clothing:faded beret:5:m:head,jewelry:worn silver watch:4:m:hand,jewelry:tattoo:9:m:forearm
+female:clothing:black jumpsuit with utility belt:6:f:torso+waist,clothing:brown leather jacket:5:f:shoulder,clothing: combat boots:7:f:foot,jewelry: silver pentagram pendant:8:f:chest

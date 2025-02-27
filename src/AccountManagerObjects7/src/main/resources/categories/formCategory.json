@@ -1,5 +1,5 @@
 {
-	"ammodel": "system.modelCategory",
+	"schema": "system.modelCategory",
 	"name": "form",
     "label" : "Forms",
     "order" : ["form","formelement","policy.validationrule"],

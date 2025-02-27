@@ -86,7 +86,7 @@ public class BuilderUtil {
 				List<BaseRecord> tags = bld.get(FieldNames.FIELD_TAGS);
 				List<BaseRecord> itags = new ArrayList<>();
 				for(BaseRecord t: tags) {
-					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), bld.getAMModel()));
+					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), bld.getSchema()));
 				}
 				bld.set(FieldNames.FIELD_TAGS, itags);
 				

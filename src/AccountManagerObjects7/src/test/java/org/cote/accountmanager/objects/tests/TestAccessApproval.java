@@ -238,7 +238,7 @@ public class TestAccessApproval extends BaseTest {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_ACCESS_REQUEST, FieldNames.FIELD_APPROVAL_STATUS, ApprovalResponseEnumType.REQUEST.toString());
 			q.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CREATED_DATE);
 			q.set(FieldNames.FIELD_ORDER, OrderEnumType.DESCENDING.toString());
-			q.field(FieldNames.FIELD_REQUESTER_TYPE, requester.getAMModel());
+			q.field(FieldNames.FIELD_REQUESTER_TYPE, requester.getSchema());
 			q.field(FieldNames.FIELD_REQUESTER, requester.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			// q.set(FieldNames.FIELD_DEBUG, true);
 			

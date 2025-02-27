@@ -400,7 +400,7 @@ public class PolicyUtil {
 			}
 			for(BaseRecord linkedObj : objects) {
 				if(!linkedObj.hasField(FieldNames.FIELD_URN) || linkedObj.get(FieldNames.FIELD_URN) == null) {
-					reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getAMModel(), PolicyEvaluator.FIELD_POPULATION));
+					reader.populate(linkedObj, RecordUtil.getPossibleFields(linkedObj.getSchema(), PolicyEvaluator.FIELD_POPULATION));
 				}
 
 				if(RecordUtil.isIdentityRecord(linkedObj)) {
@@ -429,7 +429,7 @@ public class PolicyUtil {
 		
 		/// Look through the supplied object schema
 		/// If it's foreign, or defines a modelAccess, then create a rule that includes a modelAccess pattern for that specific role or permission
-		ModelSchema schema = RecordFactory.getSchema(object.getAMModel());
+		ModelSchema schema = RecordFactory.getSchema(object.getSchema());
 		for(int i = 0; i < object.getFields().size(); i++) {
 			FieldType f = object.getFields().get(i);
 			List<BaseRecord> patterns = new ArrayList<>(); 
@@ -438,7 +438,7 @@ public class PolicyUtil {
 			if(
 				((fs.isForeign() && fs.isFollowReference()) || roles.size() > 0)
 				&&
-				!f.isNullOrEmpty(object.getAMModel())
+				!f.isNullOrEmpty(object.getSchema())
 			){
 				if(trace) {
 					logger.info("Add rule for " + fs.getName());
@@ -449,17 +449,17 @@ public class PolicyUtil {
 					}
 					else {
 						if(trace) {
-							logger.info("Add " + spet.toString() + " foreign access pattern for " + object.getAMModel() + "." + f.getName());
+							logger.info("Add " + spet.toString() + " foreign access pattern for " + object.getSchema() + "." + f.getName());
 						}
 						patterns.addAll(getForeignPatterns(actor, spet, object, f, fs));
 					}
 				}
 				if(trace) {
-					logger.info("Add " + spet.toString() + " " + roles.size() + " roles to access pattern for " + object.getAMModel() + "." + f.getName());
+					logger.info("Add " + spet.toString() + " " + roles.size() + " roles to access pattern for " + object.getSchema() + "." + f.getName());
 				}
 				for(String r : roles) {
 					if(trace) {
-						logger.info("Add " + spet.toString() + " role " + r + " access pattern for " + object.getAMModel() + "." + f.getName());
+						logger.info("Add " + spet.toString() + " role " + r + " access pattern for " + object.getSchema() + "." + f.getName());
 					}
 					BaseRecord pattern = getModelAccessPattern(actor, r);
 					if(pattern != null) {
@@ -532,7 +532,7 @@ public class PolicyUtil {
 		if(object == null) {
 			return patterns;
 		}
-		ModelSchema schema = RecordFactory.getSchema(object.getAMModel());
+		ModelSchema schema = RecordFactory.getSchema(object.getSchema());
 		List<String> roles = getSchemaRoles(schema.getAccess(), spet);
 		if(roles.size() > 0) {
 			for(String r : roles) {
@@ -622,7 +622,7 @@ public class PolicyUtil {
 			outStr = m1.replaceAll(actUrn);
 		}
 		Matcher m2 = actorTypeExp.matcher(outStr);
-		outStr = m2.replaceAll(actor.getAMModel());
+		outStr = m2.replaceAll(actor.getSchema());
 		
 		return outStr;
 	}
@@ -644,7 +644,7 @@ public class PolicyUtil {
 		outStr = m.replaceAll((recUrn != null ? recUrn : ""));
 		
 		m = resourceTypeExp.matcher(outStr);
-		outStr = m.replaceAll((resource != null ? resource.getAMModel() : ""));
+		outStr = m.replaceAll((resource != null ? resource.getSchema() : ""));
 		
 		return outStr;
 
@@ -733,16 +733,16 @@ public class PolicyUtil {
 	
 				BaseRecord par = null;
 				if(resource.hasField(FieldNames.FIELD_PARENT_ID)) {
-					par = reader.read(resource.getAMModel(), (long)resource.get(FieldNames.FIELD_PARENT_ID));
+					par = reader.read(resource.getSchema(), (long)resource.get(FieldNames.FIELD_PARENT_ID));
 				}
 				else if(resource.inherits(ModelNames.MODEL_PATH) && resource.hasField(FieldNames.FIELD_PATH)) {
 					String path = resource.get(FieldNames.FIELD_PATH);
 					if(path != null && path.lastIndexOf("/") > 0) {
 						path = path.substring(path.lastIndexOf("/"));
-						par = pathUtil.findPath(null, resource.getAMModel(), path, null, resource.get(FieldNames.FIELD_ORGANIZATION_ID));
+						par = pathUtil.findPath(null, resource.getSchema(), path, null, resource.get(FieldNames.FIELD_ORGANIZATION_ID));
 					}
 				}
-				if(par != null && resource.hasField(FieldNames.FIELD_URN) && !FieldUtil.isNullOrEmpty(par.getAMModel(), par.getField(FieldNames.FIELD_URN))) {
+				if(par != null && resource.hasField(FieldNames.FIELD_URN) && !FieldUtil.isNullOrEmpty(par.getSchema(), par.getField(FieldNames.FIELD_URN))) {
 					policyBase = p.replaceAll((String)par.get(FieldNames.FIELD_URN));
 				}
 				else {

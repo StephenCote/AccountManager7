@@ -342,7 +342,6 @@ public class Query extends LooseRecord{
 
 			}
 			else {
-				// logger.error("**** Null itype for " + getIRecord().getModel() + "." + fieldName);
 				qfield.setString(FieldNames.FIELD_VALUE, null);
 			}
 		} catch (FieldException | ModelNotFoundException | ValueException | ModelException e) {

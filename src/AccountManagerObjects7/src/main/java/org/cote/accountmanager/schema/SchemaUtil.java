@@ -166,6 +166,6 @@ public class SchemaUtil {
 	}
 	
 	public static String getSchemaJSON() {
-		return "{" + getCategoriesJSON() + ",\n" + getEnumSchemaJSON() + ",\n" + getModelSchemaJSON() + ",\n" + getValidationRulesJSON() + "\n}";
+		return "{\"jsonModelKey\" : \"" + RecordFactory.JSON_MODEL_KEY + "\", " + getCategoriesJSON() + ",\n" + getEnumSchemaJSON() + ",\n" + getModelSchemaJSON() + ",\n" + getValidationRulesJSON() + "\n}";
 	}
 }

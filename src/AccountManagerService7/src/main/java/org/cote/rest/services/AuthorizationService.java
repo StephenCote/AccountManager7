@@ -48,7 +48,7 @@ public class AuthorizationService {
 		BaseRecord object = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, objectType, objectId);
 		BaseRecord actor = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, actorType, actorId);
 		boolean outBool = false;
-		if(fieldName != null && fieldName.length() == 0) {
+		if(fieldName != null && (fieldName.length() == 0 || fieldName.equalsIgnoreCase("null"))) {
 			fieldName = null;
 		}
 		if(object != null && actor != null) {

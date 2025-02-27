@@ -317,21 +317,6 @@ public class AnimalUtil {
 				for(String i : pairs[4].split(",")) {
 					items.add(ItemUtil.getCreateItemTemplate(ctx, i.trim()));
 				}
-				/*
-				List<BaseRecord> items = new ArrayList<>();
-				for(String i : pairs[3].split(",")) {
-					items.add(ItemUtil.getItemTemplate(ctx, i.trim()));
-				}
-				store.set(OlioFieldNames.FIELD_ITEMS, items);
-				*/
-				/*)
-				List<BaseRecord> tags = oanim.get(FieldNames.FIELD_TAGS);
-				List<BaseRecord> itags = new ArrayList<>();
-				for(BaseRecord t: tags) {
-					itags.add(OlioUtil.getCreateTag(ctx, t.get(FieldNames.FIELD_NAME), act.getModel()));
-				}
-				oanim.set(FieldNames.FIELD_TAGS, itags);
-				*/
 
 			}
 			

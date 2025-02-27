@@ -89,7 +89,7 @@ public class StatementUtil {
 		if(id <= 0L) {
 			return null;
 		}
-		return getForeignDeleteTemplate(rec.getAMModel(), rec.get(FieldNames.FIELD_ID), rec.get(FieldNames.FIELD_ORGANIZATION_ID));
+		return getForeignDeleteTemplate(rec.getSchema(), rec.get(FieldNames.FIELD_ID), rec.get(FieldNames.FIELD_ORGANIZATION_ID));
 	}
 	public static String getForeignDeleteTemplate(String rmodel, long id, long organizationId) {
 		List<String> names = ModelNames.getCustomModelNames();
@@ -236,7 +236,7 @@ public class StatementUtil {
 	
 	
 	public static List<BaseRecord> getForeignParticipations(BaseRecord record) {
-		ModelSchema ms = RecordFactory.getSchema(record.getAMModel());
+		ModelSchema ms = RecordFactory.getSchema(record.getSchema());
 		List<BaseRecord> parts = new ArrayList<>();
 		for(FieldType f: record.getFields()) {
 			FieldSchema fs = ms.getFieldSchema(f.getName());
@@ -259,7 +259,7 @@ public class StatementUtil {
 						continue;
 					}
 					BaseRecord owner = null;
-					if(rec.getAMModel().equals(ModelNames.MODEL_USER)) {
+					if(rec.getSchema().equals(ModelNames.MODEL_USER)) {
 						owner = rec;
 					}
 					else {
@@ -270,7 +270,7 @@ public class StatementUtil {
 						}
 					}
 					if(owner == null) {
-						logger.error("Record " + rec.getAMModel() + " does not have an owner, therefore a reference cannot be made");
+						logger.error("Record " + rec.getSchema() + " does not have an owner, therefore a reference cannot be made");
 						continue;
 					}
 					parts.add(ParticipationFactory.newParticipation(owner, record, fs.getName(), rec));
@@ -287,8 +287,8 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getInsertTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
-		ModelSchema ms = RecordFactory.getSchema(record.getAMModel());
-		buff.append("INSERT INTO " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getAMModel()) + " (");
+		ModelSchema ms = RecordFactory.getSchema(record.getSchema());
+		buff.append("INSERT INTO " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getSchema()) + " (");
 		List<String> names = new ArrayList<>();
 		List<String> columns = new ArrayList<>();
 		List<String> tokens = new ArrayList<>();
@@ -355,15 +355,15 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getDeleteTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
-		buff.append("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getAMModel()));
+		buff.append("DELETE FROM " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getSchema()));
 		List<String> names = new ArrayList<>();
-		ModelSchema ms = RecordFactory.getSchema(record.getAMModel());
+		ModelSchema ms = RecordFactory.getSchema(record.getSchema());
 		FieldType ident = null;
 		for(int i = 0; i < record.getFields().size(); i++) {
 			FieldType f = record.getFields().get(i);
 			FieldSchema fs = ms.getFieldSchema(f.getName());
 			if(fs.isIdentity()) {
-				if(!FieldUtil.isNullOrEmpty(record.getAMModel(), f)) {
+				if(!FieldUtil.isNullOrEmpty(record.getSchema(), f)) {
 					ident = f;
 					break;
 				}
@@ -384,9 +384,9 @@ public class StatementUtil {
 	
 	public static DBStatementMeta getUpdateTemplate(BaseRecord record) {
 		StringBuilder buff = new StringBuilder();
-		buff.append("UPDATE " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getAMModel()) + " SET ");
+		buff.append("UPDATE " + IOSystem.getActiveContext().getDbUtil().getTableNameByRecord(record, record.getSchema()) + " SET ");
 		List<String> names = new ArrayList<>();
-		ModelSchema ms = RecordFactory.getSchema(record.getAMModel());
+		ModelSchema ms = RecordFactory.getSchema(record.getSchema());
 		DBUtil util = IOSystem.getActiveContext().getDbUtil();
 		int iter = 0;
 		FieldType ident = null;
@@ -395,7 +395,7 @@ public class StatementUtil {
 			FieldSchema fs = ms.getFieldSchema(f.getName());
 			/// BUG NOTE: Urn is marked as an identity field.  However, it is constructed from name values.  If the model name or container changes, the Urn will change, and therefore the model can't be updated using the Urn as the identity
 			if(fs.isIdentity()) {
-				if(ident == null && !FieldUtil.isNullOrEmpty(record.getAMModel(), f)) {
+				if(ident == null && !FieldUtil.isNullOrEmpty(record.getSchema(), f)) {
 					ident = f;
 				}
 				continue;
@@ -1080,12 +1080,12 @@ public class StatementUtil {
 			String f = meta.getFields().get(i);
 			FieldType ft = record.getField(f);
 			if(ft == null) {
-				logger.error("Null field for " + f + " in " + record.getAMModel());
+				logger.error("Null field for " + f + " in " + record.getSchema());
 				logger.error(record.toString());
 				continue;
 			}
 			T val = ft.getValue();
-			setStatementParameter(statement, record.getAMModel(), ft.getName(), ComparatorEnumType.UNKNOWN, ft.getValueType(), val, (i + 1));
+			setStatementParameter(statement, record.getSchema(), ft.getName(), ComparatorEnumType.UNKNOWN, ft.getValueType(), val, (i + 1));
 		}
 	}
 	
@@ -1330,7 +1330,7 @@ public class StatementUtil {
 	}
 
 	protected static void populateRecord(DBStatementMeta meta, ResultSet rset, BaseRecord record) throws FieldException, ValueException, ModelNotFoundException, SQLException, ReaderException {
-		ModelSchema ms = RecordFactory.getSchema(record.getAMModel());
+		ModelSchema ms = RecordFactory.getSchema(record.getSchema());
 		int subCount = 0;
 		Map<String, FieldType> flexCols = new HashMap<>();
 		Map<String, FieldType> modelCols = new HashMap<>();
@@ -1340,7 +1340,7 @@ public class StatementUtil {
 			FieldType f = record.getField(col);
 			FieldSchema fs = ms.getFieldSchema(col);
 			if(f == null) {
-				throw new FieldException("Field " + record.getAMModel() + "." + col + " not found");
+				throw new FieldException("Field " + record.getSchema() + "." + col + " not found");
 			}
 			switch(f.getValueType()) {
 				case ENUM:
@@ -1405,7 +1405,7 @@ public class StatementUtil {
 						record.set(col, lst);
 					}
 					else {
-						throw new FieldException("Unhandled list type: " + record.getAMModel() + "." + col);
+						throw new FieldException("Unhandled list type: " + record.getSchema() + "." + col);
 					}
 					break;
 				case MODEL:

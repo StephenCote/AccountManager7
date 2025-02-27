@@ -131,7 +131,7 @@
           altView = {
             fullMode,
             view: page.views.object(),
-            type: object.model,
+            type: object[am7model.jsonModelKey],
             containerId: object.objectId
           };
           m.redraw();

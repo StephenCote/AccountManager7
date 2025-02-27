@@ -52,7 +52,7 @@ public class GenericParser {
 		ParseConfiguration cfg = new ParseConfiguration();
 		cfg.setCsvFormat(csvFormat);
 		cfg.setOwner(owner);
-		cfg.setModel(model);
+		cfg.setSchema(model);
 		cfg.setFields(fields);
 		cfg.setGroupPath(groupPath);
 		cfg.setFilePath(path);
@@ -66,7 +66,7 @@ public class GenericParser {
 	public static List<BaseRecord> parseFile(ParseConfiguration cfg, IParseWriter writer){
 		List<BaseRecord> objs = new ArrayList<>();
 		CSVFormat csvFormat = cfg.getCsvFormat();
-		String model = cfg.getModel();
+		String model = cfg.getSchema();
 		ParseMap[] fields = cfg.getFields();
 		String groupPath = cfg.getGroupPath();
 		BaseRecord owner = cfg.getOwner();

@@ -1,6 +1,6 @@
 [
 	{
-		"ammodel": "data.color",
+		"schema": "data.color",
 		"name": "Air Force Blue (Raf)",
 		"hex": "#5d8aa8",
 		"red": 93,

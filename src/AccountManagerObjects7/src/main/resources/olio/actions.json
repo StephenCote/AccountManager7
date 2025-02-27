@@ -1,6 +1,6 @@
 [
 	{
-		"ammodel": "olio.action",
+		"schema": "olio.action",
 		"name": "walkTo",
 		"provider": "org.cote.accountmanager.olio.actions.WalkTo",
 		"counterActions": [
@@ -134,7 +134,7 @@
 		]
 	},
 	{
-		"ammodel": "olio.action",
+		"schema": "olio.action",
 		"counterActions": [
 			"wait",
 			"gather",

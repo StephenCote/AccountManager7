@@ -34,7 +34,7 @@ public class DirectoryFactory extends FactoryBase {
 		if(parameterList != null) {
 			
 			String name = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_NAME, String.class, null);
-			if(name == null && !FieldUtil.isNullOrEmpty(newRecord.getAMModel(), newRecord.getField(FieldNames.FIELD_NAME))) {
+			if(name == null && !FieldUtil.isNullOrEmpty(newRecord.getSchema(), newRecord.getField(FieldNames.FIELD_NAME))) {
 				name = newRecord.get(FieldNames.FIELD_NAME);
 			}
 			String path = ParameterUtil.getParameter(parameterList, FieldNames.FIELD_PATH, String.class, null);

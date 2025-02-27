@@ -100,7 +100,7 @@
     function transitionHandler() {
         init = false;
         let entity = caller.getEntity();
-        if (!entity || entity.model != 'data.data') {
+        if (!entity || entity[am7model.jsonModelKey] != 'data.data') {
             console.log("Ignoring non data or invalid entity");
             return;
         }
@@ -180,8 +180,8 @@
         if (!entity) {
             return;
         }
-        if (!entity.model || entity.model != 'data.data') {
-            console.warn("Unexpected model: " + entity.model);
+        if (!entity[am7model.jsonModelKey] || entity[am7model.jsonModelKey] != 'data.data') {
+            console.warn("Unexpected model: " + entity[am7model.jsonModelKey]);
             return;
         }
         if (designStyle != 'edit' && designStyle != 'code') {

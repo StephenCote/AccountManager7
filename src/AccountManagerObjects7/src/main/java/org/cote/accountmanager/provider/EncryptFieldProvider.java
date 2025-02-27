@@ -33,14 +33,14 @@ public class EncryptFieldProvider implements IProvider {
 	
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) throws ModelException, FieldException, ValueException, ModelNotFoundException {
 		if(!model.inherits(ModelNames.MODEL_VAULT_EXT)) {
-			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getAMModel(), ModelNames.MODEL_VAULT_EXT));
+			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getSchema(), ModelNames.MODEL_VAULT_EXT));
 		}
 		
 		if(!RecordOperation.CREATE.equals(operation) && !RecordOperation.UPDATE.equals(operation) && !RecordOperation.READ.equals(operation)) {
 			return;
 		}
 
-		String[] fields = RecordUtil.getPossibleFields(model.getAMModel(), provideFields);
+		String[] fields = RecordUtil.getPossibleFields(model.getSchema(), provideFields);
 		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);
 
 		OrganizationContext org = IOSystem.getActiveContext().findOrganizationContext(model);
@@ -63,7 +63,6 @@ public class EncryptFieldProvider implements IProvider {
 		}
 
 		if(RecordOperation.CREATE.equals(operation) || RecordOperation.UPDATE.equals(operation)) {
-			// logger.info("Provide " + operation.toString() + " for " + model.getModel() + " " + lfield.getName());
 			VaultService.getInstance().vaultField(vault, model, field);
 			List<String> vaulted = model.get(FieldNames.FIELD_VAULTED_FIELDS);
 			if(!vaulted.contains(field.getName())) {
@@ -71,8 +70,6 @@ public class EncryptFieldProvider implements IProvider {
 			}
 		}
 		else if(RecordOperation.READ.equals(operation)) {
-			// logger.info("Provide " + operation.toString() + " for " + model.getModel() + " " + lfield.getName());
-			
 			VaultService.getInstance().unvaultField(vault, model, field);
 			List<String> unvaulted = model.get(FieldNames.FIELD_UNVAULTED_FIELDS);
 			if(!unvaulted.contains(field.getName())) {

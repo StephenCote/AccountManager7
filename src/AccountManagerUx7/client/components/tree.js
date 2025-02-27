@@ -59,7 +59,7 @@
             newGrp.name = data.entity.name;
             await page.createObject(newGrp);
             resetNode(selectedNode);
-            am7client.clearCache(newGrp.model, true);
+            am7client.clearCache(newGrp[am7model.jsonModelKey], true);
             m.redraw();
         }
 
@@ -166,7 +166,7 @@
         }
 
         function getMatrix(node) {
-            let bGroup = (node.model === "auth.group");
+            let bGroup = (node[am7model.jsonModelKey] === "auth.group");
             let nodeName = node.name;
             if (!treeMatrix[node.objectId]) {
                 let fList = "list";
@@ -222,16 +222,16 @@
                         }
                     }
                 }
-                else if (node.model.match(/^(auth\.role|auth\.permission)$/gi)) {
-                    let modType = am7model.getModel(node.model.toLowerCase());
+                else if (node[am7model.jsonModelKey].match(/^(auth\.role|auth\.permission)$/gi)) {
+                    let modType = am7model.getModel(node[am7model.jsonModelKey].toLowerCase());
                     if (modType && modType.icon) {
                         ico = modType.icon;
                     }
-                    fListType = node.model;
+                    fListType = node[am7model.jsonModelKey];
                     //fList = "listInParent";
                     fList = "list";
                     if (node.objectId == originPermission.objectId || node.objectId == originRole.objectId) {
-                        nodeName = (node.model == "auth.role" ? "Roles" : "Permissions");
+                        nodeName = (node[am7model.jsonModelKey] == "auth.role" ? "Roles" : "Permissions");
                         builtIn = true;
                     }
 
@@ -239,7 +239,7 @@
                 treeMatrix[node.objectId] = {
                     id: node.objectId,
                     name: nodeName,
-                    type: node.model,
+                    type: node[am7model.jsonModelKey],
                     objectType: node.type,
                     path: node.path,
                     groupId: node.groupId,
@@ -250,7 +250,7 @@
                     builtIn,
                     ico,
                     listEntityType: fListType,
-                    listChildType: node.model,
+                    listChildType: node[am7model.jsonModelKey],
                     flist: fList,
                     nodeId: node.id
                 };
@@ -292,11 +292,11 @@
             /// Depending on how it's queried, the model property will be pruned from complex objects since the schema definition includes the model type, so that the same
             /// The downside is, if looking at a child node without the parent model reference, you don't know what the child type is supposed to be
             ///
-            if (!node.model) {
+            if (!node[am7model.jsonModelKey]) {
                 //console.warn("push model to group: " + node.name);
-                node.model = 'auth.group';
+                node[am7model.jsonModelKey] = 'auth.group';
             }
-            if (!node.model.match(/^(auth\.role|auth\.permission|auth\.group)$/gi)) {
+            if (!node[am7model.jsonModelKey].match(/^(auth\.role|auth\.permission|auth\.group)$/gi)) {
                 console.warn("Only roles, groups, and permissions are supported for hierarchical navigation");
                 return "";
             }

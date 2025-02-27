@@ -1,5 +1,5 @@
 {
-	"ammodel": "olio.llm.promptConfig",
+	"schema": "olio.llm.promptConfig",
 	"assistant": [
 		"My name is ${system.firstName}, and I am a ${system.asg}.",
 		"${system.race}",

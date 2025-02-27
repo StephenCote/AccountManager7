@@ -1,5 +1,5 @@
 {
-	"ammodel": "policy.policy",
+	"schema": "policy.policy",
 	"urn": "policy.readObject",
 	"rules": [
 		{

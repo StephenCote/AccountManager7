@@ -37,13 +37,13 @@ public class AuditUtil {
 		String rname = null;
 
 		if(contextUser != null) {
-			cname = contextUser.getAMModel() + " " + contextUser.get(FieldNames.FIELD_NAME);
+			cname = contextUser.getSchema() + " " + contextUser.get(FieldNames.FIELD_NAME);
 		}
 		if(subject != null) {
-			sname = subject.getAMModel() + " " + subject.get(FieldNames.FIELD_NAME);
+			sname = subject.getSchema() + " " + subject.get(FieldNames.FIELD_NAME);
 		}
 		if(resource != null) {
-			rname = resource.getAMModel() + " ";
+			rname = resource.getSchema() + " ";
 			if(resource.hasField(FieldNames.FIELD_NAME)) {
 				rname += resource.get(FieldNames.FIELD_NAME);
 			}
@@ -51,7 +51,7 @@ public class AuditUtil {
 				rname += resource.get(FieldNames.FIELD_URN);
 			}
 			else if(resource.hasField(FieldNames.FIELD_ID)) {
-				rname += resource.getAMModel() + " #" + resource.get(FieldNames.FIELD_ID);
+				rname += resource.getSchema() + " #" + resource.get(FieldNames.FIELD_ID);
 			}
 		}
 		if(rname == null) {
@@ -99,7 +99,7 @@ public class AuditUtil {
 			return;
 		}
 		try {
-			audit.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getAMModel());
+			audit.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getSchema());
 			audit.set(FieldNames.FIELD_RESOURCE, resource);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);

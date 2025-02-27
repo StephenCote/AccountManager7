@@ -52,7 +52,7 @@ public class WordParser {
 		map.add(new ParseMap("pcthispanic", 10));
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_CENSUS_WORD);
+		cfg.setSchema(ModelNames.MODEL_CENSUS_WORD);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(false).setQuote(null).setTrim(true).build());
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath);
@@ -75,7 +75,7 @@ public class WordParser {
 		map.add(new ParseMap("class", 2));
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_WORD);
+		cfg.setSchema(ModelNames.MODEL_WORD);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build());
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath);
@@ -98,7 +98,7 @@ public class WordParser {
 		map.add(new ParseMap(null, 2, new DecimalColorInterceptor()));
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_COLOR);
+		cfg.setSchema(ModelNames.MODEL_COLOR);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote('"').setTrim(true).build());
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath);
@@ -120,7 +120,7 @@ public class WordParser {
 		map.add(new ParseMap("blue", 5, new HSLInterceptor()));
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_COLOR);
+		cfg.setSchema(ModelNames.MODEL_COLOR);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote('"').setTrim(true).build());
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath);
@@ -139,7 +139,7 @@ public class WordParser {
 		map.add(new ParseMap("description", 2));
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_DATA);
+		cfg.setSchema(ModelNames.MODEL_DATA);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter('|').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build());
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath);
@@ -158,7 +158,7 @@ public class WordParser {
 		map.add(new ParseMap("count", 2));
 		
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_WORD);
+		cfg.setSchema(ModelNames.MODEL_WORD);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(',').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build());
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath);

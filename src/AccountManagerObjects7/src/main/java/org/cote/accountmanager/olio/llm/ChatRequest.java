@@ -28,7 +28,7 @@ public class ChatRequest extends LooseRecord {
 	}
 	
 	public static ChatRequest importRecord(String json) {
-		return new ChatRequest(JSONUtil.importObject(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()));
+		return new ChatRequest(RecordFactory.importRecord(OlioModelNames.MODEL_CHAT_REQUEST, json));
 	}
 
 	public String getPromptConfig() {

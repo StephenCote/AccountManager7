@@ -20,19 +20,9 @@ public class RecordValidator {
 	public static boolean validate(BaseRecord record) {
 		return validate(RecordOperation.CREATE, record);
 	}
+	
 	public static boolean validate(RecordOperation operation, BaseRecord record) {
-		return validate(operation, RecordFactory.getSchema(record.getAMModel()), record);
-		/*
-		ModelSchema schema = RecordFactory.getSchema(record.getModel());
-		int valid = 0;
-		for(String impl : schema.getImplements()) {
-			logger.info("Validating " + impl);
-			if(validate(operation, RecordFactory.getSchema(impl), record)) {
-				valid++;
-			}
-		}
-		return (valid == schema.getImplements().size());
-		*/
+		return validate(operation, RecordFactory.getSchema(record.getSchema()), record);
 	}
 	
 	public static List<ModelValidation> getValidations(ModelSchema schema, BaseRecord record) {
@@ -50,7 +40,6 @@ public class RecordValidator {
 		boolean valid = false;
 		
 		if(IOSystem.getActiveContext() != null && !IOSystem.getActiveContext().isEnforceValidation()) {
-			// logger.warn("Validation is not being enforced for model " + record.getModel());
 			return true;
 		}
 		
@@ -58,12 +47,10 @@ public class RecordValidator {
 			return true;
 		}
 		
-		/// logger.info("**** Validating " + record.getModel());
-		
 		int errors = 0;
 		int ruleCount = 0;
 		int successCount = 0;
-		//ModelValidation schemav = schema.getValidation();
+
 		List<ModelValidation> schemavs = getValidations(schema, record);
 		for(FieldType f : record.getFields()) {
 			FieldSchema fs = schema.getFieldSchema(f.getName());

@@ -141,7 +141,7 @@ public class TestObjectPolicy extends BaseTest {
 			preq.setContextUser(testUser1);
 			assertTrue("Expected one parameter and received " + preq.getFacts().size(), preq.getFacts().size() == 1);
 			preq.getFacts().get(0).setSourceUrn(dat.get("urn"));
-			preq.getFacts().get(0).setModelType(dat.getAMModel());
+			preq.getFacts().get(0).setModelType(dat.getSchema());
 			logger.info("Check: " + dat.get("urn") + "==" + preq.getFacts().get(0).getSourceUrn());
 			prr = ioContext.getPolicyEvaluator().evaluatePolicyRequest(preq, rec).toConcrete();
 			
@@ -184,7 +184,7 @@ public class TestObjectPolicy extends BaseTest {
 			logger.info("Load owner resource policy");
 			rec = ioContext.getPolicyUtil().getResourcePolicy("owner", testUser1, null, dat).toConcrete();
 			
-			rec.getRules().get(0).getPatterns().get(0).getMatch().setModelType(dat.getAMModel());
+			rec.getRules().get(0).getPatterns().get(0).getMatch().setModelType(dat.getSchema());
 			rec.getRules().get(0).getPatterns().get(0).getMatch().setSourceUrn(dat.get(FieldNames.FIELD_URN));
 			//rec.getRules().get(0).getPatterns().get(0).getMatch().setSourceUrn(dat.get(FieldNames.FIELD_URN));
 			
@@ -269,10 +269,10 @@ public class TestObjectPolicy extends BaseTest {
 		try {
 			rec = ioContext.getPolicyUtil().getReadPolicy(dat.get(FieldNames.FIELD_URN)).toConcrete();
 			BaseRecord fact = rec.getRules().get(0).getPatterns().get(0).getFact();
-			fact.set(FieldNames.FIELD_MODEL_TYPE, per1.getAMModel());
+			fact.set(FieldNames.FIELD_MODEL_TYPE, per1.getSchema());
 			
 			BaseRecord match = rec.getRules().get(0).getPatterns().get(0).getMatch();
-			match.set(FieldNames.FIELD_MODEL_TYPE, dat.getAMModel());
+			match.set(FieldNames.FIELD_MODEL_TYPE, dat.getSchema());
 			match.set(FieldNames.FIELD_SOURCE_URN, dat.get(FieldNames.FIELD_URN));
 
 			preq = ioContext.getPolicyUtil().getPolicyRequest(rec, testUser1, per1);
@@ -457,13 +457,13 @@ public class TestObjectPolicy extends BaseTest {
 		ioContext.getMemberUtil().member(testUser1, trole1, testUser2, null, false);
 		ioContext.getMemberUtil().member(testUser1, trole1, testUser2, null, true);
 		try {
-		evaluatePolicyByUrn(testUser1, "systemReadObject", testUser1.getAMModel(), testUser1.get(FieldNames.FIELD_URN), dat.getAMModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
-		evaluatePolicyByUrn(testUser1, "systemReadObject", testUser2.getAMModel(), testUser2.get(FieldNames.FIELD_URN), dat.getAMModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
+		evaluatePolicyByUrn(testUser1, "systemReadObject", testUser1.getSchema(), testUser1.get(FieldNames.FIELD_URN), dat.getSchema(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
+		evaluatePolicyByUrn(testUser1, "systemReadObject", testUser2.getSchema(), testUser2.get(FieldNames.FIELD_URN), dat.getSchema(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
 
-		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser1.getAMModel(), testUser1.get(FieldNames.FIELD_URN), dat.getAMModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
-		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser2.getAMModel(), testUser2.get(FieldNames.FIELD_URN), dat.getAMModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.DENY);
+		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser1.getSchema(), testUser1.get(FieldNames.FIELD_URN), dat.getSchema(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
+		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser2.getSchema(), testUser2.get(FieldNames.FIELD_URN), dat.getSchema(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.DENY);
 
-		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser1.getAMModel(), testUser1.get(FieldNames.FIELD_URN), dat.getAMModel(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
+		evaluatePolicyByUrn(testUser1, "systemCreateObject", testUser1.getSchema(), testUser1.get(FieldNames.FIELD_URN), dat.getSchema(), dat.get(FieldNames.FIELD_URN), PolicyResponseEnumType.PERMIT);
 		}
 		catch(Exception e) {
 			e.printStackTrace();

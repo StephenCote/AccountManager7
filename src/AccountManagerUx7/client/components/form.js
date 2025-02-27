@@ -37,12 +37,12 @@
 
         if (active) cls += ' carousel-item-abs';
         let maxMode = attrs.maxMode;
-        if (!object || !object.model) {
+        if (!object || !object[am7model.jsonModelKey]) {
             console.warn("Invalid object");
             return "";
         }
 
-        let type = am7model.getModel(object.model);
+        let type = am7model.getModel(object[am7model.jsonModelKey]);
         let objView = "";
 
         if (ctx.contextObjects[object.objectId] && !ctx.contextObjects[object.objectId].populated) {
@@ -398,7 +398,7 @@
         let active = attrs.active;
         let ctx = page.context();
         if (!ctx.contextObjects[object.objectId]) {
-            page.openObject(object.model, object.objectId).then((a) => {
+            page.openObject(object[am7model.jsonModelKey], object.objectId).then((a) => {
                 m.redraw();
             });
         }

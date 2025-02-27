@@ -43,7 +43,7 @@ public class WordNetParser {
 		logger.info("New WordNet Parse Configuration");
 		
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_WORD_NET);
+		cfg.setSchema(ModelNames.MODEL_WORD_NET);
 		cfg.setCsvFormat(CSVFormat.Builder.create().setDelimiter(' ').setAllowMissingColumnNames(true).setQuote(null).setTrim(true).build());
 		cfg.setFields(new ParseMap[0]);
 		cfg.setFilePath(basePath);
@@ -178,7 +178,7 @@ public class WordNetParser {
 					int offset = 6;
 					ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, cfg.getGroupPath());
 					plist.parameter(FieldNames.FIELD_NAME, name);
-					BaseRecord word = IOSystem.getActiveContext().getFactory().newInstance(cfg.getModel(), cfg.getOwner(), null, plist);
+					BaseRecord word = IOSystem.getActiveContext().getFactory().newInstance(cfg.getSchema(), cfg.getOwner(), null, plist);
 					List<BaseRecord> alts = word.get("alternatives");
 					
 					

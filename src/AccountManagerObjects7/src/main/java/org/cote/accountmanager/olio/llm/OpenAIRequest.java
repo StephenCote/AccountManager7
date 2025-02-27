@@ -54,11 +54,10 @@ public class OpenAIRequest extends LooseRecord {
 		setValue("messages", messages);
 	}
 
-	/// TODO: Conflicts with 'model' in BaseRecord, which needs to be refactored after changing the key name
-	
 	public String getModel() {
 		return get("model");
 	}
+	
 	public void setModel(String model) {
 		setValue("model", model);
 	}

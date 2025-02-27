@@ -219,7 +219,7 @@ public class GeoParser {
 		map.add(new ParseMap("neighbors", 17));
 		
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
+		cfg.setSchema(ModelNames.MODEL_GEO_LOCATION);
 		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/countryInfo.txt");
@@ -250,7 +250,7 @@ public class GeoParser {
 		}
 	
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
+		cfg.setSchema(ModelNames.MODEL_GEO_LOCATION);
 		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/alternateNamesV2.txt");
@@ -301,7 +301,7 @@ public class GeoParser {
 		q.field(FieldNames.FIELD_GEOTYPE, ComparatorEnumType.EQUALS, "admin2", or2);
 		
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
+		cfg.setSchema(ModelNames.MODEL_GEO_LOCATION);
 		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/" + isoCode.toUpperCase() + ".txt");
@@ -341,7 +341,7 @@ public class GeoParser {
 		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
+		cfg.setSchema(ModelNames.MODEL_GEO_LOCATION);
 		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/admin1CodesASCII.txt");
@@ -381,7 +381,7 @@ public class GeoParser {
 		q.setRequest(new String[] {FieldNames.FIELD_ID, "iso"});
 
 		ParseConfiguration cfg = new ParseConfiguration();
-		cfg.setModel(ModelNames.MODEL_GEO_LOCATION);
+		cfg.setSchema(ModelNames.MODEL_GEO_LOCATION);
 		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
 		cfg.setFilePath(basePath + "/admin2Codes.txt");

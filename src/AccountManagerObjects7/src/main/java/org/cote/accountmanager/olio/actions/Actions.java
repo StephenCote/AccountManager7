@@ -151,7 +151,7 @@ public class Actions {
 		}
 		
 		actr.setValue(OlioFieldNames.FIELD_ACTOR, actor);
-		actr.setValue(OlioFieldNames.FIELD_ACTOR_TYPE, actor.getAMModel());
+		actr.setValue(OlioFieldNames.FIELD_ACTOR_TYPE, actor.getSchema());
 		
 		act.configureAction(context, actr, actor, interactor);
 		if(event != null) {

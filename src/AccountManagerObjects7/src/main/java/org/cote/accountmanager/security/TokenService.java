@@ -101,7 +101,7 @@ public class TokenService {
 	public static CryptoBean getCreateCipher(BaseRecord actor, String referenceName){
 		BaseRecord tokenType = null;
 		CryptoBean outBean = null;
-		String actorType = actor.getAMModel();
+		String actorType = actor.getSchema();
 		if(!actorType.equals(ModelNames.MODEL_USER) && !actorType.equals(ModelNames.MODEL_PERSON) && !actorType.equals(ModelNames.MODEL_ACCOUNT)) {
 			logger.error("Actor type not supported: {}", actorType);
 			return null;
@@ -296,12 +296,12 @@ public class TokenService {
 		return createAuthorizationToken(authorizingUser, persona, null, new String[0], UUID.randomUUID().toString(), TOKEN_EXPIRY_10_MINUTES);
 	}
 	public static String createAuthorizationToken(BaseRecord authorizingUser, BaseRecord persona, BaseRecord resource, String[] resourceClaims, String tokenId, int expiryMinutes) throws ReaderException, IndexException{
-		if(!userType.matcher(authorizingUser.getAMModel()).find()){
-			logger.error(String.format("Unsupported user type: {0}", authorizingUser.getAMModel()));
+		if(!userType.matcher(authorizingUser.getSchema()).find()){
+			logger.error(String.format("Unsupported user type: {0}", authorizingUser.getSchema()));
 			return null;
 		}
-		if(!personaType.matcher(persona.getAMModel()).find()){
-			logger.error(String.format("Unsupported persona type: {0}", persona.getAMModel()));
+		if(!personaType.matcher(persona.getSchema()).find()){
+			logger.error(String.format("Unsupported persona type: {0}", persona.getSchema()));
 			return null;
 		}
 		CryptoBean bean = getCreateCipher(authorizingUser);
@@ -321,10 +321,10 @@ public class TokenService {
 		claims.put(CLAIM_OBJECT_ID, persona.get(FieldNames.FIELD_OBJECT_ID));
 		claims.put(CLAIM_TOKEN_ID, tokenId);
 		claims.put(CLAIM_ORGANIZATION_PATH, persona.get(FieldNames.FIELD_ORGANIZATION_PATH));
-		claims.put(CLAIM_SUBJECT_TYPE,persona.getAMModel());
+		claims.put(CLAIM_SUBJECT_TYPE,persona.getSchema());
 		if(resource != null) {
 			if(RecordUtil.isIdentityRecord(resource)) {
-				claims.put(CLAIM_RESOURCE_TYPE, resource.getAMModel());
+				claims.put(CLAIM_RESOURCE_TYPE, resource.getSchema());
 				claims.put(CLAIM_RESOURCE_ID, resource.get(FieldNames.FIELD_OBJECT_ID));
 			}
 			else {
@@ -360,8 +360,8 @@ public class TokenService {
 		return createJWTToken(contextUser, persona, UUID.randomUUID().toString(), TOKEN_EXPIRY_10_MINUTES);
 	}
 	public static String createJWTToken(BaseRecord contextUser, BaseRecord persona, String tokenId, int expiryMinutes) throws ReaderException, IndexException{
-		if(!personaType.matcher(persona.getAMModel()).find()){
-			logger.error("Unsupported persona type: {0}", persona.getAMModel());
+		if(!personaType.matcher(persona.getSchema()).find()){
+			logger.error("Unsupported persona type: {0}", persona.getSchema());
 			return null;
 		}
 		CryptoBean bean = getCreateCipher(persona);
@@ -408,7 +408,7 @@ public class TokenService {
 		claims.put(CLAIM_OBJECT_ID, persona.get(FieldNames.FIELD_OBJECT_ID));
 		claims.put(CLAIM_TOKEN_ID, tokenId);
 		claims.put(CLAIM_ORGANIZATION_PATH, persona.get(FieldNames.FIELD_ORGANIZATION_PATH));
-		claims.put(CLAIM_SUBJECT_TYPE,persona.getAMModel());
+		claims.put(CLAIM_SUBJECT_TYPE,persona.getSchema());
 		Calendar cal = Calendar.getInstance();
 		Date now = cal.getTime();
 		cal.add(Calendar.MINUTE, expiryMinutes);

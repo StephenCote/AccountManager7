@@ -3,20 +3,20 @@ package org.cote.accountmanager.schema;
 public class ModelAccessPolicyBind {
 
 	private String objectId = null;
-	private String objectModel = null;
-	private String model = null;
+	private String objectSchema = null;
+	private String schema = null;
 	private String description = null;
 	
 	public ModelAccessPolicyBind() {
 		
 	}
 
-	public String getObjectModel() {
-		return objectModel;
+	public String getObjectSchema() {
+		return objectSchema;
 	}
 
-	public void setObjectModel(String objectModel) {
-		this.objectModel = objectModel;
+	public void setObjectSchema(String objectSchema) {
+		this.objectSchema = objectSchema;
 	}
 
 	public String getObjectId() {
@@ -27,12 +27,12 @@ public class ModelAccessPolicyBind {
 		this.objectId = objectId;
 	}
 
-	public String getModel() {
-		return model;
+	public String getSchema() {
+		return schema;
 	}
 
-	public void setModel(String model) {
-		this.model = model;
+	public void setSchema(String schema) {
+		this.schema = schema;
 	}
 
 	public String getDescription() {

@@ -472,13 +472,13 @@ public class InteractionUtil {
 			inter.set(FieldNames.FIELD_TYPE, type);
 			inter.set(OlioFieldNames.FIELD_ACTOR, actor);
 			inter.set(OlioFieldNames.FIELD_ACTOR_ALIGNMENT, actorAlignment);
-			inter.set(OlioFieldNames.FIELD_ACTOR_TYPE, actor.getAMModel());
+			inter.set(OlioFieldNames.FIELD_ACTOR_TYPE, actor.getSchema());
 			inter.set(OlioFieldNames.FIELD_ACTOR_THREAT, actorThreat);
 			inter.set(OlioFieldNames.FIELD_ACTOR_ROLE, actorRole);
 			inter.set(OlioFieldNames.FIELD_ACTOR_REASON, actorReason);
 			inter.set(OlioFieldNames.FIELD_INTERACTOR, interactor);
 			inter.set(OlioFieldNames.FIELD_INTERACTOR_ALIGNMENT, interactorAlignment);
-			inter.set(OlioFieldNames.FIELD_INTERACTOR_TYPE, interactor.getAMModel());
+			inter.set(OlioFieldNames.FIELD_INTERACTOR_TYPE, interactor.getSchema());
 			inter.set(OlioFieldNames.FIELD_INTERACTOR_THREAT, interactorThreat);
 			inter.set(OlioFieldNames.FIELD_INTERACTOR_ROLE, interactorRole);
 			inter.set(OlioFieldNames.FIELD_INTERACTOR_REASON, interactorReason);

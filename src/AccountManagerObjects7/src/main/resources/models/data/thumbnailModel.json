@@ -5,7 +5,7 @@
 		"policies": {
 			"bind": {
 				"objectId": "referenceId",
-				"model": "data.data",
+				"schema": "data.data",
 				"description": "Defer to the object identified by 'propertyName' when performing policy evaluations.  This is to allow for ephemeral objects to be authorized and audited in a uniform fashion"
 			}
 		}

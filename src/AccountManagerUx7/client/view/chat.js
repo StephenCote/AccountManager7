@@ -305,7 +305,7 @@
             om.content = cnt;
             hist.dataBytesStore = Base64.encode(JSON.stringify(histx));
             let histy = {
-              model: hist.model,
+              schema: hist[am7model.jsonModelKey],
               id: hist.id,
               compressionType: "none",
               ownerId: hist.ownerId,
@@ -622,7 +622,7 @@
       altView = {
         fullMode,
         view: page.views.object(),
-        type: object.model,
+        type: object[am7model.jsonModelKey],
         containerId: object.objectId
       };
       m.redraw();

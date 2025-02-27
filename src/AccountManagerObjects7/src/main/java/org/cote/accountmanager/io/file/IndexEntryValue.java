@@ -23,7 +23,7 @@ public class IndexEntryValue extends LooseRecord {
 	}
 	
 	public IndexEntryValue(BaseRecord rec){
-		this.setAMModel(rec.getAMModel());
+		this.setSchema(rec.getSchema());
 		setFieldList(rec.getFields());
 		setFieldMap(rec.getFieldMap());
 	}

@@ -52,7 +52,7 @@
        
         this.post = function(ctx, url, object){
             return new Promise((res,rej)=>{
-                (object.objectId ? cache.removeCache(this.getCacheKey(ctx, object.model + "." + object.objectId)) : Promise.resolve())
+                (object.objectId ? cache.removeCache(this.getCacheKey(ctx, object[am7model.jsonModelKey] + "." + object.objectId)) : Promise.resolve())
                 .then(()=>{
                     axios.post(url, object, this.getBearer(ctx)).then((resp)=>{
                         if(resp.data != null){
@@ -116,10 +116,10 @@
         this.authenticate = function(ctx, credential){
 
             let credType = {
-                "model": "auth.authenticationRequest",
+                "schema": "auth.authenticationRequest",
                 "credentialType" : "HASHED_PASSWORD",
                 "subject" : {
-                    "model": "system.user",
+                    "schema": "system.user",
                     "name": ctx.username,
                     "organizationPath" : ctx.organization
                 },
@@ -166,7 +166,7 @@
                 return Promise.error(0);
             }
             let credType = {
-                "model": "auth.authenticationRequest",
+                "schema": "auth.authenticationRequest",
                 "credentialType" : "TOKEN",
                 "credential" : base64.encode(ctx.token)
             };

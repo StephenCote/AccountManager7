@@ -47,7 +47,7 @@ import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 			TerrainEnumType tet = paramLocation.getEnum(FieldNames.FIELD_TERRAIN_TYPE);
 			double movementOdds = Rules.getMovementOdds(tet);
-			if(paramAnimal.getAMModel().equals(OlioModelNames.MODEL_ANIMAL)) {
+			if(paramAnimal.getSchema().equals(OlioModelNames.MODEL_ANIMAL)) {
 				List<String> habitat = paramAnimal.get(OlioFieldNames.FIELD_HABITAT);
 				if(habitat.contains(tet.toString().toLowerCase())) {
 					movementOdds = Rules.ODDS_HABITAT_MOVEMENT;

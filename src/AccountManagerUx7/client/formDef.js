@@ -1,4 +1,5 @@
 (function () {
+    /// TODO: Currently out of date
     let forms = {
         access: {},
         auth: {},
@@ -3611,11 +3612,11 @@
             name: {
                 layout: "one"
             },
-            llmModel: {
+            model: {
                 layout: "one",
                 label: "Model Name"
             },
-            llmAnalyzeModel: {
+            analyzeModel: {
                 layout: "one",
                 label: "Analyze Model"
             },

@@ -70,7 +70,7 @@
     }
 
     function getType(o) {
-      return (o.model ? o.model : listType);
+      return (o[am7model.jsonModelKey] ? o[am7model.jsonModelKey] : listType);
     }
 
     function editItem(o) {
@@ -108,7 +108,7 @@
 
             if (bBucket) {
               console.log(label, contType, listContainerId, getType(obj), obj.objectId);
-              aP.push(page.member(contType, listContainerId, null, getType(obj), obj.objectId, false));
+              aP.push(page.member(contType, listContainerId, getType(obj), obj.objectId, false));
             }
             else {
               aP.push(page.deleteObject(getType(obj), obj.objectId));
@@ -234,7 +234,7 @@
         type = modType.type || type;
       }
       let byParent = (am7model.isParent(modType) && type !== 'auth.group');
-      if (sel && !sel.model) sel = null;
+      if (sel && !sel[am7model.jsonModelKey]) sel = null;
       if (sel || idx.length) {
         let pages = pagination.pages();
         let obj = sel || pages.pageResults[pages.currentPage][idx[0]];
@@ -247,7 +247,7 @@
           m.redraw();
         }
         else {
-          let ltype = obj.model || baseListType;
+          let ltype = obj[am7model.jsonModelKey] || baseListType;
           m.route.set("/" + (byParent ? 'p' : '') + "list/" + (containerMode ? baseListType : ltype) + "/" + obj.objectId, { key: Date.now() });
         }
       }
@@ -422,7 +422,7 @@
         if (type && type.icon) ico = type.icon;
         let icon;
         let icoCls;
-        if (p.model == "MESSAGE") {
+        if (p[am7model.jsonModelKey] == "MESSAGE") {
           if (p.spoolStatus == "ERROR") {
             icoCls = "text-red-600";
             ico = "quickreply";

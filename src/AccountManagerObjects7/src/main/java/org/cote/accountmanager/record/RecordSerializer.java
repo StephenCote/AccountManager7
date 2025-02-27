@@ -134,7 +134,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	
 	@Override
     public void serialize(BaseRecord value, JsonGenerator jgen, SerializerProvider provider) throws IOException, JsonProcessingException {
-    	ModelSchema ltype = RecordFactory.getSchema(value.getAMModel());
+    	ModelSchema ltype = RecordFactory.getSchema(value.getSchema());
     	RecordUtil.sortFields(value);
     	
         jgen.writeStartObject();
@@ -147,7 +147,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
         	}
        		condenseDeclarations = true;
 
-       		jgen.writeStringField((condenseFields ? RecordFactory.JSON_MODEL_SHORT_KEY : RecordFactory.JSON_MODEL_KEY), value.getAMModel());
+       		jgen.writeStringField((condenseFields ? RecordFactory.JSON_MODEL_SHORT_KEY : RecordFactory.JSON_MODEL_KEY), value.getSchema());
         }
         
         if(canDecompress(value)) {
@@ -165,12 +165,6 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
         		continue;
         	}
         	
-        	/*
-    		if(f.getValue() == null) {
-    			logger.warn("Null value for " + value.getModel() + " " + f.getName());
-    			continue;
-    		}
-			*/
         	if(f.getValueType().equals(FieldEnumType.FLEX)) {
         		logger.warn("Abstract FieldType value for " + f.getName() + " cannot be exported.");
         		continue;
@@ -305,14 +299,14 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        				/// TODO: Add smarter limits on preventing recursion
 		        				/// PLAN: Add an instance level tracker to only allow an object to appear once with all foreign references, and subsequently without
 		        				///
-		        				if(lft.getBaseModel() != null && (lft.getBaseModel().equals(value.getAMModel()) || value.inherits(lft.getBaseModel()))) {
+		        				if(lft.getBaseModel() != null && (lft.getBaseModel().equals(value.getSchema()) || value.inherits(lft.getBaseModel()))) {
 		        					BaseRecord o2 = (BaseRecord)o;
 		        					String recKey = null;
 		        					
 		        					List<String> ol = new ArrayList<>();
 		        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID)) {
 		        						long id = o2.get(FieldNames.FIELD_ID);
-		        						recKey = o2.getAMModel() + "-#" + Long.toString(id);
+		        						recKey = o2.getSchema() + "-#" + Long.toString(id);
 		        					}
 		        					if(stopRecursion && recKey != null && recursionSet.contains(recKey)) {
 		        						logger.debug("Stop recursion: " + recKey);
@@ -333,7 +327,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        						String recKey = null;
 			        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID)) {
 			        						long id = o2.get(FieldNames.FIELD_ID);
-			        						recKey = o2.getAMModel() + "-#" + Long.toString(id);
+			        						recKey = o2.getSchema() + "-#" + Long.toString(id);
 			        					}
 			        					if(stopRecursion && recKey != null && recursionSet.contains(recKey)) {
 			        						logger.debug("Stop recursion: " + recKey);
@@ -366,7 +360,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        					logger.debug("Required field for exporting foreign key is null: " + fprop);
 	        				}
 	        				else if(!RecordUtil.isIdentityRecord(mval)) {
-	        					logger.debug("Record " + mval.getAMModel() + " is missing an identity to be used as a foreign property.  Saving field " + lft.getName() + " directly");
+	        					logger.debug("Record " + mval.getSchema() + " is missing an identity to be used as a foreign property.  Saving field " + lft.getName() + " directly");
 	        				}
 
 	        				else {
@@ -398,7 +392,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 	        				/// TODO: Add smarter limits on preventing recursion
 	        				/// PLAN: Add an instance level tracker to only allow an object to appear once with all foreign references, and subsequently without
 	        				///
-	        				if(lft.getBaseModel() != null && lft.getBaseModel().equals(value.getAMModel()) || value.inherits(lft.getBaseModel())) {
+	        				if(lft.getBaseModel() != null && lft.getBaseModel().equals(value.getSchema()) || value.inherits(lft.getBaseModel())) {
 	        					BaseRecord o2 = (BaseRecord)mval;
 	        					Set<String> fl = o2.getFields().stream().map(fx -> fx.getName()).collect(Collectors.toSet());
 	        					List<String> ol = ltype.getFields().stream().filter(lx -> fl.contains(lx.getName()) && !lx.isForeign()).map(fx -> fx.getName()).collect(Collectors.toList());

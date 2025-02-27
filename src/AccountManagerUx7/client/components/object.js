@@ -25,7 +25,7 @@
         let active = attrs.active;
         if (active) cls += ' carousel-item-abs';
         let maxMode = attrs.maxMode;
-        let model = attrs.model || object?.model;
+        let model = attrs[am7model.jsonModelKey] || object[am7model.jsonModelKey];
         if (!object || !model) {
             console.warn("Invalid object", object);
             return "";

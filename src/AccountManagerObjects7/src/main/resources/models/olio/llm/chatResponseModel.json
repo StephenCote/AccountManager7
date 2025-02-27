@@ -15,6 +15,16 @@
 			"name": "actor",
 			"type": "string",
 			"maxLength": 32
+		},
+		{
+			"name": "uid",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "model",
+			"type": "string",
+			"maxLength": 64
 		}
 	]
 }

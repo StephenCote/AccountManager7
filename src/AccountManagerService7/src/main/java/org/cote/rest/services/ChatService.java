@@ -264,7 +264,7 @@ public class ChatService {
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
 		ChatResponse rep = new ChatResponse();
 		rep.setUid(creq.getUid());
-		rep.setAMModel(chatConfig.get("model"));
+		rep.setModel(chatConfig.get("model"));
 		/// Current template structure for chat and rpg defines prompt and initial user message
 		/// Skip prompt, and skip initial user comment
 		int startIndex = 2;

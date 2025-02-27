@@ -34,10 +34,10 @@ public class BatchQueue extends Threaded {
 		if(RecordUtil.isIdentityRecord(record)) {
 			map = updateQueue;
 		}
-		if(!map.containsKey(record.getAMModel())) {
-			map.put(record.getAMModel(), new CopyOnWriteArrayList<>());
+		if(!map.containsKey(record.getSchema())) {
+			map.put(record.getSchema(), new CopyOnWriteArrayList<>());
 		}
-		map.get(record.getAMModel()).add(record);
+		map.get(record.getSchema()).add(record);
 	}
 
 	private void processQueue(String queueType, Map<String, List<BaseRecord>> useMap) {

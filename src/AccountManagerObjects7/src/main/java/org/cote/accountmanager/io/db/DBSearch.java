@@ -149,7 +149,7 @@ public class DBSearch extends SearchBase {
 	
 	private void deepRead(String model, BaseRecord rec) {
 		MemoryReader mr = new MemoryReader();
-		ModelSchema ms = RecordFactory.getSchema(rec.getAMModel());
+		ModelSchema ms = RecordFactory.getSchema(rec.getSchema());
 		for(FieldType f : rec.getFields()) {
 			FieldSchema fs = ms.getFieldSchema(f.getName());
 			if(fs.getBaseModel() != null) {

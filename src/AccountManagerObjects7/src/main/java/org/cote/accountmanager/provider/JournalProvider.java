@@ -50,7 +50,7 @@ public class JournalProvider implements IProvider {
 	public void provide(BaseRecord contextUser, RecordOperation operation,  ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field) throws ModelException, FieldException, ValueException, ModelNotFoundException {
 
 		if(!model.inherits(ModelNames.MODEL_JOURNAL_EXT)) {
-			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getAMModel(), ModelNames.MODEL_JOURNAL_EXT));
+			throw new ModelException(String.format(ModelException.INHERITENCE_EXCEPTION, model.getSchema(), ModelNames.MODEL_JOURNAL_EXT));
 		}
 		
 		if(!RecordOperation.CREATE.equals(operation) && !RecordOperation.UPDATE.equals(operation) && !RecordOperation.DELETE.equals(operation)) {
@@ -103,7 +103,7 @@ public class JournalProvider implements IProvider {
 		}
 		
 		Map<String, FieldType> baseLine = getBaseLine(jour1);
-		ModelSchema lbm = RecordFactory.getSchema(model.getAMModel());
+		ModelSchema lbm = RecordFactory.getSchema(model.getSchema());
 		List<FieldType> patchFields = new ArrayList<>();
 		
 		for(FieldType f : model.getFields()) {
@@ -118,7 +118,7 @@ public class JournalProvider implements IProvider {
 			if(baseLine.containsKey(f.getName()) && baseLine.get(f.getName()).isEquals(f)) {
 				continue;
 			}
-			if(f.isDefault(model.getAMModel())) {
+			if(f.isDefault(model.getSchema())) {
 				continue;
 			}
 			
@@ -139,7 +139,7 @@ public class JournalProvider implements IProvider {
 		if(patchFields.size() > 0) {
 			
 			try {
-				BaseRecord patchModel = RecordFactory.newInstance(model.getAMModel());
+				BaseRecord patchModel = RecordFactory.newInstance(model.getSchema());
 				patchModel.setFields(patchFields);
 				journalFields(jour1, patchModel);
 				logger.info("Updating journal");
@@ -203,18 +203,13 @@ public class JournalProvider implements IProvider {
 		List<String> fieldNames = entry.get(FieldNames.FIELD_FIELDS);
 		
 		RecordUtil.sortFields(model);
-		ModelSchema lbm = RecordFactory.getSchema(model.getAMModel());
-		//logger.info(model.toFullString());
+		ModelSchema lbm = RecordFactory.getSchema(model.getSchema());
 		for(FieldType f : model.getFields()) {
 			FieldSchema lbf = lbm.getFieldSchema(f.getName());
 			if(lbf.isEphemeral() || lbf.isVirtual() || f.getName().equals(FieldNames.FIELD_JOURNAL)) {
 				continue;
 			}
-			/*
-			if(FieldUtil.isNullOrEmpty(model.getModel(), f)) {
-				continue;
-			}
-			*/
+
 			fieldNames.add(f.getName());
 				
 		}

@@ -123,7 +123,7 @@
 			return null;
 		}
 		if (f.followReference == false) {
-			o.model = sLType;
+			o[am7model.jsonModelKey] = sLType;
 			return o;
 		}
 		if (f.inherits) {
@@ -158,7 +158,7 @@
 		}
 
 		if (!innerCall) {
-			o.model = sLType;
+			o[am7model.jsonModelKey] = sLType;
 			let ft = am7model.getModel(sLType);
 			// ft.inherits && ft.inherits.find(s => s == "directory") != null
 			if (ft && am7model.isGroup(ft)) {
@@ -276,9 +276,9 @@
 		/// In AM7, the 'model' property may be condensed to occur in only the first result  if the remaining results are the same
     	///
       if (v && v.length) {
-        let m = v[0].model;
+        let m = v[0][am7model.jsonModelKey];
         for (let i = 1; i < v.length; i++) {
-          if (!v[i].model) v[i].model = m;
+          if (!v[i][am7model.jsonModelKey]) v[i][am7model.jsonModelKey] = m;
         }
       }
 	}
@@ -384,7 +384,7 @@
 	};
 
 	am7model.hasIdentity = function (entity) {
-		return am7model.getModelFields(entity.model).filter(f => {
+		return am7model.getModelFields(entity[am7model.jsonModelKey]).filter(f => {
 			return (f.identity && entity[f.name] && entity[f.name] != am7model.defaultValue(f));
 		}).length > 0;
 	};
@@ -541,11 +541,11 @@
 	};
 
 	am7model.prepareInstance = function (entity, form) {
-		form = form ?? am7model.forms[entity.model.substring(entity.model.lastIndexOf(".") + 1)];
+		form = form ?? am7model.forms[entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1)];
 		let inst = {
 			entity,
 			form,
-			model: am7model.getModel(entity.model),
+			model: am7model.getModel(entity[am7model.jsonModelKey]),
 			observers: [],
 			actions: {},
 			decorators: {},
@@ -558,7 +558,7 @@
 			},
 			fields: []
 		};
-		inst.fields = am7model.getModelFields(entity.model);
+		inst.fields = am7model.getModelFields(entity[am7model.jsonModelKey]);
 
 		inst.change = function (n) {
 			if (!inst.changes.includes(n)) inst.changes.push(n);
@@ -644,7 +644,7 @@
 
 		inst.field = (n) => {
 			let f;
-			//let a = inst.model.fields.filter(f => f.name === n);
+			//let a = inst[am7model.jsonModelKey].fields.filter(f => f.name === n);
 			let a = inst.fields.filter(f => f.name === n);
 			return (a.length ? a[0] : f);
 		};
@@ -801,7 +801,7 @@
 					pent[f.name] = entity[f.name];
 				}
 			});
-			pent.model = inst.model.name;
+			pent[am7model.jsonModelKey] = inst.model.name;
 			return pent;
 		};
 
@@ -809,7 +809,7 @@
 			return am7model.hasIdentity(entity);
 		};
 
-		let om = am7model.observers.models[entity.model];
+		let om = am7model.observers.models[entity[am7model.jsonModelKey]];
 		if (om) {
 			om.forEach((o) => {
 				observe(o);

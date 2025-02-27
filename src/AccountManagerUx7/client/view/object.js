@@ -118,7 +118,7 @@
                 console.error("No entity defined");
                 return;
             }
-            if(!entity.model || entity.model === 'UNKNOWN'){
+            if(!entity[am7model.jsonModelKey] || entity[am7model.jsonModelKey] === 'UNKNOWN'){
                 console.error("Unknown entity type");
                 return;
             }
@@ -134,7 +134,7 @@
 
             /// Synchronize the form with the entity
             /// 
-            if(entity.model.match(/^data\.data$/i)){
+            if(entity[am7model.jsonModelKey].match(/^data\.data$/i)){
                 if(am7view.isBinary(entity)){
                     console.log("Don't update binary content via form.");
                     inst.api.dataBytesStore("");
@@ -154,7 +154,7 @@
                     }
                 }
             }
-            else if(entity.model.match(/^message$/i)){
+            else if(entity[am7model.jsonModelKey].match(/^message$/i)){
                 let txtEl = document.querySelector("[name='data-mt']");
                 if(!inst.changes.includes("data")) inst.changes.push("data");
                 if(txtEl) entity.data = Base64.encode(txtEl.value);
@@ -183,7 +183,7 @@
                     
                     if(puint && bpatch && (!upatch || e.changes.length)){
     
-                        aP.push(am7client[upatch ? "patch" : "create"](e.entity.model, puint, function(v){
+                        aP.push(am7client[upatch ? "patch" : "create"](e.entity[am7model.jsonModelKey], puint, function(v){
                             e.resetChanges();
                             if(!upatch){
                                 for(let i in v){
@@ -220,16 +220,16 @@
                 return;
             }
 
-            am7client[bpatch ? "patch" : "create"](entity.model, uint, function(v){
+            am7client[bpatch ? "patch" : "create"](entity[am7model.jsonModelKey], uint, function(v){
                 if(v != null){
                     let bNew = objectNew || parentNew;
                     changed = false;
                     inst.resetChanges();
-                    if(entity.model.match(/message/i)){
+                    if(entity[am7model.jsonModelKey].match(/message/i)){
                         history.back();
                     }
                     else{
-                        am7client.clearCache(entity.model, false, function(){
+                        am7client.clearCache(entity[am7model.jsonModelKey], false, function(){
                             if(!bpatch){
                                 entity = v;
                             }
@@ -240,7 +240,7 @@
                                 embeddedController.editItem(entity);
                             }
                             else if(bNew){
-                                let uri = "/view/" + entity.model + "/" + entity.objectId;
+                                let uri = "/view/" + entity[am7model.jsonModelKey] + "/" + entity.objectId;
                                 m.route.set(uri, {key: entity.objectId});
                             }
                             else{
@@ -290,7 +290,7 @@
         }
         async function doCopy(){
             if(!entity || !entity.objectId) return;
-            if(am7model.hasField(entity.model, "name")){
+            if(am7model.hasField(entity[am7model.jsonModelKey], "name")){
                 entity.name += " Copy";
             }
             entity.objectId = undefined;
@@ -301,10 +301,10 @@
         }
         async function doDelete(){
             if(!entity || !entity.objectId) return;
-            let type = entity.model;
+            let type = entity[am7model.jsonModelKey];
             let path = entity.groupPath;
             page.confirm("Delete this object?", async function(){
-                await page.deleteObject(entity.model, entity.objectId);
+                await page.deleteObject(entity[am7model.jsonModelKey], entity.objectId);
                 // page.pagination.new();
                 history.back();
             });
@@ -414,7 +414,7 @@
             }
             let tableType = field.baseModel;
             if(tableType == "$self"){
-                tableType = entity.model;
+                tableType = entity[am7model.jsonModelKey];
             }
             let tableForm = fieldView.form;
             let bEdit = false;
@@ -516,7 +516,7 @@
                                             }
                                             else if(!ctx.contextObjects[findVal]){
                                                 let type = rm.field.pickerType;
-                                                if(!type || type === 'self') type = v.model;
+                                                if(!type || type === 'self') type = v[am7model.jsonModelKey];
                                                 else type = type;
                                                 if(type.match(/^\./)){
                                                     type = v[rm.field.pickerType.slice(1)];
@@ -685,9 +685,9 @@
                         useEntity[name] = Base64.encode((e.srcElement || e.target).value);
                         if(!inst.changes.includes[name]) inst.changes.push(name);
                         / *
-                        if(useEntity.model.match(/^data$/i))
+                        if(useentity[am7model.jsonModelKey].match(/^data$/i))
                             useEntity.dataBytesStore = enc; 
-                        else if(useEntity.model.match(/^message$/)){
+                        else if(useentity[am7model.jsonModelKey].match(/^message$/)){
                             useEntity.data = enc;
                         }
                         * /
@@ -803,7 +803,7 @@
                     fieldClass += " image-field";
                     let dataUrl;
                     let clickF;
-                    if(useEntity.model.match(/^imageView$/gi)){
+                    if(useEntity[am7model.jsonModelKey].match(/^imageView$/gi)){
                         let ui = useEntity.image;
                         fieldClass = "carousel-item-img";
                         /*
@@ -817,7 +817,7 @@
                         //}
                     }
 
-                    else if(useEntity.model.match(/^data\.data$/gi)){
+                    else if(useEntity[am7model.jsonModelKey].match(/^data\.data$/gi)){
                         if(useEntity.stream){
                             if(streamSeg){
                                 dataUrl = "data:" + useEntity.contentType + ";base64," + streamSeg.stream;    
@@ -851,11 +851,11 @@
                     let uri = "about:blank";
                     let label = "";
                     if(useEntity && useEntity.objectId){
-                        if(useEntity.model.match(/^data\.data$/gi)){
-                            uri = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/" + useEntity.model + useEntity.groupPath + "/" + useEntity.name;
+                        if(useEntity[am7model.jsonModelKey].match(/^data\.data$/gi)){
+                            uri = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/" + useEntity[am7model.jsonModelKey] + useEntity.groupPath + "/" + useEntity.name;
                         }
                         else{
-                            uri = g_application_path + "/rest/model/" + useEntity.model + "/" + useEntity.objectId;
+                            uri = g_application_path + "/rest/model/" + useEntity[am7model.jsonModelKey] + "/" + useEntity.objectId;
                         }
                         label = useEntity.name;
                     }
@@ -884,7 +884,7 @@
                             }
                             else if(!ctx.contextObjects[findVal]){
                                 let type = field.pickerType;
-                                if(!type || type === 'self') type = useEntity.model;
+                                if(!type || type === 'self') type = useEntity[am7model.jsonModelKey];
 
                                 if(type.match(/^\./)){
                                     type = useEntity[field.pickerType.slice(1)];
@@ -940,7 +940,7 @@
         async function doFieldOpen(field){
             if(!entity || !field.pickerProperty) return;
             let id;
-            let type = (entity.model ? entity.model : undefined);
+            let type = (entity[am7model.jsonModelKey] ? entity[am7model.jsonModelKey] : undefined);
             let prop = field.pickerProperty.entity;
             if(field.pickerType && !field.pickerType.match(/^self$/)) type = field.pickerType;
             if(type.match(/^\./)){
@@ -975,7 +975,7 @@
             /// Clear the server cache because the parent may have a cached copy of the child
             ///
             if(prop === 'parentId'){
-                am7client.clearCache(entity.model, false, function(){});
+                am7client.clearCache(entity[am7model.jsonModelKey], false, function(){});
             }
         }
         function doFieldPicker(field, useName, altEntity, altPath, pickerHandler){
@@ -985,7 +985,7 @@
                 return;
             }
             let mat;
-            let type = (entity.model ? entity.model : undefined);
+            let type = (entity[am7model.jsonModelKey] ? entity[am7model.jsonModelKey] : undefined);
             let setType = false;
             /// Special handling for embedding pickers in disconnected tables
             ///
@@ -1069,9 +1069,9 @@
                         }
                         /// Clear the server cache because the parent may have a cached copy of the child
                         ///
-                        if(!useEntity.model || useEntity.model.match(/message/i)) m.redraw();
+                        if(!useEntity[am7model.jsonModelKey] || useEntity[am7model.jsonModelKey].match(/message/i)) m.redraw();
                         else{
-                            am7client.clearCache(useEntity.model, false, function(){
+                            am7client.clearCache(useEntity[am7model.jsonModelKey], false, function(){
                                 m.redraw();
                             });
                         }
@@ -1116,7 +1116,7 @@
                         // console.log(objectType, mf.baseModel, mo);
                         inst.api[form.property](mo);
                         /// force the model def because certain settings will result in an empty object
-                        mo.model = mf.baseModel;
+                        mo[am7model.jsonModelKey] = mf.baseModel;
 
                     }
                     //let mio = (mo || am7model.newPrimitive(mf.baseModel));
@@ -1365,8 +1365,8 @@
             let bPNew = parentNew; //(m.route.get().match(/^\/pnew/gi) != null);
             let modType = am7model.getModel(type);
             if(vnode && vnode.attrs.freeForm){
-                entity = vnode.attrs.freeFormEntity || {model: objectType};
-                if(entity.model && am7model.hasIdentity(entity)){
+                entity = vnode.attrs.freeFormEntity || {schema: objectType};
+                if(entity[am7model.jsonModelKey] && am7model.hasIdentity(entity)){
                     let q = am7view.viewQuery(am7model.newInstance(type));
                     if(entity.id){
                         q.field("id", entity.id);    
@@ -1423,7 +1423,7 @@
             }
         }
         function resetEntity(e){
-            if(e && e.model){
+            if(e && e[am7model.jsonModelKey]){
                 entity = e;
             }
             pinst = {};
@@ -1435,7 +1435,7 @@
             inst = undefined;
 
             if(entity){
-                let fname = entity.model.substring(entity.model.lastIndexOf(".") + 1);
+                let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
                 inst = am7model.prepareInstance(entity, am7model.forms[fname]);
                 inst.observe(objectPage);
             }
@@ -1446,9 +1446,9 @@
 
         function setApp(){
             let ldraw = !inst;
-            if(entity.model){
+            if(entity[am7model.jsonModelKey]){
                 /*
-                let fname = entity.model.substring(entity.model.lastIndexOf(".") + 1);
+                let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
                 inst = am7model.prepareInstance(entity, am7model.forms[fname]);
                 */
                 setInst();
@@ -1511,11 +1511,11 @@
         }
         
         function applyModelNames(o){
-            let af = am7model.getModelFields(o.model);
+            let af = am7model.getModelFields(o[am7model.jsonModelKey]);
             af.forEach(f => {
-                if(f.type == "model" && o[f.name] && !o[f.name].model){
+                if(f.type == "model" && o[f.name] && !o[f.name][am7model.jsonModelKey]){
                     console.log("Set: " + f.baseModel);
-                    o[f.name].model = f.baseModel;
+                    o[f.name][am7model.jsonModelKey] = f.baseModel;
                     applyModelNames(o[f.name]);
                 }
             });
@@ -1546,14 +1546,14 @@
             if(!e){
                 return;
             }
-            if(!e.model) e.model = ue.model || baseModel;
-            if(!e.model){
+            if(!e[am7model.jsonModelKey]) e[am7model.jsonModelKey] = ue[am7model.jsonModelKey] || baseModel;
+            if(!e[am7model.jsonModelKey]){
                 console.warn("Cannot find model", e);
                 return;
             }
 
             let x = Object.assign(ue, e);
-            let af = am7model.getModelFields(e.model);
+            let af = am7model.getModelFields(e[am7model.jsonModelKey]);
             af.forEach(f => {
                 if((f.type == 'list' || f.type == 'model') && f.foreign && f.baseModel){
                     if(f.type == 'model' && !ue[f.name] && e[f.name]){
@@ -1583,7 +1583,7 @@
         objectPage.resetEntity = resetEntity;
         objectPage.getModel = function(name, fieldView, field, fieldClass){
             console.log(name, fieldView, field, fieldClass);
-            return entity.model;
+            return entity[am7model.jsonModelKey];
         }
         
         objectPage.objectControls = function(name, field){
@@ -1592,7 +1592,7 @@
                     res([]);
                 }
                 else{
-                    page.controls(entity.model, entity.objectId).then((v)=>{res(v);});
+                    page.controls(entity[am7model.jsonModelKey], entity.objectId).then((v)=>{res(v);});
                 }
             });
         };
@@ -1602,7 +1602,7 @@
                     res([]);
                 }
                 else{
-                    page.requests(entity.model, entity.objectId).then((v)=>{res(v);});
+                    page.requests(entity[am7model.jsonModelKey], entity.objectId).then((v)=>{res(v);});
                 }
             });
         };
@@ -1612,7 +1612,7 @@
             if(am7model.hasIdentity(entity)){
                 members.forEach((t)=>{
                     aP.push(new Promise((res, rej)=>{
-                        am7client.member(entity.model, entity.objectId, field?.name, t.model, t.objectId, true, function(v){
+                        am7client.member(entity[am7model.jsonModelKey], entity.objectId, field?.name, t[am7model.jsonModelKey], t.objectId, true, function(v){
                             res(v);
                         })
                     }));
@@ -1637,7 +1637,7 @@
                 }
             });
             reparent(null, aC).then(()=>{
-                am7client.clearCache(entity.model, false, function(s, v){
+                am7client.clearCache(entity[am7model.jsonModelKey], false, function(s, v){
                     console.log("Complete clear cache: " + v);
                     m.redraw();
                 });
@@ -1654,12 +1654,12 @@
             let aP = [];
             children.forEach((c)=>{
                 aP.push(new Promise((res, rej)=>{
-                    if(c.model.match(/^auth\.group$/gi) && !parent){
+                    if(c[am7model.jsonModelKey].match(/^auth\.group$/gi) && !parent){
                         rej("Unable to reparent a group to nothing");
                     }
                     else{
                         c.parentId = (parent ? parent.id : 0);
-                        am7client.patch(c.model, c, function(v){
+                        am7client.patch(c[am7model.jsonModelKey], c, function(v){
                             if(v) res();
                             else rej();
                         })
@@ -1678,7 +1678,7 @@
                 cancelPicker(true);
                 // don't update because the new lineage is already persisted
                 //updateChange();
-                am7client.clearCache(entity.model, false, function(s, v){
+                am7client.clearCache(entity[am7model.jsonModelKey], false, function(s, v){
                     m.redraw();
                 });
             });
@@ -1694,7 +1694,7 @@
             vProp[name] = page.removeDuplicates(vProp[name].concat(data), "objectId");
             
             //let bpatch = am7model.hasIdentity(entity);
-            //am7client[bpatch ? "patch" : "create"](entity.model, (bpatch ? inst.patch() : entity), function(v){
+            //am7client[bpatch ? "patch" : "create"](entity[am7model.jsonModelKey], (bpatch ? inst.patch() : entity), function(v){
 
             /// This will handle save/patch on a caller
             if(caller){
@@ -1706,7 +1706,7 @@
                 if(am7model.hasIdentity(entity)){
                     let aP = [];
                     data.forEach(v => {
-                        aP.push(am7client.member(entity.model, entity.objectId, name, v.model, v.objectId, true));
+                        aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, v[am7model.jsonModelKey], v.objectId, true));
                     });
                     Promise.all(aP);
                 }
@@ -1742,7 +1742,7 @@
                 }
             });
             if(ent){
-                let uri = "/view/" + ent.model + "/" + ent.objectId;
+                let uri = "/view/" + ent[am7model.jsonModelKey] + "/" + ent.objectId;
                 m.route.set(uri, {key: ent.objectId});
             }
             else{
@@ -1758,7 +1758,7 @@
                 if(state.selected && vProp[name]){
                 let per = vProp[name][state.index];
                 if(am7model.hasIdentity(entity)){
-                    aP.push(am7client.member(entity.model, entity.objectId, name, per.model, per.objectId, false));
+                    aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false));
                 }
                 vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
                 }
@@ -1780,7 +1780,7 @@
                 if(state.selected && foreignData[state.attribute]){
                     let obj = foreignData[state.attribute][state.index];
                     aP.push(new Promise((res, rej)=>{
-                        am7client.member(entity.model, entity.objectId, name, obj.model, obj.objectId, false, function(v){
+                        am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, obj[am7model.jsonModelKey], obj.objectId, false, function(v){
                             entity[name] = entity[name].filter(m => m.objectId != obj.objectId);
                             console.log("Deleted: " + v, entity[name]);
                             res(v);
@@ -1876,7 +1876,7 @@
                         }
                     }
                     */
-                    am7client.members(entity.model, entity.objectId, type, 0, 100, function(v){
+                    am7client.members(entity[am7model.jsonModelKey], entity.objectId, type, 0, 100, function(v){
                         res(v);
                     });
                 }
@@ -1890,7 +1890,7 @@
             let model = page.context();
             let bNew = objectNew || parentNew; //m.route.get().match(/^\/(new|pnew)/gi);
             if(!entity || (!entity.objectId && !objectId)) return path;
-            switch(entity.model){
+            switch(entity[am7model.jsonModelKey]){
                 case 'auth.role':
                 case 'auth.permission':
                 case 'auth.group':
@@ -1900,14 +1900,14 @@
                         }
                     }
                     else{
-                        if(entity.model === 'auth.group') path = entity.path.substring(0, entity.path.lastIndexOf("/"));
+                        if(entity[am7model.jsonModelKey] === 'auth.group') path = entity.path.substring(0, entity.path.lastIndexOf("/"));
                         else path = entity.path;
                     }
                     break;
                 case 'data.data':
                     break;
                 default:
-                    console.error('Handle type: ' + entity.model);
+                    console.error('Handle type: ' + entity[am7model.jsonModelKey]);
                     break;
             }
             return path;
@@ -1959,7 +1959,7 @@
         };
 
         objectPage.newEntry = function(name){
-            let mf = am7model.getModelField(entity.model, name);
+            let mf = am7model.getModelField(entity[am7model.jsonModelKey], name);
             if(!mf){
                 console.error("Object does not define '" + name + "'");
                 return;
@@ -2039,10 +2039,10 @@
                     if(!fieldView.standardUpdate && am7model.hasIdentity(entity)){
                         if(entry.objectId) aP.push(am7client.patch(entry));
                         else{
-                            entry.model = tableType;
+                            entry[am7model.jsonModelKey] = tableType;
                             if(am7model.inherits(tableType, "common.reference")){
                                 entry.referenceId = entity.id;
-                                entry.referenceModel = entity.model;
+                                entry.referenceModel = entity[am7model.jsonModelKey];
                             }
                             window.dbgEntry = entry;
                             aP.push(am7client.create(tableType, entry));
@@ -2144,7 +2144,7 @@
                 fact.sourceType = entity.type;
             }
             fact.sourceUrn = entity.urn;
-            fact.factoryType = entity.model;
+            fact.factoryType = entity[am7model.jsonModelKey];
             fact.name = entity.name + " Fact";
             fact.description = "Fact representing a relative link to " + entity.name + " as " + entity.urn + " in organization " + entity.organizationPath;
 
@@ -2270,15 +2270,15 @@
                 }
                 else{
                     /// Handled as patch operation in doUpdate
-                    let fld = am7model.getModelField(cinst.entity.model, cname);
+                    let fld = am7model.getModelField(cinst.entity[am7model.jsonModelKey], cname);
                     if(fld && fld.type == "list" && fld.foreign && fld.baseType == "model"){
                         console.log("Patch member", obj);
                         let members = cinst.api[cname]();
                         let aP = [];
                         members.forEach((t)=>{
                             aP.push(new Promise((res, rej)=>{
-                                console.log(cinst.entity.model, inst.api[pname]().objectId, t.model, t.objectId);
-                                am7client.member(cinst.entity.model, inst.api[pname]().objectId, cname, t.model, t.objectId, true, function(v){
+                                console.log(cinst.entity[am7model.jsonModelKey], inst.api[pname]().objectId, t[am7model.jsonModelKey], t.objectId);
+                                am7client.member(cinst.entity[am7model.jsonModelKey], inst.api[pname]().objectId, cname, t[am7model.jsonModelKey], t.objectId, true, function(v){
                                     res(v);
                                 })
                             }));

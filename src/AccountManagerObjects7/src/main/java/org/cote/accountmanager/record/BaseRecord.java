@@ -130,7 +130,7 @@ public abstract class BaseRecord {
 	public BaseRecord copyRecord(String[] outFieldNames) {
 		BaseRecord copy = null;
 		try {
-			copy = RecordFactory.newInstance(getAMModel(), outFieldNames);
+			copy = RecordFactory.newInstance(getSchema(), outFieldNames);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 			e.printStackTrace();
@@ -594,10 +594,10 @@ public abstract class BaseRecord {
 			}
 		}
 	}
-	public String getAMModel() {
+	public String getSchema() {
 		return model;
 	}
-	public void setAMModel(String m) {
+	public void setSchema(String m) {
 		model = m;
 	}
 	

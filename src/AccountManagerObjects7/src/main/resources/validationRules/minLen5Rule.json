@@ -1,5 +1,5 @@
 {
-	"ammodel": "policy.validationRule",
+	"schema": "policy.validationRule",
 	"name": "minLen5",
 	"type": "boolean",
 	"expression": "[A-Za-z0-9]{5}",

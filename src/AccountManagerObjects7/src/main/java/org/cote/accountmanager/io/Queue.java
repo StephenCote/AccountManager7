@@ -35,7 +35,7 @@ public class Queue {
 	}
 	
 	public static void queueAttribute(BaseRecord record) {
-		String key = "ADD-ATTRIBUTE-" + record.getAMModel();
+		String key = "ADD-ATTRIBUTE-" + record.getSchema();
 		if(!queue.containsKey(key)) {
 			queue.put(key, new ArrayList<>());
 		}
@@ -77,7 +77,7 @@ public class Queue {
 
 		fnlist.add(FieldNames.FIELD_ID);
 		//fnlist.add(FieldNames.FIELD_OWNER_ID);
-		ModelSchema ms = RecordFactory.getSchema(record.getAMModel());
+		ModelSchema ms = RecordFactory.getSchema(record.getSchema());
 		fnlist.sort((f1, f2) -> f1.compareTo(f2));
 		Set<String> fieldSet = fnlist.stream().filter(s -> {
 			boolean outBool = true;
@@ -85,7 +85,7 @@ public class Queue {
 			/// Leave the identity as it's necessary to actually perform the update
 			/// fs.isIdentity() || 
 			if(fs.isForeign() && fs.getFieldType() == FieldEnumType.LIST) {
-				logger.warn("Skip " + record.getAMModel() + "." + s);
+				logger.warn("Skip " + record.getSchema() + "." + s);
 				outBool = false;
 			}
 			return outBool;
@@ -97,7 +97,7 @@ public class Queue {
 			return;
 		}
 		
-		String key = "UP-" + record.getAMModel() + "-" + fieldSet.stream().collect(Collectors.joining("-"));
+		String key = "UP-" + record.getSchema() + "-" + fieldSet.stream().collect(Collectors.joining("-"));
 		if(!queue.containsKey(key)) {
 			queue.put(key, new ArrayList<>());
 		}
@@ -111,10 +111,10 @@ public class Queue {
 		/// Split up the adds because participations can wind up going into different tables and the bulk add
 		/// will reject the dataset as being too disimilar
 		///
-		if(record.getAMModel().equals(ModelNames.MODEL_PARTICIPATION)) {
+		if(record.getSchema().equals(ModelNames.MODEL_PARTICIPATION)) {
 			pref = record.get(FieldNames.FIELD_PARTICIPATION_MODEL) + "-";
 		}
-		String key = "ADD-" + pref + record.getAMModel() + "-" + record.getFields().stream().map(f -> f.getName()).collect(Collectors.joining("-"));
+		String key = "ADD-" + pref + record.getSchema() + "-" + record.getFields().stream().map(f -> f.getName()).collect(Collectors.joining("-"));
 		if(!queue.containsKey(key)) {
 			queue.put(key, new ArrayList<>());
 		}

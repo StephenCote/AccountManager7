@@ -11,7 +11,7 @@
         dnd.workingSet.forEach((w) => {
             /// if an id is specified, then that is the item to apply to the rest of the set
             /// if an id isn't specified, then the blender list will be any tag, event, group, or role
-            if ((sId && w.objectId == sId) || (!sId && w.model.match(/^(data\.tag|olio\.event|auth\.group|auth\.role)$/gi) && (!w.model.match(/^auth\.group$/gi) || w.type.match(/^(person|account|bucket)$/gi)))) {
+            if ((sId && w.objectId == sId) || (!sId && w[am7model.jsonModelKey].match(/^(data\.tag|olio\.event|auth\.group|auth\.role)$/gi) && (!w[am7model.jsonModelKey].match(/^auth\.group$/gi) || w.type.match(/^(person|account|bucket)$/gi)))) {
                 blender.push(w);
             }
             else {
@@ -22,54 +22,54 @@
         let filt = {};
         blender.forEach((b) => {
             blended.forEach((b2) => {
-                let actor = b2.model.match(/^identity\.account|identity\.person|olio\.charPerson|system\.user$/gi);
-                if ((b.model == 'data.data' || b.model == 'olio.charPerson') && (b2.model == 'data.data' || b2.model == 'olio.charPerson') && b.model != b2.model) {
+                let actor = b2[am7model.jsonModelKey].match(/^identity\.account|identity\.person|olio\.charPerson|system\.user$/gi);
+                if ((b[am7model.jsonModelKey] == 'data.data' || b[am7model.jsonModelKey] == 'olio.charPerson') && (b2[am7model.jsonModelKey] == 'data.data' || b2[am7model.jsonModelKey] == 'olio.charPerson') && b[am7model.jsonModelKey] != b2[am7model.jsonModelKey]) {
                     let p = b;
                     let d = b2;
-                    if (p.model == 'data.data') {
+                    if (p[am7model.jsonModelKey] == 'data.data') {
                         p = b2;
                         d = b;
                     }
 
                 }
-                switch (b.model) {
+                switch (b[am7model.jsonModelKey]) {
 
                     case "olio.llm.promptConfig":
                     case "olio.llm.chatConfig":
-                        if ((b2.model == "olio.llm.promptConfig" || b2.model == "olio.llm.chatConfig") && b2.model != b.model) {
+                        if ((b2[am7model.jsonModelKey] == "olio.llm.promptConfig" || b2[am7model.jsonModelKey] == "olio.llm.chatConfig") && b2[am7model.jsonModelKey] != b[am7model.jsonModelKey]) {
                             let cfg = {};
-                            cfg[b2.model] = b2;
-                            cfg[b.model] = b;
+                            cfg[b2[am7model.jsonModelKey]] = b2;
+                            cfg[b[am7model.jsonModelKey]] = b;
                             page.context().contextObjects["chatConfig"] = cfg;
                             m.route.set("/chat");
                             break;
                         }
                     case "auth.role":
-                        if (actor && b.type == b2.model) {
-                            aP.push(page.member(b.model, b.objectId, null, b2.model, b2.objectId, true));
+                        if (actor && b.type == b2[am7model.jsonModelKey]) {
+                            aP.push(page.member(b[am7model.jsonModelKey], b.objectId, b2[am7model.jsonModelKey], b2.objectId, true));
                             filt[b2.objectId] = true;
                         }
                         else {
-                            console.warn("Skip actor type: " + b2.model + " for role " + b.type);
+                            console.warn("Skip actor type: " + b2[am7model.jsonModelKey] + " for role " + b.type);
                         }
                         break;
                     case "auth.group":
-                        if ((actor && b2.model == b.type) || (b.type == "bucket" && b2.model != "auth.group")) {
-                            aP.push(page.member(b.model, b.objectId, null, b2.model, b2.objectId, true));
+                        if ((actor && b2[am7model.jsonModelKey] == b.type) || (b.type == "bucket" && b2[am7model.jsonModelKey] != "auth.group")) {
+                            aP.push(page.member(b[am7model.jsonModelKey], b.objectId, b2[am7model.jsonModelKey], b2.objectId, true));
                             filt[b2.objectId] = true;
                         }
                         else {
-                            console.warn("Skip actor type: " + b2.model + " for group " + b.type);
+                            console.warn("Skip actor type: " + b2[am7model.jsonModelKey] + " for group " + b.type);
                         }
                         break;
                     case "data.tag":
-                        if ((actor || b2.model.match(/^data\.data$/gi)) && b2.model == b.type) {
+                        if ((actor || b2[am7model.jsonModelKey].match(/^data\.data$/gi)) && b2[am7model.jsonModelKey] == b.type) {
                             // aP.push(page.tag(b2, b, true));
-                            aP.push(am7client.member(b2.model, b2.objectId, null, b.model, b.objectId, true));
+                            aP.push(page.member(b2[am7model.jsonModelKey], b2.objectId, b[am7model.jsonModelKey], b.objectId, true));
                             filt[b2.objectId] = true;
                         }
                         else {
-                            console.warn("Skip object type: " + b2.model + " for tag type " + b.type);
+                            console.warn("Skip object type: " + b2[am7model.jsonModelKey] + " for tag type " + b.type);
                             console.warn(blender);
                             console.warn(b);
                         }
@@ -81,11 +81,11 @@
                     case "identity.person":
                         let bUp = false;
                         console.log(b, b2);
-                        if (b2.model.match(/^identity\.contact$/gi)) {
+                        if (b2[am7model.jsonModelKey].match(/^identity\.contact$/gi)) {
                             b.contactInformation.contacts.push(b2);
                             bUp = true;
                         }
-                        if (b2.model.match(/^identity\.address$/gi)) {
+                        if (b2[am7model.jsonModelKey].match(/^identity\.address$/gi)) {
                             b.contactInformation.addresses.push(b2);
                             bUp = true;
                         }
@@ -93,10 +93,10 @@
                             aP.push(page.patchObject(b));
                         }
 
-                        console.log("Blend " + b.model + " with " + b2.model);
+                        console.log("Blend " + b[am7model.jsonModelKey] + " with " + b2[am7model.jsonModelKey]);
                         break;
                     default:
-                        console.warn("Unhandled", b.model);
+                        console.warn("Unhandled", b[am7model.jsonModelKey]);
                         break;
 
                 }
@@ -117,8 +117,8 @@
             cls = "hover:bg-orange-200";
         }
         else if (dnd.overTarget && dnd.overTarget.objectId == object.objectId && dnd.dragTarget.objectId != object.objectId) {
-            let modType = am7model.getModel(object.model);
-            if (dnd.overTarget.model.match(/^auth\.group$/gi) || am7model.inherits(modType, "common.parent")) {
+            let modType = am7model.getModel(object[am7model.jsonModelKey]);
+            if (dnd.overTarget[am7model.jsonModelKey].match(/^auth\.group$/gi) || am7model.inherits(modType, "common.parent")) {
                 cls = "hover:bg-green-200 bg-green-200";
             }
         }
@@ -149,10 +149,10 @@
     dnd.doDrop = async function (e, obj) {
         let ret = false;
         if (obj && dnd.dragTarget) {
-            let dragGroup = dnd.dragTarget.model.match(/^auth\.group$/gi);
-            let dragParent = am7model.isParent(dnd.dragTarget.model);
+            let dragGroup = dnd.dragTarget[am7model.jsonModelKey].match(/^auth\.group$/gi);
+            let dragParent = am7model.isParent(dnd.dragTarget[am7model.jsonModelKey]);
 
-            let dragModType = am7model.getModel(dnd.dragTarget.model);
+            let dragModType = am7model.getModel(dnd.dragTarget[am7model.jsonModelKey]);
             if (typeof obj === "string") {
                 if (obj === "set") {
                     let aL = dnd.workingSet.filter((o) => { if (o.objectId == dnd.dragTarget.objectId) return true; });
@@ -166,8 +166,8 @@
                 }
             }
             else if (dnd.overTarget) {
-                let overParent = am7model.isParent(dnd.overTarget.model);
-                let dropGroup = dnd.overTarget.model.match(/^auth\.[group]$/gi);
+                let overParent = am7model.isParent(dnd.overTarget[am7model.jsonModelKey]);
+                let dropGroup = dnd.overTarget[am7model.jsonModelKey].match(/^auth\.[group]$/gi);
                 console.log(dnd.dragTarget, dnd.overTarget, dragParent, overParent);
                 if ((dragGroup && dropGroup) || (dragParent && overParent)) {
                     ret = await page.reparentObject(dnd.dragTarget, dnd.overTarget);

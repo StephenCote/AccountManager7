@@ -60,7 +60,7 @@ public class FieldLockUtil {
 	}
 	
 	public static boolean unlockField(BaseRecord user, BaseRecord record, String fieldName) {
-		return unlockField(user, record.getAMModel(), record.get(FieldNames.FIELD_ID), fieldName);
+		return unlockField(user, record.getSchema(), record.get(FieldNames.FIELD_ID), fieldName);
 	}
 	public static boolean unlockField(BaseRecord user, String modelName, long recordId, String fieldName) {
 		
@@ -96,7 +96,7 @@ public class FieldLockUtil {
 	}
 	
 	public static boolean lockField(BaseRecord user, BaseRecord record, String fieldName) {
-		return lockField(user, record.getAMModel(), record.get(FieldNames.FIELD_ID), fieldName);
+		return lockField(user, record.getSchema(), record.get(FieldNames.FIELD_ID), fieldName);
 	}
 	public static boolean lockField(BaseRecord user, String modelName, long recordId, String fieldName) {
 
@@ -122,14 +122,14 @@ public class FieldLockUtil {
 		return (lock != null && ((boolean)lock.get(FieldNames.FIELD_ENABLED)));
 	}
 	public static boolean isFieldLocked(BaseRecord user, BaseRecord record, String fieldName) {
-		return isFieldLocked(user, record.getAMModel(), record.get(FieldNames.FIELD_ID), fieldName);
+		return isFieldLocked(user, record.getSchema(), record.get(FieldNames.FIELD_ID), fieldName);
 	}
 	public static boolean isFieldLocked(BaseRecord user, String modelName, long recordId, String fieldName) {
 		BaseRecord lock = getFieldLock(user, modelName, recordId, fieldName);
 		return (lock != null && ((boolean)lock.get(FieldNames.FIELD_ENABLED)));
 	}
 	public static List<String> getFieldLocks(BaseRecord user, BaseRecord record) {
-		return getFieldLocks(user, record.getAMModel(), record.get(FieldNames.FIELD_ID));
+		return getFieldLocks(user, record.getSchema(), record.get(FieldNames.FIELD_ID));
 	}
 	public static List<String> getFieldLocks(BaseRecord user, String modelName, long recordId) {
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_FIELD_LOCK, FieldNames.FIELD_REFERENCE_TYPE, modelName);
@@ -160,7 +160,7 @@ public class FieldLockUtil {
 			logger.error("Record does not define an identity");
 			return null;
 		}
-		return newFieldLock(user, record.getAMModel(), record.get(FieldNames.FIELD_ID), fieldName);
+		return newFieldLock(user, record.getSchema(), record.get(FieldNames.FIELD_ID), fieldName);
 	}
 	
 	

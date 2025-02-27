@@ -275,7 +275,7 @@
             recipientType: (recipientId != null ? "USER" : "UNKNOWN")
 
         };
-        return webSocket.send(JSON.stringify({model: "socketMessage", token: page?.token, message: msg}));
+        return webSocket.send(JSON.stringify({schema: "socketMessage", token: page?.token, message: msg}));
       }
  
 
@@ -285,14 +285,14 @@
             obj = page.user;
         }
         let authReq = {
-			model: "authenticationRequest",
+			schema: "authenticationRequest",
 			credential: uwm.base64Encode(newCredential),
 			credentialType: "hashed_password",
             checkCredential: (currentCredential ? uwm.base64Encode(currentCredential) : null),
             checkCredentialType: (currentCredential ? "hashed_password" : null)
 		};
         let newCred = await new Promise((res, rej)=>{
-            am7client.newPrimaryCredential(obj.model, obj.objectId, authReq, function(v){
+            am7client.newPrimaryCredential(obj[am7model.jsonModelKey], obj.objectId, authReq, function(v){
                 res(v);
             });
         });
@@ -401,7 +401,7 @@
             obj = am7model.newPrimitive("data.data");
             obj.name = ".profile";
             obj.mimeType = "application/json";
-            obj.dataBytesStore = uwm.base64Encode(JSON.stringify({model: "userProfile"}));
+            obj.dataBytesStore = uwm.base64Encode(JSON.stringify({schema: "userProfile"}));
             let bUp = await promiseCreate(obj);
             obj = await promiseSearchObjectByName("data.data", grp.objectId, ".profile");
         }
@@ -413,7 +413,7 @@
             entityType: "imageView",
             size: 75,
             data: {
-                entity: {model:"imageView", image:entity}
+                entity: {schema:"imageView", image:entity}
             },
             cancel: function(data){
                 if(fCancel) fCancel(data);
@@ -449,11 +449,11 @@
 
     async function profile(){
         let obj = await profileEntity();
-        let objj = {model: "userProfile"};
+        let objj = {schema: "userProfile"};
         if(obj.dataBytesStore && obj.dataBytesStore.length){
             console.log(uwm.base64Decode(obj.dataBytesStore));
             objj = JSON.parse(uwm.base64Decode(obj.dataBytesStore));
-            if(!objj.model) objj.model = "userProfile";
+            if(!objj[am7model.jsonModelKey]) objj[am7model.jsonModelKey] = "userProfile";
         }
         dialogCfg = {
             label: "Profile",
@@ -594,7 +594,7 @@
 
     function patchSet(object){
         let set = {
-            patchType: object.model,
+            patchType: object[am7model.jsonModelKey],
             patches: [],
             identityField: "OBJECTID",
             identity: object.objectId
@@ -616,7 +616,7 @@
 
     async function promiseCreate(object){
         return new Promise((res, rej)=>{
-            am7client.create(object.model, object, function(v){
+            am7client.create(object[am7model.jsonModelKey], object, function(v){
                 res(v);
             });
         })
@@ -648,8 +648,8 @@
     }
     */
     async function promiseReparentObject(child, newParent){
-        let modType = am7model.getModel(child.model);
-        let modType2 = am7model.getModel(newParent.model);
+        let modType = am7model.getModel(child[am7model.jsonModelKey]);
+        let modType2 = am7model.getModel(newParent[am7model.jsonModelKey]);
         if(!am7model.inherits(modType2, "common.parent")){
             console.warn("Not a parentable object");
             return false;
@@ -658,18 +658,20 @@
         child.parentId = newParent.id;
 
         let b = await promisePatch(child);
-        am7client.clearCache(child.model);
+        am7client.clearCache(child[am7model.jsonModelKey]);
         return b;
     }
-
+    /*
     async function promiseMember(object, actor, enabled){
         return new Promise((res, rej)=>{
-            am7client.member(object.model, object.objectId, null, actor.model, actor.objectId, enabled, function(v){
+            am7client.member(object[am7model.jsonModelKey], object.objectId, null, actor[am7model.jsonModelKey], actor.objectId, enabled, function(v){
                 res(v);
             })
 
         });
     }
+    */
+
     async function promiseParentType(sType){
         return new Promise((res, rej) => {
             am7client.user(sType, "USER", function(v){
@@ -685,13 +687,13 @@
         });
     }
     async function promiseMoveObject(object, group){
-        let modType = am7model.getModel(object.model);
+        let modType = am7model.getModel(object[am7model.jsonModelKey]);
         let bUp = false;
-        if(object.model.match(/^auth\.group$/gi)){
+        if(object[am7model.jsonModelKey].match(/^auth\.group$/gi)){
           console.warn("Use reparent to move groups");
           return;
         }
-        if(object.model.match(/^data\.data$/gi)){
+        if(object[am7model.jsonModelKey].match(/^data\.data$/gi)){
           delete object.dataBytesStore;
         }
         if(am7model.isGroup(modType)){
@@ -790,7 +792,7 @@
     }
     async function promisePatch(object){
         return new Promise((res, rej)=>{
-            am7client.patch(object.model, object, function(v){
+            am7client.patch(object[am7model.jsonModelKey], object, function(v){
                 res(v);
             });
         });

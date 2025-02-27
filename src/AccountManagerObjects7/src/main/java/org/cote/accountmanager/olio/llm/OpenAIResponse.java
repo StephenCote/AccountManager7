@@ -30,6 +30,11 @@ public class OpenAIResponse extends LooseRecord {
 	}
 	
 	public OpenAIMessage getMessage() {
+		BaseRecord msg = get("message");
+		if (msg != null) {
+			return new OpenAIMessage(msg);
+		}
+		
 		List<OpenAIChoice> choices = getChoices();
 		if (choices.size() > 0) {
 			return choices.get(0).getMessage();

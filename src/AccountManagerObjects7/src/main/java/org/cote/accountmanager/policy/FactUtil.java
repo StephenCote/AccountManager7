@@ -210,7 +210,7 @@ public class FactUtil {
 				BaseRecord[] subs = search.findByUrn(prt.get(FieldNames.FIELD_SUBJECT_TYPE), prt.get(FieldNames.FIELD_SUBJECT));
 				if(subs.length > 0) {
 					subject = subs[0];
-					String[] fields = RecordUtil.getPossibleFields(subject.getAMModel(), PolicyEvaluator.FIELD_POPULATION);
+					String[] fields = RecordUtil.getPossibleFields(subject.getSchema(), PolicyEvaluator.FIELD_POPULATION);
 					reader.populate(subject, fields);
 							
 				}

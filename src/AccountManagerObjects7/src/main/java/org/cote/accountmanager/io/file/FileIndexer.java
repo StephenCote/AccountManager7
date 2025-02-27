@@ -244,7 +244,7 @@ public class FileIndexer {
 			if(itype.equals(ModelNames.MODEL_INDEX_STORE)) {
 				return false;
 			}
-			logger.error("No Query Model for " + idx.getAMModel() + " != " + itype + "!");
+			logger.error("No Query Model for " + idx.getSchema() + " != " + itype + "!");
 			return false;
 		}
 		return matchIndexToQuery(query, idx);
@@ -422,7 +422,7 @@ public class FileIndexer {
 	
 	private void applyRecordToEntry(BaseRecord rec, IndexEntry entry) throws FieldException, ModelNotFoundException, ValueException {
 		
-		ModelSchema srec = RecordFactory.getSchema(rec.getAMModel());
+		ModelSchema srec = RecordFactory.getSchema(rec.getSchema());
 		List<BaseRecord> values = entry.get(FieldNames.FIELD_VALUES);
 		values.clear();
 		for(FieldSchema f : srec.getFields()) {
@@ -440,19 +440,19 @@ public class FileIndexer {
 					values.add(erec);
 				}
 				else {
-					logger.warn("Record " + rec.getAMModel() + " does not define an indexed field: " + f.getName());
+					logger.warn("Record " + rec.getSchema() + " does not define an indexed field: " + f.getName());
 					// logger.warn(rec.toString());
 				}
 			}
 		}
-		entry.set(FieldNames.FIELD_TYPE, rec.getAMModel());
+		entry.set(FieldNames.FIELD_TYPE, rec.getSchema());
 	}
 	
 	public IndexEntry updateIndexEntry(Index idx, BaseRecord rec) throws IndexException {
 		IndexEntry outEntry = null;
 		synchronized(indices) {
 			if(!rec.hasField(FieldNames.FIELD_ID) && !rec.hasField(FieldNames.FIELD_OBJECT_ID)) {
-				throw new IndexException(String.format(IndexException.NOT_INDEXABLE, rec.getAMModel(), "name, id, or objectId"));
+				throw new IndexException(String.format(IndexException.NOT_INDEXABLE, rec.getSchema(), "name, id, or objectId"));
 			}
 			IndexEntry entry = findIndexEntry(idx, rec);
 			if(entry == null) {
@@ -500,7 +500,7 @@ public class FileIndexer {
 	}
 	public boolean removeIndexEntry(BaseRecord rec) throws IndexException {
 		if(!rec.hasField(FieldNames.FIELD_ID) && !rec.hasField(FieldNames.FIELD_OBJECT_ID)) {
-			throw new IndexException(String.format(IndexException.NOT_INDEXABLE, rec.getAMModel()));
+			throw new IndexException(String.format(IndexException.NOT_INDEXABLE, rec.getSchema()));
 		}
 		boolean outBool = false;
 
@@ -532,8 +532,8 @@ public class FileIndexer {
 		return outBool;
 	}
 	public boolean isIndexible(BaseRecord rec) {
-		if(!model.equals(rec.getAMModel()) && !rec.getAMModel().equals(ModelNames.MODEL_INDEX_STORE)){
-			logger.error("Record " + rec.getAMModel() + " cannot be indexed by the " + model + " indexer");
+		if(!model.equals(rec.getSchema()) && !rec.getSchema().equals(ModelNames.MODEL_INDEX_STORE)){
+			logger.error("Record " + rec.getSchema() + " cannot be indexed by the " + model + " indexer");
 			return false;
 		}
 		boolean hasIdentity = false;
@@ -544,7 +544,7 @@ public class FileIndexer {
 			}
 		};
 		if(!hasIdentity) {
-			logger.error("Record " + rec.getAMModel() + " does not define an identity field");
+			logger.error("Record " + rec.getSchema() + " does not define an identity field");
 			logger.error(rec.toString());
 		}
 		return hasIdentity;
@@ -553,7 +553,7 @@ public class FileIndexer {
 		IndexEntry outEntry = null;
 		//logger.info(model + " add index entry (" + trace + ")");
 		if(!isIndexible(rec)) {
-			throw new IndexException(String.format(IndexException.NOT_INDEXABLE, rec.getAMModel()));
+			throw new IndexException(String.format(IndexException.NOT_INDEXABLE, rec.getSchema()));
 		}
 		if(trace) {
 			logger.info("Add Index Entry For Record - " + rec.toString());
@@ -569,7 +569,7 @@ public class FileIndexer {
 				if(trace) {
 					logger.error(eidx.toString());
 				}
-				throw new IndexException(String.format(IndexException.INDEX_EXISTS, rec.getAMModel()));
+				throw new IndexException(String.format(IndexException.INDEX_EXISTS, rec.getSchema()));
 			}
 			
 			IndexEntry entry = newIndexEntry(rec);
@@ -673,7 +673,7 @@ public class FileIndexer {
 		StringBuilder buff = new StringBuilder();
 		
 		buff.append(storageBase);
-		buff.append("/" + rec.getAMModel());
+		buff.append("/" + rec.getSchema());
 		if(rec.hasField(FieldNames.FIELD_NAME)) {
 			buff.append("/" + (String)rec.get(FieldNames.FIELD_NAME) + ".json");
 		}

@@ -27,12 +27,12 @@ public class ChatResponse extends LooseRecord {
 			logger.error(e);
 		}
 	}
-	
-	public String getAMModel() {
+
+	public String getModel() {
 		return get("model");
 	}
 
-	public void setAMModel(String model) {
+	public void setModel(String model) {
 		setValue("model", model);
 	}
 

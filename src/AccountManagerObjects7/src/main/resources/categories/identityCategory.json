@@ -1,5 +1,5 @@
 {
-	"ammodel": "system.modelCategory",
+	"schema": "system.modelCategory",
 	"name": "identity",
     "label" : "Identity",
     "icon" : "account_tree",

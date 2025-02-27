@@ -44,7 +44,7 @@ public class PolicyRequestFactory extends FactoryBase {
 			preq.setContextUser(contextUser);
 			if(param1 != null) {
 				preq.getFacts().get(0).setSourceUrn(param1.get("urn"));
-				preq.getFacts().get(0).setModelType(param1.getAMModel());
+				preq.getFacts().get(0).setModelType(param1.getSchema());
 			}
 			newRequest = preq;
 		}

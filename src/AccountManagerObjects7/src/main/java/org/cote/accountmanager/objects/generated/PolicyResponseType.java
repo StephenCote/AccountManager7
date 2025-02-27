@@ -29,7 +29,7 @@ public class PolicyResponseType extends LooseRecord {
 		}
 	}
 	public PolicyResponseType(BaseRecord rec){
-		this.setAMModel(rec.getAMModel());
+		this.setSchema(rec.getSchema());
 		setFieldList(rec.getFields());
 		setFieldMap(rec.getFieldMap());
 	}

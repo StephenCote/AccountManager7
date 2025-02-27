@@ -90,7 +90,7 @@ public class TestAuthentication extends BaseTest {
 		
 		// logger.info(JSONUtil.exportObject(cred, RecordSerializerConfig.getUnfilteredModule()));
 
-		Query query = QueryUtil.createQuery(ModelNames.MODEL_CREDENTIAL, FieldNames.FIELD_REFERENCE_TYPE, testUser1.getAMModel());
+		Query query = QueryUtil.createQuery(ModelNames.MODEL_CREDENTIAL, FieldNames.FIELD_REFERENCE_TYPE, testUser1.getSchema());
 		QueryResult res = null;
 		try {
 			query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CREATED_DATE);

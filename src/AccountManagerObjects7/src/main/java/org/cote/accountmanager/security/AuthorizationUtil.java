@@ -147,7 +147,7 @@ public class AuthorizationUtil {
 			return null;
 		}
 		
-		ModelSchema ms = RecordFactory.getSchema(resource.getAMModel());
+		ModelSchema ms = RecordFactory.getSchema(resource.getSchema());
 		ModelAccessPolicyBind bind = Optional.ofNullable(ms)
 				.map(ModelSchema::getAccess)
 				.map(ModelAccess::getPolicies)
@@ -155,7 +155,7 @@ public class AuthorizationUtil {
 				.orElse(null)
 		;
 		
-		reader.conditionalPopulate(resource, RecordUtil.getPossibleFields(resource.getAMModel(), new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID, FieldNames.FIELD_REFERENCE_ID, FieldNames.FIELD_REFERENCE_TYPE}));
+		reader.conditionalPopulate(resource, RecordUtil.getPossibleFields(resource.getSchema(), new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ID, FieldNames.FIELD_REFERENCE_ID, FieldNames.FIELD_REFERENCE_TYPE}));
 		
 		if(bind != null) {
 			PolicyResponseType oprr = new PolicyResponseType();
@@ -168,9 +168,9 @@ public class AuthorizationUtil {
 			else {
 				objId = resource.get(bind.getObjectId());
 			}
-			String model = bind.getModel();
-			if(bind.getObjectModel() != null && resource.get(bind.getObjectModel()) != null) {
-				model = resource.get(bind.getObjectModel());
+			String model = bind.getSchema();
+			if(bind.getObjectSchema() != null && resource.get(bind.getObjectSchema()) != null) {
+				model = resource.get(bind.getObjectSchema());
 			}
 			BaseRecord refObj = null;
 			if(model != null && objId != null) {
@@ -195,7 +195,7 @@ public class AuthorizationUtil {
 	public boolean checkEntitlement(BaseRecord actor, BaseRecord permission, BaseRecord object) {
 		
 		if(trace) {
-			logger.info("Check entitlement: " + permission.get(FieldNames.FIELD_NAME) + " " + permission.get(FieldNames.FIELD_TYPE) + " for " + object.getAMModel());
+			logger.info("Check entitlement: " + permission.get(FieldNames.FIELD_NAME) + " " + permission.get(FieldNames.FIELD_TYPE) + " for " + object.getSchema());
 		}
 
 		boolean outBool = false;
@@ -224,7 +224,7 @@ public class AuthorizationUtil {
 			}
 			/// Direct assignment, allow for generic use of 'DATA' permission type to apply to all model types
 			///
-			if(actor.getAMModel().equals(type) || type.equals(PermissionEnumType.DATA.toString())) {
+			if(actor.getSchema().equals(type) || type.equals(PermissionEnumType.DATA.toString())) {
 				long id = actor.get(FieldNames.FIELD_ID);
 				if(id == partId) {
 					outBool = true;

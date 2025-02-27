@@ -91,7 +91,7 @@ public class TestLooseField {
 		
 		String impMod = """
 			{
-				"ammodel": "genericObject",
+				"schema": "genericObject",
 				"fields": [
 					{FieldNames.FIELD_NAME : FieldNames.FIELD_ID, "value": 123 },
 					{FieldNames.FIELD_NAME : FieldNames.FIELD_NAME, "value": "Generic Object"}

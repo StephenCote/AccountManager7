@@ -150,13 +150,13 @@ public class ModelService {
 			return Response.status(404).entity(null).build();
 		}
 
-		ModelSchema schema = RecordFactory.getSchema(imp.getAMModel());
+		ModelSchema schema = RecordFactory.getSchema(imp.getSchema());
 		BaseRecord op = null;
 		BaseRecord oop = null;
 		List<String> outFields = new ArrayList<>();
 
 		try {
-			op = IOSystem.getActiveContext().getFactory().newInstance(imp.getAMModel(), user, imp, null);
+			op = IOSystem.getActiveContext().getFactory().newInstance(imp.getSchema(), user, imp, null);
 			
 			oop = IOSystem.getActiveContext().getAccessPoint().create(user, op);
 			if(oop == null) {

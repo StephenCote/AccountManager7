@@ -2,10 +2,10 @@
 "name": "system.modelSchema",
 "inherits": ["common.nameId"],
 "constraints": ["name, organizationId"],
-"query": ["name", "schema"],
+"query": ["name", "schemaData"],
 "fields": [
 	{
-		"name": "schema",
+		"name": "schemaData",
 		"type": "blob"
 	}
 ]}

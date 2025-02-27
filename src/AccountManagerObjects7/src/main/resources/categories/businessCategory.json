@@ -1,5 +1,5 @@
 {
-	"ammodel": "system.modelCategory",
+	"schema": "system.modelCategory",
 	"name": "business",
     "label" : "Business",
     "order" : ["goal","budget","schedule","case","requirement","model","estimate"],

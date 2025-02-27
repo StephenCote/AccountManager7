@@ -245,11 +245,11 @@ public class WebSocketService  extends HttpServlet {
 			msg.set(FieldNames.FIELD_NAME, messageName);
 			if(recipient != null) {
 				msg.set("recipientId", recipient.get(FieldNames.FIELD_ID));
-				msg.set("recipientType", recipient.getAMModel());
+				msg.set("recipientType", recipient.getSchema());
 			}
 			if(sender != null) {
 				msg.set("senderId", sender.get(FieldNames.FIELD_ID));
-				msg.set("senderType", sender.getAMModel());
+				msg.set("senderType", sender.getSchema());
 			}
 			msg.set(FieldNames.FIELD_DATA, messageContent.getBytes(StandardCharsets.UTF_8));
 			msg.set(FieldNames.FIELD_VALUE_TYPE, ValueEnumType.STRING);
@@ -261,7 +261,7 @@ public class WebSocketService  extends HttpServlet {
 			msg.set(FieldNames.FIELD_SPOOL_BUCKET_NAME, SpoolNameEnumType.MESSAGE);
 			msg.set(FieldNames.FIELD_SPOOL_BUCKET_TYPE, SpoolBucketEnumType.MESSAGE_QUEUE);
 			if(ref != null) {
-				msg.set(FieldNames.FIELD_REFERENCE_TYPE, ref.getAMModel());
+				msg.set(FieldNames.FIELD_REFERENCE_TYPE, ref.getSchema());
 				msg.set(FieldNames.FIELD_REFERENCE_ID, ref.get(FieldNames.FIELD_ID));
 			}
 			boolean added = IOSystem.getActiveContext().getRecordUtil().createRecord(msg);

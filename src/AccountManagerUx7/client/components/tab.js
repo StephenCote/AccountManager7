@@ -2,7 +2,7 @@
     const tab = {};
     tab.component = {
         oninit: function (x) {
-            model = x.attrs.model;
+            model = x.attrs[am7model.jsonModelKey];
         },
         oncreate: function (x) {
 

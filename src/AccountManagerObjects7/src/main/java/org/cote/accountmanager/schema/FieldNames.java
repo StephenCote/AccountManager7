@@ -254,7 +254,7 @@ public class FieldNames {
 		
 		public static final String FIELD_APPROVAL_STATUS = "approvalStatus";
 		
-		public static final String FIELD_SCHEMA = "schema";
+		public static final String FIELD_SCHEMA = "schemaData";
 		
 		public static final String FIELD_START_POSITION = "startPosition";
 		public static final String FIELD_LENGTH = "length";

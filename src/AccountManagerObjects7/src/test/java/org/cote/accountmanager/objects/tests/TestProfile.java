@@ -71,7 +71,7 @@ public class TestProfile extends BaseTest {
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
 		String objStr = """
-				{"attributes":[],"organizationId":0,"ownerId":0,"controls":[],FieldNames.FIELD_TAGS:[],FieldNames.FIELD_NAME:"aouaoeu","parentId":28,FieldNames.FIELD_TYPE:"data","ammodel":"auth.group",FieldNames.FIELD_PATH:"~/Groups","organizationPath":"/Development/Audit"}"
+				{"attributes":[],"organizationId":0,"ownerId":0,"controls":[],FieldNames.FIELD_TAGS:[],FieldNames.FIELD_NAME:"aouaoeu","parentId":28,FieldNames.FIELD_TYPE:"data","schema":"auth.group",FieldNames.FIELD_PATH:"~/Groups","organizationPath":"/Development/Audit"}"
 		""";
 		logger.info("Test creating imported object with mismatched identifiers and virtual (denormalized) paths");
 		BaseRecord newGroup = JSONUtil.importObject(objStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
@@ -80,7 +80,7 @@ public class TestProfile extends BaseTest {
 		try {
 			newGroup.set(FieldNames.FIELD_PARENT_ID, testUser1.get(FieldNames.FIELD_HOME_DIRECTORY_FIELD_ID));
 			newGroup.set(FieldNames.FIELD_NAME, "New Group - " + UUID.randomUUID().toString());
-			cleanObj = mf.newInstance(newGroup.getAMModel(), testUser1, newGroup, null);
+			cleanObj = mf.newInstance(newGroup.getSchema(), testUser1, newGroup, null);
 		}
 		catch(ModelNotFoundException | FieldException | ValueException | FactoryException e) {
 			logger.error(e);

@@ -7,7 +7,7 @@ import org.cote.accountmanager.record.BaseRecord;
 
 public class ParseConfiguration {
 	private BaseRecord owner = null;
-	private String model = null;
+	private String schema = null;
 	private ParseMap[] fields = null;
 	private ParseMap[] filters = null;
 	private String groupPath = null;
@@ -90,12 +90,12 @@ public class ParseConfiguration {
 		this.owner = owner;
 	}
 
-	public String getModel() {
-		return model;
+	public String getSchema() {
+		return schema;
 	}
 
-	public void setModel(String model) {
-		this.model = model;
+	public void setSchema(String schema) {
+		this.schema = schema;
 	}
 
 	public ParseMap[] getFields() {

@@ -41,7 +41,7 @@ public class RecordFactory {
 	public static final Logger logger = LogManager.getLogger(RecordFactory.class);
 	
 	public static String GENERATED_PACKAGE_NAME = "org.cote.accountmanager.objects.generated";
-	public static final String JSON_MODEL_KEY = "ammodel";
+	public static final String JSON_MODEL_KEY = "schema";
 	public static final String JSON_MODEL_SHORT_KEY = "m";
 
 	private static Map<String, String> looseImports = new ConcurrentHashMap<>();
@@ -170,7 +170,7 @@ public class RecordFactory {
 	public static BaseRecord newInstance(String name, BaseRecord lbm, String[] fieldNames) throws FieldException, ModelNotFoundException {
 		List<FieldType> fields = new CopyOnWriteArrayList<>();
 		List<FieldType> instFields = new CopyOnWriteArrayList<>();
-		lbm.setAMModel(name);
+		lbm.setSchema(name);
 		BaseRecord lbmb = looseBaseModels.get(name);
 		
 		if(fieldNames != null && fieldNames.length > 0) {
@@ -241,7 +241,7 @@ public class RecordFactory {
 	
 	private static LooseRecord getBaseModel(ModelSchema lmod) {
 		LooseRecord mod = new LooseRecord();
-		mod.setAMModel(lmod.getName());
+		mod.setSchema(lmod.getName());
 		List<FieldType> fields = new CopyOnWriteArrayList<>();
 		int errors = 0;
 		for(FieldSchema lft : lmod.getFields()) {

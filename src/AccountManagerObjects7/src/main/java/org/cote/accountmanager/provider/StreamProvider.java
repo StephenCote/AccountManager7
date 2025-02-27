@@ -40,17 +40,17 @@ public class StreamProvider implements IProvider {
 		if(!model.hasField(FieldNames.FIELD_TYPE)) {
 			return;
 		}
-		if(model.getAMModel().equals(ModelNames.MODEL_STREAM) && (!model.hasField(FieldNames.FIELD_SEGMENTS) || ((List<BaseRecord>)model.get(FieldNames.FIELD_SEGMENTS)).size() == 0)) {
+		if(model.getSchema().equals(ModelNames.MODEL_STREAM) && (!model.hasField(FieldNames.FIELD_SEGMENTS) || ((List<BaseRecord>)model.get(FieldNames.FIELD_SEGMENTS)).size() == 0)) {
 			return;
 		}
 		//if(!model.hasField(FieldNames.FIELD_OBJECT_ID)) {
 		if(!RecordUtil.isIdentityRecord(model)) {
 			if(operation == RecordOperation.CREATE) {
-				throw new ModelException("Model " + model.getAMModel() + " does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
+				throw new ModelException("Model " + model.getSchema() + " does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
 			}
 			else {
 				
-				logger.warn("Skip segment write for model " + model.getAMModel() + " because it does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
+				logger.warn("Skip segment write for model " + model.getSchema() + " because it does not include the " + FieldNames.FIELD_OBJECT_ID + " field.");
 				return;
 			}
 		}

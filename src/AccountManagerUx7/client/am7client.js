@@ -24,6 +24,7 @@
 		var sToken = sBase + "/token";
 		var sAppr = sBase + "/approval";
 		var sScr = sBase + "/script";
+		
 		window.uwm = {
 			consoleMode : 0,
 			developerMode : 0,	
@@ -140,7 +141,7 @@
 	function clearCache(vType, bLocalOnly, fH){
 		var sType = vType, oObj;
 		if(vType != null && typeof vType == "object"){
-			sType = vType.model;
+			sType = vType[am7model.jsonModelKey];
 			oObj = vType;
 			return removeFromCache(sType, vType.objectId);
 		}
@@ -159,7 +160,7 @@
 	function removeFromCache(vType, sObjId){
 		var sType = vType;
 		if(typeof vType == "object"){
-			sType = vType.model;
+			sType = vType[am7model.jsonModelKey];
 			if(!sObjId) sObjId = vType.objectId;
 		}
 		if(!cache[sType]) return;
@@ -238,7 +239,7 @@
 	function newQuery(m){
 		let q = {
 			entity : {
-				model: "io.query",
+				schema: "io.query",
 				type: m,
 				fields: [],
 				order: 'ascending',
@@ -490,7 +491,7 @@
 
 	function loginWithPassword(sOrg, sName, sCred, fH){
 		let cred = {
-			model: "auth.credential",
+			schema: "auth.credential",
 			name: sName,
 			credential: Base64.encode(sCred),
 			organizationPath: sOrg,
@@ -803,12 +804,12 @@
 			let a = am7client.getAttribute(o, n);
 			if(!a){
 				a = am7client.addAttribute(o, n, v);
-				await create(a.model, a);
+				await create(a[am7model.jsonModelKey], a);
 			}
 			else{
-				a.model = "common.attribute";
+				a[am7model.jsonModelKey] = "common.attribute";
 				a.value = v;
-				await patchObject(a.model, a);
+				await patchObject(a[am7model.jsonModelKey], a);
 			}
 			return a;			
 		},
@@ -827,7 +828,7 @@
 		addAttribute : function(o,s,v){
 			if(!o.attributes) o.attributes = [];
 			let a = am7client.newAttribute(s,v);
-			a.referenceModel = o.model;
+			a.referenceModel = o[am7model.jsonModelKey];
 			a.referenceId = o.id || 0;
 			o.attributes.push(a);
 			return a;

@@ -115,7 +115,9 @@ public class TestChat2 extends BaseTest {
 		// String ser = JSONUtil.exportObject(req, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 		// logger.info(ser);
 		try {
-		chat.continueChat(req, "");
+			logger.info("Continuing chat");
+			chat.continueChat(req, "");
+			logger.info("End continue chat");
 		}
 		catch(Exception e) {
 			logger.error(e);

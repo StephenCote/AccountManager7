@@ -33,7 +33,7 @@
     let favGroup;
     function doPickShuffle(object, filter) {
 
-        let bBlend = object.model.match(/^(auth\.group|auth\.role|data\.tag|olio\.event)$/gi);
+        let bBlend = object[am7model.jsonModelKey].match(/^(auth\.group|auth\.role|data\.tag|olio\.event)$/gi);
         if (!filter || (filter && bBlend) || !activeShuffle) {
             activeShuffle = object;
         }
@@ -53,7 +53,7 @@
 
         let buttons = dnd.workingSet.map((o) => {
             if (activeShuffle && activeShuffle.objectId == o.objectId) {
-                let modType = am7model.getModel(o.model);
+                let modType = am7model.getModel(o[am7model.jsonModelKey]);
                 let icon = "device_unknown";
                 if (modType.icon) {
                     icon = modType.icon;
@@ -69,13 +69,13 @@
         let blendy = false;
         let blendCls = "";
         dnd.workingSet.forEach((o) => {
-            if ((activeShuffle && activeShuffle.objectId == o.objectId) || o.model.match(/^(auth\.group|auth\.role|data\.tag|olio\.event)$/gi)) {
+            if ((activeShuffle && activeShuffle.objectId == o.objectId) || o[am7model.jsonModelKey].match(/^(auth\.group|auth\.role|data\.tag|olio\.event)$/gi)) {
                 blendable = true;
             }
             else {
                 blendy = true;
             }
-            let modType = am7model.getModel(o.model);
+            let modType = am7model.getModel(o[am7model.jsonModelKey]);
             let icon = "device_unknown";
             if (modType.icon) {
                 icon = modType.icon;

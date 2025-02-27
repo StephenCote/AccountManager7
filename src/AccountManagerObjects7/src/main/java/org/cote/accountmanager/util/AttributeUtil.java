@@ -39,7 +39,7 @@ public class AttributeUtil {
 		if(record.hasField(FieldNames.FIELD_ORGANIZATION_ID)) {
 			attr.set(FieldNames.FIELD_ORGANIZATION_ID, record.get(FieldNames.FIELD_ORGANIZATION_ID));
 		}
-		attr.set(FieldNames.FIELD_REFERENCE_TYPE, record.getAMModel());
+		attr.set(FieldNames.FIELD_REFERENCE_TYPE, record.getSchema());
 		return attr;
 	}
 	public static BaseRecord getAttribute(BaseRecord record, String name) {
@@ -73,7 +73,7 @@ public class AttributeUtil {
 		}
 		catch(Exception e) {
 			logger.error(e);
-			logger.error(record.getAMModel() + ".attribute." + name);
+			logger.error(record.getSchema() + ".attribute." + name);
 		}
 
 		return outT;

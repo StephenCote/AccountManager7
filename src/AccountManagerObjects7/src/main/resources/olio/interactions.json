@@ -1,6 +1,6 @@
 [
 	{
-		"ammodel": "olio.interaction",
+		"schema": "olio.interaction",
 		"description": "Meet and greet",
 		"type": "socialize",
 		"actorAlignmentSuggestion": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"],

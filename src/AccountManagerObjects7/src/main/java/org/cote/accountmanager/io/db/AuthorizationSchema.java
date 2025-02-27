@@ -124,7 +124,7 @@ public class AuthorizationSchema {
 			schema2 = functionNamePat.matcher(schema2).replaceAll(Matcher.quoteReplacement(viewName));
 			schemas2.add(schema2);
 			
-			groupedEntitlements.add("SELECT model, actorId, actorName, effectiveRoleId, effectiveRoleName, effectiveRoleType, baseRoleId, baseRoleName, baseRoleType, permissionId, permissionName, groupId, groupName, objectId, objectModel, objectName FROM effectiveGroup" + viewName + "ObjectEntitlements");
+			groupedEntitlements.add("SELECT model, actorId, actorName, effectiveRoleId, effectiveRoleName, effectiveRoleType, baseRoleId, baseRoleName, baseRoleType, permissionId, permissionName, groupId, groupName, objectId, objectSchema, objectName FROM effectiveGroup" + viewName + "ObjectEntitlements");
 			
 		}
 		

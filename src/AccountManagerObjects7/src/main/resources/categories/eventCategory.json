@@ -1,5 +1,5 @@
 {
-	"ammodel": "system.modelCategory",
+	"schema": "system.modelCategory",
 	"name": "event",
     "label" : "Event",
     "order" : ["message.spool", "data.geoLocation","olio.event","data.trait"],

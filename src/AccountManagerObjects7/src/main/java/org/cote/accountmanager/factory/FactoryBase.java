@@ -34,7 +34,7 @@ public class FactoryBase implements IFactory {
 		BaseRecord rec = null;
 		try {
 			rec = RecordFactory.newInstance(schema.getName());
-			if(recordTemplate != null && (schema.getName().equals(recordTemplate.getAMModel()) || schema.inherits(recordTemplate.getAMModel()))) {
+			if(recordTemplate != null && (schema.getName().equals(recordTemplate.getSchema()) || schema.inherits(recordTemplate.getSchema()))) {
 				// logger.info("Apply template");
 				//for(FieldType f : recordTemplate.getFields()) {
 				for(int i = 0; i < recordTemplate.getFields().size(); i++) {
@@ -62,11 +62,7 @@ public class FactoryBase implements IFactory {
 		} catch (FieldException | ModelNotFoundException e) {
 			throw new FactoryException(e);
 		}
-		/*
-		if(rec.getModel().equals(ModelNames.MODEL_DATA)) {
-			logger.info(rec.toString());
-		}
-		*/
+
 		return rec;
 	}
 

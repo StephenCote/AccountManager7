@@ -29,7 +29,7 @@ public class PolicyRequestType extends LooseRecord {
 		}
 	}
 	public PolicyRequestType(BaseRecord rec){
-		this.setAMModel(rec.getAMModel());
+		this.setSchema(rec.getSchema());
 		setFieldList(rec.getFields());
 		setFieldMap(rec.getFieldMap());
 	}

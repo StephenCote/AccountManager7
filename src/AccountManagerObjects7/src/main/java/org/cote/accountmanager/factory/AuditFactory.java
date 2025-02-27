@@ -57,11 +57,11 @@ public class AuditFactory extends FactoryBase {
 			}
 			if(subject != null) {
 				audit.set(FieldNames.FIELD_SUBJECT, subject);
-				audit.set(FieldNames.FIELD_SUBJECT_TYPE, subject.getAMModel());
+				audit.set(FieldNames.FIELD_SUBJECT_TYPE, subject.getSchema());
 			}
 			if(resource != null) {
 				audit.set(FieldNames.FIELD_RESOURCE, resource);
-				audit.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getAMModel());
+				audit.set(FieldNames.FIELD_RESOURCE_TYPE, resource.getSchema());
 			}
 			
 			audit.set(FieldNames.FIELD_ACTION, aet);
