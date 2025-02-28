@@ -40,7 +40,7 @@
                 mimetype = "font/woff2";
                 break;
             default:
-                throw new Error("Unknown file type " + suffix);
+                throw new Error("Unknown file type " + sExt);
             }
             return mimetype;
         }
