@@ -2270,15 +2270,17 @@
                 }
                 else{
                     /// Handled as patch operation in doUpdate
-                    let fld = am7model.getModelField(cinst.entity[am7model.jsonModelKey], cname);
+                    let uname = cname || pname;
+                    console.log(cinst.entity[am7model.jsonModelKey], uname);
+                    let fld = am7model.getModelField(cinst.entity[am7model.jsonModelKey], uname);
                     if(fld && fld.type == "list" && fld.foreign && fld.baseType == "model"){
                         console.log("Patch member", obj);
-                        let members = cinst.api[cname]();
+                        let members = cinst.api[uname]();
                         let aP = [];
                         members.forEach((t)=>{
                             aP.push(new Promise((res, rej)=>{
                                 console.log(cinst.entity[am7model.jsonModelKey], inst.api[pname]().objectId, t[am7model.jsonModelKey], t.objectId);
-                                am7client.member(cinst.entity[am7model.jsonModelKey], inst.api[pname]().objectId, cname, t[am7model.jsonModelKey], t.objectId, true, function(v){
+                                am7client.member(cinst.entity[am7model.jsonModelKey], inst.api[pname]().objectId, uname, t[am7model.jsonModelKey], t.objectId, true, function(v){
                                     res(v);
                                 })
                             }));
