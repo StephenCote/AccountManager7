@@ -8880,12 +8880,16 @@
           {
             "name": "min_p",
             "type": "double",
-            "default": 0.1
+            "default": 0.1,
+            "minValue": 0.0,
+            "maxValue": 2.0
           },
           {
             "name": "typical_p",
             "type": "double",
-            "default": 0.85
+            "default": 0.85,
+            "minValue": 0.0,
+            "maxValue": 2.0
           },
           {
             "name": "repeat_last_n",
@@ -8895,12 +8899,17 @@
           {
             "name": "temperature",
             "type": "double",
-            "default": 1
+            "default": 1,
+            "minValue": 0.0,
+            "maxValue": 2.0
+
           },
           {
             "name": "repeat_penalty",
             "type": "double",
-            "default": 1.2
+            "default": 1.2,
+            "minValue": 0.0,
+            "maxValue": 2.0
           },
           {
             "name": "num_ctx",

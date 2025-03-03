@@ -3634,7 +3634,24 @@
             prune: {
                 layout: "one"
             },
-
+            serverUrl:{
+                layout: "third"
+            },
+            apiVersion: {
+                layout: "one"
+            },
+            serviceType: {
+                layout: "one",
+                label: "Service Type",
+                field:{
+                    type: "list",
+                    limit: ["OPENAI", "OLLAMA"]
+                }
+            },
+            apiKey:{
+                layout: "third",
+                type: "password"
+            },
             systemCharacter: {
                 layout: 'third',
                 format: 'picker',
