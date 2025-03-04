@@ -11,6 +11,10 @@
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "olio.llm.openai.openaiCitation"
+		},
+		{
+			"name": "refusal",
+			"type": "string"
 		}
 
 	]

@@ -276,7 +276,7 @@ Begin conversationally.
 				BaseRecord dat = ChatUtil.getSessionData(user, sessionName);
 				ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_VECTOR_REFERENCE, dat);
 				plist.parameter(FieldNames.FIELD_CHUNK, ChunkEnumType.WORD);
-				plist.parameter(FieldNames.FIELD_CHUNK_COUNT, 200);
+				plist.parameter(FieldNames.FIELD_CHUNK_COUNT, 1000);
 				plist.parameter("chatConfig", chatConfig);
 				plist.parameter("content", cnt);
 				plist.parameter("promptConfig", promptConfig);
@@ -971,11 +971,13 @@ Begin conversationally.
 		req.setModel(model);
 		req.setStream(false);
 		//if(chatMode) {
-			OpenAIMessage msg = new OpenAIMessage();
-			msg.setRole("system");
-			msg.setContent(llmSystemPrompt.trim());
-			List<OpenAIMessage> msgs = req.get("messages");
-			msgs.add(msg);
+			if(llmSystemPrompt != null) {
+				OpenAIMessage msg = new OpenAIMessage();
+				msg.setRole("system");
+				msg.setContent(llmSystemPrompt.trim());
+				List<OpenAIMessage> msgs = req.get("messages");
+				msgs.add(msg);
+			}
 		/*
 		}
 		else {
@@ -1217,21 +1219,23 @@ Begin conversationally.
 			systemChar = chatConfig.get("systemCharacter");
 			userChar = chatConfig.get("userCharacter");
 		}
-		if(systemChar != null && userChar != null) {
-			
-			if(useAssist) {
-				assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, chatConfig);
+		if(promptConfig != null) {
+			if(systemChar != null && userChar != null) {
+				
+				if(useAssist) {
+					assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, chatConfig);
+				}
+				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
+				userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
+				//setAnnotation(getAnnotateChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
+				// setAssist(getAssistChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
 			}
-			sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
-			userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
-			//setAnnotation(getAnnotateChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
-			// setAssist(getAssistChatPromptTemplate(octx, epoch, evt, systemChar, userChar, interaction, iPrompt));
-		}
-		else {
-			sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, null);
-			assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, null);
-			userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, null);
-			
+			else {
+				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, null);
+				assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, null);
+				userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, null);
+				
+			}
 		}
 		
 		setLlmSystemPrompt(sysTemp);

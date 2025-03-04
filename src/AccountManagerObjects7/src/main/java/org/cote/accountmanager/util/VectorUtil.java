@@ -372,7 +372,6 @@ LIMIT ?
     			continue;
     		}
     		if(tmp.startsWith("Chapter ")) {
-    			//logger.info("Chapter mark: " + tmp);
     			vchunks.addAll(chunkChapter(buff.toString(), chapterTitle, chapter, chunkSize));
     			buff = new StringBuilder();
     			chapter++;
@@ -435,7 +434,7 @@ LIMIT ?
 		StringBuilder buff = new StringBuilder();
 		for(String s: sents) {
 			buff.append(s);
-			if(counter.getAndIncrement() % chunkSize == 0) {
+			if(chunkSize != 0 && counter.getAndIncrement() % chunkSize == 0) {
 				sx.add(buff.toString());
 				buff = new StringBuilder();
 			}

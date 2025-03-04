@@ -757,7 +757,8 @@
 		});
 
 		inst.handleChange = (n, fh) => {
-			if (!inst.field(n)) {
+			let f = inst.field(n);
+			if (!f) {
 				console.warn("Invalid field: '" + n + "'");
 			}
 			return function (e) {
@@ -765,8 +766,10 @@
 				if (e.target.type && e.target.type == "checkbox") {
 					v = e.target.checked;
 				}
+				else if(f.type == "string" && typeof v == "string" && v.length == 0){
+					v = null;
+				}
 				inst.api[n](v);
-				let r;
 				if (fh) fh(e);
 				inst.action(n);
 			}

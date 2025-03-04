@@ -15,6 +15,14 @@
 		{
 			"name": "total_tokens",
 			"type": "int"
+		},
+		{
+			"name": "completion_tokens_details",
+			"type": "string"
+		},
+		{
+			"name": "prompt_tokens_details",
+			"type": "string"
 		}
 	]
 }

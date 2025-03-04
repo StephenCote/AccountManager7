@@ -7,37 +7,51 @@
 		{
 			"name": "top_k",
 			"type": "int",
-			"default": 50
+			"default": 50,
+			"minValue": 0,
+			"maxValue": 1
 		},
 		{
 			"name": "top_p",
 			"type": "double",
-			"default": 1.0
+			"default": 1.0,
+			"minValue": 0.0,
+			"maxValue": 1.0
 		},
 		{
 			"name": "min_p",
 			"type": "double",
-			"default": 0.1
+			"default": 0.1,
+			"minValue": 0.0,
+			"maxValue": 1.0
 		},
 		{
 			"name": "typical_p",
 			"type": "double",
-			"default": 0.85
+			"default": 0.85,
+			"minValue": 0.0,
+			"maxValue": 1.0
 		},
 		{
 			"name": "repeat_last_n",
 			"type": "int",
-			"default": 64
+			"default": 64,
+			"minValue": 0,
+			"maxValue": 100
 		},
 		{
 			"name": "temperature",
 			"type": "double",
-			"default": 1.0
+			"default": 1.0,
+			"minValue": 0.0,
+			"maxValue": 2.0
 		},
 		{
 			"name": "repeat_penalty",
 			"type": "double",
-			"default": 1.2
+			"default": 1.2,
+			"minValue": 0.0,
+			"maxValue": 2.0
 		},
 		{
 			"name": "num_ctx",

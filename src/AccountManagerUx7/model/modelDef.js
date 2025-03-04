@@ -112,7 +112,7 @@
           "olio.charPerson",
           "olio.llm.chatConfig",
           "olio.llm.promptConfig",
-          "data.trait",
+          "data.color",
           "olio.store",
           "olio.wearable",
           "olio.apparel"
