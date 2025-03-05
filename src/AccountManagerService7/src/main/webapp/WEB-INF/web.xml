@@ -93,6 +93,11 @@
     <param-name>task.api.key</param-name>
     <param-value></param-value>
   </context-param>
+        <context-param>
+    <description>Disable SSL Verification</description>
+    <param-name>ssl.verification.disabled</param-name>
+    <param-value></param-value>
+  </context-param>
 	<context-param>
 		<description>Maximum Image Width</description>
 		<param-name>image.maximum.width</param-name>
