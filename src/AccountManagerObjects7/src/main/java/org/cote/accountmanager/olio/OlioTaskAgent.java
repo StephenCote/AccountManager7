@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.net.UnknownHostException;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;
@@ -14,6 +15,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.SystemTaskEnumType;
+import org.cote.accountmanager.util.SystemTaskUtil;
 
 public class OlioTaskAgent  {
 	public static final Logger logger = LogManager.getLogger(OlioTaskAgent.class);
@@ -55,7 +57,7 @@ public class OlioTaskAgent  {
 					break;
 				}
 		}
-		catch(ClassCastException | ModelNotFoundException | FieldException e) {
+		catch(Exception e) {
 			logger.error(e);
 			e.printStackTrace();
 			ret = ResponseEnumType.INVALID;
@@ -65,6 +67,7 @@ public class OlioTaskAgent  {
 		logger.info("Response: " + tr.toFullString());
 		return tr;		
 	}
+	
 	public static BaseRecord createTaskRequest(OpenAIRequest req, BaseRecord config) {
 		BaseRecord tr = null;
 		try{
@@ -81,5 +84,32 @@ public class OlioTaskAgent  {
 			logger.error(e);
 		}
 		return tr;
+	}
+	
+	public static BaseRecord executeTask(BaseRecord task) {
+		SystemTaskUtil.pendTask(task);
+		BaseRecord resp = null;
+		long maxTimeMS = 300000;
+		long waited = 0L;
+		long delay = 3000;
+		while(resp == null) {
+			if(waited >= maxTimeMS) {
+				logger.error("Exceeded maximum wait threshhold");
+				break;
+			}
+			resp = SystemTaskUtil.getResponse(task.get("id"));
+			//logger.info("Checking status of " + task.get("id"));
+			//SystemTaskUtil.dumpTasks();
+			if(resp == null) {
+				try{
+					Thread.sleep(delay);
+					waited += delay;
+				}
+				catch (InterruptedException ex){
+					/* ... */
+				}				
+			}
+		}
+		return resp;
 	}
 }

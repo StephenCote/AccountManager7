@@ -73,7 +73,26 @@
 		<param-name>sd.server</param-name>
 		<param-value>http://localhost:7860</param-value>
 	</context-param>
-
+    <context-param>
+    <description>Poll  for Remote Tasks</description>
+    <param-name>task.poll.remote</param-name>
+    <param-value>false</param-value>
+  </context-param>
+    <context-param>
+    <description>Defer to Remote Tasks</description>
+    <param-name>task.defer.remote</param-name>
+    <param-value>false</param-value>
+  </context-param>
+      <context-param>
+    <description>Task Server</description>
+    <param-name>task.server</param-name>
+    <param-value>https://192.168.1.3:8443</param-value>
+  </context-param>
+      <context-param>
+    <description>Task API Key</description>
+    <param-name>task.api.key</param-name>
+    <param-value></param-value>
+  </context-param>
 	<context-param>
 		<description>Maximum Image Width</description>
 		<param-name>image.maximum.width</param-name>

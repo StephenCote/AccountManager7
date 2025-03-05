@@ -27,6 +27,13 @@ public class SystemTaskUtil {
 	
 	private static String defaultNode = "any";
 
+	public static void clear() {
+		pendingTasks.clear();
+		activeTasks.clear();
+		completedTasks.clear();
+		taskResponses.clear();
+	}
+	
 	public static void dumpTasks() {
 		dumpPendingTasks();
 		dumpActiveTasks();
@@ -86,6 +93,26 @@ public class SystemTaskUtil {
 			return 0;
 		}
 		return completeTasks(Arrays.asList(new BaseRecord[] {taskResponse}));
+	}
+	
+	private static void filterId(Map<String, List<BaseRecord>> map, String node, String id) {
+		if(map.containsKey(node)) {
+			List<BaseRecord> tasks = map.get(node);
+			List<BaseRecord> filt = tasks.stream().filter(t -> !id.equals((String)t.get(FieldNames.FIELD_ID))).collect(Collectors.toList());
+			map.put(node,  filt);
+		}
+	}
+
+	public static void abandonTask(BaseRecord task){
+		abandonTask(defaultNode, task);
+	}
+
+	public static void abandonTask(String node, BaseRecord task){
+		String id = task.get("id");
+		filterId(pendingTasks, node, id);
+		filterId(activeTasks, node, id);
+		filterId(completedTasks, node, id);
+		filterId(taskResponses, node, id);
 	}
 	
 	public static int completeTasks(List<BaseRecord> taskResponses){

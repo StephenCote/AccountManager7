@@ -92,7 +92,7 @@ public class SystemTaskQueue extends Threaded {
 		List<BaseRecord> tasks = new ArrayList<>();
 		/// Get the tasks from the remote server
 		if(remotePoll) {
-			logger.info("Polling remote server:" + serverUrl);
+			// logger.info("Polling remote server:" + serverUrl);
 			if(serverUrl == null) {
 				logger.warn("Null server");
 			}
@@ -120,17 +120,18 @@ public class SystemTaskQueue extends Threaded {
 			}
 		}
 		else {
-			logger.info("Processing local queue");
+			// logger.info("Processing local queue");
 			tasks = SystemTaskUtil.activateTasks();
 		}
-		logger.info("Processing " + tasks.size() + " tasks");
-		for(BaseRecord task : tasks) {
-			if(OlioModelNames.MODEL_OPENAI_REQUEST.equals(task.get("taskModelType"))) {
-				BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
-				SystemTaskUtil.completeTasks(resp);
+		if(tasks.size() > 0) {
+			logger.info("Processing " + tasks.size() + " tasks");
+			for(BaseRecord task : tasks) {
+				if(OlioModelNames.MODEL_OPENAI_REQUEST.equals(task.get("taskModelType"))) {
+					BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
+					SystemTaskUtil.completeTasks(resp);
+				}
 			}
 		}
-		
 		if(failureCount >= maxFailureCount) {
 			logger.warn("Entering failure delay");
 			setThreadDelay(maxFailureDelay);

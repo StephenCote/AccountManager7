@@ -48,44 +48,11 @@ public class TestSystemTasks extends BaseTest {
 		OpenAIRequest req = chat.getChatPrompt();
 		
 		BaseRecord task = OlioTaskAgent.createTaskRequest(req, cfg.copyRecord(new String[]{"apiVersion", "serviceType", "serverUrl", "apiKey", "model"}));
-		String ser = task.toFullString();
-
-		BaseRecord itask = BaseRecord.importRecord(ser);
-		assertNotNull("Imported task was null", itask);
-		/*
-		
-		BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
-		assertNotNull("Response is null", resp);
-		assertTrue("Expected the response to be INFO", resp.getEnum("responseType") == ResponseEnumType.INFO);
-		logger.info(resp.toFullString());
-		*/
 		/// 1) Make sure queue is set to local
 		ioContext.getTaskQueue().setRemotePoll(false);
 		/// 2) Add the task request to the queue
-		assertTrue("Expected the task to be pended", SystemTaskUtil.pendTask(task));
-		/// 
-		BaseRecord resp = null;
-		long maxTimeMS = 300000;
-		long waited = 0L;
-		long delay = 3000;
-		while(resp == null) {
-			if(waited >= maxTimeMS) {
-				logger.error("Exceeded maximum wait threshhold");
-				break;
-			}
-			resp = SystemTaskUtil.getResponse(task.get("id"));
-			//logger.info("Checking status of " + task.get("id"));
-			//SystemTaskUtil.dumpTasks();
-			if(resp == null) {
-				try{
-					Thread.sleep(delay);
-					waited += delay;
-				}
-				catch (InterruptedException ex){
-					/* ... */
-				}				
-			}
-		}
+		BaseRecord resp = OlioTaskAgent.executeTask(task);
+		
 		assertNotNull("Response was null", resp);
 		logger.info(resp.toFullString());
 	}
