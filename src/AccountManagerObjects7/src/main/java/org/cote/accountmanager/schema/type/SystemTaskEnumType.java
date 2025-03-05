@@ -1,7 +1,7 @@
 package org.cote.accountmanager.schema.type;
 
 public enum SystemTaskEnumType {
-	UKNOWN,
+	UNKNOWN,
 	CHAT,
 	SD
 }

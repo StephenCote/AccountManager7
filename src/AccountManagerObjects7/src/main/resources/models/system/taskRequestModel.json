@@ -33,6 +33,23 @@
 			"maxLength": 64
 		},
 		{
+			"name": "data",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "dataType",
+			"access": {
+				"roles": {
+					"read": ["ApiUsers"]
+				}
+			}
+		},
+		{
+			"name": "dataType",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
 			"name": "payload",
 			"type": "blob"
 		}

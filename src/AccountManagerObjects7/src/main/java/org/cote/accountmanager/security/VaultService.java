@@ -952,8 +952,10 @@ public class VaultService
 		obj.setValue(FieldNames.FIELD_VAULTED, true);
 	}
 	
-	public void vaultField(VaultBean vault, BaseRecord obj, FieldType field) throws ValueException, ModelException
+	public boolean vaultField(VaultBean vault, BaseRecord obj, FieldType field) throws ValueException, ModelException
 	{
+		boolean outBool = false;
+		
 		vaultModel(vault, obj);
 		
 		if(!obj.inherits(ModelNames.MODEL_VAULT_EXT)) {
@@ -967,7 +969,7 @@ public class VaultService
 		}
 		if(FieldUtil.isNullOrEmpty(obj.getSchema(), field)) {
 			logger.warn("Do not vault null or empty value");
-			return;
+			return outBool;
 		}
 		
 		String vaultId = obj.get(FieldNames.FIELD_VAULT_ID);
@@ -987,7 +989,7 @@ public class VaultService
 		List<String> unvaulted = obj.get(FieldNames.FIELD_UNVAULTED_FIELDS);
 		if(vaulted.contains(field.getName())) {
 			logger.error("Field " + field.getName() + " is already vaulted");
-			return;
+			return outBool;
 		}
 		
 		try {
@@ -1000,13 +1002,16 @@ public class VaultService
 								CryptoUtil.encipher(key, sval.getBytes(StandardCharsets.UTF_8))
 							)
 						);
+						outBool = true;
 					}
 					break;
 				case BLOB:
 					byte[] bval = field.getValue();
 					if(bval != null && bval.length > 0) {
 						field.setValue(CryptoUtil.encipher(key,  field.getValue()));
+						outBool = true;
 					}
+
 					break;
 				default:
 					throw new ValueException("Unhandled field type: " + field.getValueType().toString());
@@ -1016,8 +1021,12 @@ public class VaultService
 		catch(ClassCastException | ValueException e) {
 			logger.error(e);
 		}
-		unvaulted.remove(field.getName());
-		vaulted.add(field.getName());
+		if(outBool) {
+			unvaulted.remove(field.getName());
+			vaulted.add(field.getName());
+		}
+		return outBool;
+		
 	}
 	
 	public void unvaultField(VaultBean vault, BaseRecord obj, FieldType field) throws ModelException, ValueException, FieldException

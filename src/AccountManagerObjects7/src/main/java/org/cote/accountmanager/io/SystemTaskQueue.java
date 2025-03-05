@@ -1,5 +1,6 @@
 package org.cote.accountmanager.io;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -12,24 +13,28 @@ import javax.ws.rs.core.Response;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
+import org.cote.accountmanager.util.SystemTaskUtil;
 
 public class SystemTaskQueue extends Threaded {
 	public static final Logger logger = LogManager.getLogger(SystemTaskQueue.class);
-	private int threadDelay = 1000;
+	private int threadDelay = 5000;
 	private String serverUrl = null;
 	private String authorizationToken = null;
-	private boolean remotePoll = true;
+	private boolean remotePoll = false;
 	private int failureCount = 0;
 	private int maxFailureCount = 10;
-	private int maxFailureDelay = 10000;
+	private int maxFailureDelay = 30000;
 	
 	private final Map<String, List<BaseRecord>> createQueue = new ConcurrentHashMap<>();
 	private final Map<String, List<BaseRecord>> updateQueue = new ConcurrentHashMap<>();
@@ -38,45 +43,60 @@ public class SystemTaskQueue extends Threaded {
 		this.setThreadDelay(threadDelay);
 	}
 
-	private void processQueue(String queueType, Map<String, List<BaseRecord>> useMap) {
-		if(IOSystem.getActiveContext() == null && useMap.size() > 0) {
-			logger.warn("Context is not active.  Queued items will be cached.");
-		}
-		try {
-			useMap.forEach((k, v) -> {
-				if(v.size() > 0) {
-					if(IOSystem.getActiveContext() == null) {
-						logger.error("Context is not active.  Caching " + v.size() + " " + k + " entrie(s)");
-						FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + "/.queue/" + k + "/" + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
-					}
-					else {
-						IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));
-					}
-					
-					
-				}
-			});
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-		
-	}
 
 	
+	public String getServerUrl() {
+		return serverUrl;
+	}
+
+
+
+	public void setServerUrl(String serverUrl) {
+		this.serverUrl = serverUrl;
+	}
+
+
+
+	public String getAuthorizationToken() {
+		return authorizationToken;
+	}
+
+
+
+	public void setAuthorizationToken(String authorizationToken) {
+		this.authorizationToken = authorizationToken;
+	}
+
+
+
+	public boolean isRemotePoll() {
+		return remotePoll;
+	}
+
+
+
+	public void setRemotePoll(boolean remotePoll) {
+		this.remotePoll = remotePoll;
+	}
+
+
+
 	@Override
 	public void execute(){
 		
-		if(serverUrl == null) {
-			logger.warn("Null server");
-		}
+
 		if(failureCount == 0 && getThreadDelay() == maxFailureDelay) {
 			setThreadDelay(threadDelay);
 			logger.warn("Existing failure delay");
 		}
-		/// Get the task from the remote server
+		List<BaseRecord> tasks = new ArrayList<>();
+		/// Get the tasks from the remote server
 		if(remotePoll) {
+			logger.info("Polling remote server:" + serverUrl);
+			if(serverUrl == null) {
+				logger.warn("Null server");
+			}
+			
 			Builder bld = ClientUtil.getRequestBuilder(ClientUtil.getResource(serverUrl)).accept(MediaType.APPLICATION_JSON);
 			if(authorizationToken != null) {
 				bld.header("Authorization", "Bearer " + new String(authorizationToken));
@@ -87,6 +107,7 @@ public class SystemTaskQueue extends Threaded {
 			if(response != null) {
 				if(response.getStatus() == 200){
 					json = response.readEntity(String.class);
+					tasks = JSONUtil.getList(json, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 				}
 				else {
 					logger.warn("Received response: " + response.getStatus());
@@ -97,8 +118,19 @@ public class SystemTaskQueue extends Threaded {
 			else {
 				logger.warn("Null response");
 			}
-			/// String json = ClientUtil.get(String.class, ClientUtil.getResource(serverUrl), authorizationToken, MediaType.APPLICATION_JSON_TYPE);
 		}
+		else {
+			logger.info("Processing local queue");
+			tasks = SystemTaskUtil.activateTasks();
+		}
+		logger.info("Processing " + tasks.size() + " tasks");
+		for(BaseRecord task : tasks) {
+			if(OlioModelNames.MODEL_OPENAI_REQUEST.equals(task.get("taskModelType"))) {
+				BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
+				SystemTaskUtil.completeTasks(resp);
+			}
+		}
+		
 		if(failureCount >= maxFailureCount) {
 			logger.warn("Entering failure delay");
 			setThreadDelay(maxFailureDelay);

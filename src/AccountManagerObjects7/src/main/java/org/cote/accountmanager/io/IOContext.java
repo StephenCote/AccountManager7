@@ -49,6 +49,7 @@ public class IOContext {
 	private boolean enforceAuthorization = true;
 	private boolean enforceValidation = true;
 	private BatchQueue queue = null;
+	private SystemTaskQueue taskQueue = null;
 	
 	private Map<String, OrganizationContext> organizations = new ConcurrentHashMap<>();
 	
@@ -80,8 +81,13 @@ public class IOContext {
 		this.accessPoint = new AccessPoint(this);
 		
 		queue = new BatchQueue();
+		taskQueue = new SystemTaskQueue();
 		
 		initialized = true;
+	}
+	
+	public SystemTaskQueue getTaskQueue() {
+		return taskQueue;
 	}
 	
 	public BatchQueue getQueue() {

@@ -63,10 +63,12 @@ public class EncryptFieldProvider implements IProvider {
 		}
 
 		if(RecordOperation.CREATE.equals(operation) || RecordOperation.UPDATE.equals(operation)) {
-			VaultService.getInstance().vaultField(vault, model, field);
-			List<String> vaulted = model.get(FieldNames.FIELD_VAULTED_FIELDS);
-			if(!vaulted.contains(field.getName())) {
-				throw new FieldException("Field value was not vaulted.");
+			boolean wasVaulted = VaultService.getInstance().vaultField(vault, model, field);
+			if(wasVaulted) {
+				List<String> vaulted = model.get(FieldNames.FIELD_VAULTED_FIELDS);
+				if(!vaulted.contains(field.getName())) {
+					throw new FieldException("Field value was not vaulted.");
+				}
 			}
 		}
 		else if(RecordOperation.READ.equals(operation)) {
