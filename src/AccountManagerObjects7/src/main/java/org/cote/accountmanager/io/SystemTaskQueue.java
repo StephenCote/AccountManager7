@@ -32,6 +32,7 @@ public class SystemTaskQueue extends Threaded {
 	private String serverUrl = null;
 	private String authorizationToken = null;
 	private boolean remotePoll = false;
+	private boolean localPoll = false;
 	private int failureCount = 0;
 	private int maxFailureCount = 10;
 	private int maxFailureDelay = 30000;
@@ -61,19 +62,21 @@ public class SystemTaskQueue extends Threaded {
 		return authorizationToken;
 	}
 
-
-
 	public void setAuthorizationToken(String authorizationToken) {
 		this.authorizationToken = authorizationToken;
 	}
 
+	public boolean isLocalPoll() {
+		return localPoll;
+	}
 
+	public void setLocalPoll(boolean localPoll) {
+		this.localPoll = localPoll;
+	}
 
 	public boolean isRemotePoll() {
 		return remotePoll;
 	}
-
-
 
 	public void setRemotePoll(boolean remotePoll) {
 		this.remotePoll = remotePoll;
@@ -119,7 +122,7 @@ public class SystemTaskQueue extends Threaded {
 				logger.warn("Null response");
 			}
 		}
-		else {
+		else if(localPoll){
 			// logger.info("Processing local queue");
 			tasks = SystemTaskUtil.activateTasks();
 		}
