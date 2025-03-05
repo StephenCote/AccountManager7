@@ -64,7 +64,6 @@ public class OlioTaskAgent  {
 			
 		}
 		tr.setValue("responseType", ret);
-		logger.info("Response: " + tr.toFullString());
 		return tr;		
 	}
 	
