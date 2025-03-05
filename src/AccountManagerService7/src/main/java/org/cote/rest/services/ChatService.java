@@ -24,11 +24,13 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -244,7 +246,21 @@ public class ChatService {
 			String key = getKey(user, chatConfig, promptConfig, chatReq); 
 			logger.info("Chat request: " + key);
 			Chat chat = getChat(user, chatReq, key);
-			chat.continueChat(req, chatReq.getMessage());
+			boolean defer = Boolean.parseBoolean(context.getInitParameter("task.defer.remote"));
+			if(defer) {
+				BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig.copyRecord(new String[]{"apiVersion", "serviceType", "serverUrl", "apiKey", "model"}));
+				BaseRecord rtask = OlioTaskAgent.executeTask(task);
+				if(rtask != null) {
+					BaseRecord resp = rtask.get("taskModel");
+					if(resp != null) {
+						chat.handleResponse(req, new OpenAIResponse(resp), false);
+						chat.saveSession(req);
+					}
+				}
+			}
+			else {
+				chat.continueChat(req, chatReq.getMessage());
+			}
 			if(chatReq.getMessage().startsWith("/next")) {
 				/// Dump the request from the cache when moving episodes
 				forgetRequest(user, chatReq);

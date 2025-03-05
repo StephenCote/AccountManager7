@@ -233,12 +233,15 @@ Begin conversationally.
 		else {
 			logger.warn("Last rep is null");
 		}
+		saveSession(req);
+
+	}
+	public void saveSession(OpenAIRequest req) {
 		if(sessionName != null) {
 			ChatUtil.saveSession(user, req, sessionName);
 			createNarrativeVector(user, req, sessionName);
-		}
+		}		
 	}
-	
 	private String getNarrativeForVector(OpenAIMessage msg) {
 
 		if(chatConfig == null) {
@@ -915,7 +918,7 @@ Begin conversationally.
 		req.setMessages(msgs);
 	}
 
-	private void handleResponse(OpenAIRequest req, OpenAIResponse rep, boolean emitResponse) {
+	public void handleResponse(OpenAIRequest req, OpenAIResponse rep, boolean emitResponse) {
 		List<BaseRecord> msgs = new ArrayList<>();
 		BaseRecord msg = rep.get("message");
 		if(msg == null) {
