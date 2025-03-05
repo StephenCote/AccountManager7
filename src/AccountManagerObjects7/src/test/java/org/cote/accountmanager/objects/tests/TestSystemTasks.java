@@ -48,8 +48,9 @@ public class TestSystemTasks extends BaseTest {
 		OpenAIRequest req = chat.getChatPrompt();
 		
 		BaseRecord task = OlioTaskAgent.createTaskRequest(req, cfg.copyRecord(new String[]{"apiVersion", "serviceType", "serverUrl", "apiKey", "model"}));
-		/// 1) Make sure queue is set to local
+		/// 1) Make sure queue is set to local - this really needs to be task driven
 		ioContext.getTaskQueue().setRemotePoll(false);
+		ioContext.getTaskQueue().setLocalPoll(true);
 		/// 2) Add the task request to the queue
 		BaseRecord resp = OlioTaskAgent.executeTask(task);
 		
