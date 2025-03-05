@@ -60,6 +60,7 @@ import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.VectorUtil;
@@ -252,18 +253,20 @@ public class RestServiceConfig extends ResourceConfig{
 				
 				boolean disableSSLVerification = Boolean.parseBoolean(context.getInitParameter("ssl.verification.disabled"));
 				if(disableSSLVerification) {
-					TrustManager[] trustAllCerts = new TrustManager[]{new X509TrustManager(){
-					    public X509Certificate[] getAcceptedIssuers(){return null;}
-					    public void checkClientTrusted(X509Certificate[] certs, String authType){}
-					    public void checkServerTrusted(X509Certificate[] certs, String authType){}
-					}};
-					try {
-					    SSLContext sc = SSLContext.getInstance("TLS");
-					    sc.init(null, trustAllCerts, new SecureRandom());
-					    HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-					} catch (Exception e) {
-					    
-					}
+					logger.warn("SSL VERIFICATION DISABLED");
+					ClientUtil.setDisableSSLVerification(true);
+					
+				}
+				
+				
+				boolean pollRemote = Boolean.parseBoolean(context.getInitParameter("task.poll.remote"));
+				String taskServer = context.getInitParameter("task.server");
+				String taskApiKey = context.getInitParameter("task.api.key");
+				if(pollRemote) {
+					logger.warn("REMOTE POLLING ENABLED");
+					ioContext.getTaskQueue().setRemotePoll(true);
+					ioContext.getTaskQueue().setServerUrl(taskServer);
+					ioContext.getTaskQueue().setAuthorizationToken(taskApiKey);
 				}
 				
 				AM7LoginModule.setRoleMap(roleMap);

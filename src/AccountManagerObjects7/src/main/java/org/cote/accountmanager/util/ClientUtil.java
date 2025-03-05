@@ -1,8 +1,14 @@
 package org.cote.accountmanager.util;
 
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Map;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.client.Entity;
@@ -28,7 +34,8 @@ public class ClientUtil {
 	private static String cachePath = "./cache";
 	private static String authToken = null;
 	public static final Logger logger = LogManager.getLogger(ClientUtil.class);
-
+	private static boolean disableSSLVerification = false;
+	
 	public static void clearCookies(){
 		cookies.clear();
 	}
@@ -39,6 +46,12 @@ public class ClientUtil {
 		}
 	}
 	
+	public static boolean isDisableSSLVerification() {
+		return disableSSLVerification;
+	}
+	public static void setDisableSSLVerification(boolean ds) {
+		disableSSLVerification = ds;
+	}
 	public static void setCachePath(String s) {
 		cachePath = s;
 	}
@@ -48,8 +61,27 @@ public class ClientUtil {
 
 	public static Client getClient(){
 		if(client != null) return client;
-		client = ClientBuilder
-			.newClient()
+		ClientBuilder cb = ClientBuilder.newBuilder();
+		if(disableSSLVerification) {
+			TrustManager[] trustAllCerts = new TrustManager[]{new X509TrustManager(){
+			    public X509Certificate[] getAcceptedIssuers(){return new X509Certificate[0];}
+			    public void checkClientTrusted(X509Certificate[] certs, String authType){}
+			    public void checkServerTrusted(X509Certificate[] certs, String authType){}
+			}};
+			try {
+				SSLContext sc = SSLContext.getInstance("TLS");
+			    sc.init(null, trustAllCerts, new SecureRandom());
+			    SSLContext.setDefault(sc);
+			    HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+			    cb.sslContext(sc).hostnameVerifier((s1, s2) -> true);
+			} catch (Exception e) {
+			    
+			}
+		}
+		
+		
+		client = cb
+			.build()
 			.register(JacksonFeature.class)
 			/*
 			.connectTimeout(360, TimeUnit.SECONDS)
