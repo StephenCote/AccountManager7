@@ -7,6 +7,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import javax.ws.rs.client.Entity;
 import javax.ws.rs.client.Invocation.Builder;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -93,6 +94,7 @@ public class SystemTaskQueue extends Threaded {
 			logger.warn("Existing failure delay");
 		}
 		List<BaseRecord> tasks = new ArrayList<>();
+		List<BaseRecord> rtasks = new ArrayList<>();
 		/// Get the tasks from the remote server
 		if(remotePoll) {
 			// logger.info("Polling remote server:" + serverUrl);
@@ -100,7 +102,7 @@ public class SystemTaskQueue extends Threaded {
 				logger.warn("Null server");
 			}
 			
-			Builder bld = ClientUtil.getRequestBuilder(ClientUtil.getResource(serverUrl)).accept(MediaType.APPLICATION_JSON);
+			Builder bld = ClientUtil.getRequestBuilder(ClientUtil.getResource(serverUrl + "/rest/task/activate")).accept(MediaType.APPLICATION_JSON);
 			if(authorizationToken != null) {
 				bld.header("Authorization", "Bearer " + new String(authorizationToken));
 			}
@@ -126,13 +128,31 @@ public class SystemTaskQueue extends Threaded {
 			// logger.info("Processing local queue");
 			tasks = SystemTaskUtil.activateTasks();
 		}
+		
 		if(tasks.size() > 0) {
 			logger.info("Processing " + tasks.size() + " tasks");
 			for(BaseRecord task : tasks) {
 				if(OlioModelNames.MODEL_OPENAI_REQUEST.equals(task.get("taskModelType"))) {
 					BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
-					SystemTaskUtil.completeTasks(resp);
+					if(localPoll) {
+						SystemTaskUtil.completeTasks(resp);
+					}
+					else if(remotePoll && resp != null) {
+						rtasks.add(resp);
+					}
 				}
+			}
+		}
+		if(rtasks.size() > 0) {
+			logger.info("Returning " + rtasks.size() + " responses");
+			Builder bld = ClientUtil.getRequestBuilder(ClientUtil.getResource(serverUrl + "/rest/task/complete")).accept(MediaType.APPLICATION_JSON);
+			if(authorizationToken != null) {
+				bld.header("Authorization", "Bearer " + new String(authorizationToken));
+			}
+			String ser = JSONUtil.exportObject(rtasks, RecordSerializerConfig.getUnfilteredModule());
+			Response response = bld.post(Entity.text(ser));
+			if(response.getStatus() != 200) {
+				logger.warn("Received status " + response.getStatus());
 			}
 		}
 		if(failureCount >= maxFailureCount) {
