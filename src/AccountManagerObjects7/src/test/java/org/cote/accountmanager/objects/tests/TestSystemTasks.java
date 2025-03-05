@@ -74,7 +74,7 @@ public class TestSystemTasks extends BaseTest {
 				break;
 			}
 			resp = SystemTaskUtil.getResponse(task.get("id"));
-			logger.info("Checking status of " + task.get("id"));
+			//logger.info("Checking status of " + task.get("id"));
 			//SystemTaskUtil.dumpTasks();
 			if(resp == null) {
 				try{

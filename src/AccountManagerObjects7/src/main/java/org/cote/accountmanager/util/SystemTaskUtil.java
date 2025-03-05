@@ -23,6 +23,7 @@ public class SystemTaskUtil {
 	private static Map<String, List<BaseRecord>> pendingTasks = new ConcurrentHashMap<>();
 	private static Map<String, List<BaseRecord>> activeTasks = new ConcurrentHashMap<>();
 	private static Map<String, List<BaseRecord>> completedTasks = new ConcurrentHashMap<>();
+	private static Map<String, List<BaseRecord>> taskResponses = new ConcurrentHashMap<>();
 	
 	private static String defaultNode = "any";
 
@@ -68,14 +69,14 @@ public class SystemTaskUtil {
 
 	public static BaseRecord getResponse(String node, String id) {
 		BaseRecord resp = null;
-		if(completedTasks.containsKey(node)) {
-			List<BaseRecord> mat = completedTasks.get(node).stream().filter(r -> id.equals(r.get("id"))).collect(Collectors.toList());
-			logger.info("Found " + mat.size() + " out of " + completedTasks.get(node).size() + " for " + id);
+		if(taskResponses.containsKey(node)) {
+			List<BaseRecord> mat = taskResponses.get(node).stream().filter(r -> id.equals(r.get("id"))).collect(Collectors.toList());
+			// logger.info("Found " + mat.size() + " out of " + taskResponses.get(node).size() + " for " + id);
 			if(mat.size() > 0) {
 				resp = mat.get(0);
 			}
 		}
-		return null;
+		return resp;
 	}
 
 	
@@ -91,9 +92,9 @@ public class SystemTaskUtil {
 		return completeTasks(defaultNode, taskResponses);
 	}
 
-	public static int completeTasks(String node, List<BaseRecord> taskResponses){
+	public static int completeTasks(String node, List<BaseRecord> responses){
 		int completed = 0;
-		List<String> ids = taskResponses.stream().map(r -> (String)r.get(FieldNames.FIELD_ID)).collect(Collectors.toList());
+		List<String> ids = responses.stream().map(r -> (String)r.get(FieldNames.FIELD_ID)).collect(Collectors.toList());
 		if(!activeTasks.containsKey(node) || activeTasks.get(node).size() == 0) {
 			logger.warn("No active tasks for node " + node);
 		}
@@ -112,6 +113,10 @@ public class SystemTaskUtil {
 				completedTasks.put(node, new ArrayList<>());
 			}
 			completedTasks.get(node).addAll(comp);
+			if(!taskResponses.containsKey(node)) {
+				taskResponses.put(node, new ArrayList<>());
+			}
+			taskResponses.get(node).addAll(responses);
 			completed = comp.size();
 		}
 		return completed;
@@ -153,5 +158,5 @@ public class SystemTaskUtil {
 		}
 		return tasks;
 	}
-	
+
 }
