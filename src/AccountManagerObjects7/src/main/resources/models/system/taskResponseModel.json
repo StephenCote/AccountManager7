@@ -1,0 +1,21 @@
+{
+	"name": "system.taskResponse",
+	"inherits": ["system.taskRequest"],
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "id",
+			"type": "string"
+		},
+		{
+			"name": "responseType",
+			"baseClass": "org.cote.accountmanager.schema.type.ResponseEnumType",
+			"type": "enum",
+			"maxLength": 10,
+			"default": "UNKNOWN"
+		}
+
+	]
+}

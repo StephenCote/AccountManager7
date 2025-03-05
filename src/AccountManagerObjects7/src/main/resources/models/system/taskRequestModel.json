@@ -1,0 +1,40 @@
+{
+	"name": "system.taskRequest",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "id",
+			"type": "string"
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.SystemTaskEnumType",
+			"type": "enum",
+			"maxLength": 10,
+			"default": "UNKNOWN"
+		},
+		{
+			"name": "taskModel",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "taskModelType",
+			"access": {
+				"roles": {
+					"read": ["ApiUsers"]
+				}
+			}
+		},
+		{
+			"name": "taskModelType",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "payload",
+			"type": "blob"
+		}
+	]
+}

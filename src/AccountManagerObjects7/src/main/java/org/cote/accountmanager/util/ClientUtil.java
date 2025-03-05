@@ -108,6 +108,29 @@ public class ClientUtil {
 		return outObj;
 	}
 	
+	public static <T> T get(Class<T> cls, WebTarget resource, String authorizationToken, MediaType responseType){
+		Builder bld = getRequestBuilder(resource).accept(responseType);
+		if(authToken == null && authorizationToken != null) {
+			bld.header("Authorization", "Bearer " + new String(authToken));
+		}
+		Response response = bld.get();
+
+		T outObj = null;
+		if(response != null) {
+			if(response.getStatus() == 200){
+				outObj = response.readEntity(cls);
+			}
+			else {
+				logger.warn("Received response: " + response.getStatus());
+				logger.warn(response.readEntity(String.class));
+			}
+		}
+		else {
+			logger.warn("Null response");
+		}
+		return outObj;
+	}
+	
 	public static BaseRecord postToRecord(String modelName, WebTarget resource, String authZ, String json, MediaType responseType) {
 
 		Builder bld = ClientUtil.getRequestBuilder(resource).accept(responseType);
