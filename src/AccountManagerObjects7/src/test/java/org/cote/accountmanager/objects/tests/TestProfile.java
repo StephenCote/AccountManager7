@@ -31,6 +31,7 @@ import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
@@ -71,8 +72,8 @@ public class TestProfile extends BaseTest {
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
 		String objStr = """
-				{"attributes":[],"organizationId":0,"ownerId":0,"controls":[],FieldNames.FIELD_TAGS:[],FieldNames.FIELD_NAME:"aouaoeu","parentId":28,FieldNames.FIELD_TYPE:"data","schema":"auth.group",FieldNames.FIELD_PATH:"~/Groups","organizationPath":"/Development/Audit"}"
-		""";
+				{"attributes":[],"organizationId":0,"ownerId":0,"controls":[],"tags":[],"name":"aouaoeu","parentId":28,"type":"data","schema":"auth.group",path:"~/Groups","organizationPath":"/Development/Audit"}"
+		""".trim();
 		logger.info("Test creating imported object with mismatched identifiers and virtual (denormalized) paths");
 		BaseRecord newGroup = JSONUtil.importObject(objStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 		BaseRecord cleanObj = null;
@@ -88,7 +89,7 @@ public class TestProfile extends BaseTest {
 		logger.info(cleanObj.toFullString());
 		BaseRecord newObj = ioContext.getAccessPoint().create(testUser1, cleanObj);
 		assertNotNull("Object is null", newObj);
-		logger.info(newObj.toFullString());
+		//logger.info(newObj.toFullString());
 	}
 	/*
 	@Test
@@ -162,6 +163,7 @@ public class TestProfile extends BaseTest {
 		assertNotNull("Person object is null", app.get(FieldNames.FIELD_PERSON));
 		List<BaseRecord> sysRoles = app.get(FieldNames.FIELD_SYSTEM_ROLES);
 		logger.info("Role count: " + sysRoles.size());
+		logger.info(JSONUtil.exportObject(app, RecordSerializerConfig.getForeignUnfilteredModuleRecurse()));
 	}
 	
 

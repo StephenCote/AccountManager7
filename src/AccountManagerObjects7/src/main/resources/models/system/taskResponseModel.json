@@ -6,10 +6,6 @@
 	],
 	"fields": [
 		{
-			"name": "id",
-			"type": "string"
-		},
-		{
 			"name": "responseType",
 			"baseClass": "org.cote.accountmanager.schema.type.ResponseEnumType",
 			"type": "enum",

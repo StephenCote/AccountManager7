@@ -53,6 +53,7 @@ public class Factory {
 	public static final String OPS_USER_NAME = "operations";
 	public static final String VAULT_USER_NAME = "vault";
 	public static final String DOCUMENT_CONTROL_USER_NAME = "documentControl";
+	public static final String API_USER_NAME = "apiUser";
 	private Map<String,Class<?>> factories = new ConcurrentHashMap<>();
 	private Map<String,IFactory> factoryInst = new ConcurrentHashMap<>();
 	private Map<String, List<IFactory>> factoriesMap = new ConcurrentHashMap<>();
@@ -133,7 +134,12 @@ public class Factory {
 		BaseRecord ops = getCreateUser(admin, OPS_USER_NAME, null, orgId);
 		BaseRecord vault = getCreateUser(admin, VAULT_USER_NAME, null, orgId);
 		BaseRecord docControl = getCreateUser(admin, DOCUMENT_CONTROL_USER_NAME, null, orgId);
+		BaseRecord apiUser = getCreateUser(admin, API_USER_NAME, null, orgId);
 	
+		BaseRecord apiRole = AccessSchema.getSystemRole(AccessSchema.ROLE_API_USERS, RoleEnumType.USER.toString(), orgId);
+		context.getMemberUtil().member(admin, apiRole, apiUser, null, true);
+
+		
 		configureOrganizationStore(ops, org);
 		logger.warn("*** Re-Enable path authorization");
 		context.setEnforceAuthorization(true);

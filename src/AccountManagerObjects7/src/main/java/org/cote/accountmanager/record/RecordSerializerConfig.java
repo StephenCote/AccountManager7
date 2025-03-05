@@ -93,6 +93,7 @@ public class RecordSerializerConfig {
 		ser.setFilterEphemeral(false);
 		ser.setDecompressByteStore(true);
 		ser.setStopRecursion(false);
+		ser.setCondenseFields(false);
 		SimpleModule  foreignFilteredModule = new SimpleModule();
 		foreignFilteredModule.addSerializer(LooseRecord.class, ser);
 		

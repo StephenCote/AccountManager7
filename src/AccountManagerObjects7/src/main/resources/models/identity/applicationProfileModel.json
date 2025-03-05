@@ -4,6 +4,12 @@
 "ephemeral": true,
 "fields": [
 		{
+			"name": "jsonModelKey",
+			"type": "string",
+			"maxLength": 20,
+			"default": "schema"
+		},
+		{
 			"name": "systemRoles",
 			"type": "list",
 			"baseType": "model",

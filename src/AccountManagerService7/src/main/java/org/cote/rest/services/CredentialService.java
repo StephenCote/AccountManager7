@@ -1,23 +1,33 @@
 package org.cote.rest.services;
 
+import java.util.UUID;
+
 import javax.annotation.security.RolesAllowed;
 import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.Consumes;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.IndexException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -27,6 +37,7 @@ import org.cote.accountmanager.schema.type.ActionEnumType;
 import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
+import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ParameterUtil;
@@ -36,7 +47,7 @@ import org.cote.service.util.ServiceUtil;
 public class CredentialService {
 	public static final Logger logger = LogManager.getLogger(CredentialService.class);
 
-	@RolesAllowed({"user", "admin"})
+	@RolesAllowed({"user", "admin", "api"})
 	@POST
 	@Path("/{type:[A-Za-z]+}/{objectId:[A-Za-z0-9\\-\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
@@ -109,6 +120,51 @@ public class CredentialService {
 		}
 		return outBool;
 
+	}
+	
+	/// Any API User may request a token for an API principle
+	/// 
+	@RolesAllowed({"api", "admin"})
+	@GET
+	@Path("/token")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getApiToken(@Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OrganizationContext oc = IOSystem.getActiveContext().getOrganizationContext(user.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
+		BaseRecord apiUser = oc.getAdminUser();
+		String token = getTokenForUser(user, apiUser, request);
+		return Response.status(200).entity(token).build();
+	}
+	
+	@RolesAllowed({"api", "admin"})
+	@POST
+	@Path("/token/{type:[A-Za-z]+}/{objectId:[A-Za-z0-9\\-\\.]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	@Consumes(MediaType.APPLICATION_JSON)
+	public Response getApiTokenForUser(@PathParam("objectId") String objectId, @Context HttpServletRequest request){
+		/// Both the requester and the API user must be in the API Users role
+		/// TODO: The requester MUST be able to AUTHENTICATE to the API user account
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query uq = QueryUtil.createQuery(ModelNames.MODEL_USER, FieldNames.FIELD_OBJECT_ID, objectId);
+		uq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord tuser = IOSystem.getActiveContext().getAccessPoint().find(user, uq);
+		String token = null;
+		if(tuser != null) {
+			token = getTokenForUser(user, tuser, request);
+		}
+		return Response.status(200).entity(token).build();
+
+	}
+	
+	private String getTokenForUser(BaseRecord user, BaseRecord apiUser, HttpServletRequest request){
+		String outToken = null;
+		try {
+			outToken = TokenService.createJWTToken(user, apiUser, UUID.randomUUID().toString(), TokenService.TOKEN_EXPIRY_1_WEEK);
+		} catch (ReaderException | IndexException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return outToken;
 	}
 
 }

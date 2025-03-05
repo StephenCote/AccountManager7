@@ -1,6 +1,6 @@
 {
 	"name": "common.vectorExt",
-	"inherits": [],
+	"inherits": ["crypto.vaultExt"],
 	"abstract": true,
 	"query": [],
 	"fields": [
@@ -14,7 +14,8 @@
 		},
 		{
 			"name": "content",
-			"type": "string"
+			"type": "string",
+			"encrypt": true
 		},
 		{
 			"name": "embedding",

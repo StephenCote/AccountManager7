@@ -45,6 +45,7 @@ public class OrganizationContext {
 	private BaseRecord opsUser = null;
 	private BaseRecord vaultUser = null;
 	private BaseRecord docControl = null;
+	private BaseRecord apiUser = null;
 	private boolean initialized = false;
 	private KeyStoreBean keyStoreBean = null;
 	private char[] storePass = null;
@@ -92,6 +93,7 @@ public class OrganizationContext {
 		opsUser =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.OPS_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));
 		vaultUser =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.VAULT_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));
 		docControl =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.DOCUMENT_CONTROL_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));
+		apiUser =  ioContext.getRecordUtil().getRecord(null, ModelNames.MODEL_USER, Factory.API_USER_NAME, 0L, 0L, this.organization.get(FieldNames.FIELD_ID));
 
 		if(adminUser == null) {
 			logger.error("Administration user is null");
@@ -227,6 +229,14 @@ public class OrganizationContext {
 		return vaultUser;
 	}
 	
+	public BaseRecord getApiUser() {
+		return apiUser;
+	}
+
+	public void setApiUser(BaseRecord apiUser) {
+		this.apiUser = apiUser;
+	}
+
 	public BaseRecord getDocumentControl() {
 		return docControl;
 	}
