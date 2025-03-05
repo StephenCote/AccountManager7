@@ -1500,7 +1500,7 @@
                     });
 
                 }
-                else if(type.match(/^user$/)){
+                else if(type.match(/^system\.user$/)){
                     enablePicker();
                     res();
                 }
@@ -1612,11 +1612,16 @@
             if(am7model.hasIdentity(entity)){
                 members.forEach((t)=>{
                     aP.push(new Promise((res, rej)=>{
-                        am7client.member(entity[am7model.jsonModelKey], entity.objectId, field?.name, t[am7model.jsonModelKey], t.objectId, true, function(v){
+
+                        am7client.member(entity[am7model.jsonModelKey], entity.objectId, (!field.virtual ? field?.name : null), t[am7model.jsonModelKey], t.objectId, true, function(v){
+                            console.log("Member: " + v);
                             res(v);
                         })
                     }));
                 });
+            }
+            if(!aP.length){
+                console.warn("Nothing picked!");
             }
             Promise.all(aP).then(()=>{
                 delete foreignData['members'];
@@ -1796,7 +1801,6 @@
 
         objectPage.addMember = function(name, field, tableType, tableForm, props){
             let type = tableType;
-            //console.log("Add entity " + tableType, field);
             if(type == "$flex"){
                 if(field.foreignType){
                     type = inst.api[field.foreignType]();
@@ -1847,6 +1851,7 @@
                     search.participantType = ptype;
                     // console.log(search);
                     am7client.listParticipations(ftype, search, function(v){
+                        am7model.updateListModel(v);
                         res(v);
                     });
                 }
@@ -1877,6 +1882,7 @@
                     }
                     */
                     am7client.members(entity[am7model.jsonModelKey], entity.objectId, type, 0, 100, function(v){
+                        am7model.updateListModel(v);
                         res(v);
                     });
                 }

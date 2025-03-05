@@ -51,6 +51,11 @@
                 am7client.application().then((app) => {
                     page.application = app;
                     if(app && app != null){
+                        for(let v in app){
+                            if(app[v] instanceof Array){
+                                am7model.updateListModel(app[v], am7model.getModelField(app.schema, v));
+                            }
+                        }
                         setContextRoles(app);
                         if(!rt.length || rt == "/sig") rt = "/main";
                         page.wss.connect();

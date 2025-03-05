@@ -212,9 +212,7 @@
           let uType = ttype.substring(0, 1).toUpperCase() + ttype.slice(1);
           let fType = uType + "s";
           if (uType.match(/y$/)) fType = uType.slice(0, uType.length - 1) + "ies";
-          console.log(fType);
           if(page.application["system" + fType]){
-            console.log("Count", fType, page.application["system" + fType].length);
             handleCount(page.application["system" + fType].length);
           }
         }

@@ -272,12 +272,14 @@
 		m[s].push(o);
 	};
 
-	am7model.updateListModel = function(v){
+	am7model.updateListModel = function(v, f){
 		/// In AM7, the 'model' property may be condensed to occur in only the first result  if the remaining results are the same
     	///
       if (v && v.length) {
-        let m = v[0][am7model.jsonModelKey];
-        for (let i = 1; i < v.length; i++) {
+		let mk = v[0][am7model.jsonModelKey];
+        let m = mk || f?.baseModel;
+
+        for (let i = (mk ? 1 : 0); i < v.length; i++) {
           if (!v[i][am7model.jsonModelKey]) v[i][am7model.jsonModelKey] = m;
         }
       }
@@ -526,10 +528,10 @@
 			r1.push("modifiedDate");
 		}
 		if (am7model.isParent(type)) {
-			if (am7model.hasField(m, "path")) r1.push("path");
+			if (am7model.hasField(type, "path")) r1.push("path");
 			r1.push("parentId");
 		}
-		if (am7model.isGroup(type) && m != 'auth.group') {
+		if (am7model.isGroup(type) && type != 'auth.group') {
 			r1.push("groupPath");
 			r1.push("groupId");
 		}

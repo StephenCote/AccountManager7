@@ -554,7 +554,7 @@
         format: 'object-link'
     },
         {
-            name: "model",
+            name: am7model.jsonModelKey,
             label: "Model",
             type: "string",
             virtual: true,
@@ -1313,7 +1313,7 @@
             name: {
                 layout: "half"
             },
-            model: {
+            schema: {
                 layout: "half"
             }
         }
@@ -1341,7 +1341,7 @@
             name: {
                 layout: "half"
             },
-            model: {
+            schema: {
                 layout: "half"
             }
             /*
