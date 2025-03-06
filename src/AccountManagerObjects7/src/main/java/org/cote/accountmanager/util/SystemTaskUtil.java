@@ -181,6 +181,7 @@ public class SystemTaskUtil {
 			if(!activeTasks.containsKey(node)) {
 				activeTasks.put(node, new ArrayList<>());
 			}
+			logger.info("Activating " + tasks.size() + " tasks");
 			activeTasks.get(node).addAll(tasks);
 		}
 		return tasks;
