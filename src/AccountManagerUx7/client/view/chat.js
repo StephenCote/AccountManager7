@@ -399,7 +399,7 @@
           align = "justify-end";
           txt = "bg-gray-200 text-black";
         }
-        let cnt = msg.content;
+        let cnt = msg.content || "";
         let ectl = "";
         let ecls = "";
         let bectl = false;
