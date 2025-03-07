@@ -22,7 +22,7 @@
     "express-session": "^1.17.2",
     "material-icons": "^1.13.14",
     "material-symbols": "^0.28.2",
-    "mithril": "^2.2.2",
+    "mithril": "^2.2.8",
     "uuid": "^8.3.2"
   },
   "devDependencies": {
