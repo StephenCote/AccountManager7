@@ -144,14 +144,12 @@
     }
     function doChat() {
       clearEditMode();
-      console.log("Do chat");
       if (chatCfg.pending) {
         console.warn("Chat is pending");
         return;
       }
       let msg = document.querySelector("[name='chatmessage']").value; ///e?.target?.value;
       if (!chatCfg.peek) {
-        console.log("Peeking ...");
         doPeek().then(() => {
           doChat();
         })
@@ -159,10 +157,8 @@
       else {
         pushHistory();
         chatCfg.pending = true;
-        console.log("Chatting ...");
         m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: { chatConfig: chatCfg.chat.objectId, promptConfig: chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid(), message: msg } }).then((r) => {
           if (!chatCfg.history) chatCfg.history = {};
-          // console.log(r);
           chatCfg.history.messages = r?.messages || [];
           chatCfg.pending = false;
         });

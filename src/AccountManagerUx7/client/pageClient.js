@@ -854,7 +854,7 @@
         /// https://stackoverflow.com/questions/9388412/data-uri-to-object-url-with-createobjecturl-in-chrome-ff
         var mime = dataURI.split(',')[0].split(':')[1].split(';')[0];
         /// TODO: Replace with Buffer.from(dataURI.split(',')[1],"base64"); 
-        var binary = atob(dataURI.split(',')[1]);
+        var binary = window.atob(dataURI.split(',')[1]);
         var a = [];
         for (var i = 0; i < binary.length; i++) {
             a.push(binary.charCodeAt(i));

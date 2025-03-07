@@ -207,6 +207,9 @@ public class IOSystem {
 				if(context.getQueue() != null) {
 					context.getQueue().requestStop();
 				}
+				if(context.getTaskQueue() != null) {
+					context.getTaskQueue().requestStop();
+				}
 				if(context.getIndexManager() != null) {
 					context.getIndexManager().flush();
 					context.getIndexManager().clearCache();

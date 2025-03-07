@@ -58,9 +58,8 @@
 
         function printJSONToWindow(){
             let s = JSON.stringify(inst.entity, null, 2);
-            let w = window.open("about:blank", inst.entity.name);
-            w.document.write(`<pre>${s}</pre>`);
-            w.document.close();
+            let bu = page.blobUrl("data:text/json;base64," + Base64.encode(s));
+            let w = window.open(bu, inst.entity.name);
             
             
             //let u = "data:x-application/json;base64," + Base64.encode(s);
@@ -860,7 +859,7 @@
                         label = useEntity.name;
                     }
                     view.push(m("a",{target: "new", href: uri, class: "text-blue-600"}, [m("span",{class : "material-icons-outlined mr-2"}, "link"), label]));
-                    view.push(m("span", {onclick: printJSONToWindow, class : "material-symbols-outlined ml-2"}, "file_json"));
+                    view.push(m("span", {onclick: printJSONToWindow, class : "cursor-pointer material-symbols-outlined ml-2"}, "file_json"));
                     break;
                 case 'table':
                     fieldClass += " table-field";

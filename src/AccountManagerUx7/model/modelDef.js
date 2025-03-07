@@ -7965,7 +7965,7 @@
             "baseClass": "org.cote.accountmanager.olio.llm.LLMServiceEnumType",
             "type": "enum",
             "maxLength": 10,
-            "default": "OPENAI"
+            "default": "OLLAMA"
           },
           {
             "name": "systemCharacter",
@@ -8113,7 +8113,8 @@
           {
             "name": "serverUrl",
             "type": "string",
-            "maxLength": 512
+            "maxLength": 512,
+            "default": "http://localhost:11434"
           },
           {
             "name": "apiKey",
