@@ -155,7 +155,6 @@ You MUST include effective and ineffective language styles and patterns.
 You MUST include implicit or explicit biases.
 You MUST include social, political, and gender dynamics, biases, and/or implications.
 You MUST identify key characters, relationships, and plot developments.
-You MUST include a statistical analysis of the language used to identify author demographics: Age, race, religion, politics, gender, etc.
 Limit your response to 300 words or fewer.
 """;
 

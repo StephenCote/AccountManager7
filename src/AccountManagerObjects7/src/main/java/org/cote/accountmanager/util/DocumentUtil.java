@@ -5,6 +5,8 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 
+import javax.swing.text.BadLocationException;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.pdfbox.Loader;
@@ -21,24 +23,40 @@ import org.xml.sax.SAXException;
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);
 	
+	public static String readRtf(String file) {
+	   var rtfEK = new javax.swing.text.rtf.RTFEditorKit();
+	   var rtf = rtfEK.createDefaultDocument();
+	   String outStr = null;
+	   try {
+		   rtfEK.read(new java.io.ByteArrayInputStream(FileUtil.getFile(file)), rtf, 0);
+		   outStr = rtf.getText(0, rtf.getLength());
+		} catch (IOException | BadLocationException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+	   return outStr;
+	}
+	
     public static String readDocument(String file) {
     	String out = null;
     	try {
 	    	InputStream fileStream = new FileInputStream(file);
-	    	Parser parser = new AutoDetectParser();
+	    	AutoDetectParser parser = new AutoDetectParser();
 	    	Metadata metadata = new Metadata();
 	    	BodyContentHandler handler = new BodyContentHandler(Integer.MAX_VALUE);
-	    	//PDFParserConfig pdfConfig = new PDFParserConfig();
-	    	//pdfConfig.setExtractInlineImages(true);
-	    	ParseContext parseContext = new ParseContext();
-	    	//parseContext.set(PDFParserConfig.class, pdfConfig);
-	    	parseContext.set(Parser.class, parser);
-	    	parser.parse(fileStream, handler, metadata, parseContext);
+	    	//XXX PDFParserConfig pdfConfig = new PDFParserConfig();
+	    	//XXX pdfConfig.setExtractInlineImages(true);
+	    	//XXX parseContext.set(PDFParserConfig.class, pdfConfig);
+	    	//ParseContext parseContext = new ParseContext();
+	    	//parseContext.set(Parser.class, parser);
+	    	// , parseContext
+	    	parser.parse(fileStream, handler, metadata);
 			out = replaceSmartQuotes(handler.toString());
 			
     	}
-    	catch(IOException | SAXException | TikaException e) {
+    	catch(Exception e) {
     		logger.error(e);
+    		e.printStackTrace();
     	}
     	return out;
     }

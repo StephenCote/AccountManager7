@@ -22,6 +22,8 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.PolicyType;
@@ -214,19 +216,26 @@ public class BaseTest {
 		Factory mf = ioContext.getFactory();
 		return mf.getCreateUser(org.getAdminUser(), name, org.getOrganizationId());
 	}
-	
-	protected BaseRecord getCreateData(BaseRecord owner, String name, String path, String textContents) {
+	protected BaseRecord getData(BaseRecord owner, String name, String path) {
 		BaseRecord dat = null;
-		BaseRecord datT = null;
-
 		BaseRecord group = ioContext.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(group != null) {
-			dat = ioContext.getRecordUtil().getRecord(owner, ModelNames.MODEL_DATA, name, 0, group.get(FieldNames.FIELD_ID), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_NAME,  name);
+			q.planMost(true);
+			dat = ioContext.getSearch().findRecord(q);
+			//dat = ioContext.getRecordUtil().getRecord(owner, ModelNames.MODEL_DATA, name, 0, group.get(FieldNames.FIELD_ID), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 
 		}
 		else {
 			logger.warn("Group is null: " + path);
 		}
+		return dat;
+	}
+	protected BaseRecord getCreateData(BaseRecord owner, String name, String path, String textContents) {
+		BaseRecord dat = getData(owner, name, path);
+		BaseRecord datT = null;
+
 		if(dat == null) {
 			try {
 				datT = RecordFactory.newInstance(ModelNames.MODEL_DATA);
