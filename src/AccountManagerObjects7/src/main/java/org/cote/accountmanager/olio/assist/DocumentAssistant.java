@@ -14,7 +14,7 @@ import org.cote.accountmanager.record.BaseRecord;
 
 public abstract class DocumentAssistant implements IAssist {
 	public static final Logger logger = LogManager.getLogger(DocumentAssistant.class);
-	private DocumentMap map = null;
+	protected DocumentMap map = null;
 	private long pause = 5000;
 	private BaseRecord chatConfig = null;
 	private BaseRecord user = null;

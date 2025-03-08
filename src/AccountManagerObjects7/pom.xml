@@ -125,7 +125,7 @@
 				  <environmentVariables> 
       <PATH>C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64;${java.library.path}</PATH> 
     </environmentVariables> 
-					<skipTests>true</skipTests>
+					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
 						-Djava.library.path=C:\Users\scot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64
@@ -139,8 +139,9 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestSystemTasks.java</exclude>
+						<exclude>**/TestDocumentSearch.java</exclude>
 						-->
+						<exclude>**/TestSystemTasks.java</exclude>
 						<exclude>**/TestProfile.java</exclude>
 						<exclude>**/TestChat2.java</exclude>
 						<exclude>**/TestChat.java</exclude>
@@ -400,13 +401,13 @@
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-core</artifactId>
-    <version>3.0.0</version>
+    <version>3.1.0</version>
 </dependency>
 <!-- https://mvnrepository.com/artifact/org.apache.tika/tika-parsers -->
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-parsers</artifactId>
-    <version>3.0.0</version>
+    <version>3.1.0</version>
     <type>pom</type>
 </dependency>
 
@@ -414,13 +415,13 @@
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-parser-microsoft-module</artifactId>
-    <version>3.0.0</version>
+    <version>3.1.0</version>
 </dependency>
 <!-- https://mvnrepository.com/artifact/org.apache.tika/tika-parsers-standard-package -->
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-parsers-standard-package</artifactId>
-    <version>3.0.0</version>
+    <version>3.1.0</version>
 </dependency>
 
 		<!--

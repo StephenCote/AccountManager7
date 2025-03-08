@@ -34,9 +34,10 @@ public class ScrivenerAssistant extends DocumentAssistant implements IAssist {
 	private ScrivenerDocumentMap sdm = null;
 	private BaseRecord user = null;
 
-	public ScrivenerAssistant() {
+	public ScrivenerAssistant(BaseRecord user) {
 		super(new ScrivenerDocumentMap());
-		sdm = (ScrivenerDocumentMap) sdm;
+		this.user = user;
+		this.sdm = (ScrivenerDocumentMap)map;
 	}
 
 	public int summarize(Path path, String contents) throws FieldException, ModelNotFoundException {

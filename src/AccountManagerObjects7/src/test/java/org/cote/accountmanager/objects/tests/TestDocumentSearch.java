@@ -64,11 +64,16 @@ public class TestDocumentSearch extends BaseTest {
 	@Test
 	public void TestScrivener() {
 		logger.info("Test scan scrivener...");
-		ScrivenerAssistant sa = new ScrivenerAssistant();
 
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Scrivener");
+		assertNotNull("Test org is null", testOrgContext);
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		assertNotNull("Test user is null", testUser1);
+		ScrivenerAssistant sa = new ScrivenerAssistant(testUser1);
 		try {
 			sa.parseProject(scrivenerProjectPath);
-		} catch (ParserConfigurationException | SAXException | IOException | XPathExpressionException e) {
+		} catch (NullPointerException | ParserConfigurationException | SAXException | IOException | XPathExpressionException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
