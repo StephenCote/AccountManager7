@@ -345,14 +345,6 @@
 			<version>1.6.0</version>
 		</dependency>
 
-		<!--
-		<dependency>
-			<groupId>org.bouncycastle</groupId>
-			<artifactId>bcprov-jdk15on</artifactId>
-			<version>1.69</version>
-			<scope>provided</scope>
-		</dependency>
-		-->
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcprov-jdk18on</artifactId>
@@ -401,13 +393,13 @@
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-core</artifactId>
-    <version>3.1.0</version>
+    <version>3.0.0</version>
 </dependency>
 <!-- https://mvnrepository.com/artifact/org.apache.tika/tika-parsers -->
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-parsers</artifactId>
-    <version>3.1.0</version>
+    <version>3.0.0</version>
     <type>pom</type>
 </dependency>
 
@@ -415,13 +407,13 @@
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-parser-microsoft-module</artifactId>
-    <version>3.1.0</version>
+    <version>3.0.0</version>
 </dependency>
 <!-- https://mvnrepository.com/artifact/org.apache.tika/tika-parsers-standard-package -->
 <dependency>
     <groupId>org.apache.tika</groupId>
     <artifactId>tika-parsers-standard-package</artifactId>
-    <version>3.1.0</version>
+    <version>3.0.0</version>
 </dependency>
 
 		<!--
