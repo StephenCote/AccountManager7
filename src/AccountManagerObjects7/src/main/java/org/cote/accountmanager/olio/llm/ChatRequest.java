@@ -5,9 +5,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.util.JSONUtil;
 
 /// OllamaChatRequest used for proxied API connections
 ///

@@ -12,13 +12,9 @@ import org.apache.logging.log4j.Logger;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-import org.apache.tika.exception.TikaException;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
-import org.apache.tika.parser.ParseContext;
-import org.apache.tika.parser.Parser;
 import org.apache.tika.sax.BodyContentHandler;
-import org.xml.sax.SAXException;
 
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);

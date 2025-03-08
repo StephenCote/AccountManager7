@@ -7,8 +7,6 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-
 public class OpenAIMessage extends LooseRecord {
 	public OpenAIMessage(BaseRecord rec) {
 		this();

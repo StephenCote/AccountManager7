@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio.llm;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import org.cote.accountmanager.exceptions.FieldException;
@@ -9,7 +8,6 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.schema.ModelNames;
 
 /// OllamaChatResponse used for proxied API connections
 ///

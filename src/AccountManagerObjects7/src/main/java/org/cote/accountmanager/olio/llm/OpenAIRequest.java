@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio.llm;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -9,10 +8,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.TypeUtil;
 
 public class OpenAIRequest extends LooseRecord {
 	

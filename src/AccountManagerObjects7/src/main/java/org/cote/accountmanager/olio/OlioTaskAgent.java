@@ -1,6 +1,5 @@
 package org.cote.accountmanager.olio;
 
-import java.net.UnknownHostException;
 import java.util.UUID;
 
 import org.apache.logging.log4j.LogManager;

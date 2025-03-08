@@ -19,7 +19,6 @@ import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.GroupEnumType;
 
 public class ThumbnailUtil {
 	
