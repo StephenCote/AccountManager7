@@ -253,14 +253,16 @@ Begin conversationally.
 			vchar = chatConfig.get("userCharacter");
 		}
 		String ujobDesc = "";
-		List<String> utrades = vchar.get(OlioFieldNames.FIELD_TRADES);
-		if(utrades.size() > 0) {
-			ujobDesc =" " + utrades.get(0).toLowerCase();
+		if(vchar != null) {
+			List<String> utrades = vchar.get(OlioFieldNames.FIELD_TRADES);
+			if(utrades.size() > 0) {
+				ujobDesc =" " + utrades.get(0).toLowerCase();
+			}
 		}
 		return (
-			"* " + vchar.get(FieldNames.FIELD_FIRST_NAME) + " (" + vchar.get(FieldNames.FIELD_AGE) + " year-old "
+			"* " + (vchar == null ? msg.getRole() : vchar.get(FieldNames.FIELD_FIRST_NAME) + " (" + vchar.get(FieldNames.FIELD_AGE) + " year-old "
 				+ NarrativeUtil.getRaceDescription(vchar.get(OlioFieldNames.FIELD_RACE)) + " "
-				+ vchar.get(FieldNames.FIELD_GENDER) + ujobDesc + ")*: "
+				+ vchar.get(FieldNames.FIELD_GENDER) + ujobDesc + ")") + " *: "
 			//+ System.lineSeparator()
 			+ msg.getContent()
 		);

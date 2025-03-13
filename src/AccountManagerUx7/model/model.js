@@ -474,11 +474,18 @@
 			if (v && (v instanceof Array)) {
 				v = v.join("\r\n");
 			}
+			else{
+				v = "";
+			}
 			return v;
 		},
 		decorateIn: function (i, f, v) {
 			if (v && typeof v == "string") {
 				v = v.split(/\r?\n|\r|\n/g);
+			}
+			else{
+				v = [];
+				console.log(v);
 			}
 			//v = ntc.name(v)[0];
 			return v;

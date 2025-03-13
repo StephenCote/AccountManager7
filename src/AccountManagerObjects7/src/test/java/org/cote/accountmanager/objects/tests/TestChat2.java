@@ -160,7 +160,7 @@ Limit your response to 300 words or fewer.
 
 		String userCommand = "Perform a Critical Discourse Analysis and Critical Rhetorical Analysis of the following content:" + System.lineSeparator() + System.lineSeparator();
 		try {
-			List<String> chunks = VectorUtil.chunkByChapter(doc.get(FieldNames.FIELD_NAME), null, VectorUtil.getStringContent(doc), 0);
+			List<String> chunks = VectorUtil.chunkByChapter(doc.get(FieldNames.FIELD_NAME), null, DocumentUtil.getStringContent(doc), 0);
 			assertTrue("Expected chunks", chunks.size() > 0);
 			Chat chat = new Chat(testUser1, cfg, null);
 			chat.setLlmSystemPrompt(sysPrompt);

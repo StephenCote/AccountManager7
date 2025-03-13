@@ -966,9 +966,8 @@
         function doFieldClear(field){
             if(!entity || !field.pickerProperty) return;
             let prop = field.pickerProperty.entity;
-            if(field.pickerProperty.selected === '{object}') entity[prop] = null;
-            else if(typeof entity[prop] == "string") entity[prop] = null;
-            else if(typeof entity[prop] == "number") entity[prop] = 0;
+            if(field.pickerProperty.selected === '{object}' || typeof entity[prop] == "string") inst.api[prop](null);
+            else if(typeof entity[prop] == "number") inst.api[prop](0);
             updateChange();
 
             /// Clear the server cache because the parent may have a cached copy of the child

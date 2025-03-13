@@ -141,6 +141,7 @@ public class ContentTypeUtil {
 		types.put("dir","application/x-director");
 		types.put("dl","video/x-dl");
 		types.put("doc","application/msword");
+		types.put("docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
 		types.put("dot","application/msword");
 		types.put("dp","application/commonground");
 		types.put("drw","application/drafting");

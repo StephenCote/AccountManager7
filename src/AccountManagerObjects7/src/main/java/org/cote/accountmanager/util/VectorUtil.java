@@ -179,39 +179,6 @@ LIMIT ?
 		return recs;
 	}
 	
-	public static String getStringContent(BaseRecord model) {
-		String content = null;
-		if(model.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)) {
-			//IOSystem.getActiveContext().getReader().populate(vectorRef, new String[] { FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_BYTE_STORE });
-			String contentType = model.get(FieldNames.FIELD_CONTENT_TYPE);
-			if(contentType != null) {
-				 try {
-
-					if(contentType.startsWith("text/") || contentType.equals("application/x-javascript") || contentType.equals("text/xml") || contentType.equals("application/json")) {
-						content = ByteModelUtil.getValueString(model);
-					}
-					else if(contentType.equals("application/pdf")) {
-						content = DocumentUtil.readPDF(ByteModelUtil.getValue(model));
-					}
-					else {
-						logger.warn("Unhandled content type: " + contentType);
-					}
-				} catch (ValueException | FieldException e) {
-					logger.error(e);
-				}
-
-			}
-		}
-		else if(model.hasField(FieldNames.FIELD_TEXT)) {
-			content = model.get(FieldNames.FIELD_TEXT);
-		}
-		else {
-			logger.warn("Unhandled model: " + model.getSchema());
-		}
-		return content;
-	}
-	
-
 	public static List<BaseRecord> createVectorStore(BaseRecord model, ChunkEnumType chunkType, int chunkSize) throws FieldException {
 
 		
@@ -231,7 +198,7 @@ LIMIT ?
 			}
 		}
 
-		return createVectorStore(model, getStringContent(model), chunkType, chunkSize);
+		return createVectorStore(model, DocumentUtil.getStringContent(model), chunkType, chunkSize);
 	}
 
 	public static List<BaseRecord> createVectorStore(BaseRecord model, String content, ChunkEnumType chunkType, int chunkSize) throws FieldException {
