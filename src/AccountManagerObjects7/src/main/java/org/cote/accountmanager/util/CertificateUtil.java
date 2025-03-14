@@ -199,7 +199,7 @@ public class CertificateUtil {
 		
 		String orgPath = getDotPath(organizationPath);
 		String cn = "CN=" + vcn;
-		X500Name x500Name = new X500Name("CN=" + cn);
+		X500Name x500Name = new X500Name(cn);
 		X509v3CertificateBuilder certificateBuilder = new JcaX509v3CertificateBuilder(x500Name,
 				BigInteger.valueOf(now.toEpochMilli()),
 				notBefore,

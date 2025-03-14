@@ -64,7 +64,9 @@ public enum ActionEnumType {
     AUTHORIZE,
     CLOSE,
     OPEN,
-    REOPEN;
+    REOPEN,
+    VECTORIZE
+    ;
 
     public String value() {
         return name();

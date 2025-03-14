@@ -145,6 +145,7 @@ public class RecordFactory {
 		looseBaseModels.clear();
 		schemas.clear();
 		classMap.clear();
+		instMap.clear();
 		looseImports.clear();
 		rawModels.clear();
 	}
@@ -286,13 +287,18 @@ public class RecordFactory {
 		return mod;
 	}
 	
+	public static Query getSchemaQuery(String modelName) {
+		OrganizationContext sysOrg = IOSystem.getActiveContext().getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, null);
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_NAME, modelName);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
+		q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SCHEMA});
+		return q;
+	}
+	
 	private static ModelSchema getIOSchema(String modelName) {
 		ModelSchema ms = null;
 		if(IOSystem.isInitialized()) {
-			OrganizationContext sysOrg = IOSystem.getActiveContext().getOrganizationContext(OrganizationContext.SYSTEM_ORGANIZATION, null);
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_MODEL_SCHEMA, FieldNames.FIELD_NAME, modelName);
-			q.field(FieldNames.FIELD_ORGANIZATION_ID, sysOrg.getOrganizationId());
-			q.setRequest(new String[] {FieldNames.FIELD_NAME, FieldNames.FIELD_SCHEMA});
+			Query q = getSchemaQuery(modelName);
 			BaseRecord modelRec = IOSystem.getActiveContext().getSearch().findRecord(q);
 			if(modelRec != null) {
 				if(!modelRec.hasField(FieldNames.FIELD_SCHEMA)) {
@@ -347,7 +353,7 @@ public class RecordFactory {
 							String dbSchema = ioContext.getDbUtil().generateNewSchemaOnly(ms);
 							if(dbSchema != null) {
 								logger.info("Generating schema:");
-								logger.info(dbSchema);
+								// logger.info(dbSchema);
 								ioContext.getDbUtil().execute(dbSchema);
 								ModelNames.releaseCustomModelNames();
 							}

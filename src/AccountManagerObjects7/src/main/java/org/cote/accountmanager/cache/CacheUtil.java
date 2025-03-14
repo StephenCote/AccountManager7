@@ -28,7 +28,7 @@ public class CacheUtil {
 			c.clearCache();
 		});
 		ProviderUtil.clearCache();
-		ResourceUtil.getInstance().clearCache();
+		ResourceUtil.clearCache();
 	}
 
 	public static void clearCache(String key) {

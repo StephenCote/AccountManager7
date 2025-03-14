@@ -1,0 +1,19 @@
+{
+"name": "junk",
+"inherits": ["data.directory", "common.description", "common.dateTime"],
+"group": "Junk",
+"version": "1.0",
+"fields": [
+	{
+		"name": "defaultJunk",
+		"type": "string"
+	},
+	{
+		"name": "deleteJunk",
+		"type": "string"
+	},
+	{
+		"name": "modifyJunk",
+		"type": "string"
+	}
+]}

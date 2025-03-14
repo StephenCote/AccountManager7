@@ -718,7 +718,7 @@ $$;""";
 		}
 		return outName;
 	}
-	protected String generateSchemaLine(ModelSchema baseSchema, ModelSchema schema, FieldSchema fschema) {
+	public String generateSchemaLine(ModelSchema baseSchema, ModelSchema schema, FieldSchema fschema) {
 		StringBuilder buff = new StringBuilder();
 		boolean allowNull = false;
 		if(fschema.getType() == null) {

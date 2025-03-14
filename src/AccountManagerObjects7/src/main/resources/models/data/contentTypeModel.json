@@ -5,6 +5,6 @@
 	{
 		"name": "contentType",
 		"type": "string",
-		"maxLength": 64
+		"maxLength": 128
 	}
 ]}

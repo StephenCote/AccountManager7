@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import javax.ws.rs.core.Response;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -14,6 +16,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
@@ -33,6 +36,8 @@ import org.cote.accountmanager.util.FieldLockUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.ParameterUtil;
 import org.cote.accountmanager.util.RecordUtil;
+import org.cote.accountmanager.util.VectorUtil;
+import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
 public class AccessPoint {
 	public static final Logger logger = LogManager.getLogger(AccessPoint.class);
@@ -663,6 +668,48 @@ public class AccessPoint {
 			logger.error(pr.toFullString());
 		}
 		return prr;
+	}
+	public boolean vectorize(BaseRecord user, String model, String objectId, ChunkEnumType chunkType, int chunkSize) {
+
+		logger.info("Request to vectorize " + model + " " + objectId);
+		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(true);
+		BaseRecord rec = find(user, q);
+		
+		//BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, model, objectId);
+		ActionEnumType aet = ActionEnumType.VECTORIZE;
+		BaseRecord audit = AuditUtil.startAudit(user, aet, user, rec);
+		AuditUtil.query(audit, q.key());
+		if(rec == null) {
+			audit.setValue(FieldNames.FIELD_RESOURCE_TYPE, model);
+			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Object " + objectId + " could not be read");
+			return false;
+		}
+		
+		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, rec);
+		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
+			AuditUtil.closeAudit(audit, prt, "Not authorized to modify object");
+			return false;
+		}
+		
+		boolean outBool = false;
+		try {
+			logger.info("Creating vector store for " + objectId);
+			List<BaseRecord> chunks = VectorUtil.createVectorStore(rec, chunkType, chunkSize);
+			if(chunks.size() > 0) {
+				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
+				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Created vector store");
+				outBool = true;
+			}
+			else {
+				AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Failed to create vector store");
+			}
+		} catch (FieldException | WriterException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+	
+		return outBool;
 	}
 	
 	

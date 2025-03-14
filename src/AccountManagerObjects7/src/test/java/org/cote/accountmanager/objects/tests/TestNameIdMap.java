@@ -17,7 +17,6 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
-import org.cote.accountmanager.record.RawSchema;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
@@ -49,31 +48,6 @@ public class TestNameIdMap {
 			logger.error(e);
 		}
 		return enumClass;
-	}
-	
-	@Test
-	public void TestExportAll() {
-		logger.info("Test Export All");
-		Map<String, String> export = NameIdExporter.instance().exportAll();
-		logger.info("Exported " + export.keySet().size() + " models");
-		//List<String> looseModels = new ArrayList<>(export.values());
-		//StringBuilder buff = new StringBuilder();
-		List<RawSchema> raw = new ArrayList<>();
-		//buff.append("[");
-		//int[] i = {0};
-		export.forEach((k, v) -> {
-			String path = "./exports/" + k + "Model.json";
-			logger.info("Emitting " + path);
-			//if(i[0] > 0) buff.append(",");
-			//buff.append("\n" + v);
-			raw.add(new RawSchema(k, v.replaceAll("\n",  "").replaceAll("\t", "")));
-			//i[0]++;
-			FileUtil.emitFile(path, v);
-		});
-		//buff.append("\n]");
-		logger.info("Emitting master list");
-		FileUtil.emitFile("./exports/looseModels.json", JSONUtil.exportObject(raw));
-		
 	}
 	
 	@Test

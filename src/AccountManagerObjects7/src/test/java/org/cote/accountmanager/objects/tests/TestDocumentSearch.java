@@ -49,6 +49,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
+import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.junit.Test;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -60,7 +61,7 @@ public class TestDocumentSearch extends BaseTest {
 
 	
 	private String scrivenerProjectPath = "C:\\Users\\swcot\\OneDrive\\Documents\\Scrivner\\The Verse.scriv";
-	
+	/*
 	@Test
 	public void TestScrivener() {
 		logger.info("Test scan scrivener...");
@@ -80,6 +81,26 @@ public class TestDocumentSearch extends BaseTest {
 		DocumentWatcher dw = new DocumentWatcher(sa, scrivenerProjectPath);
 
 	}
+	*/
+	
+	@Test
+	public void TestVectorAccessPoint() {
+		logger.info("Test vectorize access point method...");
+
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Scrivener");
+		assertNotNull("Test org is null", testOrgContext);
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		assertNotNull("Test user is null", testUser1);
+		
+		String path = "./media/The Verse.docx";
+		BaseRecord doc = getCreateDocument(testUser1, path);
+		assertNotNull("Test data was null", doc);
+		
+		ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 0);
+
+	}
+
 
 }
 

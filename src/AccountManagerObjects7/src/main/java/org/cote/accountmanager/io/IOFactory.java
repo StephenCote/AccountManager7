@@ -146,38 +146,17 @@ public class IOFactory {
 		return null;
 	}
 	
-	/*
-	public static MemberUtil getMemberUtil(IReader reader, IWriter writer, ISearch search) {
-		return new MemberUtil(reader, writer, search);
-	}
-	*/
 	public static MemberUtil getMemberUtil(IOContext context) {
 		return new MemberUtil(context);
 	}
-	/*
-	public static AuthorizationUtil getAuthorizationUtil(IReader reader, IWriter writer, ISearch search) {
-		return new AuthorizationUtil(reader, writer, search);
-	}
-	*/
+
 	public static AuthorizationUtil getAuthorizationUtil(IOContext context) {
 		return new AuthorizationUtil(context);
 	}
 
-	/*
-	public static RecordUtil getRecordUtil(IReader reader, IWriter writer, ISearch search) {
-		return new RecordUtil(reader, writer, search);
-	}
-	*/
-	
 	public static RecordUtil getRecordUtil(IOContext context) {
 		return new RecordUtil(context);
 	}
-	
-	/*
-	public static CachePolicyUtil getPolicyUtil(IReader reader, IWriter writer, ISearch search) {
-		return new CachePolicyUtil(reader, writer, search);
-	}
-	*/
 	
 	public static CachePolicyUtil getPolicyUtil(IOContext context) {
 		return new CachePolicyUtil(context);

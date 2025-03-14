@@ -171,7 +171,7 @@ public class RestServiceConfig extends ResourceConfig{
     	
 		private void initializeAccountManager(){
 
-			AuditUtil.setLogToConsole(false);
+			AuditUtil.setLogToConsole(Boolean.parseBoolean(context.getInitParameter("logToConsole")));
 			
 			logger.info("Initializing Account Manager");
 			String streamCut = context.getInitParameter("stream.cutoff");
