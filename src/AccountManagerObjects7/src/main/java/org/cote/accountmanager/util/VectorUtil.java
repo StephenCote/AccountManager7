@@ -22,6 +22,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
@@ -55,14 +56,14 @@ public class VectorUtil {
 	private static Pattern tablePat = Pattern.compile("\\$\\{tableName\\}");
 	private static final String HYBRID_SQL = """
 WITH semantic_search AS (
-    SELECT id, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
+    SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
     FROM ${tableName}
     WHERE vectorReference = ? and vectorReferenceType = ?
     ORDER BY embedding <=> ?
     LIMIT 20
 ),
 keyword_search AS (
-    SELECT id, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC), content, chunk
+    SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC), content, chunk
     FROM ${tableName}, plainto_tsquery('english', ?) query
     WHERE to_tsvector('english', content) @@ query
     ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC
@@ -70,6 +71,10 @@ keyword_search AS (
 )
 SELECT
     COALESCE(semantic_search.id, keyword_search.id) AS id,
+    COALESCE(semantic_search.keyId, keyword_search.keyId) AS keyId,
+    COALESCE(semantic_search.vaultId, keyword_search.vaultId) AS vaultId,
+    COALESCE(semantic_search.vaulted, keyword_search.vaulted) AS vaulted,
+    COALESCE(semantic_search.organizationId, keyword_search.organizationId) AS organizationId,
     COALESCE(semantic_search.vectorReference, keyword_search.vectorReference) AS vectorReference,
     COALESCE(semantic_search.vectorReferenceType, keyword_search.vectorReferenceType) AS vectorReferenceType,
     COALESCE(1.0 / (? + semantic_search.rank), 0.0) +
@@ -120,30 +125,38 @@ LIMIT ?
 	        queryStmt.setDouble(7, k);
 	        queryStmt.setInt(8, limit);
 	        ResultSet rs = queryStmt.executeQuery();
+	        MemoryReader mem = new MemoryReader();
 	        while (rs.next()) {
-	        	content.add(newVectorStore(rs.getLong("id"), rs.getLong("vectorReference"), rs.getString("vectorReferenceType"), rs.getDouble("score"), rs.getInt("chunk"), rs.getString("content")));
+	        	BaseRecord vs = newVectorStore(rs.getLong("id"),  rs.getString("keyId"), rs.getString("vaultId"), rs.getBoolean("vaulted"), rs.getLong("organizationId"), rs.getLong("vectorReference"), rs.getString("vectorReferenceType"), rs.getDouble("score"), rs.getInt("chunk"), rs.getString("content"));
+	        	mem.read(vs);
+	        	content.add(vs);
 	        }
 	        rs.close();
 		}
-		catch(SQLException | TranslateException | FieldException | ModelNotFoundException e) {
+		catch(SQLException | TranslateException | FieldException | ModelNotFoundException | ReaderException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
 		return content;
 	}
 	
-	private static BaseRecord newVectorStore(long id, long ref, String refType, double score, int chunk, String content) throws FieldException, ModelNotFoundException {
+	private static BaseRecord newVectorStore(long id, String keyId, String vaultId, boolean vaulted, long orgId, long ref, String refType, double score, int chunk, String content) throws FieldException, ModelNotFoundException {
 		BaseRecord vs = RecordFactory.newInstance(ModelNames.MODEL_VECTOR_MODEL_STORE);
 		vs.setValue(FieldNames.FIELD_ID, id);
 		if(ref > 0L && refType != null) {
 			BaseRecord vsr = RecordFactory.newInstance(refType);
-			vsr.setValue(FieldNames.FIELD_ID, id);
+			vsr.setValue(FieldNames.FIELD_ID, ref);
 			vs.setValue(FieldNames.FIELD_VECTOR_REFERENCE, vsr);
 		}
+		vs.setValue(FieldNames.FIELD_KEY_ID, keyId);
+		vs.setValue(FieldNames.FIELD_VAULT_ID, vaultId);
+		vs.setValue(FieldNames.FIELD_VAULTED, vaulted);
+		vs.setValue(FieldNames.FIELD_ORGANIZATION_ID, orgId);
 		vs.setValue(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, refType);
 		vs.setValue(FieldNames.FIELD_SCORE, score);
 		vs.setValue(FieldNames.FIELD_CHUNK, chunk);
 		vs.setValue(FieldNames.FIELD_CONTENT, content);
+		
 		return vs;
 	}
 

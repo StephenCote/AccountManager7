@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
 	<groupId>org.cote.accountmanager</groupId>
@@ -21,10 +23,10 @@
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
 	</properties>
 	<repositories>
-	    <repository>
-        <id>djl.ai</id>
-        <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-    </repository>
+		<repository>
+			<id>djl.ai</id>
+			<url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+		</repository>
 
 		<repository>
 			<id>sonatypeSnapshots</id>
@@ -122,9 +124,10 @@
 				</dependencies>
 
 				<configuration>
-				  <environmentVariables> 
-      <PATH>C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64;${java.library.path}</PATH> 
-    </environmentVariables> 
+					<environmentVariables>
+						<PATH>
+							C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64;${java.library.path}</PATH>
+					</environmentVariables>
 					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
@@ -139,9 +142,10 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestSchemaModification.java</exclude>
-						-->
 						<exclude>**/TestDocumentSearch.java</exclude>
+						-->
+						<exclude>**/TestSchemaModification.java</exclude>
+						
 						<exclude>**/TestSystemTasks.java</exclude>
 						<exclude>**/TestProfile.java</exclude>
 						<exclude>**/TestChat2.java</exclude>
@@ -154,8 +158,8 @@
 						<exclude>**/TestVectorStore.java</exclude>
 						<exclude>**/TestVectorIndex.java</exclude>
 						<exclude>**/TestLangChain.java</exclude>
-						<exclude>**/TestOlioRules.java</exclude>	
-						
+						<exclude>**/TestOlioRules.java</exclude>
+
 						<exclude>**/TestQueryPlan.java</exclude>
 						<exclude>**/TestH2Database.java</exclude>
 						<exclude>**/TestOlio2.java</exclude>
@@ -164,7 +168,7 @@
 						<!-- Repeatable Set -->
 						<exclude>**/TestRealm.java</exclude>
 						<exclude>**/TestNestedStructures.java</exclude>
-						
+
 						<exclude>**/TestQdrant.java</exclude>
 						<exclude>**/TestCondensedModel.java</exclude>
 						<exclude>**/TestBulkOperation.java</exclude>
@@ -172,8 +176,8 @@
 						<exclude>**/TestModelLayout.java</exclude>
 						<exclude>**/TestJournal.java</exclude>
 						<exclude>**/TestVaultFields.java</exclude>
-						
-						
+
+
 						<exclude>**/TestVault.java</exclude>
 						<exclude>**/TestFieldLock.java</exclude>
 						<exclude>**/TestDBPerformance.java</exclude>
@@ -183,7 +187,7 @@
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestStartup.java</exclude>
 						<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
-						
+
 						<exclude>**/TestObjectPolicy.java</exclude>
 						<exclude>**/TestObjectConstruct.java</exclude>
 						<exclude>**/TestAudit.java</exclude>
@@ -202,7 +206,7 @@
 
 
 						<!-- Situational Tests -->
-						
+
 						<exclude>**/TestPGDatabase.java</exclude>
 
 						<!-- Not intended to be regularly run -->
@@ -385,37 +389,37 @@
 			<artifactId>log4j-web</artifactId>
 			<version>2.24.3</version>
 		</dependency>
-<dependency>
-    <groupId>org.apache.pdfbox</groupId>
-    <artifactId>pdfbox</artifactId>
-    <version>3.0.3</version>
-</dependency>
+		<dependency>
+			<groupId>org.apache.pdfbox</groupId>
+			<artifactId>pdfbox</artifactId>
+			<version>3.0.3</version>
+		</dependency>
 
-<dependency>
-    <groupId>org.apache.tika</groupId>
-    <artifactId>tika-core</artifactId>
-    <version>3.1.0</version>
-</dependency>
+		<dependency>
+			<groupId>org.apache.tika</groupId>
+			<artifactId>tika-core</artifactId>
+			<version>3.1.0</version>
+		</dependency>
 
-<dependency>
-    <groupId>org.apache.tika</groupId>
-    <artifactId>tika-parsers</artifactId>
-    <version>3.1.0</version>
-    <type>pom</type>
-</dependency>
+		<dependency>
+			<groupId>org.apache.tika</groupId>
+			<artifactId>tika-parsers</artifactId>
+			<version>3.1.0</version>
+			<type>pom</type>
+		</dependency>
 
-<dependency>
-    <groupId>org.apache.tika</groupId>
-    <artifactId>tika-parser-microsoft-module</artifactId>
-    <version>3.1.0</version>
-</dependency>
+		<dependency>
+			<groupId>org.apache.tika</groupId>
+			<artifactId>tika-parser-microsoft-module</artifactId>
+			<version>3.1.0</version>
+		</dependency>
 
-<dependency>
-    <groupId>org.apache.tika</groupId>
-    <artifactId>tika-parsers-standard-package</artifactId>
-    <version>3.1.0</version>
-</dependency>
-	
+		<dependency>
+			<groupId>org.apache.tika</groupId>
+			<artifactId>tika-parsers-standard-package</artifactId>
+			<version>3.1.0</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.apache.commons</groupId>
 			<artifactId>commons-lang3</artifactId>
@@ -585,7 +589,7 @@
     <scope>runtime</scope>
 </dependency>
 -->
-<!--
+		<!--
 		<dependency>
 			<groupId>ai.djl.mxnet</groupId>
 			<artifactId>mxnet-model-zoo</artifactId>
@@ -618,14 +622,14 @@
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-model-zoo</artifactId>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-engine</artifactId>
 			<scope>runtime</scope>
 		</dependency>
-		
-				<dependency>
+
+		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-jni</artifactId>
 			<scope>runtime</scope>
@@ -638,7 +642,7 @@
 			<scope>runtime</scope>
 		</dependency>
 		-->
-		
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-native-cu118</artifactId>
@@ -646,8 +650,8 @@
 			<version>2.0.1</version>
 			<scope>runtime</scope>
 		</dependency>
-			
-<!--
+
+		<!--
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-native-cu124</artifactId>
@@ -658,8 +662,7 @@
 	-->
 
 
-
-<!--
+		<!--
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-native-auto</artifactId>
@@ -680,8 +683,8 @@
   <version>0.3.3</version>
 </dependency>
 -->
-<!-- LangChain -->
-<!--
+		<!-- LangChain -->
+		<!--
         <dependency>
             <groupId>dev.langchain4j</groupId>
             <artifactId>langchain4j</artifactId>

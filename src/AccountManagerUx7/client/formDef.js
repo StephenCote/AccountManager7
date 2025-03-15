@@ -616,7 +616,7 @@
             reimage: {
                 format: "button",
                 layout: "one",
-                icon: 'run_circle',
+                icon: 'polyline',
                 requiredAttributes: ["objectId"],
                 field: {
                     label: "Vectorize",

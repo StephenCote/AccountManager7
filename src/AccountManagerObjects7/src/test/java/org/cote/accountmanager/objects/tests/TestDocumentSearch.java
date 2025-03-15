@@ -1,6 +1,7 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -49,6 +50,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
+import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.junit.Test;
 import org.w3c.dom.Document;
@@ -99,6 +101,11 @@ public class TestDocumentSearch extends BaseTest {
 		
 		ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 0);
 
+		List<BaseRecord> vecs = VectorUtil.find(doc, "What are the names of Mark's kids?", 10, 0.6);
+		assertTrue("Expected at least one result", vecs.size() > 0);
+		logger.info("Content: " + vecs.get(0).get("content"));
+		logger.info(vecs.get(0).toFullString());
+		
 	}
 
 
