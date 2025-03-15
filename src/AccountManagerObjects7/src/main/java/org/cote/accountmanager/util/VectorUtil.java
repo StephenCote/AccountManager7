@@ -54,6 +54,9 @@ public class VectorUtil {
 	};
 	
 	private static Pattern tablePat = Pattern.compile("\\$\\{tableName\\}");
+	
+	/// Derived from PG Vector example hybrid search query
+	///
 	private static final String HYBRID_SQL = """
 WITH semantic_search AS (
     SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk

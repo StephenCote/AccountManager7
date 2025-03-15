@@ -35,6 +35,8 @@ import ai.djl.repository.zoo.ZooModel;
 import ai.djl.translate.TranslateException;
 public class TestVectorIndex extends BaseTest {
 	
+	/// Derived from PG Vector example hybrid search query
+	///
 	 public static final String HYBRID_SQL = """
 	    WITH semantic_search AS (
 	        SELECT id, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
