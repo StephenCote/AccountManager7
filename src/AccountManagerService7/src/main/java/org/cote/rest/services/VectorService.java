@@ -69,7 +69,7 @@ public class VectorService {
 	
 	@RolesAllowed({"user"})
 	@POST
-	@Path("/reference/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/{chunkType:[A-Za-z\\.]+}/{chunkSize:[\\d]+}")
+	@Path("/reference/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response vectorReference(String statement, @PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("chunkType") ChunkEnumType chunkType, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);

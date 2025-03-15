@@ -2620,7 +2620,7 @@
 
     async function vectorize(object, inst) {
         console.log("Vectorizing ...");
-        let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/CHAPTER/0", withCredentials: true });
+        let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/SENTENCE/10", withCredentials: true });
 
         if (x && x != null) {
             console.log("Vectorized: " + x);

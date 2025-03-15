@@ -352,7 +352,9 @@ LIMIT ?
     			continue;
     		}
     		if(tmp.startsWith("Chapter ")) {
-    			vchunks.addAll(chunkChapter(buff.toString(), chapterTitle, chapter, chunkSize));
+    			vchunks.addAll(
+    				chunkChapter(buff.toString(), chapterTitle, chapter, chunkSize)
+    			);
     			buff = new StringBuilder();
     			chapter++;
     			chapterTitle = tmp;
