@@ -61,11 +61,19 @@
         ])
     }
 
+    function getValidationErrorLabel(txt){
+        return m("span", {class: "p-1 block text-sm rounded bg-red-400"}, txt)
+    }
+
     function getFieldView(fld, inst) {
         let f = inst.field(fld);
         let ff = inst.formField(fld);
         if(ff && ff.hide){
             return m("span", "");
+        }
+        let annot = "";
+        if(inst.validationErrors[fld]){
+            annot = getValidationErrorLabel(inst.validationErrors[fld]);
         }
         return m("div", [
             m("label", {
@@ -74,7 +82,8 @@
             }, [
                 inst.label(fld)
             ]),
-            (f ? getField(fld, inst) : m("span", { class: "bold" }, "Invalid field: " + fld))
+            (f ? getField(fld, inst) : m("span", { class: "bold" }, "Invalid field: " + fld)),
+            annot
         ]);
     }
     function getField(fld, inst) {
@@ -223,8 +232,8 @@
     function getViewFields(inst) {
         if (typeof inst == "string") inst = am7model.newInstance(inst);
         return getFormFieldNames(inst.model.name, inst.form);
-
     }
+
     function getFormFieldNames(model, form) {
         let a = [];
         if (!form || !form.fields) return a;
@@ -400,6 +409,7 @@
     }
 
     let am7view = {
+        errorLabel: getValidationErrorLabel,
         form,
         fieldView: getFieldView,
         formField: getFormField,

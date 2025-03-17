@@ -897,7 +897,7 @@
         }
         else v = getListView();
         if (vnode.attrs.pickerMode || vnode.attrs.embeddedMode) return v;
-        return [v, page.loadDialog()];
+        return [v, page.loadDialog(), page.loadToast()];
       }
     };
     window.dbgList = listPage;

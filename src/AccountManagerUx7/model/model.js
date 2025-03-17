@@ -207,6 +207,9 @@
 			case "datetime":
 				defVal = (new Date()).getTime();
 				break;
+			case "color":
+			case "flex":
+				break;
 			default:
 				console.warn("Unhandled field type", field.type, field);
 				break;
@@ -283,104 +286,221 @@
           if (!v[i][am7model.jsonModelKey]) v[i][am7model.jsonModelKey] = m;
         }
       }
-	}
-
-	am7model.validateInstance = function (o) {
-		let r = o.model.fields.map((f) => am7model.validateField(o, f.name));
-
-		return r;
 	};
 
-	am7model.validateField = function (o, i) {
+	am7model.applyModelNames = function(o){
+		let af = am7model.getModelFields(o[am7model.jsonModelKey]);
+		af.forEach(f => {
+			if(f.type == "model" && o[f.name] && !o[f.name][am7model.jsonModelKey]){
+				o[f.name][am7model.jsonModelKey] = f.baseModel;
+				applyModelNames(o[f.name]);
+			}
+		});
+	}
+
+	/// A more generic version of the mergeEntity function in Object
+	am7model.prepareEntity = function(e, baseModel){
+            let ue = am7model.newPrimitive(e.model || baseModel);
+            if(!e[am7model.jsonModelKey]) e[am7model.jsonModelKey] = ue[am7model.jsonModelKey] || baseModel;
+            if(!e[am7model.jsonModelKey]){
+                console.warn("Cannot find model", e);
+                return;
+            }
+            let x = Object.assign(ue, e);
+            let af = am7model.getModelFields(e[am7model.jsonModelKey]);
+			/*
+            af.forEach(f => {
+                if((f.type == 'list' || f.type == 'model') && f.foreign && f.baseModel){
+                    if(f.type == 'model' && !ue[f.name] && e[f.name]){
+                        ue[f.name] = prepareEntity(e[f.name], f.baseModel);
+                    }
+                    else if(f.type == 'list'){
+                        ue[f.name] = ue[f.name].map(e => prepareEntity(e, f.baseModel));
+                    }
+                    if(ue[f.name] ){
+                        am7model.mergeEntity(entity[f.name], e[f.name], f.baseModel);
+                    }
+                }
+            });
+			*/
+            am7model.applyModelNames(x);
+			return x;
+        };
+	
+	am7model.validationRule = function(n){
+		let r = am7model.validationRules.filter(r => r.name == n);
+		return r.length ? r[0] : undefined;
+	};
+
+	am7model.validateInstance = function (o) {
+		let r = o.model.fields.map((f) => am7model.validateField(o, f, f.rules));
+		return r;
+	};
+	
+	let vrcache = {};
+
+	am7model.getValidationRuleInstance = function (ru){
+		let oru = ru;
+		let vr = oru;
+		let isStr = typeof oru == "string"
+		if(isStr){
+			if(vrcache[oru]){
+				return vrcache[oru]
+			}
+			/// System rule references start with $, such as $rule
+			/// Tokenized system rules are in the format of ${rule}, with the intent of being dynamically substituded when the rule is loaded on the backend
+			/// Otherwise, rules would follow the foreign list model
+			/// Since this is  a lookup, anything starting with $ is a system rule and $,{,} will be stripped
+			if(oru.match(/^\$/)){
+				oru = oru.replace(/[\$\{\}]*/g,"");
+			}
+			vr = am7model.validationRule(oru);
+		}
+		let nvr = am7model.prepareEntity(vr, "policy.validationRule")
+		let vri = am7model.prepareInstance(nvr, am7model.forms.validationRule);
+
+		if(isStr){
+			vrcache[ru] = vri;
+		}
+		return vri;
+	};
+
+	am7model.validateField = function (o, f, rules) {
 
 		var r = 0,
 			ir = 1,
 			tir,
-			pid = 0,
-			po,
-			v,
-			c
-			;
+			re = 1
+		;
 
-		if (DATATYPES.TS(i)) pid = i;
-		else pid = o.getAttribute("pattern-id");
+		let v = o.api[f.name]();
+		let err;
+		switch(f.type){
+			case "enum":
+			case "string":
 
-		/* return true if there is no pattern-id */
-		if (!pid) {
-			_m.sendMessage("Skipping empty pattern", "200.1");
-			return 1;
+				if(f.required && (v == undefined || v.length == 0)) {
+					err = "Field is required";
+					re = 0;
+					break;
+				}
+				if(f.maxLength > 0 && v != undefined && v.length > f.maxLength) {
+					err = "Exceeds maximum length " + f.maxLength;
+					re = 0;
+					break;
+				}
+				if(f.minLength && (v == undefined || v.length < f.minLength)){
+					err = "Does not meet the minimum length " + f.minLength;
+					re = 0;
+					break;
+				}
+				if(f.limit?.length > 0 && !f.limit.includes(v)) {
+					err = "Not defined in the limit", f.limit;
+					re = 0;
+					break;
+					
+				}
+				break;
+			case "long":
+			case "int":
+			case "double":
+				if(f.required && (v == undefined || v == 0)) {
+					err = "Field is required";
+					re = 0;
+					break;
+				}
+				if(f.validateRange && (v < f.minValue || v > f.maxValue)) {
+					err = "Outside value range " + f.minValue + " - " + f.maxValue;
+					re = 0;
+					break;
+				}
+			default:
+				break;
 		}
-
-		po = t.getPattern(pid);
-
-		/* return false if the pattern_id was invalid/not loaded */
-		if (!DATATYPES.TO(po)) {
-			_m.sendMessage("Pattern id '" + pid + "' is invalid in validateField.", "200.4", 1);
+		if(re == 0){
+			o.validationErrors[f.name] = err;
 			return 0;
 		}
-
-		for (c = 0; c < po.include.length; c++) {
-			/*
-				imported patterns only get applied when they return false and
-				the current return value is true;
-			*/
-			tir = t.validateField(o, po.include[c]);
-			if (ir && !tir) ir = 0;
-		}
-
-		v = t._getFieldValue(o);
-		/*
-			If the field value is 0, then the field type was not handled.
-			This is not a bug, and 0 should be fine as an integer because field values will be 
-			strings.
-		*/
-		/* check typeof == "number" because "" == 0*/
-		if (DATATYPES.TN(v) && v == 0) {
+		if (!rules || !rules.length) {
 			return 1;
 		}
-		if (DATATYPES.TU(v)) {
-			_m.sendMessage("Value is undefined for " + n, "200.4", 1);
-			return 0;
-		}
+		for(let ri in rules){
+			let ru = rules[ri];
+			let vr = am7model.getValidationRuleInstance(ru);
+			if (!vr) {
+				o.validationErrors[f.name] = "Invalid rule: " + ru;
+				return 0;
+			}
 
-		if (po.match) {
-			try {
-				re = new RegExp(po.match);
-				switch (po.type) {
-					case "replace":
-						r = 1;
-						if (DATATYPES.TS(po.replace)) {
-							v = v.replace(re, po.replace);
-							t._setFieldValue(o, v);
-						}
-						break;
-					case "bool":
-						HemiEngine.logDebug("Validating " + po.match + " against " + v);
-						if (
-							/*
-								Obviously, an allow-null won't work if the validation
-								pattern includes an import to a non-empty string.
-							*/
-							(po.allow_null && v.length == 0)
-							||
-							(v.match(re) != null) == po.comp
-						) {
-							r = 1;
-						}
-						break;
+			if(vr.api.rules()?.length) {
+				tir = am7model.validateField(o, f, vr.api.rules());
+				if (ir && !tir){
+					ir = 0;
+					break;
 				}
 			}
-			catch (e) {
-				_m.sendMessage("Error in validator.validateField:: " + (e.description ? e.description : e.message), "200.4", 1);
+
+
+
+			/* check typeof == "number" because "" == 0*/
+			if (
+				(f.type == "int" || f.type == "double" || f.type == "float") && v == f.default
+
+			 ){
+				return 1;
+			}
+
+			if (v == undefined) {
+				o.validationErrors[f.name] = "Field is empty or undefined";
+				return 0;
+			}
+	
+			if (vr.api.expression()) {
+				try {
+					let re = new RegExp(vr.api.expression());
+					switch (vr.api.type()) {
+						case "replacement":
+							r = 1;
+							if (typeof vr.api.replacementValue() == "string") {
+								v = v.replace(re, vr.api.replacementValue());
+								o.api[f.name](v);
+							}
+							break;
+						case "boolean":
+							if (
+								(v.allowNull && v.length == 0)
+								||
+								(v.match(re) != null) == vr.api.comparison()
+							) {
+								r = 1;
+							}
+							else{
+								o.validationErrors[f.name] = "Invalid value for " + vr.api.name();
+							}
+							break;
+						case "none":
+							break;
+						default:
+							console.warn("Unhandled expression type: " + v.type);
+							break;
+					}
+				}
+				catch (e) {
+					console.error("Error in validateField:: " + (e.description ? e.description : e.message));
+				}
+			}
+			if(vr.api.type() == "none") r = 1;
+			/*
+				if the return value is true, but the include return value is false
+				set the return value to false
+			*/
+			if (r && !ir) r = 0;
+			if(!r){
+				console.error("Validation failed for " + f.name + " with value " + v);
+				break;
 			}
 		}
 
-		if (po.type == "none") r = 1;
-		/*
-			if the return value is true, but the include return value is false
-			set the return value to false
-		*/
-		if (r && !ir) r = 0;
 
 		return r;
 	};
@@ -561,7 +681,10 @@
 			designers: {},
 			viewProperties: {},
 			api: {},
+			validateField: {},
 			changes: [],
+			validations: {},
+			validationErrors: {},
 			resetChanges: () => {
 				inst.changes = [];
 			},
@@ -714,8 +837,6 @@
 				if (!f.readOnly && v.length) {
 					let val = decorateInOut(true, v[0], f);
 					inst.entity[f.name] = val;
-					// if(f.name == 'dataBytesStore') console.warn(f.name, val);
-					//if(!inst.changes.includes(f.name)) inst.changes.push(f.name);
 					inst.change(f.name);
 					report('update', f.name, inst);
 				}
@@ -726,7 +847,6 @@
 				if (v.length) {
 					let p = pn.split(".");
 					let op = p[0];
-					//inst.changes.push(op);
 					inst.change(op);
 					let o = inst.entity;
 
@@ -734,7 +854,6 @@
 						o = o[op];
 						op = p[i];
 					}
-					// console.log(o, op, v[0]);
 					o[p[p.length - 1]] = v[0];
 				}
 			};
@@ -763,7 +882,27 @@
 				inst.decorate(f.name, numberDecorator);
 			}
 
+			inst.validateField[f.name] = () => {
+				let r = am7model.validateField(inst, f, f.rules);
+				inst.validations[f.name] = r == 1;
+				if(r == 0 && !inst.validationErrors[f.name]){
+					inst.validationErrors[f.name] = "Invalid value for " + f.name;
+				}
+				else if (r == 1){
+					delete inst.validationErrors[f.name];
+				}
+				return r == 1;
+			}
 		});
+		
+		inst.validate = () => {
+			let fv = [];
+			for(let fi in inst.model.fields){
+				let f = inst.model.fields[fi];
+				fv.push(inst.validateField[f.name]());
+			};
+			return !fv.includes(false);
+		}
 
 		inst.handleChange = (n, fh) => {
 			let f = inst.field(n);
@@ -781,6 +920,7 @@
 				inst.api[n](v);
 				if (fh) fh(e);
 				inst.action(n);
+				inst.validateField[n]();
 			}
 		}
 

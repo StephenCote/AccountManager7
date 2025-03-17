@@ -612,7 +612,10 @@
             let view = [];
             let disabled = false;
             let fieldClass = "";
-            if(field.readOnly || fieldView.readOnly){
+            if(inst.validationErrors[name]){
+                fieldClass += "field-error";
+            }
+            else if(field.readOnly || fieldView.readOnly){
                 disabled = true;
                 fieldClass += "field-disabled";
             }
@@ -701,7 +704,10 @@
 
             let dnd = page.components.dnd.props(inst);
             let show = am7view.showField(inst, fieldView);
-
+            let annot = "";
+            if(inst.validationErrors[name]){
+                annot = am7view.errorLabel(inst.validationErrors[name]);
+            }
             if(!show) fieldClass += " hidden";
             switch(format){
                 case "blank":
@@ -934,6 +940,7 @@
                     console.error("Handle: " + format);
                     break;
             }
+            view.push(annot);
             return view;
         }
         async function doFieldOpen(field){
@@ -1571,10 +1578,8 @@
                     }
                 }
             });
-
             
             applyModelNames(x);
-
             if(!s) resetEntity(x);
             // m.redraw();
         };

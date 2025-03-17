@@ -46,6 +46,7 @@
     };
  
     let inst = am7model.newInstance("login", am7model.forms.login);
+    window.dbgInst = inst;
     inst.action("login", doLogin);
 
     function doLogin(){

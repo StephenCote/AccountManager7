@@ -92,11 +92,11 @@
     }
 
 
-    window.dbgCfg = chatCfg;
+    // window.dbgCfg = chatCfg;
     let inst = am7model.newInstance("chatSettings", am7model.forms.chatSettings);
     inst.api.session(sessionName());
     inst.api.sessions(inst.api.session());
-    window.dbgInst = inst;
+    // window.dbgInst = inst;
     inst.action("doPeek", doPeek);
     inst.action("doChat", doChat);
 
@@ -665,7 +665,7 @@
 
       view: function (vnode) {
         let v = getChatView(vnode);
-        return [v, page.loadDialog()];
+        return [v, page.loadDialog(), page.loadToast()];
       }
     };
     return chat;

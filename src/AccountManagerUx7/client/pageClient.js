@@ -52,11 +52,41 @@
     let uidStub = "xxxxxxxx-xxxx-9xxx-yxxx-xxxxxxxxxxxx";
     let luidStub = "xxxx-xxxx";
 
+    let toast = [];
+    let toastConfig = {
+        info: {
+            ico: "info",
+            style: "text-gray-500 bg-white",
+            icoStyle: "text-blue-500",
+            timeout: 5000
+        },
+        success: {
+            ico: "check",
+            style: "text-gray-500 bg-green-200",
+            icoStyle: "text-black",
+            timeout: 5000
+        },
+        warn: {
+            ico: "warning",
+            style: "bg-yellow-200 text-black",
+            icoStyle: "text-black",
+            timeout: 10000
+        },
+        error: {
+            ico: "stop",
+            style: "bg-red-200 text-black",
+            icoStyle: "text-black",
+            timeout: 15000
+        }
+    };
+
     let page = {
         profile,
         confirm,
         imageView,
         loadDialog,
+        toast: addToast,
+        toasts: () => toast,
         loadToast,
         setDialog,
         endDialog,
@@ -505,81 +535,67 @@
         m.redraw();
     }
 
-    let toast = [];
-    function addToast(type, msg){
-        toast.push({
-            type: type,
-            message: msg,
-            ico: "info"
+    
+    function removeToast(id){
+        toast = toast.filter((t)=>{
+            return t.id != id;
         });
+    }
+    function burnToast(nt){
+        let o = document.querySelector("#toast-box-" + nt.id);
+        if(o){
+            o.className = "transition transition-0 toast-box " + toastConfig[nt.type].style;
+        }
+        window.setTimeout(()=>{
+            nt.visible = false;
+            removeToast(nt.id);
+            m.redraw();
+        }, 300);
+    }
+
+    function addToast(type, msg, timeout){
+        let nt = {
+            id: page.luid(),
+            type,
+            message: msg,
+            visible: false,
+            expiry: timeout || 5000
+        };
+        toast.push(nt);
+        window.setTimeout(()=>{
+            nt.visible = true;
+            let o = document.querySelector("#toast-box-" + nt.id);
+            if(o){
+                o.className = "transition transition-100 toast-box " + toastConfig[nt.type].style;
+            }
+        }, 10);
+        window.setTimeout(()=>{
+           burnToast(nt);
+        }, nt.expiry);
         m.redraw();
     }
-
+    /// dark:text-gray-500 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700
     function loadToast(){
-        // transition-full transition-0
-        return toast.map((t)=>{
-            let closeBtn = m("button", {type: "button", class: "ms-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex items-center justify-center h-8 w-8 dark:text-gray-500 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700", "data-dismiss-target": "#toast-success", "aria-label": "Close"}, 
+        // transition-full transition-0 transition-100
+        let items = toast.map((t)=>{
+            let cfg = toastConfig[t.type];
+            let closeBtn = m("button", {onclick: ()=>{ burnToast(t);}, type: "button", class: "ms-auto -mx-1.5 -my-1.5  rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex items-center justify-center h-8 w-8 "}, 
                 m("span", {class: "material-symbols-outlined"}, "close")
             );
-
-            return m("div", {class: "toast-container transition transition-0"}, [
-                m("div", {class: "toast-box"}, [
-                    m("div", {class: "ico-box"}, [
-                        m("span", {class: "material-symbols-outlined"}, t.ico)
-                    ]),
-                    m("div", {class: "toast-text"}, t.message),
-                    closeBtn
-                ])
+            return m("div", {id: "toast-box-" + t.id, class: "transition transition-" + (t.visible ? "100":"0") + " toast-box " + cfg.style}, [
+                m("div", {class: cfg.icoStyle + " ico-box"}, [
+                    m("span", {class: "material-symbols-outlined"}, cfg.ico)
+                ]),
+                m("div", {class: "toast-text"}, t.message),
+                closeBtn
             ]);
         });
+        return (items.length == 0 ? "" : m("div", {class: "toast-container"}, [
+            items
+        ]));
+
     }
-/*
-<div id="toast-success" class="flex items-center w-full max-w-xs p-4 mb-4 text-gray-500 bg-white rounded-lg shadow-sm dark:text-gray-400 dark:bg-gray-800" role="alert">
-    <div class="inline-flex items-center justify-center shrink-0 w-8 h-8 text-green-500 bg-green-100 rounded-lg dark:bg-green-800 dark:text-green-200">
-        <svg class="w-5 h-5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5Zm3.707 8.207-4 4a1 1 0 0 1-1.414 0l-2-2a1 1 0 0 1 1.414-1.414L9 10.586l3.293-3.293a1 1 0 0 1 1.414 1.414Z"/>
-        </svg>
-        <span class="sr-only">Check icon</span>
-    </div>
-    <div class="ms-3 text-sm font-normal">Item moved successfully.</div>
-    <button type="button" class="ms-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex items-center justify-center h-8 w-8 dark:text-gray-500 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700" data-dismiss-target="#toast-success" aria-label="Close">
-        <span class="sr-only">Close</span>
-        <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14">
-            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
-        </svg>
-    </button>
-</div>
-<div id="toast-danger" class="flex items-center w-full max-w-xs p-4 mb-4 text-gray-500 bg-white rounded-lg shadow-sm dark:text-gray-400 dark:bg-gray-800" role="alert">
-    <div class="inline-flex items-center justify-center shrink-0 w-8 h-8 text-red-500 bg-red-100 rounded-lg dark:bg-red-800 dark:text-red-200">
-        <svg class="w-5 h-5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5Zm3.707 11.793a1 1 0 1 1-1.414 1.414L10 11.414l-2.293 2.293a1 1 0 0 1-1.414-1.414L8.586 10 6.293 7.707a1 1 0 0 1 1.414-1.414L10 8.586l2.293-2.293a1 1 0 0 1 1.414 1.414L11.414 10l2.293 2.293Z"/>
-        </svg>
-        <span class="sr-only">Error icon</span>
-    </div>
-    <div class="ms-3 text-sm font-normal">Item has been deleted.</div>
-    <button type="button" class="ms-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex items-center justify-center h-8 w-8 dark:text-gray-500 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700" data-dismiss-target="#toast-danger" aria-label="Close">
-        <span class="sr-only">Close</span>
-        <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14">
-            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
-        </svg>
-    </button>
-</div>
-<div id="toast-warning" class="flex items-center w-full max-w-xs p-4 text-gray-500 bg-white rounded-lg shadow-sm dark:text-gray-400 dark:bg-gray-800" role="alert">
-    <div class="inline-flex items-center justify-center shrink-0 w-8 h-8 text-orange-500 bg-orange-100 rounded-lg dark:bg-orange-700 dark:text-orange-200">
-        <svg class="w-5 h-5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
-            <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM10 15a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm1-4a1 1 0 0 1-2 0V6a1 1 0 0 1 2 0v5Z"/>
-        </svg>
-        <span class="sr-only">Warning icon</span>
-    </div>
-    <div class="ms-3 text-sm font-normal">Improve password difficulty.</div>
-    <button type="button" class="ms-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-900 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex items-center justify-center h-8 w-8 dark:text-gray-500 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700" data-dismiss-target="#toast-warning" aria-label="Close">
-        <span class="sr-only">Close</span>
-        <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14">
-            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
-        </svg>
-    </button>
-</div>
-*/
+
     function loadDialog(){
         if(!dialogCfg || !dialogUp) return "";
         return createDialog(dialogCfg.size, dialogCfg.entityType, dialogCfg.data, dialogCfg.label, dialogCfg.confirm, dialogCfg.cancel);

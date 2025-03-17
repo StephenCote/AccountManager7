@@ -21,7 +21,7 @@
                 m("div",{class : "content-main"},[
                     page.contentRouter()
                 ])
-            ]), page.loadDialog()];
+            ]), page.loadDialog(), page.loadToast()];
             return vnode;
         }
     };
