@@ -594,6 +594,7 @@
     tagf.type = "enum";
     tagf.default = am7model.enums.modelNames[0];
     tagf.enum = am7model.enums.modelNames.sort();
+
     forms.data = {
         label: "Data",
         commands: {
@@ -648,6 +649,42 @@
         },
         //["name", "description", "createdDate", "modifiedDate", "expiryDate", "mimeType", "dataBytesStore"],
         forms: ["groupdateinfo", "tags", "ctlattributes", "execute"]
+    };
+
+    am7model.models.push(
+        {
+            name: "vectorOptions", icon: "polyline", fields: [
+                {
+                    name: "chunkType",
+                    label: "Chunk Type",
+                    type: 'string',
+                    baseType: "string",
+                    default: "word"
+                },
+                {
+                    name: "chunk",
+                    label: "Chunk",
+                    type: 'int',
+                    default: 25
+                }
+            ]
+        }
+    );
+
+    forms.vectorOptions = {
+        label: "Vector Options",
+        fields: {
+            chunkType: {
+                layout: 'one',
+                field: {
+                    type: 'list',
+                    limit: ['Sentence', 'Chapter', 'Word']
+                }
+            },
+            chunk: {
+                layout: 'one'
+            }
+        }
     };
 
     forms.control = {
@@ -2619,13 +2656,24 @@
     };
 
     async function vectorize(object, inst) {
-        console.log("Vectorizing ...");
-        let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/SENTENCE/10", withCredentials: true });
-
-        if (x && x != null) {
-            console.log("Vectorized: " + x);
-            m.redraw();
-        }
+        let entity = am7model.newPrimitive("vectorOptions");
+        let cfg = {
+            label: "Vector Options",
+            entityType: "vectorOptions",
+            size: 50,
+            data: {entity},
+            confirm: async function (data) {
+                let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, withCredentials: true });
+                if (x && x != null) {
+                    console.log("Vectorized: " + x);
+                }
+                page.endDialog();
+            },
+            cancel: async function (data) {
+                page.endDialog();
+            }
+        };
+        page.setDialog(cfg);
     }
 
 
@@ -3256,7 +3304,7 @@
     };
 
     forms.profile = {
-        label: "Personality",
+        label: "Profile",
         fields: {
             portrait: {
                 layout: 'one',

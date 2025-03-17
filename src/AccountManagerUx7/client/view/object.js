@@ -2351,8 +2351,8 @@
                 if(vnode.attrs.freeForm){
                     return getForm();
                 }                    
-                else if(embeddedMode) return [getObjectViewInner(), page.loadDialog()];
-                else return [getObjectView(), page.loadDialog()];
+                else if(embeddedMode) return [getObjectViewInner(), page.loadDialog(), page.loadToast()];
+                else return [getObjectView(), page.loadDialog(), page.loadToast()];
             }
         };
         return objectPage;

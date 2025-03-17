@@ -19,7 +19,7 @@
                     renderInnerFormView(attrs),
                     m("span", { onclick: toggleCarouselFull, class: "carousel-full" }, [m("span", { class: "material-symbols-outlined" }, (fullMode ? "close_fullscreen" : "open_in_new"))]),
                     m("span", { onclick: toggleCarouselMax, class: "carousel-max" }, [m("span", { class: "material-symbols-outlined" }, (maxMode ? "photo_size_select_small" : "aspect_ratio"))]),
-                    m("span", { onclick: toggleInfo, class: "carousel-info" }, [m("span", { class: "material-symbols-outlined" + (info ? "" : "-outlined") }, (info ? "info" : "info"))]),
+                    m("span", { onclick: toggleInfo, class: "carousel-info" }, [m("span", { class: "material-symbols" + (info ? "" : "-outlined") }, (info ? "info" : "info"))]),
                     m("span", { onclick: function () { editItem(pr[pages.currentItem]); }, class: "carousel-edit" }, [m("span", { class: "material-symbols-outlined" }, "edit")]),
                     m("span", { onclick: toggleCarousel, class: "carousel-exit" }, [m("span", { class: "material-symbols-outlined" }, "close")])
                 ])

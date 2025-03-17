@@ -213,6 +213,28 @@ h5 {
     .box-button{
         @apply px-6 py-2 mt-4 text-white bg-green-500 rounded-lg hover:bg-green-800;
     }
+    .toast-container{
+        @apply absolute top-16 right-0 items-center flex p-0 h-auto m-0 z-40
+    }
+
+    .toast-container.transition {
+        @apply transition-opacity bg-white fixed ease-in-out transition-all duration-300 z-30
+    }
+    .toast-container.transition-full {
+        @apply opacity-100
+    }
+    .toast-container.transition-0 {
+        @apply opacity-0
+    }
+    .toast-box{
+        @apply flex items-center w-full max-w-xs p-2 text-gray-500 bg-white rounded-lg shadow-sm dark:text-gray-400 dark:bg-gray-800
+    }
+    .toast-box .ico-box{
+        @apply inline-flex items-center justify-center shrink-0 w-8 h-8 text-green-500 bg-green-100 rounded-lg dark:bg-green-800 dark:text-green-200
+    }
+    .toast-box .toast-text{
+        @apply ms-3 text-sm font-normal
+    }
     .dialog-container{
         @apply absolute top-0 left-0 flex items-center justify-center min-h-screen w-full z-30
     }
