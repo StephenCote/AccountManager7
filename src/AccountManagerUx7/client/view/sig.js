@@ -9,7 +9,7 @@
         fields: [
             {name: "organization", default: "/Public", type: "string"},
             {name: "userName", type: "string", "rules": ["$notEmpty"]},
-            {name: "password", type: "string"},
+            {name: "password", type: "string", "rules": ["$notEmpty"]},
             {name: "specifyOrganizationPath", type: "string"}
         ]
     });
@@ -50,8 +50,19 @@
     inst.action("login", doLogin);
 
     function doLogin(){
-        uwm.login(inst.api.organization(), inst.api.userName(), inst.api.password(), 0, function(s, v){
-            page.router.refresh();
+        if(!inst.validate()){
+            page.toast("warn", "Please fill in all fields");
+            return;
+        }
+        uwm.login(inst.api.organization(), inst.api.userName(), inst.api.password(), 0, function(s){
+            if(s == null){
+                page.toast("error", "Login was unsuccessful");
+            }
+            else{
+                page.toast("info", "Logged in as " + s.name);
+                page.router.refresh();
+            }
+            
         });
         inst.api.password("");
     }
@@ -120,7 +131,7 @@
                 m("div",{
                     class : "box-shadow-white"
                 },[
-                    am7view.form(inst)
+                    am7view.form(inst), page.loadToast()
                 ])
                 
             ]);

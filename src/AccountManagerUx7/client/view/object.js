@@ -163,6 +163,10 @@
             }
             let bpatch = am7model.hasIdentity(entity);
 
+            if(!inst.validate()){
+                page.toast("warn", "Please fill in all fields");
+                return;
+            }
 
             /// check for updates via nested object references
             /// Eg: Object.childObject.property
@@ -208,19 +212,21 @@
             }
 
             if(!inst.changes.length){
-                console.warn("Nothing to update");
+                page.toast("warn", "No changes were detected, so nothing was updated");
                 changed = false;
                 return;
             }
             
             let uint = (bpatch ? inst.patch() : entity);
             if(!uint){
+                page.toast("warn", "No patch fields were identified, so nothing was updated");
                 console.warn("Nothing to update");
                 return;
             }
 
             am7client[bpatch ? "patch" : "create"](entity[am7model.jsonModelKey], uint, function(v){
                 if(v != null){
+                    page.toast("success", "Saved!");
                     let bNew = objectNew || parentNew;
                     changed = false;
                     inst.resetChanges();
@@ -249,7 +255,7 @@
                     }
                 }
                 else{
-                    console.log("What's that?");
+                    page.toast("error", "An error occurred while trying to update the object");
                     console.error(v);
                 }
             });

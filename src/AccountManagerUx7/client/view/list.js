@@ -107,11 +107,10 @@
             let obj = pages.pageResults[pages.currentPage][idx[i]];
 
             if (bBucket) {
-              console.log(label, contType, listContainerId, getType(obj), obj.objectId);
-              aP.push(page.member(contType, listContainerId, getType(obj), obj.objectId, false));
+              aP.push(page.member(contType, listContainerId, getType(obj), obj.objectId, false).then((r) => { if(r) page.toast("success", "Removed member"); else page.toast("error", "Failed to remove member"); })); 
             }
             else {
-              aP.push(page.deleteObject(getType(obj), obj.objectId));
+              aP.push(page.deleteObject(getType(obj), obj.objectId).then((r) => { if(r) page.toast("success", "Deleted object"); else page.toast("error", "Failed to delete object"); }));
             }
           }
           await Promise.all(aP);

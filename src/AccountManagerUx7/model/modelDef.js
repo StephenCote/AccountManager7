@@ -687,6 +687,7 @@
             "type": "long",
             "required": true,
             "index": true,
+            "private": true,
             "dynamicPolicy": false,
             "shortName": "o"
           }

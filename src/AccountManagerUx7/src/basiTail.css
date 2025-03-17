@@ -51,7 +51,7 @@ h5 {
         @apply w-10 h-10 p-2 mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
     }
     .button-field{
-        @apply check-field
+        @apply check-field hover:bg-blue-200
     }
     .button-field-full{
         @apply w-full button-field

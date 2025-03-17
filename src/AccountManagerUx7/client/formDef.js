@@ -676,6 +676,7 @@
         fields: {
             chunkType: {
                 layout: 'one',
+                label: 'Chunk Type',
                 field: {
                     type: 'list',
                     limit: ['Sentence', 'Chapter', 'Word']
@@ -2663,9 +2664,15 @@
             size: 50,
             data: {entity},
             confirm: async function (data) {
+                page.toast("info", "Vectorizing ...");
                 let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, withCredentials: true });
                 if (x && x != null) {
-                    console.log("Vectorized: " + x);
+                    if(x){
+                        page.toast("success", "Vectorization complete");
+                    }
+                    else{
+                        page.toast("error", "Vectorization failed");
+                    }
                 }
                 page.endDialog();
             },
@@ -2691,14 +2698,17 @@
     }
     async function narrate(object, inst) {
         if (!inst || inst.model.name != "olio.charPerson") {
-            console.warn("Invalid object instance");
+            page.toast("warn", "Invalid object instance");
             return;
         }
 
         let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/narrate", withCredentials: true });
         if (x && x != null) {
             inst.api.narrative(x);
-            m.redraw();
+            page.toast("success", "Updated narrative");
+        }
+        else{
+            page.toast("error", "Failed to update narrative");
         }
     }
     async function rollCharacter(object, inst) {

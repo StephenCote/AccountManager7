@@ -16,6 +16,7 @@
 			"name": "organizationId",
 			"type": "long",
 			"required": true,
+			"private": true,
 			"index": true,
 			"dynamicPolicy": false,
 			"shortName": "o"

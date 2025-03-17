@@ -373,6 +373,8 @@
 			re = 1
 		;
 
+		if(f.readOnly || f.virtual || f.ephemeral || f.private) return 1;
+
 		let v = o.api[f.name]();
 		let err;
 		switch(f.type){
@@ -490,6 +492,10 @@
 				}
 			}
 			if(vr.api.type() == "none") r = 1;
+			else if(vr.api.type() == "function"){
+				console.warn("Unhandled function type: " + vr.api.name());
+				r = 1;
+			}
 			/*
 				if the return value is true, but the include return value is false
 				set the return value to false
@@ -884,23 +890,22 @@
 
 			inst.validateField[f.name] = () => {
 				let r = am7model.validateField(inst, f, f.rules);
-				inst.validations[f.name] = r == 1;
+				inst.validations[f.name] = (r == 1);
 				if(r == 0 && !inst.validationErrors[f.name]){
 					inst.validationErrors[f.name] = "Invalid value for " + f.name;
 				}
 				else if (r == 1){
 					delete inst.validationErrors[f.name];
 				}
-				return r == 1;
+				return (r == 1);
 			}
 		});
 		
 		inst.validate = () => {
 			let fv = [];
-			for(let fi in inst.model.fields){
-				let f = inst.model.fields[fi];
+			am7model.getModelFields(inst.model).forEach((f) => {
 				fv.push(inst.validateField[f.name]());
-			};
+			});
 			return !fv.includes(false);
 		}
 
@@ -930,7 +935,7 @@
 			if (inst.changes.length == 0) {
 				return;
 			}
-			inst.fields.filter(f => {
+			am7model.getModelFields(inst.model).filter(f => {
 				return (
 					(
 						(f.identity && inst.entity[f.name])
