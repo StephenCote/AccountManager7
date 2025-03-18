@@ -13,6 +13,7 @@ import org.cote.accountmanager.schema.ModelSchema;
 
 public interface IProvider {
 
+	public String describe(ModelSchema lmodel, BaseRecord model);
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model)  throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException;
 	public void provide(BaseRecord contextUser, RecordOperation operation, ModelSchema lmodel, BaseRecord model, FieldSchema lfield, FieldType field)  throws ModelException, FieldException, ValueException, ModelNotFoundException, ReaderException;
 }

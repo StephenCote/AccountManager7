@@ -144,4 +144,11 @@ public class UrnProvider implements IProvider {
 	public static boolean isUrn(String possibleUrn){
 		return factoryPattern.matcher(possibleUrn).find();
 	}
+
+
+	@Override
+	public String describe(ModelSchema lmodel, BaseRecord model) {
+		// TODO Auto-generated method stub
+		return null;
+	}
 }

@@ -223,5 +223,11 @@ public class JournalProvider implements IProvider {
 		entries.add(entry);
 	}
 
+	@Override
+	public String describe(ModelSchema lmodel, BaseRecord model) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
 	
 }

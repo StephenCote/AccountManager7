@@ -48,7 +48,6 @@
 
     let contextModel = newContextModel();
 
-    let dialogUp = false;
     let uidStub = "xxxxxxxx-xxxx-9xxx-yxxx-xxxxxxxxxxxx";
     let luidStub = "xxxx-xxxx";
 
@@ -84,13 +83,9 @@
         profile,
         confirm,
         imageView,
-        loadDialog,
         toast: addToast,
         toasts: () => toast,
         loadToast,
-        setDialog,
-        endDialog,
-        createDialog : createDialog,
         clearServerCache,
         cleanup,
         clearCache : clearPageCache,
@@ -112,7 +107,6 @@
         countObjects : promiseCountObjects,
         deleteObject: promiseDeleteObject,
         listObjects : promiseListObjects,
-        //listObjectsInParent : promiseListObjectsInParent,
         findObject : promiseFindObject,
         makePath: promiseMakePath,
         stream : promiseStream,
@@ -410,16 +404,6 @@
         });
     }
 
-    let dialogCfg;
-    function endDialog(){
-        dialogUp = false;
-        m.redraw();
-    }
-    function setDialog(cfg){
-        dialogCfg = cfg;
-        dialogUp = true;
-        m.redraw();
-    }
     async function profileEntity(){
         let grp = await promiseMakePath("auth.group", "DATA", am7view.path("data.data"));
         let obj;
@@ -438,8 +422,9 @@
         }
         return obj;
     }
+
     function imageView(entity, fConfirm, fCancel){
-        dialogCfg = {
+        page.components.dialog.setDialog({
             label: "Viewer",
             entityType: "imageView",
             size: 75,
@@ -451,32 +436,9 @@
                 dialogUp = false;
                 m.redraw();
             }
-        };
-        dialogUp = true;
-        m.redraw();
+        });
     }
-    function confirm(sMessage, fConfirm, fCancel){
-        dialogCfg = {
-            label: "Confirmation",
-            entityType: "confirmation",
-            size: 75,
-            data: {
-                entity: {textData: sMessage}
-            },
-            confirm: function(data){
-                if(fConfirm) fConfirm(data);
-                dialogUp = false;
-                m.redraw();
-            },
-            cancel: function(data){
-                if(fCancel) fCancel(data);
-                dialogUp = false;
-                m.redraw();
-            }
-        };
-        dialogUp = true;
-        m.redraw();
-    }
+   
 
     async function profile(){
         let obj = await profileEntity();
@@ -486,7 +448,7 @@
             objj = JSON.parse(uwm.base64Decode(obj.dataBytesStore));
             if(!objj[am7model.jsonModelKey]) objj[am7model.jsonModelKey] = "userProfile";
         }
-        dialogCfg = {
+        page.components.dialog.setDialog({
             label: "Profile",
             entityType: "userProfile",
             size: 75,
@@ -495,10 +457,8 @@
                 entity: objj
             },
             confirm: updateProfile,
-            cancel: cancelDialog,
-        };
-        dialogUp = true;
-        m.redraw();
+            cancel: page.components.dialog.cancelDialog,
+        });
     }
     
     /// TODO: Replace this by having system.user inherit identity.profile
@@ -530,10 +490,6 @@
         m.redraw();
     }
 
-    function cancelDialog(obj){
-        dialogUp = false;
-        m.redraw();
-    }
 
     
     function removeToast(id){
@@ -596,60 +552,6 @@
 
     }
 
-    function loadDialog(){
-        if(!dialogCfg || !dialogUp) return "";
-        return createDialog(dialogCfg.size, dialogCfg.entityType, dialogCfg.data, dialogCfg.label, dialogCfg.confirm, dialogCfg.cancel);
-    }
-
-    function createDialog(size, entityType, data, title, fConf, fCanc){
-        let sizeCls = "dialog-" + (size || "50");
-        if(!data.view){
-            data.view = page.views.object().view;
-        }
-        let mconf = "";
-        if(fConf){
-            mconf = m("button", {class: "dialog-button", onclick: async function(){ if(data.view) data.view.sync(); await fConf(data);}}, [
-                m("span", {class: "material-symbols-outlined material-symbols-outlined-white md-18 mr-2"}, "check"),
-                "Ok"
-            ])
-        }
-        return [
-            m("div", {class: "screen-glass screen-glass-open"}, [
-                m("div", {class: "screen-glass-gray"})
-            ]),
-            m("div", {class: "dialog-container"}, [
-                m("div", {class: "dialog " + sizeCls}, [
-                    m("div", {class: "list-results-container"}, [
-                        m("div", {class: "list-results"}, [
-                            m("div",{class: "result-nav-outer"},[
-                                m("div",{class: "result-nav-inner"},[
-                                        m("nav",{class: "result-nav"},[
-                                        m("h3", {class: "box-title"}, title)
-                                    ])
-                                ])
-                            ]),
-                            m(data.view, {
-                                freeForm: true,
-                                freeFormType: entityType,
-                                freeFormEntity: data.entity
-                            }),
-                            m("div",{class: "result-nav-outer"},[
-                                m("div",{class: "result-nav-inner"},[
-                                    m("nav",{class: "result-nav"},[
-                                       mconf,
-                                        m("button", {class: "dialog-button", onclick: async function(){ await fCanc(data);}},[
-                                            m("span", {class: "material-symbols-outlined material-symbols-outlined-white md-18 mr-2"}, "cancel"),
-                                            "Cancel"
-                                        ])
-                                    ])
-                                ])
-                            ]),
-                        ])
-                    ])
-                ])
-            ])
-        ];
-    }
 
     function listByType(type, objectId, bParent){
         //let viewPath = (am7community.getCommunityMode() ? getRawUrl() : "") + "/" + (bParent ? "p" : "") + "list/" + type + "/" + objectId;

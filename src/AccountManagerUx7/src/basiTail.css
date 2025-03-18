@@ -68,6 +68,12 @@ h5 {
     .text-field-auto{
         @apply w-auto text-field-form
     }
+    .progress-field{
+        @apply [&::-webkit-progress-bar]:rounded-lg [&::-webkit-progress-value]:rounded-lg [&::-webkit-progress-bar]:bg-slate-300 [&::-webkit-progress-value]:bg-green-400 [&::-moz-progress-bar]:bg-green-400
+    }
+    .progress-field-full{
+        @apply progress-field text-field-full h-10
+    }
     .select-field-full{
         @apply text-field-full bg-white
     }

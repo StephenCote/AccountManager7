@@ -83,5 +83,12 @@ public class EncryptFieldProvider implements IProvider {
 		}
 		
 	}
+
+
+	@Override
+	public String describe(ModelSchema lmodel, BaseRecord model) {
+		// TODO Auto-generated method stub
+		return null;
+	}
 	
 }

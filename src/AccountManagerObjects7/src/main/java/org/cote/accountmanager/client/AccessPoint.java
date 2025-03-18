@@ -685,7 +685,7 @@ public class AccessPoint {
 			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID, "Object " + objectId + " could not be read");
 			return false;
 		}
-		
+
 		PolicyResponseType prt = IOSystem.getActiveContext().getAuthorizationUtil().canUpdate(user, user, rec);
 		if(prt.getType() != PolicyResponseEnumType.PERMIT) {
 			AuditUtil.closeAudit(audit, prt, "Not authorized to modify object");

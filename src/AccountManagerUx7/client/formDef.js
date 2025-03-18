@@ -614,14 +614,14 @@
             contentType: {
                 layout: "third"
             },
-            reimage: {
+            vectorize: {
                 format: "button",
                 layout: "one",
                 icon: 'polyline',
                 requiredAttributes: ["objectId"],
                 field: {
                     label: "Vectorize",
-                    command: vectorize
+                    command: page.components.dialog.vectorize
                 }
             },
 
@@ -643,6 +643,7 @@
             },
             dataBytesStore: {
                 layout: "full",
+                label: "Data",
                 dragAndDrop: true,
                 format: "contentType"
             }
@@ -684,6 +685,40 @@
             },
             chunk: {
                 layout: 'one'
+            }
+        }
+    };
+
+    am7model.models.push(
+        {
+            name: "progress", icon: "pending", fields: [
+                {
+                    name: "label",
+                    label: "Label",
+                    type: 'string'
+                },
+                {
+                    name: "progress",
+                    label: "Progress",
+                    type: 'int',
+                    minValue: 0,
+                    maxValue: 100
+                }
+            ]
+        }
+    );
+
+    forms.progress = {
+        label: "Progress",
+        fields: {
+            label: {
+                layout: 'third',
+                format: 'print'
+
+            },
+            progress: {
+                layout: 'two-thirds',
+                format: 'progress'
             }
         }
     };
@@ -2656,32 +2691,7 @@
         });
     };
 
-    async function vectorize(object, inst) {
-        let entity = am7model.newPrimitive("vectorOptions");
-        let cfg = {
-            label: "Vector Options",
-            entityType: "vectorOptions",
-            size: 50,
-            data: {entity},
-            confirm: async function (data) {
-                page.toast("info", "Vectorizing ...");
-                let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.model.name + "/" + inst.api.objectId() + "/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, withCredentials: true });
-                if (x && x != null) {
-                    if(x){
-                        page.toast("success", "Vectorization complete");
-                    }
-                    else{
-                        page.toast("error", "Vectorization failed");
-                    }
-                }
-                page.endDialog();
-            },
-            cancel: async function (data) {
-                page.endDialog();
-            }
-        };
-        page.setDialog(cfg);
-    }
+ 
 
 
     async function reimage(object, inst) {
@@ -2878,6 +2888,16 @@
                     command: narrate
                 }
             },
+            vectorize: {
+                format: "button",
+                layout: "one",
+                icon: 'polyline',
+                requiredAttributes: ["objectId"],
+                field: {
+                    label: "Vectorize",
+                    command: page.components.dialog.vectorize
+                }
+            },
             roll: {
                 format: "button",
                 layout: "one",
@@ -2889,7 +2909,7 @@
                 }
             },
             description: {
-                layout: "third",
+                layout: "two",
             },
             trades: {
                 layout: "third",
@@ -3425,6 +3445,11 @@
     forms.narrative = {
         label: "Narrative",
         fields: {
+            objectId: {
+                layout: 'full',
+                label: "Object Id",
+                readOnly: true
+            },
             physicalDescription: {
                 layout: 'full',
                 label: "Description",
@@ -3474,15 +3499,7 @@
                 layout: 'full',
                 label: "SD Negative Prompt",
                 format: 'print'
-            },
-            objectId: {
-                layout: 'full',
-                label: "Object Id",
-                readOnly: true
             }
-
-
-
         }
     };
 

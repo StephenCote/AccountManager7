@@ -10,7 +10,7 @@
             init: function () {
                 document.addEventListener("keydown", e => {
                     if (e.keyCode == 27) {
-                        page.endDialog();
+                        page.components.dialog.endDialog();
                         this.drawer(1);
                         this.menu(null, true);
                     }

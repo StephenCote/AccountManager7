@@ -32,14 +32,14 @@
                 data: { entity },
                 confirm: async function (data) {
                     if (fConfirm) await fConfirm(data);
-                    page.endDialog();
+                    page.components.dialog.endDialog();
                 },
                 cancel: async function (data) {
                     if (fCancel) await fCancel(data);
-                    page.endDialog();
+                    page.components.dialog.endDialog();
                 }
             };
-            page.setDialog(dlg);
+            page.components.dialog.setDialog(dlg);
         }
         async function inlineAdd(data) {
             let mtx = treeMatrix[selectedNode];
@@ -90,7 +90,7 @@
                 }
             });
             console.log("PID", pid);
-            page.confirm("Delete " + node.type + " " + node.name + "?", async function () {
+            page.components.dialog.confirm("Delete " + node.type + " " + node.name + "?", async function () {
                 await page.deleteObject(node.type, node.id);
                 am7client.clearCache(node.type, true);
                 delete treeMatrix[selectedNode];

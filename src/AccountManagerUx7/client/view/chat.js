@@ -665,7 +665,7 @@
 
       view: function (vnode) {
         let v = getChatView(vnode);
-        return [v, page.loadDialog(), page.loadToast()];
+        return [v, page.components.dialog.loadDialog(), page.loadToast()];
       }
     };
     return chat;

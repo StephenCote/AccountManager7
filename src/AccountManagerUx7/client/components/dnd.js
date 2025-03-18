@@ -192,10 +192,24 @@
         if(!entity){
             return;
         }
+
         totalUpCount = files.length;
         currentUpCount = 0;
+
+        let pb = am7model.prepareInstance(am7model.newPrimitive("progress"), am7model.forms.progress);
+        //let pb = am7model.newPrimitive("progress");
+        pb.api.label("Uploading " + files.length + " files");
+        pb.api.progress(0);
+        page.components.dialog.showProgress(pb.entity, pb);
+
         let aP = [];
         for (var i = 0; i < files.length; i++) {
+            if(i > 0){
+                pb.api.label("Uploading (" + i + " of " + files.length + ")");
+                pb.api.progress(parseInt((i / files.length) * 100));
+                console.log(pb.api.label() + " " + pb.api.progress() + "%");
+                m.redraw();
+            }
             var formData = new FormData();
             formData.append("organizationPath", am7client.currentOrganization);
             formData.append("groupPath", entity.groupPath);
@@ -224,15 +238,16 @@
         }
         return new Promise((res2, rej2)=>{
             Promise.all(aP).then((aD)=>{
+                page.components.dialog.endDialog();
                 if(aD.length == 1){
                     page.findObject("auth.group", "data", entity.groupPath).then((oG)=>{
                         if(!oG){
-                            console.warn("Failed to lookup group", oG);
+                            page.toast("error", "Failed to lookup group", oG);
                         }
                         else{
                             page.openObjectByName("data.data", oG.objectId, aD[0]).then((oD)=>{
                                 if(!oD){
-                                    console.warn("Failed to lookup data");
+                                    page.toast("error", "Failed to lookup data");
                                 }
                                 else{
                                     let uri = "/view/data.data/" + oD.objectId;
@@ -248,6 +263,7 @@
                 }
             });
         });
+
     }
 
     function handleDragLeave(evt) {

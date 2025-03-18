@@ -98,7 +98,7 @@
       let subType = pagination.pages().containerSubType;
       let bBucket = (subType && subType.match(/^(bucket|account|person)$/gi));
       let label = (bBucket ? "Remove" : "Delete");
-      page.confirm(label + " selected objects?", async function () {
+      page.components.dialog.confirm(label + " selected objects?", async function () {
         let idx = getSelectedIndices();
         if (idx.length) {
           let pages = pagination.pages();
@@ -896,7 +896,7 @@
         }
         else v = getListView();
         if (vnode.attrs.pickerMode || vnode.attrs.embeddedMode) return v;
-        return [v, page.loadDialog(), page.loadToast()];
+        return [v, page.components.dialog.loadDialog(), page.loadToast()];
       }
     };
     window.dbgList = listPage;

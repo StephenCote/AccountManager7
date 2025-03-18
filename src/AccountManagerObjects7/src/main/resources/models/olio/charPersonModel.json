@@ -9,6 +9,7 @@
 	"label": "Character Person",
 	"dedicatedParticipation": true,
 	"factory": "org.cote.accountmanager.olio.CharPersonFactory",
+	"vector": "org.cote.accountmanager.olio.VectorProvider",
 	"query": ["profile"],
 	"fields": [
 		{

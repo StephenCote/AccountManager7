@@ -173,7 +173,7 @@
   
             view: function (vnode) {
               let v = getNavigatorView(vnode);
-                return [v, page.loadDialog(), page.loadToast()];
+                return [v, page.components.dialog.loadDialog(), page.loadToast()];
             }
         };
         return navigator;

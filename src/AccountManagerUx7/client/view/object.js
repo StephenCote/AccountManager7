@@ -308,7 +308,7 @@
             if(!entity || !entity.objectId) return;
             let type = entity[am7model.jsonModelKey];
             let path = entity.groupPath;
-            page.confirm("Delete this object?", async function(){
+            page.components.dialog.confirm("Delete this object?", async function(){
                 await page.deleteObject(entity[am7model.jsonModelKey], entity.objectId);
                 // page.pagination.new();
                 history.back();
@@ -728,6 +728,13 @@
                         m("button[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {onclick : bfHandler, class: fieldClass}, (fieldView.icon ? m("span",{class: "material-symbols-outlined material-icons-24"}, fieldView.icon) : ""), (field.label || ""))
                     );
                     break;
+                case "progress":
+                    fieldClass += " progress-field-full";
+                    console.log("Progress: " + defVal);
+                    view.push(
+                        m("progress", {max: field.maxValue || 100, min: field.minValue || 0, class: fieldClass, name : useName, value: defVal, disabled: disabled})
+                    )
+                    break;
                 case "select":
                     let vals = am7view.defaultValuesForField(field);
                     fieldClass += " select-field-full";
@@ -792,7 +799,7 @@
                     break;
                 case "print":
                     if(!defVal && entity) defVal = entity[useName];
-                    view.push(m("span", {"class": "text-content"}, defVal));
+                    view.push(m("span", {"class": fieldClass + " inline-block text-field-full text-content"}, defVal));
                     break;
                 case "textlist":
                 case "textarea":
@@ -1389,7 +1396,7 @@
                         if(qr && qr.count){
                             let v = qr.results[0];
                             entity = v;
-                            setApp();
+                            setApp(vnode);
                         }
                         else{
                             console.warn("Failed to search for " + q.key());
@@ -1397,7 +1404,7 @@
                     });
                 }
                 else{
-                    setApp();
+                    setApp(vnode);
                 }
 
             }
@@ -1413,7 +1420,7 @@
                             model.contextObjects[objectId] = v;
                             resetEntity((bPNew || bNew ? getPrimitive(type) : v));
                             if(bPNew && am7model.isParent(modType)) entity.parentId = model.contextObjects[objectId].id;
-                            setApp();
+                            setApp(vnode);
                         }
                         else{
                             console.warn("Failed to search for " + q.key());
@@ -1424,13 +1431,13 @@
                     console.log("Got it: " + objectId);
                     entity = ((bPNew || bNew) ? getPrimitive(type) : model.contextObjects[objectId]);
                     if(bPNew && am7model.isParent(modType)) entity.parentId = model.contextObjects[objectId].id;
-                    setApp();
+                    setApp(vnode);
                 }
             }
             else{
                 console.warn("Should only hit this for non group / parent objects!!!");
                 entity = getPrimitive(type);
-                setApp();
+                setApp(vnode);
             }
         }
         function resetEntity(e){
@@ -1442,12 +1449,17 @@
             setInst();
         }
 
-        function setInst(){
+        function setInst(vnode){
             inst = undefined;
 
             if(entity){
-                let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
-                inst = am7model.prepareInstance(entity, am7model.forms[fname]);
+                if(vnode?.freeFormInstance){
+                    inst = vnode.freeFormInstance;
+                }
+                else{
+                    let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
+                    inst = am7model.prepareInstance(entity, am7model.forms[fname]);
+                }
                 inst.observe(objectPage);
             }
 
@@ -1455,14 +1467,14 @@
 
         
 
-        function setApp(){
+        function setApp(vnode){
             let ldraw = !inst;
             if(entity[am7model.jsonModelKey]){
                 /*
                 let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
                 inst = am7model.prepareInstance(entity, am7model.forms[fname]);
                 */
-                setInst();
+                setInst(vnode);
                 if(!caller){
                     window.dbgObj = objectPage;
                     window.dbgInst = inst;
@@ -2363,8 +2375,8 @@
                 if(vnode.attrs.freeForm){
                     return getForm();
                 }                    
-                else if(embeddedMode) return [getObjectViewInner(), page.loadDialog(), page.loadToast()];
-                else return [getObjectView(), page.loadDialog(), page.loadToast()];
+                else if(embeddedMode) return [getObjectViewInner(), page.components.dialog.loadDialog(), page.loadToast()];
+                else return [getObjectView(), page.components.dialog.loadDialog(), page.loadToast()];
             }
         };
         return objectPage;

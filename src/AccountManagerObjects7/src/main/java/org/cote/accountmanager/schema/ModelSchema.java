@@ -38,6 +38,7 @@ public class ModelSchema {
 	private List<String> hints = new ArrayList<>();
 	
 	private String factory = null;
+	private String vector = null;
 	
 	private ModelAccess access = null;
 	private ModelIO io = null;
@@ -62,6 +63,14 @@ public class ModelSchema {
 		
 	}
 	
+	public String getVector() {
+		return vector;
+	}
+
+	public void setVector(String vector) {
+		this.vector = vector;
+	}
+
 	public OrderEnumType getSortOrder() {
 		return sortOrder;
 	}

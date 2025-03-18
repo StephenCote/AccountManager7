@@ -18,16 +18,31 @@ import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.sax.BodyContentHandler;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.provider.IProvider;
 
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);
 	
 	public static String getStringContent(BaseRecord model) {
 		String content = null;
-		if(model.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)) {
+		ModelSchema ms = RecordFactory.getSchema(model.getSchema());
+		if(ms.getVector() != null) {
+			IProvider prov = ProviderUtil.getProviderInstance(ms.getProvider());
+			logger.info("Vector provider " + ms.getVector());
+			if(prov != null) {
+				content = prov.describe(ms, model);
+			}
+			else {
+				logger.error("Vector provider could not be instantiated: " + ms.getProvider());
+			}
+		}
+		else if(model.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)) {
 			//IOSystem.getActiveContext().getReader().populate(vectorRef, new String[] { FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_BYTE_STORE });
 			String contentType = model.get(FieldNames.FIELD_CONTENT_TYPE);
 			if(contentType != null) {
