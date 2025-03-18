@@ -2286,7 +2286,7 @@
                 else{
                     /// Handled as patch operation in doUpdate
                     let uname = cname || pname;
-                    console.log(cinst.entity[am7model.jsonModelKey], uname);
+                    // console.log(cinst.entity[am7model.jsonModelKey], uname);
                     let fld = am7model.getModelField(cinst.entity[am7model.jsonModelKey], uname);
                     if(fld && fld.type == "list" && fld.foreign && fld.baseType == "model"){
                         console.log("Patch member", obj);
@@ -2305,7 +2305,8 @@
                         });
                     }
                     else{
-                        console.warn("Handle patch", fld);
+                        /// Nothing to do - parent was updated
+                        /// console.error("Handle patch", fld);
                     }
                 }
                 

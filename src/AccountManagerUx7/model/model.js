@@ -889,6 +889,9 @@
 			}
 
 			inst.validateField[f.name] = () => {
+				if(field?.skipValidation){
+					return true;
+				}
 				let r = am7model.validateField(inst, f, f.rules);
 				inst.validations[f.name] = (r == 1);
 				if(r == 0 && !inst.validationErrors[f.name]){

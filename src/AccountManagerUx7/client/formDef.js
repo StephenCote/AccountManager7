@@ -2696,6 +2696,7 @@
             m.redraw();
         }
     }
+
     async function narrate(object, inst) {
         if (!inst || inst.model.name != "olio.charPerson") {
             page.toast("warn", "Invalid object instance");
@@ -2711,6 +2712,7 @@
             page.toast("error", "Failed to update narrative");
         }
     }
+
     async function rollCharacter(object, inst) {
         if (!inst) {
             return;
@@ -3346,23 +3348,28 @@
         fields: {
             openness: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             conscientiousness: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             extraversion: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             agreeableness: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             neuroticism: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             blank: {
                 layout: "one",
@@ -3374,15 +3381,18 @@
             },
             machiavellianism: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             narcissism: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             psychopathy: {
                 layout: 'one',
-                format: 'range'
+                format: 'range',
+                skipValidation: true
             },
             blank2: {
                 layout: "half",
