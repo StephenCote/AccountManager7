@@ -673,7 +673,11 @@ public class AccessPoint {
 
 		logger.info("Request to vectorize " + model + " " + objectId);
 		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
-		q.planMost(true);
+
+		/// TODO: There is an authorization gap where older style reference models like contactInformation are not correctly using the model level access binding
+		/// This results in an access failure in the dynamic policy for nested queries
+		///
+		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_CONTACT_INFORMATION}));
 		BaseRecord rec = find(user, q);
 		
 		//BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, model, objectId);

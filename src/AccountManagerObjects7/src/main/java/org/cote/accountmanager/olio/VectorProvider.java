@@ -27,9 +27,9 @@ public class VectorProvider implements IProvider {
 	public String describe(ModelSchema lmodel, BaseRecord model) {
 	
 		StringBuilder content = new StringBuilder();
-		if(model.inherits(OlioModelNames.MODEL_NARRATIVE)) {
+		if(lmodel.hasField(OlioFieldNames.FIELD_NARRATIVE)) {
 			logger.info("Extracting narrative content.");
-			IOSystem.getActiveContext().getReader().populate(model, new String[] {OlioFieldNames.FIELD_NARRATIVES, FieldNames.FIELD_GENDER});
+			IOSystem.getActiveContext().getReader().populate(model, new String[] {OlioFieldNames.FIELD_NARRATIVE, FieldNames.FIELD_GENDER});
 			String pro = ("male".equals(model.get(FieldNames.FIELD_GENDER)) ? "He" : "She");
 			BaseRecord rnarrative = model.get("narrative");
 			if(rnarrative != null) {

@@ -33,13 +33,13 @@ public class DocumentUtil {
 		String content = null;
 		ModelSchema ms = RecordFactory.getSchema(model.getSchema());
 		if(ms.getVector() != null) {
-			IProvider prov = ProviderUtil.getProviderInstance(ms.getProvider());
+			IProvider prov = ProviderUtil.getProviderInstance(ms.getVector());
 			logger.info("Vector provider " + ms.getVector());
 			if(prov != null) {
 				content = prov.describe(ms, model);
 			}
 			else {
-				logger.error("Vector provider could not be instantiated: " + ms.getProvider());
+				logger.error("Vector provider could not be instantiated: " + ms.getVector());
 			}
 		}
 		else if(model.inherits(ModelNames.MODEL_CRYPTOBYTESTORE)) {

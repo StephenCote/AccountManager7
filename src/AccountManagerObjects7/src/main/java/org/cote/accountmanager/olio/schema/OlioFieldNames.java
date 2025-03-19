@@ -90,6 +90,7 @@ public class OlioFieldNames {
 	public static final String FIELD_INTERACTIONS = "interactions";
 	public static final String FIELD_INTERACTIONS_ID = "interactions.id";
 	
+	public static final String FIELD_NARRATIVE = "narrative";
 	public static final String FIELD_NARRATIVES = "narratives";
 	public static final String FIELD_NARRATIVES_ID = "narratives.id";
 	

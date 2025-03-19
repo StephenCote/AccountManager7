@@ -248,7 +248,9 @@ public class ChatService {
 			Chat chat = getChat(user, chatReq, key);
 			boolean defer = Boolean.parseBoolean(context.getInitParameter("task.defer.remote"));
 			if(defer) {
-				chat.newMessage(req, chatReq.getMessage());
+				if(chatReq.getMessage() != null && chatReq.getMessage().length() > 0) {
+					chat.newMessage(req, chatReq.getMessage());
+				}
 				BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig.copyRecord(new String[]{"apiVersion", "serviceType", "serverUrl", "apiKey", "model"}));
 				BaseRecord rtask = OlioTaskAgent.executeTask(task);
 				if(rtask != null) {
