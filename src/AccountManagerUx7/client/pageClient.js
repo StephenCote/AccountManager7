@@ -433,8 +433,7 @@
             },
             cancel: function(data){
                 if(fCancel) fCancel(data);
-                dialogUp = false;
-                m.redraw();
+                page.components.dialog.cancelDialog();
             }
         });
     }

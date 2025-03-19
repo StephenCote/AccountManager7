@@ -8,8 +8,11 @@ import java.sql.SQLException;
 import java.text.BreakIterator;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -31,6 +34,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
 
 import com.ibm.icu.util.StringTokenizer;
@@ -61,7 +65,7 @@ public class VectorUtil {
 WITH semantic_search AS (
     SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
     FROM ${tableName}
-    WHERE vectorReference = ? and vectorReferenceType = ?
+    WHERE (vectorReference = ? or ? = 0) and (vectorReferenceType = ? or ? IS NULL)
     ORDER BY embedding <=> ?
     LIMIT 20
 ),
@@ -94,17 +98,34 @@ LIMIT ?
 		DBUtil du = IOSystem.getActiveContext().getDbUtil();
 		return (du.isEnableVectorExtension() && du.getConnectionType() == ConnectionEnumType.POSTGRE);
 	}
-	
-	
+	private static String[] vectorModels = new String[0];
+	public static String[] getVectorModels(){
+		if(vectorModels.length == 0) {
+			vectorModels = ModelNames.MODELS.stream().filter(m -> {
+				ModelSchema ms = RecordFactory.getSchema(m);
+				// !m.equals(ModelNames.MODEL_VECTOR_MODEL_STORE) && 
+				return ms.inherits(ModelNames.MODEL_VECTOR_EXT);
+			}).collect(Collectors.toList()).toArray(new String[0]);
+		}
+		return vectorModels;
+	}
 
-	
 	public static List<BaseRecord> find(BaseRecord model, String query){
-		return findByEmbedding(getZooModel(), model, query, 10, 60);
+		return find(model, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query);
+	}
+	public static List<BaseRecord> find(BaseRecord model, String[] vectorModels, String query){
+		return findByEmbedding(getZooModel(), model, (model != null ? model.getSchema() : null), vectorModels, query, 10, 60);
 	}
 	public static List<BaseRecord> find(BaseRecord model, String query, int limit, double k){
-		return findByEmbedding(getZooModel(), model, query, limit, k);
+		return find(model, null, query, limit, k);
+	}
+	public static List<BaseRecord> find(BaseRecord model, String modelName, String query, int limit, double k){
+		return find(model, null, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k);
+	}
+	public static List<BaseRecord> find(BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
+		return findByEmbedding(getZooModel(), model, modelName, vectorModels, query, limit, k);
 	}	
-	private static List<BaseRecord> findByEmbedding(ZooModel<String, float[]> zoo, BaseRecord model, String query, int limit, double k){
+	private static List<BaseRecord> findByEmbedding(ZooModel<String, float[]> zoo, BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
 		List<BaseRecord> content = new ArrayList<>();
 		long id = 0L;
 		String refType = null;
@@ -112,35 +133,53 @@ LIMIT ?
 			id = model.get(FieldNames.FIELD_ID);
 			refType = model.getSchema();
 		}
-		String tableName = IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_VECTOR_MODEL_STORE);
-		String sql = tablePat.matcher(HYBRID_SQL).replaceAll(tableName);
-
-		try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection()){
-	        float[] queryEmbedding = generateEmbeddings(zoo, new String[] {query}).get(0);
+		else if(modelName != null) {
+			refType = modelName;
+		}
+		
+		//List<String> tablesX = new ArrayList<>();
+		//tablesX.add(IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_VECTOR_MODEL_STORE));
+		Set<String> tables = new LinkedHashSet<>(Arrays.asList(vectorModels).stream().map(t -> IOSystem.getActiveContext().getDbUtil().getTableName(t)).collect(Collectors.toList()));
+		// Set<String> tables = new LinkedHashSet<>(tablesX);
+		
+		for(String tableName : tables) {
+			String sql = tablePat.matcher(HYBRID_SQL).replaceAll(tableName);
 	
-	        PreparedStatement queryStmt = con.prepareStatement(sql);
-	        queryStmt.setObject(1, new PGvector(queryEmbedding));
-	        queryStmt.setLong(2, id);
-	        queryStmt.setString(3, refType);
-	        queryStmt.setObject(4, new PGvector(queryEmbedding));
-	        queryStmt.setString(5, query);
-	        queryStmt.setDouble(6, k);
-	        queryStmt.setDouble(7, k);
-	        queryStmt.setInt(8, limit);
-	        ResultSet rs = queryStmt.executeQuery();
-	        MemoryReader mem = new MemoryReader();
-	        while (rs.next()) {
-	        	BaseRecord vs = newVectorStore(rs.getLong("id"),  rs.getString("keyId"), rs.getString("vaultId"), rs.getBoolean("vaulted"), rs.getLong("organizationId"), rs.getLong("vectorReference"), rs.getString("vectorReferenceType"), rs.getDouble("score"), rs.getInt("chunk"), rs.getString("content"));
-	        	mem.read(vs);
-	        	content.add(vs);
-	        }
-	        rs.close();
+			try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); PreparedStatement stat = con.prepareStatement(sql)){
+		        float[] queryEmbedding = generateEmbeddings(zoo, new String[] {query}).get(0);
+		
+		        stat.setObject(1, new PGvector(queryEmbedding));
+		        stat.setLong(2, id);
+		        stat.setLong(3, id);
+		        stat.setString(4, refType);
+		        stat.setString(5, refType);
+		        stat.setObject(6, new PGvector(queryEmbedding));
+		        stat.setString(7, query);
+		        stat.setDouble(8, k);
+		        stat.setDouble(9, k);
+		        stat.setInt(10, limit);
+
+		        ResultSet rs = stat.executeQuery();
+		        MemoryReader mem = new MemoryReader();
+		        while (rs.next()) {
+		        	BaseRecord vs = newVectorStore(rs.getLong("id"),  rs.getString("keyId"), rs.getString("vaultId"), rs.getBoolean("vaulted"), rs.getLong("organizationId"), rs.getLong("vectorReference"), rs.getString("vectorReferenceType"), rs.getDouble("score"), rs.getInt("chunk"), rs.getString("content"));
+		        	mem.read(vs);
+		        	content.add(vs);
+		        }
+		        rs.close();
+			}
+			catch(SQLException | TranslateException | FieldException | ModelNotFoundException | ReaderException e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
 		}
-		catch(SQLException | TranslateException | FieldException | ModelNotFoundException | ReaderException e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
+		
 		return content;
+	}
+	
+	public static List<BaseRecord> sortAndLimit(List<BaseRecord> lst, int limit){
+		lst.sort((c1, c2) -> Double.compare(c2.get("score"), c1.get("score")));
+		return lst.subList(0, Math.min(lst.size(), limit));
 	}
 	
 	private static BaseRecord newVectorStore(long id, String keyId, String vaultId, boolean vaulted, long orgId, long ref, String refType, double score, int chunk, String content) throws FieldException, ModelNotFoundException {

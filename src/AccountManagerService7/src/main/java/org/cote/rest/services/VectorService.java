@@ -30,6 +30,7 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -37,6 +38,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.util.JSONUtil;
@@ -69,9 +71,9 @@ public class VectorService {
 	
 	@RolesAllowed({"user"})
 	@POST
-	@Path("/reference/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
+	@Path("/reference/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/{count:[0-9]+}/{dist:[0-9\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response vectorReference(String statement, @PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("chunkType") ChunkEnumType chunkType, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request, @Context HttpServletResponse response){
+	public Response vectorReference(String statement, @PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("count") int count, @PathParam("dist") double dist, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		List<BaseRecord> vects = new ArrayList<>();
 		BaseRecord rec = null;
@@ -83,8 +85,14 @@ public class VectorService {
 				return Response.status(404).build();
 			}
 		}
-		vects = VectorUtil.find(rec, statement, 10, 0.6);
-		return Response.status(200).entity(JSONUtil.exportObject(vects, RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
+		//String[] tables = new String[0];
+		if(type != null && type.equals(OlioModelNames.MODEL_CHAR_PERSON)) {
+			vects.addAll(VectorUtil.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
+		}
+		vects.addAll(VectorUtil.find(rec, type, statement, count, dist));
+		List<BaseRecord> ovects = VectorUtil.sortAndLimit(vects, count);
+		logger.info("Found " + ovects.size() + " chunks");
+		return Response.status(200).entity(JSONUtil.exportObject(ovects, RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
 	}
 	
 	/*
