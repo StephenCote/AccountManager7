@@ -21,7 +21,7 @@
 		{
 			"name": "embedding",
 			"type": "vector",
-			"maxLength": 1024
+			"maxLength": 768
 		}
 	]
 }

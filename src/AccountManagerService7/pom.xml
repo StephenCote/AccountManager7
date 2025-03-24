@@ -243,36 +243,7 @@
 			<artifactId>graal-sdk</artifactId>
 			<version>23.0.1</version>
 		</dependency>
-	<dependency>
-			<groupId>ai.djl</groupId>
-			<artifactId>api</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>ai.djl</groupId>
-			<artifactId>model-zoo</artifactId>
-		</dependency>
 
-		<dependency>
-			<groupId>ai.djl.huggingface</groupId>
-			<artifactId>tokenizers</artifactId>
-		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-model-zoo</artifactId>
-		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-engine</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-jni</artifactId>
-			<scope>runtime</scope>
-		</dependency>
 	</dependencies>
 	<build>
 		<testSourceDirectory>${basedir}/src/test/java</testSourceDirectory>
@@ -389,15 +360,4 @@
 			</testResource>
 		</testResources>
 	</build>
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>ai.djl</groupId>
-				<artifactId>bom</artifactId>
-				<version>0.33.0</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
 </project>

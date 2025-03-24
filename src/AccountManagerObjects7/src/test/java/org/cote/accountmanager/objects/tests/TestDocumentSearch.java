@@ -23,6 +23,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -49,7 +52,13 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.DocumentUtil;
+import org.cote.accountmanager.tools.EmbeddingResponse;
+import org.cote.accountmanager.tools.EmbeddingUtil;
+import org.cote.accountmanager.tools.Status;
+import org.cote.accountmanager.tools.EmbeddingRequest;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.junit.Test;
@@ -58,6 +67,7 @@ import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
+import javax.ws.rs.client.Invocation.Builder;
 
 public class TestDocumentSearch extends BaseTest {
 
@@ -84,11 +94,12 @@ public class TestDocumentSearch extends BaseTest {
 
 	}
 	*/
-	
 	@Test
 	public void TestVectorAccessPoint() {
 		logger.info("Test vectorize access point method...");
 
+		VectorUtil vu = new VectorUtil(testProperties.getProperty("test.embedding.server"));
+		
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Scrivener");
 		assertNotNull("Test org is null", testOrgContext);
 		Factory mf = ioContext.getFactory();
@@ -101,14 +112,49 @@ public class TestDocumentSearch extends BaseTest {
 		
 		ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 0);
 
-		List<BaseRecord> vecs = VectorUtil.find(doc, "What are the names of Mark's kids?", 10, 0.6);
+		List<BaseRecord> vecs = vu.find(doc, "What are the names of Mark's kids?", 10, 0.6);
 		assertTrue("Expected at least one result", vecs.size() > 0);
-		logger.info("Content: " + vecs.get(0).get("content"));
-		logger.info(vecs.get(0).toFullString());
+		// logger.info("Content: " + vecs.get(0).get("content"));
+		// logger.info(vecs.get(0).toFullString());
 		
+	}
+	
+	@Test
+	public void TestGenerateEmbedding() {
+		String msg = "This is a test";
+		EmbeddingUtil eu = new EmbeddingUtil(testProperties.getProperty("test.embedding.server"));
+		assertTrue("Expected a heartbeat", eu.heartbeat());
+		/*
+		Status stat = ClientUtil.get(Status.class, ClientUtil.getResource(testProperties.getProperty("test.embedding.server") + "/heartbeat"), null, MediaType.APPLICATION_JSON_TYPE);
+		assertNotNull("Status was null");
+		*/
+		/*
+		EmbeddingResponse resp = ClientUtil.post(EmbeddingResponse.class, ClientUtil.getResource(testProperties.getProperty("test.embedding.server") + "/generate_embedding"), null, new EmbeddingRequest(msg), MediaType.APPLICATION_JSON_TYPE);
+		assertNotNull("Response was null", resp);
+		logger.info(resp.getEmbedding().length);
+		*/
+		/*
+		Builder bld = ClientUtil.getRequestBuilder(ClientUtil.getResource(testProperties.getProperty("test.embedding.server") + "/generate_embedding"))
+			.accept(MediaType.APPLICATION_JSON_TYPE);
+
+		Response response = bld.post(Entity.entity(msg, MediaType.APPLICATION_JSON_TYPE));
+		List<Float> embeds = new ArrayList<>();
+		if(response != null && response.getStatus() == 200) {
+			String json = response.readEntity(String.class);
+			logger.info(json);
+			embeds = JSONUtil.getList(json, Float.class, null);
+		}
+		else {
+			logger.error("Response was null or invalid");
+		}
+		//Float[] embeds = JSONUtil.importObject(json, Float[].class);
+		logger.info("Received " + embeds.size());
+		*/
 	}
 
 
 }
+
+
 
 

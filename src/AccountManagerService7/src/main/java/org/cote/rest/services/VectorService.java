@@ -86,11 +86,12 @@ public class VectorService {
 			}
 		}
 		//String[] tables = new String[0];
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
 		if(type != null && type.equals(OlioModelNames.MODEL_CHAR_PERSON)) {
-			vects.addAll(VectorUtil.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
+			vects.addAll(vu.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
 		}
-		vects.addAll(VectorUtil.find(rec, type, statement, count, dist));
-		List<BaseRecord> ovects = VectorUtil.sortAndLimit(vects, count);
+		vects.addAll(vu.find(rec, type, statement, count, dist));
+		List<BaseRecord> ovects = vu.sortAndLimit(vects, count);
 		logger.info("Found " + ovects.size() + " chunks");
 		return Response.status(200).entity(JSONUtil.exportObject(ovects, RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
 	}

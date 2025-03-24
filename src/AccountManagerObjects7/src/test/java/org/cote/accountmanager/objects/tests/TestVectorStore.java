@@ -82,6 +82,7 @@ public class TestVectorStore extends BaseTest {
 	
 	@Test
 	public void TestPDF() {
+		VectorUtil vu = new VectorUtil(testProperties.getProperty("test.embedding.server"));
 		logger.info("Test VectorStore with PDF");
 		Factory mf = ioContext.getFactory();
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Vector");
@@ -91,15 +92,15 @@ public class TestVectorStore extends BaseTest {
 		assertNotNull("Document is null", pdf1);
 		IOSystem.getActiveContext().getReader().populate(pdf1, new String[] {FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_CONTENT_TYPE});
 		
-		int count = VectorUtil.countVectorStore(pdf1);
+		int count = vu.countVectorStore(pdf1);
 		if(resetStore && count > 0) {
-			VectorUtil.deleteVectorStore(pdf1);
+			vu.deleteVectorStore(pdf1);
 			count = 0;
 		}
 		if(count == 0) {
 		List<BaseRecord> chunks = new ArrayList<>();
 		try {
-			 chunks = VectorUtil.createVectorStore(pdf1, ChunkEnumType.WORD, 250);
+			 chunks = vu.createVectorStore(pdf1, ChunkEnumType.WORD, 250);
 			logger.info("Retrieved " + chunks.size());
 			assertTrue("Expected chunks", chunks.size() > 0);
 			IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
@@ -108,10 +109,10 @@ public class TestVectorStore extends BaseTest {
 			logger.error(e);
 		}
 		}
-		List<BaseRecord> store = VectorUtil.getVectorStore(pdf1);
+		List<BaseRecord> store = vu.getVectorStore(pdf1);
 		assertTrue("Expected the store", store.size() > 0);
 		
-		List<BaseRecord> findStore = VectorUtil.find(pdf1, "Where is the casino?", 5, 60);
+		List<BaseRecord> findStore = vu.find(pdf1, "Where is the casino?", 5, 60);
 		logger.info("Found: " + findStore.size());
 		for(BaseRecord s : findStore) {
 			logger.info("Score: " + s.get(FieldNames.FIELD_SCORE));
@@ -131,16 +132,16 @@ public class TestVectorStore extends BaseTest {
 		String path = "./media/The Verse.docx";
 		BaseRecord doc = getCreateDocument(testUser1, path);
 		IOSystem.getActiveContext().getReader().populate(doc, new String[] {FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_CONTENT_TYPE});
-		
-		int count = VectorUtil.countVectorStore(doc);
+		VectorUtil vu = new VectorUtil(testProperties.getProperty("test.embedding.server"));
+		int count = vu.countVectorStore(doc);
 		if(resetStore && count > 0) {
-			VectorUtil.deleteVectorStore(doc);
+			vu.deleteVectorStore(doc);
 			count = 0;
 		}
 		if(count == 0) {
 			List<BaseRecord> chunks = new ArrayList<>();
 			try {
-				 chunks = VectorUtil.createVectorStore(doc, ChunkEnumType.CHAPTER, 20);
+				 chunks = vu.createVectorStore(doc, ChunkEnumType.CHAPTER, 20);
 				logger.info("Retrieved " + chunks.size());
 				assertTrue("Expected chunks", chunks.size() > 0);
 				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
@@ -149,10 +150,10 @@ public class TestVectorStore extends BaseTest {
 				logger.error(e);
 			}
 		}
-		List<BaseRecord> store = VectorUtil.getVectorStore(doc);
+		List<BaseRecord> store = vu.getVectorStore(doc);
 		assertTrue("Expected the store", store.size() > 0);
 		
-		List<BaseRecord> findStore = VectorUtil.find(doc, "Who is Mark Lucean?", 10, 60);
+		List<BaseRecord> findStore = vu.find(doc, "Who is Mark Lucean?", 10, 60);
 		logger.info("Found: " + findStore.size());
 		for(BaseRecord s : findStore) {
 			logger.info("Score: " + s.get(FieldNames.FIELD_SCORE));

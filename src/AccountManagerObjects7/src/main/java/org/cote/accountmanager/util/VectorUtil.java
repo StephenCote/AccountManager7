@@ -36,17 +36,10 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.ConnectionEnumType;
+import org.cote.accountmanager.tools.EmbeddingUtil;
 
 import com.ibm.icu.util.StringTokenizer;
 import com.pgvector.PGvector;
-
-import ai.djl.Device;
-import ai.djl.ModelException;
-import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
-import ai.djl.inference.Predictor;
-import ai.djl.repository.zoo.Criteria;
-import ai.djl.repository.zoo.ZooModel;
-import ai.djl.translate.TranslateException;
 
 public class VectorUtil {
 	public static final Logger logger = LogManager.getLogger(VectorUtil.class);
@@ -110,23 +103,31 @@ LIMIT ?
 		}
 		return vectorModels;
 	}
+	
+	private String serverUrl = null;
+	private EmbeddingUtil embedUtil = null;
+	
+	public VectorUtil(String url) {
+		this.serverUrl = url;
+		embedUtil = new EmbeddingUtil(url);
+	}
 
-	public static List<BaseRecord> find(BaseRecord model, String query){
+	public List<BaseRecord> find(BaseRecord model, String query){
 		return find(model, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query);
 	}
-	public static List<BaseRecord> find(BaseRecord model, String[] vectorModels, String query){
-		return findByEmbedding(getZooModel(), model, (model != null ? model.getSchema() : null), vectorModels, query, 10, 60);
+	public List<BaseRecord> find(BaseRecord model, String[] vectorModels, String query){
+		return findByEmbedding(model, (model != null ? model.getSchema() : null), vectorModels, query, 10, 60);
 	}
-	public static List<BaseRecord> find(BaseRecord model, String query, int limit, double k){
+	public List<BaseRecord> find(BaseRecord model, String query, int limit, double k){
 		return find(model, null, query, limit, k);
 	}
-	public static List<BaseRecord> find(BaseRecord model, String modelName, String query, int limit, double k){
+	public List<BaseRecord> find(BaseRecord model, String modelName, String query, int limit, double k){
 		return find(model, null, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k);
 	}
-	public static List<BaseRecord> find(BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
-		return findByEmbedding(getZooModel(), model, modelName, vectorModels, query, limit, k);
+	public List<BaseRecord> find(BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
+		return findByEmbedding(model, modelName, vectorModels, query, limit, k);
 	}	
-	private static List<BaseRecord> findByEmbedding(ZooModel<String, float[]> zoo, BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
+	private List<BaseRecord> findByEmbedding(BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
 		List<BaseRecord> content = new ArrayList<>();
 		long id = 0L;
 		String refType = null;
@@ -138,16 +139,13 @@ LIMIT ?
 			refType = modelName;
 		}
 		
-		//List<String> tablesX = new ArrayList<>();
-		//tablesX.add(IOSystem.getActiveContext().getDbUtil().getTableName(ModelNames.MODEL_VECTOR_MODEL_STORE));
 		Set<String> tables = new LinkedHashSet<>(Arrays.asList(vectorModels).stream().map(t -> IOSystem.getActiveContext().getDbUtil().getTableName(t)).collect(Collectors.toList()));
-		// Set<String> tables = new LinkedHashSet<>(tablesX);
 		
 		for(String tableName : tables) {
 			String sql = tablePat.matcher(HYBRID_SQL).replaceAll(tableName);
 	
 			try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); PreparedStatement stat = con.prepareStatement(sql)){
-		        float[] queryEmbedding = generateEmbeddings(zoo, new String[] {query}).get(0);
+		        float[] queryEmbedding = generateEmbeddings(new String[] {query}).get(0);
 
 		        stat.setObject(1, new PGvector(queryEmbedding));
 		        stat.setLong(2, id);
@@ -169,7 +167,7 @@ LIMIT ?
 		        }
 		        rs.close();
 			}
-			catch(SQLException | TranslateException | FieldException | ModelNotFoundException | ReaderException e) {
+			catch(SQLException | FieldException | ModelNotFoundException | ReaderException e) {
 				logger.error(e);
 				e.printStackTrace();
 			}
@@ -178,12 +176,12 @@ LIMIT ?
 		return content;
 	}
 	
-	public static List<BaseRecord> sortAndLimit(List<BaseRecord> lst, int limit){
+	public List<BaseRecord> sortAndLimit(List<BaseRecord> lst, int limit){
 		lst.sort((c1, c2) -> Double.compare(c2.get("score"), c1.get("score")));
 		return lst.subList(0, Math.min(lst.size(), limit));
 	}
 	
-	private static BaseRecord newVectorStore(long id, String keyId, String vaultId, boolean vaulted, long orgId, long ref, String refType, double score, int chunk, String content) throws FieldException, ModelNotFoundException {
+	private BaseRecord newVectorStore(long id, String keyId, String vaultId, boolean vaulted, long orgId, long ref, String refType, double score, int chunk, String content) throws FieldException, ModelNotFoundException {
 		BaseRecord vs = RecordFactory.newInstance(ModelNames.MODEL_VECTOR_MODEL_STORE);
 		vs.setValue(FieldNames.FIELD_ID, id);
 		if(ref > 0L && refType != null) {
@@ -203,14 +201,14 @@ LIMIT ?
 		return vs;
 	}
 
-	public static int countVectorStore(BaseRecord model){
+	public int countVectorStore(BaseRecord model){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getSchema());
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}
 	
-	public static int deleteVectorStore(BaseRecord model){
+	public int deleteVectorStore(BaseRecord model){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getSchema());
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -223,7 +221,7 @@ LIMIT ?
 		return del;
 	}
 	
-	public static List<BaseRecord> getVectorStore(BaseRecord model){
+	public List<BaseRecord> getVectorStore(BaseRecord model){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getSchema());
 		List<BaseRecord> recs = new ArrayList<>();
@@ -235,7 +233,7 @@ LIMIT ?
 		return recs;
 	}
 	
-	public static List<BaseRecord> createVectorStore(BaseRecord model, ChunkEnumType chunkType, int chunkSize) throws FieldException {
+	public List<BaseRecord> createVectorStore(BaseRecord model, ChunkEnumType chunkType, int chunkSize) throws FieldException {
 
 		
 		//BaseRecord vector = RecordFactory.newInstance(ModelNames.MODEL_VECTOR_MODEL_STORE);
@@ -257,7 +255,7 @@ LIMIT ?
 		return createVectorStore(model, DocumentUtil.getStringContent(model), chunkType, chunkSize);
 	}
 
-	public static List<BaseRecord> createVectorStore(BaseRecord model, String content, ChunkEnumType chunkType, int chunkSize) throws FieldException {
+	public List<BaseRecord> createVectorStore(BaseRecord model, String content, ChunkEnumType chunkType, int chunkSize) throws FieldException {
 
 		List<BaseRecord> chunkRecs = new ArrayList<>();
 		List<String> chunks = Arrays.asList(new String[] {content});
@@ -278,7 +276,7 @@ LIMIT ?
 		// logger.info("Generating " + chunks.size() + " embeddings");
 		long start = System.currentTimeMillis();
 		try {
-	        List<float[]> embeddings = generateEmbeddings(getZooModel(), chunks.toArray(new String[0]));
+	        List<float[]> embeddings = generateEmbeddings(chunks.toArray(new String[0]));
 	        int size = chunks.size();
 	        for (int i = 0; i < chunks.size(); i++) {
 	        	BaseRecord chunkModel = RecordFactory.newInstance(ModelNames.MODEL_VECTOR_MODEL_STORE);
@@ -292,55 +290,15 @@ LIMIT ?
 	        	chunkRecs.add(chunkModel);
 	        }
 		}
-		catch(TranslateException | ModelNotFoundException e) {
+		catch(ModelNotFoundException e) {
 			logger.error(e);
 		}
 		
 		return chunkRecs;
 	}
 	
-	private static ZooModel<String, float[]> zooModel = null;
-	private static ZooModel<String, float[]> getZooModel(){
-		if(zooModel == null) {
-			try {
-				zooModel = loadModel();
-			} catch (IOException | ModelException e) {
-				logger.error(e);
-				e.printStackTrace();
-			}
-		}
-		return zooModel;
-	}
-	
-    private static ZooModel<String, float[]> loadModel() throws IOException, ModelException {
-    	//logger.info(id + " / " + Paths.get(id));
-        return Criteria.builder()
-            .setTypes(String.class, float[].class)
-            //.optModelUrls("djl://ai.djl.huggingface.pytorch/" + id)
-            // 384
-           //.optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/all-MiniLM-L6-v2")
 
-            //.optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/all-mpnet-base-v2")
-            // 768 - but produces very large dimensions 
-            //.optModelUrls("djl://ai.djl.huggingface.pytorch/bert-base-uncased")
-            
-            // 1024
-            .optModelUrls("djl://ai.djl.huggingface.pytorch/sentence-transformers/bert-large-nli-cls-token")
-            //.optArgument("normalize", "false")
-            .optEngine("PyTorch")
-            
-            /*
-            .optEngine("MXNet")
-            .optModelUrls(id)
-            */
-            //.optDevice(Device.gpu()) 
-            .optDevice(Device.cpu())
-            .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
-            .build()
-            .loadModel();
-    }
-
-    private static List<String> chunkByWord(String block, int chunkSize) {
+    private List<String> chunkByWord(String block, int chunkSize) {
     	StringTokenizer st = new StringTokenizer(block, " ");
     	final AtomicInteger counter = new AtomicInteger(0);
     	List<String> sx = new ArrayList<>();
@@ -368,18 +326,7 @@ LIMIT ?
 		return sx;
 	}
     
-    /*
-    private static List<String> getSentences(String content){
-		return Arrays.asList(content.split("((?<=\\.)|(?=\\.))"))
-			.stream()
-			.filter(s -> s.trim().length() > 0)
-			.map(s ->  s.replaceAll("[“”]", "\"").replaceAll("’", "'"))
-			.map(l -> l.replaceAll("[\\x93-\\x94]", "'")
-			.collect(Collectors.toList());
-    }
-    */
-    
-    public static List<String> chunkByChapter(String name, String path, String block, int chunkSize) {
+    public List<String> chunkByChapter(String name, String path, String block, int chunkSize) {
     	List<BaseRecord> vchunks = new ArrayList<>();
     	
     	List<String> chunks = new ArrayList<>();
@@ -419,7 +366,7 @@ LIMIT ?
     	return chunks;
     }
     
-    private static List<BaseRecord> chunkChapter(String content, String chapterTitle, int chapter, int chunkSize) {
+    private List<BaseRecord> chunkChapter(String content, String chapterTitle, int chapter, int chunkSize) {
     	List<BaseRecord> vchunks = new ArrayList<>();
     	List<String> strChunks = chunkBySentence(content, chunkSize);
     	for(String s: strChunks) {
@@ -437,7 +384,7 @@ LIMIT ?
     	return vchunks;
     }
     
-    private static List<String> chunkBySentence(String block, int chunkSize) {
+    private List<String> chunkBySentence(String block, int chunkSize) {
     	
     	
     	BreakIterator iterator = BreakIterator.getSentenceInstance(Locale.US);
@@ -472,12 +419,11 @@ LIMIT ?
 	}
     
 	
-    private static List<float[]> generateEmbeddings(ZooModel<String, float[]> model, String[] input) throws TranslateException {
-        Predictor<String, float[]> predictor = model.newPredictor();
+    private List<float[]> generateEmbeddings(String[] input)  {
         List<float[]> embeddings = new ArrayList<>(input.length);
         for (String text : input) {
-        	float[] f = predictor.predict(text);
-            embeddings.add(f);
+        	float[] embs = embedUtil.getEmbedding(text);
+        	embeddings.add(embs);
         }
         return embeddings;
     }

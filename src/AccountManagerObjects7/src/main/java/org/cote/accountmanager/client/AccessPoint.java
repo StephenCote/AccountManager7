@@ -672,6 +672,11 @@ public class AccessPoint {
 	public boolean vectorize(BaseRecord user, String model, String objectId, ChunkEnumType chunkType, int chunkSize) {
 
 		logger.info("Request to vectorize " + model + " " + objectId);
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		if(vu == null) {
+			logger.error("Vector utility is not initialized.");
+			return false;
+		}
 		Query q = QueryUtil.createQuery(model, FieldNames.FIELD_OBJECT_ID, objectId);
 
 		/// TODO: There is an authorization gap where older style reference models like contactInformation are not correctly using the model level access binding
@@ -699,7 +704,7 @@ public class AccessPoint {
 		boolean outBool = false;
 		try {
 			logger.info("Creating vector store for " + objectId);
-			List<BaseRecord> chunks = VectorUtil.createVectorStore(rec, chunkType, chunkSize);
+			List<BaseRecord> chunks = vu.createVectorStore(rec, chunkType, chunkSize);
 			if(chunks.size() > 0) {
 				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
 				AuditUtil.closeAudit(audit, ResponseEnumType.PERMIT, "Created vector store");

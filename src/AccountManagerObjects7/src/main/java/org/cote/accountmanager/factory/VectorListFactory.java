@@ -7,6 +7,7 @@ import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -23,6 +24,10 @@ public class VectorListFactory extends FactoryBase {
 	@Override
 	public BaseRecord newInstance(BaseRecord contextUser, BaseRecord recordTemplate, ParameterList parameterList, BaseRecord... arguments) throws FactoryException
 	{
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		if(vu == null) {
+			throw new FactoryException("Vector utility was not initialized.");
+		}
 		BaseRecord ref = null;
 		String chunk = parameterList.getParameter(FieldNames.FIELD_CHUNK, String.class, null);
 		int chunkCount = parameterList.getParameter(FieldNames.FIELD_CHUNK_COUNT, Integer.class, 0);
@@ -44,10 +49,10 @@ public class VectorListFactory extends FactoryBase {
 				if(ref == null) {
 					throw new FactoryException("Vector reference is required when no content is specified.");
 				}
-				vects = VectorUtil.createVectorStore(ref, cet, chunkCount);
+				vects = vu.createVectorStore(ref, cet, chunkCount);
 			}
 			else {
-				vects = VectorUtil.createVectorStore(ref, content, cet, chunkCount);
+				vects = vu.createVectorStore(ref, content, cet, chunkCount);
 			}
 			vlist.set(FieldNames.FIELD_VECTORS, vects);
 			

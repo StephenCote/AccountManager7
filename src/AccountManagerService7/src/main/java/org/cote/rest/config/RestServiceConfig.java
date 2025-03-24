@@ -157,7 +157,7 @@ public class RestServiceConfig extends ResourceConfig{
 				List<BaseRecord> store = new ArrayList<>();
 				if(util.isEnableVectorExtension()) {
 					try {
-						store = VectorUtil.createVectorStore(octx.getDocumentControl() , "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
+						store = IOSystem.getActiveContext().getVectorUtil().createVectorStore(octx.getDocumentControl() , "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
 					} catch (FieldException e) {
 						logger.error(e);
 					}
@@ -191,6 +191,7 @@ public class RestServiceConfig extends ResourceConfig{
 			props.setSchemaCheck(chkSchema);
 			try {
 				IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
+				ioContext.setVectorUtil(new VectorUtil(context.getInitParameter("embedding.server")));
 				boolean testVector = false;
 				for(String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
 					OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));

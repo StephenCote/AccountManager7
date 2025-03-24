@@ -21,8 +21,10 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
+import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.RecordUtil;
+import org.cote.accountmanager.util.VectorUtil;
 
 public class IOContext {
 	
@@ -45,6 +47,7 @@ public class IOContext {
 	private PolicyDefinitionUtil policyDefinitionUtil = null;
 	private String guid = null;
 	private DBUtil dbUtil = null;
+	private VectorUtil vectorUtil = null;
 	private AccessPoint accessPoint = null;
 	private boolean enforceAuthorization = true;
 	private boolean enforceValidation = true;
@@ -86,6 +89,16 @@ public class IOContext {
 		initialized = true;
 	}
 	
+	
+
+	public VectorUtil getVectorUtil() {
+		return vectorUtil;
+	}
+
+	public void setVectorUtil(VectorUtil vectorUtil) {
+		this.vectorUtil = vectorUtil;
+	}
+
 	public SystemTaskQueue getTaskQueue() {
 		return taskQueue;
 	}

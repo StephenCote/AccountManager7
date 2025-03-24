@@ -37,16 +37,16 @@
 		<param-name>isLog4jAutoInitializationDisabled</param-name>
 		<param-value>false</param-value>
 	</context-param>
-  <context-param>
-    <description>Database DataSource Name</description>
-    <param-name>database.dsname</param-name>
-    <param-value>comp/env/tomcat/datasources/postgresDS</param-value>
-  </context-param>
-    <context-param>
-    <description>Database Check Schema</description>
-    <param-name>database.checkSchema</param-name>
-    <param-value>true</param-value>
-  </context-param>
+	<context-param>
+		<description>Database DataSource Name</description>
+		<param-name>database.dsname</param-name>
+		<param-value>comp/env/tomcat/datasources/postgresDS</param-value>
+	</context-param>
+	<context-param>
+		<description>Database Check Schema</description>
+		<param-name>database.checkSchema</param-name>
+		<param-value>true</param-value>
+	</context-param>
 	<context-param>
 		<description>File Store Path</description>
 		<param-name>store.path</param-name>
@@ -77,31 +77,37 @@
 		<param-name>sd.server</param-name>
 		<param-value>http://localhost:7860</param-value>
 	</context-param>
-    <context-param>
-    <description>Poll  for Remote Tasks</description>
-    <param-name>task.poll.remote</param-name>
-    <param-value>false</param-value>
-  </context-param>
-    <context-param>
-    <description>Defer to Remote Tasks</description>
-    <param-name>task.defer.remote</param-name>
-    <param-value>true</param-value>
-  </context-param>
-      <context-param>
-    <description>Task Server</description>
-    <param-name>task.server</param-name>
-    <param-value>https://192.168.1.3:8443</param-value>
-  </context-param>
-      <context-param>
-    <description>Task API Key</description>
-    <param-name>task.api.key</param-name>
-    <param-value></param-value>
-  </context-param>
-        <context-param>
-    <description>Disable SSL Verification</description>
-    <param-name>ssl.verification.disabled</param-name>
-    <param-value></param-value>
-  </context-param>
+	<context-param>
+		<description>Poll  for Remote Tasks</description>
+		<param-name>task.poll.remote</param-name>
+		<param-value>false</param-value>
+	</context-param>
+	<context-param>
+		<description>Defer to Remote Tasks</description>
+		<param-name>task.defer.remote</param-name>
+		<param-value>true</param-value>
+	</context-param>
+	<context-param>
+		<description>Embedding Server</description>
+		<param-name>embedding.server</param-name>
+		<param-value>http://127.0.0.1:8123</param-value>
+	</context-param>
+
+	<context-param>
+		<description>Task Server</description>
+		<param-name>task.server</param-name>
+		<param-value>https://192.168.1.3:8443</param-value>
+	</context-param>
+	<context-param>
+		<description>Task API Key</description>
+		<param-name>task.api.key</param-name>
+		<param-value></param-value>
+	</context-param>
+	<context-param>
+		<description>Disable SSL Verification</description>
+		<param-name>ssl.verification.disabled</param-name>
+		<param-value></param-value>
+	</context-param>
 	<context-param>
 		<description>Maximum Image Width</description>
 		<param-name>image.maximum.width</param-name>
@@ -113,10 +119,10 @@
 		<param-name>image.maximum.height</param-name>
 		<param-value>2048</param-value>
 	</context-param>
-    <listener>
-        <display-name>ImageIO service provider loader/unloader</display-name>
-        <listener-class>com.twelvemonkeys.servlet.image.IIOProviderContextListener</listener-class>
-    </listener>
+	<listener>
+		<display-name>ImageIO service provider loader/unloader</display-name>
+		<listener-class>com.twelvemonkeys.servlet.image.IIOProviderContextListener</listener-class>
+	</listener>
 	<listener>
 		<listener-class>org.cote.listeners.AccountManagerContextListener</listener-class>
 	</listener>

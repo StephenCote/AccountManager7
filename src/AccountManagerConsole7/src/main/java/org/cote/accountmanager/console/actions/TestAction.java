@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.Options;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
@@ -25,7 +26,7 @@ public class TestAction extends CommonAction {
 			logger.info("Testing vector store");
 			List<BaseRecord> store = new ArrayList<>();
 			try {
-				store = VectorUtil.createVectorStore(user, "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
+				store = IOSystem.getActiveContext().getVectorUtil().createVectorStore(user, "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
 				if(store != null) {
 					logger.info("Created: " + store.size());
 				}

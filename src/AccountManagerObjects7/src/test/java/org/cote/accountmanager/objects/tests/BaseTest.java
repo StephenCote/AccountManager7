@@ -40,6 +40,7 @@ import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.cote.accountmanager.util.VectorUtil;
 import org.junit.After;
 import org.junit.Before;
 
@@ -139,6 +140,7 @@ public class BaseTest {
 			else {
 				logger.debug("Working with existing organization " + organizationPath);
 			}
+			ioContext.setVectorUtil(new VectorUtil(testProperties.getProperty("test.embedding.server")));
 		} catch (StackOverflowError | Exception e) {
 			logger.error(e);
 			e.printStackTrace();

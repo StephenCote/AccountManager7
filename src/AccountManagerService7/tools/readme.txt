@@ -1,0 +1,1 @@
+embedApi.py - simple API for generating embeddings, extracting keywords and tags, etc
