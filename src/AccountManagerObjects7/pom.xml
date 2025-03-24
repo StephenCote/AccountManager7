@@ -23,10 +23,6 @@
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
 	</properties>
 	<repositories>
-		<repository>
-			<id>djl.ai</id>
-			<url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-		</repository>
 
 		<repository>
 			<id>sonatypeSnapshots</id>
@@ -125,15 +121,11 @@
 
 				<configuration>
 					<environmentVariables>
-						<PATH>
-							C:\Users\swcot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64;${java.library.path}</PATH>
+
 					</environmentVariables>
 					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
-						-Djava.library.path=C:\Users\scot\.djl.ai\pytorch\2.0.1-20230709-cu118-win-x86_64
-						-Dai.djl.default_engine=PyTorch
-						-Dai.djl.offline=true
 						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
 						${argLine}</argLine>
 
@@ -145,7 +137,7 @@
 						<exclude>**/TestDocumentSearch.java</exclude>
 						-->
 						<exclude>**/TestSchemaModification.java</exclude>
-						
+
 						<exclude>**/TestSystemTasks.java</exclude>
 						<exclude>**/TestProfile.java</exclude>
 						<exclude>**/TestChat2.java</exclude>
@@ -156,7 +148,7 @@
 						<exclude>**/TestStreamEncryption.java</exclude>
 						<exclude>**/TestCipherData.java</exclude>
 						<exclude>**/TestVectorStore.java</exclude>
-						<exclude>**/TestVectorIndex.java</exclude>
+
 						<exclude>**/TestLangChain.java</exclude>
 						<exclude>**/TestOlioRules.java</exclude>
 
@@ -543,185 +535,13 @@
 			<artifactId>json</artifactId>
 			<version>20230618</version>
 		</dependency>
-		<!--
-<dependency>
-    <groupId>de.articdive</groupId>
-    <artifactId>jnoise-pipeline</artifactId>
-    <version>4.1.0</version>
-</dependency>
-<dependency>
-  <groupId>io.qdrant</groupId>
-  <artifactId>client</artifactId>
-  <version>1.7.2</version>
-</dependency>
--->
 
-		<dependency>
-			<groupId>ai.djl</groupId>
-			<artifactId>api</artifactId>
-		</dependency>
-		<dependency>
-			<groupId>ai.djl</groupId>
-			<artifactId>model-zoo</artifactId>
-		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.huggingface</groupId>
-			<artifactId>tokenizers</artifactId>
-		</dependency>
-		<!--
-		<dependency>
-    <groupId>ai.djl.onnxruntime</groupId>
-    <artifactId>onnxruntime-engine</artifactId>
-    <scope>runtime</scope>
-    <exclusions>
-        <exclusion>
-            <groupId>com.microsoft.onnxruntime</groupId>
-            <artifactId>onnxruntime</artifactId>
-        </exclusion>
-    </exclusions>
-</dependency>
-
-<dependency>
-    <groupId>com.microsoft.onnxruntime</groupId>
-    <artifactId>onnxruntime_gpu</artifactId>
-    <version>1.18.0</version>
-    <scope>runtime</scope>
-</dependency>
--->
-		<!--
-		<dependency>
-			<groupId>ai.djl.mxnet</groupId>
-			<artifactId>mxnet-model-zoo</artifactId>
-		</dependency>
-		
-		<dependency>
-			<groupId>ai.djl.mxnet</groupId>
-			<artifactId>mxnet-engine</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-				<dependency>
-			<groupId>ai.djl.mxnet</groupId>
-			<artifactId>mxnet-native-auto</artifactId>
-			<version>1.8.0</version>
-			<scope>runtime</scope>
-		</dependency>
-		-->
-		<!--
-<dependency>
-    <groupId>ai.djl.mxnet</groupId>
-    <artifactId>mxnet-native-mkl</artifactId>
-    <classifier>win-x86_64</classifier>
-    <scope>runtime</scope>
-    <version>1.9.1</version>
-</dependency>
--->
-
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-model-zoo</artifactId>
-		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-engine</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-jni</artifactId>
-			<scope>runtime</scope>
-		</dependency>
-		<!--
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-native-auto</artifactId>
-			<version>1.9.1</version>
-			<scope>runtime</scope>
-		</dependency>
-		-->
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-native-cu118</artifactId>
-			<classifier>win-x86_64</classifier>
-			<version>2.0.1</version>
-			<scope>runtime</scope>
-		</dependency>
-
-		<!--
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-native-cu124</artifactId>
-			<classifier>win-x86_64</classifier>
-			<version>2.4.0</version>
-			<scope>runtime</scope>
-		</dependency>
-	-->
-
-
-		<!--
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-native-auto</artifactId>
-			<version>1.9.1</version>
-			<scope>runtime</scope>
-		</dependency>
--->
 		<!-- pgvector (Optional) -->
 		<dependency>
 			<groupId>com.pgvector</groupId>
 			<artifactId>pgvector</artifactId>
 			<version>0.1.6</version>
 		</dependency>
-		<!--
-<dependency>
-  <groupId>org.tensorflow</groupId>
-  <artifactId>tensorflow-core-platform</artifactId>
-  <version>0.3.3</version>
-</dependency>
--->
-		<!-- LangChain -->
-		<!--
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j</artifactId>
-            <version>0.35.0</version>
-        </dependency>
-                <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-embeddings</artifactId>
-            <version>0.35.0</version>
-        </dependency>
 
-<dependency>
-    <groupId>dev.langchain4j</groupId>
-    <artifactId>langchain4j-ollama</artifactId>
-    <version>0.35.0</version>
-</dependency>
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-pgvector</artifactId>
-            <version>0.35.0</version>
-        </dependency>
-        <dependency>
-            <groupId>dev.langchain4j</groupId>
-            <artifactId>langchain4j-embeddings-all-minilm-l6-v2</artifactId>
-            <version>0.35.0</version>
-        </dependency>
-        -->
 	</dependencies>
-	<dependencyManagement>
-		<dependencies>
-			<dependency>
-				<groupId>ai.djl</groupId>
-				<artifactId>bom</artifactId>
-				<version>0.28.0</version>
-				<type>pom</type>
-				<scope>import</scope>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
 </project>
