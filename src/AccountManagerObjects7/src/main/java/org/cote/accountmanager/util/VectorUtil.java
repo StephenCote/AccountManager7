@@ -40,6 +40,7 @@ import org.cote.accountmanager.schema.type.ConnectionEnumType;
 import com.ibm.icu.util.StringTokenizer;
 import com.pgvector.PGvector;
 
+import ai.djl.Device;
 import ai.djl.ModelException;
 import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
 import ai.djl.inference.Predictor;
@@ -147,7 +148,7 @@ LIMIT ?
 	
 			try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); PreparedStatement stat = con.prepareStatement(sql)){
 		        float[] queryEmbedding = generateEmbeddings(zoo, new String[] {query}).get(0);
-		
+
 		        stat.setObject(1, new PGvector(queryEmbedding));
 		        stat.setLong(2, id);
 		        stat.setLong(3, id);
@@ -158,7 +159,7 @@ LIMIT ?
 		        stat.setDouble(8, k);
 		        stat.setDouble(9, k);
 		        stat.setInt(10, limit);
-
+		        logger.info(stat);
 		        ResultSet rs = stat.executeQuery();
 		        MemoryReader mem = new MemoryReader();
 		        while (rs.next()) {
@@ -333,6 +334,7 @@ LIMIT ?
             .optModelUrls(id)
             */
             //.optDevice(Device.gpu()) 
+            .optDevice(Device.cpu())
             .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
             .build()
             .loadModel();

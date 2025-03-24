@@ -246,6 +246,7 @@ public class ChatService {
 			String key = getKey(user, chatConfig, promptConfig, chatReq); 
 			logger.info("Chat request: " + key);
 			Chat chat = getChat(user, chatReq, key);
+			/*
 			boolean defer = Boolean.parseBoolean(context.getInitParameter("task.defer.remote"));
 			if(defer) {
 				if(chatReq.getMessage() != null && chatReq.getMessage().length() > 0) {
@@ -265,8 +266,9 @@ public class ChatService {
 				}
 			}
 			else {
+			*/
 				chat.continueChat(req, chatReq.getMessage());
-			}
+			//}
 			if(chatReq.getMessage().startsWith("/next")) {
 				/// Dump the request from the cache when moving episodes
 				forgetRequest(user, chatReq);
@@ -350,6 +352,7 @@ public class ChatService {
 		Chat chat = null;
 		if(chatConfig != null && promptConfig != null) {
 			chat = new Chat(user, chatConfig, promptConfig);
+			chat.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 			if(req.getSessionName() != null && req.getSessionName().length() > 0) {
 				chat.setSessionName(req.getSessionName());
 			}

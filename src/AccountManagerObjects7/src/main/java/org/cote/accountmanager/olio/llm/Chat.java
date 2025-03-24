@@ -19,6 +19,7 @@ import org.cote.accountmanager.io.IOContext;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -69,6 +70,8 @@ public class Chat {
 	private String apiVersion = null;
 	private String authorizationToken = null;
 	
+	private boolean deferRemote = false;
+	
 	/// Depending on the system where the library is running, System.lineSeparator() may include a carriage return. Depending where the LLM is running, it may be desired to strip the carriage return off.
 	//private boolean stripCarriageReturn = true;
 
@@ -81,6 +84,20 @@ Begin conversationally.
 		
 	}
 	
+	
+	
+	public boolean isDeferRemote() {
+		return deferRemote;
+	}
+
+
+
+	public void setDeferRemote(boolean deferRemote) {
+		this.deferRemote = deferRemote;
+	}
+
+
+
 	public Chat(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig) {
 		this.user = user;
 		this.chatConfig = chatConfig;
@@ -209,9 +226,38 @@ Begin conversationally.
 		chatConsole(newRequest(chatConfig.get("model")));
 	}
 	
+	private OpenAIResponse checkRemote(OpenAIRequest req, String message, boolean conversational) {
+		OpenAIResponse oresp = null;
+		if(deferRemote) {
+			if(message != null && message.length() > 0) {
+				newMessage(req, message);
+			}
+			BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig.copyRecord(new String[]{"apiVersion", "serviceType", "serverUrl", "apiKey", "model"}));
+			BaseRecord rtask = OlioTaskAgent.executeTask(task);
+			if(rtask != null) {
+				BaseRecord resp = rtask.get("taskModel");
+				if(resp != null) {
+					oresp = new OpenAIResponse(resp);
+					if(conversational) {
+						handleResponse(req, oresp, false);
+						saveSession(req);
+					}
+				}
+				else {
+					logger.error("Task response was null");
+				}
+			}
+		}
+		return oresp;
+	}
+	
 	public void continueChat(OpenAIRequest req, String message){
-		OpenAIResponse lastRep = null;	
+		if(deferRemote) {
+			checkRemote(req, message, true);
+			return;
+		}
 		
+		OpenAIResponse lastRep = null;	
 		LineAction act = checkAction(req, message);
 		if(act == LineAction.BREAK || act == LineAction.CONTINUE || act == LineAction.SAVE_AND_CONTINUE) {
 			if(act == LineAction.SAVE_AND_CONTINUE && sessionName != null) {
@@ -558,7 +604,13 @@ Begin conversationally.
 		}
 		while(oreq != null) {
 			logger.info(lbl + " ... " + offset);
-			OpenAIResponse oresp = chat(oreq);
+			OpenAIResponse oresp = null;
+			if(deferRemote) {
+				oresp = checkRemote(oreq, null, false);
+			}
+			else {
+				oresp = chat(oreq);
+			}
 			if(oresp == null || oresp.getMessage() == null) {
 				logger.error("Unexpected response");
 				if(oresp != null) {

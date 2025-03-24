@@ -436,18 +436,26 @@
 			<artifactId>pgvector</artifactId>
 			<version>0.1.6</version>
 		</dependency>
+
+		<dependency>
+			<groupId>ai.djl</groupId>
+			<artifactId>api</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>ai.djl</groupId>
+			<artifactId>model-zoo</artifactId>
+		</dependency>
+
+		<dependency>
+			<groupId>ai.djl.huggingface</groupId>
+			<artifactId>tokenizers</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-model-zoo</artifactId>
-			
 		</dependency>
-	<!--
-  <dependency>
-        <groupId>ai.djl.pytorch</groupId>
-        <artifactId>pytorch-native-auto</artifactId>
-        <version>1.9.1</version>
-    </dependency>
-    -->
+
 		<dependency>
 			<groupId>ai.djl.pytorch</groupId>
 			<artifactId>pytorch-engine</artifactId>
@@ -459,28 +467,13 @@
 			<artifactId>pytorch-jni</artifactId>
 			<scope>runtime</scope>
 		</dependency>
-
-		<dependency>
-			<groupId>ai.djl.pytorch</groupId>
-			<artifactId>pytorch-native-cu118</artifactId>
-			<classifier>win-x86_64</classifier>
-			<version>2.0.1</version>
-			<scope>runtime</scope>
-		</dependency>
-		<!--
-<dependency>
-  <groupId>org.tensorflow</groupId>
-  <artifactId>tensorflow-core-platform</artifactId>
-  <version>0.3.3</version>
-</dependency>
--->
 	</dependencies>
 	<dependencyManagement>
 		<dependencies>
 			<dependency>
 				<groupId>ai.djl</groupId>
 				<artifactId>bom</artifactId>
-				<version>0.28.0</version>
+				<version>0.32.0</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
