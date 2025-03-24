@@ -65,7 +65,7 @@
                     case "data.tag":
                         if ((actor || b2[am7model.jsonModelKey].match(/^data\.data$/gi)) && b2[am7model.jsonModelKey] == b.type) {
                             // aP.push(page.tag(b2, b, true));
-                            aP.push(page.member(b2[am7model.jsonModelKey], b2.objectId, b[am7model.jsonModelKey], b.objectId, true));
+                            aP.push(page.member(b[am7model.jsonModelKey], b.objectId, b2[am7model.jsonModelKey], b2.objectId, true));
                             filt[b2.objectId] = true;
                         }
                         else {

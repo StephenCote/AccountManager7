@@ -1630,11 +1630,19 @@
 
         function pickMember(field, members){
             let aP = [];
+            console.log(field);
             if(am7model.hasIdentity(entity)){
                 members.forEach((t)=>{
                     aP.push(new Promise((res, rej)=>{
-
-                        am7client.member(entity[am7model.jsonModelKey], entity.objectId, (!field.virtual ? field?.name : null), t[am7model.jsonModelKey], t.objectId, true, function(v){
+                        /// TODO: Differentiate which is the container, eg: entity should participate in a tag, not the other way around
+                        let e2 = entity;
+                        let a2 = t;
+                        if("data.tag" == field.baseModel){
+                            e2 = t;
+                            a2 = entity;
+                        }
+                        console.log(a2[am7model.jsonModelKey], a2);
+                        am7client.member(e2[am7model.jsonModelKey], e2.objectId, (!field.virtual ? field?.name : null), a2[am7model.jsonModelKey], a2.objectId, true, function(v){
                             console.log("Member: " + v);
                             res(v);
                         })
