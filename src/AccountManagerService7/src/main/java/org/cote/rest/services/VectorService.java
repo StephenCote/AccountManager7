@@ -1,6 +1,7 @@
 package org.cote.rest.services;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import javax.annotation.security.DeclareRoles;
@@ -30,6 +31,7 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -41,6 +43,9 @@ import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.tools.EmbeddingUtil;
+import org.cote.accountmanager.tools.ToolResponse;
+import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
@@ -94,6 +99,68 @@ public class VectorService {
 		List<BaseRecord> ovects = vu.sortAndLimit(vects, count);
 		logger.info("Found " + ovects.size() + " chunks");
 		return Response.status(200).entity(JSONUtil.exportObject(ovects, RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
+	}
+	
+	private ToolResponse getMeta(String statement) {
+		EmbeddingUtil eu = IOSystem.getActiveContext().getVectorUtil().getEmbedUtil();
+		ToolResponse tr = new ToolResponse();
+		tr.setKeywords(eu.getKeywords(statement));
+		tr.setEntities(eu.getNames(statement));
+		tr.setSentiment(eu.getSentiment(statement));
+		tr.setSummary(eu.getSummary(statement));
+		tr.setTags(eu.getTags(statement));
+		tr.setTopics(eu.getTopics(statement));
+		return tr;
+	}
+	
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/meta")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response metaData(String statement, @Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		return Response.status(200).entity(JSONUtil.exportObject(getMeta(statement))).build();
+	}
+	
+	@GET
+	@Path("/meta/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/{count:[0-9]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response metaReference(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("count") int count, @Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, type, objectId);
+		if(rec == null) {
+			return Response.status(404).build();
+		}
+		ToolResponse tr = null;
+		
+		
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+
+		String path = rec.get(FieldNames.FIELD_GROUP_PATH);
+		if(rec.getSchema().equals(ModelNames.MODEL_DATA) && path != null && path.contains("/Chat")) {
+			Query q = QueryUtil.createQuery(OlioModelNames.MODEL_VECTOR_CHAT_HISTORY, FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			q.setRequestRange(0, count);
+			q.field(FieldNames.FIELD_VECTOR_REFERENCE, rec);
+			q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, rec.getSchema());
+			q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_EMBEDDING}));
+			BaseRecord[] chunks = IOSystem.getActiveContext().getSearch().findRecords(q);
+			StringBuilder content = new StringBuilder();
+			for(BaseRecord chunk : chunks) {
+				logger.info(chunk.toFullString());
+				content.append(chunk.get("content") + System.lineSeparator());
+			}
+			logger.info("Constructing meta data for:");
+			logger.info(content.toString());
+			tr = getMeta(content.toString());
+			//OpenAIRequest req = OpenAIRequest.importRecord(ByteModelUtil.getValueString(rec));
+		}
+		
+
+		if(type != null && type.equals(OlioModelNames.MODEL_CHAR_PERSON)) {
+//			vects.addAll(vu.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
+		}
+
+		return Response.status(200).entity(JSONUtil.exportObject(tr)).build();
 	}
 	
 	/*

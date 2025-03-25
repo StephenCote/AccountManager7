@@ -171,6 +171,12 @@ public class RestServiceConfig extends ResourceConfig{
     	
 		private void initializeAccountManager(){
 
+			boolean disableSSLVerification = Boolean.parseBoolean(context.getInitParameter("ssl.verification.disabled"));
+			if(disableSSLVerification) {
+				logger.warn("SSL VERIFICATION DISABLED");
+				ClientUtil.setDisableSSLVerification(true);
+			}
+			
 			AuditUtil.setLogToConsole(Boolean.parseBoolean(context.getInitParameter("logToConsole")));
 			
 			logger.info("Initializing Account Manager");
@@ -251,14 +257,6 @@ public class RestServiceConfig extends ResourceConfig{
 							logger.error(e);
 						}
 				}
-				
-				boolean disableSSLVerification = Boolean.parseBoolean(context.getInitParameter("ssl.verification.disabled"));
-				if(disableSSLVerification) {
-					logger.warn("SSL VERIFICATION DISABLED");
-					ClientUtil.setDisableSSLVerification(true);
-					
-				}
-				
 				
 				boolean pollRemote = Boolean.parseBoolean(context.getInitParameter("task.poll.remote"));
 				String taskServer = context.getInitParameter("task.server");

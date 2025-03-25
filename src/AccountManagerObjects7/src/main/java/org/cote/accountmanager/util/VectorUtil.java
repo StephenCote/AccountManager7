@@ -427,4 +427,10 @@ LIMIT ?
         }
         return embeddings;
     }
+
+	public EmbeddingUtil getEmbedUtil() {
+		return embedUtil;
+	}
+    
+    
 }

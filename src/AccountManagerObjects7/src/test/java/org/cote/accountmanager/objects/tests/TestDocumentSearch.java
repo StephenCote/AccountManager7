@@ -40,6 +40,8 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.assist.DocumentWatcher;
 import org.cote.accountmanager.olio.assist.ScrivenerAssistant;
@@ -51,13 +53,12 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.DocumentUtil;
-import org.cote.accountmanager.tools.EmbeddingResponse;
 import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.tools.Status;
-import org.cote.accountmanager.tools.EmbeddingRequest;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
@@ -110,10 +111,24 @@ public class TestDocumentSearch extends BaseTest {
 		BaseRecord doc = getCreateDocument(testUser1, path);
 		assertNotNull("Test data was null", doc);
 		
-		ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 0);
-
+		if(vu.countVectorStore(doc) == 0) {
+			ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 0);
+		}
+		
 		List<BaseRecord> vecs = vu.find(doc, "What are the names of Mark's kids?", 10, 0.6);
 		assertTrue("Expected at least one result", vecs.size() > 0);
+		
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_ORGANIZATION_ID, testUser1.get(FieldNames.FIELD_ORGANIZATION_ID));
+		q.field(FieldNames.FIELD_VECTOR_REFERENCE, doc);
+		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, doc.getSchema());
+		q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_EMBEDDING}));
+		BaseRecord[] chunks = ioContext.getSearch().findRecords(q);
+		
+		assertTrue("Expected to return some chunks", chunks.length > 0);
+		logger.info("Chunks: " + chunks.length);
+	
+		
+		
 		// logger.info("Content: " + vecs.get(0).get("content"));
 		// logger.info(vecs.get(0).toFullString());
 		
