@@ -26,33 +26,49 @@ app = FastAPI()
 # Request models
 class EmbeddingRequest(BaseModel):
     text: str
+    class Config:
+        anystr_strip=False
 
 class KeywordRequest(BaseModel):
     text: str
     top_n: int = 5
+    class Config:
+        anystr_strip=False
 
 class SummaryRequest(BaseModel):
     text: str
     max_length: int = 130
     min_length: int = 30
+    class Config:
+        anystr_strip=False
 
 class SentimentRequest(BaseModel):
     text: str
+    class Config:
+        anystr_strip=False
 
 class NERRequest(BaseModel):
     text: str
+    class Config:
+        anystr_strip=False
 
 class TokenizationRequest(BaseModel):
     text: str
+    class Config:
+        anystr_strip=False
 
 class TopicModelingRequest(BaseModel):
     text: list[str]
     num_topics: int = 5
+    class Config:
+        anystr_strip=False
 
 class GenerateTagsRequest(BaseModel):
     text: str
     num_keywords: int = 5
     num_topics: int = 5
+    class Config:
+        anystr_strip=False
 
 # Response models
 class EmbeddingResponse(BaseModel):
@@ -141,18 +157,31 @@ def topic_modeling(request: TopicModelingRequest):
     
     return {"topics": top_terms}
 
-@app.post("/generate_tags", response_model=GenerateTagsResponse)
+@app.post("/generate_tags")
 def generate_tags(request: GenerateTagsRequest):
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Input text cannot be empty.")
-    
-    keywords = keyword_extractor.extract_keywords(request.text, keyphrase_ngram_range=(1, 2), top_n=request.num_keywords)
+
+    # Extract keywords using KeyBERT
+    keywords = keyword_extractor.extract_keywords(
+        request.text, keyphrase_ngram_range=(1, 2), top_n=request.num_keywords
+    )
+    keyword_list = [kw[0] for kw in keywords]  # Extract keyword text
+
+    # Perform TF-IDF vectorization
     vectorizer = TfidfVectorizer(stop_words="english")
     X = vectorizer.fit_transform([request.text])
-    terms = vectorizer.get_feature_names_out()
-    top_terms = [terms[i] for i in X.sum(axis=0).argsort()[0, -request.num_topics:].tolist()]
-    
-    tags = list(set([kw[0] for kw in keywords] + top_terms))
+
+    # Get feature names as a normal list
+    terms = vectorizer.get_feature_names_out().tolist()  
+
+    # Convert NumPy array to a normal list to avoid unhashable type error
+    top_term_indices = X.sum(axis=0).A1.argsort()[-request.num_topics:].tolist()
+    top_terms = [terms[i] for i in top_term_indices]  # Extract top terms
+
+    # Ensure everything is a string and remove duplicates
+    tags = list(set(keyword_list + top_terms))  # Combine and deduplicate
+
     return {"tags": tags}
 
 @app.get("/heartbeat")
