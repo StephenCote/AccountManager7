@@ -9,6 +9,7 @@ import uvicorn
 import nltk
 import spacy
 import time
+import numpy as np
 
 # Download necessary NLTK data
 nltk.download('punkt')
@@ -58,7 +59,7 @@ class TokenizationRequest(BaseModel):
         anystr_strip=False
 
 class TopicModelingRequest(BaseModel):
-    text: list[str]
+    text: str
     num_topics: int = 5
     class Config:
         anystr_strip=False
@@ -112,21 +113,49 @@ def extract_keywords(request: KeywordRequest):
     keywords = keyword_extractor.extract_keywords(request.text, keyphrase_ngram_range=(1, 2), top_n=request.top_n)
     return {"keywords": [kw[0] for kw in keywords]}
 
-@app.post("/generate_summary", response_model=SummaryResponse)
+@app.post("/generate_summary")
 def generate_summary(request: SummaryRequest):
     if not request.text.strip():
         raise HTTPException(status_code=400, detail="Input text cannot be empty.")
-    
-    summary = summarizer(request.text, max_length=request.max_length, min_length=request.min_length, do_sample=False)
-    return {"summary": summary[0]["summary_text"]}
 
-@app.post("/analyze_sentiment", response_model=SentimentResponse)
-def analyze_sentiment(request: SentimentRequest):
-    if not request.text.strip():
-        raise HTTPException(status_code=400, detail="Input text cannot be empty.")
-    
-    result = sentiment_analyzer(request.text)[0]
-    return {"sentiment": result["label"], "confidence": result["score"]}
+    # Set default max_length and min_length if not provided
+    max_length = request.max_length if request.max_length else 150
+    min_length = request.min_length if request.min_length else 50
+
+    # Ensure min_length is not greater than max_length
+    if min_length >= max_length:
+        raise HTTPException(status_code=400, detail="min_length must be smaller than max_length.")
+
+    # Ensure input text is within model token limits
+    max_input_length = 1024  # Typical limit for BART or T5 models
+    if len(request.text) > max_input_length:
+        request.text = request.text[:max_input_length]  # Truncate input to prevent errors
+
+    try:
+        summary = summarizer(request.text, max_length=max_length, min_length=min_length, do_sample=False)
+        return {"summary": summary[0]['summary_text']}
+    except IndexError:
+        raise HTTPException(status_code=500, detail="Summarization failed due to text processing error.")
+
+def chunk_text(text, chunk_size=500):
+    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+
+@app.post("/analyze_sentiment")
+async def analyze_sentiment(request: SentimentRequest):
+    try:
+        text_chunks = chunk_text(request.text)
+        results = [sentiment_analyzer(chunk, truncation=True)[0] for chunk in text_chunks]
+        
+        # Aggregate results (e.g., majority vote or averaging scores)
+        sentiments = [res["label"] for res in results]
+        confidence_scores = [res["score"] for res in results]
+        
+        dominant_sentiment = max(set(sentiments), key=sentiments.count)  # Majority vote
+        avg_confidence = sum(confidence_scores) / len(confidence_scores)  # Average confidence
+
+        return {"sentiment": dominant_sentiment, "confidence": avg_confidence}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/named_entity_recognition", response_model=NERResponse)
 def named_entity_recognition(request: NERRequest):
@@ -147,16 +176,24 @@ def tokenize_text(request: TokenizationRequest):
 
 @app.post("/topic_modeling", response_model=TopicModelingResponse)
 def topic_modeling(request: TopicModelingRequest):
-    if not request.text:
-        raise HTTPException(status_code=400, detail="Input text list cannot be empty.")
-    
-    vectorizer = TfidfVectorizer(stop_words="english")
-    X = vectorizer.fit_transform(request.text)
-    terms = vectorizer.get_feature_names_out()
-    top_terms = [terms[i] for i in X.sum(axis=0).argsort()[0, -request.num_topics:].tolist()]
-    
-    return {"topics": top_terms}
+    if not request.text or not request.text.strip():
+        raise HTTPException(status_code=400, detail="Input text cannot be empty.")
 
+    vectorizer = TfidfVectorizer(stop_words="english")
+    X = vectorizer.fit_transform([request.text])  # Wrap text in a list
+
+    terms = vectorizer.get_feature_names_out()
+    topic_scores = np.asarray(X.sum(axis=0)).flatten()
+
+    if topic_scores.size == 0:
+        raise HTTPException(status_code=400, detail="Insufficient meaningful words for topic extraction.")
+
+    num_topics = min(request.num_topics, len(topic_scores))  # Prevent index out of bounds
+    top_indices = topic_scores.argsort()[-num_topics:].tolist()
+    top_terms = [terms[i] for i in top_indices]
+
+    return {"topics": top_terms}
+        
 @app.post("/generate_tags")
 def generate_tags(request: GenerateTagsRequest):
     if not request.text.strip():
