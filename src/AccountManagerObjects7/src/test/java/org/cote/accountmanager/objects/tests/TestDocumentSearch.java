@@ -42,6 +42,7 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.assist.DocumentWatcher;
 import org.cote.accountmanager.olio.assist.ScrivenerAssistant;
@@ -59,6 +60,7 @@ import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.tools.Status;
+import org.cote.accountmanager.tools.ToolResponse;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
@@ -107,12 +109,12 @@ public class TestDocumentSearch extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		assertNotNull("Test user is null", testUser1);
 		
-		String path = "./media/The Verse.docx";
+		String path = "./media/HarlotsEight_Vol1_SM.docx";
 		BaseRecord doc = getCreateDocument(testUser1, path);
 		assertNotNull("Test data was null", doc);
 		
 		if(vu.countVectorStore(doc) == 0) {
-			ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 0);
+			ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 200);
 		}
 		
 		List<BaseRecord> vecs = vu.find(doc, "What are the names of Mark's kids?", 10, 0.6);
@@ -127,6 +129,13 @@ public class TestDocumentSearch extends BaseTest {
 		assertTrue("Expected to return some chunks", chunks.length > 0);
 		logger.info("Chunks: " + chunks.length);
 	
+
+		
+		 
+		String cnt = chunks[1].get("content");
+		BaseRecord chunk = RecordFactory.importRecord(ModelNames.MODEL_VECTOR_CHUNK, cnt);
+		ToolResponse tr = vu.getEmbedUtil().getMeta(chunk.get("content"));
+		logger.info(JSONUtil.exportObject(tr));
 		
 		
 		// logger.info("Content: " + vecs.get(0).get("content"));
@@ -135,36 +144,12 @@ public class TestDocumentSearch extends BaseTest {
 	}
 	
 	@Test
-	public void TestGenerateEmbedding() {
+	public void TestEmbeddingToolAvailable() {
 		String msg = "This is a test";
 		EmbeddingUtil eu = new EmbeddingUtil(testProperties.getProperty("test.embedding.server"));
 		assertTrue("Expected a heartbeat", eu.heartbeat());
-		/*
-		Status stat = ClientUtil.get(Status.class, ClientUtil.getResource(testProperties.getProperty("test.embedding.server") + "/heartbeat"), null, MediaType.APPLICATION_JSON_TYPE);
-		assertNotNull("Status was null");
-		*/
-		/*
-		EmbeddingResponse resp = ClientUtil.post(EmbeddingResponse.class, ClientUtil.getResource(testProperties.getProperty("test.embedding.server") + "/generate_embedding"), null, new EmbeddingRequest(msg), MediaType.APPLICATION_JSON_TYPE);
-		assertNotNull("Response was null", resp);
-		logger.info(resp.getEmbedding().length);
-		*/
-		/*
-		Builder bld = ClientUtil.getRequestBuilder(ClientUtil.getResource(testProperties.getProperty("test.embedding.server") + "/generate_embedding"))
-			.accept(MediaType.APPLICATION_JSON_TYPE);
-
-		Response response = bld.post(Entity.entity(msg, MediaType.APPLICATION_JSON_TYPE));
-		List<Float> embeds = new ArrayList<>();
-		if(response != null && response.getStatus() == 200) {
-			String json = response.readEntity(String.class);
-			logger.info(json);
-			embeds = JSONUtil.getList(json, Float.class, null);
-		}
-		else {
-			logger.error("Response was null or invalid");
-		}
-		//Float[] embeds = JSONUtil.importObject(json, Float[].class);
-		logger.info("Received " + embeds.size());
-		*/
+		
+		logger.info(StatementUtil.getDeleteOrphanTemplate(null));
 	}
 
 

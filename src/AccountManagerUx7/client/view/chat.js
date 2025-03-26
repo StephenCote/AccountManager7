@@ -157,7 +157,8 @@
       else {
         pushHistory();
         chatCfg.pending = true;
-        m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: { chatConfig: chatCfg.chat.objectId, promptConfig: chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid(), message: msg } }).then((r) => {
+        let data = page.components.dnd.workingSet.map(r => {return JSON.stringify({schema:r.schema, objectId:r.objectId});});
+        m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: { chatConfig: chatCfg.chat.objectId, promptConfig: chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid(), message: msg, data } }).then((r) => {
           if (!chatCfg.history) chatCfg.history = {};
           chatCfg.history.messages = r?.messages || [];
           chatCfg.pending = false;
@@ -425,6 +426,22 @@
               }
               tdx1 = cnt.toLowerCase().indexOf("<thought>");
             }
+
+            tdx1 = cnt.toLowerCase().indexOf("<citation");
+            check = 0;
+            while (tdx1 > -1) {
+              if (check++ >= maxCheck) {
+                console.error("Break on loop!");
+                break;
+              }
+
+              let tdx2 = cnt.toLowerCase().indexOf("</citation>");
+              if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
+                cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + 11, cnt.length);
+              }
+              tdx1 = cnt.toLowerCase().indexOf("<citation");
+            }
+
           }
 
           if (bectl) {

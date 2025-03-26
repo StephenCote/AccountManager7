@@ -28,6 +28,11 @@
 			"name": "sessionName",
 			"type": "string",
 			"maxLength": 128
+		},
+		{
+			"name": "data",
+			"type": "list",
+			"baseType": "string"
 		}
 	]
 }

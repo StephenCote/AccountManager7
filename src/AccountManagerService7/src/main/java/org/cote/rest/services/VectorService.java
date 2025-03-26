@@ -93,24 +93,12 @@ public class VectorService {
 		//String[] tables = new String[0];
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
 		if(type != null && type.equals(OlioModelNames.MODEL_CHAR_PERSON)) {
-			vects.addAll(vu.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
+			vects.addAll(vu.find(rec, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
 		}
 		vects.addAll(vu.find(rec, type, statement, count, dist));
 		List<BaseRecord> ovects = vu.sortAndLimit(vects, count);
 		logger.info("Found " + ovects.size() + " chunks");
 		return Response.status(200).entity(JSONUtil.exportObject(ovects, RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();
-	}
-	
-	private ToolResponse getMeta(String statement) {
-		EmbeddingUtil eu = IOSystem.getActiveContext().getVectorUtil().getEmbedUtil();
-		ToolResponse tr = new ToolResponse();
-		tr.setKeywords(eu.getKeywords(statement));
-		tr.setEntities(eu.getNames(statement));
-		tr.setSentiment(eu.getSentiment(statement));
-		tr.setSummary(eu.getSummary(statement));
-		tr.setTags(eu.getTags(statement));
-		tr.setTopics(eu.getTopics(statement));
-		return tr;
 	}
 	
 	@RolesAllowed({"user"})
@@ -119,7 +107,7 @@ public class VectorService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response metaData(String statement, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		return Response.status(200).entity(JSONUtil.exportObject(getMeta(statement))).build();
+		return Response.status(200).entity(JSONUtil.exportObject(IOSystem.getActiveContext().getVectorUtil().getEmbedUtil().getMeta(statement))).build();
 	}
 	
 	@GET
@@ -131,7 +119,7 @@ public class VectorService {
 		if(rec == null) {
 			return Response.status(404).build();
 		}
-		ToolResponse tr = null;
+		List<ToolResponse> trs = new ArrayList<>();
 		
 		
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
@@ -144,15 +132,12 @@ public class VectorService {
 			q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, rec.getSchema());
 			q.planMost(false, Arrays.asList(new String[] {FieldNames.FIELD_EMBEDDING}));
 			BaseRecord[] chunks = IOSystem.getActiveContext().getSearch().findRecords(q);
-			StringBuilder content = new StringBuilder();
-			for(BaseRecord chunk : chunks) {
-				logger.info(chunk.toFullString());
-				content.append(chunk.get("content") + System.lineSeparator());
+
+			for(BaseRecord vchunk : chunks) {
+				BaseRecord chunk = RecordFactory.importRecord(ModelNames.MODEL_VECTOR_CHUNK, vchunk.get("content"));
+				ToolResponse tr = vu.getEmbedUtil().getMeta(chunk.get("content"));
+				trs.add(tr);
 			}
-			logger.info("Constructing meta data for:");
-			logger.info(content.toString());
-			tr = getMeta(content.toString());
-			//OpenAIRequest req = OpenAIRequest.importRecord(ByteModelUtil.getValueString(rec));
 		}
 		
 
@@ -160,7 +145,7 @@ public class VectorService {
 //			vects.addAll(vu.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
 		}
 
-		return Response.status(200).entity(JSONUtil.exportObject(tr)).build();
+		return Response.status(200).entity(JSONUtil.exportObject(trs)).build();
 	}
 	
 	/*

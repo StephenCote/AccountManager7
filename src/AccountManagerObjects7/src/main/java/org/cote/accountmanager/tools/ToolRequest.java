@@ -2,8 +2,8 @@ package org.cote.accountmanager.tools;
 
 public class ToolRequest{
 	private String text = null;
-	private int max_length = 130;
-	private int min_length = 30;
+	private int max_length = 300;
+	private int min_length = 50;
 	private int top_n = 5;
 	private int num_keywords = 5;
 	private int num_topics = 5;

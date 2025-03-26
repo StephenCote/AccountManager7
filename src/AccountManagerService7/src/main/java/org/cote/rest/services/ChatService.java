@@ -1,9 +1,13 @@
 package org.cote.rest.services;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.annotation.security.DeclareRoles;
 import javax.annotation.security.RolesAllowed;
@@ -27,6 +31,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
@@ -39,8 +44,10 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.cote.accountmanager.util.VectorUtil;
 import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"admin","user"})
@@ -219,12 +226,15 @@ public class ChatService {
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
 	}
 	
+	private Map<String, String> objectSummary = new HashMap<>();
+	
 	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/text")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chatRPG(String json, @Context HttpServletRequest request){
 		ChatRequest chatReq = ChatRequest.importRecord(json);
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		if(chatReq.getUid() == null) {
 			logger.warn("A uid is required for every chat");
 			return Response.status(404).entity(null).build();
@@ -235,9 +245,15 @@ public class ChatService {
 		}
 		chatTrack.add(chatReq.getUid());
 		
-		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		
 		OpenAIRequest req = getOpenAIRequest(user, chatReq);
+		String citRef = "";
+		if(chatReq.getMessage() != null && chatReq.getMessage().length() > 0) {
+			List<String> cits = getDataCitations(user, req, chatReq);
+			if(cits.size() > 0) {
+				citRef = System.lineSeparator() + cits.stream().collect(Collectors.joining(System.lineSeparator()));
+			}
+		}
+		
 		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
 		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
 		///logger.info(JSONUtil.exportObject(req));
@@ -267,7 +283,7 @@ public class ChatService {
 			}
 			else {
 			*/
-				chat.continueChat(req, chatReq.getMessage());
+				chat.continueChat(req, chatReq.getMessage() + citRef);
 			//}
 			if(chatReq.getMessage().startsWith("/next")) {
 				/// Dump the request from the cache when moving episodes
@@ -279,6 +295,96 @@ public class ChatService {
 		// logger.info((creq != null ? JSONUtil.exportObject(creq) : null));
 		
 		return Response.status((creq != null ? 200 : 404)).entity(creq).build();
+	}
+	
+	private String getFilteredCitationText(OpenAIRequest req, BaseRecord recRef, String type, int chunk, String content) {
+		if(content == null || content.length() == 0) {
+			return null;
+		}
+		String citationKey = "<citation schema=\"" + recRef.getSchema() + "\" type = \"" + type + "\" chunk = \"" + chunk + "\" id = \"" + recRef.get(FieldNames.FIELD_OBJECT_ID) + "\">";
+		String citationSuff = "</citation>";
+		List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && m.getContent().contains(citationKey)).collect(Collectors.toList());
+		String citation = null;
+		if(msgs.size() == 0) {
+			citation = citationKey + content + citationSuff;
+		}
+		return citation;
+	}
+	
+	private List<String> getDataCitations(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
+		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
+		List<String> dataCit = new ArrayList<>();
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		for(String dataR : dataRef) {
+			BaseRecord recRef = RecordFactory.importRecord(dataR);
+
+			
+			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
+
+
+			String summary = null;
+			if(objectSummary.containsKey(objId)) {
+				summary = objectSummary.get(objId);
+			}
+			else {
+				Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
+				rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+				rq.planMost(false);
+				BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
+				if(frec != null) {
+					String content = DocumentUtil.getStringContent(frec);
+					if(content != null) {
+						summary = content;
+						objectSummary.put(objId, content);
+						/*
+						summary = vu.getEmbedUtil().getSummary(content);
+						if(summary != null) {
+							objectSummary.put(objId, summary);
+						}
+						else {
+							logger.warn("Summary was null");
+						}
+						*/
+					}
+					else {
+						logger.warn("Content was null for " + recRef.getSchema() + " " + objId);
+					}
+					
+				}
+			}
+			if(summary != null) {
+				dataCit.add(getFilteredCitationText(req, recRef, "summary", 0, summary));
+			}
+			List<BaseRecord> vects = new ArrayList<>();
+			String msg = creq.getMessage();
+			if(msg != null && msg.length() > 0) {
+				if(recRef.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
+					vects.addAll(vu.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
+				}
+				else {
+					/// Skip looking up vectorized char person since the summary will include the narrative description
+					///
+					vects.addAll(vu.find(recRef, recRef.getSchema(), msg, 3, 0.6));
+				}
+			}
+
+			for(BaseRecord vect : vects) {
+				/*
+				BaseRecord chunk = RecordFactory.importRecord(ModelNames.MODEL_VECTOR_CHUNK, vect.get("content"));
+				if(chunk == null) {
+					logger.error(vect.toFullString());
+				}
+				else {
+				*/
+					String txt = getFilteredCitationText(req, recRef, "chunk", vect.get("chunk"), vect.get("content"));
+					if(txt != null) {
+						dataCit.add(txt);
+					}
+				//}
+			}
+
+		}
+		return dataCit;
 	}
 	
 	private ChatResponse getChatResponse(BaseRecord user, OpenAIRequest req, ChatRequest creq) {

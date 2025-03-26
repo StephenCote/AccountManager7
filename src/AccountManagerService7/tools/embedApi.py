@@ -18,7 +18,7 @@ nltk.download('punkt')
 model = SentenceTransformer("all-mpnet-base-v2")
 keyword_extractor = KeyBERT(model)
 summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-sentiment_analyzer = pipeline("sentiment-analysis", model="cardiffnlp/twitter-roberta-base-sentiment-latest")
+sentiment_analyzer = pipeline("sentiment-analysis", model="patrickvonplaten/longformer2roberta-cnn_dailymail-fp16")
 nlp = spacy.load("en_core_web_sm")
 
 # Initialize FastAPI app

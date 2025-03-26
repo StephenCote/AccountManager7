@@ -198,6 +198,32 @@ public class StatementUtil {
 						sqls.add(sql.toString());
 					}
 				}
+				
+				if(ms.inherits(ModelNames.MODEL_VECTOR_EXT)) {
+					for(String cmodel : names) {
+						if(cmodel.equals(ModelNames.MODEL_MODEL) || cmodel.equals(ModelNames.MODEL_PARTICIPATION)) {
+							continue;
+						}
+						if(model == null || cmodel.equals(model)) {
+							ModelSchema ms2 = RecordFactory.getSchema(cmodel);
+							if(ms2.inherits(ModelNames.MODEL_VECTOR_EXT)) {
+								continue;
+							}
+							if(ms2.isEphemeral() || IOSystem.getActiveContext().getDbUtil().isConstrained(ms2) ) {
+								continue;
+							}
+							if(!ms2.hasField(FieldNames.FIELD_ID)) {
+								continue;
+							}
+							String refTable = IOSystem.getActiveContext().getDbUtil().getTableName(cmodel);
+							sql = new StringBuilder();
+							sql.append("DELETE FROM " + table + " WHERE vectorReferenceType = '" + cmodel + "' AND vectorReference > 0 AND vectorReference NOT IN (SELECT P1.id FROM " + refTable + " P1);");
+							sqls.add(sql.toString());
+						}
+					}
+				
+
+				}
 			}
 		}
 		return sqls.stream().collect(Collectors.joining("\n"));

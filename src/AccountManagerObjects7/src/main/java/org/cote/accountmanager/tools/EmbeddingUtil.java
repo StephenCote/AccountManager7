@@ -7,6 +7,7 @@ import javax.ws.rs.core.MediaType;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.util.ClientUtil;
 
 public class EmbeddingUtil {
@@ -132,5 +133,15 @@ public class EmbeddingUtil {
 
 	}
 
+	public ToolResponse getMeta(String statement) {
+		ToolResponse tr = new ToolResponse();
+		tr.setKeywords(getKeywords(statement));
+		tr.setEntities(getNames(statement));
+		tr.setSentiment(getSentiment(statement));
+		tr.setSummary(getSummary(statement));
+		tr.setTags(getTags(statement));
+		tr.setTopics(getTopics(statement));
+		return tr;
+	}
 	
 }
