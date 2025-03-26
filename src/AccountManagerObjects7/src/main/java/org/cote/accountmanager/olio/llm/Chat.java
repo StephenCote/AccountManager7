@@ -46,6 +46,8 @@ public class Chat {
 	private boolean chatMode = true;
 	private boolean includeMessageHistory = chatMode;
 	private boolean includeContextHistory = !chatMode;
+	
+	private boolean autoTag = true;
 
 	// private static int contextSize = 4096;
 	private static int contextSize = 8192;
@@ -262,6 +264,9 @@ Begin conversationally.
 		if(act == LineAction.BREAK || act == LineAction.CONTINUE || act == LineAction.SAVE_AND_CONTINUE) {
 			if(act == LineAction.SAVE_AND_CONTINUE && sessionName != null) {
 				ChatUtil.saveSession(user, req, sessionName);
+				if(chatConfig != null) {
+					ChatUtil.applyTags(user, chatConfig, ChatUtil.getSessionData(user, sessionName));
+				}
 				createNarrativeVector(user, req, sessionName);
 			}
 			logger.info("Continue...");
@@ -285,6 +290,9 @@ Begin conversationally.
 	public void saveSession(OpenAIRequest req) {
 		if(sessionName != null) {
 			ChatUtil.saveSession(user, req, sessionName);
+			if(chatConfig != null) {
+				ChatUtil.applyTags(user, chatConfig, ChatUtil.getSessionData(user, sessionName));
+			}
 			createNarrativeVector(user, req, sessionName);
 		}		
 	}
@@ -945,6 +953,9 @@ Begin conversationally.
 				}
 				if(sessionName != null) {
 					ChatUtil.saveSession(user, req, sessionName);
+					if(chatConfig != null) {
+						ChatUtil.applyTags(user, chatConfig, ChatUtil.getSessionData(user, sessionName));
+					}
 					createNarrativeVector(user, req, sessionName);
 					
 				}

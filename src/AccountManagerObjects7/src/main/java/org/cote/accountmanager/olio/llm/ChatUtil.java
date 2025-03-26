@@ -37,6 +37,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -501,5 +502,34 @@ public class ChatUtil {
 		return null;
 		
 	}
+	
+	public static void applyTags(BaseRecord user, BaseRecord chatConfig, BaseRecord session) {
+		BaseRecord userChar = chatConfig.get("userCharacter");
+		BaseRecord systemChar = chatConfig.get("systemCharacter");
+		
+		if(userChar != null) {
+			applyTag(user, userChar.get(FieldNames.FIELD_NAME), userChar.getSchema(), userChar, true);
+			if(session != null) {
+				applyTag(user, userChar.get(FieldNames.FIELD_NAME), userChar.getSchema(), session, true);
+			}
+		}
+		
+		if(systemChar != null) {
+			applyTag(user, systemChar.get(FieldNames.FIELD_NAME), systemChar.getSchema(), systemChar, true);
+			if(session != null) {
+				applyTag(user, systemChar.get(FieldNames.FIELD_NAME), systemChar.getSchema(), session, true);
+			}
+		}
+	}
+
+	private static boolean applyTag(BaseRecord user, String tagName, String tagType, BaseRecord targetObj, boolean enable) {
+		BaseRecord tag = DocumentUtil.getCreateTag(user, tagName, tagType);
+		boolean outBool = false;
+		if(tag != null) {
+			outBool = IOSystem.getActiveContext().getMemberUtil().member(user, tag, targetObj, null, true);
+		}
+		return outBool;
+	}
+	
 	
 }

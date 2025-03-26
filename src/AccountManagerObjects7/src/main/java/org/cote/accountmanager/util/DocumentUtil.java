@@ -16,18 +16,56 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
 import org.apache.tika.sax.BodyContentHandler;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.provider.IProvider;
 
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);
+	
+
+	public static BaseRecord getCreateTag(BaseRecord user, String name, String type) {
+		BaseRecord group = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP, "~/Tags", GroupEnumType.DATA.toString());
+		if(group != null) {
+			return getCreateTag(user, name, type, group);
+		}
+		return null;
+	}
+	
+	public static BaseRecord getCreateTag(BaseRecord user, String name, String type, BaseRecord group) {
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_TAG, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+		q.field(FieldNames.FIELD_NAME, name);
+		q.field(FieldNames.FIELD_TYPE, type);
+		BaseRecord rec = IOSystem.getActiveContext().getSearch().findRecord(q);
+		if(rec == null) {
+			ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, group.get(FieldNames.FIELD_PATH));
+			plist.parameter(FieldNames.FIELD_NAME, name);
+			try {
+				rec = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_TAG, user, null, plist);
+				rec.set(FieldNames.FIELD_TYPE, type);
+				IOSystem.getActiveContext().getRecordUtil().createRecord(rec);
+			}
+			catch(FactoryException | FieldException | ValueException | ModelNotFoundException e) {
+				logger.error(e);
+			}
+		}
+		return rec;
+	}
+	
 	
 	public static String getStringContent(BaseRecord model) {
 		String content = null;
