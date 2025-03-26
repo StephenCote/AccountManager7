@@ -8,6 +8,7 @@
 			"baseType": "model",
 			"baseModel": "data.tag",
 			"foreign": true,
+			"participation": true,
 			"followReference": true
 		}
 	]

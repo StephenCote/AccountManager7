@@ -623,7 +623,13 @@ public class StatementUtil {
 			}
 			else if(schema.isForeign()) {
 				if(schema.getType().equals("list")) {
-					buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString()  + ", '" + RecordFactory.JSON_MODEL_KEY + "': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					if(schema.isParticipation()) {
+						
+						buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString()  + ", '" + RecordFactory.JSON_MODEL_KEY + "': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(msschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + participantModel + "' AND " + palias + ".participationId = " + salias + ".id AND " + palias + ".participantModel = '" + model + "' AND " + palias + ".participantId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					}
+					else {
+						buff.append("JSON_ARRAY(SELECT JSON_OBJECT(" + ajoin.toString()  + ", '" + RecordFactory.JSON_MODEL_KEY + "': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					}
 				}
 				else {
 					buff.append("(SELECT JSON_OBJECT(" + ajoin.toString() + ", '" + RecordFactory.JSON_MODEL_KEY + "': '" + subModel +  "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + alias + "." + util.getColumnName(schema.getName()) + " = " + salias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
@@ -645,7 +651,12 @@ public class StatementUtil {
 			}
 			else if(schema.isForeign()) {
 				if(schema.getType().equals("list")) {
-					buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", '" + RecordFactory.JSON_MODEL_KEY + "', '" + subModel + "')" + orderClause + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					if(schema.isParticipation()) {
+						buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", '" + RecordFactory.JSON_MODEL_KEY + "', '" + subModel + "')" + orderClause + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(msschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + participantModel + "' AND " + palias + ".participationId = " + salias + ".id AND " + palias + ".participantModel = '" + model + "' AND " + palias + ".participantId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));	
+					}
+					else {
+						buff.append("(SELECT JSON_AGG(JSON_BUILD_OBJECT(" + ajoin.toString() + ", '" + RecordFactory.JSON_MODEL_KEY + "', '" + subModel + "')" + orderClause + ") FROM " + util.getTableName(mschema, subModel) + " " + salias + " INNER JOIN " + util.getTableName(mschema, ModelNames.MODEL_PARTICIPATION) + " " + palias + " ON " + palias + ".participationModel = '" + model + "' AND " + palias + ".participantId = " + salias + ".id AND " + palias + ".participantModel = '" + participantModel + "' AND " + palias + ".participationId = " + alias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));
+					}
 				}
 				else {
 					buff.append("(SELECT JSON_BUILD_OBJECT(" + ajoin.toString() + ", '" + RecordFactory.JSON_MODEL_KEY + "', '" + subModel + "') FROM " + util.getTableName(mschema, subModel) + " " + salias + " WHERE " + alias + ".id > 0 AND " + alias + "." + util.getColumnName(schema.getName()) + " = " + salias + ".id)" + (!embedded ? " as " + util.getColumnName(schema.getName()) : ""));

@@ -34,6 +34,12 @@ public class FieldSchema {
 	private boolean virtual = false;
 	private boolean foreign = false;
 	private String participantModel = null;
+	
+	/// Participation indicates that the field base model drives the participation location, vs the object's model
+	/// E.G.: For a person, accounts and siblings would participate on the object's model.  Roles, Groups, and Tags would participate on the Tag's model.
+	/// At the moment, only Tags are being treated as a direct property
+	///
+	private boolean participation = false;
 	private String foreignType = null;
 	private String foreignField = null;
 	
@@ -80,6 +86,14 @@ public class FieldSchema {
 	
 	public FieldSchema() {
 		
+	}
+
+	public boolean isParticipation() {
+		return participation;
+	}
+
+	public void setParticipation(boolean participation) {
+		this.participation = participation;
 	}
 
 	public List<String> getFields() {

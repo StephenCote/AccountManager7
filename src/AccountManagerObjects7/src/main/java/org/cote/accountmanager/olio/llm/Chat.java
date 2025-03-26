@@ -970,7 +970,7 @@ Begin conversationally.
 	
 	private void addKeyFrame(OpenAIRequest req) {
 		OpenAIMessage msg = new OpenAIMessage();
-		msg.setRole("assistant");
+		msg.setRole("user");
 		ESRBEnumType rating = chatConfig.getEnum("rating");
 
 		BaseRecord systemChar = chatConfig.get("systemCharacter");

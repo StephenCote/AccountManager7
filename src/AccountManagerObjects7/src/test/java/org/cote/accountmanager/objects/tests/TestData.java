@@ -42,6 +42,19 @@ import org.junit.Test;
 public class TestData extends BaseTest {
 
 	@Test
+	public void TestTagQuery() {
+		logger.info("Test Tag Query - Inverting query from current version");
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA);
+		q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_TAGS});
+		try {
+			logger.info(StatementUtil.getSelectTemplate(q).getSql());
+		} catch (ModelException | FieldException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+	}
+	
+	@Test
 	public void TestTag() {
 		logger.info("Tag data");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Data");
@@ -67,14 +80,14 @@ public class TestData extends BaseTest {
 			tag = ioContext.getAccessPoint().create(testUser1, tag);
 			data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, testUser1, null, plist);
 			data = ioContext.getAccessPoint().create(testUser1, data);
-			boolean tagged = ioContext.getMemberUtil().member(testUser1, data, tag, null, true);
+			boolean tagged = ioContext.getMemberUtil().member(testUser1, tag, data, null, true);
 			assertTrue("Failed to tag", tagged);
 			
-			List<BaseRecord> datal = ioContext.getMemberUtil().getParticipations(tag, ModelNames.MODEL_DATA);
-			logger.info("Size: " + datal.size());
+			List<BaseRecord> datal = ioContext.getMemberUtil().getMembers(tag, null, ModelNames.MODEL_DATA);
+			assertTrue("Expected size to be 1", datal.size() == 1);
 			
-			datal = ioContext.getMemberUtil().getMembers(data, null, ModelNames.MODEL_TAG);
-			logger.info("Size: " + datal.size());
+			datal = ioContext.getMemberUtil().getParticipations(data, ModelNames.MODEL_TAG);
+			assertTrue("Expected size to be 1", datal.size() == 1);
 			
 		} catch (FactoryException | IndexException | ReaderException e) {
 			logger.error(e);
@@ -97,7 +110,7 @@ public class TestData extends BaseTest {
 				"subjectType": "user",
 				"subject":{
 					"schema": "system.user",
-					FieldNames.FIELD_NAME: "Admin",
+					"name": "Admin",
 					"organizationPath": "/Development"
 				}
 			}

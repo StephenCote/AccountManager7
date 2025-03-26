@@ -315,74 +315,48 @@ public class ChatService {
 		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
 		List<String> dataCit = new ArrayList<>();
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		List<BaseRecord> vects = new ArrayList<>();
+		String msg = creq.getMessage();
+		List<BaseRecord> tags = new ArrayList<>();
+		List<BaseRecord> frecs = new ArrayList<>();
 		for(String dataR : dataRef) {
 			BaseRecord recRef = RecordFactory.importRecord(dataR);
-
-			
 			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
-
-
-			String summary = null;
-			if(objectSummary.containsKey(objId)) {
-				summary = objectSummary.get(objId);
-			}
-			else {
-				Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
-				rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-				rq.planMost(false);
-				BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
-				if(frec != null) {
-					String content = DocumentUtil.getStringContent(frec);
-					if(content != null) {
-						summary = content;
-						objectSummary.put(objId, content);
-						/*
-						summary = vu.getEmbedUtil().getSummary(content);
-						if(summary != null) {
-							objectSummary.put(objId, summary);
-						}
-						else {
-							logger.warn("Summary was null");
-						}
-						*/
-					}
-					else {
-						logger.warn("Content was null for " + recRef.getSchema() + " " + objId);
-					}
-					
-				}
-			}
-			if(summary != null) {
-				dataCit.add(getFilteredCitationText(req, recRef, "summary", 0, summary));
-			}
-			List<BaseRecord> vects = new ArrayList<>();
-			String msg = creq.getMessage();
-			if(msg != null && msg.length() > 0) {
-				if(recRef.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
-					vects.addAll(vu.find(null, ModelNames.MODEL_DATA, new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
+			Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
+			rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			rq.planMost(false);
+			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
+			if(frec != null) {
+				if(recRef.getSchema().equals(ModelNames.MODEL_TAG)) {
+					tags.add(frec);
 				}
 				else {
-					/// Skip looking up vectorized char person since the summary will include the narrative description
-					///
-					vects.addAll(vu.find(recRef, recRef.getSchema(), msg, 3, 0.6));
+					frecs.add(frec);
 				}
 			}
-
-			for(BaseRecord vect : vects) {
-				/*
-				BaseRecord chunk = RecordFactory.importRecord(ModelNames.MODEL_VECTOR_CHUNK, vect.get("content"));
-				if(chunk == null) {
-					logger.error(vect.toFullString());
-				}
-				else {
-				*/
-					String txt = getFilteredCitationText(req, recRef, "chunk", vect.get("chunk"), vect.get("content"));
-					if(txt != null) {
-						dataCit.add(txt);
+		}
+		if(tags.size() > 0 && frecs.size() == 0) {
+			vects.addAll(vu.find(null, ModelNames.MODEL_DATA, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
+			vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6));
+		}
+		else {
+			for(BaseRecord frec : frecs) {
+				if(msg != null && msg.length() > 0) {
+					logger.info("Building citations with " + dataRef.size() + " references of which " + tags.size() + " are tags");
+					if(
+						frec.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)
+					) {
+						vects.addAll(vu.find(null, ModelNames.MODEL_DATA, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
 					}
-				//}
+					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 3, 0.6));
+				}
 			}
-
+		}
+		for(BaseRecord vect : vects) {
+			String txt = getFilteredCitationText(req, vect, "chunk", vect.get("chunk"), vect.get("content"));
+			if(txt != null) {
+				dataCit.add(txt);
+			}
 		}
 		return dataCit;
 	}

@@ -16,7 +16,7 @@
 			"name": "content",
 			"type": "string",
 			"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
-			"encrypt": true
+			"encrypt": false
 		},
 		{
 			"name": "embedding",

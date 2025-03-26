@@ -39,6 +39,10 @@ public class EncryptFieldProvider implements IProvider {
 		if(!RecordOperation.CREATE.equals(operation) && !RecordOperation.UPDATE.equals(operation) && !RecordOperation.READ.equals(operation)) {
 			return;
 		}
+		
+		if(!lfield.isEncrypt()) {
+			return;
+		}
 
 		String[] fields = RecordUtil.getPossibleFields(model.getSchema(), provideFields);
 		IOSystem.getActiveContext().getReader().conditionalPopulate(model, fields);

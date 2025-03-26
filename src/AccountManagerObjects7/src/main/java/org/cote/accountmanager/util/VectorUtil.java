@@ -52,20 +52,22 @@ public class VectorUtil {
 	};
 	
 	private static Pattern tablePat = Pattern.compile("\\$\\{tableName\\}");
+	private static Pattern tagFilterPat = Pattern.compile("\\$\\{tagFilter\\}");
 	
 	/// Derived from PG Vector example hybrid search query
 	///
 	private static final String HYBRID_SQL = """
 WITH semantic_search AS (
-    SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
-    FROM ${tableName}
+    SELECT T1.id, keyId, vaultId, vaulted, T1.organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY embedding <=> ?) AS rank, content, chunk
+    FROM ${tableName} T1
+    ${tagFilter}
     WHERE (vectorReference = ? or ? = 0) and (vectorReferenceType = ? or ? IS NULL)
     ORDER BY embedding <=> ?
     LIMIT 20
 ),
 keyword_search AS (
     SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC), content, chunk
-    FROM ${tableName}, plainto_tsquery('english', ?) query
+    FROM (SELECT DISTINCT T2.id, keyId, vaultId, vaulted, T2.organizationId, vectorReference, vectorReferenceType, content, chunk FROM ${tableName} T2 ${tagFilter}), plainto_tsquery('english', ?) query
     WHERE to_tsvector('english', content) @@ query
     ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC
     LIMIT 20
@@ -116,18 +118,18 @@ LIMIT ?
 		return find(model, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query);
 	}
 	public List<BaseRecord> find(BaseRecord model, String[] vectorModels, String query){
-		return findByEmbedding(model, (model != null ? model.getSchema() : null), vectorModels, query, 10, 60);
+		return findByEmbedding(model, (model != null ? model.getSchema() : null), new BaseRecord[0], vectorModels, query, 10, 60);
 	}
 	public List<BaseRecord> find(BaseRecord model, String query, int limit, double k){
 		return find(model, null, query, limit, k);
 	}
 	public List<BaseRecord> find(BaseRecord model, String modelName, String query, int limit, double k){
-		return find(model, null, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k);
+		return find(model, null, new BaseRecord[0], new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k);
 	}
-	public List<BaseRecord> find(BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
-		return findByEmbedding(model, modelName, vectorModels, query, limit, k);
+	public List<BaseRecord> find(BaseRecord model, String modelName, BaseRecord[] tags, String[] vectorModels, String query, int limit, double k){
+		return findByEmbedding(model, modelName, tags, vectorModels, query, limit, k);
 	}	
-	private List<BaseRecord> findByEmbedding(BaseRecord model, String modelName, String[] vectorModels, String query, int limit, double k){
+	private List<BaseRecord> findByEmbedding(BaseRecord model, String modelName, BaseRecord[] tags, String[] vectorModels, String query, int limit, double k){
 		List<BaseRecord> content = new ArrayList<>();
 		long id = 0L;
 		String refType = null;
@@ -140,9 +142,18 @@ LIMIT ?
 		}
 		
 		Set<String> tables = new LinkedHashSet<>(Arrays.asList(vectorModels).stream().map(t -> IOSystem.getActiveContext().getDbUtil().getTableName(t)).collect(Collectors.toList()));
-		
+		String tagFilter = "";
+		if(tags.length > 0) {
+			tagFilter = "INNER JOIN "
+				+ IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_TAG), ModelNames.MODEL_PARTICIPATION)
+				+ " TP on TP.participantId = vectorReference AND TP.participantModel = vectorReferenceType AND TP.participationId IN ("
+				+ Arrays.asList(tags).stream().map(t -> Long.toString((long)t.get(FieldNames.FIELD_ID))).collect(Collectors.joining(","))
+				+ ")"
+			;
+		}
 		for(String tableName : tables) {
 			String sql = tablePat.matcher(HYBRID_SQL).replaceAll(tableName);
+			sql = tagFilterPat.matcher(sql).replaceAll(tagFilter);
 	
 			try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); PreparedStatement stat = con.prepareStatement(sql)){
 		        float[] queryEmbedding = generateEmbeddings(new String[] {query}).get(0);
@@ -157,7 +168,7 @@ LIMIT ?
 		        stat.setDouble(8, k);
 		        stat.setDouble(9, k);
 		        stat.setInt(10, limit);
-		        logger.info(stat);
+		        // logger.info(stat);
 		        ResultSet rs = stat.executeQuery();
 		        MemoryReader mem = new MemoryReader();
 		        while (rs.next()) {

@@ -96,7 +96,7 @@
     let inst = am7model.newInstance("chatSettings", am7model.forms.chatSettings);
     inst.api.session(sessionName());
     inst.api.sessions(inst.api.session());
-    // window.dbgInst = inst;
+    window.dbgInst = inst;
     inst.action("doPeek", doPeek);
     inst.action("doChat", doChat);
 
@@ -133,7 +133,45 @@
       return b[parseInt(Math.random() * b.length)] + " " + c[parseInt(Math.random() * c.length)] + " " + a[parseInt(Math.random() * a.length)];
 
     }
+    async function chatInto(){
+      let sessName = sessionName();
+      let remoteEnt = {
+        schema: "chatSettings",
+        chat: "Object Chat",
+        prompt: "Object Prompt",
+        session: sessName,
+        sessions: sessName
+      };
 
+      let aC = aCCfg.filter(c => c.name == inst.api.chat());
+      let wset = [];
+      if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
+        let grp = await page.findObject("auth.group", "data", "~/Tags");
+        let q = am7view.viewQuery(am7model.newInstance("data.tag"));
+        q.field("groupId", grp.id);
+        let q2 = q.field(null, null);
+        q2.comparator = "group_or";
+        q2.fields = [
+          {name: "name", comparator: "equals", value: aC[0].userCharacter.name},
+          {name: "name", comparator: "equals", value: aC[0].systemCharacter.name}
+        ];
+
+        let qr = await page.search(q);
+        if(qr && qr.results){
+          wset = qr.results;
+        }
+      }
+
+      let w = window.open("/", "_blank");
+      w.onload = function(){
+        w.remoteEntity = remoteEnt;
+        w.page.components.dnd.workingSet.push(...wset);
+        w.m.route.set("/chat");
+      }
+
+
+      
+    }
     async function doCancel() {
       clearEditMode();
       chatCfg.pending = false;
@@ -400,6 +438,23 @@
         let ectl = "";
         let ecls = "";
         let bectl = false;
+        if(hideThoughts && !editMode){
+          let tdx1 = cnt.toLowerCase().indexOf("<citation");
+          let check = 0;
+          let maxCheck = 20;
+          while (tdx1 > -1) {
+            if (check++ >= maxCheck) {
+              console.error("Break on loop!");
+              break;
+            }
+
+            let tdx2 = cnt.toLowerCase().indexOf("</citation>");
+            if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
+              cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + 11, cnt.length);
+            }
+            tdx1 = cnt.toLowerCase().indexOf("<citation");
+          }
+        }
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
           /// Only edit last message
@@ -427,20 +482,7 @@
               tdx1 = cnt.toLowerCase().indexOf("<thought>");
             }
 
-            tdx1 = cnt.toLowerCase().indexOf("<citation");
-            check = 0;
-            while (tdx1 > -1) {
-              if (check++ >= maxCheck) {
-                console.error("Break on loop!");
-                break;
-              }
 
-              let tdx2 = cnt.toLowerCase().indexOf("</citation>");
-              if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
-                cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + 11, cnt.length);
-              }
-              tdx1 = cnt.toLowerCase().indexOf("<citation");
-            }
 
           }
 
@@ -462,6 +504,10 @@
           }
 
         }
+        if(!editMode && cnt.replace(/^\s*/).replace(/\s*$/).length == 0){
+          return "";
+        }
+
         if(typeof cnt == "string"){
           cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
         }
@@ -530,6 +576,7 @@
               m("div", { class: "tab-container result-nav w-full" }, [
                 m("button", { class: "button", onclick: toggleFullMode }, m("span", { class: "material-symbols-outlined material-icons-24" }, (fullMode ? "close_fullscreen" : "open_in_new"))),
                 m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
+                m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
                 m("input[" + (chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown: function (e) { if (e.which == 13) doChat(e); } }),
                 m("button", { class: "button", onclick: doChat }, m("span", { class: "material-symbols-outlined material-icons-24" }, "chat"))
@@ -656,6 +703,12 @@
       oninit: function (vnode) {
         let ctx = page.user.homeDirectory;
         origin = vnode.attrs.origin || ctx;
+
+        if(window.remoteEntity){
+          inst = am7model.prepareInstance(remoteEntity, am7model.forms.chatSettings);
+          delete window.remoteEntity;
+        }
+
         let cfg = page.context().contextObjects["chatConfig"];
         if (cfg && !inst.api.chat() && !inst.api.prompt()) {
           console.log(cfg["olio.llm.chatConfig"].name);

@@ -254,15 +254,16 @@
 			}
 		};
 		q.field = function(name, value){
-			q.entity.fields.push({
+			let fld = {
 				comparator: "equals",
 				name,
 				value
-			});
-			return q;
+			};
+			q.entity.fields.push(fld);
+			return fld;
 		};
 		q.keyField = function(afs){
-			return "(" + afs.map(f => f.name + " " + compLabel[f.comparator] + " " + f.value).join(", ") + ")";
+			return "(" + afs.map(f =>  f.fields ? q.keyField(f.fields) : f.name + " " + compLabel[f.comparator] + " " + f.value).join(", ") + ")";
 		};
 
 		q.key = function(){
