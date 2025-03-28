@@ -27,6 +27,7 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
 import org.cote.accountmanager.objects.generated.FactType;
 import org.cote.accountmanager.objects.generated.PolicyType;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -140,7 +141,7 @@ public class BaseTest {
 			else {
 				logger.debug("Working with existing organization " + organizationPath);
 			}
-			ioContext.setVectorUtil(new VectorUtil(testProperties.getProperty("test.embedding.server")));
+			ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken")));
 		} catch (StackOverflowError | Exception e) {
 			logger.error(e);
 			e.printStackTrace();

@@ -14,6 +14,7 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -82,7 +83,7 @@ public class TestVectorStore extends BaseTest {
 	
 	@Test
 	public void TestPDF() {
-		VectorUtil vu = new VectorUtil(testProperties.getProperty("test.embedding.server"));
+		VectorUtil vu = new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken"));
 		logger.info("Test VectorStore with PDF");
 		Factory mf = ioContext.getFactory();
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Vector");
@@ -132,7 +133,7 @@ public class TestVectorStore extends BaseTest {
 		String path = "./media/The Verse.docx";
 		BaseRecord doc = getCreateDocument(testUser1, path);
 		IOSystem.getActiveContext().getReader().populate(doc, new String[] {FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_CONTENT_TYPE});
-		VectorUtil vu = new VectorUtil(testProperties.getProperty("test.embedding.server"));
+		VectorUtil vu = new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken"));
 		int count = vu.countVectorStore(doc);
 		if(resetStore && count > 0) {
 			vu.deleteVectorStore(doc);

@@ -29,6 +29,7 @@ import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.DBUtil;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
@@ -106,14 +107,12 @@ LIMIT ?
 		return vectorModels;
 	}
 	
-	private String serverUrl = null;
 	private EmbeddingUtil embedUtil = null;
 	
-	public VectorUtil(String url) {
-		this.serverUrl = url;
-		embedUtil = new EmbeddingUtil(url);
+	public VectorUtil(LLMServiceEnumType type, String url, String token) {
+		embedUtil = new EmbeddingUtil(type, url, token);
 	}
-
+	
 	public List<BaseRecord> find(BaseRecord model, String query){
 		return find(model, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query);
 	}
@@ -218,9 +217,11 @@ LIMIT ?
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}
-	
 	public int deleteVectorStore(BaseRecord model){
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
+		return deleteVectorStore(model, ModelNames.MODEL_VECTOR_MODEL_STORE);
+	}
+	public int deleteVectorStore(BaseRecord model, String vectorModel){
+		Query q = QueryUtil.createQuery(vectorModel, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getSchema());
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, model.get(FieldNames.FIELD_ORGANIZATION_ID));
 		int del = 0;

@@ -152,7 +152,14 @@
         setInnerXHTML,
         favorites,
         systemLibrary,
-        blobUrl : toBlobUrl
+        blobUrl : toBlobUrl,
+        sessionName: function() {
+            let a = ["turtle", "bunny", "kitty", "puppy", "duckling", "pony", "fishy", "birdie"];
+            let b = ["fluffy", "cute", "ornery", "obnoxious", "scratchy", "licky", "cuddly", "mangy"];
+            let c = ["little", "tiny", "enormous", "big", "skinny", "lumpy"];
+      
+            return b[parseInt(Math.random() * b.length)] + " " + c[parseInt(Math.random() * c.length)] + " " + a[parseInt(Math.random() * a.length)];
+          }
     };
 
     async function systemLibrary(model){

@@ -31,7 +31,7 @@
 	</context-param>
 	<context-param>
 		<param-name>logToConsole</param-name>
-		<param-value>false</param-value>
+		<param-value>true</param-value>
 	</context-param>
 	<context-param>
 		<param-name>isLog4jAutoInitializationDisabled</param-name>
@@ -77,6 +77,11 @@
 		<param-name>sd.server</param-name>
 		<param-value>http://localhost:7860</param-value>
 	</context-param>
+		<context-param>
+		<description></description>
+		<param-name>logToConsole</param-name>
+		<param-value>true</param-value>
+	</context-param>
 	<context-param>
 		<description>Poll  for Remote Tasks</description>
 		<param-name>task.poll.remote</param-name>
@@ -85,28 +90,37 @@
 	<context-param>
 		<description>Defer to Remote Tasks</description>
 		<param-name>task.defer.remote</param-name>
-		<param-value>true</param-value>
+		<param-value>false</param-value>
 	</context-param>
 	<context-param>
 		<description>Embedding Server</description>
 		<param-name>embedding.server</param-name>
 		<param-value>http://127.0.0.1:8123</param-value>
 	</context-param>
-
+	<context-param>
+		<description>Embedding Server Type</description>
+		<param-name>embedding.type</param-name>
+		<param-value>local</param-value>
+	</context-param>
+		<context-param>
+		<description>Embedding Server Authorization Token</description>
+		<param-name>embedding.authorizationToken</param-name>
+		<param-value></param-value>
+	</context-param>
 	<context-param>
 		<description>Task Server</description>
 		<param-name>task.server</param-name>
-		<param-value>https://192.168.1.3:8443</param-value>
+		<param-value>https://192.168.1.3:8443/AccountManagerService7</param-value>
 	</context-param>
 	<context-param>
 		<description>Task API Key</description>
 		<param-name>task.api.key</param-name>
-		<param-value></param-value>
+		<param-value>eyJhbGciOiJIUzI1NiIsInppcCI6IkdaSVAifQ.H4sIAAAAAAAA_4WQPW_DIBCG_wuzScHGX2yRunSIlKFblOGAc0tqg2Vw1LTqfy84S6UMXZ-7572PbxJWRSQBM1lHChK0nzEQeTqRZ4iwz9iGuED0S0j1vdZ-dfGBH7zB8YHeU8_ngnh1QR1fTBo11BW2OADt9cCpYL2iSjVATSPKlnV1qXqd3Og_0G2C5kJ0DJBCJRoqlDJJNYxybJKo-soYlgS_vIGzXxCtd0eI78l8Oq5qtDktXZkXeL3NmHi4hYjTbg24pJoNIX9gauQfvnN-mWCU85YgE79i7oVIJG8FL3nZ864g-Dln0LY1Yxu4RPtv2v0vP79dKqldfQEAAA.HjqkCfLQ6L8csZVXwnRh-1IiijFLf0HEknzIfVFKPHU</param-value>
 	</context-param>
 	<context-param>
 		<description>Disable SSL Verification</description>
 		<param-name>ssl.verification.disabled</param-name>
-		<param-value></param-value>
+		<param-value>true</param-value>
 	</context-param>
 	<context-param>
 		<description>Maximum Image Width</description>

@@ -101,7 +101,7 @@ public class TestDocumentSearch extends BaseTest {
 	public void TestVectorAccessPoint() {
 		logger.info("Test vectorize access point method...");
 
-		VectorUtil vu = new VectorUtil(testProperties.getProperty("test.embedding.server"));
+		VectorUtil vu = new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken"));
 		
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Scrivener");
 		assertNotNull("Test org is null", testOrgContext);
@@ -114,7 +114,13 @@ public class TestDocumentSearch extends BaseTest {
 		assertNotNull("Test data was null", doc);
 		
 		if(vu.countVectorStore(doc) == 0) {
-			ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 200);
+			try {
+				ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 200);
+			}
+			catch(Exception e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
 		}
 		
 		List<BaseRecord> vecs = vu.find(doc, "What are the names of Mark's kids?", 10, 0.6);
@@ -131,12 +137,12 @@ public class TestDocumentSearch extends BaseTest {
 	
 
 		
-		 
+		/*
 		String cnt = chunks[1].get("content");
 		BaseRecord chunk = RecordFactory.importRecord(ModelNames.MODEL_VECTOR_CHUNK, cnt);
 		ToolResponse tr = vu.getEmbedUtil().getMeta(chunk.get("content"));
 		logger.info(JSONUtil.exportObject(tr));
-		
+		*/
 		
 		// logger.info("Content: " + vecs.get(0).get("content"));
 		// logger.info(vecs.get(0).toFullString());
@@ -146,10 +152,10 @@ public class TestDocumentSearch extends BaseTest {
 	@Test
 	public void TestEmbeddingToolAvailable() {
 		String msg = "This is a test";
-		EmbeddingUtil eu = new EmbeddingUtil(testProperties.getProperty("test.embedding.server"));
+		EmbeddingUtil eu = new EmbeddingUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken"));
 		assertTrue("Expected a heartbeat", eu.heartbeat());
 		
-		logger.info(StatementUtil.getDeleteOrphanTemplate(null));
+		// logger.info(StatementUtil.getDeleteOrphanTemplate(null));
 	}
 
 

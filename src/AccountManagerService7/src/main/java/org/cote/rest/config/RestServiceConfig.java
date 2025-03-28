@@ -54,6 +54,7 @@ import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.db.DBUtil;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
@@ -197,7 +198,9 @@ public class RestServiceConfig extends ResourceConfig{
 			props.setSchemaCheck(chkSchema);
 			try {
 				IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
-				ioContext.setVectorUtil(new VectorUtil(context.getInitParameter("embedding.server")));
+				String authToken = context.getInitParameter("embedding.authorizationToken");
+				if(authToken != null && authToken.length() == 0) authToken = null;
+				ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(context.getInitParameter("embedding.type").toUpperCase()), context.getInitParameter("embedding.server"), authToken));
 				boolean testVector = false;
 				for(String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
 					OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));

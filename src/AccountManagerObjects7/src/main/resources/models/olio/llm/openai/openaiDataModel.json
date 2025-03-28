@@ -1,0 +1,26 @@
+{
+	"name": "olio.llm.openai.openaiData",
+	"ioConstraints": [
+		"unknown"
+	],
+	"inherits": [
+		"olio.llm.response"
+	],
+	"fields": [
+		{
+			"name": "object",
+			"type": "string"
+		},
+		{
+			"name": "index",
+			"type": "int"
+		},
+		{
+			"name": "embedding",
+			"type": "list",
+			"baseType": "float"
+		}
+	
+	]
+}
+

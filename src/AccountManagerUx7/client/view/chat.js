@@ -94,7 +94,7 @@
 
     // window.dbgCfg = chatCfg;
     let inst = am7model.newInstance("chatSettings", am7model.forms.chatSettings);
-    inst.api.session(sessionName());
+    inst.api.session(page.sessionName());
     inst.api.sessions(inst.api.session());
     window.dbgInst = inst;
     inst.action("doPeek", doPeek);
@@ -125,16 +125,12 @@
     inst.action("chat", doPeek);
     inst.action("sessions", pickSession);
 
-    function sessionName() {
-      let a = ["turtle", "bunny", "kitty", "puppy", "duckling", "pony", "fishy"];
-      let b = ["fluffy", "cute", "ornery", "obnoxious", "scratchy", "licky", "cuddly"];
-      let c = ["little", "tiny", "enormous", "big"];
 
-      return b[parseInt(Math.random() * b.length)] + " " + c[parseInt(Math.random() * c.length)] + " " + a[parseInt(Math.random() * a.length)];
 
-    }
     async function chatInto(){
-      let sessName = sessionName();
+      page.components.dialog.chatInto(undefined, inst, aCCfg)
+      /*
+      let sessName = page.sessionName();
       let remoteEnt = {
         schema: "chatSettings",
         chat: "Object Chat",
@@ -169,7 +165,7 @@
         w.m.route.set("/chat");
       }
 
-
+      */
       
     }
     async function doCancel() {

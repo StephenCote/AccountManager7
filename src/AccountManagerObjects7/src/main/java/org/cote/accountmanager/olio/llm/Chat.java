@@ -328,11 +328,24 @@ Begin conversationally.
 		int rmc = req.getMessages().size();
 		
 		if(sessionName != null && VectorUtil.isVectorSupported() && rmc > 2) {
-			
-			String cnt = getNarrativeForVector(req.getMessages().get(rmc - 2)) + System.lineSeparator() + getNarrativeForVector(req.getMessages().get(rmc - 1));
+			int idx = 1;
+			if(chatConfig != null) {
+				boolean useAssist = chatConfig.get("assist");
+				idx = (useAssist ? 3 : 2);
+			}
+			List<String> buff = new ArrayList<>();
+			for(int i = idx; i < rmc; i++) {
+				buff.add(getNarrativeForVector(req.getMessages().get(i)));
+			}
+			String cnt = buff.stream().collect(Collectors.joining(System.lineSeparator()));
+			// String cnt = getNarrativeForVector(req.getMessages().get(rmc - 2)) + System.lineSeparator() + getNarrativeForVector(req.getMessages().get(rmc - 1));
 			try {
 				
 				BaseRecord dat = ChatUtil.getSessionData(user, sessionName);
+				int del = IOSystem.getActiveContext().getVectorUtil().deleteVectorStore(dat, OlioModelNames.MODEL_VECTOR_CHAT_HISTORY);
+				if(del > 0) {
+					logger.info("Cleaned up previous store with " + del + " chunks");
+				}
 				ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_VECTOR_REFERENCE, dat);
 				plist.parameter(FieldNames.FIELD_CHUNK, ChunkEnumType.WORD);
 				plist.parameter(FieldNames.FIELD_CHUNK_COUNT, 1000);
@@ -365,11 +378,18 @@ Begin conversationally.
 			if(cont != null && cont.startsWith("(KeyFrame")) {
 				continue;
 			}
+			String name = null;
+			boolean isUser = msg.getRole().equals("user");
+			if(chatConfig != null) {
+				String parm = "systemCharacter";
+				if(isUser) parm = "userCharacter";
+				name = chatConfig.get(parm + ".firstName");
+			}
 			String charPos = "#1";
 			if(msg.getRole().equals("user")) {
 				charPos = "#2";
 			}
-			buff.add("(" + charPos + "): " + cont);
+			buff.add("(" + charPos + (name != null ? " " + name: "") + "): " + cont);
 			/*
 			buff.append("(" + charPos + "): ");
 			buff.append(cont);

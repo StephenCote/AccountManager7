@@ -1,0 +1,12 @@
+{
+	"name": "olio.llm.openai.openaiInput",
+	"ioConstraints": [
+		"unknown"
+	],
+	"fields": [
+		{
+			"name": "input",
+			"type": "string"
+		}
+	]
+}

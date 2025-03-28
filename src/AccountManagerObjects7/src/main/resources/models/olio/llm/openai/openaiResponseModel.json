@@ -80,6 +80,12 @@
 		{
 			"name": "eval_duration",
 			"type": "long"
+		},
+		{
+			"name": "data",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.llm.openai.openaiData"
 		}
 	
 	]

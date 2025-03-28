@@ -293,6 +293,11 @@
                 m.redraw();
             }
         }
+        
+        async function chatInto(){
+            page.components.dialog.chatInto(inst.entity);
+        }
+        
         async function doCopy(){
             if(!entity || !entity.objectId) return;
             if(am7model.hasField(entity[am7model.jsonModelKey], "name")){
@@ -1297,6 +1302,7 @@
                             (designable ? page.iconButton("button" + (designMode ? " active" : ""),"design_services", "", toggleDesignMode) : ""),
                             page.iconButton("button","cancel", "", doCancel),
                             (bNew ? "" : page.iconButton("button","content_copy", "", doCopy)),
+                            (bNew ? "" : page.iconButton("button","query_stats", "", chatInto)),
                             (bNew ? "" : page.iconButton("button","delete_outline", "", doDelete)),
                             getFormCommands(type, form, null, false, false, true)
                         ]),

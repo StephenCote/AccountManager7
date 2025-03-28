@@ -23,6 +23,7 @@ import org.cote.accountmanager.io.IOFactory;
 import org.cote.accountmanager.io.IOProperties;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -122,7 +123,7 @@ public class ConsoleMain {
 		boolean enableVector = Boolean.parseBoolean(properties.getProperty("test.vector.enable"));
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));
 		if(ioContext != null) {
-			ioContext.setVectorUtil(new VectorUtil(properties.getProperty("test.embedding.server")));
+			ioContext.setVectorUtil(new VectorUtil(LLMServiceEnumType.valueOf(properties.getProperty("test.embedding.type").toUpperCase()), properties.getProperty("test.embedding.server"), properties.getProperty("test.embedding.authorizationToken")));
 		}
 
 		
