@@ -47,6 +47,7 @@ import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.assist.DocumentWatcher;
 import org.cote.accountmanager.olio.assist.ScrivenerAssistant;
 import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
@@ -74,9 +75,9 @@ import javax.ws.rs.client.Invocation.Builder;
 
 public class TestDocumentSearch extends BaseTest {
 
-	
-	private String scrivenerProjectPath = "C:\\Users\\swcot\\OneDrive\\Documents\\Scrivner\\The Verse.scriv";
 	/*
+	private String scrivenerProjectPath = "C:\\Users\\swcot\\OneDrive\\Documents\\Scrivner\\The Verse.scriv";
+	
 	@Test
 	public void TestScrivener() {
 		logger.info("Test scan scrivener...");
@@ -97,6 +98,7 @@ public class TestDocumentSearch extends BaseTest {
 
 	}
 	*/
+	/*
 	@Test
 	public void TestVectorAccessPoint() {
 		logger.info("Test vectorize access point method...");
@@ -135,18 +137,48 @@ public class TestDocumentSearch extends BaseTest {
 		assertTrue("Expected to return some chunks", chunks.length > 0);
 		logger.info("Chunks: " + chunks.length);
 	
+	}
+	*/
+	
+	@Test
+	public void TestDocumentSummarizer() {
+		
+		VectorUtil vu = new VectorUtil(LLMServiceEnumType.valueOf(testProperties.getProperty("test.embedding.type").toUpperCase()), testProperties.getProperty("test.embedding.server"), testProperties.getProperty("test.embedding.authorizationToken"));
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Summarizer");
+		assertNotNull("Test org is null", testOrgContext);
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		assertNotNull("Test user is null", testUser1);
+		
+		String path = "./media/The Verse.docx";
+		BaseRecord doc = getCreateDocument(testUser1, path);
+		
+		if(vu.countVectorStore(doc) == 0) {
+			try {
+				ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 4096);
+			}
+			catch(Exception e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
+		}
 
+		BaseRecord cfg = null;
+		try {
+			cfg = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_CONFIG);
+		} catch (FieldException | ModelNotFoundException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		assertNotNull("Config is null", cfg);
 		
-		/*
-		String cnt = chunks[1].get("content");
-		BaseRecord chunk = RecordFactory.importRecord(ModelNames.MODEL_VECTOR_CHUNK, cnt);
-		ToolResponse tr = vu.getEmbedUtil().getMeta(chunk.get("content"));
-		logger.info(JSONUtil.exportObject(tr));
-		*/
-		
-		// logger.info("Content: " + vecs.get(0).get("content"));
-		// logger.info(vecs.get(0).toFullString());
-		
+		cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
+		cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version"));
+		cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+		cfg.setValue("model", "gpt-4o");
+		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
+
+		BaseRecord summary = ChatUtil.createSummary(testUser1, cfg, doc, true);
 	}
 	
 	@Test

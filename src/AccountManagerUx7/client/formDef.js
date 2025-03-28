@@ -612,7 +612,7 @@
                 layout: "half"
             },
             contentType: {
-                layout: "third"
+                layout: "one"
             },
             vectorize: {
                 format: "button",
@@ -622,6 +622,16 @@
                 field: {
                     label: "Vectorize",
                     command: page.components.dialog.vectorize
+                }
+            },
+            summarize: {
+                format: "button",
+                layout: "one",
+                icon: 'polyline',
+                requiredAttributes: ["objectId"],
+                field: {
+                    label: "Summarize",
+                    command: page.components.dialog.summarize
                 }
             },
 
@@ -650,6 +660,32 @@
         },
         //["name", "description", "createdDate", "modifiedDate", "expiryDate", "mimeType", "dataBytesStore"],
         forms: ["groupdateinfo", "tags", "ctlattributes", "execute"]
+    };
+
+
+    am7model.models.push({
+        name: "summarizeSettings",
+        icon: "polyline",
+        label: "Settings",
+        fields: [
+        {
+            "name": "chat",
+            "label": "Chat Config",
+            "type": "list",
+        }
+        ]
+    });
+
+    forms.summarizeSettings = {
+        label: "Summarize Options",
+        fields: {
+            chat: {
+                layout: 'full',
+               format: "select"
+               
+
+            }
+        }
     };
 
     am7model.models.push(

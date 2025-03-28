@@ -15,6 +15,9 @@
                 else v = field.enum;
 
                 break;
+            default:
+                // console.warn("Unhandled type", field.type);
+                break;
         }
         return v;
     }

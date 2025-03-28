@@ -26,6 +26,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.xml.sax.SAXException;
 
 public class ScrivenerAssistant extends DocumentAssistant implements IAssist {
@@ -47,7 +48,7 @@ public class ScrivenerAssistant extends DocumentAssistant implements IAssist {
 		logger.info("Summarizing " + sb.getTitle());
 
 		String cnt = null;
-		BaseRecord sdata = getData(user, sb.getUid(), "~/Scrivener");
+		BaseRecord sdata = DocumentUtil.getData(user, sb.getUid(), "~/Scrivener");
 		if (sdata != null && resetSummary) {
 			try {
 				IOSystem.getActiveContext().getWriter().delete(sdata);
@@ -65,7 +66,7 @@ public class ScrivenerAssistant extends DocumentAssistant implements IAssist {
 
 			cnt = resp.getMessage().getContent();
 			if (cnt != null) {
-				sdata = getCreateData(user, sb.getUid(), "~/Scrivener", cnt);
+				sdata = DocumentUtil.getCreateData(user, sb.getUid(), "~/Scrivener", cnt);
 			} else {
 				logger.error("Failed to retrieve LLM response");
 			}
@@ -107,43 +108,6 @@ public class ScrivenerAssistant extends DocumentAssistant implements IAssist {
 
 		logger.info("SUGGESTION - " + resp.getMessage().getContent());
 
-	}
-
-	protected BaseRecord getData(BaseRecord owner, String name, String path) {
-		BaseRecord dat = null;
-		BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path,
-				GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
-		if (group != null) {
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID,
-					group.get(FieldNames.FIELD_ID));
-			q.field(FieldNames.FIELD_NAME, name);
-			q.planMost(true);
-			dat = IOSystem.getActiveContext().getSearch().findRecord(q);
-		} else {
-			logger.warn("Group is null: " + path);
-		}
-		return dat;
-	}
-
-	protected BaseRecord getCreateData(BaseRecord owner, String name, String path, String textContents) {
-		BaseRecord dat = getData(owner, name, path);
-		BaseRecord datT = null;
-
-		if (dat == null) {
-			try {
-				datT = RecordFactory.newInstance(ModelNames.MODEL_DATA);
-				datT.set(FieldNames.FIELD_NAME, name);
-				datT.set(FieldNames.FIELD_GROUP_PATH, path);
-				datT.set(FieldNames.FIELD_BYTE_STORE, textContents.getBytes());
-				datT.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
-				dat = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, owner, datT, null);
-				IOSystem.getActiveContext().getRecordUtil().createRecord(dat);
-
-			} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
-				logger.error(e);
-			}
-		}
-		return dat;
 	}
 
 	public List<ScrivenerBinding> parseProject(String path)

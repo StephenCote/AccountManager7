@@ -1,16 +1,26 @@
 package org.cote.accountmanager.olio.llm;
 
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
+
+import javax.ws.rs.ProcessingException;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryPlan;
@@ -36,11 +46,15 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
+import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.schema.type.OrderEnumType;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.cote.accountmanager.util.VectorUtil;
+import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
 public class ChatUtil {
 	
@@ -52,6 +66,17 @@ public class ChatUtil {
 	private static String autoSceneInstruct = "Only include character traits or details pertinent to the description.  Keep the description as short as possible, including the location, timeframe, character names, and key interactions in process or their outcomes.  Do not separately list out characters or provide a title, limit your response only to the description." + System.lineSeparator() + "EXAMPLE: if given the characters Bob and Fran, and a successful interaction of building a relationship, your response would be something like: \"In an ancient Roman villa overlooking the Bay of Naples, Bob has been making his move, using his charm to try and win over Fran's heart. But Fran is not one to be easily swayed, and she's pushing back against Bob' advances with her sharp intellect and quick wit. The air is thick with tension as they engage in a battle of wits, their physical attraction to each other simmering just below the surface.\"";
 	private static String autoScenePrompt = "Create a description for a roleplay scenario to give to two people playing the following two characters, in the designated setting, in the middle of or conclusion of the specified scene.";
 	
+	private static Set<String> chatTrack = new HashSet<>();
+	private static HashMap<String, OpenAIRequest> reqMap = new HashMap<>();
+	private static HashMap<String, Chat> chatMap = new HashMap<>();
+	private static HashMap<String, BaseRecord> configMap = new HashMap<>();
+	
+	public static void clearCache() {
+		chatTrack.clear();
+		reqMap.clear();
+		configMap.clear();
+	}
+
 	public static void generateAutoScene(OlioContext octx, BaseRecord cfg, BaseRecord pcfg, BaseRecord interaction, String setting, boolean json) {
 		BaseRecord character1 = cfg.get("systemCharacter");
 		BaseRecord character2 = cfg.get("userCharacter");
@@ -530,6 +555,421 @@ public class ChatUtil {
 		}
 		return outBool;
 	}
+	
+	public static String getFilteredCitationText(OpenAIRequest req, BaseRecord storeChunk, String type) {
+		String cit = getCitationText(storeChunk, type);
+		List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && m.getContent().contains(cit)).collect(Collectors.toList());
+		String citation = null;
+		if(msgs.size() == 0) {
+			citation = cit;
+		}
+		return citation;
+	}
+	public static String getCitationText(BaseRecord storeChunk, String type) {
+		BaseRecord chunk = storeChunk;
+		String cnt = storeChunk.get("content");
+		if(cnt == null || cnt.length() == 0) {
+			return null;
+		}
+		String chapterTitle = "";
+		int chapter = 0;
+		if(storeChunk.inherits(ModelNames.MODEL_VECTOR_MODEL_STORE)) {
+			if(cnt.startsWith("{")) {
+				chunk = RecordFactory.importRecord(ModelNames.MODEL_VECTOR_CHUNK, cnt);
+				cnt = chunk.get("content");
+				chapterTitle = chunk.get("chapterTitle");
+				chapter = chunk.get("chapter");
+				if(chapterTitle == null) chapterTitle = "";
+			}
+		}
+		String name = "";
+		if(storeChunk.hasField(FieldNames.FIELD_NAME)) {
+			name = chunk.get(FieldNames.FIELD_NAME);
+		}
+		String citationKey = "<citation schema=\"" + storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE_TYPE) + "\" chapter = \"" + chapter + "\" chapterTitle = \"" + chapterTitle + "\" name = \"" + name + "\" type = \"" + type + "\" chunk = \"" + chunk.get("chunk") + "\" id = \"" + storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE + "." + FieldNames.FIELD_ID) + "\">";
+		String citationSuff = "</citation>";
+		return citationKey + System.lineSeparator() + cnt + System.lineSeparator() + citationSuff;
+	}
+	
+
+	
+	public static BaseRecord getSummary(BaseRecord user, BaseRecord ref) {
+
+		String name = ref.get(FieldNames.FIELD_NAME) + " - Summary";
+		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, ref.get(FieldNames.FIELD_GROUP_ID));
+		q.field(FieldNames.FIELD_NAME, name);
+		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		
+	}
+
+	
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean recreate) {
+		logger.info("Creating summary ...");
+		String name = ref.get(FieldNames.FIELD_NAME) + " - Summary";
+		BaseRecord summ = DocumentUtil.getData(user, name, ref.get(FieldNames.FIELD_GROUP_PATH)); 
+		if(summ != null) {
+			if(recreate) {
+				IOSystem.getActiveContext().getAccessPoint().delete(user, summ);
+			}
+			else {
+				return summ;
+			}
+		}
+		List<String> summaries = getSummary(user, chatConfig, ref);
+		if(summaries.size() == 0) {
+			logger.error("Invalid summary data");
+			return null;
+		}
+		summ = DocumentUtil.getCreateData(user, name, ref.get(FieldNames.FIELD_GROUP_PATH), summaries.stream().collect(Collectors.joining(System.lineSeparator())));
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		logger.info("Vectorizing summary...");
+		try {
+			vu.createVectorStore(summ, ChunkEnumType.WORD, 1024);
+		} catch (FieldException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return summ;
+	}
+	
+	public static List<String> getSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref) {
+		int iter = 0;
+		int max = 5;
+		int minLength = 300;
+		List<String> summaries = new ArrayList<>();
+
+		String sysPrompt = """
+You are are an expert in creating objective content summaries.
+You will receive content in the following format:
+    <summary>
+    previous summary
+    </summary>
+	<citation>
+	content
+	</citation>
+You will produce three to ten sentence summaries of the provided content, factoring in any previous summary.
+""";
+
+		String userCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
+		try {
+			VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+			//List<BaseRecord> store = vu.getVectorStore(ref);
+			
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, ref.copyRecord(new String[] {FieldNames.FIELD_ID}));
+			q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, ref.getSchema());
+			q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_CONTENT});
+			List<BaseRecord> store = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults());
+			
+			
+			Chat chat = new Chat(user, chatConfig, null);
+			chat.setLlmSystemPrompt(sysPrompt);
+			StringBuilder contentBuffer = new StringBuilder();
+			
+			for(BaseRecord v : store) {
+				// logger.info(v.toFullString());
+				String cit = getCitationText(v, "chunk");
+				if(cit == null || cit.length() == 0) {
+					continue;
+				}
+				if(cit.length() < minLength) {
+					contentBuffer.append(cit + System.lineSeparator());
+					continue;
+				}
+				else if(contentBuffer.length() > 0) {
+					cit = contentBuffer.toString() + cit;
+					contentBuffer = new StringBuilder();
+				}
+
+				logger.info("Summarizing chunk #" + (iter + 1) + " of " + store.size());
+
+				OpenAIRequest req = chat.getChatPrompt();
+				String prevSum = "";
+				if(summaries.size() > 0) {
+					prevSum = "<previous-summary>" + System.lineSeparator() + summaries.get(summaries.size() - 1) + System.lineSeparator() + "</previous-summary>" + System.lineSeparator();
+				}
+				
+				String cmd = userCommand + prevSum + cit;
+				logger.info(cmd);
+				chat.newMessage(req, cmd, "user");
+
+				OpenAIResponse resp = chat.chat(req);
+				String summ = resp.getMessage().getContent();
+
+				summaries.add(summ);
+				
+				iter++;
+				if(max > 0 && iter >= max) {
+					break;
+				}
+				
+			}
+			if(contentBuffer.length() > 0) {
+				OpenAIRequest req = chat.getChatPrompt();
+				String prevSum = "";
+				if(summaries.size() > 0) {
+					prevSum = "<previous-summary>" + System.lineSeparator() + summaries.get(summaries.size() - 1) + System.lineSeparator() + "</previous-summary>" + System.lineSeparator();
+				}
+				
+				chat.newMessage(req, userCommand + prevSum + contentBuffer.toString(), "user");
+
+				OpenAIResponse resp = chat.chat(req);
+				summaries.add(resp.getMessage().getContent());
+			}
+			if(summaries.size() > 0) {
+				userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
+				OpenAIRequest req = chat.getChatPrompt();
+				chat.newMessage(req, userCommand, "user");
+				OpenAIResponse resp = chat.chat(req);
+				summaries.add(resp.getMessage().getContent());
+			}
+		}
+		catch(ProcessingException | ReaderException e) {
+			logger.error(e);
+		}
+		return summaries;
+	}
+	
+	public static List<String> getDataSummaryChunks(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
+		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
+		List<String> dataCit = new ArrayList<>();
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		List<BaseRecord> vects = new ArrayList<>();
+		List<BaseRecord> frecs = new ArrayList<>();
+		for(String dataR : dataRef) {
+			BaseRecord recRef = RecordFactory.importRecord(dataR);
+			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
+			Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
+			rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			rq.planMost(false);
+			rq.setValue(FieldNames.FIELD_SORT_FIELD, "chunk");
+			rq.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
+			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
+			if(frec != null) {
+				frecs.add(frec);
+			}
+		}
+
+		for(BaseRecord frec : frecs) {
+			vects.addAll(vu.getVectorStore(frec));
+		}
+
+		for(BaseRecord vect : vects) {
+			String txt = getFilteredCitationText(req, vect, "chunk");
+			if(txt != null) {
+				dataCit.add(txt);
+			}
+		}
+		return dataCit;
+	}
+	
+	public static List<String> getDataCitations(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
+		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
+		List<String> dataCit = new ArrayList<>();
+		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		List<BaseRecord> vects = new ArrayList<>();
+		String msg = creq.getMessage();
+		List<BaseRecord> tags = new ArrayList<>();
+		List<BaseRecord> frecs = new ArrayList<>();
+		for(String dataR : dataRef) {
+			BaseRecord recRef = RecordFactory.importRecord(dataR);
+			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
+			Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
+			rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			rq.planMost(false);
+			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
+			if(frec != null) {
+				if(recRef.getSchema().equals(ModelNames.MODEL_TAG)) {
+					tags.add(frec);
+				}
+				else {
+					frecs.add(frec);
+				}
+			}
+		}
+		if(tags.size() > 0 && frecs.size() == 0) {
+			vects.addAll(vu.find(null, ModelNames.MODEL_DATA, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
+			vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6));
+		}
+		else {
+			for(BaseRecord frec : frecs) {
+				if(msg != null && msg.length() > 0) {
+					logger.info("Building citations with " + dataRef.size() + " references of which " + tags.size() + " are tags");
+					if(
+						frec.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)
+					) {
+						vects.addAll(vu.find(null, ModelNames.MODEL_DATA, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
+					}
+					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 3, 0.6));
+				}
+			}
+		}
+		for(BaseRecord vect : vects) {
+			String txt = getFilteredCitationText(req, vect, "chunk");
+			if(txt != null) {
+				dataCit.add(txt);
+			}
+		}
+		return dataCit;
+	}
+	
+	public static String getKey(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, ChatRequest request) {
+		String sess = "";
+		if(request.getSessionName() != null && request.getSessionName().length() > 0) {
+			sess = "-" + request.getSessionName();
+		}
+		return user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get(FieldNames.FIELD_NAME) + "-" + promptConfig.get(FieldNames.FIELD_NAME) + sess;
+	}
+	
+	public static HashMap<String, OpenAIRequest> getReqMap() {
+		return reqMap;
+	}
+
+	public static HashMap<String, Chat> getChatMap() {
+		return chatMap;
+	}
+
+	public static Set<String> getChatTrack() {
+		return chatTrack;
+	}
+
+	public static HashMap<String, BaseRecord> getConfigMap() {
+		return configMap;
+	}
+
+	public static BaseRecord getConfig(BaseRecord user, String modelName, String objectId, String name) {
+		if(objectId != null && configMap.containsKey(objectId)) {
+			return configMap.get(objectId);
+		}
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord cfg = null;
+		if(dir != null) {
+			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
+			if(name != null) {
+				q.field(FieldNames.FIELD_NAME, name);
+			}
+			if(objectId != null) {
+				q.field(FieldNames.FIELD_OBJECT_ID, objectId);
+			}
+			q.planMost(true);
+			cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+			if(objectId != null && cfg != null) {
+				configMap.put(objectId, cfg);
+			}
+		}
+		return cfg;
+	}
+	
+	public static ChatResponse getChatResponse(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
+		if(req == null || creq == null) {
+			return null;
+		}
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		ChatResponse rep = new ChatResponse();
+		rep.setUid(creq.getUid());
+		rep.setModel(chatConfig.get("model"));
+		/// Current template structure for chat and rpg defines prompt and initial user message
+		/// Skip prompt, and skip initial user comment
+		int startIndex = 2;
+		/// With assist enabled, an initial assistant message is included, so skip that as well
+		if((boolean)chatConfig.get("assist")) {
+			startIndex++;
+		}
+		for(int i = startIndex; i < req.getMessages().size(); i++) {
+			rep.getMessages().add(req.getMessages().get(i));
+		}
+		return rep;
+	}
+
+	public static void forgetRequest(BaseRecord user, ChatRequest creq) {
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
+		String key = getKey(user, chatConfig, promptConfig, creq);
+		if(reqMap.containsKey(key)) {
+			reqMap.remove(key);
+		}
+	}
+	
+	public static OpenAIRequest getOpenAIRequest(BaseRecord user, ChatRequest creq) {
+		OpenAIRequest req = null;
+		Chat chat = null;
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
+		String key = getKey(user, chatConfig, promptConfig, creq);
+		//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get(FieldNames.FIELD_NAME) + "-" + promptConfig.get(FieldNames.FIELD_NAME);
+		if(reqMap.containsKey(key)) {
+			return reqMap.get(key);
+		}
+		if(chatConfig != null && promptConfig != null) {
+
+			if(creq.getSessionName() != null && creq.getSessionName().length() > 0) {
+				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, creq.getSessionName());
+				OpenAIRequest oreq = ChatUtil.getSession(user, sessionName);
+				if(oreq != null) {
+					req = oreq;
+				}
+			}
+			if(req == null) {
+				chat = new Chat(user, chatConfig, promptConfig);
+				chat.setSessionName(creq.getSessionName());
+				req = chat.getChatPrompt();
+			}
+			if(req != null) {
+				reqMap.put(key, req);
+			}
+
+		}
+		return req;
+	}
+	
+	public static Chat getChat(BaseRecord user, ChatRequest req, String key, boolean deferRemote) {
+		if(chatMap.containsKey(key)) {
+			return chatMap.get(key);
+		}
+		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, req.getChatConfig(), null);
+		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, req.getPromptConfig(), null);
+		Chat chat = null;
+		if(chatConfig != null && promptConfig != null) {
+			chat = new Chat(user, chatConfig, promptConfig);
+			chat.setDeferRemote(deferRemote);
+			if(req.getSessionName() != null && req.getSessionName().length() > 0) {
+				chat.setSessionName(req.getSessionName());
+			}
+			chatMap.put(key,  chat);
+		}
+		return chat;
+	}
+
+	public static String getCreateUserPrompt(BaseRecord user, String name) {
+		BaseRecord dat = getCreatePromptData(user, name);
+		IOSystem.getActiveContext().getReader().populate(dat, new String[] {FieldNames.FIELD_BYTE_STORE});
+		return new String((byte[])dat.get(FieldNames.FIELD_BYTE_STORE));
+	}
+	
+	public static BaseRecord getCreatePromptData(BaseRecord user, String name) {
+		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord dat = IOSystem.getActiveContext().getRecordUtil().getRecord(user, ModelNames.MODEL_DATA, name, 0L, (long)dir.get(FieldNames.FIELD_ID), user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if(dat == null) {
+			dat = newPromptData(user, name, ResourceUtil.getInstance().getResource("olio/llm/chat.config.json"));
+			IOSystem.getActiveContext().getRecordUtil().createRecord(dat);
+		}
+		return dat;
+	}
+	public static BaseRecord newPromptData(BaseRecord user, String name, String data) {
+		BaseRecord rec = null;
+		boolean error = false;
+		try {
+			rec = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, rec, name, "~/chat", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			rec.set(FieldNames.FIELD_CONTENT_TYPE, "application/json");
+			rec.set(FieldNames.FIELD_BYTE_STORE, data.getBytes(StandardCharsets.UTF_8));
+		} catch (Exception e) {
+			logger.error(e);
+			
+			error = true;
+		}
+		return rec;
+	}
+
 	
 	
 }

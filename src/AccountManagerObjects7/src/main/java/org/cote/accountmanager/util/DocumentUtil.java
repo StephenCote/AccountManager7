@@ -37,7 +37,46 @@ import org.cote.accountmanager.provider.IProvider;
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);
 	
+	public static BaseRecord getData(BaseRecord owner, String name, String path) {
+		BaseRecord dat = null;
+		BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path,
+				GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+		if (group != null) {
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			q.field(FieldNames.FIELD_NAME, name);
+			q.planMost(true);
+			dat = IOSystem.getActiveContext().getSearch().findRecord(q);
+		} else {
+			logger.warn("Group is null: " + path);
+		}
+		return dat;
+	}
+	
+	public static BaseRecord getCreateData(BaseRecord owner, String name, String path, String textContents) {
+		BaseRecord dat = getData(owner, name, path);
+		BaseRecord datT = null;
 
+		if (dat == null) {
+			if(textContents == null || textContents.length() == 0) {
+				logger.error("Invalid text contents");
+				return null;
+			}
+			try {
+				datT = RecordFactory.newInstance(ModelNames.MODEL_DATA);
+				datT.set(FieldNames.FIELD_NAME, name);
+				datT.set(FieldNames.FIELD_GROUP_PATH, path);
+				datT.set(FieldNames.FIELD_BYTE_STORE, textContents.getBytes());
+				datT.set(FieldNames.FIELD_CONTENT_TYPE, "text/plain");
+				dat = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_DATA, owner, datT, null);
+				dat = IOSystem.getActiveContext().getAccessPoint().create(owner, dat);
+
+			} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+				logger.error(e);
+			}
+		}
+		return dat;
+	}
+	
 	public static BaseRecord getCreateTag(BaseRecord user, String name, String type) {
 		BaseRecord group = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP, "~/Tags", GroupEnumType.DATA.toString());
 		if(group != null) {

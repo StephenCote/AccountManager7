@@ -40,6 +40,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.policy.CachePolicyUtil;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.service.util.ServiceUtil;
@@ -63,7 +64,7 @@ public class CacheService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response clearFactoryCaches(@PathParam("type") String type, @Context HttpServletRequest request){
 		logger.info("Request to clear all caches");
-		ChatService.clearCache();
+		ChatUtil.clearCache();
 		CacheUtil.clearCache();
 		clearAuthorizationCache(request);
 		ServiceUtil.clearCache();

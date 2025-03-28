@@ -8,6 +8,7 @@ import javax.annotation.security.DeclareRoles;
 import javax.annotation.security.RolesAllowed;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.ws.rs.Consumes;
 import javax.ws.rs.DELETE;
 import javax.ws.rs.GET;
 import javax.ws.rs.PATCH;
@@ -31,6 +32,8 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.llm.ChatRequest;
+import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -72,6 +75,33 @@ public class VectorService {
 			e.printStackTrace();
 		}
 		return Response.status(200).entity(vectorized).build();
+	}
+	
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/summarize")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response summarize(String json, @Context HttpServletRequest request){
+		logger.info(json);
+		ChatRequest chatReq = ChatRequest.importRecord(json);
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		boolean summarized = false;
+		List<String> dataRef = chatReq.get(FieldNames.FIELD_DATA);
+		if(dataRef.size() > 0) {
+			String dataR = dataRef.get(0);
+			BaseRecord recRef = RecordFactory.importRecord(dataR);
+			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
+			Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
+			rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			rq.planMost(false);
+			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
+			if(frec != null) {
+				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, frec, true);
+				summarized = (sumD != null);
+			}
+		}
+		return Response.status(200).entity(summarized).build();
 	}
 	
 	@RolesAllowed({"user"})

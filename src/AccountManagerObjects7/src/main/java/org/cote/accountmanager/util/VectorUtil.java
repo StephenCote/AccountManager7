@@ -238,7 +238,7 @@ LIMIT ?
 		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getSchema());
 		List<BaseRecord> recs = new ArrayList<>();
 		try {
-			recs = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q));
+			recs = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults());
 		} catch (ReaderException e) {
 			logger.error(e);
 		}

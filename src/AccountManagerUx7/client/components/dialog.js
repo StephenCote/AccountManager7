@@ -74,6 +74,51 @@
         setDialog(cfg);
     }
 
+
+    async function loadChatList() {
+        let dir = await page.findObject("auth.group", "DATA", "~/Chat");
+        return await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
+      }
+
+    async function summarize(object, inst){
+        let acfg = await loadChatList();
+        am7model.getModelField("summarizeSettings", "chat").limit  = acfg.map((c) => { return c.name; });
+        let entity = am7model.newPrimitive("summarizeSettings");
+        let cfg = {
+            label: "Summarize Options",
+            entityType: "summarizeSettings",
+            size: 50,
+            data: {entity},
+            confirm: async function (data) {
+                let vcfg = acfg.filter(a => a.name.toLowerCase() == entity.chat.toLowerCase());
+                if(!vcfg.length){
+                    page.toast("error", "Invalid chat selection: " + entity.chat);
+                    console.error("Invalid: " + entity.chat);
+                    return;
+                }
+                page.toast("info", "Summarizing ...");
+                let creq = am7model.newPrimitive("olio.llm.chatRequest");
+                creq.chatConfig = vcfg[0].objectId;
+                creq.data = [
+                    JSON.stringify({schema:inst.model.name,objectId:inst.api.objectId()})
+                ];
+                let x = await m.request({ method: 'POST', url: am7client.base() + "/vector/summarize", body: creq, withCredentials: true });
+                if (x && x != null) {
+                    page.toast("success", "Summarization complete");
+                }
+                else{
+                    page.toast("error", "Summarization failed");
+                }
+                endDialog();
+            },
+            cancel: async function (data) {
+                endDialog();
+            }
+        };
+        setDialog(cfg);
+
+    }
+
     async function vectorize(object, inst) {
         let entity = am7model.newPrimitive("vectorOptions");
         let cfg = {
@@ -192,6 +237,7 @@
         confirm,
         cancelDialog,
         vectorize,
+        summarize,
         showProgress,
         chatInto
     }
