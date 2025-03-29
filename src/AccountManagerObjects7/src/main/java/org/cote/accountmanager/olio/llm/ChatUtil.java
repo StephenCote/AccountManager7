@@ -658,6 +658,7 @@ You will produce three to ten sentence summaries of the provided content, factor
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, ref.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, ref.getSchema());
 			q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_CONTENT});
+			q.setValue(FieldNames.FIELD_SORT_FIELD, "chapter, chunk");
 			List<BaseRecord> store = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults());
 			
 			
