@@ -77,7 +77,10 @@
 
     async function loadChatList() {
         let dir = await page.findObject("auth.group", "DATA", "~/Chat");
-        return await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
+
+        let al =  await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
+        if(al && al.length && inst.api.chat() == null) inst.api.chat(al[0].name);
+        return al;
       }
 
     async function summarize(object, inst){

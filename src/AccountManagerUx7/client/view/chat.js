@@ -122,52 +122,14 @@
         console.warn("Invalid key");
       }
     }
+
     inst.action("chat", doPeek);
     inst.action("sessions", pickSession);
 
-
-
     async function chatInto(){
       page.components.dialog.chatInto(undefined, inst, aCCfg)
-      /*
-      let sessName = page.sessionName();
-      let remoteEnt = {
-        schema: "chatSettings",
-        chat: "Object Chat",
-        prompt: "Object Prompt",
-        session: sessName,
-        sessions: sessName
-      };
-
-      let aC = aCCfg.filter(c => c.name == inst.api.chat());
-      let wset = [];
-      if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
-        let grp = await page.findObject("auth.group", "data", "~/Tags");
-        let q = am7view.viewQuery(am7model.newInstance("data.tag"));
-        q.field("groupId", grp.id);
-        let q2 = q.field(null, null);
-        q2.comparator = "group_or";
-        q2.fields = [
-          {name: "name", comparator: "equals", value: aC[0].userCharacter.name},
-          {name: "name", comparator: "equals", value: aC[0].systemCharacter.name}
-        ];
-
-        let qr = await page.search(q);
-        if(qr && qr.results){
-          wset = qr.results;
-        }
-      }
-
-      let w = window.open("/", "_blank");
-      w.onload = function(){
-        w.remoteEntity = remoteEnt;
-        w.page.components.dnd.workingSet.push(...wset);
-        w.m.route.set("/chat");
-      }
-
-      */
-      
     }
+
     async function doCancel() {
       clearEditMode();
       chatCfg.pending = false;
@@ -176,6 +138,7 @@
         m.redraw();
       });
     }
+
     function doChat() {
       clearEditMode();
       if (chatCfg.pending) {
@@ -250,15 +213,6 @@
               });
             });
         });
-        /*
-        p = Promise.all([
-          m.request({method: 'GET', url: g_application_path + "/rest/chat/character/" + c1, withCredentials: true}).then((c)=>{chatCfg.system = c}),
-          m.request({method: 'GET', url: g_application_path + "/rest/chat/character/" + c2, withCredentials: true}).then((c)=>{chatCfg.user = c})
-        ]).then(()=>{
-          chatCfg.peek = true;
-          m.redraw();
-        });
-        */
       }
       return p;
     }
