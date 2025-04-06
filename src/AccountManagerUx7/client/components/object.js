@@ -59,7 +59,7 @@
         else if (mt.match(/^(video|image|audio)/)) {
 
             let path = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + object.groupPath + "/" + object.name;
-            if (mt.match(/^image/)) {
+            if (mt.match(/^image/) || mt.match(/webp$/)) {
                 if (active) objView = m("img", { class: "carousel-item-img" + (maxMode ? " carousel-item-img-max" : ""), src: path });
             }
             else {

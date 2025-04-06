@@ -341,7 +341,7 @@
         if (p.profile && p.profile.portrait && p.profile.portrait.contentType) {
           let pp = p.profile.portrait;
           let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/" + (gridMode == 1 ? "256x256" : "512x512");
-          if (gridMode == 2 && pp.contentType.match(/gif$/)) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name;
+          if (gridMode == 2 && (pp.contentType.match(/gif$/) || pp.contentType.match(/webp$/))) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name;
           let icoCls = "image-grid-image carousel-item-img";
           icon = m("img", { class: icoCls, src: icoPath });
         }
@@ -350,7 +350,7 @@
           if(p.dataBytesStore && p.dataBytesStore.length){
             icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
           }
-          if (gridMode == 2 && p.contentType.match(/gif$/)) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name;
+          if (gridMode == 2 && (pp.contentType.match(/gif$/) || pp.contentType.match(/webp$/))) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name;
           // let icoCls = "carousel-item-img";
           // image-grid-image 
           let icoCls = "image-grid-image carousel-item-img";

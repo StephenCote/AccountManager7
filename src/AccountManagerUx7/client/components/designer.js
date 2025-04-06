@@ -293,7 +293,7 @@
 
     function getDesignField() {
         let field = "";
-        let cls = 'full-block' + (page.components.picker.pickerEnabled() ? " hidden" : "");
+        let cls = 'full-block' + (page.components.picker.inPickMode() ? " hidden" : "");
         switch (designStyle) {
             case 'edit':
             case 'preview':
@@ -331,7 +331,7 @@
     }
     function getRichTextDesigner() {
         return [
-            m("div", { class: "result-nav-outer" + (page.components.picker.pickerEnabled() ? " hidden" : "") }, [
+            m("div", { class: "result-nav-outer" + (page.components.picker.inPickMode() ? " hidden" : "") }, [
                 m("div", { class: "result-nav-inner" }, [
                     m("div", { class: "result-nav" }, [
                         page.iconButton("button" + (designStyle == 'source' ? ' active' : ''), "code", "", function () { toggleStyle('source'); }),
