@@ -350,7 +350,7 @@
           if(p.dataBytesStore && p.dataBytesStore.length){
             icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
           }
-          if (gridMode == 2 && (pp.contentType.match(/gif$/) || pp.contentType.match(/webp$/))) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name;
+          if (gridMode == 2 && (p.contentType.match(/gif$/) || p.contentType.match(/webp$/))) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name;
           // let icoCls = "carousel-item-img";
           // image-grid-image 
           let icoCls = "image-grid-image carousel-item-img";

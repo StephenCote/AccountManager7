@@ -484,6 +484,7 @@ public class ChatUtil {
 		String prompt = "A " + character.get(FieldNames.FIELD_AGE) + " year-old " + NarrativeUtil.getRaceDescription(character.get(OlioFieldNames.FIELD_RACE)) + " " + character.get(FieldNames.FIELD_GENDER) + ujobDesc + ". Setting: " + setting;
 	
 		OpenAIRequest req = new OpenAIRequest();
+
 		/*
 		OllamaOptions opts = Chat.getChatOptions();
 		opts.setTemperature(0.4);
@@ -658,7 +659,7 @@ You will produce three to ten sentence summaries of the provided content, factor
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, ref.copyRecord(new String[] {FieldNames.FIELD_ID}));
 			q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, ref.getSchema());
 			q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_CONTENT});
-			q.setValue(FieldNames.FIELD_SORT_FIELD, "chapter, chunk");
+			q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CHUNK);
 			List<BaseRecord> store = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults());
 			
 			
@@ -971,6 +972,33 @@ You will produce three to ten sentence summaries of the provided content, factor
 		return rec;
 	}
 
-	
+	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
+		try {
+			BaseRecord opts = null;
+			if (cfg != null) {
+				opts = cfg.get("chatOptions");
+			}
+			double temperature = 0.9; 
+			double top_p = 0.5;
+			double repeat_penalty = 1.3;
+			double typical_p = 0.0;
+			int num_ctx = 8192;
+			if(opts != null) {
+				temperature = opts.get("temperature");
+				top_p = opts.get("top_p");
+				repeat_penalty = opts.get("repeat_penalty");
+				typical_p = opts.get("typical_p");
+				num_ctx = opts.get("num_ctx");
+		    }
+			req.set("temperature", temperature);
+			req.set("top_p", top_p);
+			req.set("frequency_penalty", repeat_penalty);
+			req.set("presence_penalty", typical_p);
+			req.set("max_tokens", num_ctx);
+		}
+		catch (ModelNotFoundException | FieldException | ValueException ex) {
+			logger.error("Error applying chat options: " + ex.getMessage());
+		}
+	}
 	
 }

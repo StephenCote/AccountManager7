@@ -261,18 +261,53 @@
             };
     
             webSocket.onmessage = function(event) {
-                //console.log("WebSocket message received: " + event.data);
                 if(event.data){
                     routeMessage(JSON.parse(event.data));
                 }
-                //m.redraw();
             };
     
             webSocket.onclose = function(event) {
-                console.log("WebSocket Closed ... TODO: Add reconnect");
+                /// console.log("WebSocket Closed ... TODO: Add reconnect");
+                setTimeout(function(){
+                    reconnect(am7client.currentOrganization, page.token, 0);
+                }, 5000)
                 
             };
         });
+      }
+
+      let maxReconnect = 60;
+      async function reconnect(sOrg, sTok, iIter){
+        addToast("warn", "Reconnecting ...", 5000);
+        let i = 0;
+        let iter = (iIter || 0) + 1;
+        try{
+            i = await m.request({method: "GET", url: g_application_path + "/rest/login/time"});
+        }
+        catch(e){
+            
+        }
+        
+        if(iter >= maxReconnect){
+            addToast("error", "Failed to reconnect", 5000);
+            return;
+        }
+        if(i > 0){
+            await am7client.loginWithPassword(sOrg, "${jwt}", sTok, function(v){
+                if(v != null){
+                    addToast("success", "Reconnected", 5000);
+                    page.router.refresh();
+                }
+                else{
+                    addToast("error", "Failed to reconnect", 5000);
+                }
+            });
+        }
+        else{
+            setTimeout(function(){
+                reconnect(sOrg, sTok, iter);
+            }, 5000);
+        }
       }
 
       function routeMessage(msg){

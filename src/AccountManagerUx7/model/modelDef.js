@@ -8877,7 +8877,10 @@
           {
             "name": "top_p",
             "type": "double",
-            "default": 1
+            "default": 0.5,
+            "minValue": 0.0,
+            "maxValue": 1.0
+
           },
           {
             "name": "min_p",
@@ -8916,7 +8919,9 @@
           {
             "name": "num_ctx",
             "type": "int",
-            "default": 8192
+            "default": 8192,
+             minValue: 0,
+             maxValue: 50000
           },
           {
             "name": "num_gpu",

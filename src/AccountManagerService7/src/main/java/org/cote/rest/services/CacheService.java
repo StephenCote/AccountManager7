@@ -58,17 +58,21 @@ public class CacheService {
 	
 	private static final Logger logger = LogManager.getLogger(CacheService.class);
 	
+	protected static void clearCaches() {
+		ChatUtil.clearCache();
+		CacheUtil.clearCache();
+		ServiceUtil.clearCache();
+		StreamUtil.clearAllUnboxedStreams();
+	}
+	
 	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/clearAll")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response clearFactoryCaches(@PathParam("type") String type, @Context HttpServletRequest request){
 		logger.info("Request to clear all caches");
-		ChatUtil.clearCache();
-		CacheUtil.clearCache();
 		clearAuthorizationCache(request);
-		ServiceUtil.clearCache();
-		StreamUtil.clearAllUnboxedStreams();
+		clearCaches();
 		return Response.status(200).entity(true).build();
 	}
 

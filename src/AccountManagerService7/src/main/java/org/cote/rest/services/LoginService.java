@@ -46,6 +46,12 @@ import org.cote.service.util.ServiceUtil;
 public class LoginService {
 	private static final Logger logger = LogManager.getLogger(LoginService.class);
 
+	@GET
+	@Path("/time")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response time(@Context HttpServletRequest request, @Context HttpServletResponse response) {
+		return Response.status(200).entity(System.currentTimeMillis()).build();
+	}
 	
 	@POST
 	@Path("/")
@@ -63,7 +69,11 @@ public class LoginService {
 				request.getSession();
 				String name = cred.get(FieldNames.FIELD_NAME);
 				logger.info("Cred Name: " + name);
-				request.login(cred.get(FieldNames.FIELD_ORGANIZATION_PATH) + "/" + cred.get(FieldNames.FIELD_NAME), new String((byte[])cred.get(FieldNames.FIELD_CREDENTIAL)));
+				String orgPath = "";
+				if(cred.get(FieldNames.FIELD_ORGANIZATION_PATH) != null) {
+					orgPath = (String) cred.get(FieldNames.FIELD_ORGANIZATION_PATH) + "/";
+				} 
+				request.login(orgPath + cred.get(FieldNames.FIELD_NAME), new String((byte[])cred.get(FieldNames.FIELD_CREDENTIAL)));
 			}
 		} catch (ServletException e) {
 			

@@ -153,7 +153,6 @@ public class CredentialService {
 			token = getTokenForUser(user, tuser, request);
 		}
 		return Response.status(200).entity(token).build();
-
 	}
 	
 	private String getTokenForUser(BaseRecord user, BaseRecord apiUser, HttpServletRequest request){

@@ -1033,6 +1033,7 @@ public class StatementUtil {
 	private static List<String> allowedSortFields = Arrays.asList(new String[] {
 		"random()"
 	});
+	
 	public static String getPaginationSuffix(DBStatementMeta meta, Query query)
 	{
 		long startRecord = query.get(FieldNames.FIELD_START_RECORD);

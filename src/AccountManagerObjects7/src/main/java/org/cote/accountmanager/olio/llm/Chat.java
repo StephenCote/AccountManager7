@@ -443,6 +443,21 @@ Begin conversationally.
 		}
 		areq.setModel(amodel);
 		applyChatOptions(req);
+		double temperature = 0.4; 
+		double top_p = 0.5;
+		double repeat_penalty = 1.3;
+		double typical_p = 0.5;
+		int num_ctx = 8192;
+		try {
+			req.set("temperature", temperature);
+			req.set("top_p", top_p);
+			req.set("frequency_penalty", repeat_penalty);
+			req.set("presence_penalty", typical_p);
+			req.set("max_tokens", num_ctx);
+		} catch (FieldException | ValueException | ModelNotFoundException e) {
+			logger.error(e);
+		}
+
 	}
 	
 	private static Pattern embeddedMessage = Pattern.compile("\\$\\{embmsg\\}");
@@ -952,6 +967,7 @@ Begin conversationally.
 		OpenAIRequest req = new OpenAIRequest();
 		req.setModel(model);
 		req.setStream(false);
+		applyChatOptions(req);
 		if(llmSystemPrompt != null) {
 			OpenAIMessage msg = new OpenAIMessage();
 			msg.setRole("system");
@@ -1111,6 +1127,7 @@ Begin conversationally.
 		}
 		String ser = JSONUtil.exportObject(getPrunedRequest(req), RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 		OpenAIResponse orec = null;
+
 		BaseRecord rec = ClientUtil.postToRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, ClientUtil.getResource(getServiceUrl(req)), authorizationToken, ser, MediaType.APPLICATION_JSON_TYPE);
 		if(rec != null) {
 			orec = new OpenAIResponse(rec);
@@ -1189,42 +1206,8 @@ Begin conversationally.
 	}
 	
 	public void applyChatOptions(OpenAIRequest req) {
-		applyChatOptions(req, chatConfig);
+		ChatUtil.applyChatOptions(req, chatConfig);
 	}
-	
-	public void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
-		try {
-			BaseRecord opts = null;
-			if (cfg != null) {
-				opts = cfg.get("chatOptions");
-			}
-					
-		if(opts != null) {
-			req.set("top_k", opts.get("top_k"));
-			req.set("top_p", opts.get("top_p"));
-			req.set("min_p", opts.get("min_p"));
-			req.set("typical_p", opts.get("typical_p"));
-			req.set("repeat_last_n", opts.get("repeat_last_n"));
-			req.set("temperature", opts.get("temperature"));
-			req.set("repeat_penalty", opts.get("repeat_penalty"));
-			req.set("num_ctx", contextSize);
-			req.set("num_gpu", 32);
-	    }
-		else {
-			req.set("top_k", 50);
-			req.set("top_p", 0.5);
-			req.set("min_p", 0.0);
-			req.set("typical_p", 0.0);
-			req.set("repeat_last_n", 512);
-			req.set("temperature", 0.9);
-			req.set("repeat_penalty", 1.3);
-			req.set("num_ctx", contextSize);
-			req.set("num_gpu", 32);
-		}
-		}
-		catch (ModelNotFoundException | FieldException | ValueException ex) {
-			logger.error("Error applying chat options: " + ex.getMessage());
-		}
-	}
+
 	
 }

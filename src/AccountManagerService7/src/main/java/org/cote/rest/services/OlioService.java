@@ -69,8 +69,17 @@ public class OlioService {
 			List<BaseRecord> nl = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {a1}), "random");
 			if(nl.size() > 0) {
 				n1 = nl.get(0);
+				/// Need to clear all the caches because the narrative will get loaded in the population lists
+				///
+				CacheService.clearCaches();
+			}
+			else {
+				logger.warn("Narrative not found for " + objectId);
 			}
 		
+		}
+		else {
+			logger.warn("Not found: " + objectId);
 		}
 		return Response.status((n1 != null ? 200 : 404)).entity((n1 != null ? n1.toFullString() : null)).build();
 	}
