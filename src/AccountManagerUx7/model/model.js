@@ -396,7 +396,7 @@
 					re = 0;
 					break;
 				}
-				if(f.limit?.length > 0 && !f.limit.includes(v)) {
+				if(f.limit?.length > 0 && !f.limit.includes(v) && f.required) {
 					err = "Not defined in the limit", f.limit;
 					re = 0;
 					break;
@@ -417,6 +417,7 @@
 					break;
 				}
 			default:
+				console.warn("Unhandled field type: " + f.type);
 				break;
 		}
 		if(re == 0){

@@ -75,7 +75,7 @@
     }
 
 
-    async function loadChatList() {
+    async function loadChatList(inst) {
         let dir = await page.findObject("auth.group", "DATA", "~/Chat");
 
         let al =  await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
@@ -84,9 +84,10 @@
       }
 
     async function summarize(object, inst){
-        let acfg = await loadChatList();
-        am7model.getModelField("summarizeSettings", "chat").limit  = acfg.map((c) => { return c.name; });
         let entity = am7model.newPrimitive("summarizeSettings");
+        let acfg = await loadChatList(am7model.prepareInstance(entity));
+        am7model.getModelField("summarizeSettings", "chat").limit  = acfg.map((c) => { return c.name; });
+        
         let cfg = {
             label: "Summarize Options",
             entityType: "summarizeSettings",

@@ -94,7 +94,7 @@ public class VectorService {
 			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
 			Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
 			rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			rq.planMost(false);
+			rq.planMost(true);
 			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
 			if(frec != null) {
 				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, frec, true);

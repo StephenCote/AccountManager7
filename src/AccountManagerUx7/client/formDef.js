@@ -1352,8 +1352,14 @@
             traitType: {
                 layout: "third"
             },
-            alignmentType: {
-                layout: "third"
+            alignment: {
+                layout: "third",
+                field:{
+                    label: "Alignment",
+                    type: "list",
+                    default: "neutral",
+                    "limit": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
+                }
             },
             description: {
                 layout: "full"
@@ -2748,7 +2754,7 @@
             page.toast("warn", "Invalid object instance");
             return;
         }
-
+        page.toast("info", "Updating narrative ...");
         let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/narrate", withCredentials: true });
         if (x && x != null) {
             inst.api.narrative(x);
@@ -2874,14 +2880,16 @@
             age: {
                 layout: "one"
             },
-            blank: {
+            alignment: {
                 layout: "one",
-                format: "blank",
-                field: {
-                    label: "",
-                    readOnly: true
+                field:{
+                    label: "Alignment",
+                    type: "list",
+                    default: "neutral",
+                    "limit": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
                 }
             },
+
             /*
             blank : {
                 layout : "full",
@@ -3723,26 +3731,27 @@
         label: "Options",
         fields: {
             temperature: {
-                layout: 'third',
-                format: "range"
-            },
-            top_k: {
+                label: "Temperature",
                 layout: 'third',
                 format: "range"
             },
             top_p: {
+                label: "Top P",
                 layout: 'third',
                 format: "range"
             },
-            min_p: {
+            num_ctx: {
+                label: "Maximum Tokens",
                 layout: 'third',
                 format: "range"
             },
-            repeat_last_n: {
+            typical_p: {
+                label: "Presence Penalty",
                 layout: 'third',
                 format: "range"
             },
             repeat_penalty: {
+                label: "Frequency Penalty",
                 layout: 'third',
                 format: "range"
             }

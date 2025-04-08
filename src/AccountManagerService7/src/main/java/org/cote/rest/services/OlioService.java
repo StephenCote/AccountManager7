@@ -59,6 +59,9 @@ public class OlioService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response narrateCharacter(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		/// Need to clear all the caches because the narrative will get loaded in the population lists
+		///
+		CacheService.clearCaches();
 		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, "narrative"});
@@ -69,9 +72,6 @@ public class OlioService {
 			List<BaseRecord> nl = NarrativeUtil.getCreateNarrative(octx, Arrays.asList(new BaseRecord[] {a1}), "random");
 			if(nl.size() > 0) {
 				n1 = nl.get(0);
-				/// Need to clear all the caches because the narrative will get loaded in the population lists
-				///
-				CacheService.clearCaches();
 			}
 			else {
 				logger.warn("Narrative not found for " + objectId);

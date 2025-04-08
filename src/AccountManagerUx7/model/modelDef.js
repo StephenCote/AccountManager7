@@ -52,7 +52,8 @@
           "data.data",
           "data.note",
           "auth.group",
-          "data.tag"
+          "data.tag",
+          "data.trait"
         ],
         "icon": "emoji_objects",
         "prototypes": [
@@ -4345,7 +4346,8 @@
             "baseClass": "org.cote.accountmanager.olio.AlignmentEnumType",
             "type": "enum",
             "maxLength": 32,
-            "shortName": "aln"
+            "shortName": "aln",
+            "limit": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
           }
         ]
       },
