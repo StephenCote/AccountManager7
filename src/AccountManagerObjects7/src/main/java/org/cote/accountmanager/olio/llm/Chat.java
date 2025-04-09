@@ -1110,10 +1110,10 @@ Begin conversationally.
 		if(promptConfig == null) {
 			return inReq;
 		}
-		OpenAIRequest outReq = new OpenAIRequest();
+		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.toFullString());
 		outReq.setModel(inReq.getModel());
-		String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
-		boolean useJB = (forceJailbreak || chatConfig != null && (boolean)chatConfig.get("useJailBreak"));
+		// String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
+		// boolean useJB = (forceJailbreak || chatConfig != null && (boolean)chatConfig.get("useJailBreak"));
 
 		outReq.addMessage(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
 		.collect(Collectors.toList()));
