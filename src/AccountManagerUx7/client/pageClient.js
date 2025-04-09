@@ -83,6 +83,8 @@
         profile,
         confirm,
         imageView,
+        clearToast,
+        reconnect,
         toast: addToast,
         toasts: () => toast,
         loadToast,
@@ -281,6 +283,15 @@
         addToast("warn", "Reconnecting ...", 5000);
         let i = 0;
         let iter = (iIter || 0) + 1;
+        let org = sOrg || am7client.currentOrganization;
+        let tok = sTok || page.token;
+        if(!org || !tok){
+            clearToast();
+            addToast("error", "Unable to reconnect", 5000);
+            return;
+        }
+
+        /// Test that the server is available
         try{
             i = await m.request({method: "GET", url: g_application_path + "/rest/login/time"});
         }
@@ -294,6 +305,7 @@
         }
         if(i > 0){
             await am7client.loginWithPassword(sOrg, "${jwt}", sTok, function(v){
+                clearToast();
                 if(v != null){
                     addToast("success", "Reconnected", 5000);
                     page.router.refresh();
@@ -549,6 +561,11 @@
             m.redraw();
         }, 300);
     }
+    
+    function clearToast(){
+        toast = [];
+        m.redraw();
+    }
 
     function addToast(type, msg, timeout){
         let nt = {
@@ -566,11 +583,15 @@
                 o.className = "transition transition-100 toast-box " + toastConfig[nt.type].style;
             }
         }, 10);
-        window.setTimeout(()=>{
-           burnToast(nt);
-        }, nt.expiry);
+        if(nt.expiry >= 0){
+            window.setTimeout(()=>{
+            burnToast(nt);
+            }, nt.expiry);
+        }
         m.redraw();
+        return nt.id;
     }
+
     /// dark:text-gray-500 dark:hover:text-white dark:bg-gray-800 dark:hover:bg-gray-700
     function loadToast(){
         // transition-full transition-0 transition-100

@@ -60,7 +60,6 @@ public class ChatService {
 	@Context
 	ServletContext context;
 	
-	
 	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/clearAll")
@@ -153,19 +152,6 @@ public class ChatService {
 		return Response.status(200).entity(ChatUtil.getDefaultPrompt().toFullString()).build();
 	}
 	
-	/*
-	@RolesAllowed({"admin","user"})
-	@GET
-	@Path("/character/{name:[\\.A-Za-z\\s]+}")
-	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response getCharactor(@PathParam(FieldNames.FIELD_NAME) String name, @Context HttpServletRequest request){
-		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord chart = getCharacter(user, name);
-		
-		return Response.status((chart != null ? 200 : 404)).entity((chart != null ? chart.toFullString() : null)).build();
-	}
-	*/
-	
 	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/config/prompt/{name:[\\.A-Za-z0-9%\\s]+}")
@@ -194,7 +180,7 @@ public class ChatService {
 	@POST
 	@Path("/text")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response chatRPG(String json, @Context HttpServletRequest request){
+	public Response chat(String json, @Context HttpServletRequest request){
 		ChatRequest chatReq = ChatRequest.importRecord(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		if(chatReq.getUid() == null) {
@@ -221,7 +207,7 @@ public class ChatService {
 		String key = ChatUtil.getKey(user, chatConfig, promptConfig, chatReq); 
 		logger.info("Chat request: " + key);
 		Chat chat = ChatUtil.getChat(user, chatReq, key, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
-			chat.continueChat(req, chatReq.getMessage() + citRef);
+		chat.continueChat(req, chatReq.getMessage() + citRef);
 		if(chatReq.getMessage().startsWith("/next")) {
 			/// Dump the request from the cache when moving episodes
 			ChatUtil.forgetRequest(user, chatReq);

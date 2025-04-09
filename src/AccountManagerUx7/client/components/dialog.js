@@ -75,17 +75,15 @@
     }
 
 
-    async function loadChatList(inst) {
+    async function loadChatList() {
         let dir = await page.findObject("auth.group", "DATA", "~/Chat");
-
-        let al =  await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
-        if(al && al.length && inst.api.chat() == null) inst.api.chat(al[0].name);
-        return al;
+        return await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
       }
 
     async function summarize(object, inst){
         let entity = am7model.newPrimitive("summarizeSettings");
-        let acfg = await loadChatList(am7model.prepareInstance(entity));
+        let acfg = await loadChatList();
+        if(acfg && acfg.length) entity.chat = acfg[0].name;
         am7model.getModelField("summarizeSettings", "chat").limit  = acfg.map((c) => { return c.name; });
         
         let cfg = {
@@ -100,13 +98,14 @@
                     console.error("Invalid: " + entity.chat);
                     return;
                 }
-                page.toast("info", "Summarizing ...");
+                page.toast("info", "Summarizing ...", -1);
                 let creq = am7model.newPrimitive("olio.llm.chatRequest");
                 creq.chatConfig = vcfg[0].objectId;
                 creq.data = [
                     JSON.stringify({schema:inst.model.name,objectId:inst.api.objectId()})
                 ];
                 let x = await m.request({ method: 'POST', url: am7client.base() + "/vector/summarize", body: creq, withCredentials: true });
+                page.clearToast();
                 if (x && x != null) {
                     page.toast("success", "Summarization complete");
                 }

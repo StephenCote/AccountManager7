@@ -34,6 +34,10 @@ public class EmbeddingUtil {
 		this.serviceType = type;
 	}
 	
+	public LLMServiceEnumType getServiceType() {
+		return serviceType;
+	}
+
 	public String[] getKeywords(String content){
 		String[] words = new String[0];
 		if(serviceType != LLMServiceEnumType.LOCAL) {

@@ -48,6 +48,7 @@ import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.OrderEnumType;
+import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -558,7 +559,7 @@ public class ChatUtil {
 	}
 	
 	public static String getFilteredCitationText(OpenAIRequest req, BaseRecord storeChunk, String type) {
-		String cit = getCitationText(storeChunk, type);
+		String cit = getCitationText(storeChunk, type, true);
 		List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && m.getContent().contains(cit)).collect(Collectors.toList());
 		String citation = null;
 		if(msgs.size() == 0) {
@@ -566,7 +567,7 @@ public class ChatUtil {
 		}
 		return citation;
 	}
-	public static String getCitationText(BaseRecord storeChunk, String type) {
+	public static String getCitationText(BaseRecord storeChunk, String type, boolean includeMeta) {
 		BaseRecord chunk = storeChunk;
 		String cnt = storeChunk.get("content");
 		if(cnt == null || cnt.length() == 0) {
@@ -589,7 +590,7 @@ public class ChatUtil {
 		}
 		String citationKey = "<citation schema=\"" + storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE_TYPE) + "\" chapter = \"" + chapter + "\" chapterTitle = \"" + chapterTitle + "\" name = \"" + name + "\" type = \"" + type + "\" chunk = \"" + chunk.get("chunk") + "\" id = \"" + storeChunk.get(FieldNames.FIELD_VECTOR_REFERENCE + "." + FieldNames.FIELD_ID) + "\">";
 		String citationSuff = "</citation>";
-		return citationKey + System.lineSeparator() + cnt + System.lineSeparator() + citationSuff;
+		return (includeMeta ? citationKey + System.lineSeparator() : "") + cnt + System.lineSeparator() + (includeMeta ? citationSuff : "");
 	}
 	
 
@@ -603,8 +604,11 @@ public class ChatUtil {
 		
 	}
 
-	
 	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean recreate) {
+		return createSummary(user, chatConfig, ref, recreate, false);
+	}
+	
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean recreate, boolean remote) {
 		logger.info("Creating summary ...");
 		String name = ref.get(FieldNames.FIELD_NAME) + " - Summary";
 		BaseRecord summ = DocumentUtil.getData(user, name, ref.get(FieldNames.FIELD_GROUP_PATH)); 
@@ -616,7 +620,7 @@ public class ChatUtil {
 				return summ;
 			}
 		}
-		List<String> summaries = getSummary(user, chatConfig, ref);
+		List<String> summaries = composeSummary(user, chatConfig, ref, remote);
 		if(summaries.size() == 0) {
 			logger.error("Invalid summary data");
 			return null;
@@ -633,25 +637,31 @@ public class ChatUtil {
 		return summ;
 	}
 	
-	public static List<String> getSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref) {
+	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref) {
+		return composeSummary(user, chatConfig, ref, false);
+	}
+
+	private static String summarizeSysPrompt = """
+You will summarize creating objective content summaries.
+You will receive content in the following format:
+<summary>
+previous summary
+</summary>
+<citation>
+content
+</citation>
+You will produce three to ten sentence summaries of the provided content.
+Use any previous summary for context, but do not repeat it.
+""";
+
+	private static String summarizeUserCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
+	
+	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean remote) {
 		int iter = 0;
-		int max = 5;
+		int max = 100;
 		int minLength = 300;
 		List<String> summaries = new ArrayList<>();
 
-		String sysPrompt = """
-You are are an expert in creating objective content summaries.
-You will receive content in the following format:
-    <summary>
-    previous summary
-    </summary>
-	<citation>
-	content
-	</citation>
-You will produce three to ten sentence summaries of the provided content, factoring in any previous summary.
-""";
-
-		String userCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
 		try {
 			VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
 			//List<BaseRecord> store = vu.getVectorStore(ref);
@@ -663,66 +673,76 @@ You will produce three to ten sentence summaries of the provided content, factor
 			List<BaseRecord> store = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults());
 			
 			
-			Chat chat = new Chat(user, chatConfig, null);
-			chat.setLlmSystemPrompt(sysPrompt);
+			Chat chat = null;
+			if(chatConfig != null) {
+				chat = new Chat(user, chatConfig, null);
+				chat.setDeferRemote(remote);
+				chat.setLlmSystemPrompt(summarizeSysPrompt);
+			}
+
 			StringBuilder contentBuffer = new StringBuilder();
+			EmbeddingUtil eu = IOSystem.getActiveContext().getVectorUtil().getEmbedUtil();
 			
-			for(BaseRecord v : store) {
-				// logger.info(v.toFullString());
-				String cit = getCitationText(v, "chunk");
-				if(cit == null || cit.length() == 0) {
-					continue;
-				}
-				if(cit.length() < minLength) {
+			for(int i = 0; i < store.size(); i++) {
+				BaseRecord v = store.get(i);
+				String cit = getCitationText(v, "chunk", false);
+				
+				if(cit != null || cit.length() > 0) {
 					contentBuffer.append(cit + System.lineSeparator());
-					continue;
 				}
-				else if(contentBuffer.length() > 0) {
-					cit = contentBuffer.toString() + cit;
-					contentBuffer = new StringBuilder();
+				if(i < (store.size() - 1) && cit.length() < minLength) {
+					continue;
 				}
 
 				logger.info("Summarizing chunk #" + (iter + 1) + " of " + store.size());
-
-				OpenAIRequest req = chat.getChatPrompt();
+				String summ = null;
 				String prevSum = "";
-				if(summaries.size() > 0) {
-					prevSum = "<previous-summary>" + System.lineSeparator() + summaries.get(summaries.size() - 1) + System.lineSeparator() + "</previous-summary>" + System.lineSeparator();
+				if(chat == null) {
+					if (eu.getServiceType() == LLMServiceEnumType.LOCAL) {
+						summ = eu.getSummary(contentBuffer.toString());
+						// logger.info(contentBuffer.toString());
+						logger.info(summ);
+					}
+					else {
+						logger.warn("Remote summarization not currently supported");
+					}
 				}
-				
-				String cmd = userCommand + prevSum + cit;
-				logger.info(cmd);
-				chat.newMessage(req, cmd, "user");
-
-				OpenAIResponse resp = chat.chat(req);
-				String summ = resp.getMessage().getContent();
-
-				summaries.add(summ);
-				
+				else {
+					OpenAIRequest req = chat.getChatPrompt();
+					if(summaries.size() > 0) {
+						prevSum = "<previous-summary>" + System.lineSeparator() + summaries.get(summaries.size() - 1) + System.lineSeparator() + "</previous-summary>" + System.lineSeparator();
+					}
+					
+					String cmd = summarizeUserCommand + prevSum + contentBuffer.toString();
+					chat.newMessage(req, cmd, "user");
+	
+					OpenAIResponse resp = chat.chat(req);
+					summ = resp.getMessage().getContent();
+				}
+				if(summ != null && summ.length() > 0) {
+					summaries.add("<summary-chunk chunk=\"" + (i + 1) + "\">" + System.lineSeparator() + summ + System.lineSeparator() + "</summary-chunk>");
+				}
+				contentBuffer = new StringBuilder();
 				iter++;
 				if(max > 0 && iter >= max) {
+					logger.warn("Maximum summarization requests reached - " + max + " of " + store.size());
 					break;
 				}
 				
 			}
-			if(contentBuffer.length() > 0) {
-				OpenAIRequest req = chat.getChatPrompt();
-				String prevSum = "";
-				if(summaries.size() > 0) {
-					prevSum = "<previous-summary>" + System.lineSeparator() + summaries.get(summaries.size() - 1) + System.lineSeparator() + "</previous-summary>" + System.lineSeparator();
-				}
-				
-				chat.newMessage(req, userCommand + prevSum + contentBuffer.toString(), "user");
-
-				OpenAIResponse resp = chat.chat(req);
-				summaries.add(resp.getMessage().getContent());
-			}
+		
 			if(summaries.size() > 0) {
-				userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
-				OpenAIRequest req = chat.getChatPrompt();
-				chat.newMessage(req, userCommand, "user");
-				OpenAIResponse resp = chat.chat(req);
-				summaries.add(resp.getMessage().getContent());
+				logger.info("Completing summarization with " + summaries.size() + " summary chunks");
+				if(chatConfig == null) {
+					summaries.add(eu.getSummary(summaries.stream().collect(Collectors.joining(System.lineSeparator()))));
+				}
+				else {
+					String userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
+					OpenAIRequest req = chat.getChatPrompt();
+					chat.newMessage(req, userCommand, "user");
+					OpenAIResponse resp = chat.chat(req);
+					summaries.add("<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>");
+				}
 			}
 		}
 		catch(ProcessingException | ReaderException e) {

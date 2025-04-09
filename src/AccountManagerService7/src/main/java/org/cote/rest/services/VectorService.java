@@ -6,6 +6,7 @@ import java.util.List;
 
 import javax.annotation.security.DeclareRoles;
 import javax.annotation.security.RolesAllowed;
+import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.Consumes;
@@ -59,6 +60,8 @@ import org.cote.service.util.ServiceUtil;
 public class VectorService {
 
 	private static final Logger logger = LogManager.getLogger(VectorService.class);
+	@Context
+	ServletContext context;
 	
 	@RolesAllowed({"user"})
 	@GET
@@ -97,7 +100,7 @@ public class VectorService {
 			rq.planMost(true);
 			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
 			if(frec != null) {
-				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, frec, true);
+				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, frec, true, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 				summarized = (sumD != null);
 			}
 		}

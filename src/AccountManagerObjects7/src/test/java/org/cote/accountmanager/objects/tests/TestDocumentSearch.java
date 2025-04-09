@@ -150,12 +150,12 @@ public class TestDocumentSearch extends BaseTest {
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		assertNotNull("Test user is null", testUser1);
 		
-		String path = "./media/The Verse.docx";
+		String path = "./media/Vore.docx";
 		BaseRecord doc = getCreateDocument(testUser1, path);
 		
 		if(vu.countVectorStore(doc) == 0) {
 			try {
-				ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.CHAPTER, 4096);
+				ioContext.getAccessPoint().vectorize(testUser1, doc.getSchema(), doc.get(FieldNames.FIELD_OBJECT_ID), ChunkEnumType.WORD, 250);
 			}
 			catch(Exception e) {
 				logger.error(e);
@@ -178,7 +178,8 @@ public class TestDocumentSearch extends BaseTest {
 		cfg.setValue("model", "gpt-4o");
 		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 
-		BaseRecord summary = ChatUtil.createSummary(testUser1, cfg, doc, true);
+		BaseRecord summary = ChatUtil.createSummary(testUser1, null, doc, true);
+		assertNotNull("Summary is null", summary);
 	}
 	
 	@Test
