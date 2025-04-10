@@ -72,6 +72,11 @@ public class ChatUtil {
 	private static HashMap<String, Chat> chatMap = new HashMap<>();
 	private static HashMap<String, BaseRecord> configMap = new HashMap<>();
 	
+	/// When true, chat options are re-applied to the chat request for saved sessions
+	/// When false, chat options are only applied when the request is first created
+	///
+	private static boolean alwaysApplyChatOptions = true;
+	
 	public static void clearCache() {
 		chatTrack.clear();
 		reqMap.clear();
@@ -246,7 +251,7 @@ public class ChatUtil {
 				dat = IOSystem.getActiveContext().getAccessPoint().create(user, dat);
 			}
 			//ByteModelUtil.setValueString(dat, JSONUtil.exportObject(req));
-			dat.set(FieldNames.FIELD_BYTE_STORE, JSONUtil.exportObject(req).getBytes());
+			dat.set(FieldNames.FIELD_BYTE_STORE, req.toFullString().getBytes());
 			if(IOSystem.getActiveContext().getAccessPoint().update(user, dat) != null) {
 				upd = true;
 			}
@@ -924,10 +929,13 @@ Use any previous summary for context, but do not repeat it.
 		if(chatConfig != null && promptConfig != null) {
 
 			if(creq.getSessionName() != null && creq.getSessionName().length() > 0) {
-				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, creq.getSessionName());
-				OpenAIRequest oreq = ChatUtil.getSession(user, sessionName);
+				String sessionName = getSessionName(user, chatConfig, promptConfig, creq.getSessionName());
+				OpenAIRequest oreq = getSession(user, sessionName);
 				if(oreq != null) {
 					req = oreq;
+					if (alwaysApplyChatOptions) {
+						applyChatOptions(req, chatConfig);
+					}
 				}
 			}
 			if(req == null) {

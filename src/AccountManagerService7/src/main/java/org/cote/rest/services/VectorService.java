@@ -85,7 +85,6 @@ public class VectorService {
 	@Path("/summarize")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response summarize(String json, @Context HttpServletRequest request){
-		logger.info(json);
 		ChatRequest chatReq = ChatRequest.importRecord(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);

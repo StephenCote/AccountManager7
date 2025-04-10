@@ -308,16 +308,22 @@ Begin conversationally.
 	
 
 	}
+	
+	private int getMessageOffset() {
+		int idx = 1;
+		if(chatConfig != null) {
+			boolean useAssist = chatConfig.get("assist");
+			idx = (useAssist ? 3 : 2);
+		}
+		return idx;
+	}
+	
 	private List<BaseRecord> createNarrativeVector(BaseRecord user, OpenAIRequest req, String sessionName) {
 		List<BaseRecord> vect = new ArrayList<>();
 		int rmc = req.getMessages().size();
 		
 		if(sessionName != null && VectorUtil.isVectorSupported() && rmc > 2) {
-			int idx = 1;
-			if(chatConfig != null) {
-				boolean useAssist = chatConfig.get("assist");
-				idx = (useAssist ? 3 : 2);
-			}
+			int idx = getMessageOffset();
 			List<String> buff = new ArrayList<>();
 			for(int i = idx; i < rmc; i++) {
 				buff.add(getNarrativeForVector(req.getMessages().get(i)));
@@ -805,7 +811,7 @@ Begin conversationally.
 
 		}
 		else if(line.equals("/prune")) {
-			prune(req, true);
+			pruneCount(req, messageTrim);
 			oact = LineAction.CONTINUE;
 		}
 		else if(line.equals("/prompt")) {
@@ -987,67 +993,33 @@ Begin conversationally.
 		
 		/// Target count = system + pruneSkip
 		///
-		int idx = pruneSkip + 1;
+		int idx = getMessageOffset();
 		int len = req.getMessages().size() - messageCount;
-		int kfc = 0;
+		List<OpenAIMessage> kfs = new ArrayList<>();
 		for(int i = idx; i < len; i++) {
 			OpenAIMessage msg = req.getMessages().get(i);
 			msg.setPruned(true);
 			if(msg.getContent() != null && msg.getContent().startsWith("(KeyFrame:")) {
-				kfc++;
+				kfs.add(msg);
 			}
 		}
+
+		/// Don't prune the last key frame
+		if (kfs.size() > 0) {
+			kfs.get(kfs.size() - 1).setPruned(false);
+		}
 		
-		if(req.getMessages().size() > (pruneSkip + keyFrameEvery) && (req.getMessages().size() - idx - kfc) % keyFrameEvery == 0) {
+		/// if the key frame step is even and the size offset is odd, then make the size offset even
+		int cntOff = req.getMessages().size() - idx;
+		if(keyFrameEvery % 2 == 0 && cntOff % 2 != 0) {
+			cntOff--;
+		}
+		if(req.getMessages().size() > (pruneSkip + keyFrameEvery) && cntOff % keyFrameEvery == 0) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}
 		
 
-	}
-	
-	private void prune(OpenAIRequest req, boolean force) {
-		boolean enablePrune = chatConfig.get("prune");
-		if((!force && !enablePrune) || !chatMode) {
-			return;
-		}
-		if(req.getMessages().size() <= pruneSkip) {
-			return;
-		}
-		OpenAIMessage ctxMsg = req.getMessages().get(0);
-		int curLength = 0;
-		int marker = -1;
-		/// Skip the first message used to set any context prompt
-		///
-		for(int i = 0; i < req.getMessages().size(); i++) {
-			OpenAIMessage msg = req.getMessages().get(i);
-			if(msg.isPruned()) continue;
-			if(msg.getContent() != null) {
-				curLength += msg.getContent().split("\\W+").length;
-			}
-			if(i < pruneSkip) {
-				continue;
-			}
-			else if(i == pruneSkip) {
-				// logger.info("Front load: " + curLength);
-				continue;
-			}
-			if(marker == -1 && curLength >= pruneLength) {
-				marker = i - 1;
-			}
-
-		}
-		
-		logger.info("Found " + curLength + " tokens. " + (marker > -1 ? "Will":"Won't") + " prune.");
-		if(marker > -1 && curLength >= contextSize) {
-			
-			int im = marker; //Math.max(marker, markerAhead);
-			for(int i = pruneSkip; i <= im; i++) {
-				req.getMessages().get(i).setPruned(true);
-			}
-			logger.info("(Adding key frame)");
-			addKeyFrame(req);
-		}
 	}
 
 	public OpenAIMessage newMessage(OpenAIRequest req, String message) {
@@ -1112,12 +1084,14 @@ Begin conversationally.
 		}
 
 		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.toFullString());
-		outReq.setModel(inReq.getModel());
+		// outReq.setModel(inReq.getModel());
 		// String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
 		// boolean useJB = (forceJailbreak || chatConfig != null && (boolean)chatConfig.get("useJailBreak"));
 
-		outReq.addMessage(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
-		.collect(Collectors.toList()));
+		// outReq.addMessage(inReq.getMessages().stream().filter(m -> (m.isPruned()==false))
+		// 	.collect(Collectors.toList()));
+		outReq.setMessages(outReq.getMessages().stream().filter(m -> (m.isPruned()==false)).collect(Collectors.toList()));
+
 		
 		return outReq;
 	}
@@ -1127,6 +1101,7 @@ Begin conversationally.
 			return null;
 		}
 		String ser = JSONUtil.exportObject(getPrunedRequest(req), RecordSerializerConfig.getHiddenForeignUnfilteredModule());
+
 		OpenAIResponse orec = null;
 
 		BaseRecord rec = ClientUtil.postToRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, ClientUtil.getResource(getServiceUrl(req)), authorizationToken, ser, MediaType.APPLICATION_JSON_TYPE);

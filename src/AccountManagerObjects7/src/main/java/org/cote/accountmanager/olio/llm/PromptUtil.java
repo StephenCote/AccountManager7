@@ -215,6 +215,10 @@ public class PromptUtil {
 		BaseRecord userChar = chatConfig.get("userCharacter");
 		BaseRecord systemChar = chatConfig.get("systemCharacter");
 		
+		if (userChar == null || systemChar == null) {
+			return templ;
+		}
+
 		PersonalityProfile sysProf = ProfileUtil.getProfile(null, chatConfig.get("systemCharacter"));
 		PersonalityProfile usrProf = ProfileUtil.getProfile(null, chatConfig.get("userCharacter"));
 		ProfileComparison profComp = new ProfileComparison(null, sysProf, usrProf);
