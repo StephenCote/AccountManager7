@@ -632,9 +632,13 @@ public class ChatUtil {
 		}
 		summ = DocumentUtil.getCreateData(user, name, ref.get(FieldNames.FIELD_GROUP_PATH), summaries.stream().collect(Collectors.joining(System.lineSeparator())));
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
+		String lastSumm = "Summary of " + ref.get(FieldNames.FIELD_NAME) + System.lineSeparator() + summaries.get(summaries.size() - 1);
 		logger.info("Vectorizing summary...");
 		try {
-			vu.createVectorStore(summ, ChunkEnumType.WORD, 1024);
+			/// Vectorize the summary set
+			vu.createVectorStore(summ, ChunkEnumType.WORD, 500);
+			/// Vectorize the last summary and associate with the reference
+			vu.createVectorStore(ref, lastSumm, ChunkEnumType.WORD, 500);
 		} catch (FieldException e) {
 			logger.error(e);
 			e.printStackTrace();
