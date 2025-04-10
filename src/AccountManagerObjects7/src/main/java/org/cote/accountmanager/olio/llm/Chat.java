@@ -442,18 +442,18 @@ Begin conversationally.
 			amodel = req.getModel();
 		}
 		areq.setModel(amodel);
-		applyChatOptions(req);
+		applyChatOptions(areq);
 		double temperature = 0.4; 
 		double top_p = 0.5;
 		double repeat_penalty = 1.3;
 		double typical_p = 0.5;
 		int num_ctx = 8192;
 		try {
-			req.set("temperature", temperature);
-			req.set("top_p", top_p);
-			req.set("frequency_penalty", repeat_penalty);
-			req.set("presence_penalty", typical_p);
-			req.set("max_tokens", num_ctx);
+			areq.set("temperature", temperature);
+			areq.set("top_p", top_p);
+			areq.set("frequency_penalty", repeat_penalty);
+			areq.set("presence_penalty", typical_p);
+			areq.set("max_tokens", num_ctx);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -1110,6 +1110,7 @@ Begin conversationally.
 		if(promptConfig == null) {
 			return inReq;
 		}
+
 		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.toFullString());
 		outReq.setModel(inReq.getModel());
 		// String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
