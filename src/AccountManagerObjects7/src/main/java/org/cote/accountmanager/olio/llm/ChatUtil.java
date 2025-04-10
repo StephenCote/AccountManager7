@@ -18,6 +18,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
+import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
@@ -636,10 +637,16 @@ public class ChatUtil {
 		logger.info("Vectorizing summary...");
 		try {
 			/// Vectorize the summary set
-			vu.createVectorStore(summ, ChunkEnumType.WORD, 500);
+			List<BaseRecord> chunks = vu.createVectorStore(summ, ChunkEnumType.WORD, 500);
+			if(chunks.size() > 0) {
+				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
+			}
 			/// Vectorize the last summary and associate with the reference
-			vu.createVectorStore(ref, lastSumm, ChunkEnumType.WORD, 500);
-		} catch (FieldException e) {
+			chunks = vu.createVectorStore(ref, lastSumm, ChunkEnumType.WORD, 500);
+			if(chunks.size() > 0) {
+				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
+			}
+		} catch (FieldException | WriterException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
@@ -661,6 +668,7 @@ content
 </citation>
 You will produce three to ten sentence summaries of the provided content.
 Use any previous summary for context, but do not repeat it.
+ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 """;
 
 	private static String summarizeUserCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
