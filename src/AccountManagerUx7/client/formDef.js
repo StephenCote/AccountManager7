@@ -627,7 +627,7 @@
             summarize: {
                 format: "button",
                 layout: "one",
-                icon: 'polyline',
+                icon: 'summarize',
                 requiredAttributes: ["objectId"],
                 field: {
                     label: "Summarize",
@@ -672,6 +672,19 @@
             "name": "chat",
             "label": "Chat Config",
             "type": "list",
+        },
+        {
+            name: "chunkType",
+            label: "Chunk Type",
+            type: 'string',
+            baseType: "string",
+            default: "word"
+        },
+        {
+            name: "chunk",
+            label: "Chunk",
+            type: 'int',
+            default: 25
         }
         ]
     });
@@ -680,11 +693,21 @@
         label: "Summarize Options",
         fields: {
             chat: {
-                layout: 'full',
+                layout: 'third',
                format: "select"
-               
-
+            },
+            chunkType: {
+                layout: 'third',
+                label: 'Chunk Type',
+                field: {
+                    type: 'list',
+                    limit: ['Sentence', 'Chapter', 'Word']
+                }
+            },
+            chunk: {
+                layout: 'third'
             }
+
         }
     };
 
@@ -1330,12 +1353,21 @@
                 layout: "half"
             },
             createdDate: {
-                layout: "half"
+                layout: "third"
             },
             modifiedDate: {
-                layout: "half"
+                layout: "third"
             },
-
+            vectorize: {
+                format: "button",
+                layout: "third",
+                icon: 'polyline',
+                requiredAttributes: ["objectId"],
+                field: {
+                    label: "Vectorize",
+                    command: page.components.dialog.vectorize
+                }
+            },
             text: {
                 layout: "full",
                 format: "textarea"
@@ -2950,6 +2982,16 @@
                 field: {
                     label: "Roll",
                     command: rollCharacter
+                }
+            },
+            summarize: {
+                format: "button",
+                layout: "one",
+                icon: 'summarize',
+                requiredAttributes: ["objectId"],
+                field: {
+                    label: "Summarize",
+                    command: page.components.dialog.summarize
                 }
             },
             description: {

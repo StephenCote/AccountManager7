@@ -101,6 +101,7 @@
         getRawUrl : getRawUrl,
         home : goHome,
         nav: goNav,
+        getTag,
         chat: goChat,
         member: promiseMember,
         parentType: promiseParentType,
@@ -163,6 +164,25 @@
             return b[parseInt(Math.random() * b.length)] + " " + c[parseInt(Math.random() * c.length)] + " " + a[parseInt(Math.random() * a.length)];
           }
     };
+
+    async function getTag(name, type){
+        let grp = await page.findObject("auth.group", "data", "~/Tags");
+        if(grp == null){
+            return;
+        }
+        let q = am7view.viewQuery(am7model.newInstance("data.tag"));
+        q.field("groupId", grp.id);
+        q.field("name", name);
+        if(type){
+            q.field("type", type);
+        }
+        let qr = await page.search(q);
+        let tag;
+        if(qr && qr.results && qr.results.length){
+            tag = qr.results[0];
+        }
+        return tag;
+    }
 
     async function systemLibrary(model){
         let grp;

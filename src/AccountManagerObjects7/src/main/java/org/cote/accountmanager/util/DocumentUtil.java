@@ -36,18 +36,50 @@ import org.cote.accountmanager.provider.IProvider;
 
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);
-	
-	public static BaseRecord getData(BaseRecord owner, String name, String path) {
+
+	private static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path) {
 		BaseRecord dat = null;
 		BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path,
 				GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if (group != null) {
-			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
+			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, name);
 			q.planMost(true);
 			dat = IOSystem.getActiveContext().getSearch().findRecord(q);
 		} else {
 			logger.warn("Group is null: " + path);
+		}
+		return dat;
+	}
+	
+	public static BaseRecord getData(BaseRecord owner, String name, String path) {
+		return getRecord(owner, ModelNames.MODEL_DATA, name, path);
+	}
+	
+	public static BaseRecord getNote(BaseRecord owner, String name, String path) {
+		return getRecord(owner, ModelNames.MODEL_NOTE, name, path);
+	}
+	
+	public static BaseRecord getCreateNote(BaseRecord owner, String name, String path, String textContents) {
+		BaseRecord dat = getRecord(owner, ModelNames.MODEL_NOTE, name, path);
+		BaseRecord datT = null;
+
+		if (dat == null) {
+			if(textContents == null || textContents.length() == 0) {
+				logger.error("Invalid text contents");
+				return null;
+			}
+			try {
+				datT = RecordFactory.newInstance(ModelNames.MODEL_NOTE);
+				datT.set(FieldNames.FIELD_NAME, name);
+				datT.set(FieldNames.FIELD_GROUP_PATH, path);
+				datT.set(FieldNames.FIELD_TEXT, textContents);
+				dat = IOSystem.getActiveContext().getFactory().newInstance(ModelNames.MODEL_NOTE, owner, datT, null);
+				dat = IOSystem.getActiveContext().getAccessPoint().create(owner, dat);
+
+			} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+				logger.error(e);
+			}
 		}
 		return dat;
 	}
@@ -75,6 +107,15 @@ public class DocumentUtil {
 			}
 		}
 		return dat;
+	}
+	
+	public static boolean applyTag(BaseRecord user, String tagName, String tagType, BaseRecord targetObj, boolean enable) {
+		BaseRecord tag = getCreateTag(user, tagName, tagType);
+		boolean outBool = false;
+		if(tag != null) {
+			outBool = IOSystem.getActiveContext().getMemberUtil().member(user, tag, targetObj, null, true);
+		}
+		return outBool;
 	}
 	
 	public static BaseRecord getCreateTag(BaseRecord user, String name, String type) {

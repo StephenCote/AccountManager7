@@ -5,6 +5,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.text.BreakIterator;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -70,6 +71,7 @@ keyword_search AS (
     SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC), content, chunk
     FROM (SELECT DISTINCT T2.id, keyId, vaultId, vaulted, T2.organizationId, vectorReference, vectorReferenceType, content, chunk FROM ${tableName} T2 ${tagFilter}), plainto_tsquery('english', ?) query
     WHERE to_tsvector('english', content) @@ query
+    AND (vectorReference = ? or ? = 0) and (vectorReferenceType = ? or ? IS NULL)
     ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC
     LIMIT 20
 )
@@ -112,6 +114,39 @@ LIMIT ?
 	public VectorUtil(LLMServiceEnumType type, String url, String token) {
 		embedUtil = new EmbeddingUtil(type, url, token);
 	}
+	
+	public List<BaseRecord> findByTag(String modelName, BaseRecord[] tags){
+		List<BaseRecord> chunks = new ArrayList<>();
+		if(modelName == null || tags.length == 0) {
+			return chunks;
+		}
+		
+		String tableName = IOSystem.getActiveContext().getDbUtil().getTableName(modelName);
+		String sql = "SELECT DISTINCT T.id, keyId, vaultId, vaulted, T.organizationId, vectorReference, vectorReferenceType, content, chunk FROM " + tableName + " T "
+		+ "INNER JOIN "
+			+ IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_TAG), ModelNames.MODEL_PARTICIPATION)
+			+ " TP on TP.participantId = vectorReference AND TP.participantModel = vectorReferenceType AND TP.participationId IN ("
+			+ Arrays.asList(tags).stream().map(t -> Long.toString((long)t.get(FieldNames.FIELD_ID))).collect(Collectors.joining(","))
+			+ ")"
+		;
+		// logger.info(sql);
+		try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); Statement stat = con.createStatement()){
+	        ResultSet rs = stat.executeQuery(sql);
+	        MemoryReader mem = new MemoryReader();
+	        while (rs.next()) {
+	        	BaseRecord vs = newVectorStore(rs.getLong("id"),  rs.getString("keyId"), rs.getString("vaultId"), rs.getBoolean("vaulted"), rs.getLong("organizationId"), rs.getLong("vectorReference"), rs.getString("vectorReferenceType"), 0.0, rs.getInt("chunk"), rs.getString("content"));
+	        	mem.read(vs);
+	        	chunks.add(vs);
+	        }
+	        rs.close();
+		}
+		catch(SQLException | FieldException | ModelNotFoundException | ReaderException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		
+		return chunks;
+    }
 	
 	public List<BaseRecord> find(BaseRecord model, String query){
 		return find(model, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query);
@@ -164,9 +199,13 @@ LIMIT ?
 		        stat.setString(5, refType);
 		        stat.setObject(6, new PGvector(queryEmbedding));
 		        stat.setString(7, query);
-		        stat.setDouble(8, k);
-		        stat.setDouble(9, k);
-		        stat.setInt(10, limit);
+		        stat.setLong(8, id);
+		        stat.setLong(9, id);
+		        stat.setString(10, refType);
+		        stat.setString(11, refType);
+		        stat.setDouble(12, k);
+		        stat.setDouble(13, k);
+		        stat.setInt(14, limit);
 		        // logger.info(stat);
 		        ResultSet rs = stat.executeQuery();
 		        MemoryReader mem = new MemoryReader();
@@ -234,8 +273,13 @@ LIMIT ?
 	}
 	
 	public List<BaseRecord> getVectorStore(BaseRecord model){
+		return getVectorStore(model, new String[0]);
+	}
+	
+	public List<BaseRecord> getVectorStore(BaseRecord model, String[] fields){
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_VECTOR_MODEL_STORE, FieldNames.FIELD_VECTOR_REFERENCE, model.copyRecord(new String[] {FieldNames.FIELD_ID}));
 		q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, model.getSchema());
+		q.setRequest(fields);
 		List<BaseRecord> recs = new ArrayList<>();
 		try {
 			recs = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults());

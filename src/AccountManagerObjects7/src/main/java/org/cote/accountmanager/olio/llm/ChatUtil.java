@@ -541,32 +541,30 @@ public class ChatUtil {
 		BaseRecord systemChar = chatConfig.get("systemCharacter");
 		
 		if(userChar != null) {
-			applyTag(user, userChar.get(FieldNames.FIELD_NAME), userChar.getSchema(), userChar, true);
+			DocumentUtil.applyTag(user, userChar.get(FieldNames.FIELD_NAME), userChar.getSchema(), userChar, true);
 			if(session != null) {
-				applyTag(user, userChar.get(FieldNames.FIELD_NAME), userChar.getSchema(), session, true);
+				DocumentUtil.applyTag(user, userChar.get(FieldNames.FIELD_NAME), userChar.getSchema(), session, true);
 			}
 		}
 		
 		if(systemChar != null) {
-			applyTag(user, systemChar.get(FieldNames.FIELD_NAME), systemChar.getSchema(), systemChar, true);
+			DocumentUtil.applyTag(user, systemChar.get(FieldNames.FIELD_NAME), systemChar.getSchema(), systemChar, true);
 			if(session != null) {
-				applyTag(user, systemChar.get(FieldNames.FIELD_NAME), systemChar.getSchema(), session, true);
+				DocumentUtil.applyTag(user, systemChar.get(FieldNames.FIELD_NAME), systemChar.getSchema(), session, true);
 			}
 		}
 	}
 
-	private static boolean applyTag(BaseRecord user, String tagName, String tagType, BaseRecord targetObj, boolean enable) {
-		BaseRecord tag = DocumentUtil.getCreateTag(user, tagName, tagType);
-		boolean outBool = false;
-		if(tag != null) {
-			outBool = IOSystem.getActiveContext().getMemberUtil().member(user, tag, targetObj, null, true);
-		}
-		return outBool;
-	}
-	
 	public static String getFilteredCitationText(OpenAIRequest req, BaseRecord storeChunk, String type) {
 		String cit = getCitationText(storeChunk, type, true);
-		List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> m.getContent() != null && m.getContent().contains(cit)).collect(Collectors.toList());
+		if(cit == null) {
+			logger.warn("Citation is null");
+			return null;
+		}
+		List<OpenAIMessage> msgs = req.getMessages().stream().filter(m -> {
+			return m.getContent() != null && m.getContent().contains(cit);
+		}).collect(Collectors.toList());
+		
 		String citation = null;
 		if(msgs.size() == 0) {
 			citation = cit;
@@ -599,11 +597,11 @@ public class ChatUtil {
 		return (includeMeta ? citationKey + System.lineSeparator() : "") + cnt + System.lineSeparator() + (includeMeta ? citationSuff : "");
 	}
 	
-
-	
+	private static String notePath = "~/Notes/Summaries";
+	private static String summarySuffix = " - Summary";
 	public static BaseRecord getSummary(BaseRecord user, BaseRecord ref) {
 
-		String name = ref.get(FieldNames.FIELD_NAME) + " - Summary";
+		String name = ref.get(FieldNames.FIELD_NAME) + summarySuffix;
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, ref.get(FieldNames.FIELD_GROUP_ID));
 		q.field(FieldNames.FIELD_NAME, name);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -611,52 +609,97 @@ public class ChatUtil {
 	}
 
 	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean recreate) {
-		return createSummary(user, chatConfig, ref, recreate, false);
+		return createSummary(user, chatConfig, ref, ChunkEnumType.WORD, 500, recreate, false);
 	}
 	
-	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean recreate, boolean remote) {
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, ChunkEnumType chunkType, int chunkCount, boolean recreate, boolean remote) {
 		logger.info("Creating summary ...");
-		String name = ref.get(FieldNames.FIELD_NAME) + " - Summary";
-		BaseRecord summ = DocumentUtil.getData(user, name, ref.get(FieldNames.FIELD_GROUP_PATH)); 
-		if(summ != null) {
+		String setName = ref.get(FieldNames.FIELD_NAME) + " - Summary Set";
+		String summName = ref.get(FieldNames.FIELD_NAME) + summarySuffix;
+		// ref.get(FieldNames.FIELD_GROUP_PATH)
+		BaseRecord summSet = DocumentUtil.getNote(user, setName, notePath);
+		BaseRecord summFin = DocumentUtil.getNote(user, summName, notePath);
+		if(summSet != null) {
 			if(recreate) {
-				IOSystem.getActiveContext().getAccessPoint().delete(user, summ);
+				IOSystem.getActiveContext().getAccessPoint().delete(user, summSet);
+			}
+			/*
+			else {
+				return summSet;
+			}
+			*/
+		}
+		if(summFin != null) {
+			if(recreate) {
+				IOSystem.getActiveContext().getAccessPoint().delete(user, summFin);
 			}
 			else {
-				return summ;
+				return summFin;
 			}
 		}
-		List<String> summaries = composeSummary(user, chatConfig, ref, remote);
-		if(summaries.size() == 0) {
-			logger.error("Invalid summary data");
-			return null;
-		}
-		summ = DocumentUtil.getCreateData(user, name, ref.get(FieldNames.FIELD_GROUP_PATH), summaries.stream().collect(Collectors.joining(System.lineSeparator())));
+		
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
-		String lastSumm = "Summary of " + ref.get(FieldNames.FIELD_NAME) + System.lineSeparator() + summaries.get(summaries.size() - 1);
-		logger.info("Vectorizing summary...");
+		logger.info("Vectorizing reference ...");
 		try {
-			/// Vectorize the summary set
-			List<BaseRecord> chunks = vu.createVectorStore(summ, ChunkEnumType.WORD, 500);
+			List<BaseRecord> chunks = vu.createVectorStore(ref, chunkType, chunkCount);
 			if(chunks.size() == 0) {
 				logger.warn("Failed to create summary vector store");
 			}
 			else {
 				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
 			}
+		}
+		catch (FieldException | WriterException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		logger.info("Composing summary...");
+		
+		List<String> summaries = composeSummary(user, chatConfig, ref, remote);
+		if(summaries.size() == 0) {
+			logger.error("Invalid summary data");
+			return null;
+		}
+		
+		summSet = DocumentUtil.getCreateNote(user, setName, notePath, summaries.stream().collect(Collectors.joining(System.lineSeparator())));
+		String lastSumm = "Summary of " + ref.get(FieldNames.FIELD_NAME) + System.lineSeparator() + summaries.get(summaries.size() - 1);
+		summFin = DocumentUtil.getCreateNote(user, summName, notePath, lastSumm);
+		DocumentUtil.applyTag(user, "Summary", summFin.getSchema(), summFin, true);
+		
+		
+		logger.info("Vectorizing summary...");
+		try {
+			List<BaseRecord> chunks = vu.createVectorStore(summSet, chunkType, chunkCount);
+			if(chunks.size() == 0) {
+				logger.warn("Failed to create summary set vector store");
+			}
+			else {
+				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
+			}
+			
+			chunks = vu.createVectorStore(summFin, chunkType, chunkCount);
+			if(chunks.size() == 0) {
+				logger.warn("Failed to create summary vector store");
+			}
+			else {
+				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
+			}
+
+			
 			/// Vectorize the last summary and associate with the reference
-			chunks = vu.createVectorStore(ref, lastSumm, ChunkEnumType.WORD, 500);
+			chunks = vu.createVectorStore(ref, lastSumm, chunkType, chunkCount);
 			if (chunks.size() == 0) {
 				logger.warn("Failed to create summary vector reference store");
 			}
 			else {
 				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
 			}
+			
 		} catch (FieldException | WriterException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
-		return summ;
+		return summFin;
 	}
 	
 	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref) {
@@ -664,17 +707,20 @@ public class ChatUtil {
 	}
 
 	private static String summarizeSysPrompt = """
-You will summarize creating objective content summaries.
-You will receive content in the following format:
-<summary>
+You create objective content summaries.
+Content will be provided in the following format:
+<previous-summary>
 previous summary
-</summary>
-<citation>
-content
-</citation>
-You will produce three to ten sentence summaries of the provided content.
+</previous-summary>
+Content to summarize
+
+Content may include tags to assist in identifying the content source and type.  Tags include:
+<citation /> refers to a chunk of a specific content source
+<chat /> refers to a chunk of a conversation related to the content source
+
+Create a three to ten sentence summary with the provided content.
 Use any previous summary for context, but do not repeat it.
-ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
+BE SURE TO EVALUATE EVERY <citation /> and <chat /> 
 """;
 
 	private static String summarizeUserCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
@@ -693,7 +739,15 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 			q.field(FieldNames.FIELD_VECTOR_REFERENCE_TYPE, ref.getSchema());
 			q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_CONTENT});
 			q.setValue(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_CHUNK);
-			List<BaseRecord> store = Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults());
+			List<BaseRecord> store = new ArrayList<>(Arrays.asList(IOSystem.getActiveContext().getSearch().find(q).getResults()));
+			
+			Set<Long> chatIds = new HashSet<>();
+			if(ref.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)) {
+				BaseRecord tag = DocumentUtil.getCreateTag(user, ref.get(FieldNames.FIELD_NAME), ref.getSchema());
+				List<BaseRecord> chats = vu.findByTag(OlioModelNames.MODEL_VECTOR_CHAT_HISTORY, new BaseRecord[] {tag});
+				chatIds = chats.stream().map(c -> (long)c.get(FieldNames.FIELD_ID)).collect(Collectors.toSet());
+				store.addAll(chats);
+			}
 			
 			
 			Chat chat = null;
@@ -708,9 +762,13 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 			
 			for(int i = 0; i < store.size(); i++) {
 				BaseRecord v = store.get(i);
+				long id = v.get(FieldNames.FIELD_ID);
 				String cit = getCitationText(v, "chunk", false);
-				
+
 				if(cit != null || cit.length() > 0) {
+					if(chatIds.contains(id)) {
+						cit = "<chat>" + System.lineSeparator() + cit + System.lineSeparator() + "</chat>";
+					}
 					contentBuffer.append(cit + System.lineSeparator());
 				}
 				if(i < (store.size() - 1) && cit.length() < minLength) {
@@ -732,10 +790,11 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 				}
 				else {
 					OpenAIRequest req = chat.getChatPrompt();
+					/*
 					if(summaries.size() > 0) {
 						prevSum = "<previous-summary>" + System.lineSeparator() + summaries.get(summaries.size() - 1) + System.lineSeparator() + "</previous-summary>" + System.lineSeparator();
 					}
-					
+					*/
 					String cmd = summarizeUserCommand + prevSum + contentBuffer.toString();
 					chat.newMessage(req, cmd, "user");
 	
@@ -747,6 +806,8 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 						resp = chat.chat(req);
 					}
 					summ = resp.getMessage().getContent();
+					logger.info(req.toFullString());
+					logger.info(summ);
 				}
 				if(summ != null && summ.length() > 0) {
 					summaries.add("<summary-chunk chunk=\"" + (i + 1) + "\">" + System.lineSeparator() + summ + System.lineSeparator() + "</summary-chunk>");
@@ -766,17 +827,19 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 					summaries.add(eu.getSummary(summaries.stream().collect(Collectors.joining(System.lineSeparator()))));
 				}
 				else {
-					String userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
-					OpenAIRequest req = chat.getChatPrompt();
-					chat.newMessage(req, userCommand, "user");
-					OpenAIResponse resp = null;
-					if(remote) {
-						resp = chat.checkRemote(req, null, false);
+					if (summaries.size() > 1) {
+						String userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
+						OpenAIRequest req = chat.getChatPrompt();
+						chat.newMessage(req, userCommand, "user");
+						OpenAIResponse resp = null;
+						if(remote) {
+							resp = chat.checkRemote(req, null, false);
+						}
+						else {
+							resp = chat.chat(req);
+						}
+						summaries.add("<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>");
 					}
-					else {
-						resp = chat.chat(req);
-					}
-					summaries.add("<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>");
 				}
 			}
 		}
@@ -786,6 +849,7 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 		return summaries;
 	}
 	
+	/*
 	public static List<String> getDataSummaryChunks(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
 		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
 		List<String> dataCit = new ArrayList<>();
@@ -818,6 +882,7 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 		}
 		return dataCit;
 	}
+	*/
 	
 	public static List<String> getDataCitations(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
 		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
@@ -827,6 +892,8 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 		String msg = creq.getMessage();
 		List<BaseRecord> tags = new ArrayList<>();
 		List<BaseRecord> frecs = new ArrayList<>();
+		
+		// boolean findSummaryNote = false;
 		for(String dataR : dataRef) {
 			BaseRecord recRef = RecordFactory.importRecord(dataR);
 			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
@@ -837,6 +904,11 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 			if(frec != null) {
 				if(recRef.getSchema().equals(ModelNames.MODEL_TAG)) {
 					tags.add(frec);
+					/*
+					if (frec.get(FieldNames.FIELD_NAME).equals("Summary")) {
+						findSummaryNote = true;
+					}
+					*/
 				}
 				else {
 					frecs.add(frec);
@@ -844,19 +916,31 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 			}
 		}
 		if(tags.size() > 0 && frecs.size() == 0) {
+			logger.info("Find by tags only");
 			vects.addAll(vu.find(null, ModelNames.MODEL_DATA, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
 			vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6));
 		}
 		else {
 			for(BaseRecord frec : frecs) {
 				if(msg != null && msg.length() > 0) {
+					//  + (findSummaryNote ? " and include any summary note" : "")
 					logger.info("Building citations with " + dataRef.size() + " references of which " + tags.size() + " are tags");
 					if(
 						frec.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)
 					) {
 						vects.addAll(vu.find(null, ModelNames.MODEL_DATA, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6));
 					}
-					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 3, 0.6));
+					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6));
+					//if(findSummaryNote) {
+					if(!frec.getSchema().equals(ModelNames.MODEL_TAG)) {
+						BaseRecord summaryNote = DocumentUtil.getNote(user, frec.get(FieldNames.FIELD_NAME) + summarySuffix, notePath);
+						if(summaryNote != null) {
+							List<BaseRecord> chunks = vu.getVectorStore(summaryNote, new String[] {FieldNames.FIELD_CONTENT, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_ID});
+							logger.info("Adding " + chunks.size() + " summary notes");
+							vects.addAll(chunks);
+							//vects.addAll(vu.find(summaryNote, summaryNote.getSchema(), new BaseRecord[0], new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6));
+						}
+					}
 				}
 			}
 		}

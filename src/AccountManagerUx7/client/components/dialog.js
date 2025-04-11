@@ -13,6 +13,13 @@
           sessions: sessName
         };
         let wset = [];
+        /*
+        /// Since the summary tag is set to the summary notes and not the reference, adding the tag will limit the citations to only the summary notes
+        let tag = await page.getTag("Summary");
+        if(tag){
+            wset.push(tag);
+        }
+        */
         if(aCCfg){
             let aC = aCCfg.filter(c => c.name == inst.api.chat());
             if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
@@ -40,6 +47,9 @@
         w.onload = function(){
           w.remoteEntity = remoteEnt;
           w.page.components.dnd.workingSet.push(...wset);
+          if(wset.length){
+            w.page.components.topMenu.activeShuffle(wset[0]);
+          }
           w.m.route.set("/chat");
         }
   
@@ -104,7 +114,7 @@
                 creq.data = [
                     JSON.stringify({schema:inst.model.name,objectId:inst.api.objectId()})
                 ];
-                let x = await m.request({ method: 'POST', url: am7client.base() + "/vector/summarize", body: creq, withCredentials: true });
+                let x = await m.request({ method: 'POST', url: am7client.base() + "/vector/summarize/" + entity.chunkType.toUpperCase() + "/" + entity.chunk, body: creq, withCredentials: true });
                 page.clearToast();
                 if (x && x != null) {
                     page.toast("success", "Summarization complete");

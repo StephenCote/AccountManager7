@@ -82,9 +82,9 @@ public class VectorService {
 	
 	@RolesAllowed({"admin","user"})
 	@POST
-	@Path("/summarize")
+	@Path("/summarize/{chunkType:[A-Za-z\\.]+}/{chunkSize:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response summarize(String json, @Context HttpServletRequest request){
+	public Response summarize(String json, @PathParam("chunkType") ChunkEnumType chunkType, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request){
 		ChatRequest chatReq = ChatRequest.importRecord(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
@@ -99,7 +99,7 @@ public class VectorService {
 			rq.planMost(true);
 			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
 			if(frec != null) {
-				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, frec, true, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, frec, chunkType, chunkSize, true, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 				summarized = (sumD != null);
 			}
 		}
