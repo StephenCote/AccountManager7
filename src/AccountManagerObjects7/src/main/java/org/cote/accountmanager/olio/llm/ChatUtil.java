@@ -716,7 +716,8 @@ Content to summarize
 
 Content may include tags to assist in identifying the content source and type.  Tags include:
 <citation /> refers to a chunk of a specific content source
-<chat /> refers to a chunk of a conversation related to the content source
+<chat /> refers to a chunk of a conversation related to content describing people. Summarize the conversation relative to the citation.
+* Example: When summarizing the description of a single person, focus on how the conversation relates to that one person. 
 
 Create a three to ten sentence summary with the provided content.
 Use any previous summary for context, but do not repeat it.
@@ -806,8 +807,8 @@ BE SURE TO EVALUATE EVERY <citation /> and <chat />
 						resp = chat.chat(req);
 					}
 					summ = resp.getMessage().getContent();
-					logger.info(req.toFullString());
-					logger.info(summ);
+					// logger.info(req.toFullString());
+					// logger.info(summ);
 				}
 				if(summ != null && summ.length() > 0) {
 					summaries.add("<summary-chunk chunk=\"" + (i + 1) + "\">" + System.lineSeparator() + summ + System.lineSeparator() + "</summary-chunk>");
