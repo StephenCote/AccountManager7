@@ -214,7 +214,7 @@ Begin conversationally.
 		chatConsole(newRequest(chatConfig.get("model")));
 	}
 	
-	private OpenAIResponse checkRemote(OpenAIRequest req, String message, boolean conversational) {
+	public OpenAIResponse checkRemote(OpenAIRequest req, String message, boolean conversational) {
 		OpenAIResponse oresp = null;
 		if(deferRemote) {
 			if(message != null && message.length() > 0) {

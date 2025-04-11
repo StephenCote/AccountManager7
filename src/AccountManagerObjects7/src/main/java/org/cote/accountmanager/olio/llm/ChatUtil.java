@@ -638,12 +638,18 @@ public class ChatUtil {
 		try {
 			/// Vectorize the summary set
 			List<BaseRecord> chunks = vu.createVectorStore(summ, ChunkEnumType.WORD, 500);
-			if(chunks.size() > 0) {
+			if(chunks.size() == 0) {
+				logger.warn("Failed to create summary vector store");
+			}
+			else {
 				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
 			}
 			/// Vectorize the last summary and associate with the reference
 			chunks = vu.createVectorStore(ref, lastSumm, ChunkEnumType.WORD, 500);
-			if(chunks.size() > 0) {
+			if (chunks.size() == 0) {
+				logger.warn("Failed to create summary vector reference store");
+			}
+			else {
 				IOSystem.getActiveContext().getWriter().write(chunks.toArray(new BaseRecord[0]));
 			}
 		} catch (FieldException | WriterException e) {
@@ -733,7 +739,13 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 					String cmd = summarizeUserCommand + prevSum + contentBuffer.toString();
 					chat.newMessage(req, cmd, "user");
 	
-					OpenAIResponse resp = chat.chat(req);
+					OpenAIResponse resp = null;
+					if(remote) {
+						resp = chat.checkRemote(req, null, false);
+					}
+					else {
+						resp = chat.chat(req);
+					}
 					summ = resp.getMessage().getContent();
 				}
 				if(summ != null && summ.length() > 0) {
@@ -757,7 +769,13 @@ ONLY SUMMARIZE CONTENT.  DO NOT ADD YOUR OWN CONTENT. NO YAPPING!
 					String userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
 					OpenAIRequest req = chat.getChatPrompt();
 					chat.newMessage(req, userCommand, "user");
-					OpenAIResponse resp = chat.chat(req);
+					OpenAIResponse resp = null;
+					if(remote) {
+						resp = chat.checkRemote(req, null, false);
+					}
+					else {
+						resp = chat.chat(req);
+					}
 					summaries.add("<summary>" + System.lineSeparator() + resp.getMessage().getContent() + System.lineSeparator() + "</summary>");
 				}
 			}
