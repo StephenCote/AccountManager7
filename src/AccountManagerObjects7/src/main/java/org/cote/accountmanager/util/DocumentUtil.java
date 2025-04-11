@@ -131,7 +131,10 @@ public class DocumentUtil {
 					else if(contentType.equals("application/pdf")) {
 						content = readPDF(ByteModelUtil.getValue(model));
 					}
-					else if(contentType.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document")) {
+					else if(
+						contentType.equals("application/msword") ||
+						contentType.equals("application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+					) {
 						content = readDocument(ByteModelUtil.getValue(model));
 					}
 					else {
