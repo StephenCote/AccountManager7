@@ -88,6 +88,7 @@ public class VectorService {
 		ChatRequest chatReq = ChatRequest.importRecord(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
+		BaseRecord promptConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
 		boolean summarized = false;
 		List<String> dataRef = chatReq.get(FieldNames.FIELD_DATA);
 		if(dataRef.size() > 0) {
@@ -99,7 +100,7 @@ public class VectorService {
 			rq.planMost(true);
 			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
 			if(frec != null) {
-				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, frec, chunkType, chunkSize, true, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+				BaseRecord sumD = ChatUtil.createSummary(user, chatConfig, promptConfig, frec, chunkType, chunkSize, true, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 				summarized = (sumD != null);
 			}
 		}

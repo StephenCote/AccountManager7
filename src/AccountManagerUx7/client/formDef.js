@@ -668,9 +668,15 @@
         icon: "polyline",
         label: "Settings",
         fields: [
+
         {
             "name": "chat",
             "label": "Chat Config",
+            "type": "list",
+        },
+        {
+            "name": "prompt",
+            "label": "Prompt Config",
             "type": "list",
         },
         {
@@ -696,8 +702,12 @@
                 layout: 'third',
                format: "select"
             },
-            chunkType: {
+            prompt: {
                 layout: 'third',
+               format: "select"
+            },
+            chunkType: {
+                layout: 'one',
                 label: 'Chunk Type',
                 field: {
                     type: 'list',
@@ -705,7 +715,7 @@
                 }
             },
             chunk: {
-                layout: 'third'
+                layout: 'one'
             }
 
         }
@@ -3715,6 +3725,10 @@
                 format: "textlist"
             },
             assistantNlp: {
+                layout: "full",
+                format: "textlist"
+            },
+            assistantAnalyze: {
                 layout: "full",
                 format: "textlist"
             },

@@ -608,11 +608,11 @@ public class ChatUtil {
 		
 	}
 
-	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean recreate) {
-		return createSummary(user, chatConfig, ref, ChunkEnumType.WORD, 500, recreate, false);
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean recreate) {
+		return createSummary(user, chatConfig, promptConfig, ref, ChunkEnumType.WORD, 500, recreate, false);
 	}
 	
-	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, ChunkEnumType chunkType, int chunkCount, boolean recreate, boolean remote) {
+	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, ChunkEnumType chunkType, int chunkCount, boolean recreate, boolean remote) {
 		logger.info("Creating summary ...");
 		String setName = ref.get(FieldNames.FIELD_NAME) + " - Summary Set";
 		String summName = ref.get(FieldNames.FIELD_NAME) + summarySuffix;
@@ -655,7 +655,7 @@ public class ChatUtil {
 		}
 		logger.info("Composing summary...");
 		
-		List<String> summaries = composeSummary(user, chatConfig, ref, remote);
+		List<String> summaries = composeSummary(user, chatConfig, promptConfig, ref, remote);
 		if(summaries.size() == 0) {
 			logger.error("Invalid summary data");
 			return null;
@@ -702,31 +702,13 @@ public class ChatUtil {
 		return summFin;
 	}
 	
-	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref) {
-		return composeSummary(user, chatConfig, ref, false);
+	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref) {
+		return composeSummary(user, chatConfig, promptConfig, ref, false);
 	}
-
-	private static String summarizeSysPrompt = """
-You create objective content summaries.
-Content will be provided in the following format:
-<previous-summary>
-previous summary
-</previous-summary>
-Content to summarize
-
-Content may include tags to assist in identifying the content source and type.  Tags include:
-<citation /> refers to a chunk of a specific content source
-<chat /> refers to a chunk of a conversation related to content describing people. Summarize the conversation relative to the citation.
-* Example: When summarizing the description of a single person, focus on how the conversation relates to that one person. 
-
-Create a three to ten sentence summary with the provided content.
-Use any previous summary for context, but do not repeat it.
-BE SURE TO EVALUATE EVERY <citation /> and <chat /> 
-""";
 
 	private static String summarizeUserCommand = "Create a summary for the following using 300 words or less:" + System.lineSeparator();
 	
-	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord ref, boolean remote) {
+	public static List<String> composeSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, boolean remote) {
 		int iter = 0;
 		int max = 100;
 		int minLength = 300;
@@ -752,10 +734,9 @@ BE SURE TO EVALUATE EVERY <citation /> and <chat />
 			
 			
 			Chat chat = null;
-			if(chatConfig != null) {
-				chat = new Chat(user, chatConfig, null);
+			if(chatConfig != null && promptConfig != null) {
+				chat = new Chat(user, chatConfig, promptConfig);
 				chat.setDeferRemote(remote);
-				chat.setLlmSystemPrompt(summarizeSysPrompt);
 			}
 
 			StringBuilder contentBuffer = new StringBuilder();

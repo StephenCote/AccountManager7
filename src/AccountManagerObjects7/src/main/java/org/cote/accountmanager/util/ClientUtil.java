@@ -1,5 +1,6 @@
 package org.cote.accountmanager.util;
 
+import java.net.ConnectException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -164,26 +165,32 @@ public class ClientUtil {
 	}
 	
 	public static BaseRecord postToRecord(String modelName, WebTarget resource, String authZ, String json, MediaType responseType) {
-
-		Builder bld = ClientUtil.getRequestBuilder(resource).accept(responseType);
-
-		if (authZ != null) {
-			bld.header("api-key", authZ);
-		}
-		Response response = bld.post(Entity.entity(json, MediaType.APPLICATION_JSON_TYPE));
-
 		BaseRecord outObj = null;
-		if (response != null) {
-			if (response.getStatus() == 200) {
-
-				String ser = response.readEntity(String.class);
-				outObj = RecordFactory.importRecord(modelName, ser);
-			} else {
-				logger.warn("Received response: " + response.getStatus());
-				logger.warn(response.readEntity(String.class));
+		try {
+			Builder bld = ClientUtil.getRequestBuilder(resource).accept(responseType);
+	
+			if (authZ != null) {
+				bld.header("api-key", authZ);
 			}
-		} else {
-			logger.warn("Null response");
+			Response response = bld.post(Entity.entity(json, MediaType.APPLICATION_JSON_TYPE));
+	
+			
+			if (response != null) {
+				if (response.getStatus() == 200) {
+	
+					String ser = response.readEntity(String.class);
+					outObj = RecordFactory.importRecord(modelName, ser);
+				} else {
+					logger.warn("Received response: " + response.getStatus());
+					logger.warn(response.readEntity(String.class));
+				}
+			} else {
+				logger.warn("Null response");
+			}
+		}
+		catch(Exception e) {
+			logger.error(e);
+			e.printStackTrace();
 		}
 		return outObj;
 	}
