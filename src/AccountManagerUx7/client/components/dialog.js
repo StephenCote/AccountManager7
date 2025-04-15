@@ -1,5 +1,9 @@
 (function(){
 
+    /// TODO: Persist chatRequest.
+    /// NOTE: The underlying AI request should also be persisted to make it easier to access and edit without having to deserialize the data.data byteStore
+    ///
+
     let dialogUp = false;
     let dialogCfg;
 
@@ -93,6 +97,80 @@
         let dir = await page.findObject("auth.group", "DATA", "~/Chat");
         return await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
       }
+
+    function updateSessionName(inst, acfg, pcfg){
+        let chat = inst.api.chat();
+        let prompt = inst.api.prompt();
+        if(!chat || !prompt){
+            console.warn("Invalid chat or prompt selection: " + chat + " / " + prompt);
+            return;
+        }
+        let ycfg = pcfg.filter(a => a.name.toLowerCase() == prompt.toLowerCase());
+        let vcfg = acfg.filter(a => a.name.toLowerCase() == chat.toLowerCase());
+        if(!ycfg.length || !vcfg.length){
+            console.warn("Invalid chat or prompt list: " + chat + " / " + prompt);
+            return;
+        }
+        let occfg = vcfg[0];
+        let opcfg = ycfg[0];
+
+        let name = inst.api.session();
+        //if(!name || !name.length){
+            if(page.components.dnd.workingSet.length){
+                name = page.components.dnd.workingSet[0].name;
+            }
+            else if(occfg.systemCharacter && occfg.userCharacter){
+                let sysName = occfg.systemCharacter.firstName || occfg.systemCharacter.name.substring(0,occfg.systemCharacter.name.indexOf(" "));
+                let usrName = occfg.userCharacter.firstName || occfg.userCharacter.name.substring(0,occfg.userCharacter.name.indexOf(" "));
+                name = sysName + " and " + usrName + " (" + occfg.rating.toUpperCase() + ")";
+            }
+            else {
+                name = page.sessionName();
+            }
+        //}
+        inst.api.session(name);
+
+    }
+    
+    async function chatSettings(pinst, fHandler){
+        let entity = am7model.newPrimitive("chatSettings");
+        let inst = am7model.prepareInstance(entity, am7model.forms.newChatSettings);
+
+        inst.api.chat(pinst.api.chat());
+        inst.api.prompt(pinst.api.prompt());
+
+        let acfg = await loadChatList();
+        if(acfg && acfg.length && !entity.chat) entity.chat = acfg[0].name;
+        //am7model.getModelField("chatSettings", "chat").limit  = acfg.map((c) => { return c.name; });
+        am7model.forms.newChatSettings.fields.chat.field.limit = acfg.map((c) => { return c.name; });
+        let pcfg = await loadPromptList();
+        if(pcfg && pcfg.length && !entity.prompt) entity.prompt = pcfg[0].name;
+        //am7model.getModelField("chatSettings", "prompt").limit  = pcfg.map((c) => { return c.name; });
+        am7model.forms.newChatSettings.fields.prompt.field.limit = pcfg.map((c) => { return c.name; });
+
+        inst.action("chat", function(){updateSessionName(inst, acfg, pcfg);});
+        inst.action("prompt", function(){updateSessionName(inst, acfg, pcfg);});
+        updateSessionName(inst, acfg, pcfg);
+
+        let cfg = {
+            label: "Chat Settings",
+            entityType: "chatSettings",
+            size: 50,
+            data: {entity, inst},
+            confirm: async function (data) {
+
+                if(fHandler){
+                    fHandler(entity);
+                }
+
+                endDialog();
+            },
+            cancel: async function (data) {
+                endDialog();
+            }
+        };
+        setDialog(cfg);
+    }
 
     async function summarize(object, inst){
         let entity = am7model.newPrimitive("summarizeSettings");
@@ -234,7 +312,7 @@
         dialogCfg = {
             label: "Confirmation",
             entityType: "confirmation",
-            size: 75,
+            size: 50,
             data: {
                 entity: {textData: sMessage}
             },
@@ -266,6 +344,7 @@
         cancelDialog,
         vectorize,
         summarize,
+        chatSettings,
         showProgress,
         chatInto
     }

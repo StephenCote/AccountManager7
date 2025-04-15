@@ -1813,6 +1813,24 @@ aside.transition.transition-0 {
   color: rgb(31 41 55 / var(--tw-text-opacity, 1));
 }
 
+.flyout-button.active {
+  --tw-border-opacity: 1;
+  border-color: rgb(107 114 128 / var(--tw-border-opacity, 1));
+  --tw-bg-opacity: 1;
+  background-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(55 65 81 / var(--tw-text-opacity, 1));
+}
+
+.flyout-button.\!active {
+  --tw-border-opacity: 1;
+  border-color: rgb(107 114 128 / var(--tw-border-opacity, 1));
+  --tw-bg-opacity: 1;
+  background-color: rgb(229 231 235 / var(--tw-bg-opacity, 1));
+  --tw-text-opacity: 1;
+  color: rgb(55 65 81 / var(--tw-text-opacity, 1));
+}
+
 .flyout-banner {
   display: flex;
   width: 100%;
@@ -2284,10 +2302,12 @@ ol.breadcrumb-list li {
 }
 
 .splitcontainer .splitleftcontainer {
+  margin-left: auto;
+  margin-right: auto;
   display: flex;
   width: 25%;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   padding: 1rem;
 }
 
@@ -3286,19 +3306,35 @@ button.button-tab-active:hover {
   border-bottom-right-radius: 0.375rem;
 }
 
-/*
-    ul.tabstrip{
-        @apply  flex flex-row flex-wrap list-none border-b-0 pl-0 mb-4
-    }
+.pending-blue {
+  position: relative;
+  overflow: hidden;
+  background-color: rgba(50, 50, 255, 0.7);
+}
 
-    li.tab{
-        @apply flex-grow text-center
-    }
+.pending-blue::after {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+          90deg,
+          rgba(233, 233, 233, 1) 0,
+          rgba(233, 233, 233, 0.9) 50%,
+          rgba(233, 233, 233, 0.8) 100%
+        );
+  animation: shimmer 3s ease-out infinite;
+  content: "";
+}
 
-    .tablabel{
-        @apply  w-full block font-medium text-xs leading-tight uppercase border-x-0 border-t-0 border-b-2 border-transparent px-6 py-3 my-2 hover:border-transparent hover:bg-gray-100 focus:border-transparent active
-    }
-    */
+@keyframes shimmer {
+  100% {
+    transform: translateX(0%);
+    opacity: 0;
+  }
+}
 
 .sr-only {
   position: absolute;
@@ -3318,6 +3354,10 @@ button.button-tab-active:hover {
 
 .static {
   position: static;
+}
+
+.fixed {
+  position: fixed;
 }
 
 .absolute {
@@ -3344,6 +3384,10 @@ button.button-tab-active:hover {
   inset-inline-end: 0px;
 }
 
+.end-1 {
+  inset-inline-end: 0.25rem;
+}
+
 .right-0 {
   right: 0px;
 }
@@ -3362,6 +3406,10 @@ button.button-tab-active:hover {
 
 .start-2\/3 {
   inset-inline-start: 66.666667%;
+}
+
+.top-0 {
+  top: 0px;
 }
 
 .row-span-1 {
@@ -3462,8 +3510,16 @@ button.button-tab-active:hover {
   display: table;
 }
 
+.table-cell {
+  display: table-cell;
+}
+
 .grid {
   display: grid;
+}
+
+.contents {
+  display: contents;
 }
 
 .\!hidden {
@@ -3476,6 +3532,10 @@ button.button-tab-active:hover {
 
 .h-24 {
   height: 6rem;
+}
+
+.h-4 {
+  height: 1rem;
 }
 
 .h-8 {
@@ -3518,8 +3578,16 @@ button.button-tab-active:hover {
   flex-shrink: 0;
 }
 
+.shrink {
+  flex-shrink: 1;
+}
+
 .-translate-x-1\/2 {
   --tw-translate-x: -50%;
+  transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
+}
+
+.transform {
   transform: translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y));
 }
 
@@ -3527,8 +3595,20 @@ button.button-tab-active:hover {
   cursor: pointer;
 }
 
+.resize {
+  resize: both;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
 .place-content-end {
   place-content: end;
+}
+
+.content-end {
+  align-content: flex-end;
 }
 
 .items-center {
@@ -3680,6 +3760,10 @@ button.button-tab-active:hover {
   padding: 0.375rem;
 }
 
+.p-4 {
+  padding: 1rem;
+}
+
 .px-5 {
   padding-left: 1.25rem;
   padding-right: 1.25rem;
@@ -3711,6 +3795,10 @@ button.button-tab-active:hover {
 
 .font-light {
   font-weight: 300;
+}
+
+.italic {
+  font-style: italic;
 }
 
 .text-black {
@@ -3776,6 +3864,26 @@ button.button-tab-active:hover {
 .text-white {
   --tw-text-opacity: 1;
   color: rgb(255 255 255 / var(--tw-text-opacity, 1));
+}
+
+.shadow {
+  --tw-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --tw-shadow-colored: 0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.outline {
+  outline-style: solid;
+}
+
+.blur {
+  --tw-blur: blur(8px);
+  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
+}
+
+.grayscale {
+  --tw-grayscale: grayscale(100%);
+  filter: var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow);
 }
 
 .\!invert {

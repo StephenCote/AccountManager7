@@ -81,7 +81,6 @@
 
     let page = {
         profile,
-        confirm,
         imageView,
         clearToast,
         reconnect,
@@ -517,7 +516,6 @@
         let obj = await profileEntity();
         let objj = {schema: "userProfile"};
         if(obj.dataBytesStore && obj.dataBytesStore.length){
-            console.log(uwm.base64Decode(obj.dataBytesStore));
             objj = JSON.parse(uwm.base64Decode(obj.dataBytesStore));
             if(!objj[am7model.jsonModelKey]) objj[am7model.jsonModelKey] = "userProfile";
         }

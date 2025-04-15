@@ -50,8 +50,7 @@
           {
             "name": "session",
             "label": "Session Name",
-            "type": "string",
-            "default": "Def Sess"
+            "type": "string"
 
           }
         ]
@@ -64,12 +63,14 @@
             label: 'Peek',
             icon: 'man',
             action: 'doPeek'
-          },
-          cmdChat: {
+          }
+          /*
+          ,cmdChat: {
             label: 'Chat',
             icon: 'chat',
             action: 'doChat'
           }
+          */
         },
         fields: {
           prompt: {
@@ -89,18 +90,45 @@
           },
         }
       };
-    }
+      /// TODO: There are two different methods for constructing the object view: 1) the newer generic am7view, and 2) the legacy though still more complex object component view
+      /// So some form fields are not interoperable, like 'list' for am7view must be 'select' for the object component view.
+      am7model.forms.newChatSettings = {
+        label: "Settings",
+        fields: {
+          prompt: {
+            layout: 'third',
+            format: 'select',
+            field: {
+              type: "list",
+              label: "Prompt Config"
+            }
+          },
+          chat: {
+            layout: 'third',
+            format: 'select',
+            field: {
+              type: "list",
+              label: "Chat Config"
+            }
+          },
+          session: {
+            label: "Chat Name",
+            layout: 'third'
+          }
+        }
+      };
 
+    }
 
     // window.dbgCfg = chatCfg;
     let inst = am7model.newInstance("chatSettings", am7model.forms.chatSettings);
-    inst.api.session(page.sessionName());
+    inst.api.session("New Chat");
     inst.api.sessions(inst.api.session());
     window.dbgInst = inst;
     inst.action("doPeek", doPeek);
-    inst.action("doChat", doChat);
+    // inst.action("doChat", doChat);
 
-    function pickSession(i, n){
+    function pickSession(){
       doClear();
       let key = inst.api.sessions();
       if(key.length > 1){
@@ -163,6 +191,21 @@
       }
 
     }
+    
+    async function deleteChat(s){
+      page.components.dialog.confirm("Delete chat " + s + "?", async function(){
+        let cht = aSess.filter((c) => { return c.name == s; });
+        if(!cht){
+          console.warn("Do not have current pointer to chat " + s);
+        }
+        else{
+          cht = cht[0];
+          await page.deleteObject("data.data", cht.objectId);
+          aSess = undefined;
+          m.redraw();
+        }
+      });
+    }
 
     function pushHistory() {
       let msg = document.querySelector("[name='chatmessage']").value;
@@ -174,6 +217,7 @@
     }
 
     function getHistory() {
+      // console.log(chatCfg);
       return m.request({ method: 'POST', url: g_application_path + "/rest/chat/history", withCredentials: true, body: { chatConfig: chatCfg.chat.objectId, promptConfig: chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid() } });
     }
 
@@ -243,12 +287,16 @@
     chat.callback = function () {
 
     };
-
+    
     function getSplitLeftContainerView() {
       let sess = inst.api.sessions().split("-").length == 4;
       inst.formField("prompt").hide = sess;
       inst.formField("chat").hide = sess;
       inst.formField("session").hide = sess;
+      // let defActive = (aSess && aSess.length > 0 && inst.api.session() == aSess[0].name) ? " active" : "";
+      //let defName = (aSess && aSess.length > 0) ? aSess[0].name : "";
+      let al = am7model.getModelField("chatSettings", "sessions").limit;
+      let vsess = al || [].concat((aSess || []).map((c) => { return c.name; }))
 
       return m("div", {
         class: "splitleftcontainer",
@@ -256,8 +304,50 @@
           e.preventDefault();
         }
       }, [
-        am7view.form(inst)
+       // am7view.form(inst),
+        //         m("button", { class: "flyout-button", onclick: openChatSettings }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"]),
+        vsess.map((s, i) => {
+          let sessName = s.substring(s.lastIndexOf("-") + 1, s.length);
+          let bNew = aSess.filter((c) => { return c.name == s; }).length == 0;
+          let bDel = "";
+          if(bNew){
+            bDel = m("button", {class: "menu-button content-end mr-2", onclick: openChatSettings}, m("span", {class: "material-symbols-outlined material-icons-24"}, "add"));
+            //m("button", {class: "menu-button material-symbols-outlined material-icons-24 mr-2"},"add");
+          }
+          else{
+            bDel = m("button", {class: "menu-button content-end mr-2", onclick: function(e){ e.preventDefault(); deleteChat(s); return false;}}, m("span", {class: "material-symbols-outlined material-icons-24"}, "delete_outline"));
+          }
+          return m("button", { class: "flyout-button" + (sessName == inst.api.session() ? " active": ""), onclick: function () {
+            inst.api.sessions(s);
+            pickSession();
+          } }, [bDel, sessName]);
+        })
+           
       ]);
+    }
+
+    function openChatSettings(){
+      page.components.dialog.chatSettings(inst, function(e){
+
+        let esess = e.session;
+        let dup = esess;
+        let iter = 1;
+
+        while(aSess.filter((s) => {
+          let cn = s.name.substring(s.name.lastIndexOf("-") + 1, s.name.length);
+          return cn == dup;
+        }).length > 0){
+          dup = esess + " " + iter;
+          iter++;
+        }
+        esess = dup;
+        inst.api.session(esess);
+        inst.api.chat(e.chat);
+        inst.api.prompt(e.prompt);
+        am7model.getModelField("chatSettings", "sessions").limit = ["New Chat", inst.api.session()].concat(aSess.map((c) => { return c.name; }));
+        //pickSession();
+        doPeek();
+      });
     }
 
     let hideThoughts = true;
@@ -517,10 +607,19 @@
 
     function getChatBottomMenuView() {
       // if(!showFooter) return "";
+
+    let pendBar = m("div", {class: "w-[80%] p-4 flex flex-col"},
+        m("div", {class: "relative bg-gray-200 rounded"},
+          m("div", {class: "absolute top-0 h-4 w-full rounded pending-blue"})
+        )
+      );
+
+      let input = m("input[" + (chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown: function (e) { if (e.which == 13) doChat(e); } });
+
       return m("div", { class: "result-nav-outer" },
         m("div", { class: "results-fixed" },
           m("div", { class: "splitcontainer" }, [
-            m("div", { class: "splitleftcontainer" }, "..."),
+            m("div", { class: "splitleftcontainer" },         m("button", { class: "flyout-button", onclick: openChatSettings }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"])),
             m("div", { class: "splitrightcontainer result-nav-inner" },
 
               m("div", { class: "tab-container result-nav w-full" }, [
@@ -528,7 +627,8 @@
                 m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
-                m("input[" + (chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown: function (e) { if (e.which == 13) doChat(e); } }),
+                //m("input[" + (chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown: function (e) { if (e.which == 13) doChat(e); } }),
+                (chatCfg.pending ? pendBar : input),
                 m("button", { class: "button", onclick: doChat }, m("span", { class: "material-symbols-outlined material-icons-24" }, "chat"))
               ])
             )
@@ -652,10 +752,12 @@
     chat.view = {
       oninit: function (vnode) {
         let ctx = page.user.homeDirectory;
+        let bPopSet = false;
         origin = vnode.attrs.origin || ctx;
 
         if(window.remoteEntity){
           inst = am7model.prepareInstance(remoteEntity, am7model.forms.chatSettings);
+          bPopSet = true;
           delete window.remoteEntity;
         }
 
@@ -668,6 +770,12 @@
           inst.api.prompt(chatCfg.prompt.name);
         }
         document.documentElement.addEventListener("keydown", navKey);
+
+        if(bPopSet){
+          openChatSettings();
+
+        }
+
 
       },
       oncreate: function (x) {

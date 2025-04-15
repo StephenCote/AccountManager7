@@ -56,6 +56,7 @@ h5 {
     .button-field-full{
         @apply w-full button-field
     }
+
     .text-field-form{
         @apply w-full px-4 py-2 mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
     }
@@ -334,9 +335,15 @@ h5 {
     .flyout-button{
         @apply flex items-center p-2 w-full page-button hover:text-gray-800 hover:bg-blue-100
     }
+
+    .flyout-button.active{
+        @apply border-gray-500 text-gray-700 bg-gray-200
+    }
+    
     .flyout-banner{
         @apply flex w-full items-center p-4 border-b
     }
+
     .flyout-gutter{
         @apply fixed bottom-0 w-full
     }
@@ -496,7 +503,7 @@ h5 {
         @apply max-h-full h-full flex
     }
     .splitcontainer .splitleftcontainer{
-        @apply flex flex-col w-1/4 p-4 overflow-hidden
+        @apply flex flex-col w-1/4 p-4 overflow-y-auto mx-auto
     }
     .splitcontainer .splitfullcontainer{
         @apply flex w-full p-4 overflow-hidden
@@ -813,19 +820,34 @@ h5 {
         @apply border border-gray-500 shadow-md grid auto-rows-auto grid-cols-4 gap-0
     }
 
-    /*
-    ul.tabstrip{
-        @apply  flex flex-row flex-wrap list-none border-b-0 pl-0 mb-4
-    }
-
-    li.tab{
-        @apply flex-grow text-center
-    }
-
-    .tablabel{
-        @apply  w-full block font-medium text-xs leading-tight uppercase border-x-0 border-t-0 border-b-2 border-transparent px-6 py-3 my-2 hover:border-transparent hover:bg-gray-100 focus:border-transparent active
-    }
-    */
+    .pending-blue {
+        position: relative;
+        overflow: hidden;
+        background-color: rgba(50, 50, 255, 0.7);
+      }
+      .pending-blue::after {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        transform: translateX(-100%);
+        background-image: linear-gradient(
+          90deg,
+          rgba(233, 233, 233, 1) 0,
+          rgba(233, 233, 233, 0.9) 50%,
+          rgba(233, 233, 233, 0.8) 100%
+        );
+        animation: shimmer 3s ease-out infinite;
+        content: "";
+      }
+      
+      @keyframes shimmer {
+        100% {
+          transform: translateX(0%);
+          opacity: 0;
+        }
+      }
 
  }
 

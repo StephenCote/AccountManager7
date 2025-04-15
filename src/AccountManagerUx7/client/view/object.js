@@ -743,8 +743,6 @@
                 case "select":
                     let vals = am7view.defaultValuesForField(field);
                     fieldClass += " select-field-full";
-                    // console.log(field);
-                    // console.log(vals);
                     view.push(m("select", {oninput: fHandler, class: fieldClass, name : useName}, vals.map((v)=>{
                         let selected;
                         if(defVal && (defVal === v || (typeof defVal == "string" && defVal.toLowerCase() === v.toLowerCase()))) selected = true;
@@ -1459,8 +1457,8 @@
             inst = undefined;
 
             if(entity){
-                if(vnode?.freeFormInstance){
-                    inst = vnode.freeFormInstance;
+                if(vnode?.attrs?.freeFormInstance){
+                    inst = vnode?.attrs?.freeFormInstance;
                 }
                 else{
                     let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
