@@ -619,7 +619,11 @@
       return m("div", { class: "result-nav-outer" },
         m("div", { class: "results-fixed" },
           m("div", { class: "splitcontainer" }, [
-            m("div", { class: "splitleftcontainer" },         m("button", { class: "flyout-button", onclick: openChatSettings }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"])),
+            m("div", { class: "splitleftcontainer" },
+              m("button", { class: "flyout-button", onclick: openChatSettings },
+                [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"]
+              )
+            ),
             m("div", { class: "splitrightcontainer result-nav-inner" },
 
               m("div", { class: "tab-container result-nav w-full" }, [
