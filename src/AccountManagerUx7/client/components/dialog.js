@@ -10,7 +10,7 @@
     async function chatInto(ref, inst, aCCfg){
         let sessName = page.sessionName();
         let remoteEnt = {
-          schema: "chatSettings",
+          schema: "olio.llm.chatRequest",
           chat: "Object Chat",
           prompt: "Object Prompt",
           session: sessName,
@@ -99,14 +99,14 @@
       }
 
     function updateSessionName(inst, acfg, pcfg){
-        let chat = inst.api.chat();
-        let prompt = inst.api.prompt();
+        let chat = inst.api.chatConfig();
+        let prompt = inst.api.promptConfig();
         if(!chat || !prompt){
             console.warn("Invalid chat or prompt selection: " + chat + " / " + prompt);
             return;
         }
-        let ycfg = pcfg.filter(a => a.name.toLowerCase() == prompt.toLowerCase());
-        let vcfg = acfg.filter(a => a.name.toLowerCase() == chat.toLowerCase());
+        let ycfg = pcfg.filter(a => a.name.toLowerCase() == prompt.name.toLowerCase());
+        let vcfg = acfg.filter(a => a.name.toLowerCase() == chat.name.toLowerCase());
         if(!ycfg.length || !vcfg.length){
             console.warn("Invalid chat or prompt list: " + chat + " / " + prompt);
             return;
@@ -114,7 +114,7 @@
         let occfg = vcfg[0];
         let opcfg = ycfg[0];
 
-        let name = inst.api.session();
+        let name = inst.api.name();
         //if(!name || !name.length){
             if(page.components.dnd.workingSet.length){
                 name = page.components.dnd.workingSet[0].name;
@@ -128,33 +128,33 @@
                 name = page.sessionName();
             }
         //}
-        inst.api.session(name);
+        inst.api.name(name);
 
     }
     
     async function chatSettings(pinst, fHandler){
-        let entity = am7model.newPrimitive("chatSettings");
-        let inst = am7model.prepareInstance(entity, am7model.forms.newChatSettings);
+        let entity = am7model.newPrimitive("olio.llm.chatRequest");
+        let inst = am7model.prepareInstance(entity, am7model.forms.newChatRequest);
 
-        inst.api.chat(pinst.api.chat());
-        inst.api.prompt(pinst.api.prompt());
+        inst.api.chatConfig(pinst.api.chatConfig());
+        inst.api.promptConfig(pinst.api.promptConfig());
 
         let acfg = await loadChatList();
-        if(acfg && acfg.length && !entity.chat) entity.chat = acfg[0].name;
+        if(acfg && acfg.length && !entity.chatConfig) entity.chatConfig = acfg[0];
         //am7model.getModelField("chatSettings", "chat").limit  = acfg.map((c) => { return c.name; });
-        am7model.forms.newChatSettings.fields.chat.field.limit = acfg.map((c) => { return c.name; });
+        //am7model.forms.newChatRequest.fields.chatConfig.field.limit = acfg.map((c) => { return c.name; });
         let pcfg = await loadPromptList();
-        if(pcfg && pcfg.length && !entity.prompt) entity.prompt = pcfg[0].name;
+        if(pcfg && pcfg.length && !entity.prompt) entity.prompt = pcfg[0];
         //am7model.getModelField("chatSettings", "prompt").limit  = pcfg.map((c) => { return c.name; });
-        am7model.forms.newChatSettings.fields.prompt.field.limit = pcfg.map((c) => { return c.name; });
+       // am7model.forms.newChatSettings.fields.promptConfig.field.limit = pcfg.map((c) => { return c.name; });
 
-        inst.action("chat", function(){updateSessionName(inst, acfg, pcfg);});
-        inst.action("prompt", function(){updateSessionName(inst, acfg, pcfg);});
+        inst.action("chatConfig", function(){updateSessionName(inst, acfg, pcfg);});
+        inst.action("promptConfig", function(){updateSessionName(inst, acfg, pcfg);});
         updateSessionName(inst, acfg, pcfg);
 
         let cfg = {
             label: "Chat Settings",
-            entityType: "chatSettings",
+            entityType: "olio.llm.chatRequest",
             size: 50,
             data: {entity, inst},
             confirm: async function (data) {
@@ -202,8 +202,8 @@
                 }
                 page.toast("info", "Summarizing ...", -1);
                 let creq = am7model.newPrimitive("olio.llm.chatRequest");
-                creq.chatConfig = vcfg[0].objectId;
-                creq.promptConfig = ycfg[0].objectId;
+                creq.chatConfig = {name:vcfg[0].name,id:vcfg[0].id};
+                creq.promptConfig = {name: ycfg[0].name, id: ycfg[0].id};
                 creq.data = [
                     JSON.stringify({schema:inst.model.name,objectId:inst.api.objectId()})
                 ];

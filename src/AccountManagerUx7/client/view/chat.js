@@ -1,6 +1,76 @@
 (function () {
+  /*
+  am7model.getModel("olio.llm.chatRequest").fields.push({
+      name: "sesssions",
+      label: 'Sessions',
+      virtual: true,
+      ephemeral: true,
+      type: "string",
+      baseType: "string",
+      format: "list"
+  });
+  */
+  am7model.forms.chatRequest = {
+    label: "Chat Request",
+    commands: {
+      cmdPeek: {
+        label: 'Peek',
+        icon: 'man',
+        action: 'doPeek'
+      }
+    },
+    fields: {
+      prompt: {
+        layout: 'full',
+        format: 'list'
+      },
+      chat: {
+        layout: 'full',
+        format: 'list'
+      },
 
-
+      session: {
+        layout: 'full'
+      }
+    }
+  };
+  /// TODO: There are two different methods for constructing the object view: 1) the newer generic am7view, and 2) the legacy though still more complex object component view
+  /// So some form fields are not interoperable, like 'list' for am7view must be 'select' for the object component view.
+  am7model.forms.newChatRequest = {
+    label: "Chat Request",
+    fields: {
+      promptConfig: {
+        layout: 'third',
+        format: 'picker',
+        field: {
+          format: 'picker',
+          pickerType: "olio.llm.promptConfig",
+          pickerProperty: {
+              selected: "{object}",
+              entity: "promptConfig"
+          },
+          label: "Prompt Config"
+        }
+      },
+      chatConfig: {
+        layout: 'third',
+        format: 'picker',
+        field: {
+          format: 'picker',
+          pickerType: "olio.llm.chatConfig",
+          pickerProperty: {
+              selected: "{object}",
+              entity: "chatConfig"
+          },
+          label: "Chat Config"
+        }
+      },
+      name: {
+        label: "Chat Name",
+        layout: 'third'
+      }
+    }
+  };
 
   function newChatControl() {
 
@@ -22,108 +92,12 @@
       clearEditMode();
       chatCfg = newChatConfig();
     }
-
-    if (am7model.getModel("chatSettings") == null) {
-      am7model.models.push({
-        name: "chatSettings",
-        icon: "chat",
-        label: "Settings",
-        fields: [
-          {
-            "name": "chat",
-            "label": "Chat Config",
-            "type": "string",
-            "baseType": "string"
-          },
-          {
-            "name": "prompt",
-            "label": "Prompt Config",
-            "type": "string",
-            "baseType": "string"
-          },
-          {
-            "name": "sessions",
-            "label": "Sessions",
-            "type": "string",
-            "baseType": "string"
-          },
-          {
-            "name": "session",
-            "label": "Session Name",
-            "type": "string"
-
-          }
-        ]
-      });
-
-      am7model.forms.chatSettings = {
-        label: "Settings",
-        commands: {
-          cmdPeek: {
-            label: 'Peek',
-            icon: 'man',
-            action: 'doPeek'
-          }
-          /*
-          ,cmdChat: {
-            label: 'Chat',
-            icon: 'chat',
-            action: 'doChat'
-          }
-          */
-        },
-        fields: {
-          prompt: {
-            layout: 'full',
-            format: 'list'
-          },
-          chat: {
-            layout: 'full',
-            format: 'list'
-          },
-          sessions: {
-            layout: 'full',
-            format: 'list'
-          },
-          session: {
-            layout: 'full'
-          },
-        }
-      };
-      /// TODO: There are two different methods for constructing the object view: 1) the newer generic am7view, and 2) the legacy though still more complex object component view
-      /// So some form fields are not interoperable, like 'list' for am7view must be 'select' for the object component view.
-      am7model.forms.newChatSettings = {
-        label: "Settings",
-        fields: {
-          prompt: {
-            layout: 'third',
-            format: 'select',
-            field: {
-              type: "list",
-              label: "Prompt Config"
-            }
-          },
-          chat: {
-            layout: 'third',
-            format: 'select',
-            field: {
-              type: "list",
-              label: "Chat Config"
-            }
-          },
-          session: {
-            label: "Chat Name",
-            layout: 'third'
-          }
-        }
-      };
-
-    }
+    
 
     // window.dbgCfg = chatCfg;
-    let inst = am7model.newInstance("chatSettings", am7model.forms.chatSettings);
+    let inst = am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest);
     inst.api.session("New Chat");
-    inst.api.sessions(inst.api.session());
+    // inst.api.sessions(inst.api.session());
     window.dbgInst = inst;
     inst.action("doPeek", doPeek);
     // inst.action("doChat", doChat);
@@ -152,7 +126,7 @@
     }
 
     inst.action("chat", doPeek);
-    inst.action("sessions", pickSession);
+    // inst.action("sessions", pickSession);
 
     async function chatInto(){
       page.components.dialog.chatInto(undefined, inst, aCCfg)
@@ -202,6 +176,7 @@
           cht = cht[0];
           await page.deleteObject("data.data", cht.objectId);
           aSess = undefined;
+          await loadConfigList();
           m.redraw();
         }
       });
@@ -236,8 +211,8 @@
 
     function doPeek() {
       doClear();
-      let c1 = inst.api.prompt();
-      let c2 = inst.api.chat();
+      let c1 = inst.api.promptConfig();
+      let c2 = inst.api.chatConfig();
       let p;
       if (c1.length && c2.length) {
         p = new Promise((res, rej) => {
@@ -260,6 +235,7 @@
       }
       return p;
     }
+
     function getChatTopMenuView() {
 
       return [];
@@ -289,14 +265,14 @@
     };
     
     function getSplitLeftContainerView() {
-      let sess = inst.api.sessions().split("-").length == 4;
+      let sess = false; // inst.api.sessions().split("-").length == 4;
       inst.formField("prompt").hide = sess;
       inst.formField("chat").hide = sess;
       inst.formField("session").hide = sess;
       // let defActive = (aSess && aSess.length > 0 && inst.api.session() == aSess[0].name) ? " active" : "";
       //let defName = (aSess && aSess.length > 0) ? aSess[0].name : "";
-      let al = am7model.getModelField("chatSettings", "sessions").limit;
-      let vsess = al || [].concat((aSess || []).map((c) => { return c.name; }))
+      // let al = am7model.getModelField("chatSettings", "sessions").limit;
+      let vsess = [].concat((aSess || []).map((c) => { return c.name; }))
 
       return m("div", {
         class: "splitleftcontainer",
@@ -308,7 +284,7 @@
         //         m("button", { class: "flyout-button", onclick: openChatSettings }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"]),
         vsess.map((s, i) => {
           let sessName = s.substring(s.lastIndexOf("-") + 1, s.length);
-          let bNew = aSess.filter((c) => { return c.name == s; }).length == 0;
+          let bNew = (aSess || []).filter((c) => { return c.name == s; }).length == 0;
           let bDel = "";
           if(bNew){
             bDel = m("button", {class: "menu-button content-end mr-2", onclick: openChatSettings}, m("span", {class: "material-symbols-outlined material-icons-24"}, "add"));
@@ -328,7 +304,6 @@
 
     function openChatSettings(){
       page.components.dialog.chatSettings(inst, function(e){
-
         let esess = e.session;
         let dup = esess;
         let iter = 1;
@@ -676,16 +651,16 @@
       let dir = await page.findObject("auth.group", "DATA", "~/Chat");
       if (aPCfg == undefined) {
         aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
-        if(aPCfg && aPCfg.length && inst.api.prompt() == null) inst.api.prompt(aPCfg[0].name);
+        if(aPCfg && aPCfg.length && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
       }
       if (aCCfg == undefined) {
         aCCfg = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
-        if(aCCfg && aCCfg.length && inst.api.chat() == null) inst.api.chat(aCCfg[0].name);
+        if(aCCfg && aCCfg.length && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
 
       }
       if (aSess == undefined) {
         aSess = await am7client.list("data.data", dir.objectId, null, 0, 0);
-        if(aSess && aSess.length && inst.api.sessions().length == 1) inst.api.sessions(inst.api.sessions().concat(aSess.map((s)=>{return s.name})));
+        // if(aSess && aSess.length && inst.api.sessions().length == 1) inst.api.sessions(inst.api.sessions().concat(aSess.map((s)=>{return s.name})));
       }
 
     }
@@ -694,9 +669,9 @@
 
       if (aPCfg == undefined && aCCfg == undefined) {
         loadConfigList().then(() => {
-          am7model.getModelField("chatSettings", "prompt").limit = aPCfg.map((c) => { return c.name; });
-          am7model.getModelField("chatSettings", "chat").limit = aCCfg.map((c) => { return c.name; });
-          am7model.getModelField("chatSettings", "sessions").limit = [inst.api.session()].concat(aSess.map((c) => { return c.name; }));
+          // am7model.getModelField("chatSettings", "prompt").limit = aPCfg.map((c) => { return c.name; });
+          // am7model.getModelField("chatSettings", "chat").limit = aCCfg.map((c) => { return c.name; });
+          // am7model.getModelField("chatSettings", "sessions").limit = [inst.api.session()].concat(aSess.map((c) => { return c.name; }));
           if(aCCfg.length > 0){
             doPeek();
           }
@@ -766,12 +741,12 @@
         }
 
         let cfg = page.context().contextObjects["chatConfig"];
-        if (cfg && !inst.api.chat() && !inst.api.prompt()) {
+        if (cfg && !inst.api.chatConfig() && !inst.api.promptConfig()) {
           console.log(cfg["olio.llm.chatConfig"].name);
           //chatCfg.chat = cfg["olio.llm.chatConfig"];
           //chatCfg.prompt = cfg["olio.llm.promptConfig"];
-          inst.api.chat(chatCfg.chat.name);
-          inst.api.prompt(chatCfg.prompt.name);
+          inst.api.chat(chatCfg.chat);
+          inst.api.prompt(chatCfg.prompt);
         }
         document.documentElement.addEventListener("keydown", navKey);
 
