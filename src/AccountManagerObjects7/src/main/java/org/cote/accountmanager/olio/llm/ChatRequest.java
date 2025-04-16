@@ -29,20 +29,35 @@ public class ChatRequest extends LooseRecord {
 		return new ChatRequest(RecordFactory.importRecord(OlioModelNames.MODEL_CHAT_REQUEST, json));
 	}
 
-	public String getPromptConfig() {
+	public BaseRecord getPromptConfig() {
 		return get("promptConfig");
 	}
 
-	public void setPromptConfig(String cfg) {
+	public void setPromptConfig(BaseRecord cfg) {
 		setValue("promptConfig", cfg);
 	}
 
+	public BaseRecord getSession() {
+		return get("session");
+	}
+
+	public void setSession(BaseRecord cfg) {
+		setValue("session", cfg);
+	}
 	
-	public String getChatConfig() {
+	public String getSessionType() {
+		return get("sessionType");
+	}
+	
+	public void setSessionType(String type) {
+		setValue("sessionType", type);
+	}
+	
+	public BaseRecord getChatConfig() {
 		return get("chatConfig");
 	}
 
-	public void setChatConfig(String cfg) {
+	public void setChatConfig(BaseRecord cfg) {
 		setValue("chatConfig", cfg);
 	}
 
@@ -54,14 +69,10 @@ public class ChatRequest extends LooseRecord {
 		setValue("uid", uid);
 	}
 	
-	public String getSessionName() {
-		return get("sessionName");
+	public String getModel() {
+		return get("model");
 	}
 
-	public void setSessionName(String name) {
-		setValue("sessionName", name);
-	}
-	
 	public String getMessage() {
 		return get("message");
 	}

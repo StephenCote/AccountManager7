@@ -203,6 +203,47 @@
         page.components.dialog.showProgress(pb.entity, pb);
 
         let aP = [];
+        if(inst.model.name != "data.data"){
+            
+            return new Promise((res, rej) =>{
+                //for(let i = 0; i < files.length; i++){
+                    var fileReader = new FileReader();  
+                    fileReader.onload = function() {
+                        //if(files[i].name.match(/\.json$/gi)){
+                            let obj = JSON.parse(this.result);
+                            delete obj.objectId;
+                            delete obj.id;
+                            delete obj.ownerId;
+                            delete obj.urn;
+                            delete obj.groupPath;
+                            delete obj.organizationId;
+                            delete obj.organizationPath;
+
+                            if(inst.api.groupId){
+                                console.warn("Creating");
+                                obj.groupId = inst.api.groupId();
+                                obj.groupPath = inst.api.groupPath();
+                                page.createObject(obj).then((o) => {
+                                    let uri = "/view/" + obj.schema + "/" + o.objectId;
+                                    m.route.set(uri, {key: o.objectId});
+                                });
+                            }
+                            else{
+                                logger.warn("Need a group");
+                            }
+
+                        //}
+                        //else{
+                          //  console.warn("Skipped " + files[i].name);
+                        //}
+                    };
+                    fileReader.readAsText(files[0]);
+                    page.components.dialog.endDialog();
+
+                //}
+                res();
+            });
+        }
         for (var i = 0; i < files.length; i++) {
             if(i > 0){
                 pb.api.label("Uploading (" + i + " of " + files.length + ")");
@@ -213,7 +254,6 @@
             var formData = new FormData();
             formData.append("organizationPath", am7client.currentOrganization);
             formData.append("groupPath", entity.groupPath);
-            //formData.append("groupId", oGroup.id);
             let fname = files[i].name;
             formData.append("name", files[i].name);
             formData.append("dataFile", files[i]);

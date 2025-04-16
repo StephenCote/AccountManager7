@@ -1,13 +1,18 @@
 {
 	"name": "olio.llm.chatRequest",
-	"ioConstraints": [
-		"unknown"
+	"inherits": [
+		"data.directory"
 	],
+	"group": "ChatRequests",
+	"icon": "chat",
+	"label": "Requests",
+	"query": ["id", "groupId", "chatConfig", "promptConfig", "session", "sessionType"],
 	"description": "Used for proxying requests",
 	"fields": [
 		{
 			"name": "message",
-			"type": "string"
+			"type": "string",
+			"ephemeral": true
 		},
 		{
 			"name": "uid",
@@ -16,23 +21,33 @@
 		},
 		{
 			"name": "chatConfig",
-			"type": "string",
-			"maxLength": 128
+			"type": "model",
+			"baseModel": "olio.llm.chatConfig",
+			"foreign": true
 		},
 		{
 			"name": "promptConfig",
-			"type": "string",
-			"maxLength": 128
+			"type": "model",
+			"baseModel": "olio.llm.promptConfig",
+			"foreign": true
 		},
 		{
-			"name": "sessionName",
+			"name": "sessionType",
 			"type": "string",
-			"maxLength": 128
+			"maxLength": 64
+		},
+		{
+			"name": "session",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "sessionType"
 		},
 		{
 			"name": "data",
 			"type": "list",
-			"baseType": "string"
+			"baseType": "string",
+			"ephemeral": true
 		}
 	]
 }

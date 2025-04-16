@@ -3655,7 +3655,8 @@
         label: "Prompt",
         fields: {
             name: {
-                layout: "one"
+                layout: "one",
+                dragAndDrop: true
             },
             systemPrompt: {
                 format: "button",
@@ -3818,7 +3819,8 @@
         label: "Chat Configuration",
         fields: {
             name: {
-                layout: "one"
+                layout: "one",
+                dragAndDrop: true
             },
             model: {
                 layout: "one",

@@ -33,6 +33,7 @@ import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.stream.StreamSegmentUtil;
 import org.cote.accountmanager.model.field.FieldType;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
@@ -87,8 +88,8 @@ public class VectorService {
 	public Response summarize(String json, @PathParam("chunkType") ChunkEnumType chunkType, @PathParam("chunkSize") int chunkSize, @Context HttpServletRequest request){
 		ChatRequest chatReq = ChatRequest.importRecord(json);
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
+		BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());
+		BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.getPromptConfig());
 		boolean summarized = false;
 		List<String> dataRef = chatReq.get(FieldNames.FIELD_DATA);
 		if(dataRef.size() > 0) {

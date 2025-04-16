@@ -10,6 +10,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
@@ -46,6 +47,7 @@ import org.cote.accountmanager.olio.ThreatEnumType;
 import org.cote.accountmanager.olio.ThreatUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
 import org.cote.accountmanager.olio.rules.GenericStateRule;
 import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
@@ -64,6 +66,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AuditUtil;
+import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -422,13 +425,24 @@ public class OlioTestUtil {
 		Queue.processQueue();
 	}
 	
-	public static BaseRecord getPromptConfig(BaseRecord user) {
+	public static BaseRecord getPromptConfig(BaseRecord user, String name) {
+		return getPromptConfig(user, name, "olio/llm/prompt.config.json");
+	}
+	
+	public static BaseRecord getObjectPromptConfig(BaseRecord user, String name) {
+		return getPromptConfig(user, name, "olio/llm/object.prompt.json");
+	}
+	
+	public static BaseRecord getPromptConfig(BaseRecord user, String name, String resource) {
+		BaseRecord opcfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_PROMPT_CONFIG, name, "~/Chat");
+		if (opcfg != null) {
+			return opcfg;
+		}
 		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
-		plist.parameter(FieldNames.FIELD_NAME, "Prompt Config - " + UUID.randomUUID().toString());
+		plist.parameter(FieldNames.FIELD_NAME, name);
 
 		BaseRecord pcfg = null;
-		BaseRecord opcfg = null;
-		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getInstance().getResource("olio/llm/prompt.config.json"), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+		BaseRecord ipcfg = JSONUtil.importObject(ResourceUtil.getInstance().getResource(resource), LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 
 		try {
 			pcfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_PROMPT_CONFIG, user, ipcfg, plist);
@@ -439,6 +453,29 @@ public class OlioTestUtil {
 			e.printStackTrace();
 		}
 		return opcfg;
+	}
+	
+	public static BaseRecord getOpenAIConfig(BaseRecord user, String name, Properties testProperties) {
+		BaseRecord ocfg = null;
+		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
+		if (cfg != null) {
+			return cfg;
+		}
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		try {
+			cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+			cfg.set("serviceType", LLMServiceEnumType.OPENAI);
+			cfg.set("apiVersion", testProperties.getProperty("test.llm.openai.version"));
+			cfg.set("serverUrl", testProperties.getProperty("test.llm.openai.server"));
+			cfg.set("model", "gpt-4o");
+			cfg.set("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
+			
+			ocfg = IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
+		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+			logger.error(e);
+		}
+		return ocfg;
 	}
 	
 	public static BaseRecord getRandomChatConfig(BaseRecord user, String dataPath) {

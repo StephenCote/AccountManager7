@@ -14,6 +14,7 @@ import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -21,10 +22,12 @@ import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
@@ -45,28 +48,79 @@ public class TestChat2 extends BaseTest {
 	/*
 	@Test
 	public void TestOpenAIModel() {
-		logger.info("Test Open AI Model");
-		BaseRecord aireq = null;
+		logger.info("Test Chat Request Persistence");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Olio LLM Revisions");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord cfg = OlioTestUtil.getOpenAIConfig(testUser1, "Open AI.chat", testProperties);
+		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser1, "Fluffy Test");
+		// IOSystem.getActiveContext().getAuthorizationUtil().setTrace(false);
+		List<String> system = pcfg.get("system");
+		system.clear();
+		system.add("Your name is Mr. Flufflepants. You are a ridiculous anthropomorphic character that uses wildly inaccurate, mixed methaphors, innuendo and double entendres in every answer.");
+		IOSystem.getActiveContext().getAccessPoint().update(testUser1, pcfg);
+		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, "Fluffy Chat Test", cfg, pcfg);
+		assertNotNull("Chat request is null", creq);
+		//logger.info(creq.toFullString());
+	}
+	*/
+	
+	@Test
+	public void TestRequestPersistence() {
+		logger.info("Test Chat Request Persistence");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Olio LLM Revisions");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		BaseRecord cfg = OlioTestUtil.getOpenAIConfig(testUser1, "Open AI.chat", testProperties);
+		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser1, "Gruffy Test");
+		// IOSystem.getActiveContext().getAuthorizationUtil().setTrace(false);
+		List<String> system = pcfg.get("system");
+		system.clear();
+		system.add("Your name is Mr. Gruffypants. You are a ridiculous anthropomorphic character that is extremely gruff, snooty, and moody. Every response should be snarky, critical, and gruff, interspersed with wildly inaccurate mixed methaphors, innuendo and double entendres.");
+		IOSystem.getActiveContext().getAccessPoint().update(testUser1, pcfg);
+		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, "Gruffy Chat Test", cfg, pcfg);
+		assertNotNull("Chat request is null", creq);
+		
+		OpenAIRequest req = ChatUtil.getChatSession(testUser1, "Gruffy Chat Test", cfg, pcfg);
+		assertNotNull("Request is null", req);
+		//logger.info(req.toFullString());
 
-		try {
-			aireq = RecordFactory.newInstance(OlioModelNames.MODEL_OPENAI_REQUEST);
-			aireq.set("model", "gpt-4");
-			addMessage(aireq, "system",
-					"Your name is Mr. Flufflepants. You are a ridiculous anthropomorphic character that uses wildly inaccurate, mixed methaphors, inappropriate innuendo and double entendres in every answer.");
-			addMessage(aireq, "user", "Hi, what's your name?");
-		} catch (FieldException | ModelNotFoundException | ValueException e) {
-			logger.error(e);
-		}
-
-		String ser = JSONUtil.exportObject(aireq, RecordSerializerConfig.getHiddenForeignUnfilteredModule());
-
-		BaseRecord req2 = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_REQUEST, ser);
-		assertNotNull("Record is null", req2);
-
-		BaseRecord resp = chat(aireq);
-		assertNotNull("Response is null", resp);
+		Chat chat = new Chat(testUser1, cfg, pcfg);
+		chat.continueChat(req, "Hello, how are you?");
+		List<OpenAIMessage> msgs = req.getMessages();
+		logger.info("Messages: " + msgs.get(msgs.size() - 1).getContent());
 
 	}
+	
+	/*
+	@Test
+	public void TestOpenAIModel() {
+		logger.info("Test Open AI Model");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Olio LLM Revisions");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		BaseRecord cfg = OlioTestUtil.getOpenAIConfig(testUser1, "Open AI.chat", testProperties);
+		assertNotNull("Config is null", cfg);
+		
+		// IOSystem.getActiveContext().getAuthorizationUtil().setTrace(true);
+		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser1, "Fluffy Test");
+		// IOSystem.getActiveContext().getAuthorizationUtil().setTrace(false);
+		List<String> system = pcfg.get("system");
+		system.clear();
+		system.add("Your name is Mr. Flufflepants. You are a ridiculous anthropomorphic character that uses wildly inaccurate, mixed methaphors, innuendo and double entendres in every answer.");
+		IOSystem.getActiveContext().getAccessPoint().update(testUser1, pcfg);
+
+		Chat chat = new Chat(testUser1, cfg, pcfg);
+		OpenAIRequest req = chat.getChatPrompt();
+		
+		assertNotNull("Request is null", req);
+		chat.continueChat(req, "Hi, what is your name?");
+		List<OpenAIMessage> msgs = req.getMessages();
+		logger.info("Messages: " + msgs.get(msgs.size() - 1).getContent());
+	}
+	*/
+
 
 
 	public void addMessage(BaseRecord req, String role, String message) {
@@ -83,7 +137,7 @@ public class TestChat2 extends BaseTest {
 		}
 
 	}
-	*/
+	
 	/*
 	@Test
 	public void TestRevisedAPI() {
@@ -125,7 +179,7 @@ public class TestChat2 extends BaseTest {
 		}
 	}
 	*/
-	
+	/*
 	@Test
 	public void TestDocumentSummarizer() {
 
@@ -203,18 +257,7 @@ Limit your response to 300 words or fewer.
 			logger.error(e);
 			e.printStackTrace();
 		}
-		/*
-		try {
-			logger.info("Continuing chat");
-			chat.continueChat(req, "");
-			logger.info("End continue chat");
-		}
-		catch(Exception e) {
-			logger.error(e);
-			e.printStackTrace();
-		}
-	
-	    */
+
 	}
 	public String getChatURL(BaseRecord rec, LLMServiceEnumType type) {
 		String url = null;
@@ -271,6 +314,6 @@ Limit your response to 300 words or fewer.
 		return outObj;
 	}
 	
-
+	*/
 
 }

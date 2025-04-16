@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -49,8 +50,7 @@ public class Chat {
 	/// Which role to use for the keyframe content
 	/// NOTE: When the Keyframe is added as an assistant response, the assistant will start copying that format
 	private static String keyframeRole = "user";
-	
-	private String sessionName = null;
+
 	private String saveName = "chat.json";
 	private BaseRecord user = null;
 	private int pruneSkip = 1;
@@ -156,10 +156,6 @@ public class Chat {
 		this.formatOutput = formatOutput;
 	}
 
-	public void setSessionName(String sessionName) {
-		this.sessionName = (sessionName != null ? ChatUtil.getSessionName(user, chatConfig, promptConfig, sessionName)
-				: null);
-	}
 
 	public boolean isIncludeScene() {
 		return includeScene;
@@ -253,12 +249,12 @@ public class Chat {
 		OpenAIResponse lastRep = null;
 		LineAction act = checkAction(req, message);
 		if (act == LineAction.BREAK || act == LineAction.CONTINUE || act == LineAction.SAVE_AND_CONTINUE) {
-			if (act == LineAction.SAVE_AND_CONTINUE && sessionName != null) {
-				ChatUtil.saveSession(user, req, sessionName);
+			if (act == LineAction.SAVE_AND_CONTINUE) {
+				ChatUtil.saveSession(user, req);
 				if (chatConfig != null) {
-					ChatUtil.applyTags(user, chatConfig, ChatUtil.getSessionData(user, sessionName));
+					ChatUtil.applyTags(user, chatConfig, req);
 				}
-				createNarrativeVector(user, req, sessionName);
+				createNarrativeVector(user, req);
 			}
 			logger.info("Continue...");
 			return;
@@ -279,13 +275,11 @@ public class Chat {
 	}
 
 	public void saveSession(OpenAIRequest req) {
-		if (sessionName != null) {
-			ChatUtil.saveSession(user, req, sessionName);
-			if (chatConfig != null) {
-				ChatUtil.applyTags(user, chatConfig, ChatUtil.getSessionData(user, sessionName));
-			}
-			createNarrativeVector(user, req, sessionName);
+		ChatUtil.saveSession(user, req);
+		if (chatConfig != null) {
+			ChatUtil.applyTags(user, chatConfig, req);
 		}
+		createNarrativeVector(user, req);
 	}
 
 	private String getNarrativeForVector(OpenAIMessage msg) {
@@ -322,11 +316,11 @@ public class Chat {
 		return idx;
 	}
 
-	private List<BaseRecord> createNarrativeVector(BaseRecord user, OpenAIRequest req, String sessionName) {
+	private List<BaseRecord> createNarrativeVector(BaseRecord user, OpenAIRequest req) {
 		List<BaseRecord> vect = new ArrayList<>();
 		int rmc = req.getMessages().size();
 
-		if (sessionName != null && VectorUtil.isVectorSupported() && rmc > 2) {
+		if (VectorUtil.isVectorSupported() && rmc > 2) {
 			int idx = getMessageOffset();
 			List<String> buff = new ArrayList<>();
 			for (int i = idx; i < rmc; i++) {
@@ -335,13 +329,12 @@ public class Chat {
 			String cnt = buff.stream().collect(Collectors.joining(System.lineSeparator()));
 			try {
 
-				BaseRecord dat = ChatUtil.getSessionData(user, sessionName);
-				int del = IOSystem.getActiveContext().getVectorUtil().deleteVectorStore(dat,
+				int del = IOSystem.getActiveContext().getVectorUtil().deleteVectorStore(req,
 						OlioModelNames.MODEL_VECTOR_CHAT_HISTORY);
 				if (del > 0) {
 					logger.info("Cleaned up previous store with " + del + " chunks");
 				}
-				ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_VECTOR_REFERENCE, dat);
+				ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_VECTOR_REFERENCE, req);
 				plist.parameter(FieldNames.FIELD_CHUNK, ChunkEnumType.WORD);
 				plist.parameter(FieldNames.FIELD_CHUNK_COUNT, 1000);
 				plist.parameter("chatConfig", chatConfig);
@@ -897,14 +890,13 @@ public class Chat {
 				if (lastRep != null) {
 					handleResponse(req, lastRep, true);
 				}
-				if (sessionName != null) {
-					ChatUtil.saveSession(user, req, sessionName);
-					if (chatConfig != null) {
-						ChatUtil.applyTags(user, chatConfig, ChatUtil.getSessionData(user, sessionName));
-					}
-					createNarrativeVector(user, req, sessionName);
 
+				ChatUtil.saveSession(user, req);
+				if (chatConfig != null) {
+					ChatUtil.applyTags(user, chatConfig, req);
 				}
+				createNarrativeVector(user, req);
+
 			}
 			AuditUtil.setLogToConsole(true);
 			is.close();
@@ -1071,13 +1063,13 @@ public class Chat {
 
 		return msg;
 	}
-
+	private static List<String> ignoreFields = Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_URN, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH);
 	public OpenAIRequest getPrunedRequest(OpenAIRequest inReq) {
 		if (promptConfig == null) {
 			return inReq;
 		}
-
-		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.toFullString());
+		List<String> flds = inReq.getFields().stream().map(f -> f.getName()).filter(f -> !ignoreFields.contains(f)).collect(Collectors.toList());
+		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.copyRecord(flds.toArray(new String[0])).toFullString());
 		// outReq.setModel(inReq.getModel());
 		// String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
 		// boolean useJB = (forceJailbreak || chatConfig != null &&

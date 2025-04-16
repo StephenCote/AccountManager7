@@ -790,7 +790,14 @@
                 case "datetime-local":
                 case "text":
                     fieldClass += " text-field-full";
-                    view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName}));
+                    let propst = {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName};
+                    if(entity && !entity.objectId && fieldView.dragAndDrop){
+                        propst.class += " border-dotted";
+                        propst = Object.assign(propst, dnd);
+                        propst.placeholder = "{ Type Text or Drop File Here }";
+                    }
+
+                    view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", propst));
                     break;
                 case "checkbox":
                     fieldClass += " check-field";

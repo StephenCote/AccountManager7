@@ -134,13 +134,15 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestDocumentSearch.java</exclude>
+						<exclude>**/TestChat2.java</exclude>
 						-->
+						<exclude>**/TestData.java</exclude>
+						<exclude>**/TestDocumentSearch.java</exclude>
 						<exclude>**/TestSchemaModification.java</exclude>
 
 						<exclude>**/TestSystemTasks.java</exclude>
 						<exclude>**/TestProfile.java</exclude>
-						<exclude>**/TestChat2.java</exclude>
+						
 						<exclude>**/TestChat.java</exclude>
 						<exclude>**/TestAuthorization.java</exclude>
 						<exclude>**/TestAccessPoint.java</exclude>
@@ -176,7 +178,7 @@
 						<exclude>**/TestFieldRevisions.java</exclude>
 						<exclude>**/TestMembership.java</exclude>
 						<exclude>**/TestToken.java</exclude>
-						<exclude>**/TestData.java</exclude>
+						
 						<exclude>**/TestStartup.java</exclude>
 						<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
 

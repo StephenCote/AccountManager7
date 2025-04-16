@@ -178,7 +178,7 @@ public class TestDocumentSearch extends BaseTest {
 		cfg.setValue("model", "gpt-4o");
 		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 
-		BaseRecord summary = ChatUtil.createSummary(testUser1, null, doc, true);
+		BaseRecord summary = ChatUtil.createSummary(testUser1, null, null, doc, true);
 		assertNotNull("Summary is null", summary);
 	}
 	

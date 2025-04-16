@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.stream.Collectors;
 
 import javax.swing.text.BadLocationException;
 
@@ -37,15 +38,23 @@ import org.cote.accountmanager.provider.IProvider;
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);
 
-	private static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path) {
+	public static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path) {
+		return getRecord(owner, modelName, name, path, true);
+	}
+	public static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path, boolean full) {
 		BaseRecord dat = null;
 		BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path,
 				GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if (group != null) {
 			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, name);
-			q.planMost(true);
-			dat = IOSystem.getActiveContext().getSearch().findRecord(q);
+			if(full) {
+				q.planMost(true);
+			}
+			// logger.info(q.toFullString());
+			// logger.info(q.toSelect());
+			
+			dat = IOSystem.getActiveContext().getAccessPoint().find(owner, q);
 		} else {
 			logger.warn("Group is null: " + path);
 		}

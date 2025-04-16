@@ -52,8 +52,7 @@
           "data.data",
           "data.note",
           "auth.group",
-          "data.tag",
-          "data.trait"
+          "data.tag"
         ],
         "icon": "emoji_objects",
         "prototypes": [
@@ -206,7 +205,8 @@
         "AUTHORIZE",
         "CLOSE",
         "OPEN",
-        "REOPEN"
+        "REOPEN",
+        "VECTORIZE"
       ],
       "approvalEnumType": [
         "UNKNOWN",
@@ -602,6 +602,389 @@
         "VERIFIED",
         "NOT_VERIFIED",
         "ERROR"
+      ],
+      "alignmentEnumType": [
+        "CHAOTICEVIL",
+        "NEUTRALEVIL",
+        "LAWFULEVIL",
+        "CHAOTICNEUTRAL",
+        "NEUTRAL",
+        "UNKNOWN",
+        "LAWFULNEUTRAL",
+        "CHAOTICGOOD",
+        "NEUTRALGOOD",
+        "LAWFULGOOD"
+      ],
+      "assessedEnumType": [
+        "UNKNOWN",
+        "LOCATION",
+        "GROUP",
+        "INDIVIDUAL",
+        "ENCOUNTER"
+      ],
+      "assessmentEnumType": [
+        "UNKNOWN",
+        "PHYSIOLOGICAL",
+        "SAFETY",
+        "LOVE",
+        "ESTEEM",
+        "SELF",
+        "REPLENISH",
+        "PREDICTION",
+        "PREDILECTION",
+        "CURIOSITY"
+      ],
+      "characterRoleEnumType": [
+        "ACQUAINTENCE",
+        "ANTAGONIST",
+        "ANTIHERO",
+        "CONFIDANT",
+        "CONTAGONIST",
+        "DEUTERAGONIST",
+        "ENEMY_INTEREST",
+        "FOIL",
+        "GUIDE",
+        "HENCHMAN",
+        "INDETERMINATE",
+        "LOVE_INTEREST",
+        "STRANGER",
+        "FRIEND_INTEREST",
+        "COMPANION",
+        "PROTAGONIST",
+        "TEMPTRESS",
+        "UNKNOWN"
+      ],
+      "densityEnumType": [
+        "UNKNOWN",
+        "ROADHOUSE",
+        "HOMESTEAD",
+        "BAND",
+        "HAMLET",
+        "TRIBE",
+        "VILLAGE",
+        "RESIDENTIAL_TOWN",
+        "TOWN",
+        "CITY",
+        "METROPOLIS",
+        "ECUMENOPOLIS"
+      ],
+      "directionEnumType": [
+        "NORTH",
+        "NORTHEAST",
+        "EAST",
+        "SOUTHEAST",
+        "SOUTH",
+        "SOUTHWEST",
+        "WEST",
+        "NORTHWEST",
+        "UNKNOWN"
+      ],
+      "esteemNeedsEnumType": [
+        "RESPECT",
+        "SELF_ESTEEM",
+        "STATUS",
+        "RECOGNITION",
+        "STRENGTH",
+        "FREEDOM",
+        "UNKNOWN"
+      ],
+      "ethnicityEnumType": [
+        "A",
+        "B",
+        "D",
+        "E",
+        "F",
+        "G",
+        "H",
+        "J",
+        "K",
+        "L",
+        "P",
+        "Q",
+        "S",
+        "T",
+        "V",
+        "W",
+        "ZERO",
+        "ONE",
+        "TWO",
+        "THREE",
+        "FOUR",
+        "FIVE",
+        "SIX",
+        "SEVEN",
+        "EIGHT",
+        "NINE",
+        "TEN",
+        "ELEVEN",
+        "TWELVE",
+        "THIRTEEN",
+        "FOURTEEN"
+      ],
+      "highEnumType": [
+        "DISREGARDED",
+        "NEVER",
+        "LOW",
+        "MINIMAL",
+        "DIMINISHED",
+        "INSIGNIFICANT",
+        "WEAK",
+        "MODEST",
+        "MARGINAL",
+        "AVERAGE",
+        "MODERATE",
+        "INTERMEDIATE",
+        "FAIR",
+        "ADEQUATE",
+        "BALANCED",
+        "ELEVATED",
+        "SUBSTANTIAL",
+        "STRONG",
+        "PROFOUND",
+        "EXTENSIVE",
+        "PEAK",
+        "MAXIMUM",
+        "HERO"
+      ],
+      "instinctEnumType": [
+        "DISREGARDED",
+        "INCONCEIVABLE",
+        "FATAL",
+        "VAGUE",
+        "WEAK",
+        "IMBALANCED",
+        "INADEQUATE",
+        "INSIGNIFICANT",
+        "DIMINISHED",
+        "BELOW_AVERAGE",
+        "MINIMAL",
+        "LOW",
+        "STASIS",
+        "MODEST",
+        "MARGINAL",
+        "AVERAGE",
+        "FAIR",
+        "ADEQUATE",
+        "BALANCED",
+        "ELEVATED",
+        "STRONG",
+        "PROFOUND",
+        "PEAK",
+        "UNCONTROLLABLE"
+      ],
+      "interactionEnumType": [
+        "ACCOMMODATE",
+        "ALLY",
+        "BARTER",
+        "BEFRIEND",
+        "BETRAY",
+        "BREAK_UP",
+        "COERCE",
+        "COMBAT",
+        "COMMERCE",
+        "COMMUNICATE",
+        "COMPETE",
+        "CONFLICT",
+        "CONGREGATE",
+        "COOPERATE",
+        "CORRESPOND",
+        "CRITICIZE",
+        "DATE",
+        "DEBATE",
+        "DEFEND",
+        "ENTERTAIN",
+        "EXCHANGE",
+        "EXPRESS_GRATITUDE",
+        "EXPRESS_INDIFFERENCE",
+        "HELP",
+        "INTIMATE",
+        "INVESTIGATE",
+        "MENTOR",
+        "NEGOTIATE",
+        "NONE",
+        "OPPOSE",
+        "PEER_PRESSURE",
+        "RECREATE",
+        "RELATE",
+        "ROMANCE",
+        "SHUN",
+        "SEPARATE",
+        "SOCIALIZE",
+        "THREATEN",
+        "UNKNOWN"
+      ],
+      "loveNeedsEnumType": [
+        "FRIENDSHIP",
+        "INTIMACY",
+        "FAMILY",
+        "CONNECTION",
+        "UNKNOWN"
+      ],
+      "outcomeEnumType": [
+        "VERY_FAVORABLE",
+        "FAVORABLE",
+        "EQUILIBRIUM",
+        "UNFAVORABLE",
+        "VERY_UNFAVORABLE"
+      ],
+      "pointOfInterestEnumType": [
+        "UNKNOWN",
+        "COMMERCIAL",
+        "RECREATIONAL",
+        "LANDMARK",
+        "ENCAMPMENT",
+        "LAIR",
+        "RUIN",
+        "STASH",
+        "RESOURCE",
+        "HARVESTABLE",
+        "ORE",
+        "STRUCTURE"
+      ],
+      "raceEnumType": [
+        "A",
+        "B",
+        "C",
+        "D",
+        "E",
+        "L",
+        "R",
+        "S",
+        "U",
+        "V",
+        "W",
+        "X",
+        "Y",
+        "Z"
+      ],
+      "reasonEnumType": [
+        "AGE",
+        "ALOOFNESS",
+        "AMORALITY",
+        "ATTRACTION",
+        "ATTRACTIVE_NARCISSISM",
+        "AVARICE",
+        "COERCION",
+        "COMMERCE",
+        "COMMUNITY",
+        "COMPANIONSHIP",
+        "CONFIDENCE",
+        "COWARDICE",
+        "EXTRAVERSION",
+        "FRIENDSHIP",
+        "GENEROSITY",
+        "GUARDIANSHIP",
+        "HOSTILITY",
+        "IMMATURITY",
+        "INSTINCT",
+        "INTIMACY",
+        "INTIMIDATION",
+        "INTRAVERSION",
+        "LESS_ATTRACTIVE",
+        "MACHIAVELLIANISM",
+        "MATURITY",
+        "MORALITY",
+        "NARCISSISM",
+        "NONE",
+        "PEER_PRESSURE",
+        "POLITICAL",
+        "PSYCHOPATHY",
+        "REVENGE",
+        "REVULSION",
+        "SANITY",
+        "SENILITY",
+        "SENSUALITY",
+        "SPIRITUALITY",
+        "SOCIALIZE",
+        "UNKNOWN"
+      ],
+      "rollEnumType": [
+        "UNKNOWN",
+        "INVALID_STATISTIC",
+        "CATASTROPHIC_FAILURE",
+        "FAILURE",
+        "SUCCESS",
+        "NATURAL_SUCCESS"
+      ],
+      "safetyNeedsEnumType": [
+        "SECURITY",
+        "EMPLOYMENT",
+        "RESOURCES",
+        "HEALTH",
+        "PROPERTY",
+        "UNKNOWN"
+      ],
+      "threatEnumType": [
+        "ANIMAL_TARGET",
+        "ANIMAL_THREAT",
+        "ECONOMIC_TARGET",
+        "ECONOMIC_THREAT",
+        "ENVIRONMENTAL_THREAT",
+        "EXISTENTIAL_THREAT",
+        "EXISTENTIAL_TARGET",
+        "HEALTH_TARGET",
+        "HEALTH_THREAT",
+        "HOLLOW_THREAT",
+        "IDEOLOGICAL_TARGET",
+        "IDEOLOGICAL_THREAT",
+        "NONE",
+        "PERSONAL_TARGET",
+        "PERSONAL_THREAT",
+        "PHYSICAL_TARGET",
+        "PHYSICAL_THREAT",
+        "POLITICAL_TARGET",
+        "POLITICAL_THREAT",
+        "PSYCHOLOGICAL_TARGET",
+        "PSYCHOLOGICAL_THREAT",
+        "SOCIAL_TARGET",
+        "SOCIAL_THREAT",
+        "VERBAL_TARGET",
+        "VERBAL_THREAT"
+      ],
+      "veryEnumType": [
+        "DISREGARDED",
+        "NEVER",
+        "UNLIKELY",
+        "SLIGHTLY",
+        "NOT_USUALLY",
+        "LESS_FREQUENTLY",
+        "SOMEWHAT",
+        "FREQUENTLY",
+        "USUALLY",
+        "MOSTLY",
+        "VERY",
+        "ALWAYS",
+        "GUARANTEED"
+      ],
+      "wearLevelEnumType": [
+        "NONE",
+        "INTERNAL",
+        "UNDER",
+        "ON",
+        "BASE",
+        "ACCENT",
+        "SUIT",
+        "GARNITURE",
+        "ACCESSORY",
+        "OVER",
+        "OUTER",
+        "FULL_BODY",
+        "ENCLOSURE",
+        "UNKNOWN"
+      ],
+      "eSRBEnumType": [
+        "E",
+        "E10",
+        "T",
+        "M",
+        "AO",
+        "RC"
+      ],
+      "lLMServiceEnumType": [
+        "UNKNOWN",
+        "LOCAL",
+        "OLLAMA",
+        "OPENAI"
       ]
     },
     "models": [
@@ -687,8 +1070,8 @@
             "name": "organizationId",
             "type": "long",
             "required": true,
-            "index": true,
             "private": true,
+            "index": true,
             "dynamicPolicy": false,
             "shortName": "o"
           }
@@ -827,6 +1210,7 @@
             "baseType": "model",
             "baseModel": "data.tag",
             "foreign": true,
+            "participation": true,
             "followReference": true
           }
         ]
@@ -1495,7 +1879,7 @@
           {
             "name": "contentType",
             "type": "string",
-            "maxLength": 64
+            "maxLength": 128
           }
         ]
       },
@@ -3608,7 +3992,7 @@
           {
             "name": "message",
             "type": "string",
-            "maxLength": 512
+            "maxLength": 2048
           },
           {
             "name": "query",
@@ -4102,6 +4486,12 @@
         "ephemeral": true,
         "fields": [
           {
+            "name": "jsonModelKey",
+            "type": "string",
+            "maxLength": 20,
+            "default": "schema"
+          },
+          {
             "name": "systemRoles",
             "type": "list",
             "baseType": "model",
@@ -4346,8 +4736,7 @@
             "baseClass": "org.cote.accountmanager.olio.AlignmentEnumType",
             "type": "enum",
             "maxLength": 32,
-            "shortName": "aln",
-            "limit": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
+            "shortName": "aln"
           }
         ]
       },
@@ -5152,7 +5541,9 @@
       },
       {
         "name": "common.vectorExt",
-        "inherits": [],
+        "inherits": [
+          "crypto.vaultExt"
+        ],
         "abstract": true,
         "query": [],
         "fields": [
@@ -5166,12 +5557,14 @@
           },
           {
             "name": "content",
-            "type": "string"
+            "type": "string",
+            "provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
+            "encrypt": false
           },
           {
             "name": "embedding",
             "type": "vector",
-            "maxLength": 1024
+            "maxLength": 768
           }
         ]
       },
@@ -5272,6 +5665,85 @@
         ]
       },
       {
+        "name": "system.taskRequest",
+        "ioConstraints": [
+          "unknown"
+        ],
+        "fields": [
+          {
+            "name": "id",
+            "type": "string"
+          },
+          {
+            "name": "type",
+            "baseClass": "org.cote.accountmanager.schema.type.SystemTaskEnumType",
+            "type": "enum",
+            "maxLength": 10,
+            "default": "UNKNOWN"
+          },
+          {
+            "name": "taskModel",
+            "baseModel": "$flex",
+            "type": "model",
+            "foreign": true,
+            "foreignType": "taskModelType",
+            "access": {
+              "roles": {
+                "read": [
+                  "ApiUsers"
+                ]
+              }
+            }
+          },
+          {
+            "name": "taskModelType",
+            "type": "string",
+            "maxLength": 64
+          },
+          {
+            "name": "data",
+            "baseModel": "$flex",
+            "type": "model",
+            "foreign": true,
+            "foreignType": "dataType",
+            "access": {
+              "roles": {
+                "read": [
+                  "ApiUsers"
+                ]
+              }
+            }
+          },
+          {
+            "name": "dataType",
+            "type": "string",
+            "maxLength": 64
+          },
+          {
+            "name": "payload",
+            "type": "blob"
+          }
+        ]
+      },
+      {
+        "name": "system.taskResponse",
+        "inherits": [
+          "system.taskRequest"
+        ],
+        "ioConstraints": [
+          "unknown"
+        ],
+        "fields": [
+          {
+            "name": "responseType",
+            "baseClass": "org.cote.accountmanager.schema.type.ResponseEnumType",
+            "type": "enum",
+            "maxLength": 10,
+            "default": "UNKNOWN"
+          }
+        ]
+      },
+      {
         "name": "olio.charPerson",
         "inherits": [
           "identity.person",
@@ -5282,6 +5754,7 @@
         "label": "Character Person",
         "dedicatedParticipation": true,
         "factory": "org.cote.accountmanager.olio.CharPersonFactory",
+        "vector": "org.cote.accountmanager.olio.VectorProvider",
         "query": [
           "profile"
         ],
@@ -7968,7 +8441,7 @@
             "baseClass": "org.cote.accountmanager.olio.llm.LLMServiceEnumType",
             "type": "enum",
             "maxLength": 10,
-            "default": "OLLAMA"
+            "default": "OPENAI"
           },
           {
             "name": "systemCharacter",
@@ -8874,56 +9347,56 @@
           {
             "name": "top_k",
             "type": "int",
-            "default": 50
+            "default": 50,
+            "minValue": 0,
+            "maxValue": 1
           },
           {
             "name": "top_p",
             "type": "double",
-            "default": 0.5,
-            "minValue": 0.0,
-            "maxValue": 1.0
-
+            "default": 1,
+            "minValue": 0,
+            "maxValue": 1
           },
           {
             "name": "min_p",
             "type": "double",
             "default": 0.1,
-            "minValue": 0.0,
-            "maxValue": 2.0
+            "minValue": 0,
+            "maxValue": 1
           },
           {
             "name": "typical_p",
             "type": "double",
             "default": 0.85,
-            "minValue": 0.0,
-            "maxValue": 2.0
+            "minValue": 0,
+            "maxValue": 1
           },
           {
             "name": "repeat_last_n",
             "type": "int",
-            "default": 64
+            "default": 64,
+            "minValue": 0,
+            "maxValue": 100
           },
           {
             "name": "temperature",
             "type": "double",
             "default": 1,
-            "minValue": 0.0,
-            "maxValue": 2.0
-
+            "minValue": 0,
+            "maxValue": 2
           },
           {
             "name": "repeat_penalty",
             "type": "double",
             "default": 1.2,
-            "minValue": 0.0,
-            "maxValue": 2.0
+            "minValue": 0,
+            "maxValue": 2
           },
           {
             "name": "num_ctx",
             "type": "int",
-            "default": 8192,
-             minValue: 0,
-             maxValue: 50000
+            "default": 8192
           },
           {
             "name": "num_gpu",
@@ -8934,14 +9407,26 @@
       },
       {
         "name": "olio.llm.chatRequest",
-        "ioConstraints": [
-          "unknown"
+        "inherits": [
+          "data.directory"
+        ],
+        "group": "ChatRequests",
+        "icon": "chat",
+        "label": "Requests",
+        "query": [
+          "id",
+          "groupId",
+          "chatConfig",
+          "promptConfig",
+          "session",
+          "sessionType"
         ],
         "description": "Used for proxying requests",
         "fields": [
           {
             "name": "message",
-            "type": "string"
+            "type": "string",
+            "ephemeral": true
           },
           {
             "name": "uid",
@@ -8950,18 +9435,33 @@
           },
           {
             "name": "chatConfig",
-            "type": "string",
-            "maxLength": 128
+            "type": "model",
+            "baseModel": "olio.llm.chatConfig",
+            "foreign": true
           },
           {
             "name": "promptConfig",
-            "type": "string",
-            "maxLength": 128
+            "type": "model",
+            "baseModel": "olio.llm.promptConfig",
+            "foreign": true
           },
           {
-            "name": "sessionName",
+            "name": "sessionType",
             "type": "string",
-            "maxLength": 128
+            "maxLength": 64
+          },
+          {
+            "name": "session",
+            "baseModel": "$flex",
+            "type": "model",
+            "foreign": true,
+            "foreignType": "sessionType"
+          },
+          {
+            "name": "data",
+            "type": "list",
+            "baseType": "string",
+            "ephemeral": true
           }
         ]
       },
@@ -8982,6 +9482,16 @@
             "name": "actor",
             "type": "string",
             "maxLength": 32
+          },
+          {
+            "name": "uid",
+            "type": "string",
+            "maxLength": 64
+          },
+          {
+            "name": "model",
+            "type": "string",
+            "maxLength": 64
           }
         ]
       },
@@ -9025,9 +9535,6 @@
       },
       {
         "name": "olio.llm.request",
-        "ioConstraints": [
-          "unknown"
-        ],
         "abstract": true,
         "fields": [
           {
@@ -9165,16 +9672,29 @@
             "type": "list",
             "baseType": "model",
             "baseModel": "olio.llm.openai.openaiCitation"
+          },
+          {
+            "name": "refusal",
+            "type": "string"
           }
         ]
       },
       {
         "name": "olio.llm.openai.openaiRequest",
-        "ioConstraints": [
-          "unknown"
+        "likeInherits": [
+          "data.directory"
         ],
         "inherits": [
+          "common.groupExt",
+          "common.baseLight",
           "olio.llm.request"
+        ],
+        "group": "Chat",
+        "icon": "chat",
+        "label": "Requests",
+        "query": [
+          "id",
+          "groupId"
         ],
         "fields": [
           {
@@ -9195,12 +9715,12 @@
           {
             "name": "frequency_penalty",
             "type": "double",
-            "default": 1.1
+            "default": 1.3
           },
           {
             "name": "presence_penalty",
             "type": "double",
-            "default": 1.1
+            "default": 1.3
           },
           {
             "name": "messages",
@@ -9291,6 +9811,12 @@
           {
             "name": "eval_duration",
             "type": "long"
+          },
+          {
+            "name": "data",
+            "type": "list",
+            "baseType": "model",
+            "baseModel": "olio.llm.openai.openaiData"
           }
         ]
       },
@@ -9389,6 +9915,14 @@
           {
             "name": "total_tokens",
             "type": "int"
+          },
+          {
+            "name": "completion_tokens_details",
+            "type": "string"
+          },
+          {
+            "name": "prompt_tokens_details",
+            "type": "string"
           }
         ]
       },
@@ -9456,6 +9990,42 @@
             "name": "jailbreak",
             "type": "model",
             "baseModel": "olio.llm.openai.openaiFilterResult"
+          }
+        ]
+      },
+      {
+        "name": "olio.llm.openai.openaiData",
+        "ioConstraints": [
+          "unknown"
+        ],
+        "inherits": [
+          "olio.llm.response"
+        ],
+        "fields": [
+          {
+            "name": "object",
+            "type": "string"
+          },
+          {
+            "name": "index",
+            "type": "int"
+          },
+          {
+            "name": "embedding",
+            "type": "list",
+            "baseType": "float"
+          }
+        ]
+      },
+      {
+        "name": "olio.llm.openai.openaiInput",
+        "ioConstraints": [
+          "unknown"
+        ],
+        "fields": [
+          {
+            "name": "input",
+            "type": "string"
           }
         ]
       }

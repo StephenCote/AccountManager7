@@ -481,6 +481,9 @@ public class OlioUtil {
 	}
 	
 	public static BaseRecord getFullRecord(BaseRecord rec) {
+		if(rec == null) {
+			return null;
+		}
 		Query q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_ID, rec.get(FieldNames.FIELD_ID));
 		planMost(q);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);

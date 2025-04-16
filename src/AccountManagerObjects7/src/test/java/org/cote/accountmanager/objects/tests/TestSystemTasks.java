@@ -42,7 +42,7 @@ public class TestSystemTasks extends BaseTest {
 		cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey"}));
 
-		BaseRecord pcfg = OlioTestUtil.getPromptConfig(testUser1);
+		BaseRecord pcfg = OlioTestUtil.getPromptConfig(testUser1, "Test Prompt");
 		Chat chat = new Chat(testUser1, cfg, pcfg);
 
 		OpenAIRequest req = chat.getChatPrompt();

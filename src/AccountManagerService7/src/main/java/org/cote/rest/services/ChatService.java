@@ -29,6 +29,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
@@ -85,20 +86,10 @@ public class ChatService {
 			return Response.status(404).entity(null).build();
 		}
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
+		BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());
+		BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.getPromptConfig());
 		if(chatConfig != null && promptConfig != null) {
-	
-			String key = ChatUtil.getKey(user, chatConfig, promptConfig, chatReq);
-			//dataMap.remove(key);
-			ChatUtil.getReqMap().remove(key);
-			ChatUtil.getChatMap().remove(key);
-			ChatUtil.getConfigMap().remove(chatConfig.get("objectId"));
-			ChatUtil.getConfigMap().remove(promptConfig.get("objectId"));
-			/*
-			charMap.remove(user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getSystemCharacter());
-			charMap.remove(user.get(FieldNames.FIELD_NAME) + "-" + chatReq.getUserCharacter());
-			*/
+				logger.warn("Deprecate - Nothing to do");
 		}
 		return Response.status(200).entity(true).build();
 	}
@@ -121,21 +112,10 @@ public class ChatService {
 		}
 		ChatResponse crep = null;
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
-		if(chatConfig != null && promptConfig != null) {
-			String key = ChatUtil.getKey(user, chatConfig, promptConfig, chatReq);
-			crep = new ChatResponse();
-			if(ChatUtil.getReqMap().containsKey(key)) {
-				crep = ChatUtil.getChatResponse(user, ChatUtil.getReqMap().get(key), chatReq);
-			}
-			else if (chatReq.getSessionName() != null){
-				String sessionName = ChatUtil.getSessionName(user, chatConfig, promptConfig, chatReq.getSessionName());
-				OpenAIRequest oreq = ChatUtil.getSession(user, sessionName);
-				if(oreq != null) {
-					crep = ChatUtil.getChatResponse(user, oreq, chatReq);
-				}
-			}
+		BaseRecord vreq = OlioUtil.getFullRecord(chatReq.getSession());
+		if(vreq != null) {
+			OpenAIRequest oreq = new OpenAIRequest(vreq);
+			crep = ChatUtil.getChatResponse(user, oreq, chatReq);
 		}
 		else {
 			logger.error("Invalid chat or prompt configuration");
@@ -202,16 +182,12 @@ public class ChatService {
 			}
 		}
 		
-		BaseRecord chatConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, chatReq.getChatConfig(), null);
-		BaseRecord promptConfig = ChatUtil.getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, chatReq.getPromptConfig(), null);
-		String key = ChatUtil.getKey(user, chatConfig, promptConfig, chatReq); 
-		logger.info("Chat request: " + key);
-		Chat chat = ChatUtil.getChat(user, chatReq, key, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+		BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());
+		BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());
+
+		Chat chat = ChatUtil.getChat(user, chatReq, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		chat.continueChat(req, chatReq.getMessage() + citRef);
-		if(chatReq.getMessage().startsWith("/next")) {
-			/// Dump the request from the cache when moving episodes
-			ChatUtil.forgetRequest(user, chatReq);
-		}
+
 		ChatResponse creq = ChatUtil.getChatResponse(user, req, chatReq);
 		
 		return Response.status((creq != null ? 200 : 404)).entity(creq).build();

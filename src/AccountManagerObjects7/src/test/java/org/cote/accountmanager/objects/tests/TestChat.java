@@ -115,7 +115,7 @@ public class TestChat extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 	
-		BaseRecord pcfg = OlioTestUtil.getPromptConfig(testUser1);
+		BaseRecord pcfg = OlioTestUtil.getPromptConfig(testUser1, "Test Prompt");
 		assertNotNull("Prompt config is null", pcfg);
 		BaseRecord cfg = OlioTestUtil.getRandomChatConfig(testUser1, testProperties.getProperty("test.datagen.path"));
 		assertNotNull("Chat config is null", cfg);
@@ -131,16 +131,9 @@ public class TestChat extends BaseTest {
 			String utempl = PromptUtil.getUserChatPromptTemplate(pcfg, cfg2);
 			String atempl = PromptUtil.getAssistChatPromptTemplate(pcfg, cfg2);
 			
-			String sessionName = "Demo Session";
 			Chat chat = new Chat(testUser1, cfg, pcfg);
-			chat.setSessionName(sessionName);
 			OpenAIRequest req = chat.getChatPrompt();
 
-			String msn = ChatUtil.getSessionName(testUser1, cfg, pcfg, sessionName);
-			assertTrue("Failed to save session " + sessionName, ChatUtil.saveSession(testUser1, req, sessionName));
-			OpenAIRequest sreq = ChatUtil.getSession(testUser1, sessionName);
-			assertNotNull("Failed to retrieve session " + sessionName, sreq);
-			
 			chat.continueChat(req, "Hi");
 			
 			logger.info(JSONUtil.exportObject(req));

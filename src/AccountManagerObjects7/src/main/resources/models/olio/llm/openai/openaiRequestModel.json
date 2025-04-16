@@ -1,9 +1,15 @@
 {
 	"name": "olio.llm.openai.openaiRequest",
-	"ioConstraints": [
-		"unknown"
+	"likeInherits": ["data.directory"],
+	"inherits": [
+		"common.groupExt",
+		"common.baseLight",
+		"olio.llm.request"
 	],
-	"inherits": ["olio.llm.request"],
+	"group": "Chat",
+	"icon": "chat",
+	"label": "Requests",
+	"query": ["id", "groupId"],
 	"fields": [
 		{
 			"name": "max_tokens",

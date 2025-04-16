@@ -11,6 +11,29 @@ import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.olio.AlignmentEnumType;
+import org.cote.accountmanager.olio.AssessedEnumType;
+import org.cote.accountmanager.olio.AssessmentEnumType;
+import org.cote.accountmanager.olio.CharacterRoleEnumType;
+import org.cote.accountmanager.olio.DensityEnumType;
+import org.cote.accountmanager.olio.DirectionEnumType;
+import org.cote.accountmanager.olio.EsteemNeedsEnumType;
+import org.cote.accountmanager.olio.EthnicityEnumType;
+import org.cote.accountmanager.olio.HighEnumType;
+import org.cote.accountmanager.olio.InstinctEnumType;
+import org.cote.accountmanager.olio.InteractionEnumType;
+import org.cote.accountmanager.olio.LoveNeedsEnumType;
+import org.cote.accountmanager.olio.OutcomeEnumType;
+import org.cote.accountmanager.olio.PointOfInterestEnumType;
+import org.cote.accountmanager.olio.RaceEnumType;
+import org.cote.accountmanager.olio.ReasonEnumType;
+import org.cote.accountmanager.olio.RollEnumType;
+import org.cote.accountmanager.olio.SafetyNeedsEnumType;
+import org.cote.accountmanager.olio.ThreatEnumType;
+import org.cote.accountmanager.olio.VeryEnumType;
+import org.cote.accountmanager.olio.WearLevelEnumType;
+import org.cote.accountmanager.olio.llm.ESRBEnumType;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.type.AccountEnumType;
 import org.cote.accountmanager.schema.type.AccountStatusEnumType;
@@ -74,7 +97,11 @@ public class SchemaUtil {
 	private static Set<String> modelSet = ConcurrentHashMap.newKeySet();
 	private static List<String> models = new ArrayList<>();
 	
-	private static List<Class<? extends Enum<?>>> enumList = Arrays.asList(FieldEnumType.class, SystemPermissionEnumType.class, AccountEnumType.class, AccountStatusEnumType.class, ActionEnumType.class, ApprovalEnumType.class, ApprovalResponseEnumType.class, ApproverEnumType.class, AuthenticationResponseEnumType.class, ComparatorEnumType.class, CompressionEnumType.class, ConditionEnumType.class, ConnectionEnumType.class, ContactEnumType.class, ContactInformationEnumType.class, ControlActionEnumType.class, ControlEnumType.class, CredentialEnumType.class, EffectEnumType.class, FactEnumType.class, FunctionEnumType.class, GroupEnumType.class, LevelEnumType.class, LocationEnumType.class, OperationEnumType.class, OperationResponseEnumType.class, OrderEnumType.class, OrganizationEnumType.class, PatternEnumType.class, PermissionEnumType.class, PolicyRequestEnumType.class, PolicyResponseEnumType.class, QueryEnumType.class, ResponseEnumType.class, RoleEnumType.class, RuleEnumType.class, SpoolBucketEnumType.class, SpoolNameEnumType.class, SpoolStatusEnumType.class, SqlDataEnumType.class, StatisticsEnumType.class, StreamEnumType.class, TagEnumType.class, UserEnumType.class, UserStatusEnumType.class, ValidationEnumType.class, ValueEnumType.class, VerificationEnumType.class);
+	private static List<Class<? extends Enum<?>>> enumList = Arrays.asList(
+		FieldEnumType.class, SystemPermissionEnumType.class, AccountEnumType.class, AccountStatusEnumType.class, ActionEnumType.class, ApprovalEnumType.class, ApprovalResponseEnumType.class, ApproverEnumType.class, AuthenticationResponseEnumType.class, ComparatorEnumType.class, CompressionEnumType.class, ConditionEnumType.class, ConnectionEnumType.class, ContactEnumType.class, ContactInformationEnumType.class, ControlActionEnumType.class, ControlEnumType.class, CredentialEnumType.class, EffectEnumType.class, FactEnumType.class, FunctionEnumType.class, GroupEnumType.class, LevelEnumType.class, LocationEnumType.class, OperationEnumType.class, OperationResponseEnumType.class, OrderEnumType.class, OrganizationEnumType.class, PatternEnumType.class, PermissionEnumType.class, PolicyRequestEnumType.class, PolicyResponseEnumType.class, QueryEnumType.class, ResponseEnumType.class, RoleEnumType.class, RuleEnumType.class, SpoolBucketEnumType.class, SpoolNameEnumType.class, SpoolStatusEnumType.class, SqlDataEnumType.class, StatisticsEnumType.class, StreamEnumType.class, TagEnumType.class, UserEnumType.class, UserStatusEnumType.class, ValidationEnumType.class, ValueEnumType.class, VerificationEnumType.class,
+		AlignmentEnumType.class, AssessedEnumType.class, AssessmentEnumType.class, CharacterRoleEnumType.class, DensityEnumType.class, DirectionEnumType.class, EsteemNeedsEnumType.class, EthnicityEnumType.class, HighEnumType.class, InstinctEnumType.class, InteractionEnumType.class, LoveNeedsEnumType.class, OutcomeEnumType.class, PointOfInterestEnumType.class, RaceEnumType.class, ReasonEnumType.class, RollEnumType.class, SafetyNeedsEnumType.class, ThreatEnumType.class, VeryEnumType.class, WearLevelEnumType.class,
+		ESRBEnumType.class, LLMServiceEnumType.class
+		);
 	
 	private static String getModel(String name) {
 		return ResourceUtil.getInstance().getModelResource(name);

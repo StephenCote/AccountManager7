@@ -69,9 +69,7 @@ public class ChatUtil {
 	private static String autoScenePrompt = "Create a description for a roleplay scenario to give to two people playing the following two characters, in the designated setting, in the middle of or conclusion of the specified scene.";
 	
 	private static Set<String> chatTrack = new HashSet<>();
-	private static HashMap<String, OpenAIRequest> reqMap = new HashMap<>();
-	private static HashMap<String, Chat> chatMap = new HashMap<>();
-	private static HashMap<String, BaseRecord> configMap = new HashMap<>();
+
 	
 	/// When true, chat options are re-applied to the chat request for saved sessions
 	/// When false, chat options are only applied when the request is first created
@@ -80,8 +78,6 @@ public class ChatUtil {
 	
 	public static void clearCache() {
 		chatTrack.clear();
-		reqMap.clear();
-		configMap.clear();
 	}
 
 	public static void generateAutoScene(OlioContext octx, BaseRecord cfg, BaseRecord pcfg, BaseRecord interaction, String setting, boolean json) {
@@ -239,59 +235,73 @@ public class ChatUtil {
 		return null;
 	}
 	
-	public static boolean saveSession(BaseRecord user, OpenAIRequest req, String sessionName) {
-		
-		BaseRecord dat = getSessionData(user, sessionName);
-		boolean upd = false;
-		try {
-			if(dat == null) {
-				BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-				dat = RecordFactory.model(ModelNames.MODEL_DATA).newInstance();
-				IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, dat, sessionName, dir.get(FieldNames.FIELD_PATH), user.get(FieldNames.FIELD_ORGANIZATION_ID));
-				dat.set(FieldNames.FIELD_CONTENT_TYPE,  "text/plain");
-				dat = IOSystem.getActiveContext().getAccessPoint().create(user, dat);
-			}
-			//ByteModelUtil.setValueString(dat, JSONUtil.exportObject(req));
-			dat.set(FieldNames.FIELD_BYTE_STORE, req.toFullString().getBytes());
-			if(IOSystem.getActiveContext().getAccessPoint().update(user, dat) != null) {
-				upd = true;
-			}
+	public static boolean saveSession(BaseRecord user, OpenAIRequest req) {
+		return (IOSystem.getActiveContext().getAccessPoint().update(user, req) != null);
+	}
+	
+	public static OpenAIRequest getChatSession(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
+		BaseRecord creq = getChatRequest(user, name, cfg, pcfg);
+		if (creq == null) {
+			logger.warn("Chat request was null for " + name);
+			return null;
 		}
-		catch(ModelNotFoundException | FieldException | ValueException e) {
+		if (creq.get("session") == null) {
+			logger.warn("LLM Request was null for " + name);
+			return null;
+		}
+		// logger.info("Return full record for " + ((BaseRecord)creq.get("session")).toFullString());
+		return new OpenAIRequest(OlioUtil.getFullRecord(creq.get("session")));
+	}
+	public static OpenAIRequest getCreateChatSession(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
+		BaseRecord creq = getCreateChatRequest(user, name, cfg, pcfg);
+		if (creq == null) {
+			logger.warn("Chat request was null for " + name);
+			return null;
+		}
+		
+		if (creq.get("session") == null) {
+			logger.warn("LLM Request was null for " + name);
+			return null;
+		}
+		return new OpenAIRequest(OlioUtil.getFullRecord(creq.get("session")));
+	}
+	public static BaseRecord getChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
+		return getCreateChatRequest(user, name, cfg, pcfg, false);
+	}
+	public static BaseRecord getCreateChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
+		return getCreateChatRequest(user, name, cfg, pcfg, true);
+	}
+	private static BaseRecord getCreateChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg, boolean create) {
+		BaseRecord ocreq = null;
+		BaseRecord creq = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_REQUEST, name, "~/ChatRequests", false);
+		if(creq != null) {
+			return creq;
+		}
+		if (!create) {
+			return null;
+		}
+		
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/ChatRequests");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		try {
+			creq = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_REQUEST, user, null, plist);
+			creq.set("chatConfig", cfg);
+			creq.set("promptConfig", pcfg);
+			Chat chat = new Chat(user, cfg, pcfg);
+			OpenAIRequest req = chat.getChatPrompt();
+			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, req, name, "~/ChatRequests", user.get(FieldNames.FIELD_ORGANIZATION_ID));
+			BaseRecord oreq = IOSystem.getActiveContext().getAccessPoint().create(user, req);
+			creq.set("sessionType", oreq.getSchema());
+			creq.set("session", oreq);
+			ocreq = IOSystem.getActiveContext().getAccessPoint().create(user, creq);
+		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error(e);
 		}
-		return upd;
-	}
-	
-	public static Query getSessionDataQuery(BaseRecord user, String sessionName) {
-		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
-		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_NAME, sessionName);
-		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
-		q.planMost(false);
-		return q;
-	}
-	
-	public static BaseRecord getSessionData(BaseRecord user, String sessionName) {
-		//q.setRequest(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_BYTE_STORE});
-		return IOSystem.getActiveContext().getSearch().findRecord(getSessionDataQuery(user, sessionName));
-	}
-	public static OpenAIRequest getSession(BaseRecord user, String sessionName) {
-		
-		BaseRecord dat = getSessionData(user, sessionName);
-		OpenAIRequest req = null;
-		if(dat != null) {
-			//req = JSONUtil.importObject(ByteModelUtil.getValueString(dat), OpenAIRequest.class);
-			try {
-				req = OpenAIRequest.importRecord(ByteModelUtil.getValueString(dat));
-			} catch (ValueException | FieldException e) {
-				logger.error(e);
-				e.printStackTrace();
-			}
+		return ocreq;
 
-		}
-		return req;
 	}
-	
+
+
 	public static String getSessionName(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, String name) {
 		String cfgName = "ucfg";
 		String pcfgName = "pcfg";
@@ -934,35 +944,13 @@ public class ChatUtil {
 		}
 		return dataCit;
 	}
-	
-	public static String getKey(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, ChatRequest request) {
-		String sess = "";
-		if(request.getSessionName() != null && request.getSessionName().length() > 0) {
-			sess = "-" + request.getSessionName();
-		}
-		return user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get(FieldNames.FIELD_NAME) + "-" + promptConfig.get(FieldNames.FIELD_NAME) + sess;
-	}
-	
-	public static HashMap<String, OpenAIRequest> getReqMap() {
-		return reqMap;
-	}
-
-	public static HashMap<String, Chat> getChatMap() {
-		return chatMap;
-	}
 
 	public static Set<String> getChatTrack() {
 		return chatTrack;
 	}
 
-	public static HashMap<String, BaseRecord> getConfigMap() {
-		return configMap;
-	}
-
 	public static BaseRecord getConfig(BaseRecord user, String modelName, String objectId, String name) {
-		if(objectId != null && configMap.containsKey(objectId)) {
-			return configMap.get(objectId);
-		}
+
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		BaseRecord cfg = null;
 		if(dir != null) {
@@ -975,9 +963,6 @@ public class ChatUtil {
 			}
 			q.planMost(true);
 			cfg = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-			if(objectId != null && cfg != null) {
-				configMap.put(objectId, cfg);
-			}
 		}
 		return cfg;
 	}
@@ -986,7 +971,7 @@ public class ChatUtil {
 		if(req == null || creq == null) {
 			return null;
 		}
-		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
+		BaseRecord chatConfig = OlioUtil.getFullRecord(creq.getChatConfig());
 		ChatResponse rep = new ChatResponse();
 		rep.setUid(creq.getUid());
 		rep.setModel(chatConfig.get("model"));
@@ -1002,65 +987,39 @@ public class ChatUtil {
 		}
 		return rep;
 	}
-
-	public static void forgetRequest(BaseRecord user, ChatRequest creq) {
-		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
-		String key = getKey(user, chatConfig, promptConfig, creq);
-		if(reqMap.containsKey(key)) {
-			reqMap.remove(key);
-		}
-	}
 	
 	public static OpenAIRequest getOpenAIRequest(BaseRecord user, ChatRequest creq) {
 		OpenAIRequest req = null;
 		Chat chat = null;
-		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, creq.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, creq.getPromptConfig(), null);
-		String key = getKey(user, chatConfig, promptConfig, creq);
-		//String key = user.get(FieldNames.FIELD_NAME) + "-" + chatConfig.get(FieldNames.FIELD_NAME) + "-" + promptConfig.get(FieldNames.FIELD_NAME);
-		if(reqMap.containsKey(key)) {
-			return reqMap.get(key);
-		}
-		if(chatConfig != null && promptConfig != null) {
+		BaseRecord chatConfig = OlioUtil.getFullRecord(creq.getChatConfig());
+		BaseRecord promptConfig = OlioUtil.getFullRecord(creq.getPromptConfig());
 
-			if(creq.getSessionName() != null && creq.getSessionName().length() > 0) {
-				String sessionName = getSessionName(user, chatConfig, promptConfig, creq.getSessionName());
-				OpenAIRequest oreq = getSession(user, sessionName);
-				if(oreq != null) {
-					req = oreq;
-					if (alwaysApplyChatOptions) {
-						applyChatOptions(req, chatConfig);
-					}
+		if(chatConfig != null && promptConfig != null) {
+            BaseRecord vreq = OlioUtil.getFullRecord(creq.get("session"));
+			if(vreq != null) {
+				OpenAIRequest oreq = new OpenAIRequest(vreq);
+				req = oreq;
+				if (alwaysApplyChatOptions) {
+					applyChatOptions(req, chatConfig);
 				}
 			}
 			if(req == null) {
 				chat = new Chat(user, chatConfig, promptConfig);
-				chat.setSessionName(creq.getSessionName());
 				req = chat.getChatPrompt();
 			}
-			if(req != null) {
-				reqMap.put(key, req);
-			}
+
 
 		}
 		return req;
 	}
 	
-	public static Chat getChat(BaseRecord user, ChatRequest req, String key, boolean deferRemote) {
-		if(chatMap.containsKey(key)) {
-			return chatMap.get(key);
-		}
-		BaseRecord chatConfig = getConfig(user, OlioModelNames.MODEL_CHAT_CONFIG, req.getChatConfig(), null);
-		BaseRecord promptConfig = getConfig(user, OlioModelNames.MODEL_PROMPT_CONFIG, req.getPromptConfig(), null);
+	public static Chat getChat(BaseRecord user, ChatRequest req, boolean deferRemote) {
+		BaseRecord chatConfig = OlioUtil.getFullRecord(req.getChatConfig());
+		BaseRecord promptConfig = OlioUtil.getFullRecord(req.getPromptConfig());
 		Chat chat = null;
 		if(chatConfig != null && promptConfig != null) {
 			chat = new Chat(user, chatConfig, promptConfig);
 			chat.setDeferRemote(deferRemote);
-			if(req.getSessionName() != null && req.getSessionName().length() > 0) {
-				chat.setSessionName(req.getSessionName());
-			}
-			chatMap.put(key,  chat);
 		}
 		return chat;
 	}
