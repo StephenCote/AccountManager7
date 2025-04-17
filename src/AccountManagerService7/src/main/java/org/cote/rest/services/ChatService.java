@@ -99,7 +99,7 @@ public class ChatService {
 	@Path("/history")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response chatHistory(String json, @Context HttpServletRequest request){
-		logger.info("History ....");
+		logger.info("History .... ");
 		ChatRequest chatReq = ChatRequest.importRecord(json);
 		if(chatReq.getUid() == null) {
 			logger.warn("A uid is required for every chat");
@@ -112,16 +112,20 @@ public class ChatService {
 		}
 		ChatResponse crep = null;
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		BaseRecord vreq = OlioUtil.getFullRecord(chatReq.getSession());
+		//ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().findByObjectId(user, chatReq.getSchema(), chatReq.get(FieldNames.FIELD_OBJECT_ID)));
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatReq.get(FieldNames.FIELD_OBJECT_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().find(user, q));
+		BaseRecord vreq = OlioUtil.getFullRecord(vChatReq.get("session"));
 		if(vreq != null) {
 			OpenAIRequest oreq = new OpenAIRequest(vreq);
-			crep = ChatUtil.getChatResponse(user, oreq, chatReq);
+			crep = ChatUtil.getChatResponse(user, oreq, vChatReq);
 		}
 		else {
 			logger.error("Invalid chat or prompt configuration");
 		}
 		
-		return Response.status((crep != null ? 200 : 404)).entity(crep).build();
+		return Response.status((crep != null ? 200 : 404)).entity(crep.toFullString()).build();
 	}
 	
 	@RolesAllowed({"admin","user"})
@@ -154,7 +158,64 @@ public class ChatService {
 		return Response.status((cfg != null ? 200 : 404)).entity((cfg != null ? cfg.toFullString() : null)).build();
 	}
 	
-	private Map<String, String> objectSummary = new HashMap<>();
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/new")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response newChat(String json, @Context HttpServletRequest request){
+		ChatRequest chatReq = ChatRequest.importRecord(json);
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		String name = chatReq.get(FieldNames.FIELD_NAME);
+		String chatConfigId = null;
+		String promptConfigId = null;
+		if (chatReq.getChatConfig() != null) {
+			chatConfigId = chatReq.get("chatConfig.objectId");
+		}
+		if (chatReq.getPromptConfig() != null) {
+			promptConfigId = chatReq.get("promptConfig.objectId");
+		}
+		if(promptConfigId == null || promptConfigId.length() == 0|| chatConfigId == null || chatConfigId.length() == 0 || name == null || name.length() == 0) {
+			logger.warn("Name, prompt, or chat config was null or empty");
+			return Response.status(404).entity(null).build();
+		}
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_OBJECT_ID, chatConfigId);
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord chatConfig = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if (chatConfig == null) {
+			logger.warn("Chat config not found");
+			return Response.status(404).entity(null).build();
+		}
+		
+		Query q2 = QueryUtil.createQuery(OlioModelNames.MODEL_PROMPT_CONFIG, FieldNames.FIELD_OBJECT_ID, promptConfigId);
+		q2.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		BaseRecord promptConfig = IOSystem.getActiveContext().getAccessPoint().find(user, q2);
+		
+		if (promptConfig == null) {
+			logger.warn("Prompt config not found");
+			return Response.status(404).entity(null).build();
+		}
+		
+		BaseRecord req = ChatUtil.getChatRequest(user, name, chatConfig, promptConfig);
+		if(req != null) {
+			logger.warn("Chat request '" + name + "' already exists");
+			return Response.status(404).entity(null).build();
+		}
+		
+		req = ChatUtil.getCreateChatRequest(user, name, chatConfig, promptConfig);
+		if(req != null) {
+			/// Fetch again since the create will only return the identifiers. 
+			req = ChatUtil.getChatRequest(user, name, chatConfig, promptConfig);
+		}
+		if(req != null) {
+			logger.info("Created new chat request: " + name);
+		}
+		else {
+			logger.error("Failed to create chat request: " + name);
+		}
+		return Response.status((req != null ? 200 : 404)).entity(req.toFullString()).build();
+		
+	}
 	
 	@RolesAllowed({"admin","user"})
 	@POST
@@ -172,25 +233,33 @@ public class ChatService {
 			return Response.status(404).entity(null).build();
 		}
 		ChatUtil.getChatTrack().add(chatReq.getUid());
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatReq.get(FieldNames.FIELD_OBJECT_ID));
+		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
+		ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().find(user, q));
 		
-		OpenAIRequest req = ChatUtil.getOpenAIRequest(user, chatReq);
+		vChatReq.setValue(FieldNames.FIELD_DATA, chatReq.get(FieldNames.FIELD_DATA));
+		vChatReq.setValue(FieldNames.FIELD_MESSAGE, chatReq.get(FieldNames.FIELD_MESSAGE));
+		
+		OpenAIRequest req = ChatUtil.getOpenAIRequest(user, vChatReq);
+
 		String citRef = "";
-		if(chatReq.getMessage() != null && chatReq.getMessage().length() > 0) {
-			List<String> cits = ChatUtil.getDataCitations(user, req, chatReq);
+		if(vChatReq.getMessage() != null && vChatReq.getMessage().length() > 0) {
+			List<String> cits = ChatUtil.getDataCitations(user, req, vChatReq);
 			if(cits.size() > 0) {
 				citRef = System.lineSeparator() + cits.stream().collect(Collectors.joining(System.lineSeparator()));
 			}
 		}
+		else {
+			logger.warn("Chat message is null for " + vChatReq.get(FieldNames.FIELD_NAME));
+		}
 		
-		BaseRecord chatConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());
-		BaseRecord promptConfig = OlioUtil.getFullRecord(chatReq.getChatConfig());
+		Chat chat = ChatUtil.getChat(user, vChatReq, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
+		chat.continueChat(req, vChatReq.getMessage() + citRef);
 
-		Chat chat = ChatUtil.getChat(user, chatReq, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
-		chat.continueChat(req, chatReq.getMessage() + citRef);
-
-		ChatResponse creq = ChatUtil.getChatResponse(user, req, chatReq);
+		ChatResponse creq = ChatUtil.getChatResponse(user, req, vChatReq);
 		
-		return Response.status((creq != null ? 200 : 404)).entity(creq).build();
+		return Response.status((creq != null ? 200 : 404)).entity(creq.toFullString()).build();
 	}
 	
 	

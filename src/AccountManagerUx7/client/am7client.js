@@ -450,11 +450,6 @@
 	function makeFind(sType, sObjType, sPath, bMake,fH){
 		var sK = "FIND-" + sObjType;
 
-		if(bMake){
-			console.log("MAKE " + sPath);
-		}
-
-
 		/// Band-aid - need to better encode these
 		///
 		if(sPath.match(/^\//) || sPath.match(/\./)){

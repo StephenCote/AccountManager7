@@ -211,13 +211,10 @@
                     fileReader.onload = function() {
                         //if(files[i].name.match(/\.json$/gi)){
                             let obj = JSON.parse(this.result);
-                            delete obj.objectId;
-                            delete obj.id;
-                            delete obj.ownerId;
-                            delete obj.urn;
-                            delete obj.groupPath;
-                            delete obj.organizationId;
-                            delete obj.organizationPath;
+                            let clearFlds = ["objectId", "id", "ownerId", "urn", "groupPath", "organizationId", "organizationPath", "vaultId", "vaulted", "keyId"];
+                            for(let f in clearFlds){
+                                delete obj[f];
+                            }
 
                             if(inst.api.groupId){
                                 console.warn("Creating");

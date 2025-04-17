@@ -482,9 +482,22 @@ public class OlioUtil {
 	
 	public static BaseRecord getFullRecord(BaseRecord rec) {
 		if(rec == null) {
+			logger.warn("Null record passed to getFullRecord");
 			return null;
 		}
-		Query q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_ID, rec.get(FieldNames.FIELD_ID));
+		Query q = null;
+		long id = rec.get(FieldNames.FIELD_ID);
+		String objectId = rec.get(FieldNames.FIELD_OBJECT_ID);
+		if(id > 0L) {
+			q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_ID, id);
+		}
+		else if(objectId != null) {
+			q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_OBJECT_ID, objectId);
+		}
+		else if(rec.hasField(FieldNames.FIELD_URN)){
+			q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_URN, rec.get(FieldNames.FIELD_URN));
+		}
+		
 		planMost(q);
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}

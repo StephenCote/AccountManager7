@@ -12,6 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Queue;
@@ -321,12 +322,20 @@ public class OlioAction extends CommonAction implements IAction{
 			if (cmd.hasOption("scan")) {
 				//octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 				// IOSystem.getActiveContext().getAuthorizationUtil().setTrace(true);
-				octx.scanNestedGroups(octx.getUniverse(), false);
-				octx.scanNestedGroups(octx.getWorld(), true);
-				LibraryUtil.configureLibraryRootReader(user);
-				for(String s : WorldUtil.SHARED_LIBRARY_NAMES) {
-					LibraryUtil.configureLibraryReader(user, s);
+				try {
+					//BaseRecord ugroup = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_GROUP, octx.getUniverse().get(FieldNames.FIELD_ID));
+					BaseRecord wgroup = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_GROUP, (long)octx.getWorld().get(FieldNames.FIELD_GROUP_ID));
+					//octx.scanNestedGroups(wgroup, false);
+					octx.scanNestedGroups(wgroup, true);
+					LibraryUtil.configureLibraryRootReader(user);
+					for(String s : WorldUtil.SHARED_LIBRARY_NAMES) {
+						LibraryUtil.configureLibraryReader(user, s);
+					}
+				} catch (ReaderException e) {
+					logger.error(e);
+					e.printStackTrace();
 				}
+
 				// IOSystem.getActiveContext().getAuthorizationUtil().setTrace(false);
 			}
 			if(cmd.hasOption("list")) {

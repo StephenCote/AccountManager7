@@ -271,7 +271,6 @@
             }
         }
         function enablePicker(bNoRefresh){
-            console.log("Enable picker");
             pickerMode.enabled = true;
             if(caller){
                 caller.setChildPickerMode(objectPage);
@@ -306,6 +305,9 @@
             entity.objectId = undefined;
             entity.id = undefined;
             entity.urn = undefined;
+            delete entity.vaultId;
+            delete entity.vaulted;
+            delete entity.keyId;
             resetEntity(entity);
             m.redraw();
         }
@@ -1060,7 +1062,6 @@
                                     
                                 }
                                 else{
-                                    console.log("Update pick");
                                     inst.api[field.pickerProperty.entity](data[0]);
                                 }
                             }
@@ -1092,6 +1093,7 @@
                         }
                         */
                         updateChange();
+                        inst.action(useName);
                         if(pickerHandler){
                             pickerHandler(objectPage, inst, field, useName, data[0]);
                         }

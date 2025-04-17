@@ -17,7 +17,8 @@
 		{
 			"name": "uid",
 			"type": "string",
-			"maxLength": 64
+			"maxLength": 64,
+			"ephemeral": true
 		},
 		{
 			"name": "chatConfig",

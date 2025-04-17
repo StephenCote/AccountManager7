@@ -25,7 +25,7 @@
         }
         */
         if(aCCfg){
-            let aC = aCCfg.filter(c => c.name == inst.api.chat());
+            let aC = aCCfg.filter(c => c.name == inst.api.chatConfig()?.name);
             if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
                 let grp = await page.findObject("auth.group", "data", "~/Tags");
                 let q = am7view.viewQuery(am7model.newInstance("data.tag"));
@@ -132,19 +132,16 @@
 
     }
     
-    async function chatSettings(pinst, fHandler){
+    async function chatSettings(fHandler){
         let entity = am7model.newPrimitive("olio.llm.chatRequest");
         let inst = am7model.prepareInstance(entity, am7model.forms.newChatRequest);
-
-        inst.api.chatConfig(pinst.api.chatConfig());
-        inst.api.promptConfig(pinst.api.promptConfig());
 
         let acfg = await loadChatList();
         if(acfg && acfg.length && !entity.chatConfig) entity.chatConfig = acfg[0];
         //am7model.getModelField("chatSettings", "chat").limit  = acfg.map((c) => { return c.name; });
         //am7model.forms.newChatRequest.fields.chatConfig.field.limit = acfg.map((c) => { return c.name; });
         let pcfg = await loadPromptList();
-        if(pcfg && pcfg.length && !entity.prompt) entity.prompt = pcfg[0];
+        if(pcfg && pcfg.length && !entity.prompt) entity.promptConfig = pcfg[0];
         //am7model.getModelField("chatSettings", "prompt").limit  = pcfg.map((c) => { return c.name; });
        // am7model.forms.newChatSettings.fields.promptConfig.field.limit = pcfg.map((c) => { return c.name; });
 

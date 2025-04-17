@@ -95,48 +95,29 @@
     
 
     // window.dbgCfg = chatCfg;
-    let inst = am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest);
-    inst.api.session("New Chat");
-    // inst.api.sessions(inst.api.session());
-    window.dbgInst = inst;
-    inst.action("doPeek", doPeek);
-    // inst.action("doChat", doChat);
-
-    function pickSession(){
+    let inst;
+    // = am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest);
+    
+    function pickSession(obj){
       doClear();
-      let key = inst.api.sessions();
-      if(key.length > 1){
-        let pairs = key.split("-");
-        if(pairs.length == 4){
-          inst.api.chat(pairs[1]);
-          inst.api.prompt(pairs[2]);
-          inst.api.session(pairs[3]);
-          doPeek();
-        }
-        else if(pairs.length == 1){
-          inst.api.session(pairs[0]);
-        }
-        else{
-          console.warn("Unexpected key format: " + key);
-        }
-      }
-      else{
-        console.warn("Invalid key");
-      }
+      inst = am7model.prepareInstance(obj);
+      window.dbgInst = inst;
+      doPeek();
     }
 
-    inst.action("chat", doPeek);
-    // inst.action("sessions", pickSession);
+    function setSession(obj){
+
+    }
 
     async function chatInto(){
-      page.components.dialog.chatInto(undefined, inst, aCCfg)
+      page.components.dialog.chatInto(undefined, undefined, aCCfg)
     }
 
     async function doCancel() {
       clearEditMode();
       chatCfg.pending = false;
       chatCfg.history = [];
-      return m.request({ method: 'POST', url: g_application_path + "/rest/chat/clear", withCredentials: true, body: { chatConfig: chatCfg?.chat?.objectId, promptConfig: chatCfg?.prompt?.objectId, sessionName: inst.api.session(), uid: page.uid() } }).then((r) => {
+      return m.request({ method: 'POST', url: g_application_path + "/rest/chat/clear", withCredentials: true, body: chatReq }).then((r) => {
         m.redraw();
       });
     }
@@ -157,7 +138,18 @@
         pushHistory();
         chatCfg.pending = true;
         let data = page.components.dnd.workingSet.map(r => {return JSON.stringify({schema:r.schema, objectId:r.objectId});});
-        m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: { chatConfig: chatCfg.chat.objectId, promptConfig: chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid(), message: msg, data } }).then((r) => {
+
+        let chatReq = {
+          schema: inst.model.name,
+          objectId: inst.api.objectId(),
+          // chatConfig: {inst.api.chatConfig()?.objectId},
+          // promptConfig: {inst.api.promptConfig()?.objectId},
+          uid: page.uid(),
+          message: msg,
+          data
+        };
+
+        m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
           if (!chatCfg.history) chatCfg.history = {};
           chatCfg.history.messages = r?.messages || [];
           chatCfg.pending = false;
@@ -168,17 +160,26 @@
     
     async function deleteChat(s){
       page.components.dialog.confirm("Delete chat " + s + "?", async function(){
-        let cht = aSess.filter((c) => { return c.name == s; });
-        if(!cht){
-          console.warn("Do not have current pointer to chat " + s);
+        if(s.session){
+          let q = am7client.newQuery(s.sessionType);
+          q.field("id", s.session.id);    
+          let qr = await page.search(q);
+          if(qr && qr.results.length > 0){
+            // console.log("Deleting session data", qr.results[0].objectId);
+            await page.deleteObject(s.sessionType, qr.results[0].objectId);
+          }
+          else{
+            console.error("Failed to find session data to delete", qr);
+          }
         }
-        else{
-          cht = cht[0];
-          await page.deleteObject("data.data", cht.objectId);
-          aSess = undefined;
-          await loadConfigList();
-          m.redraw();
-        }
+        // console.log("Deleting request", s.objectId);
+        await page.deleteObject(s[am7model.jsonModelKey], s.objectId);
+        
+        aSess = undefined;
+        await loadConfigList();
+        doClear();
+        m.redraw();
+
       });
     }
 
@@ -193,15 +194,26 @@
 
     function getHistory() {
       // console.log(chatCfg);
-      return m.request({ method: 'POST', url: g_application_path + "/rest/chat/history", withCredentials: true, body: { chatConfig: chatCfg.chat.objectId, promptConfig: chatCfg.prompt.objectId, sessionName: inst.api.session(), uid: page.uid() } });
+      if(!inst){
+        return;
+      }
+
+      let chatReq = {
+        schema: inst.model.name,
+        objectId: inst.api.objectId(),
+        uid: page.uid()
+      };
+      return m.request({ method: 'POST', url: g_application_path + "/rest/chat/history", withCredentials: true, body: chatReq });
     }
 
     function newChatConfig(){
       return {
+        /*
         chat: undefined,
         prompt: undefined,
         system: undefined,
         user: undefined,
+        */
         peek: false,
         history: undefined,
         pending: false
@@ -210,16 +222,23 @@
 
 
     function doPeek() {
-      doClear();
+      //doClear();
+      if(chatCfg.peek || !inst){
+        return Promise.resolve();
+      }
+
       let c1 = inst.api.promptConfig();
       let c2 = inst.api.chatConfig();
       let p;
-      if (c1.length && c2.length) {
+      if (c1 && c2) {
+        /// Looking up the prompt and chat config to get the full objects
+        ///
+        chatCfg.peek = true;
         p = new Promise((res, rej) => {
-          m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/prompt/" + c1, withCredentials: true })
+          m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/prompt/" + c1.name, withCredentials: true })
             .then((c) => {
               chatCfg.prompt = c;
-              m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/chat/" + c2, withCredentials: true }).then((c2) => {
+              m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/chat/" + c2.name, withCredentials: true }).then((c2) => {
                 chatCfg.chat = c2;
                 chatCfg.system = c2.systemCharacter;
                 chatCfg.user = c2.userCharacter;
@@ -232,6 +251,10 @@
               });
             });
         });
+      }
+      else{
+        console.warn("No prompt or chat config");
+
       }
       return p;
     }
@@ -265,14 +288,12 @@
     };
     
     function getSplitLeftContainerView() {
-      let sess = false; // inst.api.sessions().split("-").length == 4;
+      /*
       inst.formField("prompt").hide = sess;
       inst.formField("chat").hide = sess;
       inst.formField("session").hide = sess;
-      // let defActive = (aSess && aSess.length > 0 && inst.api.session() == aSess[0].name) ? " active" : "";
-      //let defName = (aSess && aSess.length > 0) ? aSess[0].name : "";
-      // let al = am7model.getModelField("chatSettings", "sessions").limit;
-      let vsess = [].concat((aSess || []).map((c) => { return c.name; }))
+      */
+      let vsess = aSess || [];
 
       return m("div", {
         class: "splitleftcontainer",
@@ -283,8 +304,7 @@
        // am7view.form(inst),
         //         m("button", { class: "flyout-button", onclick: openChatSettings }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"]),
         vsess.map((s, i) => {
-          let sessName = s.substring(s.lastIndexOf("-") + 1, s.length);
-          let bNew = (aSess || []).filter((c) => { return c.name == s; }).length == 0;
+          let bNew = s.objectId == undefined;
           let bDel = "";
           if(bNew){
             bDel = m("button", {class: "menu-button content-end mr-2", onclick: openChatSettings}, m("span", {class: "material-symbols-outlined material-icons-24"}, "add"));
@@ -293,35 +313,44 @@
           else{
             bDel = m("button", {class: "menu-button content-end mr-2", onclick: function(e){ e.preventDefault(); deleteChat(s); return false;}}, m("span", {class: "material-symbols-outlined material-icons-24"}, "delete_outline"));
           }
-          return m("button", { class: "flyout-button" + (sessName == inst.api.session() ? " active": ""), onclick: function () {
-            inst.api.sessions(s);
-            pickSession();
-          } }, [bDel, sessName]);
+          return m("button", { class: "flyout-button" + (inst && s.name == inst.api.name() ? " active": ""), onclick: function () {
+            pickSession(s);
+          } }, [bDel, s.name]);
         })
            
       ]);
     }
 
-    function openChatSettings(){
-      page.components.dialog.chatSettings(inst, function(e){
-        let esess = e.session;
-        let dup = esess;
-        let iter = 1;
 
-        while(aSess.filter((s) => {
-          let cn = s.name.substring(s.name.lastIndexOf("-") + 1, s.name.length);
-          return cn == dup;
-        }).length > 0){
-          dup = esess + " " + iter;
-          iter++;
-        }
-        esess = dup;
-        inst.api.session(esess);
-        inst.api.chat(e.chat);
-        inst.api.prompt(e.prompt);
-        am7model.getModelField("chatSettings", "sessions").limit = ["New Chat", inst.api.session()].concat(aSess.map((c) => { return c.name; }));
+    function openChatSettings(){
+      page.components.dialog.chatSettings(async function(e){
+
+        //let obj = await page.createObject(e);
+        let chatReq = {
+          schema: e[am7model.jsonModelKey],
+          name: e.name,
+          objectId: e.objectId,
+          chatConfig: {objectId: e.chatConfig.objectId},
+          promptConfig: {objectId: e.promptConfig.objectId},
+          uid: page.uid()
+        };
+
+        let obj = await m.request({ method: 'POST', url: g_application_path + "/rest/chat/new", withCredentials: true, body: chatReq });
+
+        inst = am7model.prepareInstance(obj);
+        window.dbgInst = inst;
+        aSess = undefined;
+        await loadConfigList();
+        doPeek();
+        /*
+
+        inst.api.name(esess);
+        inst.api.chatConfig(e.chat);
+        inst.api.promptConfig(e.prompt);
+        //am7model.getModelField("chatSettings", "sessions").limit = ["New Chat", inst.api.session()].concat(aSess.map((c) => { return c.name; }));
         //pickSession();
         doPeek();
+        */
       });
     }
 
@@ -339,6 +368,8 @@
     /// The reasoning: The message history returned from the chat API is not the entire history, and doesn't include any system prompt
     /// Alternately, this could be a separate API, but that seems unnecessary at the moment
     async function editMessageHistory(idx, cnt) {
+      logger.warn("REVISE EDIT");
+      /*
       let pg = await page.findObject("auth.group", "data", "~/Chat")
       if (pg) {
         let name = page.user.name + "-" + inst.api.chat() + "-" + inst.api.prompt() + "-" + inst.api.session();
@@ -349,9 +380,7 @@
           let histx = JSON.parse(Base64.decode(hist.dataBytesStore));
           if (histx && histx.messages.length > 0) {
             let om = histx.messages[histx.messages.length - 1];
-            //let om = histx.messages.filter(m => m.content == ocnt.content);
-            //if(om.length){
-            //  om[0].content = cnt;
+
             om.content = cnt;
             hist.dataBytesStore = Base64.encode(JSON.stringify(histx));
             let histy = {
@@ -368,12 +397,6 @@
             await doCancel();
             await doPeek();
             clearEditMode();
-            /*
-            }
-            else{
-              console.error("Failed to find matching history");
-            }
-            */
           }
           else {
             console.error("Failed to parse history, or history contained no messages");
@@ -388,6 +411,7 @@
         console.error("Failed to find chat group");
       }
       clearEditMode();
+      */
     }
     function toggleEditMode(idx) {
       if (editMode) {
@@ -406,6 +430,9 @@
     }
 
     function getResultsView() {
+      if(!inst){
+        return "";
+      }
       let c1g = "man";
       let c1l = "Nobody";
       let c2g = "man";
@@ -588,8 +615,14 @@
           m("div", {class: "absolute top-0 h-4 w-full rounded pending-blue"})
         )
       );
-
-      let input = m("input[" + (chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown: function (e) { if (e.which == 13) doChat(e); } });
+      let placeText = "Start typing...";
+      if(!inst){
+        placeText = "Select or create a chat to begin...";
+      }
+      else if(chatCfg.pending){
+        placeText = "Waiting ...";
+      }
+      let input = m("input[" + (!inst || chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } });
 
       return m("div", { class: "result-nav-outer" },
         m("div", { class: "results-fixed" },
@@ -637,7 +670,9 @@
 
     let lastCount = -1;
     function scrollToLast() {
-
+      if(!inst){
+        return;
+      }
       let msgs = document.getElementById("messages").querySelectorAll(":scope > div");
       if (msgs.length > 1 && lastCount != msgs.length) {
         lastCount = msgs.length;
@@ -648,19 +683,21 @@
     }
     
     async function loadConfigList() {
+      am7client.clearCache(undefined, true);
       let dir = await page.findObject("auth.group", "DATA", "~/Chat");
       if (aPCfg == undefined) {
         aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
-        if(aPCfg && aPCfg.length && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
+        if(aPCfg && aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
       }
       if (aCCfg == undefined) {
         aCCfg = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
-        if(aCCfg && aCCfg.length && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
+        if(aCCfg && aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
 
       }
+      let dir2 = await page.findObject("auth.group", "DATA", "~/ChatRequests");
       if (aSess == undefined) {
-        aSess = await am7client.list("data.data", dir.objectId, null, 0, 0);
-        // if(aSess && aSess.length && inst.api.sessions().length == 1) inst.api.sessions(inst.api.sessions().concat(aSess.map((s)=>{return s.name})));
+        aSess = await am7client.list("olio.llm.chatRequest", dir2.objectId, null, 0, 0);
+        if(aSess && aSess.length && !inst) pickSession(aSess[0]);
       }
 
     }
@@ -736,17 +773,20 @@
 
         if(window.remoteEntity){
           inst = am7model.prepareInstance(remoteEntity, am7model.forms.chatSettings);
+          window.dbgInst = inst;
           bPopSet = true;
           delete window.remoteEntity;
         }
 
         let cfg = page.context().contextObjects["chatConfig"];
-        if (cfg && !inst.api.chatConfig() && !inst.api.promptConfig()) {
+        if (cfg ) {
+          // && !inst.api.chatConfig() && !inst.api.promptConfig()
+          console.warn("TODO: Refactor sending in chat config ref");
+          /*
           console.log(cfg["olio.llm.chatConfig"].name);
-          //chatCfg.chat = cfg["olio.llm.chatConfig"];
-          //chatCfg.prompt = cfg["olio.llm.promptConfig"];
-          inst.api.chat(chatCfg.chat);
-          inst.api.prompt(chatCfg.prompt);
+          inst.api.chatConfig(chatCfg.chatConfig);
+          inst.api.promptConfig(chatCfg.promptConfig);
+          */
         }
         document.documentElement.addEventListener("keydown", navKey);
 

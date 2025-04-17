@@ -9396,7 +9396,9 @@
           {
             "name": "num_ctx",
             "type": "int",
-            "default": 8192
+            "default": 0,
+            "minValue": 0,
+            "maxValue": 120000
           },
           {
             "name": "num_gpu",
@@ -9700,7 +9702,9 @@
           {
             "name": "max_tokens",
             "type": "int",
-            "default": 2048
+            "default": 2048,
+            "minValue": 0,
+            "maxValue": 120000
           },
           {
             "name": "temperature",

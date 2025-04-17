@@ -356,33 +356,10 @@ public class Chat {
 		return vect;
 	}
 
-	private List<String> getFormattedChatHistory(OpenAIRequest req, boolean full) {
-		List<String> buff = new ArrayList<>();
-		for (int i = (full ? 0 : (pruneSkip + 2)); i < req.getMessages().size(); i++) {
-			OpenAIMessage msg = req.getMessages().get(i);
-			String cont = msg.getContent();
-			if (cont != null && cont.startsWith("(KeyFrame")) {
-				continue;
-			}
-			String name = null;
-			boolean isUser = msg.getRole().equals("user");
-			if (chatConfig != null) {
-				String parm = "systemCharacter";
-				if (isUser)
-					parm = "userCharacter";
-				name = chatConfig.get(parm + ".firstName");
-			}
-			String charPos = "#1";
-			if (msg.getRole().equals("user")) {
-				charPos = "#2";
-			}
-			buff.add("(" + charPos + (name != null ? " " + name : "") + "): " + cont);
-		}
-		return buff;
-	}
+
 
 	public OpenAIRequest getAnalyzePrompt(OpenAIRequest req, String command, int offset, int count, boolean full) {
-		List<String> lines = getFormattedChatHistory(req, full);
+		List<String> lines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, full);
 		if (count == 0) {
 			count = lines.size();
 		}
@@ -471,7 +448,7 @@ public class Chat {
 	private static Pattern embeddedMessage = Pattern.compile("\\$\\{embmsg\\}");
 
 	public OpenAIRequest getNarratePrompt(OpenAIRequest req, String command, int offset, int count, boolean full) {
-		List<String> lines = getFormattedChatHistory(req, full);
+		List<String> lines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, full);
 		if (count == 0) {
 			count = lines.size();
 		}
@@ -534,7 +511,7 @@ public class Chat {
 	}
 
 	public OpenAIRequest getSDPrompt(OpenAIRequest req, String command, boolean full) {
-		List<String> lines = getFormattedChatHistory(req, full);
+		List<String> lines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, full);
 
 		String systemSD = PromptUtil.getSystemSDTemplate(promptConfig, chatConfig);
 		command = "Create an SD prompt based on the most recent roleplay scene.";
@@ -1063,32 +1040,12 @@ public class Chat {
 
 		return msg;
 	}
-	private static List<String> ignoreFields = Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_URN, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH);
-	public OpenAIRequest getPrunedRequest(OpenAIRequest inReq) {
-		if (promptConfig == null) {
-			return inReq;
-		}
-		List<String> flds = inReq.getFields().stream().map(f -> f.getName()).filter(f -> !ignoreFields.contains(f)).collect(Collectors.toList());
-		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.copyRecord(flds.toArray(new String[0])).toFullString());
-		// outReq.setModel(inReq.getModel());
-		// String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
-		// boolean useJB = (forceJailbreak || chatConfig != null &&
-		// (boolean)chatConfig.get("useJailBreak"));
-
-		// outReq.addMessage(inReq.getMessages().stream().filter(m ->
-		// (m.isPruned()==false))
-		// .collect(Collectors.toList()));
-		outReq.setMessages(
-				outReq.getMessages().stream().filter(m -> (m.isPruned() == false)).collect(Collectors.toList()));
-
-		return outReq;
-	}
 
 	public OpenAIResponse chat(OpenAIRequest req) {
 		if (req == null) {
 			return null;
 		}
-		String ser = JSONUtil.exportObject(getPrunedRequest(req),
+		String ser = JSONUtil.exportObject(ChatUtil.getPrunedRequest(req),
 				RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 
 		OpenAIResponse orec = null;
@@ -1156,7 +1113,9 @@ public class Chat {
 		setLlmSystemPrompt(sysTemp);
 		req = newRequest(model);
 		setPruneSkip(2);
-		newMessage(req, userTemp);
+		if(userTemp != null && userTemp.length() > 0) {
+			newMessage(req, userTemp);
+		}
 		if (assist != null && assist.length() > 0) {
 			setPruneSkip(3);
 			newMessage(req, assist, "assistant");

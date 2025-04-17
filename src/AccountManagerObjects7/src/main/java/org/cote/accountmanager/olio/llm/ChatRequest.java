@@ -13,7 +13,9 @@ public class ChatRequest extends LooseRecord {
 
 	public ChatRequest(BaseRecord rec) {
 		this();
-		this.setFields(rec.getFields());
+		if(rec != null) {
+			this.setFields(rec.getFields());
+		}
 	}
 	
 	public ChatRequest() {

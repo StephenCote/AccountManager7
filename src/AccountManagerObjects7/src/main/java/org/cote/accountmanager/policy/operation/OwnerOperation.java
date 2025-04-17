@@ -15,6 +15,7 @@ import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 
@@ -41,6 +42,9 @@ import org.cote.accountmanager.util.RecordUtil;
 			
 			if(stype == null || !ModelNames.MODEL_USER.equals(stype)) {
 				logger.error("Source type must refer to a user model: " + stype + " != " + ModelNames.MODEL_USER);
+				if(IOSystem.getActiveContext().getAuthorizationUtil().isTrace()) {
+					ErrorUtil.printStackTrace();
+				}
 				return OperationResponseEnumType.ERROR;
 				
 			}

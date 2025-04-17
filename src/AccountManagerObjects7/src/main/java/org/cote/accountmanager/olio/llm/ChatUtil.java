@@ -287,7 +287,11 @@ public class ChatUtil {
 			creq = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_REQUEST, user, null, plist);
 			creq.set("chatConfig", cfg);
 			creq.set("promptConfig", pcfg);
-			Chat chat = new Chat(user, cfg, pcfg);
+			
+			BaseRecord chatConfig = OlioUtil.getFullRecord(cfg);
+			BaseRecord promptConfig = OlioUtil.getFullRecord(pcfg);
+			
+			Chat chat = new Chat(user, chatConfig, promptConfig);
 			OpenAIRequest req = chat.getChatPrompt();
 			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, req, name, "~/ChatRequests", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			BaseRecord oreq = IOSystem.getActiveContext().getAccessPoint().create(user, req);
@@ -302,25 +306,7 @@ public class ChatUtil {
 	}
 
 
-	public static String getSessionName(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, String name) {
-		String cfgName = "ucfg";
-		String pcfgName = "pcfg";
-		if(chatConfig != null) {
-			cfgName = chatConfig.get(FieldNames.FIELD_NAME);
-		}
-		if(promptConfig != null) {
-			pcfgName = promptConfig.get(FieldNames.FIELD_NAME);
-		}
-		return
-		(
-		//CryptoUtil.getDigestAsString(
-			user.get(FieldNames.FIELD_NAME)
-			+ "-" + cfgName
-			+ "-" + pcfgName
-			+ "-" + name
-		//)
-		);
-	}
+	/// TODO: DEPRECATE THIS
 	public static BaseRecord getCreateChatConfig(BaseRecord user, String name) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Chat", "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_CONFIG, FieldNames.FIELD_NAME, name);
@@ -977,10 +963,10 @@ public class ChatUtil {
 		rep.setModel(chatConfig.get("model"));
 		/// Current template structure for chat and rpg defines prompt and initial user message
 		/// Skip prompt, and skip initial user comment
-		int startIndex = 2;
+		int startIndex = 1;
 		/// With assist enabled, an initial assistant message is included, so skip that as well
 		if((boolean)chatConfig.get("assist")) {
-			startIndex++;
+			startIndex = 3;
 		}
 		for(int i = startIndex; i < req.getMessages().size(); i++) {
 			rep.getMessages().add(req.getMessages().get(i));
@@ -1057,6 +1043,7 @@ public class ChatUtil {
 
 	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
 		try {
+			req.setModel(cfg.get("model"));
 			BaseRecord opts = null;
 			if (cfg != null) {
 				opts = cfg.get("chatOptions");
@@ -1083,5 +1070,50 @@ public class ChatUtil {
 			logger.error("Error applying chat options: " + ex.getMessage());
 		}
 	}
+	
+	private static List<String> ignoreFields = Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_URN, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH);
+	public static OpenAIRequest getPrunedRequest(OpenAIRequest inReq) {
+
+		List<String> flds = inReq.getFields().stream().map(f -> f.getName()).filter(f -> !ignoreFields.contains(f)).collect(Collectors.toList());
+		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.copyRecord(flds.toArray(new String[0])).toFullString());
+		// outReq.setModel(inReq.getModel());
+		// String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
+		// boolean useJB = (forceJailbreak || chatConfig != null &&
+		// (boolean)chatConfig.get("useJailBreak"));
+
+		// outReq.addMessage(inReq.getMessages().stream().filter(m ->
+		// (m.isPruned()==false))
+		// .collect(Collectors.toList()));
+		outReq.setMessages(
+				outReq.getMessages().stream().filter(m -> (m.isPruned() == false)).collect(Collectors.toList()));
+
+		return outReq;
+	}
+	
+	public static List<String> getFormattedChatHistory(OpenAIRequest req, BaseRecord chatConfig, int pruneSkip, boolean full) {
+		List<String> buff = new ArrayList<>();
+		for (int i = (full ? 0 : (pruneSkip + 2)); i < req.getMessages().size(); i++) {
+			OpenAIMessage msg = req.getMessages().get(i);
+			String cont = msg.getContent();
+			if (cont != null && cont.startsWith("(KeyFrame")) {
+				continue;
+			}
+			String name = null;
+			boolean isUser = msg.getRole().equals("user");
+			if (chatConfig != null) {
+				String parm = "systemCharacter";
+				if (isUser)
+					parm = "userCharacter";
+				name = chatConfig.get(parm + ".firstName");
+			}
+			String charPos = "#1";
+			if (msg.getRole().equals("user")) {
+				charPos = "#2";
+			}
+			buff.add("(" + charPos + (name != null ? " " + name : "") + "): " + cont);
+		}
+		return buff;
+	}
+
 	
 }

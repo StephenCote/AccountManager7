@@ -1,5 +1,7 @@
 package org.cote.accountmanager.olio;
 
+import java.util.List;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -27,7 +29,20 @@ public class VectorProvider implements IProvider {
 	public String describe(ModelSchema lmodel, BaseRecord model) {
 	
 		StringBuilder content = new StringBuilder();
-		if(lmodel.hasField(OlioFieldNames.FIELD_NARRATIVE)) {
+		if(lmodel.getName().equals(OlioModelNames.MODEL_OPENAI_REQUEST)) {
+			logger.info("Extracting conversation history.");
+			IOSystem.getActiveContext().getReader().populate(model, new String[] {"messages"});
+			List<BaseRecord> msgs = model.get("messages");  
+			for(BaseRecord msg : msgs) {
+				if (msg.get("role").equals("user")) {
+					content.append("User: " + msg.get("content") + System.lineSeparator());
+				}
+				else if (msg.get("role").equals("assistant")) {
+					content.append("Assistant: " + msg.get("content") + System.lineSeparator());
+				}
+			}
+		}
+		else if(lmodel.hasField(OlioFieldNames.FIELD_NARRATIVE)) {
 			logger.info("Extracting narrative content.");
 			IOSystem.getActiveContext().getReader().populate(model, new String[] {OlioFieldNames.FIELD_NARRATIVE, FieldNames.FIELD_GENDER});
 			String pro = ("male".equals(model.get(FieldNames.FIELD_GENDER)) ? "He" : "She");

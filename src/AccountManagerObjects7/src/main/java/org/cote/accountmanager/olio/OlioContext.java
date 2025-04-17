@@ -220,7 +220,8 @@ public class OlioContext {
 		Query pq = QueryUtil.createQuery(ModelNames.MODEL_GROUP, FieldNames.FIELD_PARENT_ID, dir.get(FieldNames.FIELD_ID), dir.get(FieldNames.FIELD_ORGANIZATION_ID));
 		
 		BaseRecord[] dirs = ioContext.getSearch().findRecords(pq);
-		logger.info("Scan group " + dir.get(FieldNames.FIELD_NAME));
+
+		// logger.info("Scan group " + dir.get(FieldNames.FIELD_NAME) + " (#" + dir.get(FieldNames.FIELD_ID) + " in #" +  dir.get(FieldNames.FIELD_ORGANIZATION_ID) + ") with " + dirs.length + " children");
 		for(BaseRecord group : dirs) {
 			scanNestedGroups(group, userWrite);
 		}

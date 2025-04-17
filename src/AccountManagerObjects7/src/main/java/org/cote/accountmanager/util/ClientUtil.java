@@ -104,7 +104,7 @@ public class ClientUtil {
 				outObj = response.readEntity(cls);
 			}
 			else {
-				logger.warn("Received response: " + response.getStatus());
+				logger.warn("Received response: " + response.getStatus() + " for " + resource.getUri());
 			}
 		}
 		else {
@@ -131,7 +131,7 @@ public class ClientUtil {
 				outObj = response.readEntity(cls);
 			}
 			else {
-				logger.warn("Received response: " + response.getStatus());
+				logger.warn("Received response: " + response.getStatus() + " for " + resource.getUri());
 				logger.warn(response.readEntity(String.class));
 			}
 		}
@@ -154,7 +154,7 @@ public class ClientUtil {
 				outObj = response.readEntity(cls);
 			}
 			else {
-				logger.warn("Received response: " + response.getStatus());
+				logger.warn("Received response: " + response.getStatus() + " for " + resource.getUri());
 				logger.warn(response.readEntity(String.class));
 			}
 		}
@@ -181,7 +181,7 @@ public class ClientUtil {
 					String ser = response.readEntity(String.class);
 					outObj = RecordFactory.importRecord(modelName, ser);
 				} else {
-					logger.warn("Received response: " + response.getStatus());
+					logger.warn("Received response: " + response.getStatus() + " for " + resource.getUri());
 					logger.warn(response.readEntity(String.class));
 				}
 			} else {

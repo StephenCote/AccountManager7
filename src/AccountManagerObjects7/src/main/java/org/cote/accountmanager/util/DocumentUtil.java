@@ -44,7 +44,8 @@ public class DocumentUtil {
 	public static BaseRecord getRecord(BaseRecord owner, String modelName, String name, String path, boolean full) {
 		BaseRecord dat = null;
 		BaseRecord group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, path,
-				GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
+				GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID)
+		);
 		if (group != null) {
 			Query q = QueryUtil.createQuery(modelName, FieldNames.FIELD_GROUP_ID, group.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, name);
