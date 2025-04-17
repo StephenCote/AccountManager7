@@ -1,6 +1,8 @@
 {
 	"name": "olio.llm.openai.openaiRequest",
-	"likeInherits": ["data.directory"],
+	"likeInherits": [
+		"data.directory"
+	],
 	"inherits": [
 		"common.groupExt",
 		"common.baseLight",
@@ -10,7 +12,10 @@
 	"icon": "chat",
 	"label": "Requests",
 	"vector": "org.cote.accountmanager.olio.VectorProvider",
-	"query": ["id", "groupId"],
+	"query": [
+		"id",
+		"groupId"
+	],
 	"fields": [
 		{
 			"name": "max_tokens",
