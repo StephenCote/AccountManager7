@@ -783,7 +783,13 @@ public class ChatUtil {
 					else {
 						resp = chat.chat(req);
 					}
-					summ = resp.getMessage().getContent();
+					if (resp == null || resp.getMessage() == null) {
+						logger.warn("No message received");
+						summ = "Content null or blocked.";
+					}
+					else {
+						summ = resp.getMessage().getContent();
+					}
 					// logger.info(req.toFullString());
 					// logger.info(summ);
 				}
