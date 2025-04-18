@@ -784,7 +784,7 @@ public class ChatUtil {
 						resp = chat.chat(req);
 					}
 					if (resp == null || resp.getMessage() == null) {
-						logger.warn("No message received");
+						logger.warn("Content null or blocked.");
 						summ = "Content null or blocked.";
 					}
 					else {
