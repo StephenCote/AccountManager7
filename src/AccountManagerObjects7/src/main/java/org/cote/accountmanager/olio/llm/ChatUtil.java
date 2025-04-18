@@ -250,7 +250,7 @@ public class ChatUtil {
 			return null;
 		}
 		// logger.info("Return full record for " + ((BaseRecord)creq.get("session")).toFullString());
-		return new OpenAIRequest(OlioUtil.getFullRecord(creq.get("session")));
+		return new OpenAIRequest(OlioUtil.getFullRecord(creq.get("session"), false));
 	}
 	public static OpenAIRequest getCreateChatSession(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
 		BaseRecord creq = getCreateChatRequest(user, name, cfg, pcfg);
@@ -263,7 +263,7 @@ public class ChatUtil {
 			logger.warn("LLM Request was null for " + name);
 			return null;
 		}
-		return new OpenAIRequest(OlioUtil.getFullRecord(creq.get("session")));
+		return new OpenAIRequest(OlioUtil.getFullRecord(creq.get("session"), false));
 	}
 	public static BaseRecord getChatRequest(BaseRecord user, String name, BaseRecord cfg, BaseRecord pcfg) {
 		return getCreateChatRequest(user, name, cfg, pcfg, false);
@@ -981,7 +981,7 @@ public class ChatUtil {
 		BaseRecord promptConfig = OlioUtil.getFullRecord(creq.getPromptConfig());
 
 		if(chatConfig != null && promptConfig != null) {
-            BaseRecord vreq = OlioUtil.getFullRecord(creq.get("session"));
+            BaseRecord vreq = OlioUtil.getFullRecord(creq.get("session"), false);
 			if(vreq != null) {
 				OpenAIRequest oreq = new OpenAIRequest(vreq);
 				req = oreq;

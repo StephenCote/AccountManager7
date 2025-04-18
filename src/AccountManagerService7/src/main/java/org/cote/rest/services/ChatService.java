@@ -116,7 +116,7 @@ public class ChatService {
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAT_REQUEST, FieldNames.FIELD_OBJECT_ID, chatReq.get(FieldNames.FIELD_OBJECT_ID));
 		q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		ChatRequest vChatReq = new ChatRequest(IOSystem.getActiveContext().getAccessPoint().find(user, q));
-		BaseRecord vreq = OlioUtil.getFullRecord(vChatReq.get("session"));
+		BaseRecord vreq = OlioUtil.getFullRecord(vChatReq.get("session"), false);
 		if(vreq != null) {
 			OpenAIRequest oreq = new OpenAIRequest(vreq);
 			crep = ChatUtil.getChatResponse(user, oreq, vChatReq);

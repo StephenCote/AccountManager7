@@ -46,9 +46,10 @@ public class Chat {
 	private boolean includeContextHistory = !chatMode;
 
 	private static int contextSize = 8192;
-	
+
 	/// Which role to use for the keyframe content
-	/// NOTE: When the Keyframe is added as an assistant response, the assistant will start copying that format
+	/// NOTE: When the Keyframe is added as an assistant response, the assistant
+	/// will start copying that format
 	private static String keyframeRole = "user";
 
 	private String saveName = "chat.json";
@@ -155,7 +156,6 @@ public class Chat {
 	public void setFormatOutput(boolean formatOutput) {
 		this.formatOutput = formatOutput;
 	}
-
 
 	public boolean isIncludeScene() {
 		return includeScene;
@@ -355,8 +355,6 @@ public class Chat {
 		}
 		return vect;
 	}
-
-
 
 	public OpenAIRequest getAnalyzePrompt(OpenAIRequest req, String command, int offset, int count, boolean full) {
 		List<String> lines = ChatUtil.getFormattedChatHistory(req, chatConfig, pruneSkip, full);
@@ -1113,7 +1111,7 @@ public class Chat {
 		setLlmSystemPrompt(sysTemp);
 		req = newRequest(model);
 		setPruneSkip(2);
-		if(userTemp != null && userTemp.length() > 0) {
+		if (userTemp != null && userTemp.length() > 0) {
 			newMessage(req, userTemp);
 		}
 		if (assist != null && assist.length() > 0) {

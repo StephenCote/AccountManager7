@@ -481,6 +481,9 @@ public class OlioUtil {
 	}
 	
 	public static BaseRecord getFullRecord(BaseRecord rec) {
+		return getFullRecord(rec, true);
+	}
+	public static BaseRecord getFullRecord(BaseRecord rec, boolean applyFilter) {
 		if(rec == null) {
 			logger.warn("Null record passed to getFullRecord");
 			return null;
@@ -497,8 +500,12 @@ public class OlioUtil {
 		else if(rec.hasField(FieldNames.FIELD_URN)){
 			q = QueryUtil.createQuery(rec.getSchema(), FieldNames.FIELD_URN, rec.get(FieldNames.FIELD_URN));
 		}
-		
-		planMost(q);
+		if(applyFilter) {
+			planMost(q);
+		}
+		else {
+			q.planMost(true);
+		}
 		return IOSystem.getActiveContext().getSearch().findRecord(q);
 	}
 	

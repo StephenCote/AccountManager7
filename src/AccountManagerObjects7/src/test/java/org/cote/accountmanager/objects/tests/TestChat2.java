@@ -6,6 +6,7 @@ import static org.junit.Assert.assertTrue;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import javax.ws.rs.client.Entity;
@@ -78,18 +79,25 @@ public class TestChat2 extends BaseTest {
 		system.clear();
 		system.add("Your name is Mr. Gruffypants. You are a ridiculous anthropomorphic character that is extremely gruff, snooty, and moody. Every response should be snarky, critical, and gruff, interspersed with wildly inaccurate mixed methaphors, innuendo and double entendres.");
 		IOSystem.getActiveContext().getAccessPoint().update(testUser1, pcfg);
-		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, "Gruffy Chat Test", cfg, pcfg);
+		String chatName = "Gruffy Chat Test " + UUID.randomUUID().toString();
+		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, chatName, cfg, pcfg);
 		assertNotNull("Chat request is null", creq);
 		
-		OpenAIRequest req = ChatUtil.getChatSession(testUser1, "Gruffy Chat Test", cfg, pcfg);
+		OpenAIRequest req = ChatUtil.getChatSession(testUser1, chatName, cfg, pcfg);
+		//req.setValue("stream", false);
+		String flds = req.getFields().stream().map(f -> f.getName()).collect(Collectors.joining(", "));
+		logger.info(flds);
+		logger.info(JSONUtil.exportObject(ChatUtil.getPrunedRequest(req), RecordSerializerConfig.getHiddenForeignUnfilteredModule()));
+
+		/*
 		assertNotNull("Request is null", req);
-		//logger.info(req.toFullString());
+		//
 
 		Chat chat = new Chat(testUser1, cfg, pcfg);
 		chat.continueChat(req, "Hello, how are you?");
 		List<OpenAIMessage> msgs = req.getMessages();
 		logger.info("Messages: " + msgs.get(msgs.size() - 1).getContent());
-
+		*/
 	}
 	
 	/*
