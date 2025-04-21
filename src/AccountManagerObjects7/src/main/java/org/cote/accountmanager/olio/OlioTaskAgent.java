@@ -87,7 +87,7 @@ public class OlioTaskAgent  {
 	public static BaseRecord executeTask(BaseRecord task) {
 		SystemTaskUtil.pendTask(task);
 		BaseRecord resp = null;
-		long maxTimeMS = 300000;
+		long maxTimeMS = 600000;
 		long waited = 0L;
 		long delay = 3000;
 		while(resp == null) {

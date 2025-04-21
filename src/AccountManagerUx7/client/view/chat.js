@@ -165,12 +165,15 @@
           q.field("id", s.session.id);    
           let qr = await page.search(q);
           if(qr && qr.results.length > 0){
-            // console.log("Deleting session data", qr.results[0].objectId);
+            console.log("Deleting session data", qr.results[0].objectId);
             await page.deleteObject(s.sessionType, qr.results[0].objectId);
           }
           else{
             console.error("Failed to find session data to delete", qr);
           }
+        }
+        else{
+          console.warn("No session data found");
         }
         // console.log("Deleting request", s.objectId);
         await page.deleteObject(s[am7model.jsonModelKey], s.objectId);
@@ -340,6 +343,7 @@
         inst = am7model.prepareInstance(obj);
         window.dbgInst = inst;
         aSess = undefined;
+        doClear();
         await loadConfigList();
         doPeek();
         /*
