@@ -917,7 +917,11 @@ public class ChatUtil {
 					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6));
 					//if(findSummaryNote) {
 					if(!frec.getSchema().equals(ModelNames.MODEL_TAG)) {
-						BaseRecord summaryNote = DocumentUtil.getNote(user, frec.get(FieldNames.FIELD_NAME) + summarySuffix, notePath);
+						String uname = frec.get(FieldNames.FIELD_OBJECT_ID);
+						if(frec.hasField(FieldNames.FIELD_NAME)) {
+							uname = frec.get(FieldNames.FIELD_NAME);
+						}
+						BaseRecord summaryNote = DocumentUtil.getNote(user, uname + summarySuffix, notePath);
 						if(summaryNote != null) {
 							List<BaseRecord> chunks = vu.getVectorStore(summaryNote, new String[] {FieldNames.FIELD_CONTENT, FieldNames.FIELD_CHUNK, FieldNames.FIELD_CHUNK_COUNT, FieldNames.FIELD_VECTOR_REFERENCE, FieldNames.FIELD_VECTOR_REFERENCE_TYPE, FieldNames.FIELD_ID});
 							logger.info("Adding " + chunks.size() + " summary notes");
