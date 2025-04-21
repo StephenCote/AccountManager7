@@ -577,7 +577,6 @@
                 labelClass += " text-gray-300"
             }
             let lbl = (fieldView.label || field.label || field.name);
-
             return m("div",{class: className},[
                 m("label",{class : labelClass, for: name}, lbl), //  || name
                 modelField(name, fieldView, field)
@@ -619,7 +618,6 @@
 
         function modelField(name, fieldView, field, altName, altVal, noChange, altEntity){
             let useEntity = altEntity || entity;
-
             let format = (fieldView?.form?.format || fieldView.format || field.format || am7view.getFormatForType(field.type));
             let useName = altName || name;
             let view = [];
@@ -1517,7 +1515,7 @@
                 pickerMode.handler = handler;
                 if(am7model.isGroup(model) || am7model.isParent(model)) pickerMode.pickPath = altPath || am7view.path(type);
                 if(am7model.isGroup(model)){
-                    console.warn("PICK PATH", pickerMode.pickPath);
+                    // console.warn("PICK PATH", pickerMode.pickPath);
                     am7client.make("auth.group","data", pickerMode.pickPath, function(v){
                         pickerMode.containerId = v.objectId;
                         requesting = false;
@@ -2036,10 +2034,11 @@
 
         objectPage.checkEntry = function(name, field, tableType, tableForm, props){
             console.log("check entry: " + name);
-            let fieldView = am7model.forms[name];
-            //console.log(name, fieldView);
+            let formName = tableType.substring(tableType.lastIndexOf(".") + 1);
+            let fieldView = am7model.forms[formName];
+            console.log(name, tableType, tableForm);
             
-            let tableFieldView = fieldView.form;
+            //let tableFieldView = fieldView.form;
             /// console.log(tableFieldView);
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
@@ -2095,6 +2094,9 @@
                             window.dbgEntry = entry;
                             aP.push(am7client.create(tableType, entry));
                         }
+                    }
+                    else if(fieldView.standardUpdate){
+                        inst.change(name);
                     }
                     /*
                     if(name.match(/^(controls|requestsList)$/gi)){

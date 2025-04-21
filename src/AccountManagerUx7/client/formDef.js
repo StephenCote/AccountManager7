@@ -4024,6 +4024,82 @@
         }
     };
 
+    forms.openaiRequest = {
+        label: "OpenAI Request",
+        fields: {
+            model: {
+                layout: 'one'
+            }
+            /*
+            ,
+            messages: {
+                format: "table",
+                form: forms.openaiMessages
+            }
+            */
+        },
+        forms: ["openaiMessages", "lightgroupinfo", "attributes"]
+    }
+
+
+
+    forms.openaiMessage = {
+        label: "Chat Message",
+        format: "table",
+        standardUpdate: true,
+        commands: {
+            new: {
+                label: 'New',
+                icon: 'add',
+                altIcon: 'check',
+                altCondition: ['edit'],
+                function: 'newEntry',
+                altFunction: 'checkEntry'
+            },
+            edit: {
+                label: 'Edit',
+                icon: 'edit',
+                function: 'editEntry',
+                condition: ['select']
+            },
+            cancel: {
+                label: 'Cancel',
+                icon: 'cancel',
+                function: 'cancelEntry',
+                condition: ['select', 'edit']
+            },
+            delete: {
+                label: 'Delete',
+                icon: 'delete_outline',
+                function: 'deleteEntry',
+                condition: ['select']
+            }
+
+        },
+        fields: {
+            role: {
+                layout: "one"
+            },
+            pruned: {
+                layout: "one"
+            },
+            content: {
+                layout: "two-thirds",
+                format: "textarea"
+            }
+        }
+    };
+    
+    forms.openaiMessages = {
+        label: "Chat Messages",
+        format: "table",
+        fields: {
+            messages: {
+                layout: 'full',
+                form: forms.openaiMessage
+            }
+        }
+    };
 
     am7model.forms = forms;
 }());

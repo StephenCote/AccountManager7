@@ -112,10 +112,13 @@
           "olio.charPerson",
           "olio.llm.chatConfig",
           "olio.llm.promptConfig",
+          "olio.llm.openai.openaiRequest"
+          /*
           "data.color",
           "olio.store",
           "olio.wearable",
           "olio.apparel"
+          */
         ],
         "icon": "event_note"
       },
@@ -9691,9 +9694,9 @@
           "common.baseLight",
           "olio.llm.request"
         ],
-        "group": "Chat",
+        "group": "ChatRequests",
         "icon": "chat",
-        "label": "Requests",
+        "label": "Chat Requests",
         "query": [
           "id",
           "groupId"

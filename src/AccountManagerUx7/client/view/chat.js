@@ -116,7 +116,14 @@
     async function doCancel() {
       clearEditMode();
       chatCfg.pending = false;
+      chatCfg.peek = false;
       chatCfg.history = [];
+      let chatReq = {
+        schema: inst.model.name,
+        objectId: inst.api.objectId(),
+        uid: page.uid()
+      };
+
       return m.request({ method: 'POST', url: g_application_path + "/rest/chat/clear", withCredentials: true, body: chatReq }).then((r) => {
         m.redraw();
       });
@@ -148,29 +155,39 @@
           message: msg,
           data
         };
-
-        m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
-          if (!chatCfg.history) chatCfg.history = {};
-          chatCfg.history.messages = r?.messages || [];
+        try{
+          m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
+            if (!chatCfg.history) chatCfg.history = {};
+            chatCfg.history.messages = r?.messages || [];
+            chatCfg.pending = false;
+          });
+        }
+        catch(e){
+          console.error("Error in chat", e);
           chatCfg.pending = false;
-        });
+        }
       }
-
     }
     
     async function deleteChat(s){
       page.components.dialog.confirm("Delete chat " + s + "?", async function(){
         if(s.session){
           let q = am7client.newQuery(s.sessionType);
-          q.field("id", s.session.id);    
-          let qr = await page.search(q);
-          if(qr && qr.results.length > 0){
-            console.log("Deleting session data", qr.results[0].objectId);
-            await page.deleteObject(s.sessionType, qr.results[0].objectId);
+          q.field("id", s.session.id);
+          try{
+            let qr = await page.search(q);
+            if(qr && qr.results && qr.results.length > 0){
+              console.log("Deleting session data", qr.results[0].objectId);
+              await page.deleteObject(s.sessionType, qr.results[0].objectId);
+            }
+            else{
+              console.error("Failed to find session data to delete", qr);
+            }
           }
-          else{
-            console.error("Failed to find session data to delete", qr);
+          catch(e){
+            console.error("Error deleting session data", e); 
           }
+
         }
         else{
           console.warn("No session data found");
@@ -250,6 +267,10 @@
                   chatCfg.history = h;
                   m.redraw();
                   res();
+                }).catch((e) => {
+                  console.warn("Error in chat history", e);
+                  chatCfg.peek = false;
+                  // rej(e);
                 });
               });
             });
@@ -368,66 +389,40 @@
       editMode = false;
       editIndex = -1;
     }
+
     /// Currently only editing the last assistant message
-    /// The reasoning: The message history returned from the chat API is not the entire history, and doesn't include any system prompt
+    /// The reasoning: The message history used for display is a truncated version of what's in the chat request
     /// Alternately, this could be a separate API, but that seems unnecessary at the moment
     async function editMessageHistory(idx, cnt) {
-      logger.warn("REVISE EDIT");
-      /*
-      let pg = await page.findObject("auth.group", "data", "~/Chat")
-      if (pg) {
-        let name = page.user.name + "-" + inst.api.chat() + "-" + inst.api.prompt() + "-" + inst.api.session();
-        let hist = await page.searchByName("data.data", pg.id, name);
-        let ocnt = chatCfg.history.messages[idx];
-        window.dbgCnt = ocnt;
-        if (hist) {
-          let histx = JSON.parse(Base64.decode(hist.dataBytesStore));
-          if (histx && histx.messages.length > 0) {
-            let om = histx.messages[histx.messages.length - 1];
 
-            om.content = cnt;
-            hist.dataBytesStore = Base64.encode(JSON.stringify(histx));
-            let histy = {
-              schema: hist[am7model.jsonModelKey],
-              id: hist.id,
-              compressionType: "none",
-              ownerId: hist.ownerId,
-              groupId: hist.groupId,
-              organizationId: hist.organizationId,
-              dataBytesStore: hist.dataBytesStore
-            };
-            let patch = await page.patchObject(histy);
-            await am7client.clearCache();
-            await doCancel();
-            await doPeek();
-            clearEditMode();
-          }
-          else {
-            console.error("Failed to parse history, or history contained no messages");
-          }
-          window.dbgHist = hist;
-        }
-        else {
-          console.error("Failed to find history " + name);
-        }
+      let q = am7view.viewQuery(am7model.newInstance(inst.api.sessionType()));
+      q.field("id", inst.api.session().id);    
+      let qr = await page.search(q);
+      if(qr && qr.results.length > 0){
+        console.log("Patching session data", qr.results[0].objectId);
+        let req = qr.results[0];
+
+        /// change the contents of the last message 
+        req.messages[req.messages.length - 1].content = cnt;
+        let patch = await page.patchObject(req);
+        clearEditMode();
+        await am7client.clearCache();
+        await doCancel();
+        await doPeek();
       }
-      else {
-        console.error("Failed to find chat group");
+      else{
+        console.error("Failed to find session data to edit", qr);
       }
       clearEditMode();
-      */
     }
     function toggleEditMode(idx) {
       if (editMode) {
 
-        /// Need to put message back in the history
-        /// The data object containing the history isn't cited here, so it needs to be retrieved, modified, and updated
+        /// Put message back in the history
         ///
-        //clearEditMode();
         editMessageHistory(idx, document.getElementById("editMessage").value);
       }
       else {
-        console.log("Edit", idx);
         editMode = true;
         editIndex = idx;
       }
@@ -459,7 +454,7 @@
       if (chatCfg.system?.profile?.portrait) {
         let pp = chatCfg.system.profile.portrait;
         let dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
-        // h-8 w-8 
+        // h-8 w-8
         c1i = m("img", { onclick: function () { page.imageView(pp); }, class: "mr-4 rounded-full", src: dataUrl });
       }
 
@@ -504,6 +499,7 @@
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
           /// Only edit last message
+          console.log(midx, chatCfg.history.messages.length);
           if (midx == chatCfg.history.messages.length - 1) {
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
           }
@@ -528,12 +524,9 @@
               tdx1 = cnt.toLowerCase().indexOf("<thought>");
             }
 
-
-
           }
 
           if (bectl) {
-            //cnt = m("input", {id: "editMessage", value:cnt, class: "text-field w-[80%]"});
             ecls = "w-full ";
             cnt = m("textarea", { id: "editMessage", class: "text-field textarea-field-full" }, cnt);
           }
@@ -560,53 +553,27 @@
 
         return m("div", { class: "relative receive-chat flex " + align },
           [ectl, m("div", { class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light" },
-            //m("i", {class: "material-icons text-violet-400 -top-4 absolute"}, "arrow_upward_alt"),
             m("p", cnt)
           )]
         );
       });
       let flds = [m("div", { class: "flex justify-between" }, [
-        m("div", { class: "flex items-center" }, [
-          c1i,
-          m("span", { class: "text-gray-400 text-base pl-4" }, c1l)
-        ]),
-        m("div", { class: "flex items-center" }, [
+          m("div", { class: "flex items-center" }, [
+            c1i,
+            m("span", { class: "text-gray-400 text-base pl-4" }, c1l)
+          ]),
+          m("div", { class: "flex items-center" }, [
 
-          m("span", { class: "text-gray-400 text-base pl-4" }, c2l),
-          c2i
-          //m("i", {class: "material-icons text-violet-300"}, "chat")
+            m("span", { class: "text-gray-400 text-base pl-4" }, c2l),
+            c2i
+          ])
         ])
-      ])
       ];
-      //flds.push(...msgs);
-      /*
-      let ret = m("div", {class: "list-results-container"},
-        m("div", {class: "list-results"}, [
-          m("div", {class: "result-nav-outer"}, m("div", {class: "bg-white user-info-header px-5 py-3"}, flds)),
-          m("div", {id: "messages", class: "list-results-overflow"}, msgs)
-        ])
-        );
-      */
 
-      let ret = m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
-        m("div", { class: "bg-white user-info-header px-5 py-3" }, flds),
+      let ret = [m("div", { class: "bg-white user-info-header px-5 py-3" }, flds), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
+        
         msgs
-      ]);
-
-      /*
-      m("div", {class: "relative receive-chat flex justify-start"},
-        m("div", {class: "px-5 mb-2 bg-violet-400 text-white py-2 text-sm max-w-[80%] rounded font-light"},
-          m("i", {class: "material-icons text-violet-400 -top-4 absolute"}, "arrow_upward_alt"),
-          m("p", "Here is the text")
-        )
-      ),
-      m("div", {class: "relative receive-chat flex justify-end"},
-        m("div", {class: "px-5 mb-2 bg-violet-200 text-slate-500 py-2 text-sm max-w-[80%] rounded font-light"},
-        m("i", {class: "material-icons text-violet-200 -bottom-2 right-0 absolute"}, "arrow_downward_alt"),
-          m("p", "Here is the text")
-        )
-      ),
-      */
+      ])];
 
       return ret;
     }

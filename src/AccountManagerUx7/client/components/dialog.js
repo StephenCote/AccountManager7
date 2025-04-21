@@ -114,7 +114,8 @@
         let occfg = vcfg[0];
         let opcfg = ycfg[0];
 
-        let name = inst.api.name();
+        let name;
+        if(inst.api.name) name = inst.api.name();
         //if(!name || !name.length){
             if(page.components.dnd.workingSet.length){
                 name = page.components.dnd.workingSet[0].name;
