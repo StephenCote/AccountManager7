@@ -3016,7 +3016,7 @@
                 format: "textlist"
             }
         },
-        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tags"]
     };
 
     forms.storeRef = {

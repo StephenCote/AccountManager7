@@ -34,7 +34,7 @@ public class ParticipationFactory {
 		if(fieldName != null) {
 			FieldSchema fs = RecordFactory.getSchema(model).getFieldSchema(fieldName);
 			if(fs == null) {
-				logger.error("Null field schema for " + fieldName);
+				logger.error("Null field schema for " + model + "." + fieldName);
 				return null;
 			}
 			if(fs.getParticipantModel() != null) {

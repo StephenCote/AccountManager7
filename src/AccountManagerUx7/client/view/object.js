@@ -1641,7 +1641,7 @@
 
         function pickMember(field, members){
             let aP = [];
-            console.log(field);
+           // console.log(field);
             if(am7model.hasIdentity(entity)){
                 members.forEach((t)=>{
                     aP.push(new Promise((res, rej)=>{
@@ -1652,8 +1652,18 @@
                             e2 = t;
                             a2 = entity;
                         }
-                        console.log(a2[am7model.jsonModelKey], a2);
-                        am7client.member(e2[am7model.jsonModelKey], e2.objectId, (!field.virtual ? field?.name : null), a2[am7model.jsonModelKey], a2.objectId, true, function(v){
+                        //console.log(e2[am7model.jsonModelKey], e2.objectId, (!field.virtual ? field?.name : null), a2[am7model.jsonModelKey], a2.objectId);
+                        /// Need to be smarter about whether e2 is an actor or object depending on the instance model
+                        /*
+                        let obj = e2;
+                        let act = a2;
+                        if(e2.schema == "data.tag"){
+                            obj = a2;
+                            act = e2;
+                        }
+                        */
+                       let fn = (!field.name == "data.tag" && !field.virtual ? field?.name : null);
+                        am7client.member(e2[am7model.jsonModelKey], e2.objectId, fn, a2[am7model.jsonModelKey], a2.objectId, true, function(v){
                             console.log("Member: " + v);
                             res(v);
                         })
@@ -1797,15 +1807,16 @@
 
         objectPage.deleteEntity = function(name, field, tableType, tableForm, props){
             let aP = [];
+
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
                 if(state.selected && vProp[name]){
-                let per = vProp[name][state.index];
-                if(am7model.hasIdentity(entity)){
-                    aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false));
-                }
-                vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
+                    let per = vProp[name][state.index];
+                    if(am7model.hasIdentity(entity)){
+                        aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false));
+                    }
+                    vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
                 }
             });
 
@@ -1820,17 +1831,35 @@
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
-
                 /// state.foreign && 
-                if(state.selected && foreignData[state.attribute]){
-                    let obj = foreignData[state.attribute][state.index];
-                    aP.push(new Promise((res, rej)=>{
-                        am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, obj[am7model.jsonModelKey], obj.objectId, false, function(v){
-                            entity[name] = entity[name].filter(m => m.objectId != obj.objectId);
-                            console.log("Deleted: " + v, entity[name]);
-                            res(v);
-                        });
-                    }));
+                if(state.selected){
+                    if(foreignData[state.attribute]){
+                        let obj = foreignData[state.attribute][state.index];
+                        aP.push(new Promise((res, rej)=>{
+                            
+                            am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, obj[am7model.jsonModelKey], obj.objectId, false, function(v){
+                                entity[name] = entity[name].filter(m => m.objectId != obj.objectId);
+                                console.log("Deleted: " + v, entity[name]);
+                                res(v);
+                            });
+                        }));
+                    }
+                    else{
+                        let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
+                        let per = vProp[name][state.index];
+                        if(am7model.hasIdentity(entity)){
+                            let fn = (!field.name == "data.tag" && !field.virtual ? field?.name : null);
+                            console.log("Delete member: " + entity[am7model.jsonModelKey], entity.objectId, fn, per[am7model.jsonModelKey], per.objectId);
+                            let obj = entity;
+                            let act = per;
+                            if(per[am7model.jsonModelKey] == "data.tag"){
+                                obj = per;
+                                act = entity;
+                            }
+                            aP.push(am7client.member(obj[am7model.jsonModelKey], obj.objectId, fn, act[am7model.jsonModelKey], act.objectId, false));
+                        }
+                        vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
+                    }
                 }
             });
             Promise.all(aP).then(()=>{
