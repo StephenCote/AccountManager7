@@ -118,6 +118,9 @@ public class ApparelUtil {
 		for(BaseRecord p: party) {
 			BaseRecord sto = p.get(FieldNames.FIELD_STORE);
 			List<BaseRecord> appl = sto.get(OlioFieldNames.FIELD_APPAREL);
+			/// FIELD_ITEMS is explicitly excluded in the Olio Query Plan filter
+			/// So it's necessary to populate it
+			IOSystem.getActiveContext().getRecordUtil().populate(sto, new String[] {OlioFieldNames.FIELD_ITEMS});
 			List<BaseRecord> iteml = sto.get(OlioFieldNames.FIELD_ITEMS);
 			if(appl.size() == 0) {
 				BaseRecord app = ApparelUtil.randomApparel(ctx, p);
