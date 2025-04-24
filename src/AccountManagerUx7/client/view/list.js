@@ -131,6 +131,7 @@
     function openSelected() {
 
       /// open first selected
+      page.components.pdf.clear();
       let idx = getSelectedIndices();
       if (idx.length) {
         carousel = true;
@@ -709,7 +710,7 @@
     function moveCarousel(i) {
       let pages = pagination.pages();
       let pr = pages.pageResults[pages.currentPage];
-
+      page.components.pdf.clear();
       wentBack = false;
 
       let idx = pages.currentItem + i;
@@ -745,7 +746,7 @@
       ]);
     }
 
-    function getCarouselViewInner() {
+    function getCurrentResults(){
       let pages = pagination.pages();
       let pr = pages.pageResults[pages.currentPage];
       if (pr) {
@@ -755,6 +756,12 @@
         }
         if (pages.currentItem < 0 && pr.length) pages.currentItem = 0;
       }
+      return pr;
+    }
+
+    function getCarouselViewInner() {
+      let pages = pagination.pages();
+      let pr = getCurrentResults();
       let uimarkers = [];
       if (!embeddedMode || fullMode) {
         uimarkers = [
@@ -853,7 +860,23 @@
       let startRecord = vnode.attrs.startRecord || m.route.param("startRecord");
       let recordCount = vnode.attrs.recordCount || m.route.param("recordCount") || defaultRecordCount;
       pagination.update(listType, listContainerId, navigateByParent, listFilter, startRecord, recordCount, systemList);
-    }
+
+      if(carousel){
+        let pr = getCurrentResults();
+        let cient = pr ? pr[pagination.pages().currentItem] : undefined;
+        if(cient && page.context().contextObjects[cient.objectId]){
+          if(page.components.pdf.viewer(cient.objectId)){
+            page.components.pdf.viewers[cient.objectId].init(1.0);
+          }
+          /*
+          let mt = cient.contentType;
+          if(mt && mt.match(/pdf$/i)){
+              page.components.pdf.init(am7model.prepareInstance(page.context().contextObjects[cient.objectId]), 1.0);
+          }
+          */
+        }
+      }
+     }
 
     listPage.closeView = function () {
       closeSelected();
@@ -881,6 +904,7 @@
         update(x);
       },
       onremove: function (x) {
+        page.components.pdf.clear();
         navFilter = null;
         document.documentElement.removeEventListener("keydown", navListKey);
         pagination.stop();

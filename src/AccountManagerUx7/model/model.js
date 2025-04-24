@@ -651,6 +651,15 @@
 		}
 	};
 
+	am7model.base64ToUint8 = function(data) {
+		var dec = Base64.decode(data);
+		var array = new Uint8Array(new ArrayBuffer(dec.length));
+		for(var i = 0; i < dec.length; i++) {
+			array[i] = dec.charCodeAt(i);
+		}
+		return array;
+	};
+
 	am7model.queryFields = function (type) {
 		let r1 = am7model.inheritsFrom(type).filter(m => m.query).map(m => m.query).flat(1);
 		if (am7model.inherits(type, "system.organizationExt")) {

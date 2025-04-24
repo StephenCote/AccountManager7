@@ -23,6 +23,7 @@
     "material-icons": "^1.13.14",
     "material-symbols": "^0.28.2",
     "mithril": "^2.2.8",
+    "pdfjs-dist": "^5.1.91",
     "uuid": "^8.3.2"
   },
   "devDependencies": {

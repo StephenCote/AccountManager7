@@ -18,6 +18,9 @@
             case ".png":
                 mimeType = "image/png";
                 break;
+            case ".gif":
+                mimeType = "image/gif";
+                break;
             case ".jpg":
                 mimeType = "image/jpg";
                 break;

@@ -18,6 +18,7 @@
         ])
         ]);
     }
+
     function renderInnerObjectView(attrs) {
 
         let cls = 'carousel-item';
@@ -69,7 +70,7 @@
                 );
             }
         }
-        else if (mt.match(/^text/)) {
+        else if (mt.match(/^text/) || mt.match(/pdf$/)) {
             let ctx = page.context();
             if (active) {
 
@@ -78,19 +79,36 @@
                     delete ctx.contextObjects[object.objectId];
                 }
                 if (!ctx.contextObjects[object.objectId]) {
-                    console.log("Request full obj");
+                    // console.log("Request full obj");
                     let q = am7view.viewQuery(am7model.newInstance(model));
                     q.field("objectId", object.objectId);
                     page.search(q).then(qr => {
                         ctx.contextObjects[object.objectId] = (qr && qr.results.length ? qr.results[0] : null);
                         ctx.tags[object.objectId] = [];
+                        if(ctx.contextObjects[object.objectId] && mt.match(/pdf$/)){
+                            page.components.pdf.viewer(am7model.prepareInstance(ctx.contextObjects[object.objectId]));
+                        }
                     });
                 }
                 else {
-                    console.log("Use cached obj");
+                    // console.log("Use cached obj");
                     cls = 'carousel-item carousel-item-flex';
                     let dat = ctx.contextObjects[object.objectId];
-                    objView = m("div", { class: "carousel-article-outer" }, m("div", { class: "carousel-article carousel-article-margin" }, bbConverter.mInto(Base64.decode(dat.dataBytesStore))));
+                    let cnt = "";
+                    if(mt.match(/^text/)){
+                        cnt = bbConverter.mInto(Base64.decode(dat.dataBytesStore))
+                    }
+                    else if(mt.match(/pdf$/)){
+                        //cnt = page.components.pdf.container();
+                        if(page.components.pdf.viewer(object.objectId)){
+                            cnt = page.components.pdf.viewer(object.objectId).container();
+                        }
+                        else{
+                            cnt = m("div", "No PDF Viewer ...");
+                        }
+                    }
+                    
+                    objView = m("div", { class: "carousel-article-outer" }, m("div", { class: "carousel-article carousel-article-margin" }, cnt));
                 }
             }
         }

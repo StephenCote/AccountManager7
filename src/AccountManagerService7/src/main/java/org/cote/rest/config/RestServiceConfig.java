@@ -158,6 +158,9 @@ public class RestServiceConfig extends ResourceConfig{
 				List<BaseRecord> store = new ArrayList<>();
 				if(util.isEnableVectorExtension()) {
 					try {
+						/// NOTE: This only tests the vector storage capability
+						/// Any failure of the embedding API is allowed/not handled here.
+						///
 						store = IOSystem.getActiveContext().getVectorUtil().createVectorStore(octx.getDocumentControl() , "Random content - " + UUID.randomUUID(), ChunkEnumType.UNKNOWN, 0);
 					} catch (FieldException e) {
 						logger.error(e);
@@ -212,6 +215,7 @@ public class RestServiceConfig extends ResourceConfig{
 						logger.info("Working with existing organization " + org);
 						if(!testVector) {
 							testVectorStore(ioContext, octx);
+							testVector = true;
 						}
 					}
 				}

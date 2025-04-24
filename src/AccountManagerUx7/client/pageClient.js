@@ -817,6 +817,9 @@
         }
         let q = am7view.viewQuery(am7model.newInstance(type));
         q.field("groupId", id);
+        if(name){
+            q.field("name", name);
+        }
         return new Promise( (res, rej) => {
             page.search(q).then( (g2) => {
                 let og;

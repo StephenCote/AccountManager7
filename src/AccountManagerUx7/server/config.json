@@ -20,7 +20,12 @@
         "/node_modules/print-js/dist",
         "/node_modules/material-symbols",
         "/node_modules/material-icons/css",
-        "/node_modules/material-icons/iconfont"
+        "/node_modules/material-icons/iconfont",
+        "/node_modules/pdfjs-dist",
+        "/node_modules/pdfjs-dist/web",
+        "/node_modules/pdfjs-dist/web/images",
+        "/node_modules/pdfjs-dist/build",
+        "/node_modules/pdfjs-dist/build/webpack"
     ],
     "files" : [
         "/blank.html",

@@ -34,7 +34,7 @@
         let objectNew;
         let parentNew;
         let streamSeg;
-
+        let pdfViewer;
         let parentProperty;
 
         objectPage.pinst = function(){
@@ -348,11 +348,23 @@
             let mt = entity.contentType;
             if(!am7view.isBinary(entity, mt)) format = 'textarea';
             else if(mt.match(/^image/)) format = 'image';
+            else if(mt.match(/pdf$/)) format = 'pdf';
             else{
                 console.warn("Unhandled contentType: " + mt);
             }
 
             return format;
+        }
+
+
+        async function postRender(){
+            if(!entity){
+                return;
+            }
+            if(pdfViewer){
+                pdfViewer.init(0.5);
+            }
+
         }
 
 
@@ -680,35 +692,10 @@
             }
 
             if(format === 'contentType'){
-
                 useName = name + "-mt";
-
-                /*
-                if(useEntity && !isBinary(useEntity.contentType)){
-                    if(useEntity[name]){
-                        defVal = Base64.decode(useEntity[name]);
-                    }
-                }
-                */
-
                 format = getFormatForContentType(format);
-                if(!noChange && !disabled){
-                    /*
-                    fHandler = function(e){
-                        useEntity[name] = Base64.encode((e.srcElement || e.target).value);
-                        if(!inst.changes.includes[name]) inst.changes.push(name);
-                        / *
-                        if(useentity[am7model.jsonModelKey].match(/^data$/i))
-                            useEntity.dataBytesStore = enc; 
-                        else if(useentity[am7model.jsonModelKey].match(/^message$/)){
-                            useEntity.data = enc;
-                        }
-                        * /
-                        updateChange(e);
-                    }
-                    */
-                }
             }
+
             if(field.property && !defVal){
                 defVal = getObjectProperty(name, field);
             }
@@ -826,6 +813,16 @@
                     }
                     */
                     view.push(m("textarea", props, defVal));
+                    break;
+                case "pdf":
+                    // fieldClass += " pdf-field";
+                    //view.push(m("canvas", {class: fieldClass, name: useName}));
+                    if(pdfViewer){
+                        view.push(pdfViewer.container());
+                    }
+                    else{
+                        view.push("Missing PDF viewer");
+                    }
                     break;
                 case "image":
                     fieldClass += " image-field";
@@ -1439,7 +1436,6 @@
                     });
                 }
                 else{
-                    console.log("Got it: " + objectId);
                     entity = ((bPNew || bNew) ? getPrimitive(type) : model.contextObjects[objectId]);
                     if(bPNew && am7model.isParent(modType)) entity.parentId = model.contextObjects[objectId].id;
                     setApp(vnode);
@@ -1462,7 +1458,7 @@
 
         function setInst(vnode){
             inst = undefined;
-
+            pdfViewer = undefined;
             if(entity){
                 if(vnode?.attrs?.freeFormInstance){
                     inst = vnode?.attrs?.freeFormInstance;
@@ -1471,6 +1467,12 @@
                     let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
                     inst = am7model.prepareInstance(entity, am7model.forms[fname]);
                 }
+                
+                let mt = inst?.entity?.contentType;
+                if(mt && mt.match(/pdf$/i)){
+                    pdfViewer = page.components.pdf.viewer(inst);
+                }
+
                 inst.observe(objectPage);
             }
 
@@ -1497,6 +1499,7 @@
                 // m.redraw();
             }
             else{
+                postRender();
                 m.redraw();
             }
         }
@@ -1743,15 +1746,8 @@
             console.log("Pick entity", data, field);
             let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
             if(!vProp[name] && field.type == "list") vProp[name] = [];
-            /// TODO - need to save/patch inner object if new/changed, doesn't currently bubble up to caller
-            /// Plan - bubble up change to caller's model property, then the patch should include that object, and if new, would need to create as new sub because current AM7 system won't auto-create on patch, only on create.
-            ///
             vProp[name] = page.removeDuplicates(vProp[name].concat(data), "objectId");
             
-            //let bpatch = am7model.hasIdentity(entity);
-            //am7client[bpatch ? "patch" : "create"](entity[am7model.jsonModelKey], (bpatch ? inst.patch() : entity), function(v){
-
-            /// This will handle save/patch on a caller
             if(caller){
                 caller.callback('update', objectPage, inst, name, parentProperty);
             }
@@ -1766,10 +1762,7 @@
                     Promise.all(aP);
                 }
             }
-
-            
             cancelPicker();
-
         }
 
         objectPage.addEntity = function(name, field, tableType, tableForm, props){
@@ -1958,10 +1951,9 @@
             });
         };
 
+        /*
         objectPage.parentPath = function(){
             let path;
-            //let objectId = m.route.param("objectId");
-
             let model = page.context();
             let bNew = objectNew || parentNew; //m.route.get().match(/^\/(new|pnew)/gi);
             if(!entity || (!entity.objectId && !objectId)) return path;
@@ -1987,6 +1979,7 @@
             }
             return path;
         };
+        */
 
         objectPage.editEntry = function(){
             Object.keys(valuesState).forEach((k)=>{
@@ -2014,7 +2007,6 @@
                         let model = page.context();
                         if(model.controls[entity.objectId]){
                             let ctl = model.controls[entity.objectId][state.index];
-                            //model.controls[entity.objectId].slice(state.index);
                             delete model.controls[entity.objectId][state.index];
                             if(ctl.objectId){
                                 aP.push(new Promise((res, rej)=>{
@@ -2066,9 +2058,7 @@
             let formName = tableType.substring(tableType.lastIndexOf(".") + 1);
             let fieldView = am7model.forms[formName];
             console.log(name, tableType, tableForm);
-            
-            //let tableFieldView = fieldView.form;
-            /// console.log(tableFieldView);
+
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
@@ -2165,21 +2155,28 @@
         objectPage.pickerMode = function(){ return pickerMode;};
         objectPage.enablePicker = enablePicker;
         objectPage.cancelPicker = cancelPicker;
+
         objectPage.setChildPickerMode = function(p){
             console.log(p);
             childPickerMode = p;
         };
+
         objectPage.pickerEnabled = function(){
             return pickerMode.enabled;
         };
+
         objectPage.endPicker = function(){
             pickerMode.enabled = false;
             m.redraw();
         };
+
         objectPage.clear = function(){
+            if(pdfViewer){
+                pdfViewer.clear();
+            }
 
-            /// console.warn("Clear!");
-
+            pdfViewer = undefined;
+            
             if(app) app.destroy();
             entity = null;
             inst = null;
@@ -2383,6 +2380,7 @@
             },
             oninit : function(x){
                 // window.dbgObj = objectPage;
+
                 fullMode = x.attrs.fullMode || fullMode;
                 embeddedMode = x.attrs.embeddedMode;
                 embeddedController = x.attrs.embeddedController;
@@ -2410,6 +2408,7 @@
             },
             onupdate : function(x){
                 page.navigable.setupPendingContextMenus();
+                postRender();
             },
             onunload : function(x){
                 // console.log("Unloading ...");

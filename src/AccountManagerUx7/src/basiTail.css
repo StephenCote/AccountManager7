@@ -93,6 +93,9 @@ h5 {
     .image-field{
         @apply image-grid-image max-h-36
     }
+    .pdf-field{
+        @apply block mx-auto w-full flex-grow
+    }
     .field-required{
         @apply bg-blue-100
     }
@@ -243,22 +246,22 @@ h5 {
     .toast-box.transition-0 {
         @apply opacity-0
     }
-    .dialog-container{
+    .page-dialog-container{
         @apply absolute top-0 left-0 flex items-center justify-center min-h-screen w-full z-30
     }
-    .dialog-button{
+    .page-dialog-button{
         @apply inline-flex px-2 py-2 mt-4 ml-2 mr-2 text-white bg-blue-600 rounded-lg hover:bg-blue-900
     }
-    .dialog{
+    .page-dialog{
         @apply bg-white shadow-lg flex flex-grow fixed
     }
-    .dialog.dialog-25{
+    .page-dialog.page-dialog-25{
         @apply h-1/4 w-1/4
     }
-    .dialog.dialog-50{
+    .page-dialog.page-dialog-50{
         @apply h-1/2 w-1/2
     }
-    .dialog.dialog-75{
+    .page-dialog.page-dialog-75{
         @apply h-3/4 w-3/4
     }
     .text-content{
@@ -482,12 +485,10 @@ h5 {
         @apply flex-grow overflow-hidden flex bg-white border border-gray-200
     }
     .list-results{
-        @apply flex flex-col w-full overflow-hidden /* m-4 */
+        @apply flex flex-col w-full overflow-hidden p-0
     }
     .results-outer-container{
         @apply bg-white max-w-7xl mx-auto flex h-screen
-        /* py-6 sm:px-6 lg:px-8 */
-        /* max-h-screen mx-auto */
     }
 
     .results-container{
@@ -515,10 +516,10 @@ h5 {
         @apply block flex-1 overflow-auto whitespace-nowrap
     }
     .results-overflow{
-        @apply flex-1 overflow-y-auto p-4
+        @apply flex-1 overflow-y-auto p-0
     }
     ul.list-results-overflow{
-        @apply results-overflow divide-gray-200 divide-y
+        @apply results-overflow divide-gray-200 divide-y p-0
         /*overflow-y-auto divide-y divide-gray-200*/
     }
     /*
@@ -532,7 +533,7 @@ h5 {
     }
     */
     .result-item{
-        @apply px-1 py-1 sm:px-6 hover:bg-blue-100
+        @apply px-1 py-1 hover:bg-blue-100
     }
     .result-item-active{
         @apply bg-blue-300 hover:bg-blue-400
@@ -584,11 +585,11 @@ h5 {
     }
 
     .result-nav-outer{
-        @apply bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6
+        @apply bg-white px-1 py-1 flex items-center justify-between border-t border-gray-200
     }
 
     .result-nav-inner {
-        @apply sm:flex-1 sm:flex sm:items-center sm:justify-between
+        @apply sm:flex-1 sm:flex sm:items-center sm:justify-between p-0
     }
 
     .result-nav-inner .count-label{
@@ -734,7 +735,7 @@ h5 {
         @apply pt-4 pb-4
     }
     .carousel-article-margin{
-        @apply pl-4 pr-4 mb-20 ml-20 mr-20 mt-10 
+        @apply pl-1 pr-1 mb-2 ml-2 mr-2 mt-1 
     }
 
     .carousel-article ul {

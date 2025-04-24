@@ -499,7 +499,7 @@
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
           /// Only edit last message
-          console.log(midx, chatCfg.history.messages.length);
+          // console.log(midx, chatCfg.history.messages.length);
           if (midx == chatCfg.history.messages.length - 1) {
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
           }

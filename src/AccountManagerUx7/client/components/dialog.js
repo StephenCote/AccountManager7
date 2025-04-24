@@ -255,14 +255,14 @@
     }
 
     function createDialog(size, entityType, data, title, fConf, fCanc){
-        let sizeCls = "dialog-" + (size || "50");
+        let sizeCls = "page-dialog-" + (size || "50");
 
         if(!data.view){
             data.view = page.views.object().view;
         }
         let mconf = "";
         if(fConf){
-            mconf = m("button", {class: "dialog-button", onclick: async function(){ if(data.view) data.view.sync(); await fConf(data);}}, [
+            mconf = m("button", {class: "page-dialog-button", onclick: async function(){ if(data.view) data.view.sync(); await fConf(data);}}, [
                 m("span", {class: "material-symbols-outlined material-symbols-outlined-white md-18 mr-2"}, "check"),
                 "Ok"
             ])
@@ -271,8 +271,8 @@
             m("div", {class: "screen-glass screen-glass-open"}, [
                 m("div", {class: "screen-glass-gray"})
             ]),
-            m("div", {class: "dialog-container"}, [
-                m("div", {class: "dialog " + sizeCls}, [
+            m("div", {class: "page-dialog-container"}, [
+                m("div", {class: "page-dialog " + sizeCls}, [
                     m("div", {class: "list-results-container"}, [
                         m("div", {class: "list-results"}, [
                             m("div",{class: "result-nav-outer"},[
@@ -292,7 +292,7 @@
                                 m("div",{class: "result-nav-inner"},[
                                     m("nav",{class: "result-nav"},[
                                        mconf,
-                                        m("button", {class: "dialog-button", onclick: async function(){ await fCanc(data);}},[
+                                        m("button", {class: "page-dialog-button", onclick: async function(){ await fCanc(data);}},[
                                             m("span", {class: "material-symbols-outlined material-symbols-outlined-white md-18 mr-2"}, "cancel"),
                                             "Cancel"
                                         ])

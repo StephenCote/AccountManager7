@@ -8,10 +8,13 @@
         <link href = "/dist/basiTail.css" rel = "stylesheet" />
         <link href="/node_modules/material-icons/iconfont/material-icons.css" rel="stylesheet" />
         <link href="/node_modules/material-symbols/index.css" rel="stylesheet" />
+        <link rel="stylesheet" href="/node_modules/pdfjs-dist/web/pdf_viewer.css" />
+        <link rel="stylesheet" href="/node_modules/codemirror/lib/codemirror.css" />
+        <link rel="stylesheet" href="/node_modules/codemirror/theme/neat.css" />
+        <link rel="stylesheet" href="/node_modules/codemirror/addon/lint/lint.css" />
+
         <link rel="stylesheet" href="/styles/pageStyle.css" />
-        <link rel="stylesheet" href="/node_modules/codemirror/lib/codemirror.css">
-        <link rel="stylesheet" href="/node_modules/codemirror/theme/neat.css">
-        <link rel="stylesheet" href="/node_modules/codemirror/addon/lint/lint.css">
+
         <script type = "text/javascript">
             (function(){
                 window.g_application_path = "%AM7_SERVER%/AccountManagerService7";
@@ -27,6 +30,7 @@
             <script src="/node_modules/codemirror/mode/css/css.js"></script>
             <script src="/node_modules/codemirror/addon/lint/lint.js"></script>
             <script src="/node_modules/codemirror/addon/lint/css-lint.js"></script>
+
             <script src="/common/ntc.js"></script>
     </head>
     <body>
@@ -39,7 +43,7 @@
          <script src="/client/pageClient.js" type = "module"></script>
          <script src="/client/components/dialog.js" type = "module"></script>
          <script src="/client/components/dnd.js" type = "module"></script>
-
+         <script src="/client/components/pdf.js" type = "module"></script>
          <script src="/client/formDef.js" type = "module"></script>
          <script src="/client/view.js" type = "module"></script>
  
@@ -62,7 +66,13 @@
         <script src="/client/view/navigator.js" type = "module"></script>
         <script src="/client/view/chat.js" type = "module"></script>
         <script src="/client/applicationRouter.js" type = "module"></script>
+        <!---->
+        <script src="/node_modules/pdfjs-dist/webpack.mjs" type = "module"></script>
+        -->
         
+        <script src="/node_modules/pdfjs-dist/build/pdf.mjs" type="module"></script>
+        <script src="/node_modules/pdfjs-dist/web/pdf_viewer.mjs" type="module"></script>
+     
         
        
     </body>

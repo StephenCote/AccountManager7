@@ -539,7 +539,7 @@
 			}
 			return x;
 		}).catch((x) =>{
-			console.error("Failed to post " + url);
+			console.error("Failed to post " + url, x);
 			if(fH){
 				fH();
 			}
