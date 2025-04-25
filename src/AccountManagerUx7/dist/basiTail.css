@@ -1847,9 +1847,14 @@ aside.transition.transition-0 {
   padding: 1rem;
 }
 
+.flyout-body {
+  flex-grow: 1;
+}
+
 .flyout-gutter {
   position: fixed;
   bottom: 0px;
+  margin-top: 1rem;
   width: 100%;
 }
 
@@ -3477,6 +3482,10 @@ button.button-tab-active:hover {
 
 .mt-4 {
   margin-top: 1rem;
+}
+
+.ml-8 {
+  margin-left: 2rem;
 }
 
 .block {

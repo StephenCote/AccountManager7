@@ -49,7 +49,7 @@
         let a = inst.form.commands[fld];
         return m("div", [
             m("button", {
-                class: "dialog-button",
+                class: "page-dialog-button",
                 onclick: function () {
                     inst.action(a.action);
                 }

@@ -68,10 +68,12 @@
                 class: "transition transition-0"
             }, [
                 m("span", { class: "flyout-banner" }, [
-                    m("img", { src: "/media/5715116.png", class: "object-scale-down h-24 w-24" })
+                    m("img", { src: "/media/logo_128.png", class: "object-scale-down h-24 w-24" })
                 ]),
-                button("Home", "home"),
-                getCategories(),
+                m("div", {class: "flyout-body"}, [
+                    button("Home", "home"),
+                    getCategories(),
+                ]),
                 m("div", { class: "flyout-gutter" }, [
                     //button("Community Mode", "group_off", "icoCommunityMode", undefined, page.components.breadCrumb.toggleCommunity),
                     

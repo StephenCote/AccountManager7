@@ -185,7 +185,7 @@
                 m("div", { class: "menu-bar-flex" }, [
                     m("div", { class: "flex-center" }, [
                         m("div", { class: "flex-shrink-0" }, [
-                            m("img", { class: "h-8", src: "/media/5715116.png" })
+                            m("img", { class: "h-8", src: "/media/logo_128_alt.png" })
                         ]),
                         m("div", { class: "menu-buttons-spaced" }, [
                             button(null, "dashboard", (mr.match(/^\/main/gi) ? "active" : ""), page.home),

@@ -346,9 +346,11 @@ h5 {
     .flyout-banner{
         @apply flex w-full items-center p-4 border-b
     }
-
+    .flyout-body{
+        @apply flex-grow
+    }
     .flyout-gutter{
-        @apply fixed bottom-0 w-full
+        @apply fixed bottom-0 w-full mt-4
     }
 
     nav.pageNav{

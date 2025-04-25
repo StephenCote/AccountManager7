@@ -160,7 +160,7 @@
         <head>
             <meta charset="utf-8">
             <title>forms</title>
-            <link rel="icon" href="/media/5715116.png" />  
+            <link rel="icon" href="/media/logo_48.png" />  
             <link href = "/dist/basiTail.css" rel = "stylesheet" />
             <link href="/node_modules/material-icons/iconfont/material-icons.css" rel="stylesheet" />
             <link rel="stylesheet" href="/styles/pageStyle.css" />
