@@ -72,15 +72,12 @@
                 ]),
                 m("div", {class: "flyout-body"}, [
                     button("Home", "home"),
-                    getCategories(),
+                    //getCategories(),
                 ]),
                 m("div", { class: "flyout-gutter" }, [
-                    //button("Community Mode", "group_off", "icoCommunityMode", undefined, page.components.breadCrumb.toggleCommunity),
-                    
+                    button("Breadcrumb Bar", "footprint", null, undefined, async function(){ page.components.breadCrumb.toggleBreadcrumb();}),
                     button("Clear Cache", "cached", null, undefined, async function(){ await am7client.clearCache();}),
                     button("Cleanup", "cached", null, undefined, async function(){ await page.cleanup();})
-                    //button("Settings", "settings", null, undefined, clicky),
-                    //button("Code", "code", null, undefined, clicky)
                 ])
             ]);
             return vnode;

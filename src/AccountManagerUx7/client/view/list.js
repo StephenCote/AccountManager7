@@ -403,11 +403,12 @@
 
       return m("div", { class: 'h-full overflow-hidden' }, m("div", { class: (gridMode == 1 ? 'image-grid-tile' : 'image-grid-5') }, results));
     }
-
+ 
     function displayList() {
       let results = [];
       let pages = pagination.pages();
       let rset;
+      page.checkFavorites();
       if (pages.pageResults[pages.currentPage]) {
         if (infiniteScroll) {
           rset = [].concat.apply([], pagination.pages().pageResults.slice(1, pages.currentPage + 1));
@@ -490,7 +491,15 @@
         };
 
         //}
-
+        let isFavcls = "";
+        if(page.isFavorite(p)){
+          isFavcls = " material-symbols-outlined-red filled";
+        }
+        let mtIco = "";
+        if(p.contentType && p.name.indexOf(".") > -1){
+          let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length);
+          mtIco = m("span", {class: "fontLabel fiv-cla fiv-icon-" + ext});
+        }
         return m("li" + attr, dndProp,
           [
             m("div", {
@@ -501,11 +510,12 @@
               class: cls
             }, [
               m("div", { class: "flex-polar" }, [
-                m("div", { class: "label" }, useName),
+                m("div", { class: "label" }, [useName]),
                 m("div", { class: "polar-label" }, [
                   m("span", { class: "tweak-box" }, [
                     /// placeholder: Favorites button
-                    m("span", { class: "material-symbols-outlined material-icons-sm" }, "add")
+                    //m("span", { class: "material-symbols-outlined material-icons-sm" }, "add")
+                    mtIco
                   ])
                 ])
               ]),
@@ -518,8 +528,15 @@
                   ])
                 ]),
                 m("div", { class: "annotation" }, [
-                  m("span", { class: "material-symbols-outlined" }, icoTxt),
-                  m("span", { class: "material-symbols-outlined" }, "favorite")
+                  // m("span", { class: "material-symbols-outlined" }, icoTxt),
+                  m("span", { class: "cursor-pointer material-symbols-outlined" + isFavcls, onclick: function(e){
+                    e.preventDefault();
+                    page.favorite(p).then((b) => {
+                      //page.context().favorites[p[am7model.jsonModelKey]] = undefined;
+                      m.redraw();
+                    });
+                    return false;
+                  } }, "favorite")
                 ])
               ])
             ])

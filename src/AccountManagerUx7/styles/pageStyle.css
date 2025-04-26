@@ -65,11 +65,32 @@
       'opsz' 48;
       color: #e08206; 
   }
+  .material-symbols-outlined-red {
+    font-variation-settings:
+      'FILL' 0,
+      'wght' 400,
+      'GRAD' 0,
+      'opsz' 48;
+      color: #FF0000; 
+  }
+  .material-symbols-outlined-red.filled {
+    font-variation-settings:
+      'FILL' 1,
+      'wght' 400,
+      'GRAD' 0,
+      'opsz' 48;
+      color: #FF0000; 
+  }
+
 .reactive-arrow:hover{
     background-image : url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/></svg>");
     background-position: right .75rem center;
     background-size: 16px 12px;
     background-repeat: no-repeat;
+}
+
+.fontLabel {
+  font-size: 2em;
 }
 
 .carousel-item-img-max{

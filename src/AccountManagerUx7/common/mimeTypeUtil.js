@@ -4,6 +4,10 @@
             let mimetype;
 
             switch (sExt) {
+            case ".svg":
+                mimeType = "image/svg+xml";
+                break;
+            case ".map":
             case ".mjs":
             case ".js":
                 mimetype = "application/javascript";

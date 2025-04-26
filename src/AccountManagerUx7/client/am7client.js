@@ -147,13 +147,13 @@
 		}
 		if(!sType){
 			cache = {};
-			return (bLocalOnly ? 1 : get(sCache + "/clearAll",fH));
+			return (bLocalOnly ? Promise.resolve(true) : get(sCache + "/clearAll",fH));
 		}
 		else{
 			delete cache[sType];
 			if(sType.match(/^(project|lifecycle)$/gi)) delete cache["GROUP"];
 			delete cache["COUNT"];
-			return (bLocalOnly ? 1 : get(sCache + "/clear/" + sType,fH));
+			return (bLocalOnly ? Promise.resolve(true) : get(sCache + "/clear/" + sType,fH));
 		}
 	}
 

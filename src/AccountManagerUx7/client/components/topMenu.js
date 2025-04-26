@@ -123,7 +123,7 @@
         buttons.push(favButton, backButton, blendButton);
 
         let menuCls = "menu";
-        let trayCls = "place-content-end ml-10 menu-buttons";
+        let trayCls = "place-content-end menu-buttons ml-4";
         if (expanded) {
             trayCls += " w-96 bg-orange-100 border rounded-lg border-orange-600";
         }

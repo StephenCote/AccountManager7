@@ -25,6 +25,7 @@
             contextObjects : {},
             entitlements : {},
             tags : {},
+            favorites : {},
             controls: {},
             requests: {},
             contextViews : {},
@@ -80,6 +81,7 @@
     };
 
     let page = {
+
         profile,
         imageView,
         clearToast,
@@ -152,6 +154,9 @@
         },
         views: {},
         setInnerXHTML,
+        checkFavorites,
+        isFavorite,
+        favorite,
         favorites,
         systemLibrary,
         blobUrl : toBlobUrl,
@@ -163,6 +168,36 @@
             return b[parseInt(Math.random() * b.length)] + " " + c[parseInt(Math.random() * c.length)] + " " + a[parseInt(Math.random() * a.length)];
           }
     };
+    function isFavorite(obj){
+        let ctx = contextModel;
+        let type = obj[am7model.jsonModelKey];
+        return (ctx.favorites[type] != undefined && ctx.favorites[type].filter((o)=>o.objectId == obj.objectId).length)
+    }
+    async function favorite(obj){
+        let set = !isFavorite(obj);
+        let ctx = contextModel;
+        //ctx.favorites[obj[am7model.jsonModelKey]] = undefined;
+        let fav = await favorites();
+        let b = await promiseMember(fav[am7model.jsonModelKey], fav.objectId, obj[am7model.jsonModelKey], obj.objectId, set);
+        if(!b){
+            addToast("warn", "Failed to set favorite status");
+        }
+        page.context().favorites[obj[am7model.jsonModelKey]] = undefined;
+        await am7client.clearCache();
+        return b;
+    }
+
+    async function checkFavorites(itype){
+        let type = itype || m.route.param("type");
+        let ctx = contextModel;
+        if(type && ctx.favorites[type] == undefined){
+          ctx.favorites[type] = [];
+          let fav = await favorites();
+          am7client.members(fav[am7model.jsonModelKey], fav.objectId, type, 0, 100, function (v) {
+            ctx.favorites[type] = v;
+          });
+        }
+      }
 
     async function getTag(name, type){
         let grp = await page.findObject("auth.group", "data", "~/Tags");

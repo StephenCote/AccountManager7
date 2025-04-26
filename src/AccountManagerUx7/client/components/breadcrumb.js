@@ -1,6 +1,7 @@
 (function () {
-    const breadCrumb = {};
+    
     let crumbButtons;
+    let showBreadcrumb = false;
 
     function modelBreadCrumb() {
         let oL = document.querySelector("#listBreadcrumb");
@@ -90,6 +91,7 @@
 
 
     function buildBreadCrumb() {
+        if(!showBreadcrumb) return "";
         let type = m.route.param("type") || "data.data";
         let modType = am7model.getModel(type);
 
@@ -120,6 +122,10 @@
     }
 
     function configureContextMenus() {
+        if(!showBreadcrumb){
+            return;
+        }
+
         crumbButtons.forEach((v) => {
             page.navigable.addContextMenu("#" + v.id, "#" + v.bid, {
                 menu: v.id,
@@ -134,12 +140,18 @@
         });
     }
     function cleanupContextMenus() {
-        crumbButtons.forEach((v) => page.navigable.removeContextMenu("#" + v.id));
+        if(crumbButtons){
+            crumbButtons.forEach((v) => page.navigable.removeContextMenu("#" + v.id));
+        }
     }
     function setupDisplayState() {
         configureContextMenus();
     }
-    breadCrumb.component = {
+    let breadCrumb = {
+        toggleBreadcrumb: function(){
+            showBreadcrumb = !showBreadcrumb;
+            m.redraw();
+        },
         oninit: function (x) {
 
         },
@@ -162,5 +174,5 @@
         }
     };
 
-    page.components.breadCrumb = breadCrumb.component;
+    page.components.breadCrumb = breadCrumb;
 }());
