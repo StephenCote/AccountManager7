@@ -75,7 +75,6 @@
         );
         
         let mt = mimeUtil.findByExtension(suffix);
-
         let mimeType;
         if(mt) mimeType = {"Content-Type": mt};
 

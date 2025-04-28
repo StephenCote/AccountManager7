@@ -317,14 +317,24 @@
         dnd.uploadFiles(inst, evt.dataTransfer.files);
     }
 
-    dnd.props = function(inst){
+    dnd.dropProps = function(inst){
         return {
             ondrop: function(e){ handleDrop(inst, e); },
             ondragover: handleDragOver,
             ondragenter: handleDragEnter,
             ondragleave: handleDragLeave
         };
-    }
+    };
+
+    dnd.dragProps = function(p){
+        return {
+          ondragover: function (e) { dnd.doDragOver(e, p); },
+          ondragend: function (e) { dnd.doDragEnd(e, p); },
+          ondragstart: function (e) { dnd.doDragStart(e, p); },
+          ondrop: function (e) { dnd.doDrop(e, p); }
+        };
+      };
 
     page.components.dnd = dnd;
 }());
+

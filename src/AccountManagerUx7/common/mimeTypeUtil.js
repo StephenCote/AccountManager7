@@ -5,7 +5,7 @@
 
             switch (sExt) {
             case ".svg":
-                mimeType = "image/svg+xml";
+                mimetype = "image/svg+xml";
                 break;
             case ".map":
             case ".mjs":

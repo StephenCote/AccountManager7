@@ -700,7 +700,7 @@
                 defVal = getObjectProperty(name, field);
             }
 
-            let dnd = page.components.dnd.props(inst);
+            let dnd = page.components.dnd.dropProps(inst);
             let show = am7view.showField(inst, fieldView);
             let annot = "";
             if(inst.validationErrors[name]){

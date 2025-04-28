@@ -187,7 +187,7 @@ h5 {
     }
     */
     .field-grid-6{
-        @apply grid grid-cols-6 gap-1 auto-rows-max h-full grid-flow-row
+        @apply grid grid-cols-6 gap-1 auto-rows-max h-full grid-flow-row p-1
     }
     .field-grid-item-half {
         @apply col-span-3 pl-0
@@ -517,6 +517,28 @@ h5 {
     .splitoverflow{
         @apply block flex-1 overflow-auto whitespace-nowrap
     }
+
+    .tablular-results-overflow{
+        @apply results-overflow
+    }
+    .tabular-results{
+
+    }
+
+    .tabular-results table{
+        @apply table-auto w-full text-sm text-left border border-white bg-white p-1 shadow-lg
+    }
+
+    tr.tabular-row td{
+        @apply align-middle text-left
+    }
+    tr.tabular-row{
+        @apply text-gray-500 text-left hover:bg-blue-100 hover:border-blue-300
+    }
+    tr.tabular-row-active{
+        @apply bg-blue-300 hover:bg-blue-400
+    }
+
     .results-overflow{
         @apply flex-1 overflow-y-auto p-0
     }
@@ -580,10 +602,19 @@ h5 {
         @apply text-sm font-medium text-indigo-600 truncate
     }
     .flex-polar .polar-label{
-        @apply ml-2 flex-shrink-0 flex
+        @apply ml-0 flex-shrink-0 flex
     }
     .flex-polar .tweak-box{
-        @apply px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-200 text-blue-800
+        /* bg-blue-200 text-blue-800 leading-5 px-2  rounded-full*/
+        @apply inline-flex text-xs font-semibold
+    }
+
+    .tag{
+        @apply leading-5 px-2 rounded-md
+    }
+
+    .tag-blue{
+        @apply bg-blue-200 text-blue-800
     }
 
     .result-nav-outer{

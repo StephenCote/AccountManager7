@@ -416,6 +416,7 @@
 					re = 0;
 					break;
 				}
+				break;
 			default:
 				console.warn("Unhandled field type: " + f.type);
 				break;

@@ -90,7 +90,19 @@
 }
 
 .fontLabel {
-  font-size: 2em;
+  font-size: 2.5em;
+}
+.fontLabel-3 {
+  font-size: 3.5em;
+}
+.fontLabel-4 {
+  font-size: 4em;
+}
+.fontLabel-6 {
+  font-size: 6em;
+}
+.fontLabel-10 {
+  font-size: 15em;
 }
 
 .carousel-item-img-max{

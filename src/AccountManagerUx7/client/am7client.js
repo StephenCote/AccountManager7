@@ -253,6 +253,24 @@
 					.filter( (v, i, z) => z.indexOf(v) == i)
 			}
 		};
+		
+		q.range = function(s, c){
+			q.entity.startRecord = parseInt(s);
+			q.entity.recordCount = parseInt(c);
+		};
+
+		q.sort = function(s){
+			if(s != undefined){
+				q.entity.sortField = s;
+			}
+			return s;
+		}
+		q.order = function(o){
+			if(o != undefined){
+				q.entity.order = o;
+			}
+			return q.entity.order;
+		};
 		q.field = function(name, value){
 			let fld = {
 				comparator: "equals",

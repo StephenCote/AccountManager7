@@ -277,7 +277,6 @@
     function selectResult(o) {
       let state = pagination.state(o);
       state.checked = !state.checked;
-      // console.log("REDRAW ON SELECT");
       m.redraw();
     }
 
@@ -329,221 +328,52 @@
     }
 
     function displayGrid() {
-      let results = [];
-      let pages = pagination.pages();
-      let showInfo = info;
-      if (pages.pageResults[pages.currentPage]) results = pages.pageResults[pages.currentPage].map((p, i) => {
+      return am7decorator.gridListView(getListController());
+    }
 
-        let type = am7model.getModel(getType(p));
-        let ico = "question_mark";
-        if (type && type.icon) ico = type.icon;
-        let icon;
-
-        if (p.profile && p.profile.portrait && p.profile.portrait.contentType) {
-          let pp = p.profile.portrait;
-          let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/" + (gridMode == 1 ? "256x256" : "512x512");
-          if (gridMode == 2 && (pp.contentType.match(/gif$/) || pp.contentType.match(/webp$/))) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name;
-          let icoCls = "image-grid-image carousel-item-img";
-          icon = m("img", { class: icoCls, src: icoPath });
-        }
-        else if (p.contentType && p.contentType.match(/^image/)) {
-          let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/" + (gridMode == 1 ? "256x256" : "512x512");
-          if(p.dataBytesStore && p.dataBytesStore.length){
-            icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
-          }
-          if (gridMode == 2 && (p.contentType.match(/gif$/) || p.contentType.match(/webp$/))) icoPath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name;
-          // let icoCls = "carousel-item-img";
-          // image-grid-image 
-          let icoCls = "image-grid-image carousel-item-img";
-          icon = m("img", { class: icoCls, src: icoPath });
-        }
-        else {
-          //showInfo = true;
-          icon = m("span", { class: "material-symbols-outlined material-icons-48" }, ico);
-        }
-        let cls = (gridMode == 1 ? "image-grid-item-tile" : "image-grid-item-1");
-        if (pagination.state(p).checked) {
-          cls += " image-grid-item-active";
-        }
-        let title = "";
-        let footer = "";
-        if (showInfo) {
-          title = m("p", { class: "card-title" }, p.name);
-          if (showIconFooter) footer = m("p", { class: "card-footer" }, 'footer');
-        }
-        // onclick : function(){ pages.currentItem = i; toggleCarousel();}
-        //m("div", {class: "h-full"},
-
-        let gridCellCls = "image-grid-item-content-32";
-        if (gridMode == 2) gridCellCls = "image-grid-item-1";
-        let attr = "";
-        let props = {
-          ondblclick: function () {
-            if (containerMode) navigateDown(p);
-            else openItem(p);
-          },
-          onclick: function () {
-            selectResult(p);
-          },
-          class: cls
-        };
-        //if(dnd && dnd.dragStartHandler){
-        attr = "[draggable]";
-        props.ondragover = function (e) { dnd.doDragOver(e, p); };
-        props.ondragend = function (e) { dnd.doDragEnd(e, p); };
-        props.ondragstart = function (e) { dnd.doDragStart(e, p); };
-        props.ondrop = function (e) { dnd.doDrop(e, p); };
-        //}
-
-
-        return m("div" + attr, props, [title, m("div", { class: gridCellCls }, icon), footer])
-          //)
-          ;
-      });
-
-      return m("div", { class: 'h-full overflow-hidden' }, m("div", { class: (gridMode == 1 ? 'image-grid-tile' : 'image-grid-5') }, results));
+    function getListController(){
+      return {
+        containerMode,
+        listPage,
+        showIconFooter,
+        embeddedMode,
+        pickerMode,
+        results: getCurrentResults,
+        gridMode,
+        info,
+        pagination,
+        fullMode,
+        maxMode,
+        listType,
+        edit: editItem,
+        move: moveCarousel,
+        moveTo: moveCarouselTo,
+        select: selectResult,
+        open: openItem,
+        down: navigateDown,
+        onscroll: checkScrollPagination,
+        toggleCarousel,
+        toggleCarouselFull,
+        toggleCarouselMax,
+        toggleInfo
+      };
     }
  
     function displayList() {
       let results = [];
-      let pages = pagination.pages();
       let rset;
+      let pages = pagination.pages();
       page.checkFavorites();
+
       if (pages.pageResults[pages.currentPage]) {
         if (infiniteScroll) {
           rset = [].concat.apply([], pagination.pages().pageResults.slice(1, pages.currentPage + 1));
-          //console.log("Working from " + pages.currentPage + " with " + rset.length);
-          //rset = pages.pageResults[pages.currentPage];
         }
         else rset = pages.pageResults[pages.currentPage];
       }
-      if (rset) results = rset.map((p) => {
-        let type = am7model.getModel(getType(p).toLowerCase());
-        let ico = "question_mark";
-        if (type && type.icon) ico = type.icon;
-        let icon;
-        let icoCls;
-        if (p[am7model.jsonModelKey] == "MESSAGE") {
-          if (p.spoolStatus == "ERROR") {
-            icoCls = "text-red-600";
-            ico = "quickreply";
-          }
-          else if (p.spoolStates == "ACKNOWLEGED_RECEIPT") {
-            ico = "mark_chat_read";
-          }
-          else if (p.spoolStates == "TRANSMITTED" || p.spoolStatus == "SPOOLED") {
-            icoCls = "text-green-600";
-            ico = "mark_chat_unread";
-          }
 
-        }
-        if (p.profile && p.profile.portrait && p.profile.portrait.contentType) {
-          let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.profile.portrait.groupPath + "/" + p.profile.portrait.name + "/48x48";
-
-          icon = m("img", { height: 48, width: 48, src: icoPath });
-        }
-        else if (p.contentType && p.contentType.match(/^image/)) {
-          let icoPath = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + p.groupPath + "/" + p.name + "/48x48";
-          if(p.dataBytesStore && p.dataBytesStore.length){
-            icoPath = "data:" + p.contentType + ";base64," + p.dataBytesStore;
-          }
-          icon = m("img", { height: 48, width: 48, src: icoPath });
-        }
-        else {
-          let icoCls = "material-symbols-outlined";
-          let col = "";
-          let sty = "";
-          if (p.hex) {
-            icoCls = "material-icons";
-            col = " stroke-slate-50";
-            sty = "color: " + p.hex + ";";
-          }
-
-          icon = m("span", { style: sty, class: icoCls + " material-icons-48" + (icoCls ? " " + icoCls : "") + col }, ico);
-        }
-        let cls = "result-item";
-        let icoTxt = "check";
-        let dcls;
-        //if(dnd && dnd.dragDecorator){
-        dcls = dnd.doDragDecorate(p);
-        if (dcls) cls += " " + dcls;
-        //}
-        if (!dcls && pagination.state(p).checked) {
-          cls += " result-item-active";
-          icoTxt = "check_circle";
-        }
-        let useName = am7client.getAttributeValue(p, 'name', p.name) || (p.objectId);
-
-        let supplData = "";
-        if (p.contentType) supplData = p.contentType;
-        else if (p.type) supplData = p.type;
-        else if (p.description) supplData = p.description;
-        else if (p.spoolStatus) supplData = p.spoolStatus;
-        let attr = "";
-        let dndProp = {};
-        //if(dnd && dnd.dragStartHandler){
-        attr = "[draggable]";
-        dndProp = {
-          ondragover: function (e) { dnd.doDragOver(e, p); },
-          ondragend: function (e) { dnd.doDragEnd(e, p); },
-          ondragstart: function (e) { dnd.doDragStart(e, p); },
-          ondrop: function (e) { dnd.doDrop(e, p); }
-        };
-
-        //}
-        let isFavcls = "";
-        if(page.isFavorite(p)){
-          isFavcls = " material-symbols-outlined-red filled";
-        }
-        let mtIco = "";
-        if(p.contentType && p.name.indexOf(".") > -1){
-          let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length);
-          mtIco = m("span", {class: "fontLabel fiv-cla fiv-icon-" + ext});
-        }
-        return m("li" + attr, dndProp,
-          [
-            m("div", {
-              rid: "item-" + p.objectId,
-              onselectstart: function () { return false; },
-              ondblclick: function () { if (containerMode) navigateDown(p); else openItem(p); },
-              onclick: function () { selectResult(p) },
-              class: cls
-            }, [
-              m("div", { class: "flex-polar" }, [
-                m("div", { class: "label" }, [useName]),
-                m("div", { class: "polar-label" }, [
-                  m("span", { class: "tweak-box" }, [
-                    /// placeholder: Favorites button
-                    //m("span", { class: "material-symbols-outlined material-icons-sm" }, "add")
-                    mtIco
-                  ])
-                ])
-              ]),
-              m("div", { class: "flex-polar-2" }, [
-                m("div", { class: "meta-container" }, [
-                  m("div", { class: "meta-item" }, [
-                    icon,
-                    m("span", { class: "ml-2" }, supplData),
-                    m("span", { class: "ml-2" }, (p.modifiedDate ? " " + (new Date(p.modifiedDate)).toLocaleDateString("en-US", { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' }) : ""))
-                  ])
-                ]),
-                m("div", { class: "annotation" }, [
-                  // m("span", { class: "material-symbols-outlined" }, icoTxt),
-                  m("span", { class: "cursor-pointer material-symbols-outlined" + isFavcls, onclick: function(e){
-                    e.preventDefault();
-                    page.favorite(p).then((b) => {
-                      //page.context().favorites[p[am7model.jsonModelKey]] = undefined;
-                      m.redraw();
-                    });
-                    return false;
-                  } }, "favorite")
-                ])
-              ])
-            ])
-          ]);
-      });
-
-      return m("ul", { rid: 'resultList', onscroll: checkScrollPagination, class: "list-results-overflow" }, results);
+      //lreturn am7decorator.polarListView(getListController(), rset);
+      return am7decorator.tabularView(getListController(), rset);
     }
 
     function checkScrollPagination() {
@@ -559,28 +389,9 @@
       }
     }
 
-    function getListViewInner(type) {
-
-      let infoButton = "";
-      //let modType = am7model.getModel(type);
-
-      //if(gridMode){
-      infoButton = pagination.button("button" + (info ? " active" : ""), "info", "", toggleInfo);
-      //}
-      let selected = (getSelectedIndices().length > 0);
-      let undef;
-
-      //console.log("Type: " + type);
+    function getOptionButton(type){
       let optButton;
-      /// type === 'role' || type === 'permission'
-
-
-      let cnt = pagination.pages().container;
-      let buttons = [];
-      let rs = page.context().roles;
-      let favSel = "";
-
-
+      let selected = (getSelectedIndices().length > 0);
       if (containerMode || type === 'auth.group' || am7model.isParent(modType)) {
         let disableUp = (type !== 'auth.group' && am7model.isParent(modType) && !navigateByParent)
         optButton = [pagination.button("button" + (disableUp ? " inactive" : ""), "north_west", "", navigateUp), pagination.button("button" + (!selected ? " inactive" : ""), "south_east", "", navigateDown)]
@@ -588,10 +399,12 @@
       else if (!pickerMode) {
         optButton = pagination.button("button" + (carousel ? " active" : ""), "view_carousel", "", toggleCarousel);
       }
+      return optButton;
+    }
 
-      if (pickerMode) {
-        buttons.push(pagination.button("button", "check", "", function () { pickerHandler(getSelected()); }));
-      }
+    function getAdminButtons(type){
+      let rs = page.context().roles;
+      let buttons = [];
       if (type.match(/^policy\.policy/) || rs.accountAdmin || (rs.roleReader && type.match(/^auth\.role$/gi)) || (rs.permissionReader && type.match(/^auth\.permission$/gi))) {
         buttons.push(pagination.button("button mr-4" + (systemList ? " active" : ""), "admin_panel_settings", "", listSystemType));
       }
@@ -599,45 +412,89 @@
         if (cnt && cnt.path.match(/^\/Library/gi)) favSel = " bg-orange-200 active";
         buttons.push(pagination.button("button mr-4" + (systemList ? " active" : ""), "admin_panel_settings", "", openSystemLibrary));
       }
-      //else{
-      if (!pickerMode && !containerMode) {
+      return buttons;
+    }
 
+    function getPickerButton(){
+      let buttons = [];
+      if (pickerMode) {
+        buttons.push(pagination.button("button", "check", "", function () { pickerHandler(getSelected()); }));
+      }
+      return buttons;
+    }
+
+    function getActionButtons(){
+      let buttons = [];
+      if (!pickerMode && !containerMode) {
+        let selected = (getSelectedIndices().length > 0);
         buttons.push(pagination.button("button mr-4", (fullMode ? "close_fullscreen" : "open_in_new"), "", toggleCarouselFull));
         if (!modType.systemNew) buttons.push(pagination.button("button", "add", "", addNew));
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), "file_open", "", openSelected));
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), "edit", "", editSelected));
         let bBucket = (pagination.pages().containerSubType && pagination.pages().containerSubType.match(/^(bucket|account|person)$/gi));
-
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), (bBucket ? "playlist_remove" : "delete"), "", deleteSelected));
       }
 
-      let oliSel = "";
-      if (cnt && cnt.path.match(/^\/olio/gi)) oliSel = " bg-orange-200 active";
-      buttons.push(pagination.button("button" + oliSel, "globe", "", openOlio));
+      return buttons;
+    }
 
-      if (cnt && cnt.name.match(/favorites/gi)) favSel = " bg-orange-200 active";
-      buttons.push(pagination.button("button" + favSel, "favorite", "", openFavorites));
-
-      buttons.push(optButton);
+    function getPageToggleButtons(type){
+      let buttons = [];
       buttons.push(pagination.button("button" + (gridMode > 0 ? " active" : ""), (gridMode <= 1 ? "apps" : "grid_view"), "", toggleGrid));
       if (!embeddedMode && (!containerMode || !type.match(/^auth\.group$/gi)) && modType.group) buttons.push(pagination.button("button" + (navigateByParent ? " inactive" : (containerMode ? " active" : "")), 'group_work', "", toggleContainer));
-      buttons.push(infoButton);
-      //}
+      buttons.push( pagination.button("button" + (info ? " active" : ""), "info", "", toggleInfo));
+      return buttons;
+    }
 
-      /// The authorizedsearch query has a few leftovers limiting it to groups, until that's corrected search won't work correctly for users, permissions, and roles (non-group types)
+    function getGroupSearchButtons(){
+      let buttons = [];
       if (am7model.isGroup(modType)) {
         buttons.push(textField("text-field", "listFilter", function (e) { if (e.which == 13) doFilter(); },));
         buttons.push(pagination.button("button", "search", null, doFilter));
       }
-      let fdoh;
-      let fdrh;
-      //if(dnd && dnd.dragOverHandler){
-      /// prevent default at the top
-      fdoh = function (e) {
+      return buttons;
+    }
+
+    function getOlioButtons(){
+      let buttons = [];
+      let oliSel = "";
+      let cnt = pagination.pages().container;
+      if (cnt && cnt.path.match(/^\/olio/gi)) oliSel = " bg-orange-200 active";
+      buttons.push(pagination.button("button" + oliSel, "globe", "", openOlio));
+      return buttons;
+    }
+
+    function getFavoriteButtons(){
+      let buttons = [];
+      let cnt = pagination.pages().container;
+      let favSel = "";
+      if (cnt && cnt.name.match(/favorites/gi)) favSel = " bg-orange-200 active";
+      buttons.push(pagination.button("button" + favSel, "favorite", "", openFavorites));
+      return buttons;
+    }
+
+    function getActionButtonBar(type){
+      let buttons = [];
+      buttons.push(getPickerButton());
+      buttons.push(getAdminButtons(type));
+      buttons.push(getActionButtons());
+      buttons.push(getOlioButtons());
+      buttons.push(getFavoriteButtons());
+      buttons.push(getOptionButton(type));
+      buttons.push(getPageToggleButtons(type));
+      buttons.push(getGroupSearchButtons());
+      return buttons;
+    }
+
+    function getListViewInner(type) {
+
+      let buttons = getActionButtonBar(type);
+
+      let fdoh = function (e) {
         e.preventDefault();
       };
-      fdrh = dnd.doDrop;
-      //}
+      let fdrh = dnd.doDrop;
+
       return m("div", { ondragover: fdoh, ondrop: fdrh, class: "list-results-container" }, [
         m("div", { class: "list-results" }, [
           m("div", { class: "result-nav-outer" }, [
@@ -677,45 +534,7 @@
       ]);
     }
 
-    function displayIndicators() {
-      let results = [];
-      let pages = pagination.pages();
-      if (pages.pageResults[pages.currentPage]) results = pages.pageResults[pages.currentPage].map((p, i) => {
-        let cls = "material-symbols-outlined carousel-bullet";
-        let ico = "radio_button_unchecked";
-        if (i == pages.currentItem) {
-          cls += " carousel-bullet-active";
-          ico = "radio_button_checked";
-        }
-        return m("li", { onclick: function () { moveCarouselTo(i); }, class: "carousel-indicator" }, [
-          m("span", { class: cls }, ico)
-        ]);
-      });
-
-      return m("ul", { class: "carousel-indicators" }, [
-        m("li", { onclick: function () { pagination.prev(embeddedMode || pickerMode); }, class: "carousel-indicator" }, [
-          m("span", { class: "material-symbols-outlined carousel-bullet" }, "arrow_back")
-        ]),
-        results,
-        m("li", { onclick: function () { pagination.next(embeddedMode || pickerMode); }, class: "carousel-indicator" }, [
-          m("span", { class: "material-symbols-outlined carousel-bullet" }, "arrow_forward")
-        ])
-      ]);
-    }
-    function displayObjects() {
-
-      let results = [];
-      let pages = pagination.pages();
-      let pr = pages.pageResults[pages.currentPage];
-      /// let cls = 'carousel-item carousel-item-abs';
-      if (pr) {
-        results = pr.map((p, i) => {
-          return m(page.components.object, { view: listPage, app, object: p, model: listType, active: (pages.currentItem == i), maxMode: maxMode, inner: true });
-        });
-      }
-      return results;
-
-    }
+   
 
     function moveCarouselTo(i) {
       let pages = pagination.pages();
@@ -742,26 +561,11 @@
       }
       else {
         pages.currentItem = idx;
-        // console.log("move carousel to " + idx);
         m.redraw();
       }
     }
 
-    function getCarouselView() {
 
-      /// set the current item value to the end of the array when paginating back while in carousel mode
-      // console.log("Current item: " + pages.currentItem + " / " + pagination.requesting);
-
-      return m("div", { class: "content-outer" }, [(fullMode ? "" : m(page.components.navigation)),
-      m("div", { class: "content-main" }, [
-        //            m("div", {class: "carousel"}, [
-        //              m("div", {class : "carousel-inner"}, [
-        getCarouselViewInner()
-        //              ])
-        //            ])
-      ])
-      ]);
-    }
 
     function getCurrentResults(){
       let pages = pagination.pages();
@@ -769,39 +573,13 @@
       if (pr) {
         if (wentBack) {
           pages.currentItem = pr.length - 1;
-          //wentBack = false;
         }
         if (pages.currentItem < 0 && pr.length) pages.currentItem = 0;
       }
       return pr;
     }
 
-    function getCarouselViewInner() {
-      let pages = pagination.pages();
-      let pr = getCurrentResults();
-      let uimarkers = [];
-      if (!embeddedMode || fullMode) {
-        uimarkers = [
-          m("span", { onclick: toggleCarouselFull, class: "carousel-full" }, [m("span", { class: "material-symbols-outlined" }, (fullMode ? "close_fullscreen" : "open_in_new"))]),
-          m("span", { onclick: toggleCarouselMax, class: "carousel-max" }, [m("span", { class: "material-symbols-outlined" }, (maxMode ? "photo_size_select_small" : "aspect_ratio"))]),
-          m("span", { onclick: toggleInfo, class: "carousel-info" }, [m("span", { class: "material-symbols-outlined" + (info ? "" : "-outlined") }, (info ? "info" : "info"))]),
-          m("span", { onclick: function () { editItem(pr[pages.currentItem]); }, class: "carousel-edit" }, [m("span", { class: "material-symbols-outlined" }, "edit")]),
-          m("span", { onclick: toggleCarousel, class: "carousel-exit" }, [m("span", { class: "material-symbols-outlined" }, "close")]),
-          m("span", { onclick: function () { moveCarousel(-1); }, class: "carousel-prev" }, [m("span", { class: "material-symbols-outlined" }, "arrow_back")]),
-          m("span", { onclick: function () { moveCarousel(1); }, class: "carousel-next" }, [m("span", { class: "material-symbols-outlined" }, "arrow_forward")]),
-        ];
-      }
-      return m("div", { class: "carousel" }, [
-        m("div", { class: "carousel-inner" },
-          [
-            displayObjects(),
-            uimarkers,
-            displayIndicators()
-          ]
-        )
-      ]);
 
-    }
 
     function navListKey(e) {
       wentBack = false;
@@ -838,13 +616,6 @@
     function initParams(vnode) {
       ;
       listType = vnode.attrs.type || m.route.param("type") || "data";
-      //dnd = vnode.attrs.dnd;
-      /*
-      dnd.dragStartHandler = vnode.attrs.dragStartHandler;
-      dnd.dragOverHandler = vnode.attrs.dragOverHandler;
-      dnd.dragEndHandler = vnode.attrs.dragEndHandler;
-      dnd.dropHandler = vnode.attrs.dropHandler;
-      */
 
       modType = am7model.getModel(listType);
       if (!modType) {
@@ -856,15 +627,10 @@
           console.warn("Type is not clustered by parent");
           navigateByParent = false;
         }
-        // console.log("Parent mode: " + navigateByParent);
       }
-      //console.log('type=' + listType);
-      //console.log(modType);
       baseListType = listType;
       if (modType.group && containerMode && !listType.match(/^auth\.group$/gi)) listType = 'auth.group';
-      //console.log(listType);
       listContainerId = navContainerId || vnode.attrs.objectId || m.route.param("objectId");
-      //console.log(listContainerId + " || " + navContainerId);
       if (!embeddedMode && !pickerMode) navContainerId = null;
     }
 
@@ -885,12 +651,6 @@
           if(page.components.pdf.viewer(cient.objectId)){
             page.components.pdf.viewers[cient.objectId].init(1.0);
           }
-          /*
-          let mt = cient.contentType;
-          if(mt && mt.match(/pdf$/i)){
-              page.components.pdf.init(am7model.prepareInstance(page.context().contextObjects[cient.objectId]), 1.0);
-          }
-          */
         }
       }
      }
@@ -932,8 +692,8 @@
         let v;
         if (vnode.attrs.pickerMode || (!carousel && vnode.attrs.embeddedMode)) v = getListViewInner(vnode.attrs.type);
         else if (carousel) {
-          if (vnode.attrs.embeddedMode) v = getCarouselViewInner();
-          else v = v = getCarouselView();
+          if (vnode.attrs.embeddedMode) v = am7decorator.carouselItem(getListController());
+          else v = v = am7decorator.carouselView(getListController());
         }
         else v = getListView();
         if (vnode.attrs.pickerMode || vnode.attrs.embeddedMode) return v;

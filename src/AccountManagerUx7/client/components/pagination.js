@@ -40,10 +40,9 @@
         let qf = q.field("name", pages.filter);
         qf.comparator = "like";
       }
-      q.recordCount = pages.recordCount;
-      q.startRecord = pages.startRecord;
-      q.sortField = "name";
-      q.order = "asc";
+      q.range(pages.startRecord, pages.recordCount);
+      q.sort("name");
+      q.order("ascending");
       q.field("organizationId", page.user.organizationId);
       return q;
     }
@@ -71,6 +70,9 @@
       m.redraw();
     }
     function handleList(v) {
+      if(v && v[am7model.jsonModelKey] == "io.queryResult"){
+        v = v.results;
+      }
       pages.pageResults[pages.currentPage] = v;
       am7model.updateListModel(v);
       requesting = false;
@@ -143,7 +145,33 @@
         }
 
         else if (pages.filter == null) {
-          am7client.list(pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
+          //console.log("List: " + pages.resultType + " / " + pages.containerId + " / " + sFields + " / " + pages.startRecord + " / " + pages.recordCount);
+          //am7client.list(pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
+          
+          let q = getSearchQuery();
+          q.entity.request.push("tags");
+
+          if(!pages.containerId){
+            am7client.search(q, handleList);
+          }
+          else{
+            let gq = am7view.viewQuery(am7model.newInstance("auth.group"));
+            gq.field("objectId", pages.containerId  );
+            page.search(gq).then((g) => {
+              let id = 0;
+              if(g && g.results){
+                id = g.results[0].id;
+              }
+              if(am7model.isParent(pages.resultType)){
+                q.field("parentId", id);
+              }
+              else if(am7model.isGroup(pages.resultType)){
+                q.field("groupId", id);
+              }
+              am7client.search(q, handleList);
+            });
+          }
+            
         }
         else {
 

@@ -178,7 +178,7 @@ public class TokenService {
 	}
 	
 	public static String validateTokenToSubject(String token){
-		logger.info("Validating token: '" + token + "'");
+		// logger.info("Validating token: '" + token + "'");
 		return Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token).getBody().getSubject();
 	}
 	
