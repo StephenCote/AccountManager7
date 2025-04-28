@@ -229,13 +229,13 @@
             else if(h == "_tags" && p.tags){
 
                 let tags = p.tags.map((t) => {
-                    return m("span", {
+                    return [m("span", {
                         class: "cursor-pointer material-symbols-outlined", onclick: function (e) {
                             e.preventDefault();
 
                             return false;
                         }
-                    }, "label");
+                    }, "label"), t.name];
                 });
                 return m("td", { class: "" }, tags);
             }

@@ -149,7 +149,9 @@
           //am7client.list(pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
           
           let q = getSearchQuery();
-          q.entity.request.push("tags");
+          if(am7model.hasField(pages.resultType, "tags")){ 
+            q.entity.request.push("tags");
+          }
 
           if(!pages.containerId){
             am7client.search(q, handleList);
@@ -162,12 +164,13 @@
               if(g && g.results){
                 id = g.results[0].id;
               }
-              if(am7model.isParent(pages.resultType)){
-                q.field("parentId", id);
-              }
-              else if(am7model.isGroup(pages.resultType)){
+              if(am7model.isGroup(pages.resultType)){
                 q.field("groupId", id);
               }
+              else if(am7model.isParent(pages.resultType)){
+                q.field("parentId", id);
+              }
+
               am7client.search(q, handleList);
             });
           }
