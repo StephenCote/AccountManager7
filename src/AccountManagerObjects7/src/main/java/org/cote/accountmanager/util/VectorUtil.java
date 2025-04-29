@@ -181,7 +181,8 @@ LIMIT ?
 		if(tags.length > 0) {
 			tagFilter = "INNER JOIN "
 				+ IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_TAG), ModelNames.MODEL_PARTICIPATION)
-				+ " TP on TP.participantId = vectorReference AND TP.participantModel = vectorReferenceType AND TP.participationId IN ("
+				// AND TP.participantModel = vectorReferenceType
+				+ " TP on TP.participantId = vectorReference AND TP.participationId IN ("
 				+ Arrays.asList(tags).stream().map(t -> Long.toString((long)t.get(FieldNames.FIELD_ID))).collect(Collectors.joining(","))
 				+ ")"
 			;
