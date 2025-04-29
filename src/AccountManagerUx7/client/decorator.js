@@ -73,7 +73,7 @@
             }
             icon = m("img", { height: 48, width: 48, src: icoPath });
         }
-        else if(p.name && p.name.indexOf(".") > 0){
+        else if(p.contentType && p.name && p.name.indexOf(".") > 0){
             icon = getFileTypeIcon(p, 3);
         }
         else {
@@ -263,10 +263,10 @@
             return "";
         }
 
-        let table = m("table", { class: "" }, [ getHeadersView(ctl.listType), m("tbody", results)]);
+        let table = m("table", { class: "tabular-results-table" }, [ getHeadersView(ctl.listType), m("tbody", results)]);
 
 
-        return m("div", { rid: 'resultList', onscroll: ctl.onscroll, class: "tabular-results tabular-results-overflow" },
+        return m("div", { rid: 'resultList', onscroll: ctl.onscroll, class: "tabular-results-overflow" },
             table
         );
       }

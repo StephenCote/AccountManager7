@@ -2348,10 +2348,14 @@ ol.breadcrumb-list li {
   white-space: nowrap;
 }
 
-.tabular-results{
+.tabular-results-overflow {
+  flex: 1 1 0%;
+  overflow-y: auto;
+  padding: 0px;
+  padding: 0.5rem;
 }
 
-.tabular-results table {
+.tabular-results-table {
   width: 100%;
   table-layout: auto;
   border-width: 1px;

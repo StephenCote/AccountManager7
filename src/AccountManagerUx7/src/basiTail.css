@@ -518,14 +518,14 @@ h5 {
         @apply block flex-1 overflow-auto whitespace-nowrap
     }
 
-    .tablular-results-overflow{
-        @apply results-overflow
+    .tabular-results-overflow{
+        @apply results-overflow p-2
     }
     .tabular-results{
-
+        @apply w-full
     }
 
-    .tabular-results table{
+    .tabular-results-table {
         @apply table-auto w-full text-sm text-left border border-white bg-white p-1 shadow-lg
     }
 
