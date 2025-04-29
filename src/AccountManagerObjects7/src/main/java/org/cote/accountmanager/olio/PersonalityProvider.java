@@ -9,7 +9,7 @@ import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.FieldType;
-import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.personality.DarkTetradUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.Sloan;
 import org.cote.accountmanager.personality.SloanUtil;
@@ -50,9 +50,9 @@ public class PersonalityProvider  implements IProvider {
 				logger.warn("Sloan key is null or invalid: " + model.get(OlioFieldNames.FIELD_SLOAN_KEY) + " / empty map = " + SloanUtil.getSloanDef().isEmpty());
 			}
 		}
-		else if(lfield.getName().equals(OlioFieldNames.FIELD_DARK_TRIAD_KEY)) {
+		else if(lfield.getName().equals(OlioFieldNames.FIELD_DARK_TETRAD_KEY)) {
 			IOSystem.getActiveContext().getReader().populate(model, ProfileUtil.DARK_PERSONALITY_FIELDS);
-			model.set(lfield.getName(), DarkTriadUtil.getDarkTriadKey(model));
+			model.set(lfield.getName(), DarkTetradUtil.getDarkTetradKey(model));
 		}
 	}
 

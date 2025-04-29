@@ -109,16 +109,16 @@
         "name": "event",
         "label": "Event",
         "order": [
+          /*
+          "message.spool",
+          "data.geoLocation",
+          "olio.event",
+          "data.trait"
+          */
           "olio.charPerson",
           "olio.llm.chatConfig",
           "olio.llm.promptConfig",
           "olio.llm.openai.openaiRequest"
-          /*
-          "data.color",
-          "olio.store",
-          "olio.wearable",
-          "olio.apparel"
-          */
         ],
         "icon": "event_note"
       },
@@ -894,6 +894,7 @@
         "PSYCHOPATHY",
         "REVENGE",
         "REVULSION",
+        "SADISM",
         "SANITY",
         "SENILITY",
         "SENSUALITY",
@@ -5286,6 +5287,13 @@
             "validateRange": true
           },
           {
+            "name": "sadism",
+            "type": "double",
+            "minValue": 0,
+            "maxValue": 1,
+            "validateRange": true
+          },
+          {
             "name": "sloanKey",
             "type": "string",
             "maxLength": 5,
@@ -5307,9 +5315,9 @@
             "priority": 15
           },
           {
-            "name": "darkTriadKey",
+            "name": "darkTetradKey",
             "type": "string",
-            "maxLength": 24,
+            "maxLength": 4,
             "provider": "org.cote.accountmanager.olio.PersonalityProvider",
             "priority": 15
           }
@@ -8391,7 +8399,7 @@
             "type": "string"
           },
           {
-            "name": "darkTriadDescription",
+            "name": "darkTetradDescription",
             "type": "string"
           },
           {
@@ -9399,9 +9407,7 @@
           {
             "name": "num_ctx",
             "type": "int",
-            "default": 0,
-            "minValue": 0,
-            "maxValue": 120000
+            "default": 8192
           },
           {
             "name": "num_gpu",
@@ -9436,7 +9442,8 @@
           {
             "name": "uid",
             "type": "string",
-            "maxLength": 64
+            "maxLength": 64,
+            "ephemeral": true
           },
           {
             "name": "chatConfig",
@@ -9694,9 +9701,10 @@
           "common.baseLight",
           "olio.llm.request"
         ],
-        "group": "ChatRequests",
+        "group": "Chat",
         "icon": "chat",
-        "label": "Chat Requests",
+        "label": "Requests",
+        "vector": "org.cote.accountmanager.olio.VectorProvider",
         "query": [
           "id",
           "groupId"

@@ -72,6 +72,6 @@ public class PersonalityUtil {
 	}
 	
 	public static List<PersonalityProfile> filterBetterLookingPrettyNarcissists(List<PersonalityProfile> map, PersonalityProfile ref){
-		return filterBetterLooking(filterPretty(DarkTriadUtil.filterNarcissism(map)), ref);
+		return filterBetterLooking(filterPretty(DarkTetradUtil.filterNarcissism(map)), ref);
 	}
 }

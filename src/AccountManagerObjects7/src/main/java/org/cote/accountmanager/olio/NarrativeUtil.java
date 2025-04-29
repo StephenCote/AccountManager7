@@ -17,7 +17,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
-import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.personality.DarkTetradUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
@@ -89,7 +89,7 @@ public class NarrativeUtil {
 	}
 	
 	
-	public static String getDarkTriadDescription(PersonalityProfile prof) {
+	public static String getDarkTetradDescription(PersonalityProfile prof) {
 		StringBuilder desc = new StringBuilder();
 		
 		StringBuilder desc2 = new StringBuilder();
@@ -101,18 +101,22 @@ public class NarrativeUtil {
 		}
 		if(prof.isMachiavellian()) {
 			if(desc.length() > 0) desc.append(", ");
-			desc.append("may be callous, lack morality, or be motivated by self-interest");
+			desc.append("may be manipulative, calculating, or be motivated by self-interest");
 		}
 		
 		if(prof.isNarcissist()) {
 			if(desc.length() > 0) desc.append(", ");
-			desc.append("may show grandiosity, entitlement, dominance, or superiority");
+			desc.append("may show arrogance, entitlement, self-importance, or superiority");
 		}
 		if(prof.isPsychopath()) {
 			if(desc.length() > 0) desc.append(", and ");
-			desc.append("may show low levels of empathy and high levels of impulsivity and thrill-seeking");
+			desc.append("may be unemotional, impulsive, unempathetic, and thrill-seeking");
 		}
-		desc2.append(pro + " is " + DarkTriadUtil.getDarkTriadName(prof.getDarkTriadKey()));
+		if(prof.isSadist()) {
+			if(desc.length() > 0) desc.append(", and ");
+			desc.append("may enjoy cruelty, and be reactive or petty");
+		}
+		desc2.append(pro + " is " + DarkTetradUtil.getDarkTetradName(prof.getDarkTetradKey()));
 		desc2.append(".");
 		if(desc.length() > 0) {
 			desc2.append(" " + pro + " " + desc.toString() + ".");
@@ -999,7 +1003,7 @@ public class NarrativeUtil {
 		if(includePersonality) {
 			buff.append(" " + cpro + " is " + pp.getMbti().getDescription() + ".");
 			buff.append(" Morally, " + pro + " " + getActsLikeSatan(pp) + ".");
-			buff.append(" " + getDarkTriadDescription(pp));
+			buff.append(" " + getDarkTetradDescription(pp));
 		}
 		
 		buff.append(" " + cpro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
@@ -1074,7 +1078,7 @@ public class NarrativeUtil {
 			nar.set("armamentDescription", describeArmament(pp));
 			nar.set("statisticsDescription", describeStatistics(pp));
 			nar.set("alignmentDescription", getActsLikeSatan(pp));
-			nar.set("darkTriadDescription", getDarkTriadDescription(pp));
+			nar.set("darkTetradDescription", getDarkTetradDescription(pp));
 			nar.set("mbtiDescription", pp.getMbti().getDescription());
 			nar.set("sloanDescription", pp.getSloanDescription());
 			nar.set("sdPrompt", getSDPrompt(null, pp, pp.getRecord(), (setting != null && !setting.equals("random") ? setting : getRandomSetting())));;
@@ -1418,7 +1422,7 @@ public class NarrativeUtil {
 		String raceDesc = getRaceDescription(pov.get(OlioFieldNames.FIELD_RACE));
 		buff.append(fname + " is a " + age + " year old " + raceDesc + " " + getGenderLabel(gender, age) + ".");
 		buff.append(" " + pro + " is a '" + pp.getMbti().getName() + "' and is " + pp.getMbti().getDescription() + ".");
-		buff.append(" " + getDarkTriadDescription(pp));
+		buff.append(" " + getDarkTetradDescription(pp));
 		buff.append(" " + pro + " has " + eyeColor + " eyes and " + hairColor + " " + hairStyle + " hair.");
 		buff.append(" " + pro + " is");
 		if(stets.size() > 0) {
@@ -1479,7 +1483,7 @@ public class NarrativeUtil {
 			PersonalityProfile pp2 = ProfileUtil.analyzePersonality(ctx, p);
 			String compatKey = OCEANUtil.getCompatibilityKey(pov.get(FieldNames.FIELD_PERSONALITY), p.get(FieldNames.FIELD_PERSONALITY));
 			CompatibilityEnumType mbtiCompat = MBTIUtil.getCompatibility(pov.get("personality.mbtiKey"), p.get("personality.mbtiKey"));
-			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get(OlioFieldNames.FIELD_RACE)) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get(FieldNames.FIELD_GENDER) + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTriadDescription(pp2));
+			buff.append("\n" + p.get(FieldNames.FIELD_FIRST_NAME) + " " + getRaceDescription(p.get(OlioFieldNames.FIELD_RACE)) + " (" + p.get(FieldNames.FIELD_AGE) + " year old " + p.get(FieldNames.FIELD_GENDER) + "): " + compatKey + " / " + mbtiCompat.toString() + " / " + getDarkTetradDescription(pp2));
 		}
 		
 		return buff.toString();

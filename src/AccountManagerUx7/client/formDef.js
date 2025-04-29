@@ -3510,13 +3510,10 @@
                 format: 'range',
                 skipValidation: true
             },
-            blank2: {
-                layout: "half",
-                format: "blank",
-                field: {
-                    label: "",
-                    readOnly: true
-                }
+            sadism: {
+                layout: 'one',
+                format: 'range',
+                skipValidation: true
             },
             sloanKey: {
                 layout: 'one',
@@ -3531,7 +3528,7 @@
                 layout: 'one',
                 readOnly: true
             },
-            darkTriadKey: {
+            darkTetradKey: {
                 layout: 'one',
                 readOnly: true
             }
@@ -3571,9 +3568,9 @@
                 label: "Alignment",
                 format: 'print'
             },
-            darkTriadDescription: {
+            darkTetradDescription: {
                 layout: 'full',
-                label: "Dark Triad",
+                label: "Dark Tetrad",
                 format: 'print'
             },
             sloanDescription: {

@@ -235,7 +235,7 @@ public class OlioFieldNames {
 	public static final String FIELD_SLOAN_KEY = "sloanKey";
 	public static final String FIELD_SLOAN_CARDINAL = "sloanCardinal";
 	public static final String FIELD_MBTI_KEY = "mbtiKey";
-	public static final String FIELD_DARK_TRIAD_KEY = "darkTriadKey";
+	public static final String FIELD_DARK_TETRAD_KEY = "darkTetradKey";
 	
 	public static final String FIELD_OPENNESS = "openness";
 	public static final String FIELD_CONSCIENTIOUSNESS = "conscientiousness";
@@ -245,6 +245,7 @@ public class OlioFieldNames {
 	public static final String FIELD_MACHIAVELLIANISM = "machiavellianism";
 	public static final String FIELD_NARCISSISM = "narcissism";
 	public static final String FIELD_PSYCHOPATHY = "psychopathy";
+	public static final String FIELD_SADISM = "sadism";
 	
 	
 	public static final String FIELD_PHYSICAL_STRENGTH = "physicalStrength";

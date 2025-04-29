@@ -55,7 +55,7 @@ public class VectorProvider implements IProvider {
 				content.append(" " + pro + " is wearing " + nar.get("outfitDescription") + ".");
 				
 				content.append(System.lineSeparator() + nar.get("name") + " " + nar.get("alignmentDescription") + ".");
-				content.append(" " + nar.get("darkTriadDescription") + ".");
+				content.append(" " + nar.get("darkTetradDescription") + ".");
 				content.append(" " + pro + " is " + nar.get("sloanDescription") + ".");
 				content.append(" " + pro + " is " + nar.get("mbtiDescription") + ".");
 			}

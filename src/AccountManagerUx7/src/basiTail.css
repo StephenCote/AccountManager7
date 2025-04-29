@@ -526,14 +526,19 @@ h5 {
     }
 
     .tabular-results-table {
-        @apply table-auto w-full text-sm text-left border border-white bg-white p-1 shadow-lg
+        @apply table-fixed w-full text-sm text-left border border-white bg-white p-1 shadow-lg
     }
 
+    tr.tabular-header th{
+        @apply align-middle text-left text-left mr-4 border-b border-gray-300 pl-2 pr-2
+    }
+
+
     tr.tabular-row td{
-        @apply align-middle text-left
+        @apply align-middle text-left text-gray-500 text-left border-r border-gray-300 pl-2 pr-2
     }
     tr.tabular-row{
-        @apply text-gray-500 text-left hover:bg-blue-100 hover:border-blue-300
+        @apply hover:bg-blue-100 hover:border-blue-300
     }
     tr.tabular-row-active{
         @apply bg-blue-300 hover:bg-blue-400

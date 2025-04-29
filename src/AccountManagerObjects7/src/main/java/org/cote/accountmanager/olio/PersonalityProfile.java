@@ -21,7 +21,7 @@ public class PersonalityProfile extends AnimalProfile {
 	*/
 	private String sloanKey = null;
 	private String sloanDescription = null;
-	private String darkTriadKey = null;
+	private String darkTetradKey = null;
 	
 	private String mbtiKey = null;
 	private MBTI mbti = null;
@@ -34,6 +34,7 @@ public class PersonalityProfile extends AnimalProfile {
 	private VeryEnumType narcissist = VeryEnumType.DISREGARDED;
 	private VeryEnumType machiavellian = VeryEnumType.DISREGARDED;
 	private VeryEnumType psychopath = VeryEnumType.DISREGARDED;
+	private VeryEnumType sadist = VeryEnumType.DISREGARDED;
 	
 	private VeryEnumType aggressive = VeryEnumType.DISREGARDED;
 	
@@ -100,37 +101,15 @@ public class PersonalityProfile extends AnimalProfile {
 		this.psychopath = psychopath;
 	}
 
-	public String getDarkTriadKey() {
-		return darkTriadKey;
-	}
-	public void setDarkTriadKey(String darkTriadKey) {
-		this.darkTriadKey = darkTriadKey;
-	}
-	/*
-	public boolean isNarcissist() {
-		return narcissist;
+
+	public String getDarkTetradKey() {
+		return darkTetradKey;
 	}
 
-	public void setNarcissist(boolean narcissist) {
-		this.narcissist = narcissist;
+	public void setDarkTetradKey(String darkTetradKey) {
+		this.darkTetradKey = darkTetradKey;
 	}
 
-	public boolean isPsychopath() {
-		return psychopath;
-	}
-
-	public void setPsychopath(boolean psychopath) {
-		this.psychopath = psychopath;
-	}
-
-	public boolean isMachiavellian() {
-		return machiavellian;
-	}
-
-	public void setMachiavellian(boolean machiavellian) {
-		this.machiavellian = machiavellian;
-	}
-	*/
 	public String getMbtiKey() {
 		return mbtiKey;
 	}
@@ -244,6 +223,17 @@ public class PersonalityProfile extends AnimalProfile {
 
 	public void setAggressive(VeryEnumType aggressive) {
 		this.aggressive = aggressive;
+	}
+
+	public VeryEnumType getSadist() {
+		return sadist;
+	}
+
+	public void setSadist(VeryEnumType sadist) {
+		this.sadist = sadist;
+	}
+	public boolean isSadist() {
+		return VeryEnumType.compare(sadist, VeryEnumType.SOMEWHAT, ComparatorEnumType.GREATER_THAN_OR_EQUALS);
 	}
 	
 }

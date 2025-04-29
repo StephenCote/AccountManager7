@@ -16,7 +16,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.olio.personality.DarkTriadUtil;
+import org.cote.accountmanager.olio.personality.DarkTetradUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.personality.MBTI;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -177,7 +177,7 @@ SLOAN Notation
 				double val = Double.parseDouble(df.format(rand.nextDouble()));
 				rec.set(s, val);
 			}
-			DarkTriadUtil.rollDarkPersonality(rec);
+			DarkTetradUtil.rollDarkPersonality(rec);
 		}
 		catch(ModelNotFoundException | FieldException | ValueException e) {
 			logger.error(e);
@@ -388,7 +388,7 @@ SLOAN Notation
 		}
 
 		BaseRecord per = person.get(FieldNames.FIELD_PERSONALITY);
-		prof.setAggressive(VeryEnumType.valueOf(DarkTriadUtil.getAggressiveness(per)));
+		prof.setAggressive(VeryEnumType.valueOf(DarkTetradUtil.getAggressiveness(per)));
 		prof.setOpen(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_OPENNESS)));
 		prof.setConscientious(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_CONSCIENTIOUSNESS)));
 		prof.setExtraverted(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_EXTRAVERSION)));
@@ -398,7 +398,7 @@ SLOAN Notation
 		prof.setMachiavellian(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_MACHIAVELLIANISM)));
 		prof.setNarcissist(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_NARCISSISM)));
 		prof.setPsychopath(VeryEnumType.valueOf((double)per.get(OlioFieldNames.FIELD_PSYCHOPATHY)));
-		prof.setDarkTriadKey(per.get(OlioFieldNames.FIELD_DARK_TRIAD_KEY));
+		prof.setDarkTetradKey(per.get(OlioFieldNames.FIELD_DARK_TETRAD_KEY));
 		
 		Sloan sloan = SloanUtil.getSloan(per.get(OlioFieldNames.FIELD_SLOAN_KEY));
 		MBTI mbti = MBTIUtil.getMBTI(per.get(OlioFieldNames.FIELD_MBTI_KEY));

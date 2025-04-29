@@ -67,6 +67,13 @@
 			"validateRange": true
 		},
 		{
+			"name": "sadism",
+			"type": "double",
+			"minValue": 0,
+			"maxValue": 1,
+			"validateRange": true
+		},
+		{
 			"name": "sloanKey",
 			"type": "string",
 			"maxLength": 5,
@@ -88,9 +95,9 @@
 			"priority": 15
 		},
 		{
-			"name": "darkTriadKey",
+			"name": "darkTetradKey",
 			"type": "string",
-			"maxLength": 24,
+			"maxLength": 4,
 			"provider": "org.cote.accountmanager.olio.PersonalityProvider",
 			"priority": 15
 		}

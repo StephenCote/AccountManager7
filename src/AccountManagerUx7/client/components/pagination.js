@@ -4,7 +4,9 @@
     let requesting = false;
 
     let entity = {
-      listFilter: ""
+      listFilter: "",
+      sort: "name",
+      order: "ascending"
     };
 
     function newPagination(containerType) {
@@ -27,6 +29,8 @@
         containerSubType: null,
         containerId: null,
         container: null,
+        sort: entity.sort,
+        order: entity.order,
         id: page.uid()
       };
     }
@@ -41,8 +45,8 @@
         qf.comparator = "like";
       }
       q.range(pages.startRecord, pages.recordCount);
-      q.sort("name");
-      q.order("ascending");
+      q.sort(pages.sort);
+      q.order(pages.order);
       q.field("organizationId", page.user.organizationId);
       return q;
     }
@@ -164,12 +168,15 @@
               if(g && g.results){
                 id = g.results[0].id;
               }
-              if(am7model.isGroup(pages.resultType)){
+              /// auth.group is a special case where it is a parent/child hierarchy, so the parentId is used
+              /// some models like data.note can be hierarchical by group and parent
+              if(am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, "groupId")){
                 q.field("groupId", id);
               }
               else if(am7model.isParent(pages.resultType)){
                 q.field("parentId", id);
               }
+              console.log(q);
 
               am7client.search(q, handleList);
             });
@@ -197,16 +204,30 @@
       pagination.paginating = true;
 
       entity.listFilter = filter || "";
+      let sortChange = (entity.sort != pages.sort || entity.order != pages.order);
       if (
+        sortChange
+        ||
         ((pages.filter == null && entity.listFilter.length) || (pages.filter != null && pages.filter != entity.listFilter))
         ||
         (pages.containerId != null && pages.containerId != containerId)
         ||
         (!isNaN(recordCount) && recordCount > 0 && pages.recordCount != recordCount)
       ) {
+        /// TODO: Need to clean all of this up - the pagination state object needs a better relationship with the entity containing the filter and any search/query configuration
+        /// A lot of this is due to the original API being driven by listing by type and membership, and it's morphed into the query/search format which is more flexible (albeit still somewhat limited by type)
+        ///
+        let sort = pages.sort;
+        let order = pages.order;
         pages = newPagination();
+        entity.sort = sort;
+        entity.order = order;
+        pages.sort = sort;
+        pages.order = order;
         pages.recordCount = (!isNaN(recordCount) && recordCount > 0 ? recordCount : pages.recordCount);
         pages.filter = (entity.listFilter.length ? entity.listFilter : null);
+
+        console.log(pages);
       }
       pages.navigateByParent = navigateByParent;
       pages.listSystem = bSystem;

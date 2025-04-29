@@ -3,7 +3,7 @@
     function getFileTypeIcon(p, i) {
         let mtIco = "";
         if (p.contentType && p.name.indexOf(".") > 0) {
-            let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length);
+            let ext = p.name.substring(p.name.lastIndexOf(".") + 1, p.name.length).toLowerCase();
             mtIco = m("span", { class: "fontLabel" + (i && i > 0 ? "-" + i : "") + " fiv-cla fiv-icon-" + ext });
         }
         return mtIco;
@@ -175,8 +175,11 @@
     }
 
     let defaultHeaderMap = [
+        "_rowNum",
         "_icon",
+        "id",
         "name",
+        "modifiedDate",
         // "_thumbnail",
         "_tags",
         "_favorite"
@@ -186,25 +189,52 @@
         return (map || defaultHeaderMap).filter((h) => am7model.hasField(type, h) || h.match(/^_/));
     }
 
-    function getHeadersView(type, map){
+    function getHeadersView(ctl, map){
+        let type = ctl.listType;
         let mod = am7model.getModel(type);
-
+        let pages = ctl.pagination.pages();
         let headers = getHeaders(type, map).map((h) => {
             let fld = am7model.getModelField(type, h);
             let lbl = fld?.label || h;
-            if(lbl.match(/^_/)){
+            if(h.match(/^_/)){
                 lbl = "";
+                if(h == "_tags"){
+                    lbl = "tags";
+                }
             }
             let ico = "";
             if (h == "_icon" && mod.icon) {
-                ico = m("span", { class: "material-symbols-outlined" }, mod.icon);
+                ico = m("span", { class: "material-icons-cm material-symbols-outlined" }, mod.icon);
             }
-            return m("th", { class: "" }, [ico, lbl]);
+            else if(h == "_rowNum"){
+                ico = m("span", { class: "material-icons-cm material-symbols-outlined" }, "tag");
+            }
+            let cw = getCellStyle(ctl, h);
+            let sortButton = "";
+            //if(pages.sort == h){
+            if(!h.match(/^_/)){
+                let sico = "swap_vert";
+                let icoCls = "text-red-200";
+                if(pages.sort == h){
+                    sico = (pages.order == "ascending" ? "arrow_upward" : "arrow_downward");
+                    icoCls = "text-blue-700";
+                }
+                sortButton = m("span", { class: "mr-2 material-icons-cm material-symbols-outlined " + icoCls, onclick: function(){
+                    if(pages.sort == h){
+                        pages.order = (pages.order == "ascending" ? "descending" : "ascending");
+                    }
+                    else{
+                        pages.sort = h;
+                        pages.order = "ascending";
+                    }
+                }}, sico);
+            }
+            return m("th", {class: cw}, [ico, sortButton, lbl]);
         });
-        return m("thead", m("tr", headers));
+        return m("thead", m("tr", {class: "tabular-header"}, headers));
     }
 
-    function getTabularRow(ctl, p, map) {
+    function getTabularRow(ctl, p, idx, map) {
         let isFavcls = getFavoriteStyle(p);
         let dcls = page.components.dnd.doDragDecorate(p);
         let cls = "tabular-row";
@@ -220,15 +250,16 @@
         });
         let attr = "[draggable]";
         return m("tr" + attr, props, getHeaders(ctl.listType, map).map((h) => {
+            let cw = getCellStyle(ctl, h);
             if(h == "_thumbnail") {
-                return m("td", { class: "" }, [getThumbnail(ctl, p)]);
+                return m("td", { class: {class: cw}, }, [getThumbnail(ctl, p)]);
             }
             else if(h == "_icon") {
-                return m("td", { class: "" }, [getIcon(p)]);
+                return m("td", { class: cw}, [getIcon(p)]);
             }
-            else if(h == "_tags" && p.tags){
+            else if(h == "_tags"){
 
-                let tags = p.tags.map((t) => {
+                let tags = (p.tags || []).map((t) => {
                     return [m("span", {
                         class: "cursor-pointer material-symbols-outlined", onclick: function (e) {
                             e.preventDefault();
@@ -237,10 +268,10 @@
                         }
                     }, "label"), t.name];
                 });
-                return m("td", { class: "" }, tags);
+                return m("td", { class: cw}, tags);
             }
             else if(h == "_favorite"){
-                return m("td", m("span", {
+                return m("td", {class: cw},  m("span", {
                     class: "cursor-pointer material-symbols-outlined" + isFavcls, onclick: function (e) {
                         e.preventDefault();
                         page.favorite(p).then((b) => {
@@ -250,20 +281,62 @@
                     }
                 }, "favorite"));
             }
-            return m("td",p[h]);
+            else if(h == "_rowNum"){
+                return m("td", {class: cw}, (parseInt(ctl.pagination.pages().startRecord) + 1) + idx);
+            };
+            
+
+            return m("td",{class: cw}, getFormattedValue(ctl, p, h));
         }));
     
     }
+    
+    function getCellStyle(ctl, h){
+        let w = "";
+        if(h == "_icon" || h == "id" || h == "_rowNum"){
+            w = "w-14";
+        }
+        else if(h == "_favorite"){
+            w = "w-8"
+        }
+
+        if(h == "id" || h == "_rowNum"){
+            w += " align-right";
+        }
+        else{
+            w += " align-center";
+        }
+        return w;
+    }
+
+    function getFormattedValue(ctl, p, h){
+        if(h.match(/^_/)){
+            console.warn("Unhandled special column: " + h);
+            return "";
+        }
+        let fld = am7model.getModelField(p[am7model.jsonModelKey], h);
+        if(!fld){
+            console.warn("Couldn't find field", h);
+            return p[h];
+        }
+
+        if(fld.type == "timestamp"){
+            //  { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' }
+            return (p[h] ? " " + (new Date(p[h])).toLocaleDateString("en-US", {year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }) : "");
+        }
+
+        return p[h];
+    }
 
     function getTabularView(ctl, rset){
-        let results = (rset || []).map((p) => {
-          return getTabularRow(ctl, p);
+        let results = (rset || []).map((p, i) => {
+          return getTabularRow(ctl, p, i);
         });
         if(results.length == 0){
             return "";
         }
 
-        let table = m("table", { class: "tabular-results-table" }, [ getHeadersView(ctl.listType), m("tbody", results)]);
+        let table = m("table", { class: "tabular-results-table" }, [ getHeadersView(ctl), m("tbody", results)]);
 
 
         return m("div", { rid: 'resultList', onscroll: ctl.onscroll, class: "tabular-results-overflow" },

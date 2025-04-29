@@ -127,8 +127,9 @@ public class GroupDynamicUtil {
 			case ATTRACTIVE_NARCISSISM:
 			case MACHIAVELLIANISM:
 			case NARCISSISM:
+			case SADISM:
 			case PSYCHOPATHY:
-				oet = DarkTriadUtil.ruleDarkTriad(interaction, prof1, prof2);
+				oet = DarkTetradUtil.ruleDarkTetrad(interaction, prof1, prof2);
 				break;
 			case MATURITY:
 				oet = ruleMaturity(interaction, prof1, prof2);
@@ -331,7 +332,7 @@ public class GroupDynamicUtil {
 
 		}
 
-		List<PersonalityProfile> machiavellian = DarkTriadUtil.filterMachiavellianism(map, leader);
+		List<PersonalityProfile> machiavellian = DarkTetradUtil.filterMachiavellianism(map, leader);
 		if(machiavellian.size() > 0) {
 			for(PersonalityProfile p: machiavellian) {
 				interactions.add(
@@ -340,7 +341,7 @@ public class GroupDynamicUtil {
 			}
 
 		}
-		List<PersonalityProfile> psychopath = DarkTriadUtil.filterPsychopath(map, leader);
+		List<PersonalityProfile> psychopath = DarkTetradUtil.filterPsychopath(map, leader);
 		if(psychopath.size() > 0 && !leader.isPsychopath()) {
 			for(PersonalityProfile p: psychopath) {
 				interactions.add(

@@ -449,7 +449,7 @@ public class ChatUtil {
 			OlioFieldNames.FIELD_SLOAN_KEY,
 			OlioFieldNames.FIELD_SLOAN_CARDINAL,
 			OlioFieldNames.FIELD_MBTI_KEY,
-			OlioFieldNames.FIELD_DARK_TRIAD_KEY,
+			OlioFieldNames.FIELD_DARK_TETRAD_KEY,
 			OlioFieldNames.FIELD_AGREEABLENESS,
 			OlioFieldNames.FIELD_CONSCIENTIOUSNESS,
 			OlioFieldNames.FIELD_EXTRAVERSION,
