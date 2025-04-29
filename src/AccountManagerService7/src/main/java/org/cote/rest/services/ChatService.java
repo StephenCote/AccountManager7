@@ -125,7 +125,7 @@ public class ChatService {
 			logger.error("Invalid chat or prompt configuration");
 		}
 		
-		return Response.status((crep != null ? 200 : 404)).entity(crep.toFullString()).build();
+		return Response.status((crep != null ? 200 : 404)).entity(crep != null ? crep.toFullString() : null).build();
 	}
 	
 	@RolesAllowed({"admin","user"})
