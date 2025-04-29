@@ -637,7 +637,6 @@
     function update(vnode) {
       initParams(vnode);
       let listFilter = navFilter || vnode.attrs.filter || m.route.param("filter");
-      //console.log(listFilter, navFilter, vnode.attrs.filter, m.route.param("filter"));
       if (listFilter) listFilter = decodeURI(listFilter);
 
       let startRecord = vnode.attrs.startRecord || m.route.param("startRecord");
