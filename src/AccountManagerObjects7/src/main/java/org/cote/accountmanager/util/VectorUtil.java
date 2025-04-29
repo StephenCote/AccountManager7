@@ -125,11 +125,12 @@ LIMIT ?
 		String sql = "SELECT DISTINCT T.id, keyId, vaultId, vaulted, T.organizationId, vectorReference, vectorReferenceType, content, chunk FROM " + tableName + " T "
 		+ "INNER JOIN "
 			+ IOSystem.getActiveContext().getDbUtil().getTableName(RecordFactory.getSchema(ModelNames.MODEL_TAG), ModelNames.MODEL_PARTICIPATION)
-			+ " TP on TP.participantId = vectorReference AND TP.participantModel = vectorReferenceType AND TP.participationId IN ("
+			/// AND TP.participantModel = vectorReferenceType
+			+ " TP on TP.participantId = vectorReference  AND TP.participationId IN ("
 			+ Arrays.asList(tags).stream().map(t -> Long.toString((long)t.get(FieldNames.FIELD_ID))).collect(Collectors.joining(","))
 			+ ")"
 		;
-		// logger.info(sql);
+		logger.info(sql);
 		try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); Statement stat = con.createStatement()){
 	        ResultSet rs = stat.executeQuery(sql);
 	        MemoryReader mem = new MemoryReader();
@@ -158,7 +159,7 @@ LIMIT ?
 		return find(model, null, query, limit, k);
 	}
 	public List<BaseRecord> find(BaseRecord model, String modelName, String query, int limit, double k){
-		return find(model, null, new BaseRecord[0], new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k);
+		return find(model, modelName, new BaseRecord[0], new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k);
 	}
 	public List<BaseRecord> find(BaseRecord model, String modelName, BaseRecord[] tags, String[] vectorModels, String query, int limit, double k){
 		return findByEmbedding(model, modelName, tags, vectorModels, query, limit, k);

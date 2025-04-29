@@ -297,7 +297,7 @@
             w = "w-14";
         }
         else if(h == "_favorite"){
-            w = "w-8"
+            w = "w-12"
         }
 
         if(h == "id" || h == "_rowNum"){

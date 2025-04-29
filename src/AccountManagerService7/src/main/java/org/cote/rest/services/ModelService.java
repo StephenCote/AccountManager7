@@ -21,6 +21,7 @@ import javax.ws.rs.core.Response;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
@@ -36,6 +37,8 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.VectorUtil;
+import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"admin","user"})
@@ -116,6 +119,9 @@ public class ModelService {
 		}
 
 		boolean deleted = IOSystem.getActiveContext().getAccessPoint().delete(user, rec);
+		if(ms.isVectorize() && deleted && VectorUtil.isVectorSupported()) {
+			IOSystem.getActiveContext().getVectorUtil().deleteVectorStore(rec);
+		}
 		return Response.status(200).entity(deleted).build();
 	}
 	
@@ -127,14 +133,23 @@ public class ModelService {
 		
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
-
 		boolean patched = false;
 		if(imp == null) {
 			return Response.status(404).entity(null).build();
 		}
+		ModelSchema ms = RecordFactory.getSchema(imp.getSchema());
 
 		if(IOSystem.getActiveContext().getAccessPoint().update(user, imp) != null) {
 			patched = true;
+			if(ms.isVectorize() && VectorUtil.isVectorSupported()) {
+				try {
+					IOSystem.getActiveContext().getVectorUtil().createVectorStore(imp, ChunkEnumType.WORD, 500);
+				} catch (FieldException e) {
+					logger.error(e);
+					e.printStackTrace();
+				}
+			}
+
 		}
 		return Response.status(200).entity(patched).build();
 	}
@@ -179,6 +194,16 @@ public class ModelService {
 		String ops = null;
 		if(oop != null) {
 			ops = oop.copyRecord(outFields.toArray(new String[0])).toFullString();
+			ModelSchema ms = RecordFactory.getSchema(oop.getSchema());
+			if(ms.isVectorize() && VectorUtil.isVectorSupported()) {
+				try {
+					IOSystem.getActiveContext().getVectorUtil().createVectorStore(oop, ChunkEnumType.WORD, 500);
+				} catch (FieldException e) {
+					logger.error(e);
+					e.printStackTrace();
+				}
+			}
+
 		}
 		return Response.status(200).entity(ops).build();
 	}

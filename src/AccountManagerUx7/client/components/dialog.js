@@ -24,25 +24,45 @@
             wset.push(tag);
         }
         */
+        let aCPs = [];
         if(aCCfg){
+
             let aC = aCCfg.filter(c => c.name == inst.api.chatConfig()?.name);
             if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
-                let grp = await page.findObject("auth.group", "data", "~/Tags");
-                let q = am7view.viewQuery(am7model.newInstance("data.tag"));
-                q.field("groupId", grp.id);
-                let q2 = q.field(null, null);
-                q2.comparator = "group_or";
-                q2.fields = [
-                    {name: "name", comparator: "equals", value: aC[0].userCharacter.name},
-                    {name: "name", comparator: "equals", value: aC[0].systemCharacter.name}
-                ];
-        
-                let qr = await page.search(q);
-                if(qr && qr.results){
-                    wset = qr.results;
-                }
+                aCPs.push(aC[0].userCharacter.name);
+                aCPs.push(aC[0].systemCharacter.name);
             }
         }
+        else if(ref && ref[am7model.jsonModelKey] == "olio.charPerson" || ref[am7model.jsonModelKey] == "identity.person"){
+            aCPs.push(ref.name);
+        }
+
+        if(aCPs.length){
+            let grp = await page.findObject("auth.group", "data", "~/Tags");
+            let q = am7view.viewQuery(am7model.newInstance("data.tag"));
+            q.field("groupId", grp.id);
+            let q2 = q.field(null, null);
+            q2.comparator = "group_or";
+            q2.fields = aCPs.map((a) => {
+                return {
+                    name: "name",
+                    comparator: "equals",
+                    value: a
+                }
+            });
+            /*
+            [
+                {name: "name", comparator: "equals", value: aC[0].userCharacter.name},
+                {name: "name", comparator: "equals", value: aC[0].systemCharacter.name}
+            ];
+            */
+    
+            let qr = await page.search(q);
+            if(qr && qr.results){
+                wset = qr.results;
+            }
+        }
+        
         if(ref){
             wset.push(ref);
         }

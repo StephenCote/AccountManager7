@@ -2358,18 +2358,10 @@ ol.breadcrumb-list li {
 .tabular-results-table {
   width: 100%;
   table-layout: fixed;
-  border-width: 1px;
-  --tw-border-opacity: 1;
-  border-color: rgb(255 255 255 / var(--tw-border-opacity, 1));
-  --tw-bg-opacity: 1;
-  background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
   padding: 0.25rem;
   text-align: left;
   font-size: 0.875rem;
   line-height: 1.25rem;
-  --tw-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --tw-shadow-colored: 0 10px 15px -3px var(--tw-shadow-color), 0 4px 6px -4px var(--tw-shadow-color);
-  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
 tr.tabular-header th {
@@ -3610,8 +3602,8 @@ button.button-tab-active:hover {
   width: 25%;
 }
 
-.w-12 {
-  width: 3rem;
+.w-14 {
+  width: 3.5rem;
 }
 
 .w-24 {
@@ -3638,8 +3630,8 @@ button.button-tab-active:hover {
   width: 100%;
 }
 
-.w-14 {
-  width: 3.5rem;
+.w-12 {
+  width: 3rem;
 }
 
 .max-w-\[80\%\] {
@@ -3831,10 +3823,6 @@ button.button-tab-active:hover {
 
 .pl-4 {
   padding-left: 1rem;
-}
-
-.pr-2 {
-  padding-right: 0.5rem;
 }
 
 .text-base {

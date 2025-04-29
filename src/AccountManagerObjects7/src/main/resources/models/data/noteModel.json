@@ -4,6 +4,7 @@
 "group": "Notes",
 "icon": "note",
 "label": "Note",
+"vectorize": true,
 "fields": [
 	{
 		"name": "text",

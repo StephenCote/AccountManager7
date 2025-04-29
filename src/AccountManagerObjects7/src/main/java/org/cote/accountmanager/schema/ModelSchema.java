@@ -20,6 +20,7 @@ public class ModelSchema {
 	@JsonProperty("absolute")	
 	private boolean abs = false;
 	
+	private boolean vectorize = false;
 	private boolean ephemeral = false;
 	private boolean followReference = true;
 	private boolean emitModel = false;
@@ -325,4 +326,14 @@ public class ModelSchema {
 		this.inherits = inherits;
 	}
 
+	public boolean isVectorize() {
+		return vectorize;
+	}
+
+	public void setVectorize(boolean vectorize) {
+		this.vectorize = vectorize;
+	}
+
+	
+	
 }

@@ -142,7 +142,7 @@ public class DBWriter extends MemoryWriter {
 
 		return success;
 	}
-
+	
 	public synchronized int write(BaseRecord[] models) throws WriterException {
 		int writeCount = 0;
 		int batch = 0;

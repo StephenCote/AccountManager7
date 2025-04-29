@@ -526,7 +526,7 @@ h5 {
     }
 
     .tabular-results-table {
-        @apply table-fixed w-full text-sm text-left border border-white bg-white p-1 shadow-lg
+        @apply table-fixed w-full text-sm text-left p-1
     }
 
     tr.tabular-header th{

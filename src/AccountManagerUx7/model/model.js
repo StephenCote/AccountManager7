@@ -380,7 +380,6 @@
 		switch(f.type){
 			case "enum":
 			case "string":
-
 				if(f.required && (v == undefined || v.length == 0)) {
 					err = "Field is required";
 					re = 0;
@@ -403,10 +402,15 @@
 					
 				}
 				break;
+			case "timestamp":
 			case "long":
 			case "int":
 			case "double":
-				if(f.required && (v == undefined || v == 0)) {
+				if(f.name == "parentId" && am7model.isGroup(o.model.name)){
+					/// Allow parentId to be 0 if group is also present
+					///
+				}
+				else if(f.required && (v == undefined || v == 0)) {
 					err = "Field is required";
 					re = 0;
 					break;
@@ -417,8 +421,11 @@
 					break;
 				}
 				break;
+			case "list":
+				/// ignore
+				break;
 			default:
-				console.warn("Unhandled field type: " + f.type);
+				console.warn("Unhandled field type: " + f.type, f);
 				break;
 		}
 		if(re == 0){
