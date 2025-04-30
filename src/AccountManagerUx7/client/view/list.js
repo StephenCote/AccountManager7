@@ -405,12 +405,14 @@
     function getAdminButtons(type){
       let rs = page.context().roles;
       let buttons = [];
+      let cnt = pagination.pages().container;
+      let favSel = "";
       if (type.match(/^policy\.policy/) || rs.accountAdmin || (rs.roleReader && type.match(/^auth\.role$/gi)) || (rs.permissionReader && type.match(/^auth\.permission$/gi))) {
         buttons.push(pagination.button("button mr-4" + (systemList ? " active" : ""), "admin_panel_settings", "", listSystemType));
       }
       else if (am7model.system.library[type]) {
         if (cnt && cnt.path.match(/^\/Library/gi)) favSel = " bg-orange-200 active";
-        buttons.push(pagination.button("button mr-4" + (systemList ? " active" : ""), "admin_panel_settings", "", openSystemLibrary));
+        buttons.push(pagination.button("button mr-4" + (systemList ? " active" + favSel : ""), "admin_panel_settings", "", openSystemLibrary));
       }
       return buttons;
     }

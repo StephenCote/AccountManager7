@@ -130,7 +130,7 @@ LIMIT ?
 			+ Arrays.asList(tags).stream().map(t -> Long.toString((long)t.get(FieldNames.FIELD_ID))).collect(Collectors.joining(","))
 			+ ")"
 		;
-		logger.info(sql);
+
 		try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); Statement stat = con.createStatement()){
 	        ResultSet rs = stat.executeQuery(sql);
 	        MemoryReader mem = new MemoryReader();
@@ -208,7 +208,7 @@ LIMIT ?
 		        stat.setDouble(12, k);
 		        stat.setDouble(13, k);
 		        stat.setInt(14, limit);
-		        // logger.info(stat);
+		        //logger.info(stat);
 		        ResultSet rs = stat.executeQuery();
 		        MemoryReader mem = new MemoryReader();
 		        while (rs.next()) {
