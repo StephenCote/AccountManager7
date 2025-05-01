@@ -137,17 +137,11 @@
 					let nfv = am7model.defaultValue(i);
 					let emptyArray = (i.type == 'list' && nfv.length == 0);
 					let nullOrUndef = ((i.type == 'string' || i.type == 'object' || i.type == 'enum') && (!nfv || nfv == null));
-					if (i.name == 'quality') {
-						console.log(i, ignoreEmptyNull, emptyArray, nullOrUndef);
-					}
 					if (!ignoreEmptyNull || !(
 						emptyArray
 						||
 						nullOrUndef
 					)) {
-						if (i.name == 'quality') {
-							console.log(i.name, nfv);
-						}
 						o[i.name] = nfv;
 					}
 					else {
@@ -275,59 +269,64 @@
 		m[s].push(o);
 	};
 
-	am7model.updateListModel = function(v, f){
+	am7model.updateListModel = function (v, f) {
 		/// In AM7, the 'model' property may be condensed to occur in only the first result  if the remaining results are the same
-    	///
-      if (v && v.length) {
-		let mk = v[0][am7model.jsonModelKey];
-        let m = mk || f?.baseModel;
+		///
+		if (v && v.length) {
+			let mk = v[0][am7model.jsonModelKey];
+			let m = mk || f?.baseModel;
 
-        for (let i = (mk ? 1 : 0); i < v.length; i++) {
-          if (!v[i][am7model.jsonModelKey]) v[i][am7model.jsonModelKey] = m;
-        }
-      }
+			for (let i = (mk ? 1 : 0); i < v.length; i++) {
+				if (!v[i][am7model.jsonModelKey]) v[i][am7model.jsonModelKey] = m;
+			}
+		}
 	};
 
-	am7model.applyModelNames = function(o){
+	am7model.applyModelNames = function (o) {
 		let af = am7model.getModelFields(o[am7model.jsonModelKey]);
 		af.forEach(f => {
-			if(f.type == "model" && o[f.name] && !o[f.name][am7model.jsonModelKey]){
+			if (f.type == "model" && o[f.name] && !o[f.name][am7model.jsonModelKey]) {
 				o[f.name][am7model.jsonModelKey] = f.baseModel;
-				applyModelNames(o[f.name]);
+				am7model.applyModelNames(o[f.name]);
 			}
 		});
 	}
 
 	/// A more generic version of the mergeEntity function in Object
-	am7model.prepareEntity = function(e, baseModel){
-            let ue = am7model.newPrimitive(e.model || baseModel);
-            if(!e[am7model.jsonModelKey]) e[am7model.jsonModelKey] = ue[am7model.jsonModelKey] || baseModel;
-            if(!e[am7model.jsonModelKey]){
-                console.warn("Cannot find model", e);
-                return;
-            }
-            let x = Object.assign(ue, e);
-            let af = am7model.getModelFields(e[am7model.jsonModelKey]);
-			/*
-            af.forEach(f => {
-                if((f.type == 'list' || f.type == 'model') && f.foreign && f.baseModel){
-                    if(f.type == 'model' && !ue[f.name] && e[f.name]){
-                        ue[f.name] = prepareEntity(e[f.name], f.baseModel);
-                    }
-                    else if(f.type == 'list'){
-                        ue[f.name] = ue[f.name].map(e => prepareEntity(e, f.baseModel));
-                    }
-                    if(ue[f.name] ){
-                        am7model.mergeEntity(entity[f.name], e[f.name], f.baseModel);
-                    }
-                }
-            });
-			*/
-            am7model.applyModelNames(x);
-			return x;
-        };
-	
-	am7model.validationRule = function(n){
+	am7model.prepareEntity = function (e, baseModel, recurse) {
+		let ue = am7model.newPrimitive(e && e[am7model.jsonModelKey] ? e[am7model.jsonModelKey] : baseModel);
+		if (!e[am7model.jsonModelKey]) e[am7model.jsonModelKey] = ue[am7model.jsonModelKey] || baseModel;
+		if (!e[am7model.jsonModelKey]) {
+			console.warn("Cannot find model", e);
+			return;
+		}
+		let x = Object.assign(ue, e);
+		let af = am7model.getModelFields(e[am7model.jsonModelKey]);
+		
+		if (recurse) {
+			af.forEach(f => {
+				if ((f.type == 'list' || f.type == 'model') && f.foreign && f.baseModel) {
+					if (f.type == 'model' && !ue[f.name] && e[f.name]) {
+						ue[f.name] = am7model.prepareEntity(e[f.name], f.baseModel, recurse);
+					}
+					else if (f.type == 'list') {
+						ue[f.name] = ue[f.name].map(e2 => am7model.prepareEntity(e2, f.baseModel, recurse));
+					}
+					/*
+					if (ue[f.name] && (f.type != 'list' || ue[f.name].length > 0)) {
+						let fm = f.baseModel;
+						ue[f.name] = am7model.prepareEntity(e[f.name] || ue[f.name], f.baseModel, recurse);
+					}
+					*/
+				}
+			});
+		}
+		
+		am7model.applyModelNames(x);
+		return x;
+	};
+
+	am7model.validationRule = function (n) {
 		let r = am7model.validationRules.filter(r => r.name == n);
 		return r.length ? r[0] : undefined;
 	};
@@ -336,30 +335,30 @@
 		let r = o.model.fields.map((f) => am7model.validateField(o, f, f.rules));
 		return r;
 	};
-	
+
 	let vrcache = {};
 
-	am7model.getValidationRuleInstance = function (ru){
+	am7model.getValidationRuleInstance = function (ru) {
 		let oru = ru;
 		let vr = oru;
 		let isStr = typeof oru == "string"
-		if(isStr){
-			if(vrcache[oru]){
+		if (isStr) {
+			if (vrcache[oru]) {
 				return vrcache[oru]
 			}
 			/// System rule references start with $, such as $rule
 			/// Tokenized system rules are in the format of ${rule}, with the intent of being dynamically substituded when the rule is loaded on the backend
 			/// Otherwise, rules would follow the foreign list model
 			/// Since this is  a lookup, anything starting with $ is a system rule and $,{,} will be stripped
-			if(oru.match(/^\$/)){
-				oru = oru.replace(/[\$\{\}]*/g,"");
+			if (oru.match(/^\$/)) {
+				oru = oru.replace(/[\$\{\}]*/g, "");
 			}
 			vr = am7model.validationRule(oru);
 		}
 		let nvr = am7model.prepareEntity(vr, "policy.validationRule")
 		let vri = am7model.prepareInstance(nvr, am7model.forms.validationRule);
 
-		if(isStr){
+		if (isStr) {
 			vrcache[ru] = vri;
 		}
 		return vri;
@@ -371,51 +370,51 @@
 			ir = 1,
 			tir,
 			re = 1
-		;
+			;
 
-		if(f.readOnly || f.virtual || f.ephemeral || f.private) return 1;
+		if (f.readOnly || f.virtual || f.ephemeral || f.private) return 1;
 
 		let v = o.api[f.name]();
 		let err;
-		switch(f.type){
+		switch (f.type) {
 			case "enum":
 			case "string":
-				if(f.required && (v == undefined || v.length == 0)) {
+				if (f.required && (v == undefined || v.length == 0)) {
 					err = "Field is required";
 					re = 0;
 					break;
 				}
-				if(f.maxLength > 0 && v != undefined && v.length > f.maxLength) {
+				if (f.maxLength > 0 && v != undefined && v.length > f.maxLength) {
 					err = "Exceeds maximum length " + f.maxLength;
 					re = 0;
 					break;
 				}
-				if(f.minLength && (v == undefined || v.length < f.minLength)){
+				if (f.minLength && (v == undefined || v.length < f.minLength)) {
 					err = "Does not meet the minimum length " + f.minLength;
 					re = 0;
 					break;
 				}
-				if(f.limit?.length > 0 && !f.limit.includes(v) && f.required) {
+				if (f.limit?.length > 0 && !f.limit.includes(v) && f.required) {
 					err = "Not defined in the limit", f.limit;
 					re = 0;
 					break;
-					
+
 				}
 				break;
 			case "timestamp":
 			case "long":
 			case "int":
 			case "double":
-				if(f.name == "parentId" && am7model.isGroup(o.model.name)){
+				if (f.name == "parentId" && am7model.isGroup(o.model.name)) {
 					/// Allow parentId to be 0 if group is also present
 					///
 				}
-				else if(f.required && (v == undefined || v == 0)) {
+				else if (f.required && (v == undefined || v == 0)) {
 					err = "Field is required";
 					re = 0;
 					break;
 				}
-				if(f.validateRange && (v < f.minValue || v > f.maxValue)) {
+				if (f.validateRange && (v < f.minValue || v > f.maxValue)) {
 					err = "Outside value range " + f.minValue + " - " + f.maxValue;
 					re = 0;
 					break;
@@ -428,14 +427,14 @@
 				console.warn("Unhandled field type: " + f.type, f);
 				break;
 		}
-		if(re == 0){
+		if (re == 0) {
 			o.validationErrors[f.name] = err;
 			return 0;
 		}
 		if (!rules || !rules.length) {
 			return 1;
 		}
-		for(let ri in rules){
+		for (let ri in rules) {
 			let ru = rules[ri];
 			let vr = am7model.getValidationRuleInstance(ru);
 			if (!vr) {
@@ -443,9 +442,9 @@
 				return 0;
 			}
 
-			if(vr.api.rules()?.length) {
+			if (vr.api.rules()?.length) {
 				tir = am7model.validateField(o, f, vr.api.rules());
-				if (ir && !tir){
+				if (ir && !tir) {
 					ir = 0;
 					break;
 				}
@@ -457,7 +456,7 @@
 			if (
 				(f.type == "int" || f.type == "double" || f.type == "float") && v == f.default
 
-			 ){
+			) {
 				return 1;
 			}
 
@@ -465,7 +464,7 @@
 				o.validationErrors[f.name] = "Field is empty or undefined";
 				return 0;
 			}
-	
+
 			if (vr.api.expression()) {
 				try {
 					let re = new RegExp(vr.api.expression());
@@ -485,7 +484,7 @@
 							) {
 								r = 1;
 							}
-							else{
+							else {
 								o.validationErrors[f.name] = "Invalid value for " + vr.api.name();
 							}
 							break;
@@ -500,8 +499,8 @@
 					console.error("Error in validateField:: " + (e.description ? e.description : e.message));
 				}
 			}
-			if(vr.api.type() == "none") r = 1;
-			else if(vr.api.type() == "function"){
+			if (vr.api.type() == "none") r = 1;
+			else if (vr.api.type() == "function") {
 				console.warn("Unhandled function type: " + vr.api.name());
 				r = 1;
 			}
@@ -510,7 +509,7 @@
 				set the return value to false
 			*/
 			if (r && !ir) r = 0;
-			if(!r){
+			if (!r) {
 				console.error("Validation failed for " + f.name + " with value " + v);
 				break;
 			}
@@ -609,7 +608,7 @@
 			if (v && (v instanceof Array)) {
 				v = v.join("\r\n");
 			}
-			else{
+			else {
 				v = "";
 			}
 			return v;
@@ -618,7 +617,7 @@
 			if (v && typeof v == "string") {
 				v = v.split(/\r?\n|\r|\n/g);
 			}
-			else{
+			else {
 				v = [];
 				console.log(v);
 			}
@@ -659,10 +658,10 @@
 		}
 	};
 
-	am7model.base64ToUint8 = function(data) {
+	am7model.base64ToUint8 = function (data) {
 		var dec = Base64.decode(data);
 		var array = new Uint8Array(new ArrayBuffer(dec.length));
-		for(var i = 0; i < dec.length; i++) {
+		for (var i = 0; i < dec.length; i++) {
 			array[i] = dec.charCodeAt(i);
 		}
 		return array;
@@ -810,7 +809,7 @@
 			if (v) {
 				let z;
 				if (x && x[v]) z = x[v];
-				else if(inst.field(n)) z = inst.field(n)[v];
+				else if (inst.field(n)) z = inst.field(n)[v];
 				return z;
 			}
 			return x;
@@ -823,7 +822,7 @@
 			if (!o && inst.actions[n]) {
 				inst.actions[n](inst, n);
 			}
-			else if(o) {
+			else if (o) {
 				inst.actions[n] = o;
 			}
 		};
@@ -907,21 +906,21 @@
 			}
 
 			inst.validateField[f.name] = () => {
-				if(field?.skipValidation){
+				if (field?.skipValidation) {
 					return true;
 				}
 				let r = am7model.validateField(inst, f, f.rules);
 				inst.validations[f.name] = (r == 1);
-				if(r == 0 && !inst.validationErrors[f.name]){
+				if (r == 0 && !inst.validationErrors[f.name]) {
 					inst.validationErrors[f.name] = "Invalid value for " + f.name;
 				}
-				else if (r == 1){
+				else if (r == 1) {
 					delete inst.validationErrors[f.name];
 				}
 				return (r == 1);
 			}
 		});
-		
+
 		inst.validate = () => {
 			let fv = [];
 			am7model.getModelFields(inst.model).forEach((f) => {
@@ -940,7 +939,7 @@
 				if (e.target.type && e.target.type == "checkbox") {
 					v = e.target.checked;
 				}
-				else if(f.type == "string" && typeof v == "string" && v.length == 0){
+				else if (f.type == "string" && typeof v == "string" && v.length == 0) {
 					v = null;
 				}
 				inst.api[n](v);

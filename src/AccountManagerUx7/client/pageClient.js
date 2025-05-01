@@ -728,7 +728,7 @@
             am7client.create(object[am7model.jsonModelKey], object, function(v){
                 res(v);
             });
-        })
+        });
     }
     async function promiseMakePath(type, subType, path){
         return new Promise((res, rej)=>{

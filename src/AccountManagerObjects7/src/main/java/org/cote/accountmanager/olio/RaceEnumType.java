@@ -11,6 +11,7 @@ public enum RaceEnumType {
 	E("White"),
 	L("Lunatic"),
 	R("Robot"),
+	M("Monster"),
 	S("Succubus"),
 	U("Unknown"),
 	V("Vampire"),

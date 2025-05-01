@@ -254,6 +254,7 @@ public class Rules {
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.D, 0.003);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.E, 0.755);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.L, 0.001);
+		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.M, 0.001);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.R, 0.001);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.S, 0.001);
 		DEFAULT_RACE_PERCENTAGE.put(RaceEnumType.V, 0.001);

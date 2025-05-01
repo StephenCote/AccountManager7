@@ -2807,14 +2807,14 @@
         }
     }
 
-    async function rollCharacter(object, inst) {
-        if (!inst) {
-            return;
-        }
+    async function rollCharacter(object) {
         let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/roll", withCredentials: true });
         if (x && x != null) {
-            object.mergeEntity(x);
+            if(object){
+                object.mergeEntity(x);
+            }
         }
+        return x;
     }
     async function getSystemPrompt(object, inst) {
         if (!inst) {
@@ -4097,6 +4097,9 @@
             }
         }
     };
-
+    forms.commands = {
+        rollCharacter,
+        narrate
+    };
     am7model.forms = forms;
 }());

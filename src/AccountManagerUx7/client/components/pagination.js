@@ -176,7 +176,7 @@
               else if(am7model.isParent(pages.resultType)){
                 q.field("parentId", id);
               }
-              console.log(q);
+              // console.log(q);
 
               am7client.search(q, handleList);
             });

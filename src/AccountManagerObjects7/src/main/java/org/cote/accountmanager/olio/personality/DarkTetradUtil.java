@@ -242,6 +242,7 @@ public class DarkTetradUtil {
 			per.set(OlioFieldNames.FIELD_MACHIAVELLIANISM, Double.parseDouble(df.format(rand.nextDouble(agreeLimit))));
 			per.set(OlioFieldNames.FIELD_NARCISSISM, Double.parseDouble(df.format(rand.nextDouble(prettyPsycho))));
 			per.set(OlioFieldNames.FIELD_PSYCHOPATHY, Double.parseDouble(df.format(rand.nextDouble(prettyPsycho))));
+			per.set(OlioFieldNames.FIELD_SADISM, Double.parseDouble(df.format(rand.nextDouble(prettyPsycho))));
 		} catch (NumberFormatException | FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}

@@ -263,10 +263,12 @@ public class CharacterUtil {
 			hairStyle = femaleHairStyles[rand.nextInt(femaleHairStyles.length)];
 		}
 		switch(pret) {
+			
 			case A:
 			case B:
 			case C:
 			case D:
+			case M:
 				eyeColor = "#a52a2a";
 				hairColor = "#000000";
 				break;

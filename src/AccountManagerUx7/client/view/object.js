@@ -1547,16 +1547,7 @@
             });
         }
         
-        function applyModelNames(o){
-            let af = am7model.getModelFields(o[am7model.jsonModelKey]);
-            af.forEach(f => {
-                if(f.type == "model" && o[f.name] && !o[f.name][am7model.jsonModelKey]){
-                    console.log("Set: " + f.baseModel);
-                    o[f.name][am7model.jsonModelKey] = f.baseModel;
-                    applyModelNames(o[f.name]);
-                }
-            });
-        }
+
 
         /*
         function mergeDeep(t, ...s) {
@@ -1599,12 +1590,10 @@
                     else if(f.type == 'list'){
                         ue[f.name] = [];
                         for(let c in e[f.name]){
-                            console.log(f.name);
                             ue[f.name].push(getPrimitive(f.baseModel));
                         }
                     }
                     if(e[f.name] ){
-                        console.log(f.name, e[f.name]);
                         objectPage.mergeEntity(entity[f.name], e[f.name], f.baseModel);
                         //e[f.name] = undefined;
                     }
