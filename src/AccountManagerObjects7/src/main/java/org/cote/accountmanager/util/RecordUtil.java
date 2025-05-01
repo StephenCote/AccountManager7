@@ -572,20 +572,13 @@ public class RecordUtil {
 					boolean partCheck = ((partModel == null && check != null) || (partModel != null && !partModel.equals(check)));
 					if((size || ids || partCheck)) {
 						logger.warn(firstModel.getSchema() + " " + size + " " +  m.getFields().size() + " <> " + firstModel.getFields().size() + " " + ids + " " + rid + " <> " + id + " Part " + partCheck);
-						logger.warn(firstModel.toFullString());
-						logger.warn(m.toFullString());
+						// logger.warn(firstModel.toFullString());
+						// logger.warn(m.toFullString());
 					}
 					return (size || ids || partCheck);
 				} 
 		).collect(Collectors.toList());
-		/*
-		if(mlist.size() != 1 || rlist.size() > 0) {
-			logger.info("Is Similar: " + mlist.size() + " / " + rlist.size());
-			for(BaseRecord rec: rlist) {
-				logger.warn(firstModel.getFields().size() + " :: " + rec.getFields().size());
-			}
-		}
-		*/
+
 		return (mlist.size() == 1 && rlist.size() == 0);
 	}
 	

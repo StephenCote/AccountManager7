@@ -541,6 +541,10 @@ public class ApparelUtil {
 				}
 				wearList.add(wearRec);
 				applyEmbeddedWearable(ctx, ownerId, wearRec, emb);
+				if(wearRec.get(FieldNames.FIELD_NAME) == null) {
+					logger.warn("Failed to apply embedding: " + emb);
+					logger.warn(wearRec.toFullString());
+				}
 			}
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
@@ -550,42 +554,6 @@ public class ApparelUtil {
 		return app;
 
 	}
-	
-	/*
-	protected static String randomClothingType(String gender, String type) {
-		String outType = null;
-		String pref = cpref;
-		String[] base = clothingTypes;
-		if(type != null && type.equals("jewelry")) {
-			pref = jpref;
-			base = jewelryTypes;
-		}
-		while(outType == null) {
-			String chk = base[rand.nextInt(base.length)];
-			if(chk.equals("jewelry")) {
-				base = jewelryTypes;
-				continue;
-			}
-			if(gender != null && !chk.contains(":" + gender + ":") && !chk.contains(":u:")) {
-				continue;
-			}
-			outType = chk;
-		}
-		return (pref + outType);
-	}
-	*/
-	
-	
-	/*
-	protected static void applyRandomWearable(OlioContext ctx, BaseRecord rec) {
-		String type = rec.get(FieldNames.FIELD_TYPE);
-		String gender = rec.get(FieldNames.FIELD_GENDER);
-		if(gender != null) gender = gender.substring(0,1).toLowerCase();
-		else gender = "u";
-		String randType = randomClothingType(gender, type);
-		applyEmbeddedWearable(ctx, rec, randType);
-	}
-	*/
 	
 	/// name - level - gender - opacity - elastic - glossy - smooth - def - water - heat - insul
 	public static String randomFabric(WearLevelEnumType level, String gender) {

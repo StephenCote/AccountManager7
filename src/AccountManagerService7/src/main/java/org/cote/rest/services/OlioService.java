@@ -124,7 +124,7 @@ public class OlioService {
 			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
 			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
 
-			a1.set(FieldNames.FIELD_GENDER, (Math.random() < 0.5 ? "male" : "female"));
+			a1.set(FieldNames.FIELD_GENDER, (Math.random() <= 0.5 ? "male" : "female"));
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
 			

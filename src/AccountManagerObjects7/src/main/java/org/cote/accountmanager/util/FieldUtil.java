@@ -360,8 +360,18 @@ public class FieldUtil {
 				outBool = (f.getValue() == null && sval == null) || (sval != null && sval.equals(f.getValue()));
 				break;
 			case LONG:
-				long l1 = f.getValue();
+				long l1 = 0L;
 				long l2 = 0L;
+				Object val = f.getValue();
+				if(val != null) {
+					if(val instanceof Integer) {
+						l1  = ((Integer)val).longValue();
+					}
+					else {
+						l1 = (long)val;
+					}
+				}
+		
 				if(fs.getDefaultValue() != null) {
 					l2 = (long)fs.getDefaultValue();
 				}

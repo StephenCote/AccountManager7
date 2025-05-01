@@ -247,6 +247,7 @@ public abstract class BaseRecord {
 		FieldSchema fs = ms.getFieldSchema(embedded[0]);
 		if(fs == null) {
 			logger.error("Schema is null for " + embedded[0]);
+			ErrorUtil.printStackTrace();
 			return null;
 		}
 		if(fs.getBaseModel() == null) {

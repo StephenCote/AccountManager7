@@ -14,6 +14,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
+import org.cote.accountmanager.util.FieldUtil;
 
 public class FactoryBase implements IFactory {
 	public static final Logger logger = LogManager.getLogger(FactoryBase.class);
@@ -48,7 +49,8 @@ public class FactoryBase implements IFactory {
 						if(fs.getFieldType() == FieldEnumType.FLEX) {
 							rec.setFlex(f.getName(), recordTemplate.get(f.getName()));
 						}
-						else {
+
+						else if(f.getValue() != null && !FieldUtil.isDefault(schema.getName(), f)) {
 							rec.set(f.getName(), recordTemplate.get(f.getName()));
 						}
 					} catch (ValueException e) {
