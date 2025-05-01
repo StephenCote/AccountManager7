@@ -32,6 +32,11 @@ public class ProfileUtil {
 	private static SecureRandom rand = new SecureRandom();
 	private static Map<Long, PersonalityProfile> profiles = new ConcurrentHashMap<>();
 	private static Map<Long, AnimalProfile> animalProfiles = new ConcurrentHashMap<>();
+	
+	public static void clearCache() {
+		profiles.clear();
+		animalProfiles.clear();
+	}
 	/*
 	Openness - [inventive/curiosity to consistent/cautious]
 	Conscientiousness - [organized/efficient to extravagant/careless]

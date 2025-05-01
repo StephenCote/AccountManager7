@@ -40,6 +40,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.policy.CachePolicyUtil;
 import org.cote.accountmanager.util.StreamUtil;
@@ -63,6 +64,7 @@ public class CacheService {
 		CacheUtil.clearCache();
 		ServiceUtil.clearCache();
 		StreamUtil.clearAllUnboxedStreams();
+		OlioUtil.clearCache();
 	}
 	
 	@RolesAllowed({"admin","user"})

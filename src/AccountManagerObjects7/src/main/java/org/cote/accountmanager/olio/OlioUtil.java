@@ -64,6 +64,10 @@ public class OlioUtil {
 		return ctx.getDemographicMap().get(id);
 	}
 	
+	public static void clearCache() {
+		ProfileUtil.clearCache();
+	}
+	
 	public static void setDemographicMap(OlioContext ctx, Map<String,List<BaseRecord>> map, BaseRecord realm, BaseRecord person) {
 		try {
 			ZonedDateTime birthDate = person.get(FieldNames.FIELD_BIRTH_DATE);

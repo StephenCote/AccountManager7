@@ -44,10 +44,17 @@
         let qf = q.field("name", pages.filter);
         qf.comparator = "like";
       }
+
+      if(!am7model.hasField(pages.resultType, "name") && entity.sort == "name"){
+        entity.sort = "id";
+        pages.sort = "id";
+      }
+
       q.range(pages.startRecord, pages.recordCount);
       q.sort(pages.sort);
       q.order(pages.order);
       q.field("organizationId", page.user.organizationId);
+
       return q;
     }
     /*
@@ -111,6 +118,7 @@
         console.debug("Invalid page: " + iPage + " / " + pages.pageCount);
         return;
       }
+
       pages.currentPage = iPage;
       pages.currentItem = -1;
       if (pages.pageResults[iPage]) {
@@ -176,15 +184,12 @@
               else if(am7model.isParent(pages.resultType)){
                 q.field("parentId", id);
               }
-              // console.log(q);
-
               am7client.search(q, handleList);
             });
           }
             
         }
         else {
-
           am7client.search(getSearchQuery(), handleList);
         }
       }
@@ -205,6 +210,7 @@
 
       entity.listFilter = filter || "";
       let sortChange = (entity.sort != pages.sort || entity.order != pages.order);
+
       if (
         sortChange
         ||
@@ -284,7 +290,6 @@
           /// Set record count to 0 because searchCount operates differently than the regular count, counting authorized identifiers outside of a view versus counting rows
           ///
           req.recordCount = 0;
-
           am7client.searchCount(req, handleCount);
         }
 

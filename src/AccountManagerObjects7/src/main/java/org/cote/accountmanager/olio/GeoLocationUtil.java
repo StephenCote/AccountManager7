@@ -39,6 +39,9 @@ public class GeoLocationUtil {
 	private static Map<String, String[]> altNamesCache = new HashMap<>();
 
 	private static Map<Long, List<BaseRecord>> cellMap = new ConcurrentHashMap<>();
+	public static void clearCache() {
+		cellMap.clear();
+	}
 
 	/// 30K is in the middle of the ocean
 	public static final String GZD = "30K";

@@ -52,7 +52,7 @@ public class DarkTetradUtil {
 
 		tetradKeyTitles.put("mnPS", "destroyer");
 		tetradKeyTitles.put("mnPs", "psychopath");
-		tetradKeyTitles.put("mnpS", "menace");
+		tetradKeyTitles.put("mnpS", "sadistic");
 		tetradKeyTitles.put("mnps", "benevolent");
 	}
 	/// This is a somewhat simplistic view on the DarkTetrad personality theory, and currently only indicates a presence on the spectrum and not the degree

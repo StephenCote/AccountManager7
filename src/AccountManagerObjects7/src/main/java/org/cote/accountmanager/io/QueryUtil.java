@@ -216,7 +216,7 @@ public class QueryUtil {
 	}
 	public static void filterParticipant(Query query, String model, String[] fieldNames, BaseRecord actor, BaseRecord effect) {
 		Query part = new Query(ModelNames.MODEL_PARTICIPATION);
-
+		ModelSchema ms = RecordFactory.getSchema(query.getType());
 		QueryField or = part.field(null, ComparatorEnumType.GROUP_OR, null);
 		for(String f : fieldNames) {
 			String actorType = ParticipationFactory.getParticipantModel(model, f, actor.getSchema());
@@ -229,7 +229,12 @@ public class QueryUtil {
 		try {
 			part.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPATION_ID);
 			query.field(FieldNames.FIELD_ORGANIZATION_ID, actor.get(FieldNames.FIELD_ORGANIZATION_ID));
-			query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+			if(ms.hasField(FieldNames.FIELD_NAME)) {
+				query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+			}
+			else if(ms.hasField(FieldNames.FIELD_ID)) {
+				query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_ID);
+			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -240,7 +245,7 @@ public class QueryUtil {
 	public static void filterParticipation(Query query, BaseRecord object, String fieldName, String actorType, BaseRecord effect) {
 		Query part = createParticipationQuery(null, object, fieldName, null, effect);
 		actorType = ParticipationFactory.getParticipantModel(object.getSchema(), fieldName, actorType);
-
+		ModelSchema ms = RecordFactory.getSchema(query.getType());
 		part.field(FieldNames.FIELD_PARTICIPANT_MODEL, actorType);
 		try {
 			part.set(FieldNames.FIELD_JOIN_KEY, FieldNames.FIELD_PARTICIPANT_ID);
@@ -248,7 +253,12 @@ public class QueryUtil {
 			if(oid > 0L) {
 				query.field(FieldNames.FIELD_ORGANIZATION_ID, object.get(FieldNames.FIELD_ORGANIZATION_ID));
 			}
-			query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+			if(ms.hasField(FieldNames.FIELD_NAME)) {
+				query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_NAME);
+			}
+			else if(ms.hasField(FieldNames.FIELD_ID)) {
+				query.set(FieldNames.FIELD_SORT_FIELD, FieldNames.FIELD_ID);
+			}
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
@@ -409,7 +419,7 @@ public class QueryUtil {
 			if(isOrg) {
 				q.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			}
-			if(name != null) {
+			if(ms.hasField(FieldNames.FIELD_NAME) && name != null) {
 				q.field(FieldNames.FIELD_NAME, name);
 			}
 		}

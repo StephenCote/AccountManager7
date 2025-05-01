@@ -83,6 +83,7 @@ public class AccessPoint {
 		if(qr == null) {
 			return new ArrayList<>();
 		}
+
 		return Arrays.asList(qr.getResults());
 	}
 	

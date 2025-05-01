@@ -323,6 +323,7 @@
 	*/
 
 	function search(q, fH, bCount){
+		
 		var sKey = q.key();
 		var o = getFromCache(q.type, "GET", sKey);
 		if(o){
@@ -415,7 +416,6 @@
 	}
 	*/
 	function list(sType, sObjectId, sFields, iStart, iLength, fH){
-		
 		var sK = "LIST-" + sType + "-" + (sObjectId ? sObjectId : "0") + "-" + sFields + "-" + iStart + "-" + iLength;
 		var o = getFromCache(sType, sK, sObjectId);
 		if(o){
@@ -720,39 +720,7 @@
 		console.error("REFACTOR: attachPolicy");
 		// return Hemi.xml.getJSON(sAppr + "/policy/attach/" + sType + "/" + sId + "/" + sPid,fH,(fH ? 1 : 0));
 	}
-	function newSortQuery(sField, sOrder){
-		console.error("REFACTOR: newSortQuery");
-		var oSort = new org.cote.objects.sortQueryType();
-		oSort.sortOrder = sOrder;
-		oSort.sortField = sField;
-		return oSort;
-	}
-	function newFieldMatch(sType, sFieldName, sComp, sPattern){
-		console.error("REFACTOR: newFieldMatch");
-		var oF = new org.cote.objects.fieldMatch();
-		oF.comparator = sComp;
-		oF.dataType = sType;
-		oF.encodedValue = sPattern;
-		oF.fieldName = sFieldName;
-		return oF;
-	}
-	function newSearchRequest(sType, sActorType, sActorId, iStartRecord, iRecordCount, bFull, oSort, aFields){
-		console.error("REFACTOR: newSearchRequest");
-		var oR = new org.cote.objects.objectSearchRequestType();
-		oR.objectType = sType;
-		oR.sort = oSort;
-		oR.organizationId = 0;
-		oR.fullRecord = true;
-		oR.populateGroup = false;
-		oR.startRecord = iStartRecord;
-		oR.recordCount = iRecordCount;
-		oR.paginate = true;
-		oR.includeThumbnail = false;
-		oR.contextActorType = (sActorType ? sActorType : "UNKNOWN");
-		oR.contextActorId = (sActorId ? sActorId : null);
-		oR.fields = (aFields ? aFields : []);
-		return oR;
-	}
+
 	window.am7client = {
 		executeScript : executeScript,
 		executeScriptById : executeScriptById,
@@ -770,9 +738,6 @@
 		// query : query,
 		newQuery : newQuery,
 		searchCount : searchCount,
-		newSortQuery : newSortQuery,
-		newFieldMatch : newFieldMatch,
-		newSearchRequest : newSearchRequest,
 		countByTag : countByTag,
 		findTags : findTags,
 		make : make,

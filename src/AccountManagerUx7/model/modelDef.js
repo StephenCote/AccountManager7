@@ -9701,7 +9701,7 @@
           "common.baseLight",
           "olio.llm.request"
         ],
-        "group": "Chat",
+        "group": "ChatRequests",
         "icon": "chat",
         "label": "Requests",
         "vector": "org.cote.accountmanager.olio.VectorProvider",

@@ -39,11 +39,14 @@ public class AnimalUtil {
 	private static int defaultAnimalSpeed = 10;
 	
 	private static final Map<Long, Map<String, List<BaseRecord>>> animalSpread = new ConcurrentHashMap<>();
+
+	public static void clearCache() {
+		animalSpread.clear();
+	}
 	
 	/// Attach an animal population to the specified location.  This should be used for random/surprise encounters, or called from the adjacent paint method
 	/// Note: For 'feature' locations with 'cell' children, the animals need to be spread/painted across the cells
 	///
-	
 	public static void checkAnimalPopulation(OlioContext context, BaseRecord realm, BaseRecord loc) {
 		BaseRecord location = OlioUtil.getFullRecord(loc);
 		/// List<BaseRecord> zoo = realm.get(OlioFieldNames.FIELD_ZOO);
