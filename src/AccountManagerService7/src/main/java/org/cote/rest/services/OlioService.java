@@ -113,7 +113,26 @@ public class OlioService {
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response rollCharacter(@Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
-		Factory f = IOSystem.getActiveContext().getFactory();
+		BaseRecord a1 = rollCharacter(user, (Math.random() <= 0.5 ? "male" : "female"));
+		return Response.status((a1 != null ? 200 : 404)).entity((a1 != null ? a1.toFullString() : null)).build();
+	}
+
+	@RolesAllowed({"user"})
+	@GET
+	@Path("/roll/{gender:[a-z]+}")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response rollCharacterGender(@PathParam("gender") String gen, @Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		String gender = gen;
+		if(!gender.equals("male") && !gender.equals("female")) {
+			gender = "male";
+		}
+		BaseRecord a1 = rollCharacter(user, gender);
+		return Response.status((a1 != null ? 200 : 404)).entity((a1 != null ? a1.toFullString() : null)).build();
+	}
+	
+	private BaseRecord rollCharacter(BaseRecord user, String gender) {
+Factory f = IOSystem.getActiveContext().getFactory();
 		
 		BaseRecord a1 = null;
 		try{
@@ -124,7 +143,7 @@ public class OlioService {
 			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
 			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
 
-			a1.set(FieldNames.FIELD_GENDER, (Math.random() <= 0.5 ? "male" : "female"));
+			a1.set(FieldNames.FIELD_GENDER, gender);
 			a1.set("age", (new Random()).nextInt(7, 70));
 			a1.set("alignment", OlioUtil.getRandomAlignment());
 			
@@ -136,15 +155,17 @@ public class OlioService {
 			List<BaseRecord> apps = a1.get("store.apparel");
 			BaseRecord app = ApparelUtil.randomApparel(null, a1);
 			app.set(FieldNames.FIELD_NAME, "Primary Apparel");
+			app.set(OlioFieldNames.FIELD_IN_USE, true);
+			List<BaseRecord> wears = app.get(OlioFieldNames.FIELD_WEARABLES);
+			wears.forEach(w -> {
+				w.setValue(OlioFieldNames.FIELD_IN_USE, true);
+			});
 			apps.add(app);
-			return Response.status(200).entity(a1.toFullString()).build();
 		}
 		catch(ModelNotFoundException | FieldException | ValueException | FactoryException e) {
 			logger.error(e);
 		}
-		return Response.status(404).entity(null).build();
+		return a1;
 	}
-
-	
 	
 }

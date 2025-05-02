@@ -619,7 +619,6 @@
 			}
 			else {
 				v = [];
-				console.log(v);
 			}
 			//v = ntc.name(v)[0];
 			return v;

@@ -1600,7 +1600,7 @@
                 }
             });
             
-            applyModelNames(x);
+            am7model.applyModelNames(x);
             if(!s) resetEntity(x);
             // m.redraw();
         };

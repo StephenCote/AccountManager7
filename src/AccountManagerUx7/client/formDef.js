@@ -758,6 +758,68 @@
         }
     };
 
+    
+    am7model.models.push(
+        {
+            name: "characterWizard", icon: "person", fields: [
+                {
+                    name: "firstName",
+                    label: "First Name",
+                    type: 'string'
+                },
+                {
+                    name: "middleName",
+                    label: "Middle Name",
+                    type: 'string'
+                },
+                {
+                    name: "lastName",
+                    label: "Last Name",
+                    type: 'string'
+                },
+                {
+                    name: "gender",
+                    label: "Gender",
+                    type: 'string',
+                    default: "male"
+                },
+                {
+                    name: "age",
+                    label: "Age",
+                    type: 'int',
+                    default: 25
+                }
+            ]
+        }
+    );
+
+    forms.characterWizard = {
+        label: "Character Wizard",
+        fields: {
+            gender: {
+                layout: 'one',
+                field: {
+                    label: 'Gender',
+                    type: 'list',
+                    limit: ['male', 'female', 'random']
+                }
+            },
+            firstName: {
+                layout: 'one'
+            },
+            middleName: {
+                layout: 'one'
+            },
+            lastName: {
+                layout: 'one'
+            },
+            age: {
+                layout: 'one'
+            }
+
+        }
+    };
+
     am7model.models.push(
         {
             name: "progress", icon: "pending", fields: [
@@ -2807,8 +2869,142 @@
         }
     }
 
-    async function rollCharacter(object) {
-        let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/roll", withCredentials: true });
+    async function character(name, gender, age, race, profUrl, op){
+        let obj = await am7model.forms.commands.rollCharacter(undefined, undefined, gender);
+        obj.age = age;
+        obj.race = [race];
+        obj.name = name;
+        let nms = name.split(" ");
+        if(nms.length){
+            obj.firstName = nms[0];
+            obj.lastName = nms[nms.length - 1];
+            if(nms.length > 2){
+                obj.middleName = nms[1];
+            }
+            else obj.middleName = null;
+        }
+        else{
+            obj.firstName = name;
+            obj.middleName = null;
+            obj.lastName = null;
+        }
+
+        let char = await createCharacter(obj, profUrl);
+        if(op && char.objectId){
+            m.route.set("/view/" + char[am7model.jsonModelKey] + "/" + char.objectId);
+        }
+        return char;
+
+    }
+    
+    async function createCharacter(obj, profUrl){
+        if(!obj){
+            obj = await am7model.forms.commands.rollCharacter();
+        }
+    // 	let pdir = await page.makePath("auth.group", "data", "~/Profiles");
+        let cdir = await page.makePath("auth.group", "data", "~/Persons");
+        let char = await page.searchFirst("olio.charPerson", cdir.id, obj.name); 
+
+        if(char == null){
+            
+            let charN = am7model.prepareEntity(obj, "olio.charPerson", true);
+    
+            console.log("Creating", charN);
+            char = await page.createObject(charN, false);
+    
+            if(char != null){
+                char = await page.searchFirst("olio.charPerson", cdir.id, obj.name); 
+            }
+            else{
+                console.error("Failed to create character " + obj.name, char);
+                return null;
+            }
+        }
+        if(char == null){
+            console.error("Character is null", char);
+            return null;
+        }
+        if(!char.profile.portrait){
+
+            let dir = await page.makePath("auth.group", "data", "~/Gallery");
+            if(!profUrl){
+                profUrl = "/media/" + char.gender + "Silhouette.png";
+            }
+            let datName = profUrl.substring(profUrl.lastIndexOf("/") + 1);
+            let img;
+            try{
+                img = await page.openObjectByName("data.data", dir.objectId, datName);
+            }
+            catch(e){
+                console.warn(e);
+            }
+            if(!img){
+                img = am7model.newInstance("data.data").entity;
+                img.groupPath = dir.path;
+                img.name = datName;
+                img.contentType = "image/png";
+                img.dataBytesStore = await getProfUrl(profUrl);
+                img = await page.createObject(img);
+            }
+
+            char.profile.portrait = {id: img.id};
+            await page.patchObject(char.profile);
+        }
+        let inst = am7model.prepareInstance(char);
+        await am7model.forms.commands.narrate(undefined, inst);
+        return char;
+    }
+    async function getProfUrl(url){
+    
+        let x;
+        try{
+            x = await m.request({ method: 'GET', responseType: 'blob', url});
+        }
+        catch(e){
+            console.error("Error loading " + url);
+        }
+        return new Promise((res, rej) => {
+            if(!x){
+                rej()
+            }
+            else{
+                var reader = new FileReader();
+                reader.onloadend = function() {
+                       res(reader.result.split(',', 2)[1]);
+                }
+                reader.readAsDataURL(x);
+            }
+        });
+    }
+
+    function characterWizard(){
+
+            let entity = am7model.newPrimitive("characterWizard");
+            let cfg = {
+                label: "Character Wizard",
+                entityType: "characterWizard",
+                size: 50,
+                data: {entity},
+                confirm: async function (data) {
+                    page.toast("info", "Generating ...");
+                    let o = data.entity;
+                    let name = o.firstName;
+                    if(o.middleName && o.middleName.length) name += " " + o.middleName;
+                    if(o.lastName && o.lastName.length) name += " " + o.lastName;
+                    await character(name, (o.gender == 'random' ? undefined : o.gender), o.age, "E", undefined, true);
+                    page.components.dialog.endDialog();
+                },
+                cancel: async function (data) {
+                    page.components.dialog.endDialog();
+                }
+            };
+            page.components.dialog.setDialog(cfg);
+        
+
+    }
+
+    async function rollCharacter(object, inst, gender) {
+        let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/roll" + (gender ? "/" + gender : ""), withCredentials: true });
         if (x && x != null) {
             if(object){
                 object.mergeEntity(x);
@@ -2984,6 +3180,16 @@
                     command: page.components.dialog.vectorize
                 }
             },
+            blank: {
+                layout: "one",
+                format: "blank",
+                field: {
+                    label: "",
+                    readOnly: true
+                }
+            },
+
+            /*
             roll: {
                 format: "button",
                 layout: "one",
@@ -2994,6 +3200,7 @@
                     command: rollCharacter
                 }
             },
+            */
             summarize: {
                 format: "button",
                 layout: "one",
@@ -3005,7 +3212,7 @@
                 }
             },
             description: {
-                layout: "two",
+                layout: "third",
             },
             trades: {
                 layout: "third",
@@ -3600,7 +3807,7 @@
     let prc = am7model.getModel("olio.llm.promptRaceConfig");
     let prcr = am7model.getModelField(prc, "raceType");
     prcr.type = "list";
-    prcr.limit = ["L", "W", "X", "Y", "Z", "R", "S"];
+    prcr.limit = ["L", "W", "X", "Y", "Z", "R", "S", "M"];
     forms.races = {
         form: forms.promptRaceConfig,
         standardUpdate: true
@@ -3705,6 +3912,14 @@
                 format: "textlist"
             },
             systemAnalyze: {
+                layout: "full",
+                format: "textlist"
+            },
+            malePerspective: {
+                layout: "full",
+                format: "textlist"
+            },
+            femalePerspective: {
                 layout: "full",
                 format: "textlist"
             }
@@ -4098,6 +4313,9 @@
         }
     };
     forms.commands = {
+        character,
+        createCharacter,
+        characterWizard,
         rollCharacter,
         narrate
     };

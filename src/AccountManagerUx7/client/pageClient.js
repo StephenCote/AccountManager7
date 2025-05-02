@@ -166,8 +166,13 @@
             let c = ["little", "tiny", "enormous", "big", "skinny", "lumpy"];
       
             return b[parseInt(Math.random() * b.length)] + " " + c[parseInt(Math.random() * c.length)] + " " + a[parseInt(Math.random() * a.length)];
-          }
+          },
+        searchFirst,
+        chatAvatar
     };
+    async function chatAvatar(){
+        await am7model.forms.commands.character("Basi Lisk", undefined, 42, "M", "/media/logo_512.png")
+    }
     function isFavorite(obj){
         let ctx = contextModel;
         let type = obj[am7model.jsonModelKey];
@@ -1100,6 +1105,19 @@
 
         return r;
     }
+
+    async function searchFirst(model, groupId, name){
+        let q = am7view.viewQuery(am7model.newInstance(model));
+        q.field("groupId", groupId);
+        q.field("name", name);
+        let qr = await page.search(q);
+        let obj;
+        if(qr && qr.results && qr.results.length){
+            obj = qr.results[0];
+        }
+        return obj;
+    }
+    
 
     let test = typeof module;
 

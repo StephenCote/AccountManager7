@@ -425,12 +425,15 @@
       return buttons;
     }
 
-    function getActionButtons(){
+    function getActionButtons(type){
       let buttons = [];
       if (!pickerMode && !containerMode) {
         let selected = (getSelectedIndices().length > 0);
         buttons.push(pagination.button("button mr-4", (fullMode ? "close_fullscreen" : "open_in_new"), "", toggleCarouselFull));
         if (!modType.systemNew) buttons.push(pagination.button("button", "add", "", addNew));
+        if(type && type == "olio.charPerson"){
+          buttons.push(pagination.button("button", "steppers", "", am7model.forms.commands.characterWizard));
+        }
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), "file_open", "", openSelected));
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), "edit", "", editSelected));
         let bBucket = (pagination.pages().containerSubType && pagination.pages().containerSubType.match(/^(bucket|account|person)$/gi));
@@ -479,7 +482,7 @@
       let buttons = [];
       buttons.push(getPickerButton());
       buttons.push(getAdminButtons(type));
-      buttons.push(getActionButtons());
+      buttons.push(getActionButtons(type));
       buttons.push(getOlioButtons());
       buttons.push(getFavoriteButtons());
       buttons.push(getOptionButton(type));
