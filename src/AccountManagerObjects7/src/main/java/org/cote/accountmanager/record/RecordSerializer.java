@@ -304,7 +304,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        					String recKey = null;
 		        					
 		        					List<String> ol = new ArrayList<>();
-		        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID)) {
+		        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID) && ((long)o2.get(FieldNames.FIELD_ID)) > 0L) {
 		        						long id = o2.get(FieldNames.FIELD_ID);
 		        						recKey = o2.getSchema() + "-#" + Long.toString(id);
 		        					}
@@ -325,7 +325,7 @@ public class RecordSerializer extends JsonSerializer<BaseRecord> {
 		        					if(o instanceof BaseRecord) {
 		        						BaseRecord o2 = (BaseRecord)o;
 		        						String recKey = null;
-			        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID)) {
+			        					if(stopRecursion && o2.hasField(FieldNames.FIELD_ID) &&  ((long)o2.get(FieldNames.FIELD_ID)) > 0L) {
 			        						long id = o2.get(FieldNames.FIELD_ID);
 			        						recKey = o2.getSchema() + "-#" + Long.toString(id);
 			        					}

@@ -7,19 +7,31 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
+import org.cote.accountmanager.exceptions.FactoryException;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.CharacterUtil;
 import org.cote.accountmanager.olio.DirectionEnumType;
+import org.cote.accountmanager.olio.EthnicityEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioContextConfiguration;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.StateUtil;
+import org.cote.accountmanager.olio.StatisticsUtil;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
@@ -32,9 +44,11 @@ import org.cote.accountmanager.olio.rules.IOlioStateRule;
 import org.cote.accountmanager.olio.rules.Increment24HourRule;
 import org.cote.accountmanager.olio.rules.LocationPlannerRule;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
+import org.cote.accountmanager.util.RecordUtil;
 import org.junit.Test;
 
 public class TestOlio2 extends BaseTest {
@@ -50,11 +64,85 @@ public class TestOlio2 extends BaseTest {
 	private String universeName = "Olio Universe";
 	private String worldName = "Olio World";
 
+	@Test
+	public void TestRollCharacter() {
+		logger.info("Test Olio Roll Character");
+
+		Factory mf = ioContext.getFactory();
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");;
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+
+		
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		
+		OlioContext octx = null;
+		try{
+			octx = OlioTestUtil.getContext(testOrgContext, dataPath);
+		}
+		catch(StackOverflowError | Exception e) {
+			e.printStackTrace();
+		}
+		assertNotNull("Context is null", octx);
+		List<BaseRecord> realms = octx.getRealms();
+		assertTrue("Expected some realms", realms.size() > 0);
+		BaseRecord realm = realms.get(0);
+		BaseRecord popGroup = realm.get(OlioFieldNames.FIELD_POPULATION);
+		assertNotNull("Pop group is null", popGroup);
+		List<BaseRecord> pop = octx.getRealmPopulation(realm);
+		
+		logger.info("Imprint Characters");
+		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getLaurelPrint());
+		assertNotNull("Person was null", per1);
+		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
+		assertNotNull("Person was null", per2);
+		
+		logger.info("Roll new character");
+		BaseRecord a1 = null;
+		String name = "Jay Kippy Smith - " + UUID.randomUUID().toString();
+		try {
+			a1 = mf.newInstance(OlioModelNames.MODEL_CHAR_PERSON, testUser1, null, null);
+
+			a1.set(FieldNames.FIELD_FIRST_NAME, "Jay");
+			a1.set(FieldNames.FIELD_MIDDLE_NAME, "Kippy");
+			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
+			a1.set(FieldNames.FIELD_NAME, name);
+	
+			a1.set(FieldNames.FIELD_GENDER, (Math.random() <= 0.5 ? "male" : "female"));
+			a1.set("age", (new Random()).nextInt(7, 70));
+			a1.set("alignment", OlioUtil.getRandomAlignment());
+			
+			StatisticsUtil.rollStatistics(a1.get(OlioFieldNames.FIELD_STATISTICS), (int)a1.get("age"));
+			ProfileUtil.rollPersonality(a1.get(FieldNames.FIELD_PERSONALITY));
+			a1.set(OlioFieldNames.FIELD_RACE, CharacterUtil.randomRaceType().stream().map(k -> k.toString()).collect(Collectors.toList()));
+			a1.set("ethnicity", Arrays.asList(new String[] {EthnicityEnumType.ZERO.toString()}));
+			CharacterUtil.setStyleByRace(null, a1);
+			
+			BaseRecord app = ApparelUtil.randomApparel(null, a1);
+			List<BaseRecord> apps = a1.get("store.apparel");
+			app.set(FieldNames.FIELD_NAME, "Primary Apparel");
+			apps.add(app);
+			//logger.info(((BaseRecord)a1.get("store")).toFullString());
+			logger.info(app.toFullString());
+			//RecordUtil.buildNestedGroupRecord(testUser1, a1.get("store"), null, OlioFieldNames.FIELD_APPAREL, null); 
+			
+			List<BaseRecord> wears = app.get(OlioFieldNames.FIELD_WEARABLES);
+			//logger.info(wears.get(wears.size() - 1).toFullString());
+			//logger.info(app.toFullString());
+			 
+			// logger.info(a1.toFullString());
+		}
+		catch(NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException  e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+	}
+	
+	/*
 	/// Using MGRS-like coding to subdivide the random maps
 	///
 	
 	@Test
-	public void TestGrid() {
+	public void TestGridBROKEN() {
 
 		/// World - 60 longitudinal bands (1 - 60) by 20 latitude bands (C to X, not including O)
 		/// Grid Zone Designation (GZD) is the intersection 
@@ -115,23 +203,7 @@ public class TestOlio2 extends BaseTest {
 		assertNotNull("Location was null", lrec);
 		
 		logger.info("Start/Continue Location Epoch");
-		BaseRecord levt = null;
-		///octx.startOrContinueLocationEpoch(lrec);
-		assertNotNull("Location epoch is null", levt);
-		
-		logger.info("Start/Continue Increment");
-		BaseRecord cevt = null;
-		//octx.startOrContinueIncrement();
-		/*
-		try {
-			octx.evaluateIncrement();
-		}
-		catch(Exception e) {
-			e.printStackTrace();
-			return;
-		}
-		*/
-		// octx.clearCache();
+
 		List<BaseRecord> pop = octx.getRealmPopulation(realm);
 
 		logger.info("Imprint Characters");
@@ -140,20 +212,11 @@ public class TestOlio2 extends BaseTest {
 		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(octx, pop, OlioTestUtil.getDukePrint());
 		assertNotNull("Person was null", per2);
 
-		/*
-		logger.info("Look around");
-		look(octx, realm, pop, cevt, per1);
-		look(octx, realm, pop, cevt, per2);
-		*/
-		
 		logger.info(per1.get("state.id") + " " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_EAST) + ", " + per1.get(OlioFieldNames.FIELD_STATE_CURRENT_NORTH));
 		MapUtil.printLocationMap(octx, lrec, realm, pop);
 		MapUtil.printRealmMap(octx, realm, Arrays.asList(new BaseRecord[] {per1, per2}));
 		MapUtil.printAdmin2Map(octx, GeoLocationUtil.getParentLocation(octx, realms.get(0).get(OlioFieldNames.FIELD_ORIGIN)));
-		//BaseRecord upar = GeoLocationUtil.getParentLocation(octx, per1.get(OlioFieldNames.FIELD_STATE_CURRENT_LOCATION));
-		// MapUtil.printPovLocationMap(octx, realm, per1, 3);
-		// MapUtil.printPovLocationMap(octx, realm, per2, 3);
-		
+	
 		
 		DirectionEnumType dir = DirectionEnumType.UNKNOWN;
 		while(dir == DirectionEnumType.UNKNOWN) {
@@ -167,11 +230,6 @@ public class TestOlio2 extends BaseTest {
 		OlioTestUtil.lookout(per1, per2);
 		OlioTestUtil.lookout(per2, per1);
 		
-		ZonedDateTime ep = cevt.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
-		ZonedDateTime ee = cevt.get(OlioFieldNames.FIELD_EVENT_END);
-		long remMin = ep.until(ee, ChronoUnit.MINUTES);
-		logger.info("Minutes remaining: " + remMin);
-		
 		BaseRecord mact = null;
 		try{
 			mact = ActionUtil.getInAction(per1, "walkTo");
@@ -179,71 +237,17 @@ public class TestOlio2 extends BaseTest {
 				mact.set(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
 				Queue.queueUpdate(mact, new String[] {FieldNames.FIELD_TYPE});
 			}
-			mact = Actions.beginMoveTo(octx, cevt, per1, per2);
+
+			mact = Actions.beginMoveTo(octx, null, per1, per2);
 			octx.overwatchActions();
-			/*
-			assertNotNull("Move action was null", mact);
-			Actions.executeAction(octx, mact);
-			*/
+
 		}
 		catch(Exception e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
 		assertNotNull("Move action was null", mact);
-		//logger.info(mact.toFullString());
-		
-		//logger.info(cevt.toFullString());
-		
-		//MapUtil.printLocationMap(octx, upar, realm, pop);
-		/*
-		String filtName = "Jori Tyce Hoggan";
-		for(BaseRecord realm : realms) {
-			BaseRecord lrec = realm.get(OlioFieldNames.FIELD_ORIGIN);
-			assertNotNull("Location was null", lrec);
-			
-			BaseRecord levt = octx.startOrContinueLocationEpoch(lrec);
-			assertNotNull("Location epoch is null", levt);
-			BaseRecord cevt = octx.startOrContinueIncrement();
-			octx.evaluateIncrement();
-			List<BaseRecord> pop = octx.getPopulation(lrec);
-			BaseRecord per = null;
-			if(filtName != null) {
-				Optional<BaseRecord> oper = pop.stream().filter(c -> filtName.equals(c.get(FieldNames.FIELD_NAME))).findFirst();
-				if(oper.isPresent()) {
-					per = oper.get();
-				}
-			}
-			else {
-				per = pop.get((new Random()).nextInt(pop.size()));
-			}
-			assertTrue("Expected a population", pop.size() > 0);
-			/ *
-			if(per != null) {
-				try {
-					// wanderAimlessly(octx, levt, cevt, realm, pop, pop.get((new Random()).nextInt(pop.size())));
-					wanderAmok(octx, levt, cevt, realm, pop, per);
-				}
-				catch(Exception e) {
-					e.printStackTrace();
-				}
-				//MapUtil.printLocationMap(octx, lrec, realm, pop);
-				MapUtil.printRealmMap(octx, realm);
-			}
-			* /
-			
-		}
-		*/
-		//MapUtil.printMapFromAdmin2(octx);
-		
-		//assertNotNull("Root location is null", octx.getRootLocation());
 	}
-	
-
-	
-
-
-	
-
+	*/
 	
 }

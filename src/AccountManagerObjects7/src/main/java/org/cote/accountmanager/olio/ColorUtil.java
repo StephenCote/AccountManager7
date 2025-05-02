@@ -16,6 +16,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.db.DBUtil;
+import org.cote.accountmanager.io.db.cache.CacheDBSearch;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -23,6 +24,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.GroupEnumType;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 
@@ -47,39 +49,6 @@ public class ColorUtil {
 	}
 	
 	public static double[] getHSL(int red, int green, int blue) {
-		/*
-		/// Calculate HSL
-		int max = Math.max(red,  Math.max(green, blue));
-		int min = Math.min(red,  Math.max(green, blue));
-		
-		double l = (max + min) / 2;
-		double h = 0;
-		double s = 0;
-		double d = max - min;
-
-		if (max == min) {
-			h = 0;
-			s = 0;
-		}
-		
-		else {
-			s = l > 0.5d ? d / (2 - d) : d / (max + min);
-			if(max == red) {
-				h = ((60 * (green - blue)) / (d + 360)) % 360;
-			}
-			else if (max == green) {
-				h = ((60 * (blue - red)) / d) + 120;
-			}
-			else { /// max == blue
-				h = ((60 * (red - green)) / d) + 240;
-			}
-		}
-		return new double[] {h, s * 100, l * 100};
-		*/
-		// float[] hsl = new float[3];
-		// Color.RGBtoHSB(red, green, blue, hsl);
-		// return new double[] { floatToDouble(hsl[0]), floatToDouble(hsl[1]), floatToDouble(hsl[2])};
-		
 		float[] hsl = fromRGB(red, green, blue);
 		return new double[] { floatToDouble(hsl[0]), floatToDouble(hsl[1]), floatToDouble(hsl[2])};
 	}
@@ -88,16 +57,12 @@ public class ColorUtil {
 	public static float[] fromRGB(float r, float g, float b)
 	{
 		//  Get RGB values in the range 0 - 1
-
 		//	Minimum and Maximum RGB values are used in the HSL calculations
-
 		float min = Math.min(r, Math.min(g, b));
 		float max = Math.max(r, Math.max(g, b));
 
 		//  Calculate the Hue
-
 		float h = 0;
-
 		if (max == min)
 			h = 0;
 		else if (max == r)
@@ -108,11 +73,9 @@ public class ColorUtil {
 			h = (60 * (r - g) / (max - min)) + 240;
 
 		//  Calculate the Luminance
-
 		float l = (max + min) / 2;
 
 		//  Calculate the Saturation
-
 		float s = 0;
 
 		if (max == min)
@@ -150,6 +113,7 @@ public class ColorUtil {
 			try {
 				owner = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_USER, ownerId);
 				if(owner != null) {
+					IOSystem.getActiveContext().getReader().populate(owner, 2);
 					group = IOSystem.getActiveContext().getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, "~/Colors", GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 				}
 			} catch (ReaderException e) {
@@ -182,18 +146,8 @@ public class ColorUtil {
 
 		/// A random offset between 0 and 10 is given to add a little variety
 		/// An adjustment of 10% is added to give a little more variety
-		///
-		/*
-		String sql = "SELECT C1.id as colorId, sqrt((power(C1.red - C2.red,2) *1.1) + (power(C1.green - C2.green,2) * 1.1) "
-			+ "+ (power(C1.blue - C2.blue,2) * 1.1)) as dist, C2.hex as complement FROM "
-			+ tableName + " C1 "
-			+ "CROSS JOIN " + tableName + " C2 "
-			+ "WHERE C1.name = ? "
-			+ "AND NOT C2.name = 'Black' "
-			+ " AND NOT C2.name = 'White' "
-			+ " AND C1.groupId = ? AND C2.groupId = ? LIMIT 1 OFFSET ?"
-		;
-		*/
+		/// OFFSET ?
+
 		StringBuilder buff = new StringBuilder();
 		buff.append("SELECT id, name FROM (");
 		buff.append("(SELECT id, name, hue FROM " + tableName + " C2 WHERE C2.hue >= (SELECT (CASE WHEN hue <= 0.5 THEN (hue + 0.5) ELSE (hue - 0.5) END) as chue FROM " + tableName + " WHERE hex = ? AND groupId = ? LIMIT 1) ORDER BY C2.hue LIMIT 1)");

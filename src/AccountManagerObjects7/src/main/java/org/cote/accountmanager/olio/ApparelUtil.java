@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.ParticipationFactory;
 import org.cote.accountmanager.io.IOSystem;
@@ -25,6 +26,7 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.ComputeUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -344,70 +346,6 @@ public class ApparelUtil {
 		return rol.toArray(new String[0]);
 	}
 	
-	/*
-	private static String replaceTokens(final String text) {
-		
-		Matcher mat = randomRangePattern.matcher(text);
-		
-		DecimalFormat df = new DecimalFormat("#.##");
-		df.setRoundingMode(RoundingMode.HALF_EVEN);
-		int idx = 0;
-		StringBuilder rep = new StringBuilder();
-
-		while(mat.find()) {
-			double min = Double.parseDouble(mat.group(1));
-			double max = Double.parseDouble(mat.group(2));
-			double res = Double.parseDouble(df.format(rand.nextDouble(max-min) + min));
-			VeryEnumType ver = VeryEnumType.valueOf(res);
-			logger.info(min + " to " + max + " = " + res + " - " + ver.toString());
-		    rep.append(text, idx, mat.start()).append(Double.toString(res));
-		    idx = mat.end();
-		}
-		if (idx < text.length()) {
-		    rep.append(text, idx, text.length());
-		}
-		return rep.toString();
-	}
-	private static String getRandomType(BaseRecord user, BaseRecord world, String type, String gender, String parms) {
-		String ranType = "null";
-		int count = 1;
-		if(parms != null) {
-			Matcher m = randomCountPattern.matcher(parms);
-			if(m.find()) {
-				int min = Integer.parseInt(m.group(1));
-				int max = Integer.parseInt(m.group(2));
-				count = rand.nextInt(max-min) + min;
-			}
-		}
-		StringBuilder buff = new StringBuilder();
-		for(int i = 0; i < count; i++) {
-			BaseRecord rec = null;
-			if(i > 0){
-				buff.append(",\n");
-			}
-			if(type.equals("wearable")) {
-				rec = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_WEARABLE, world.get(OlioFieldNames.FIELD_WEARABLES_PATH), null);
-				if(gender != null) {
-					try {
-						rec.set(FieldNames.FIELD_GENDER, gender);
-					} catch (FieldException | ValueException | ModelNotFoundException e) {
-						logger.error(e);
-					}
-				}
-				applyParameters(user, world, rec, parms);
-				applyRandomWearable(user, world, rec);
-			}
-			buff.append(rec.toFullString());
-		}
-		ranType = buff.toString();
-		if(ranType.length() == 0) {
-			ranType = "null";
-		}
-
-		return ranType;
-	}
-	*/
-	
 	private static void alignPatternAndColors(List<BaseRecord> wears, double complementRatio, double patternRatio) {
 		BaseRecord primPatt = null;
 		BaseRecord primCol = null;
@@ -512,13 +450,17 @@ public class ApparelUtil {
 
 	private static BaseRecord constructApparel(OlioContext ctx, long ownerId, String gender, String[] wears) {
 		BaseRecord app = null;
+		BaseRecord user = null;
 		try {
 			if(ctx != null) {
 				app = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_APPAREL, ctx.getWorld().get(OlioFieldNames.FIELD_APPAREL_PATH), null);
 			}
 			else {
-	
-				app = RecordFactory.newInstance(OlioModelNames.MODEL_APPAREL);
+				user = IOSystem.getActiveContext().getReader().read(ModelNames.MODEL_USER, ownerId);
+				if(user != null) {
+					IOSystem.getActiveContext().getReader().populate(user, 2);
+				}
+				app = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_APPAREL, "~/Apparel", null);
 			}
 			app.setValue(FieldNames.FIELD_GENDER, gender);
 			
@@ -530,23 +472,29 @@ public class ApparelUtil {
 					wearRec = OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_WEARABLE, ctx.getWorld().get(OlioFieldNames.FIELD_WEARABLES_PATH), null);
 				}
 				else {
-					wearRec = RecordFactory.newInstance(OlioModelNames.MODEL_WEARABLE);
+					wearRec = OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_WEARABLE, "~/Wearables", null);
 				}
 				List<BaseRecord> quals = wearRec.get(OlioFieldNames.FIELD_QUALITIES);
 				if(ctx != null) {
 					quals.add(OlioUtil.newGroupRecord(ctx.getOlioUser(), OlioModelNames.MODEL_QUALITY, ctx.getWorld().get(OlioFieldNames.FIELD_QUALITIES_PATH), null));
 				}
 				else {
-					quals.add(RecordFactory.newInstance(OlioModelNames.MODEL_QUALITY));
+					quals.add(OlioUtil.newGroupRecord(user, OlioModelNames.MODEL_QUALITY, "~/Qualities", null));
 				}
-				wearList.add(wearRec);
-				applyEmbeddedWearable(ctx, ownerId, wearRec, emb);
+				
+				if(!applyEmbeddedWearable(ctx, ownerId, wearRec, emb)) {
+					logger.error("Failed to apply wearable embedding");
+					continue;
+				}
+				
 				if(wearRec.get(FieldNames.FIELD_NAME) == null) {
 					logger.warn("Failed to apply embedding: " + emb);
 					logger.warn(wearRec.toFullString());
+					continue;
 				}
+				wearList.add(wearRec);
 			}
-		} catch (FieldException | ModelNotFoundException e) {
+		} catch (ReaderException e) {
 			logger.error(e);
 		}
 
@@ -589,14 +537,15 @@ public class ApparelUtil {
 	private static void embedWearable(OlioContext ctx, long ownerId, BaseRecord rec, String embType) {
 		applyEmbeddedWearable(ctx, ownerId, rec, cpref + embType);
 	}
-	private static void applyEmbeddedWearable(OlioContext ctx, long ownerId, BaseRecord rec, String embType) {
+	private static boolean applyEmbeddedWearable(OlioContext ctx, long ownerId, BaseRecord rec, String embType) {
 		String gender = rec.get(FieldNames.FIELD_GENDER);
 		if(gender != null) gender = gender.substring(0,1).toLowerCase();
 		else gender = "u";
 		String[] tmeta = embType.split(":");
+		boolean applied = false;
 		if(tmeta.length < 5) {
 			logger.error("Unexpected embed: " + embType);
-			return;
+			return applied;
 		}
 		try {
 			String ttype = tmeta[0];
@@ -627,10 +576,12 @@ public class ApparelUtil {
 			String ploc = plocs[rand.nextInt(plocs.length)];
 			String[] iplocs = ploc.split("\\+");
 			locs.addAll(Arrays.asList(iplocs));
+			applied = true;
 		}
 		catch(ValueException | FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}
+		return applied;
 	}
 	
 	// name - level - gender - opacity - elastic - glossy - smooth - def - water - heat - insul

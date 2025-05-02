@@ -12,7 +12,10 @@ import org.cote.accountmanager.io.db.DBReader;
 import org.cote.accountmanager.io.db.DBSearch;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.FileUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 
 public class CacheDBSearch extends DBSearch implements ICache {
@@ -40,7 +43,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			m.remove(key);
 		});
 	}
-	
+	public synchronized void dumpCache() {
+		FileUtil.emitFile("./dump.txt", JSONUtil.exportObject(cacheMap, RecordSerializerConfig.getForeignUnfilteredModule()));
+	}
 	public void cleanupCache() {
 		clearCache();
 		CacheUtil.removeProvider(this);
@@ -100,6 +105,15 @@ public class CacheDBSearch extends DBSearch implements ICache {
 				logger.error("****** MISMATCHED RESULT TYPE ENTERING CACHE!!! " + qt + " -> " + qrt);
 				throw new ReaderException("Mismatched result type entering cache: Query for " + qt + " contains " + qrt);
 			}
+			if(qr.getResults().length > 0) {
+				BaseRecord qr1 = qr.getResults()[0];
+				String qrt1 = qr1.getSchema();
+				if(!qt.equals(qrt1)) {
+					logger.error("****** MISMATCHED RESULT TYPE IN VALUE ENTERING CACHE!!! " + qt + " -> " + qrt1);
+					throw new ReaderException("Mismatched result type entering cache: Query for " + qt + " contains " + qrt);
+					
+				}
+			}
 			cache.put(hash, qr);
 		}
 	}
@@ -110,7 +124,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 		if(query.key() == null) {
 			throw new ReaderException("Null query key");
 		}
-		
+
 		checkCache();
 		
 		Map<String, QueryResult> cache = getCacheMap(query.get(FieldNames.FIELD_TYPE));
@@ -123,9 +137,7 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			qr = super.find(query);
 			addToCache(cache, query, qr, hash);
 		}
-
 		return qr;
-
 	}
 
 	@Override

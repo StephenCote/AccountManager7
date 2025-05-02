@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
@@ -22,6 +23,7 @@ import org.cote.accountmanager.io.IPath;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.io.IWriter;
+import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
@@ -99,6 +101,89 @@ public class RecordUtil {
 			 
 		}
 	}
+	
+	/*
+	public static BaseRecord buildNestedGroupRecord(BaseRecord contextUser, BaseRecord newRecord, BaseRecord template, String fieldName, String groupName) throws FactoryException, FieldException, ValueException, ModelNotFoundException {
+		ModelSchema ms = RecordFactory.getSchema(newRecord.getSchema());
+		FieldSchema fs = ms.getFieldSchema(fieldName);
+		return buildNestedGroupRecord(contextUser, newRecord, template, fs, groupName);
+	}
+	public static BaseRecord buildNestedGroupRecord(BaseRecord contextUser, BaseRecord newRecord, BaseRecord template, FieldSchema fieldSchema, String groupName) throws FactoryException, FieldException, ValueException, ModelNotFoundException {
+		long orgId = contextUser.get(FieldNames.FIELD_ORGANIZATION_ID);
+		if(fieldSchema.getBaseModel() == null) {
+			logger.error("Field schema " + fieldSchema.getName() + " does not define a base model");
+			return null;
+		}
+		if(
+			(
+				fieldSchema.getFieldType() != FieldEnumType.MODEL
+				&&
+				(fieldSchema.getFieldType() != FieldEnumType.LIST || !"model".equals(fieldSchema.getBaseType()))
+			)
+			||
+			!fieldSchema.isForeign() || fieldSchema.isVirtual() || fieldSchema.isEphemeral() || fieldSchema.isReferenced()
+		) {
+			logger.info("Skip " + fieldSchema.getName());
+			logger.info(JSONUtil.exportObject(fieldSchema));
+			return null;
+		}
+		
+		ModelSchema ms = RecordFactory.getSchema(fieldSchema.getBaseModel());
+		if(groupName == null) {
+			groupName = ms.getGroup();
+		}
+		if(groupName == null) {
+			logger.error("Field schema " + fieldSchema.getName() + " does not define a group name");
+			return null;
+		}
+		boolean isModel = (fieldSchema.getFieldType() == FieldEnumType.MODEL);
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/" + groupName);
+
+		BaseRecord fieldRec = null;
+		
+		if(isModel) {
+			BaseRecord exRec = newRecord.get(fieldSchema.getName());
+			if(exRec != null && isIdentityRecord(exRec)) {
+				fieldRec = exRec;
+			}
+			else {
+				fieldRec = IOSystem.getActiveContext().getFactory().newInstance(fieldSchema.getBaseModel(), contextUser, template, plist);
+				newRecord.set(fieldSchema.getName(), fieldRec);
+			}
+		}
+
+		for(FieldSchema fs : ms.getFields()) {
+			if(!fs.isForeign() || fs.isVirtual() || fs.isEphemeral() || fs.isReferenced()) {
+                continue;
+            }
+			logger.info("Nesting " + newRecord.getSchema() + "." + fs.getName());
+			if(fs.getFieldType() == FieldEnumType.MODEL) {
+				BaseRecord temp = fieldRec.get(fs.getName());
+				buildNestedGroupRecord(contextUser, fieldRec, temp, fs, null);
+			}
+			
+			else if (fs.getFieldType() == FieldEnumType.LIST) {
+				List<BaseRecord> nlst = new ArrayList<>();
+				
+				List<BaseRecord> lst = fieldRec.get(fs.getName());
+				if(lst.size() > 0) {
+					logger.info("Build out nested arraylist for " + fs.getName());
+				}
+				for(BaseRecord cr : lst) {
+					
+					BaseRecord ncr = buildNestedGroupRecord(contextUser, cr, cr, fs, null);
+					if(ncr != null) {
+						nlst.add(ncr);
+					}
+				}
+				fieldRec.set(fs.getName(), nlst);
+			}
+		}
+		
+		return fieldRec;
+		
+	}
+	*/
 	
 	public static String getIdentityString(BaseRecord rec) {
 		String id = null;
