@@ -348,6 +348,9 @@ public class FieldUtil {
 			case MODEL:
 				outBool = f.getValue() == null;
 				break;
+			case VECTOR:
+				outBool = ((float[])f.getValue()).length == 0;
+				break;
 			case LIST:
 				outBool = ((List)f.getValue()).size() == 0;
 				break;

@@ -1394,6 +1394,13 @@
                 entity = vnode.attrs.freeFormEntity || {schema: objectType};
                 if(entity[am7model.jsonModelKey] && am7model.hasIdentity(entity)){
                     let q = am7view.viewQuery(am7model.newInstance(type));
+                    /// Force query to include objectId - it's possible it wasn't requested for an embedded form, and doesn't belong in a common query suggestion
+                    /// This is because the membership operations depend on the objectId vs. the id or urn.
+                    ///
+                    if(am7model.hasField(type, "objectId") && !q.entity.request.filter(r => r == "objectId").length){
+                        q.entity.request.push("objectId");
+                    }
+                    //if(type == 'olio.store') console.warn(q);
                     if(entity.id){
                         q.field("id", entity.id);    
                     }
@@ -1789,14 +1796,20 @@
 
         objectPage.deleteEntity = function(name, field, tableType, tableForm, props){
             let aP = [];
-
+            
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
                 if(state.selected && vProp[name]){
+                    
                     let per = vProp[name][state.index];
                     if(am7model.hasIdentity(entity)){
+                        console.log("Delete entity", field, name, entity, per);  
+                        console.log(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false);
                         aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false));
+                    }
+                    else{
+                        console.warn("Cannot delete entity without identity: " + entity[am7model.jsonModelKey]);
                     }
                     vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
                 }
@@ -1828,7 +1841,8 @@
                     }
                     else{
                         let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
-                        let per = vProp[name][state.index];
+                        let per = vProp[name][state.index]
+                        console.log("Delete parent prop member");;
                         if(am7model.hasIdentity(entity)){
                             let fn = (!field.name == "data.tag" && !field.virtual ? field?.name : null);
                             console.log("Delete member: " + entity[am7model.jsonModelKey], entity.objectId, fn, per[am7model.jsonModelKey], per.objectId);

@@ -1462,7 +1462,7 @@
                     label: "Alignment",
                     type: "list",
                     default: "neutral",
-                    "limit": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
+                    "limit": ["neutralevil", "lawfulevil", "chaoticevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
                 }
             },
             description: {
@@ -3124,7 +3124,7 @@
                     label: "Alignment",
                     type: "list",
                     default: "neutral",
-                    "limit": ["neutralevil", "lawfulevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
+                    "limit": ["neutralevil", "lawfulevil", "chaoticevil", "chaoticneutral", "neutral", "lawfulneutral", "chaoticgood", "neutralgood", "lawfulgood"]
                 }
             },
 

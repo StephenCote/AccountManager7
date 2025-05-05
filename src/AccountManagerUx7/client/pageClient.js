@@ -93,7 +93,6 @@
         cleanup,
         clearCache : clearPageCache,
         components: {},
-        patchSet,
         user : null,
         application : undef,
         navigable : undef,
@@ -704,28 +703,6 @@
         });
         if(openItems.length) stem.push("open=" + openItems.join(","));
         return stem.join("&");
-    }
-
-    function patchSet(object){
-        let set = {
-            patchType: object[am7model.jsonModelKey],
-            patches: [],
-            identityField: "OBJECTID",
-            identity: object.objectId
-
-        };
-        return {
-            set: function(){
-                return set;
-            },
-            patch: function(col, val){
-                let useVal = val;
-                if(val instanceof Date) useVal = val.getTime();
-                else if(typeof val == "number") useVal = val + "";
-                else if(typeof val == "boolean" || typeof val == "object") useVal = val.toString();
-                set.patches.push({valueField: col, value: useVal});
-            }
-        };
     }
 
     async function promiseCreate(object){

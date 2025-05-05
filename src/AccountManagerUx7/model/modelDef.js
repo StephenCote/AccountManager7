@@ -118,7 +118,9 @@
           "olio.charPerson",
           "olio.llm.chatConfig",
           "olio.llm.promptConfig",
-          "olio.llm.openai.openaiRequest"
+          "olio.llm.openai.openaiRequest",
+          "olio.apparel",
+          "olio.wearable"
         ],
         "icon": "event_note"
       },
