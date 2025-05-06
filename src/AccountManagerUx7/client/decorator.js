@@ -180,6 +180,8 @@
         "id",
         "name",
         "modifiedDate",
+        "age",
+        "gender",
         // "_thumbnail",
         "_tags",
         "_favorite"
@@ -472,6 +474,7 @@
     
 
     let am7dec = {
+        map: () => defaultHeaderMap,
         icon: getIcon,
         fileIcon: getFileTypeIcon,
         tabularView: getTabularView,

@@ -38,8 +38,8 @@ public class OlioModelNames extends ModelNames {
 	public static final String MODEL_EPISODE = "olio.llm.episode";
 	public static final String MODEL_CHAT_OPTIONS = "olio.llm.chatOptions";
 	
-	public static final String MODEL_SD_CONFIG = "olio.sd.sdConfig";
-	public static final String MODEL_SD_CONFIG_DATA = "olio.sd.sdConfigData";
+	public static final String MODEL_SD_CONFIG = "olio.sd.config";
+	public static final String MODEL_SD_CONFIG_DATA = "olio.sd.configData";
 	
 	public static final String MODEL_VECTOR_CHAT_HISTORY = "olio.llm.vectorChatHistory";
 	public static final String MODEL_VECTOR_CHAT_HISTORY_LIST = "olio.llm.vectorChatHistoryList";

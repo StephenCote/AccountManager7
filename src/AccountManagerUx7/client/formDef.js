@@ -721,6 +721,159 @@
         }
     };
 
+    forms.sdConfig = {
+        label: "SD Config",
+        fields: {
+            description: {
+                label: "Description",
+                layout: "full",
+                format: "print"
+            },
+            seed:{
+                label: 'Seed',
+                layout: 'one'
+            },
+            /*
+            imageCount: {
+                label: 'Count',
+                layout: 'one'
+            },
+            */
+            hires: {
+                label: 'Hi-Res',
+                layout: 'one'
+            },
+            randomConfig: {
+                format: "button",
+                layout: "one",
+                icon: 'run_circle',
+                field: {
+                    label: "New Config",
+                    command: undefined
+                }
+            },
+            dressUp: {
+                format: "button",
+                layout: "one",
+                icon: 'add',
+                field: {
+                    label: "Dress Up",
+                    command: undefined
+                }
+            },
+            dressDown: {
+                format: "button",
+                layout: "one",
+                icon: 'remove',
+                field: {
+                    label: "Dress Down",
+                    command: undefined
+                }
+            },
+            blank : {
+                layout : "one",
+                format: "blank",
+                field: {
+                    label: "",
+                    readOnly: true
+                }
+            },
+            bodyStyle: {
+                label: 'Composition',
+                layout: 'third'
+            },
+            imageAction: {
+                label: 'Action',
+                layout: 'third'
+            },
+            imageSetting: {
+                label: 'Setting',
+                layout: 'third'
+            },
+            style: {
+                layout: 'one',
+                label: 'Style',
+                field: {
+                    type: 'list',
+                    limit: ['art', 'movie', 'photograph']
+                }
+            },
+            artStyle: {
+                label: 'Art Style',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["art"],
+            },
+            director: {
+                label: 'Director',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["movie"],
+            },
+            photographer: {
+                label: 'Photographer',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["photograph"],
+            },
+            blank2 : {
+                layout : "third",
+                format: "blank",
+                field: {
+                    label: "",
+                    readOnly: true
+                }
+            },
+            stillCamera: {
+                label: 'Still Camera',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["photograph"],
+            },
+            lens: {
+                label: 'Lens',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["photograph"],
+            },
+            film: {
+                label: 'Film',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["photograph"],
+            },
+            colorProcess: {
+                label: 'Process',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["movie|photograph"],
+            },
+            movieCamera: {
+                label: 'Movie Camera',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["movie"],
+            },
+            movieFilm: {
+                label: 'Movie Film',
+                layout: 'one',
+                referField: true,
+                requiredAttributes: ["style"],
+                requiredValues: ["movie"],
+            }
+
+
+        }
+    };
+
     am7model.models.push(
         {
             name: "vectorOptions", icon: "polyline", fields: [
@@ -2815,11 +2968,11 @@
         //inst.change("portrait");
         //inst.change("profile");
         // " + inst.api.name()
-        console.warn("Need to update profile.portrait after picking, and/or fix the child object property not being updated");
+        //console.warn("Need to update profile.portrait after picking, and/or fix the child object property not being updated");
         let n = "";
         let p = object.caller();
         let np = "";
-        console.log(p.getInstance()?.entity?.groupPath);
+        //console.log(p.getInstance()?.entity?.groupPath);
         if (p && p.getInstance()?.entity?.name) {
             let pe = p.getInstance().entity;
             let gp = "/Gallery";
@@ -2832,7 +2985,11 @@
         //page.components.picker.fieldPicker(inst, inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
         object.picker(inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
             if (p && p.getInstance()?.entity?.profile) {
+                let od = {id: p.getInstance.entity.profile.id, portrait: {id: data.id}};
                 p.getInstance().entity.profile.portrait = data;
+                od[am7model.jsonModelKey] = "identity.profile";
+                page.patchObject(od);
+               
             }
         });
     };
@@ -2840,18 +2997,7 @@
  
 
 
-    async function reimage(object, inst) {
-        if (!inst || inst.model.name != "olio.charPerson") {
-            console.warn("Invalid object instance");
-            return;
-        }
 
-        let x = await m.request({ method: 'GET', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage/true", withCredentials: true });
-        if (x && x != null) {
-            inst.entity.profile.portrait = x;
-            m.redraw();
-        }
-    }
 
     async function narrate(object, inst) {
         if (!inst || inst.model.name != "olio.charPerson") {
@@ -3157,7 +3303,7 @@
                 requiredAttributes: ["objectId"],
                 field: {
                     label: "Reimage",
-                    command: reimage
+                    command: page.components.dialog.reimage
                 }
             },
             narrate: {
@@ -3293,10 +3439,31 @@
                 layout: 'one'
             },
             designerRef: {
-                layout: 'third'
+                layout: 'one'
             },
             manufacturer: {
-                layout: 'third'
+                layout: 'one'
+            },
+            dressUp: {
+                format: "button",
+                layout: "one",
+                icon: 'add',
+                field: {
+                    label: "Dress Up",
+                    command: am7olio.dressUp
+                }
+            },
+            dressDown: {
+                format: "button",
+                layout: "one",
+                icon: 'remove',
+                field: {
+                    label: "Dress Down",
+                    command: am7olio.dressDown
+                }
+            },
+            description: {
+                layout: 'full'
             },
             wearables: {
                 layout: 'full',
@@ -3475,8 +3642,22 @@
                     }
                 }
             },
+            pattern: {
+                layout: 'one',
+                format: 'picker',
+                label: "Pattern",
+                field: {
+                    format: "picker",
+                    pickerType: "data.data",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "pattern"
+                    }
+                }
+            },
+
             inuse: {
-                layout: 'third'
+                layout: 'one'
             },
             qualities: {
                 layout: 'half',

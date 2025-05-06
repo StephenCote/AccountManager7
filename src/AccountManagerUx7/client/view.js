@@ -357,7 +357,7 @@
                         let reqVals = (reqVal ? reqVal.split("|") : [undefined]);
                         let showTotal = 0;
                         reqVals.forEach((v2) => {
-                            //console.log(a2, "Scan: " + v2, e.value);
+                            // console.log(a2, "Scan: " + v2, e.value);
                             if (
                                 (v2 && e.value == v2)
                                 ||

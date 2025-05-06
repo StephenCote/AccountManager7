@@ -196,7 +196,14 @@
     }
 
     function getRequestFields(type) {
-      return am7model.queryFields(type);
+      let flds = am7model.queryFields(type);
+      window.am7decorator.map().forEach(m => {
+        if(!m.match(/^_/) && !flds.includes(m) && am7model.hasField(type, m)){
+          flds.push(m);
+        }
+      });
+      return flds;
+
     }
 
     function stopPaginating() {

@@ -11,6 +11,7 @@ import javax.servlet.ServletContext;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.GET;
+import javax.ws.rs.POST;
 import javax.ws.rs.Path;
 import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
@@ -41,7 +42,10 @@ import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
 @DeclareRoles({"admin","user"})
@@ -86,13 +90,57 @@ public class OlioService {
 	
 	@RolesAllowed({"user"})
 	@GET
+	@Path("/randomImageConfig")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response randomImageConfig(@Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord sdConfig = SDUtil.randomSDConfig();
+		sdConfig.setValue("imageSetting", NarrativeUtil.getRandomSetting());
+		sdConfig.setValue("imageAction", NarrativeUtil.randomVerb());
+		return Response.status(200).entity(sdConfig.toFullString()).build();
+	}
+
+	@RolesAllowed({"user"})
+	@POST
+	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/reimage")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response reimageCharacterWithConfig(String json, @PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		BaseRecord imp = JSONUtil.importObject(json,  LooseRecord.class, RecordDeserializerConfig.getFilteredModule());
+		if(imp == null) {
+			logger.error("Invalid config");
+			return Response.status(200).entity(null).build();
+		}
+		// sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
+
+		BaseRecord a1 = null;
+		SDUtil sdu = new SDUtil();
+
+		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(true);
+		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(a1 != null) {
+			String verb = imp.get("imageAction");
+			String bodyStyle = imp.get("bodyStyle");
+			String setting = imp.get("imageSetting");
+			sdu.generateSDImages(octx, Arrays.asList(a1), imp, setting, "((DEPRECATED))", bodyStyle, (verb != null && verb.length() > 0 ? verb : null), 1, false, imp.get("hires"), imp.get("seed"));
+			octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
+		}
+		BaseRecord oi = a1.get("profile.portrait");
+
+		return Response.status(200).entity(oi.toFullString()).build();
+	}
+	
+	
+	@RolesAllowed({"user"})
+	@GET
 	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/reimage/{hires:[A-Za-z\\\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response reimageCharacter(@PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("hires") boolean hires, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
 		// sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
-		BaseRecord i1 = null;
+
 		BaseRecord a1 = null;
 		SDUtil sdu = new SDUtil();
 
@@ -101,6 +149,7 @@ public class OlioService {
 		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if(a1 != null) {
 			sdu.generateSDImages(octx, Arrays.asList(a1), "random", "professional photograph", "full body", null, 1, false, hires, -1);
+			octx.scanNestedGroups(octx.getWorld(), OlioFieldNames.FIELD_GALLERY, true);
 		}
 		BaseRecord oi = a1.get("profile.portrait");
 

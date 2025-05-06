@@ -882,6 +882,10 @@ public class NarrativeUtil {
 	}
 	
 	private static String[] verbs = new String[] {"running in", "walking in", "sitting in", "talking in", "dancing in", "working in", "playing in", "sleeping in", "bathing in", "dressing in", "swimming in", "skiing in"};
+
+	public static String randomVerb() {
+		return verbs[rand.nextInt(verbs.length)];
+	}
 	public static String getSDPrompt(OlioContext ctx, PersonalityProfile pp, BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb) {
 		StringBuilder buff = new StringBuilder();
 		

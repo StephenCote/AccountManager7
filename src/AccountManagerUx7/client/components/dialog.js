@@ -268,6 +268,70 @@
         setDialog(cfg);
     }
 
+    async function reimage(object, inst) {
+
+        //let entity = am7model.newPrimitive("olio.sd.config");
+        let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
+        let cinst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
+        await am7olio.setNarDescription(inst, cinst);
+        let cfg = {
+            label: "Reimage " + inst.api.name(),
+            entityType: "olio.sd.config",
+            size: 75,
+            data: {entity, inst: cinst},
+            confirm: async function (data) {
+                console.log(data);
+                page.toast("info", "Reimaging ...", -1);
+                let x = await m.request({ method: 'POST', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage", body:cinst.entity, withCredentials: true });
+                page.clearToast();
+                let pop = false;
+                if (x && x != null) {
+                    page.toast("success", "Reimage complete");
+                    inst.entity.profile.portrait = x;
+                    let od = {id: inst.entity.profile.id, portrait: {id: x.id}};
+                    od[am7model.jsonModelKey] = "identity.profile";
+                    page.patchObject(od);
+                    pop = true;
+        
+                }
+                else{
+                    page.toast("error", "Reimage failed");
+                }
+                endDialog();
+                if(pop){
+                    page.imageView(x);
+                }
+                
+            },
+            cancel: async function (data) {
+                endDialog();
+            }
+        };
+        
+        am7model.forms.sdConfig.fields.dressDown.field.command = async function(){
+            await am7olio.dressCharacter(inst, false);
+            await setNarDescription(inst, cinst);
+        };
+        
+        am7model.forms.sdConfig.fields.dressUp.field.command = async function(){
+            await am7olio.dressCharacter(inst, true);
+            await am7olio.setNarDescription(inst, cinst);
+        };
+
+        am7model.forms.sdConfig.fields.randomConfig.field.command = async function(){
+            let ncfg = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
+            // Do style first since that drives the display
+            cinst.api.style(ncfg.style);
+            for(let k in ncfg){
+                if(k != "id" && k != "objectId"){
+                    if(cinst.api[k]) cinst.api[k](ncfg[k]);
+                }
+            }
+
+            m.redraw();
+        };
+        setDialog(cfg);
+    }
 
     function loadDialog(){
         if(!dialogCfg || !dialogUp) return "";
@@ -362,6 +426,7 @@
         cancelDialog,
         vectorize,
         summarize,
+        reimage,
         chatSettings,
         showProgress,
         chatInto

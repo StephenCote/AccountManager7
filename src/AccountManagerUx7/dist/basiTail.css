@@ -3602,6 +3602,10 @@ button.button-tab-active:hover {
   width: 25%;
 }
 
+.w-12 {
+  width: 3rem;
+}
+
 .w-14 {
   width: 3.5rem;
 }
@@ -3628,10 +3632,6 @@ button.button-tab-active:hover {
 
 .w-full {
   width: 100%;
-}
-
-.w-12 {
-  width: 3rem;
 }
 
 .max-w-\[80\%\] {

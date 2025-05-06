@@ -9173,11 +9173,48 @@
         ]
       },
       {
-        "name": "olio.sd.configData",
+        "name": "olio.sd.config",
         "ioConstraints": [
           "unknown"
         ],
         "fields": [
+          {
+            "name": "description",
+            "type": "string" 
+          },
+          {
+            "name": "imageAction",
+            "type": "string",
+            "description": "Verb phrase describing the action to be performed in the image.",
+            "default": "sitting"
+          },
+          {
+            "name": "seed",
+            "type": "int",
+            "default": -1
+          },
+          {
+            "name": "hires",
+            "type": "boolean",
+            "default": true
+          },
+          {
+            "name": "imageCount",
+            "type": "int",
+            "default": 1,
+            "minValue": 1,
+            "maxValue": 5
+          },
+          {
+            "name": "imageSetting",
+            "type": "string",
+            "default": "random"
+          },
+          {
+            "name": "bodyStyle",
+            "type": "string",
+            "default": "full body"
+          },
           {
             "name": "stillCamera",
             "type": "string"
@@ -9210,10 +9247,7 @@
             "name": "director",
             "type": "string"
           },
-          {
-            "name": "photoStyle",
-            "type": "string"
-          },
+
           {
             "name": "style",
             "type": "string",

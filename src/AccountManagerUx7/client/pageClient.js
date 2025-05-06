@@ -1083,10 +1083,17 @@
         return r;
     }
 
-    async function searchFirst(model, groupId, name){
+    async function searchFirst(model, groupId, name, objectId){
         let q = am7view.viewQuery(am7model.newInstance(model));
-        q.field("groupId", groupId);
-        q.field("name", name);
+        if(groupId){
+            q.field("groupId", groupId);
+        }
+        if(name){
+            q.field("name", name);
+        }
+        if(objectId){
+            q.field("objectId", objectId);
+        }
         let qr = await page.search(q);
         let obj;
         if(qr && qr.results && qr.results.length){

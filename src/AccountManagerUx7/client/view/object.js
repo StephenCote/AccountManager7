@@ -715,7 +715,7 @@
                     break;
                 case "button":
                     fieldClass += " button-field-full";
-                    let bfHandler = function(){field.command(objectPage, inst, name);};
+                    let bfHandler = function(){if(field.command) field.command(objectPage, inst, name);};
                     view.push(
                         m("button[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {onclick : bfHandler, class: fieldClass}, (fieldView.icon ? m("span",{class: "material-symbols-outlined material-icons-24"}, fieldView.icon) : ""), (field.label || ""))
                     );
