@@ -6,7 +6,6 @@ import static org.junit.Assert.assertTrue;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
@@ -23,7 +22,6 @@ import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
-import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;

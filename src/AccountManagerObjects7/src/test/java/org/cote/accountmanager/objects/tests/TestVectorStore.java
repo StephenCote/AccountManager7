@@ -3,7 +3,6 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -18,7 +17,6 @@ import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.junit.Test;

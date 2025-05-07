@@ -1,11 +1,6 @@
 package org.cote.rest.services;
 
-import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import javax.annotation.security.DeclareRoles;
 import javax.annotation.security.RolesAllowed;
@@ -24,25 +19,12 @@ import javax.ws.rs.core.Response;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.llm.Chat;
-import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.llm.ChatRequest;
-import org.cote.accountmanager.olio.llm.ChatResponse;
-import org.cote.accountmanager.olio.llm.OpenAIRequest;
-import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.SystemTaskUtil;
 import org.cote.service.util.ServiceUtil;
 

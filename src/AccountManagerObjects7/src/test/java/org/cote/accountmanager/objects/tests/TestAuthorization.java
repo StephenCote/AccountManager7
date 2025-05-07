@@ -12,7 +12,6 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.db.AuthorizationSchema;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.schema.AccessSchema;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
@@ -20,7 +19,6 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PermissionEnumType;
 import org.cote.accountmanager.schema.type.RoleEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
-import org.cote.accountmanager.util.FileUtil;
 import org.junit.Test;
 
 public class TestAuthorization extends BaseTest{

@@ -3,10 +3,8 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
-import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
-import java.util.List;
 import java.util.UUID;
 
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -20,24 +18,13 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.stream.StreamSegmentUtil;
-import org.cote.accountmanager.objects.generated.PolicyResponseType;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
-import org.cote.accountmanager.schema.type.StreamEnumType;
-import org.cote.accountmanager.security.TokenService;
-import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
-import org.cote.accountmanager.util.DirectoryUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.StreamUtil;
-import org.cote.accountmanager.util.ThumbnailUtil;
 import org.junit.Test;
 
 public class TestStreamEncryption extends BaseTest {

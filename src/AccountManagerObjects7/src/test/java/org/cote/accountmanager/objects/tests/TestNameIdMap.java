@@ -4,10 +4,8 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import org.apache.logging.log4j.LogManager;
@@ -23,9 +21,7 @@ import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.NameIdExporter;
 import org.junit.Test;
 
 public class TestNameIdMap {

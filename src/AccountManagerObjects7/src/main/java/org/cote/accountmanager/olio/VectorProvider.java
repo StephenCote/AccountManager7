@@ -20,8 +20,6 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelSchema;
 
-import picocli.CommandLine.Model;
-
 public class VectorProvider implements IProvider {
 	public static final Logger logger = LogManager.getLogger(VectorProvider.class);
 	

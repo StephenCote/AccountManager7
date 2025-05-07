@@ -1,63 +1,33 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
 import java.util.UUID;
-
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
 
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.io.db.DBStatementMeta;
 import org.cote.accountmanager.io.db.StatementUtil;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
-import org.cote.accountmanager.olio.ApparelUtil;
-import org.cote.accountmanager.olio.InteractionUtil;
-import org.cote.accountmanager.olio.ItemUtil;
-import org.cote.accountmanager.olio.NarrativeUtil;
-import org.cote.accountmanager.olio.OlioContext;
-import org.cote.accountmanager.olio.OlioContextConfiguration;
-import org.cote.accountmanager.olio.OlioContextUtil;
-import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptUtil;
-import org.cote.accountmanager.olio.rules.GenericItemDataLoadRule;
-import org.cote.accountmanager.olio.rules.GridSquareLocationInitializationRule;
-import org.cote.accountmanager.olio.rules.HierarchicalNeedsEvolveRule;
-import org.cote.accountmanager.olio.rules.IOlioContextRule;
-import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
-import org.cote.accountmanager.olio.rules.Increment24HourRule;
-import org.cote.accountmanager.olio.rules.LocationPlannerRule;
-import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.util.AuditUtil;
-import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
-import org.json.JSONObject;
 import org.junit.Test;
 
 public class TestChat extends BaseTest {

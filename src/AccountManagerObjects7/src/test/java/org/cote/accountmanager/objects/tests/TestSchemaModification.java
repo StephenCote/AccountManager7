@@ -10,11 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.model.field.FieldEnumType;
-import org.cote.accountmanager.model.field.FieldFactory;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;

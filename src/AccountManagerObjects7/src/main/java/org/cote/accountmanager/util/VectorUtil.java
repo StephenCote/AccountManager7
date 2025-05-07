@@ -1,6 +1,5 @@
 package org.cote.accountmanager.util;
 
-import java.io.IOException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -9,7 +8,6 @@ import java.sql.Statement;
 import java.text.BreakIterator;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -23,7 +21,6 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
-import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.MemoryReader;

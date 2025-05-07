@@ -29,7 +29,6 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.AuthenticationResponseEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.security.CredentialUtil;
 import org.cote.accountmanager.security.TokenService;

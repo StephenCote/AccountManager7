@@ -1,47 +1,25 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
-import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-import javax.ws.rs.client.Entity;
-import javax.ws.rs.client.Invocation.Builder;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
-
-import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.exceptions.WriterException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
-import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
-import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
-import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
-import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
-import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.util.ByteModelUtil;
-import org.cote.accountmanager.util.ClientUtil;
-import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.VectorUtil;
-import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 import org.junit.Test;
 
 public class TestChat2 extends BaseTest {

@@ -5,7 +5,6 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.stream.Collectors;
 
 import javax.swing.text.BadLocationException;
 
@@ -25,7 +24,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.provider.IProvider;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -33,7 +32,6 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.provider.IProvider;
 
 public class DocumentUtil {
 	public static final Logger logger = LogManager.getLogger(DocumentUtil.class);

@@ -23,8 +23,6 @@ import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.ProfileUtil;
-import org.cote.accountmanager.olio.llm.OpenAIRequest;
-import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;

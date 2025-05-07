@@ -9,7 +9,6 @@ import org.apache.commons.cli.Options;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
 public class TestAction extends CommonAction {

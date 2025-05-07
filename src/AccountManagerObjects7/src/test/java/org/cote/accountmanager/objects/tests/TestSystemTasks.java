@@ -1,27 +1,16 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
 
-import java.util.UUID;
-
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.OlioTaskAgent;
-import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.type.ResponseEnumType;
-import org.cote.accountmanager.schema.type.SystemTaskEnumType;
-import org.cote.accountmanager.util.SystemTaskUtil;
 import org.junit.Test;
 
 public class TestSystemTasks extends BaseTest {

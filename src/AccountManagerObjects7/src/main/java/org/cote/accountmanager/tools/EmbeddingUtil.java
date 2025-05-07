@@ -1,20 +1,16 @@
 package org.cote.accountmanager.tools;
 
-import java.net.ConnectException;
 import java.util.List;
 
 import javax.ws.rs.ProcessingException;
 import javax.ws.rs.core.MediaType;
 
-import org.apache.commons.lang3.ArrayUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
-import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;

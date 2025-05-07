@@ -1,6 +1,5 @@
 package org.cote.accountmanager.util;
 
-import java.net.ConnectException;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;

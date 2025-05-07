@@ -21,7 +21,6 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
-import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.VectorUtil;
