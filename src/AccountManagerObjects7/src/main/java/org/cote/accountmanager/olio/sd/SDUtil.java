@@ -21,7 +21,10 @@ import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.ProfileUtil;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -45,7 +48,10 @@ public class SDUtil {
 	private String modelVae = "sdxl_vae.safetensors";
 	private String refiner = "juggernautXL_juggXIByRundiffusion";
 	private String scheduler = "Karras";
-	private String sampler = "DPM++ SDE"; 
+	private String sampler = "DPM++ SDE";
+	
+	private boolean deferRemote = false;
+	
 	public SDUtil() {
 		
 	}
@@ -54,8 +60,15 @@ public class SDUtil {
 		autoserver = server;
 	}
 	
-	
-	
+
+	public boolean isDeferRemote() {
+		return deferRemote;
+	}
+
+	public void setDeferRemote(boolean deferRemote) {
+		this.deferRemote = deferRemote;
+	}
+
 	public String getScheduler() {
 		return scheduler;
 	}
@@ -98,10 +111,6 @@ public class SDUtil {
 
 	public SDResponse txt2img(SDTxt2Img req) {
 		return ClientUtil.post(SDResponse.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
-	}
-	
-	public SDResponse txt2img(String req) {
-		return ClientUtil.postJSON(SDResponse.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), req, MediaType.APPLICATION_JSON_TYPE);
 	}
 	
 	public int getSteps() {
@@ -241,6 +250,30 @@ public class SDUtil {
 
 	}
 	
+	public SDResponse checkRemote(SDTxt2Img req) {
+		SDResponse oresp = null;
+		if (deferRemote) {
+			/*
+			BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig
+					.copyRecord(new String[] { "apiVersion", "serviceType", "serverUrl", "apiKey", "model" }));
+			BaseRecord rtask = OlioTaskAgent.executeTask(task);
+			if (rtask != null) {
+				BaseRecord resp = rtask.get("taskModel");
+				if (resp != null) {
+					oresp = new OpenAIResponse(resp);
+					if (conversational) {
+						handleResponse(req, oresp, false);
+						saveSession(req);
+					}
+				} else {
+					logger.error("Task response was null");
+				}
+			}
+			*/
+		}
+		return oresp;
+	}
+	
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, SDTxt2Img s2i, int seed) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		List<BaseRecord> datas = new ArrayList<>();
@@ -248,6 +281,9 @@ public class SDUtil {
 		try {
 
 			logger.info("Generating image for " + person.get(FieldNames.FIELD_NAME));
+			
+			
+			
 			SDResponse rep = txt2img(s2i);
 
 			if(seed <= 0) {
