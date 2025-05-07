@@ -1,5 +1,7 @@
 package org.cote.accountmanager.olio.actions;
 
+import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.cote.accountmanager.io.Queue;
@@ -13,6 +15,13 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 
 public abstract class CommonAction implements IAction {
 
+	@Override
+	public long timeRemaining(BaseRecord actionResult, ChronoUnit unit) {
+		ZonedDateTime ep = actionResult.get(OlioFieldNames.FIELD_ACTION_PROGRESS);
+		ZonedDateTime ee = actionResult.get(OlioFieldNames.FIELD_ACTION_END);
+		return ep.until(ee, unit);
+	}
+	
 	protected void edgeEnd(OlioContext ctx, BaseRecord actionResult, int iter) {
 		int minSeconds = actionResult.get(OlioFieldNames.FIELD_ACTION_MINIMUM_TIME);
 		ActionUtil.edgeSecondsUntilEnd(actionResult, minSeconds * iter);

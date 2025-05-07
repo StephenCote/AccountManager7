@@ -15,7 +15,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 
-public class Sleep implements IAction {
+public class Sleep extends CommonAction implements IAction {
 	
 	public static final Logger logger = LogManager.getLogger(Sleep.class);
 	/// Track sleep in 1 min increments

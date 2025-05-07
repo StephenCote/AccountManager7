@@ -253,23 +253,15 @@ public class SDUtil {
 	public SDResponse checkRemote(SDTxt2Img req) {
 		SDResponse oresp = null;
 		if (deferRemote) {
-			/*
-			BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig
-					.copyRecord(new String[] { "apiVersion", "serviceType", "serverUrl", "apiKey", "model" }));
+
+			BaseRecord task = OlioTaskAgent.createTaskRequest(req);
 			BaseRecord rtask = OlioTaskAgent.executeTask(task);
 			if (rtask != null) {
-				BaseRecord resp = rtask.get("taskModel");
-				if (resp != null) {
-					oresp = new OpenAIResponse(resp);
-					if (conversational) {
-						handleResponse(req, oresp, false);
-						saveSession(req);
-					}
-				} else {
+				oresp = JSONUtil.importObject(rtask.get("taskModelData"), SDResponse.class);
+				if (oresp == null) {
 					logger.error("Task response was null");
 				}
 			}
-			*/
 		}
 		return oresp;
 	}
@@ -284,7 +276,13 @@ public class SDUtil {
 			
 			
 			
-			SDResponse rep = txt2img(s2i);
+			SDResponse rep = null;
+			if(deferRemote) {
+				rep = checkRemote(s2i);
+			}
+			else {
+				rep = txt2img(s2i);
+			}
 
 			if(seed <= 0) {
 				seed = rep.getParameters().getSeed();

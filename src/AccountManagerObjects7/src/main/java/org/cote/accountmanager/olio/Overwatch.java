@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -63,9 +64,11 @@ public class Overwatch {
 		GROUP,
 		INTERACTION
 	};
-	
-	/// Some actions may result in many small incremental and/or repeating steps, such as moving between two points.  If the average walking speed is 1.2 meters per second.
-	private int maximumProcessCount = 500;
+
+	//private long minimumProcessTime = 500L;
+	/// Some actions may result in many small incremental and/or repeating steps, such as moving between two points.
+	// If the average walking speed is 1.2 meters per second.
+	private int maximumProcessCount = 1000;
 	
 	private Clock clock = null;
 	private OlioContext context = null;
@@ -159,6 +162,7 @@ public class Overwatch {
 			this.clock = new Clock(evt);
 		}
 		*/
+		// context.clock().addMilliseconds(minimumProcessTime);
 	}
 	
 
@@ -186,6 +190,13 @@ public class Overwatch {
 			if(count >= maximumProcessCount) {
 				throw new OverwatchException("Exceeded maximum process count");
 			}
+			/*
+			try {
+				Thread.sleep(minimumProcessTime);
+			} catch (InterruptedException e) {
+				// Sink the interrupt
+			}
+			*/
 		}
 	}
 	
@@ -249,9 +260,9 @@ public class Overwatch {
 			}
 			
 			/// The action implementation will set the action progress; Overwatch will adjust any external clocks/events
-			long timeCost = action.calculateCostMS(context, actionResult, actor, iactor);
+			// long timeCost = action.calculateCostMS(context, actionResult, actor, iactor);
 			// logger.info("Time Cost: " + timeCost + "ms");
-			
+			logger.info(actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2) + " time remaining: " + action.timeRemaining(actionResult, ChronoUnit.SECONDS) + " seconds");
 			if(!Actions.executeAction(context, actionResult)) {
 				// logger.warn("Follow-up failed action: " + (String)actionResult.get(OlioFieldNames.FIELD_ACTION_NAME));
 			}

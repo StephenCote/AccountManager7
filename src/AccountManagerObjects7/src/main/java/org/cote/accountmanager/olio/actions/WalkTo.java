@@ -19,7 +19,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 
-public class WalkTo implements IAction {
+public class WalkTo extends CommonAction implements IAction {
 	
 	public static final Logger logger = LogManager.getLogger(WalkTo.class);
 	
@@ -62,11 +62,13 @@ public class WalkTo implements IAction {
 	
 	@Override
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException {
-		double angle = GeoLocationUtil.getAngleBetweenInDegrees(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
+		double angle = GeoLocationUtil.getAngleBetweenStatesInDegrees(actor.get(FieldNames.FIELD_STATE), interactor.get(FieldNames.FIELD_STATE));
 		DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(angle);
 		
 		boolean moved = StateUtil.moveByOneMeterInCell(context, actor, dir);
-
+		if(moved) {
+			StateUtil.queueUpdateLocation(context, actor.get(FieldNames.FIELD_STATE));
+		}
 		return moved;
 	}
 	
@@ -84,7 +86,8 @@ public class WalkTo implements IAction {
 			aret = ActionResultEnumType.COMPLETE;
 			actionResult.setValue(FieldNames.FIELD_TYPE, aret);
 		}
-		logger.info("Remaining: " + dist + "m");
+		
+		logger.info("Conclude with remaining: " + dist + "m" + " / " + calculateCostMS(context, actionResult, actor, interactor) + "mps");
 		return aret;
 	}
 

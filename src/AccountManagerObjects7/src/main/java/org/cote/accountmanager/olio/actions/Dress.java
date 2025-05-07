@@ -19,7 +19,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 
-public class Dress implements IAction {
+public class Dress extends CommonAction implements IAction {
 	
 	public static final Logger logger = LogManager.getLogger(Dress.class);
 	

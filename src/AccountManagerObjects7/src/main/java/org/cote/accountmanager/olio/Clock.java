@@ -143,6 +143,11 @@ public class Clock {
 	public void addCycle() {
 		cycle++;
 	}
+	
+	public void addMilliseconds(long sec) {
+		current = current.plus(sec, ChronoUnit.MILLIS);
+	}
+	
 	public void addSeconds(long sec) {
 		current = current.plusSeconds(sec);
 	}

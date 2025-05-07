@@ -17,7 +17,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 
-public class Peek implements IAction {
+public class Peek extends CommonAction implements IAction {
 	
 	public static final Logger logger = LogManager.getLogger(Peek.class);
 	

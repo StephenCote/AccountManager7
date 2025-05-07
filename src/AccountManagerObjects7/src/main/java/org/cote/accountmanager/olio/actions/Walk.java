@@ -16,7 +16,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 import org.cote.accountmanager.schema.type.EventEnumType;
 
-public class Walk implements IAction {
+public class Walk extends CommonAction implements IAction {
 	
 	public static final Logger logger = LogManager.getLogger(Walk.class);
 	
@@ -75,6 +75,7 @@ public class Walk implements IAction {
 		}
 
 		if(moved) {
+			StateUtil.queueUpdateLocation(context, actionResult.get(FieldNames.FIELD_STATE));
 			actionResult.setValue(FieldNames.FIELD_TYPE, ActionResultEnumType.SUCCEEDED);
 		}
 		else {

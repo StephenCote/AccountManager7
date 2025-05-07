@@ -28,6 +28,10 @@
 			}
 		},
 		{
+			"name": "taskModelData",
+			"type": "string"
+		},
+		{
 			"name": "taskModelType",
 			"type": "string",
 			"maxLength": 64

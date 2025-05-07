@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.actions;
 
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.cote.accountmanager.olio.OlioContext;
@@ -11,6 +12,7 @@ import org.cote.accountmanager.schema.type.EventEnumType;
 public interface IAction {
 	public EventEnumType getEventType();
 	
+	public long timeRemaining(BaseRecord actionResult, ChronoUnit unit);
 	public long calculateCostMS(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;
 	public boolean executeAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;
 	public boolean counterAction(OlioContext context, BaseRecord actionResult, BaseRecord actor, BaseRecord interactor) throws OlioException;
