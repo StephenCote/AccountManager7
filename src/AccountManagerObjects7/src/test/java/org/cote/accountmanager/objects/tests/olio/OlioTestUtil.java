@@ -29,6 +29,7 @@ import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.AnimalUtil;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.ClockException;
 import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.InteractionUtil;
@@ -511,7 +512,14 @@ public class OlioTestUtil {
 			}
 		}
 
-		BaseRecord levt = ctx.realmClock(ctx.getRealms().get(0)).getIncrement();
+		BaseRecord levt = null;
+		try {
+			levt = ctx.realmClock(ctx.getRealms().get(0)).getIncrement();
+		} catch (ClockException e) {
+			logger.error(e);
+			return null;
+		}
+		
 		ParameterList clist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
 		clist.parameter(FieldNames.FIELD_NAME, "Chat Config - " + UUID.randomUUID().toString());
 
