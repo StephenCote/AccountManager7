@@ -310,7 +310,7 @@
         
         am7model.forms.sdConfig.fields.dressDown.field.command = async function(){
             await am7olio.dressCharacter(inst, false);
-            await setNarDescription(inst, cinst);
+            await am7olio.setNarDescription(inst, cinst);
         };
         
         am7model.forms.sdConfig.fields.dressUp.field.command = async function(){

@@ -281,8 +281,11 @@ public class SDUtil {
 			else {
 				rep = txt2img(s2i);
 			}
-
-			if(seed <= 0) {
+			if(rep == null) {
+				logger.error("Response is null");
+				return datas;
+			}
+			if(seed <= 0 && rep.getParameters() != null) {
 				seed = rep.getParameters().getSeed();
 			}
 			int counter = 1;

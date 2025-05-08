@@ -29,10 +29,10 @@
 
     function describeWearable(wear){
 
-        let qual = wear?.qualities[0];
-        let opac = qual.opacity || 0.0;
-        let shin = qual.shininess || 0.0;
-        let smoo = qual.smoothness || 0.0;
+        let qual = wear.qualities ? wear.qualities[0] : null;
+        let opac = qual?.opacity || 0.0;
+        let shin = qual?.shininess || 0.0;
+        let smoo = qual?.smoothness || 0.0;
         let col = wear?.color?.name.toLowerCase() || "";        
        
         if(col){

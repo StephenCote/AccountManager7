@@ -2985,7 +2985,7 @@
         //page.components.picker.fieldPicker(inst, inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
         object.picker(inst.formField("portrait")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
             if (p && p.getInstance()?.entity?.profile) {
-                let od = {id: p.getInstance.entity.profile.id, portrait: {id: data.id}};
+                let od = {id: p.getInstance().entity.profile.id, portrait: {id: data.id}};
                 p.getInstance().entity.profile.portrait = data;
                 od[am7model.jsonModelKey] = "identity.profile";
                 page.patchObject(od);

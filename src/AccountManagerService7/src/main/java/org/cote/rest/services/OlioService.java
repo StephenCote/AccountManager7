@@ -115,7 +115,7 @@ public class OlioService {
 
 		BaseRecord a1 = null;
 		SDUtil sdu = new SDUtil();
-
+		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
 		a1 = IOSystem.getActiveContext().getAccessPoint().find(user, q);
