@@ -18,6 +18,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.type.SystemTaskEnumType;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -129,6 +130,15 @@ public class SystemTaskQueue extends Threaded {
 			logger.info("Processing " + tasks.size() + " tasks");
 			for(BaseRecord task : tasks) {
 				if(OlioModelNames.MODEL_OPENAI_REQUEST.equals(task.get("taskModelType"))) {
+					BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
+					if(localPoll) {
+						SystemTaskUtil.completeTasks(resp);
+					}
+					else if(remotePoll && resp != null) {
+						rtasks.add(resp);
+					}
+				}
+				if(SystemTaskEnumType.SD.toString().equals(task.get("type"))) {
 					BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
 					if(localPoll) {
 						SystemTaskUtil.completeTasks(resp);
