@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio;
 
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
@@ -11,19 +12,19 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.actions.IAction;
+import org.cote.accountmanager.olio.rules.IOlioEvolveRule;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.ActionResultEnumType;
 
 public class Overwatch {
-	
+
 	/*
-	 * Overwatch is intended to manage action state changes
-	 * 
-	 * The intended process flow is as follows:
+	 *  The intended process flow is as follows:
 	 * 	0) Elements monitored by OverWatch:
 	 * 		a) Interactions spawned from prior Overwatch
 	 *		b) ActionResults that are PENDING or IN_PROGRESS 
@@ -50,54 +51,40 @@ public class Overwatch {
 	 *  5) Conclude
 	 *  	a) Annotate the action state
 	 *  	b) Send Roll/Counter Out actions through Overwatch
-	 *  	c) Send repeated or ongoing actions through Overwatch 
+	 *  	c) Send repeated or ongoing actions through Overwatc
 	 */
-	
+
 	public static final Logger logger = LogManager.getLogger(Overwatch.class);
+
 	public static enum OverwatchEnumType {
-		UNKNOWN,
-		EVENT,
-		TIME,
-		PROXIMITY,
-		ACTION,
-		RESPONSE,
-		GROUP,
-		INTERACTION
+		UNKNOWN, EVENT, TIME, PROXIMITY, ACTION, RESPONSE, GROUP, INTERACTION
 	};
 
-	//private long minimumProcessTime = 500L;
-	/// Some actions may result in many small incremental and/or repeating steps, such as moving between two points.
+	// private long minimumProcessTime = 500L;
+	/// Some actions may result in many small incremental and/or repeating steps,
+	// such as moving between two points.
 	// If the average walking speed is 1.2 meters per second.
-	private int maximumProcessCount = 1000;
-	
-	private Clock clock = null;
+	/// Maximum process count is 1 hour; each cycle increments by one second
+	private int maximumProcessCount = 3600;
+
 	private OlioContext context = null;
 	private Map<OverwatchEnumType, List<BaseRecord>> map = new ConcurrentHashMap<>();
+
 	public Overwatch(OlioContext context) {
 		this.context = context;
-		
-	}
-	
-	public Clock getClock() {
-		return clock;
-	}
 
-	public void setClock(Clock clock) {
-		this.clock = clock;
 	}
 
 	protected boolean isWatched(OverwatchEnumType type, long id) {
-		if(!map.containsKey(type)) {
+		if (!map.containsKey(type)) {
 			return false;
 		}
 		List<BaseRecord> watched = map.get(type);
-		return watched.stream().filter(
-			a -> ((long)a.get(FieldNames.FIELD_ID) == id)
-		).findFirst().isPresent();
+		return watched.stream().filter(a -> ((long) a.get(FieldNames.FIELD_ID) == id)).findFirst().isPresent();
 	}
-	
+
 	protected void add(OverwatchEnumType type, List<BaseRecord> recs) {
-		if(!map.containsKey(type)) {
+		if (!map.containsKey(type)) {
 			map.put(type, new CopyOnWriteArrayList<>());
 		}
 		map.get(type).addAll(recs);
@@ -105,37 +92,36 @@ public class Overwatch {
 
 	public boolean watch(OverwatchEnumType type, BaseRecord[] actionResults) {
 		List<BaseRecord> lar = new CopyOnWriteArrayList<>();
-		for(BaseRecord ar: actionResults) {
+		for (BaseRecord ar : actionResults) {
 			long id = ar.get(FieldNames.FIELD_ID);
-			if(!isWatched(type, id)) {
+			if (!isWatched(type, id)) {
 				lar.add(ar);
-			}
-			else {
+			} else {
 				logger.info(type.toString() + " #" + id + " is already watched");
 			}
 		}
 		add(type, lar);
 		return lar.size() > 0;
 	}
-	
+
 	private void prune() {
 		map.keySet().forEach(k -> {
 			prune(k);
 		});
 	}
-	
+
 	private void prune(OverwatchEnumType type) {
-		if(map.containsKey(type)) {
+		if (map.containsKey(type)) {
 			List<BaseRecord> frec = getInProcessActions();
 			List<BaseRecord> rec = new CopyOnWriteArrayList<>();
 			rec.addAll(frec);
 			map.put(type, frec);
 		}
 	}
-	
+
 	private List<BaseRecord> getInProcessActions() {
 		List<BaseRecord> frec = new CopyOnWriteArrayList<>();
-		if(map.containsKey(OverwatchEnumType.ACTION)) {
+		if (map.containsKey(OverwatchEnumType.ACTION)) {
 			frec = map.get(OverwatchEnumType.ACTION).stream().filter(r -> {
 				boolean f = true;
 				ActionResultEnumType atype = r.getEnum(FieldNames.FIELD_TYPE);
@@ -148,154 +134,188 @@ public class Overwatch {
 
 	public void updateClock() {
 		/*
-		BaseRecord evt = null;
-		if(context.getCurrentIncrement() != null) {
-			evt = context.getCurrentIncrement();
-		}
-		else if(context.getCurrentEvent() != null) {
-			evt = context.getCurrentEvent();
-		}
-		else if(context.getCurrentEpoch() != null) {
-			evt = context.getCurrentEpoch();
-		}
-		if(evt != null) {
-			this.clock = new Clock(evt);
-		}
-		*/
+		 * BaseRecord evt = null; if(context.getCurrentIncrement() != null) { evt =
+		 * context.getCurrentIncrement(); } else if(context.getCurrentEvent() != null) {
+		 * evt = context.getCurrentEvent(); } else if(context.getCurrentEpoch() != null)
+		 * { evt = context.getCurrentEpoch(); } if(evt != null) { this.clock = new
+		 * Clock(evt); }
+		 */
 		// context.clock().addMilliseconds(minimumProcessTime);
 	}
-	
 
 	protected void process() throws OverwatchException {
 		int count = 0;
-		while(count == 0 || getInProcessActions().size() > 0) {
+		while (count == 0 || getInProcessActions().size() > 0) {
 
-			// logger.info("Processing ...");
-			if(clock == null) {
-				updateClock();
-			}
 			prune();
 			processInteractions();
-			//processActionResultResponses();
+			// processActionResultResponses();
 			/// Process Actions
 			processActions();
 			processGroup();
 			processProximity();
 			processTimedSchedules();
 			processEvents();
-			
+			try {
+				synchronizeClocks();
+			} catch (ClockException e) {
+				throw new OverwatchException(e);
+			}
 			Queue.processQueue();
-			
+
 			count++;
-			if(count >= maximumProcessCount) {
+			if (count > maximumProcessCount) {
 				throw new OverwatchException("Exceeded maximum process count");
 			}
-			/*
-			try {
-				Thread.sleep(minimumProcessTime);
-			} catch (InterruptedException e) {
-				// Sink the interrupt
-			}
-			*/
+
 		}
 	}
-	
+
+	protected void synchronizeClocks() throws ClockException {
+		// logger.info(context.clock().getCurrent() + " to " +
+		// context.clock().getEnd());
+		BaseRecord inc = context.clock().getIncrement();
+		ZonedDateTime progress = inc.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
+		ZonedDateTime end = inc.get(OlioFieldNames.FIELD_EVENT_END);
+		long remainingSeconds = progress.until(end, ChronoUnit.SECONDS);
+		// long remainingSeconds =
+		// context.clock().getCurrent().until(context.clock().getEnd(),
+		// ChronoUnit.SECONDS);
+
+		if (remainingSeconds > maximumProcessCount) {
+			throw new ClockException("Remaining seconds cannot exceed the increment of one hour");
+		}
+
+		inc.setValue(OlioFieldNames.FIELD_EVENT_PROGRESS, progress.plusSeconds(1));
+		// 59:59
+		if (remainingSeconds <= 1) {
+			// if(remainingSeconds >= (maximumProcessCount - 1)){
+			logger.warn("Move to next increment with remainingSeconds " + remainingSeconds);
+			List<BaseRecord> rlms = context.getRealms();
+			for (BaseRecord r : rlms) {
+
+				List<IOlioEvolveRule> rules = context.getConfig().getEvolutionRules();
+				rules.forEach(ru -> {
+					ru.endRealmIncrement(context, r);
+					BaseRecord ni = ru.nextRealmIncrement(context, r);
+					if (ni == null) {
+						logger.error("Failed to start next increment");
+					} else {
+						logger.info(ni.toFullString());
+						r.setValue(OlioFieldNames.FIELD_CURRENT_INCREMENT, ni);
+						Queue.queueUpdate(r, new String[] { OlioFieldNames.FIELD_CURRENT_INCREMENT });
+					}
+
+				});
+			}
+		}
+
+		logger.info("Remaining seconds: " + remainingSeconds);
+	}
+
 	protected boolean checkReprocess() {
 		boolean outBool = false;
 		prune();
-		if(getInProcessActions().size() > 0) {
+		if (getInProcessActions().size() > 0) {
 			outBool = true;
 		}
 		return outBool;
 	}
-	
+
 	protected void processInteractions() {
-		
+
 	}
-	
+
 	protected void processActionResultResponses() {
-		
+
 	}
+
 	protected void processActions() {
-		if(map.containsKey(OverwatchEnumType.ACTION)) {
+		if (map.containsKey(OverwatchEnumType.ACTION)) {
 			List<BaseRecord> actionResults = map.get(OverwatchEnumType.ACTION);
-			// logger.info("Processing actions " + actionResults.size() + " actions ...");			
+			// logger.info("Processing actions " + actionResults.size() + " actions ...");
 			try {
-				//for(BaseRecord actionResult : actionResults) {
-				for(int i = 0; i < actionResults.size(); i++) {
+				// for(BaseRecord actionResult : actionResults) {
+				for (int i = 0; i < actionResults.size(); i++) {
 					BaseRecord actionResult = actionResults.get(i);
 					processAction(actionResult);
 				}
-			}
-			catch(OverwatchException e) {
+			} catch (OverwatchException e) {
 				logger.error(e);
 			}
 		}
 	}
-	
+
 	protected void processAction(BaseRecord actionResult) throws OverwatchException {
-		// logger.info("Processing action " + actionResult.get(OlioFieldNames.FIELD_ACTION_NAME));
-		if(testForRollOut(actionResult)) {
+		// logger.info("Processing action " +
+		// actionResult.get(OlioFieldNames.FIELD_ACTION_NAME));
+		if (testForRollOut(actionResult)) {
 			return;
 		}
 		try {
-			IAction action = Actions.getActionProvider(context, (String)actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2));
-			if(action == null) {
+			IAction action = Actions.getActionProvider(context,
+					(String) actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2));
+			if (action == null) {
 				throw new OverwatchException("Invalid action");
 			}
-			BaseRecord actor = actionResult.get(OlioFieldNames.FIELD_ACTOR);
-			BaseRecord iactor = null;
-			List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
-			BaseRecord interaction = null;
-			if(inters.size() > 0) {
-				interaction = inters.get(0);
-				IOSystem.getActiveContext().getReader().populate(interaction, new String[] {OlioFieldNames.FIELD_INTERACTOR, OlioFieldNames.FIELD_INTERACTOR_TYPE});
-				iactor = interaction.get(OlioFieldNames.FIELD_INTERACTOR);
-			}
-			if(actor != null) {
-				IOSystem.getActiveContext().getReader().populate(actor, new String[] {FieldNames.FIELD_STATE});
-			}
-			if(iactor != null) {
-				IOSystem.getActiveContext().getReader().populate(iactor, new String[] {FieldNames.FIELD_STATE});
-			}
-			
-			/// The action implementation will set the action progress; Overwatch will adjust any external clocks/events
+
+			BaseRecord actor = ActionUtil.getActionActor(actionResult);
+			BaseRecord iactor = ActionUtil.getActionInteractor(actionResult);
+
+			/// The action implementation will set the action progress; Overwatch will
+			/// adjust any external clocks/events
 			// long timeCost = action.calculateCostMS(context, actionResult, actor, iactor);
 			// logger.info("Time Cost: " + timeCost + "ms");
-			logger.info(actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2) + " time remaining: " + action.timeRemaining(actionResult, ChronoUnit.SECONDS) + " seconds");
-			if(!Actions.executeAction(context, actionResult)) {
-				// logger.warn("Follow-up failed action: " + (String)actionResult.get(OlioFieldNames.FIELD_ACTION_NAME));
+
+			ZonedDateTime progress = actionResult.get(OlioFieldNames.FIELD_ACTION_PROGRESS);
+			ZonedDateTime end = actionResult.get(OlioFieldNames.FIELD_ACTION_END);
+			long remainingSeconds = progress.until(end, ChronoUnit.SECONDS);
+
+			logger.info(actionResult.get(OlioFieldNames.FIELD_ACTION_NAME2) + " ("
+					+ actionResult.get(FieldNames.FIELD_TYPE) + ") time remaining: "
+					+ action.timeRemaining(actionResult, ChronoUnit.SECONDS) + " seconds");
+			// logger.info("Overwatch progress remaining - " +
+			// remainingActionProgress(actionResult) + "ms");
+			if (!Actions.executeAction(context, actionResult)) {
+				// logger.warn("Follow-up failed action: " +
+				// (String)actionResult.get(OlioFieldNames.FIELD_ACTION_NAME));
 			}
-			
+
 			Actions.concludeAction(context, actionResult, actor, iactor);
-			
-			
+
 		} catch (OlioException e) {
 			logger.error(e);
 			throw new OverwatchException(e);
 		}
 
 	}
-	
+
+	public long remainingActionProgress(BaseRecord actionResult) {
+		ZonedDateTime ep = actionResult.get(OlioFieldNames.FIELD_ACTION_PROGRESS);
+		ZonedDateTime ee = context.clock().getCurrent();
+		return ep.until(ee, ChronoUnit.MILLIS);
+	}
+
 	protected boolean testForRollOut(BaseRecord actionResult) {
-		/// Check to see if there is another action for or involving this actor, and whether it should take priority over this action
+		/// Check to see if there is another action for or involving this actor, and
+		/// whether it should take priority over this action
 		///
 		return false;
 	}
-	
+
 	protected void processGroup() {
-		
+
 	}
-	
+
 	protected void processProximity() {
-		
+
 	}
-	
+
 	protected void processTimedSchedules() {
-		
+
 	}
-	
-	protected void processEvents(){
-		
+
+	protected void processEvents() {
+
 	}
 }

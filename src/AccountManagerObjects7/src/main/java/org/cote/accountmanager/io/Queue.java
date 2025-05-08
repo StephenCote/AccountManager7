@@ -84,7 +84,12 @@ public class Queue {
 			FieldSchema fs = ms.getFieldSchema(s);
 			/// Leave the identity as it's necessary to actually perform the update
 			/// fs.isIdentity() || 
-			if(fs.isForeign() && fs.getFieldType() == FieldEnumType.LIST) {
+			if(fs == null) {
+				logger.warn("Null field schema for: " + s);
+				logger.warn(record.toFullString());
+				ErrorUtil.printStackTrace();
+			}
+			if(fs == null || fs.isForeign() && fs.getFieldType() == FieldEnumType.LIST) {
 				logger.warn("Skip " + record.getSchema() + "." + s);
 				outBool = false;
 			}

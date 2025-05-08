@@ -37,6 +37,31 @@ import org.cote.accountmanager.util.ResourceUtil;
 public class ActionUtil {
 	public static final Logger logger = LogManager.getLogger(ActionUtil.class);
 	private static BaseRecord[] actions = new BaseRecord[0];
+
+	public static BaseRecord getActionInteractor(BaseRecord actionResult) {
+		BaseRecord iactor = null;
+		List<BaseRecord> inters = actionResult.get(OlioFieldNames.FIELD_INTERACTIONS);
+		BaseRecord interaction = null;
+		if(inters.size() > 0) {
+			interaction = inters.get(0);
+			IOSystem.getActiveContext().getReader().populate(interaction, new String[] {OlioFieldNames.FIELD_INTERACTOR, OlioFieldNames.FIELD_INTERACTOR_TYPE});
+			iactor = interaction.get(OlioFieldNames.FIELD_INTERACTOR);
+		}
+		if(iactor != null) {
+			IOSystem.getActiveContext().getReader().populate(iactor, new String[] {FieldNames.FIELD_STATE});
+		}
+		return iactor;
+	}
+	
+	public static BaseRecord getActionActor(BaseRecord actionResult) {
+		BaseRecord actor = actionResult.get(OlioFieldNames.FIELD_ACTOR);
+		if(actor != null) {
+			IOSystem.getActiveContext().getReader().populate(actor, new String[] {FieldNames.FIELD_STATE});
+		}
+		return actor;
+		
+	}
+	
 	public static List<BaseRecord> getCurrentActions(BaseRecord animal, String actionName, List<ActionResultEnumType> filter) {
 		List<BaseRecord> actions = animal.get("state.actions");
 		if(actions == null) {

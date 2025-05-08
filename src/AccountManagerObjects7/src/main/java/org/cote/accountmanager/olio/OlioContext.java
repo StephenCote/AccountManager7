@@ -403,7 +403,7 @@ public class OlioContext {
 		return EventUtil.getChildEvents(world, event, EventEnumType.UNKNOWN);
 	}
 	*/
-	private boolean startOrContinueRealmEvents() {
+	private boolean startOrContinueRealmEvents() throws ClockException {
 		BaseRecord ep = startOrContinueEpoch();
 		int errors = 0;
 		if(ep != null) {
@@ -465,7 +465,7 @@ public class OlioContext {
 		return e;
 	}
 	
-	public Clock realmClock(BaseRecord realm) {
+	public Clock realmClock(BaseRecord realm) throws ClockException {
 		return clock.realmClock(realm);
 	}
 	
@@ -629,7 +629,7 @@ public class OlioContext {
 	}
 
 	
-	public BaseRecord endIncrement(BaseRecord realm) {
+	public BaseRecord endIncrement(BaseRecord realm) throws ClockException {
 		Clock rclock = clock.realmClock(realm);
 		if(rclock.getIncrement() == null) {
 			logger.error("Invalid increment");
@@ -640,7 +640,7 @@ public class OlioContext {
 
 	}
 
-	public BaseRecord continueIncrement(BaseRecord realm) {
+	public BaseRecord continueIncrement(BaseRecord realm) throws ClockException {
 		Clock rclock = clock.realmClock(realm);
 		if(rclock.getIncrement() == null) {
 			logger.error("Invalid increment");

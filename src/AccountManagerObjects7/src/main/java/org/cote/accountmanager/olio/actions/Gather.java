@@ -176,7 +176,7 @@ public class Gather extends CommonAction implements IAction {
 			BaseRecord bld = poi.get(OlioFieldNames.FIELD_BUILDER);
 			
 			if(dist > Rules.PROXIMATE_CONTACT_DISTANCE) {
-				// logger.info("Too far away - " + dist + " meters.  Need to move closer.");
+				logger.info("Too far away - " + dist + " meters.  Need to move closer.");
 				DirectionEnumType dir = DirectionEnumType.getDirectionFromDegrees(GeoLocationUtil.getAngleBetweenInDegrees(new Coordinates(cx, cy), new Coordinates(poi.get(FieldNames.FIELD_EAST), poi.get(FieldNames.FIELD_NORTH))));
 				BaseRecord move = Actions.beginMove(context, context.clock().getIncrement(), actor, dir);
 				move.setValue(OlioFieldNames.FIELD_STATE_CURRENT_EAST, poi.get(FieldNames.FIELD_EAST));

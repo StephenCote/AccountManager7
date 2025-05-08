@@ -96,7 +96,16 @@ public class NeedsUtil {
         Map<BaseRecord, PersonalityProfile> map = ProfileUtil.getProfileMap(ctx, group);
         logger.info("Calculating recommendation ....");
 
-        BaseRecord increment = ctx.clock().realmClock(realm).getIncrement();
+        BaseRecord increment = null;
+        try {
+			increment = ctx.clock().realmClock(realm).getIncrement();
+		} catch (ClockException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+        if(increment == null) {
+        	return new ArrayList<>();
+        }
 
         List<BaseRecord> tinters = evaluateThreats(ctx, realm, increment, map);
         logger.info("Calculating threat interactions ... " + tinters.size());

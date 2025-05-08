@@ -7,9 +7,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.util.ErrorUtil;
 
 public class Clock {
 	public static final Logger logger = LogManager.getLogger(Clock.class);
@@ -22,7 +24,7 @@ public class Clock {
 	private BaseRecord epoch = null;
 	/// For olio realms, an event is 1 year
 	private BaseRecord event = null;
-	/// For olio reams, an increment is 1 hour
+	/// For olio realms, an increment is 1 hour
 	private BaseRecord increment = null;
 	
 	private BaseRecord realm = null;
@@ -61,7 +63,7 @@ public class Clock {
 		realm = null;
 	}
 	
-	public void tap() {
+	public void tap() throws ClockException {
 		if(parent != null) {
 			parent.setEvent(event);
 			parent.setIncrement(increment);
@@ -79,13 +81,22 @@ public class Clock {
 	}
 
 
-	public Clock realmClock(BaseRecord realm) {
+	public Clock realmClock(BaseRecord realm) throws ClockException {
 		long rid = realm.get(FieldNames.FIELD_ID);
 		if(!realmClocks.containsKey(rid)) {
 			Clock rc = new Clock(this);
 			rc.setRealm(realm);
-			rc.setEvent(realm.get(OlioFieldNames.FIELD_CURRENT_EVENT));
-			rc.setIncrement(realm.get(OlioFieldNames.FIELD_CURRENT_INCREMENT));
+			BaseRecord currInc = realm.get(OlioFieldNames.FIELD_CURRENT_INCREMENT);
+			if(currInc != null) {
+				IOSystem.getActiveContext().getReader().populate(currInc, EventUtil.EVENT_QUERY_FIELDS);
+			}
+			
+			BaseRecord currEvt = realm.get(OlioFieldNames.FIELD_CURRENT_EVENT);
+			if(currEvt != null) {
+				IOSystem.getActiveContext().getReader().populate(currEvt, EventUtil.EVENT_QUERY_FIELDS);
+			}
+			rc.setEvent(currEvt);
+			rc.setIncrement(currInc);
 			realmClocks.put(rid, rc);
 		}
 		Clock rc = realmClocks.get(rid);
@@ -107,10 +118,14 @@ public class Clock {
 			this.start = evt.get(OlioFieldNames.FIELD_EVENT_START);
 			this.current = evt.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
 			this.end = evt.get(OlioFieldNames.FIELD_EVENT_END);
+			if(start.until(current, ChronoUnit.SECONDS) < 0) {
+				logger.warn("Progress before start");
+				logger.warn(evt.toFullString());
+			}
 		}
 	}
 	
-	public void setEvent(BaseRecord event) {
+	public void setEvent(BaseRecord event) throws ClockException {
 		this.event = event;
 		if(event != null) {
 			this.current = event.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
@@ -127,15 +142,23 @@ public class Clock {
 		return increment;
 	}
 
-	public void setIncrement(BaseRecord increment) {
+	public void setIncrement(BaseRecord increment) throws ClockException {
 		this.increment = increment;
 		if(increment != null) {
+			checkClockSkew(increment);
 			this.current = increment.get(OlioFieldNames.FIELD_EVENT_PROGRESS);
+
 		}
 		tap();
 	}
 	
-	
+	private void checkClockSkew(BaseRecord evt) throws ClockException {
+		if (evt != null) {
+			if(start.until(increment.get(OlioFieldNames.FIELD_EVENT_PROGRESS), ChronoUnit.SECONDS) < 0) {
+				throw new ClockException("Event progress is chronologically before event start for event #" + increment.get(FieldNames.FIELD_ID));
+			}
+		}
+	}
 
 	public int getCycle() {
 		return cycle;

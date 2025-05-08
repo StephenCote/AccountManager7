@@ -6,6 +6,7 @@ import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.olio.ClockException;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
@@ -41,7 +42,12 @@ public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolve
 
 	@Override
 	public void startRealmEvent(OlioContext context, BaseRecord realm) {
-		EventUtil.edgeTimes(context.clock().realmClock(realm).getEvent());
+		try {
+			EventUtil.edgeTimes(context.clock().realmClock(realm).getEvent());
+		} catch (ClockException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
 	}
 
 	
@@ -57,7 +63,13 @@ public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolve
 
 	@Override
 	public BaseRecord continueRealmIncrement(OlioContext context, BaseRecord realm) {
-		return context.clock().realmClock(realm).getIncrement();
+		BaseRecord inc = null;
+		try {
+			inc = context.clock().realmClock(realm).getIncrement();
+		} catch (ClockException e) {
+			logger.error(e);
+		}
+		return inc;
 	}
 
 	@Override
@@ -68,6 +80,10 @@ public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolve
 			return;
 		}
 		ActionResultEnumType aet = ActionResultEnumType.valueOf(rec.get(FieldNames.FIELD_STATE));
+		if(aet == ActionResultEnumType.COMPLETE) {
+			logger.warn("Increment is already complete");
+			return;
+		}
 		if(aet != ActionResultEnumType.PENDING) {
 			logger.error("Increment is not in a pending state");
 			return;
@@ -82,7 +98,14 @@ public class Increment24HourRule extends CommonEvolveRule implements IOlioEvolve
 
 	@Override
 	public BaseRecord nextRealmIncrement(OlioContext context, BaseRecord realm) {
-		return EventUtil.findNextIncrement(context, context.clock().realmClock(realm).getEvent(), incrementType);
+		BaseRecord inc = null;
+		try {
+			inc = EventUtil.findNextIncrement(context, context.clock().realmClock(realm).getEvent(), incrementType);
+		} catch (ClockException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
+		return inc;
 	}
 	
 }

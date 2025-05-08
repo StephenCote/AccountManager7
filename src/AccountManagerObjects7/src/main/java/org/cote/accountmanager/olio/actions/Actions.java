@@ -210,7 +210,9 @@ public class Actions {
 				logger.info(NarrativeUtil.describeInteraction(inters.get(0)));
 			}
 		}
-		ActionUtil.addProgressMS(actionResult, action.calculateCostMS(context, actionResult, actor, interactor));
+		long cost = action.calculateCostMS(context, actionResult, actor, interactor);
+		logger.info("Add time to act cost " + cost + " ms");
+		ActionUtil.addProgressMS(actionResult, cost);
 		Queue.queueUpdate(actionResult, new String[] {OlioFieldNames.FIELD_ACTION_PROGRESS});
 		
 		//logger.info("Execute action: " + actName);
@@ -245,8 +247,13 @@ public class Actions {
 		return beginAction(ctx, evt, params, per1, null);
 	}
 	public static BaseRecord beginMove(OlioContext ctx, BaseRecord evt, BaseRecord per1, DirectionEnumType dir) throws OlioException {
+		return beginMove(ctx, evt, per1, dir, 1.0);
+	}
+
+	public static BaseRecord beginMove(OlioContext ctx, BaseRecord evt, BaseRecord per1, DirectionEnumType dir, double distance) throws OlioException {
 		BaseRecord params = ActionUtil.newActionParameters(AssessmentEnumType.CURIOSITY, null, "walk");
 		params.setValue("direction", dir);
+		params.setValue("distance", distance);
 		return beginAction(ctx, evt, params, per1, null);
 	}
 	

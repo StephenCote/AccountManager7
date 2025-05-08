@@ -3,6 +3,7 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -14,10 +15,12 @@ import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.DirectionEnumType;
 import org.cote.accountmanager.olio.InteractionUtil;
 import org.cote.accountmanager.olio.MapUtil;
 import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
+import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.OverwatchException;
 import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
@@ -109,13 +112,25 @@ public class TestOlioRules extends BaseTest {
 			/// Therefore, in order to process an action for an actor, it's necessary to start or continue the epoch and increment for their root location in order for the context to be correct, such as if trying to obtain the realm based on the context location, which would return the last location processed, not the correct location
 			///
 			///
-			
+			/*
 			BaseRecord mact = ActionUtil.getInAction(per1, "walkTo");
 			if(mact != null) {
 				mact.set(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
 				Queue.queueUpdate(mact, new String[] {FieldNames.FIELD_TYPE});
 			}
+			
 			mact = Actions.beginMoveTo(octx, octx.clock().getIncrement(), per1, per2);
+			octx.overwatchActions();
+			*/
+			
+			BaseRecord wact = ActionUtil.getInAction(per1, "walk");
+			if(wact != null) {
+				wact.set(FieldNames.FIELD_TYPE, ActionResultEnumType.INCOMPLETE);
+				Queue.queueUpdate(wact, new String[] {FieldNames.FIELD_TYPE});
+			}
+			/// walk 100 meters in a random direction;
+			DirectionEnumType dir = OlioUtil.randomEnum(DirectionEnumType.class);
+			wact = Actions.beginMove(octx, octx.clock().getIncrement(), per1, dir, 100.0);
 			octx.overwatchActions();
 			
 			pact = Actions.beginLook(octx, octx.clock().getIncrement(), per1);
@@ -125,6 +140,22 @@ public class TestOlioRules extends BaseTest {
 			pact = Actions.beginGather(octx, octx.clock().getIncrement(), per1, "water", 3);
 			octx.overwatchActions();
 			logger.info(pact.toString());
+			
+			/*
+			ZonedDateTime start = octx.clock().getStart();
+			ZonedDateTime current = octx.clock().getCurrent();
+			ZonedDateTime end = octx.clock().getEnd();
+			*/
+			ZonedDateTime start = octx.clock().getIncrement().get(OlioFieldNames.FIELD_EVENT_START);
+			ZonedDateTime current = octx.clock().getIncrement().get(OlioFieldNames.FIELD_EVENT_PROGRESS);
+			ZonedDateTime end = octx.clock().getIncrement().get(OlioFieldNames.FIELD_EVENT_END);
+			logger.info("Start: " + start.toString());
+			logger.info("Current: " + current.toString());
+			logger.info("End: " + end.toString());
+			//logger.info(octx.clock().getIncrement().toFullString());
+			
+			/*
+
 			
 			pact = Actions.beginPeek(octx, octx.clock().getIncrement(), per1, per1);
 			octx.overwatchActions();
@@ -137,7 +168,7 @@ public class TestOlioRules extends BaseTest {
 			pact = Actions.beginDress(octx, octx.clock().getIncrement(), per1, null, WearLevelEnumType.ACCESSORY);
 			octx.overwatchActions();
 			logger.info(pact.toString());
-			
+			*/
 			
 
 		}

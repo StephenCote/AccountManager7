@@ -12,6 +12,7 @@ import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.ClockException;
 import org.cote.accountmanager.olio.EventUtil;
 import org.cote.accountmanager.olio.GeoLocationUtil;
 import org.cote.accountmanager.olio.ItemUtil;
@@ -33,7 +34,12 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 
 	@Override
 	public void startRealmEvent(OlioContext context, BaseRecord realm) {
-		EventUtil.edgeTimes(context.clock().realmClock(realm).getEvent());
+		try {
+			EventUtil.edgeTimes(context.clock().realmClock(realm).getEvent());
+		} catch (ClockException e) {
+			logger.error(e);
+			e.printStackTrace();
+		}
 		
 	}
 
@@ -49,13 +55,18 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 
 	@Override
 	public BaseRecord continueRealmIncrement(OlioContext context, BaseRecord realm) {
-		return context.clock().realmClock(realm).getIncrement();
-		// BaseRecord rec = EventUtil.getLastEvent(context.getOlioUser(), context.getWorld(), locationEpoch.get(FieldNames.FIELD_LOCATION), EventEnumType.PERIOD, TimeEnumType.HOUR, ActionResultEnumType.PENDING, false); 
+		BaseRecord inc = null;
+		try {
+			inc = context.clock().realmClock(realm).getIncrement();
+		} catch (ClockException e) {
+			logger.error(e);
+		}
+		return inc;
 	}
 
 	@Override
 	public void endRealmIncrement(OlioContext context, BaseRecord realm) {
-		BaseRecord rec = context.clock().realmClock(realm).getIncrement();
+		BaseRecord rec = continueRealmIncrement(context, realm);
 
 		if(rec == null) {
 			logger.warn("Current increment was not found");
@@ -77,25 +88,36 @@ public class ArenaEvolveRule extends CommonEvolveRule implements IOlioEvolveRule
 	@Override
 	public void evaluateRealmIncrement(OlioContext context, BaseRecord realm) {
 		// TODO Auto-generated method stub
-		List<BaseRecord> party1 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party1Name, new ArrayList<>());
-		List<BaseRecord> party2 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party2Name, party1);
-		
-		logger.info("Party: " + party1.size() + " - " + party2.size());
-		//logger.info(increment.toString());
-
-		BaseRecord field1 = ArenaInitializationRule.findLocation(context, "Field 1");
-		List<BaseRecord> acells = GeoLocationUtil.getCells(context, field1);
-		
-		ApparelUtil.outfitAndStage(context, acells.get(random.nextInt(acells.size())), party1);
-		ApparelUtil.outfitAndStage(context, acells.get(random.nextInt(acells.size())), party2);
-		ItemUtil.showerWithMoney(context, party1);
-		ItemUtil.showerWithMoney(context, party2);
-		Queue.processQueue();
+		try {
+			List<BaseRecord> party1 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party1Name, new ArrayList<>());
+			List<BaseRecord> party2 = GroupDynamicUtil.getCreateParty(context, context.clock().realmClock(realm).getEvent(), party2Name, party1);
+			
+			logger.info("Party: " + party1.size() + " - " + party2.size());
+			//logger.info(increment.toString());
+	
+			BaseRecord field1 = ArenaInitializationRule.findLocation(context, "Field 1");
+			List<BaseRecord> acells = GeoLocationUtil.getCells(context, field1);
+			
+			ApparelUtil.outfitAndStage(context, acells.get(random.nextInt(acells.size())), party1);
+			ApparelUtil.outfitAndStage(context, acells.get(random.nextInt(acells.size())), party2);
+			ItemUtil.showerWithMoney(context, party1);
+			ItemUtil.showerWithMoney(context, party2);
+			Queue.processQueue();
+		}
+		catch(ClockException e) {
+			logger.error(e);
+		}
 	}
 
 	@Override
 	public BaseRecord nextRealmIncrement(OlioContext context, BaseRecord realm) {
-		return EventUtil.findNextIncrement(context, context.clock().realmClock(realm).getIncrement(), TimeEnumType.HOUR);
+		BaseRecord rec = null;
+		try {
+			rec = EventUtil.findNextIncrement(context, context.clock().realmClock(realm).getIncrement(), TimeEnumType.HOUR);
+		} catch (ClockException e) {
+			logger.error(e);
+		}
+		return rec;
 	}
 
 	@Override

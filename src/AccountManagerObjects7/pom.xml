@@ -134,8 +134,9 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestChat2.java</exclude>
+						<exclude>**/TestOlioRules.java</exclude>
 						-->
+						<exclude>**/TestChat2.java</exclude>
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestDocumentSearch.java</exclude>
 						<exclude>**/TestSchemaModification.java</exclude>
@@ -152,7 +153,7 @@
 						<exclude>**/TestVectorStore.java</exclude>
 
 						<exclude>**/TestLangChain.java</exclude>
-						<exclude>**/TestOlioRules.java</exclude>
+						
 
 						<exclude>**/TestQueryPlan.java</exclude>
 						<exclude>**/TestH2Database.java</exclude>

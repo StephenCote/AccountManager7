@@ -184,7 +184,7 @@ public class EpochUtil {
 			Queue.queue(cepoch.copyRecord(new String[]{FieldNames.FIELD_ID, FieldNames.FIELD_STATE}));
 			Queue.processQueue();
 			ctx.clock().setEvent(null);
-		} catch (FieldException | ValueException | ModelNotFoundException e) {
+		} catch (FieldException | ValueException | ModelNotFoundException | ClockException e) {
 			logger.error(e);
 		}
 	}
@@ -247,7 +247,16 @@ public class EpochUtil {
 			return null;
 		}
 		
-		Clock rclock = ctx.clock().realmClock(realm);
+		Clock rclock = null;
+		try {
+			rclock = ctx.clock().realmClock(realm);
+		} catch (ClockException e) {
+			logger.error(e);
+		}
+		if (rclock == null) {
+			logger.error("Failed to get realm clock");
+			return evt;
+		}
 		if(rclock.getEvent() != null) {
 			logger.error("The current realm already has an ongoing event");
 			return evt;
@@ -296,7 +305,7 @@ public class EpochUtil {
 				}
 			}
 		}
-		catch (FieldException | ValueException | ModelNotFoundException | ModelException e) {
+		catch (FieldException | ValueException | ModelNotFoundException | ModelException | ClockException e) {
 			logger.error(e);
 		}
 		
