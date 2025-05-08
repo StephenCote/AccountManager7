@@ -56,8 +56,6 @@ public class OlioTaskAgent  {
 					SDTxt2Img s2i = JSONUtil.importObject(request.get("taskModelData"), SDTxt2Img.class);
 					if(s2i != null) {
 						SDUtil sdu = new SDUtil();
-						logger.info("Invoking txt2img");
-						logger.info((String)request.get("taskModelData"));
 						SDResponse resp = sdu.txt2img(s2i);
 						;
 						if(resp != null) {
