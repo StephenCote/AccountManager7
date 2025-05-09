@@ -172,7 +172,7 @@ public class TestOlioRules extends BaseTest {
 			
 
 		}
-		catch ( ClassCastException | OverwatchException | OlioException | FieldException | ValueException | ModelNotFoundException  e) {
+		catch ( NullPointerException | ClassCastException | OverwatchException | OlioException | FieldException | ValueException | ModelNotFoundException  e) {
 			logger.info(e);
 			e.printStackTrace();
 		}

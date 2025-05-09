@@ -23,6 +23,10 @@ public class StateUtil {
 	
 	public static void queueUpdateLocation(OlioContext context, BaseRecord obj) {
 		BaseRecord state = obj;
+		if(state == null) {
+			logger.warn("State is null");
+			return;
+		}
 		if(!obj.getSchema().equals(OlioModelNames.MODEL_CHAR_STATE)) {
 			state = obj.get(FieldNames.FIELD_STATE);
 		}
