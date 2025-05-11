@@ -399,11 +399,11 @@
         });
   
         return m("ul", { class: "carousel-indicators" }, [
-          m("li", { onclick: function () { pagination.prev(ctl.embeddedMode || ctl.pickerMode); }, class: "carousel-indicator" }, [
+          m("li", { onclick: function () { ctl.pagination.prev(ctl.embeddedMode || ctl.pickerMode); }, class: "carousel-indicator" }, [
             m("span", { class: "material-symbols-outlined carousel-bullet" }, "arrow_back")
           ]),
           results,
-          m("li", { onclick: function () { pagination.next(ctl.embeddedMode || ctl.pickerMode); }, class: "carousel-indicator" }, [
+          m("li", { onclick: function () { ctl.pagination.next(ctl.embeddedMode || ctl.pickerMode); }, class: "carousel-indicator" }, [
             m("span", { class: "material-symbols-outlined carousel-bullet" }, "arrow_forward")
           ])
         ]);

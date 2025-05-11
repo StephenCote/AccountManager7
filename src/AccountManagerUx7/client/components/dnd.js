@@ -167,7 +167,7 @@
             }
             else if (dnd.overTarget) {
                 let overParent = am7model.isParent(dnd.overTarget[am7model.jsonModelKey]);
-                let dropGroup = dnd.overTarget[am7model.jsonModelKey].match(/^auth\.[group]$/gi);
+                let dropGroup = dnd.overTarget[am7model.jsonModelKey].match(/^auth\.group$/gi);
                 console.log(dnd.dragTarget, dnd.overTarget, dragParent, overParent);
                 if ((dragGroup && dropGroup) || (dragParent && overParent)) {
                     ret = await page.reparentObject(dnd.dragTarget, dnd.overTarget);
