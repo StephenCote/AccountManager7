@@ -54,4 +54,14 @@ CREATE TABLE vecttest (
 
 
 //// Java setup
-https://djl.ai/extensions/tokenizers/
+Use embedTool.py python script
+DEPRECATED - https://djl.ai/extensions/tokenizers/
+
+/// TAG CLOUD QUERY
+SELECT COUNT(T.id) AS usage_count, T.id, T.name, (SELECT COUNT(*) FROM a7_data_tag_0_1) AS total_tags, (COUNT(T.id)::numeric / (SELECT COUNT(*) FROM a7_data_tag_system_participation_0_1) * 100) AS usage_percentage
+FROM a7_data_tag_0_1 T
+INNER JOIN a7_data_tag_system_participation_0_1 TP
+ON TP.participationid = T.id
+GROUP BY T.id, T.name
+ORDER BY usage_count DESC;
+

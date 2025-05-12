@@ -36,7 +36,18 @@
             icon = m("span", { class: "fontLabel-" + (gridMode == 1 ? "6" : "10") + " fiv-cla fiv-icon-" + ext });
         }
         else {
-          icon = m("span", { class: "material-symbols-outlined material-icons-48" }, ico);
+          //icon = m("span", { class: "material-symbols-outlined material-icons-48" }, ico);
+        let icoCls = "material-symbols-outlined";
+        let col = "";
+        let sty = "";
+        if (p.hex) {
+            icoCls = "material-icons";
+            col = " stroke-slate-50";
+            sty = "color: " + p.hex + ";";
+        }
+
+        icon = m("span", { style: sty, class: icoCls + " material-icons-72" + (icoCls ? " " + icoCls : "") + col }, ico);
+        
         }
         return icon;
     }
