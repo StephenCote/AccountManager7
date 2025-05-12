@@ -154,40 +154,6 @@ public class FieldUtil {
 		return fet;
 	}
 	
-	/*
-	public static <T> FieldEnumType getValueType(T val) {
-		FieldEnumType fet = FieldEnumType.UNKNOWN;
-		if(val instanceof LooseRecord) {
-			fet = FieldEnumType.MODEL;
-		}
-		else if(val instanceof byte[]) {
-			fet = FieldEnumType.BLOB;
-		}
-		else if(val instanceof String) {
-			fet = FieldEnumType.STRING;
-		}
-		else if(val instanceof Long) {
-			fet = FieldEnumType.LONG;
-		}
-		else if(val instanceof Integer) {
-			fet = FieldEnumType.INT;
-		}
-		else if(val instanceof Double) {
-			fet = FieldEnumType.DOUBLE;
-		}
-		else if(val instanceof List) {
-			fet = FieldEnumType.LIST;
-		}
-		else if(val instanceof Date) {
-			fet = FieldEnumType.TIMESTAMP;
-		}
-		else {
-			logger.error("Unchecked type: " + val.toString());
-		}
-		return fet;
-	}
-	*/
-	
 	public static int compareTo(FieldType c, FieldType f) {
 		int comp = 0;
 		if(f.getValueType() != c.getValueType()) {
