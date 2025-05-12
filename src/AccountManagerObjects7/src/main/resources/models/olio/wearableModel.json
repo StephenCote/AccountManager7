@@ -5,7 +5,7 @@
 		"olio.item"
 	],
 	"group": "Wearables",
-	"icon": "category",
+	"icon": "apparel",
 	"label": "Wearable",
 	"dedicatedParticipation": true,
 	"fields": [

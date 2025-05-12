@@ -52,7 +52,8 @@
           "data.data",
           "data.note",
           "auth.group",
-          "data.tag"
+          "data.tag",
+          "data.color"
         ],
         "icon": "emoji_objects",
         "prototypes": [
@@ -5762,8 +5763,8 @@
           "identity.person",
           "common.alignment"
         ],
-        "group": "Persons",
-        "icon": "note",
+        "group": "Characters",
+        "icon": "face",
         "label": "Character Person",
         "dedicatedParticipation": true,
         "factory": "org.cote.accountmanager.olio.CharPersonFactory",
@@ -6270,7 +6271,7 @@
           "olio.item"
         ],
         "group": "Wearables",
-        "icon": "category",
+        "icon": "apparel",
         "label": "Wearable",
         "dedicatedParticipation": true,
         "fields": [
@@ -6358,7 +6359,7 @@
           "common.baseLight"
         ],
         "group": "Apparel",
-        "icon": "category",
+        "icon": "styler",
         "label": "Apparel",
         "query": [
           "id",

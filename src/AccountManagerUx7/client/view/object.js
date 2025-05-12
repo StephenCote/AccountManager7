@@ -1554,28 +1554,6 @@
             });
         }
         
-
-
-        /*
-        function mergeDeep(t, ...s) {
-            if (!s.length) return t;
-            let src = s.shift();
-          
-            if (isObject(target) && isObject(source)) {
-              for (const key in source) {
-                if (isObject(source[key])) {
-                  if (!target[key]) Object.assign(target, { [key]: {} });
-                  mergeDeep(target[key], source[key]);
-                } else {
-                  Object.assign(target, { [key]: source[key] });
-                }
-              }
-            }
-          
-            return mergeDeep(target, ...sources);
-          }
-          */
-
         objectPage.mergeEntity = function(e, s, baseModel){
             let ue = s || entity;
             if(!e){
@@ -1638,45 +1616,7 @@
             });
         };
 
-        function pickMember(field, members){
-            let aP = [];
-           // console.log(field);
-            if(am7model.hasIdentity(entity)){
-                members.forEach((t)=>{
-                    aP.push(new Promise((res, rej)=>{
-                        /// TODO: Differentiate which is the container, eg: entity should participate in a tag, not the other way around
-                        let e2 = entity;
-                        let a2 = t;
-                        if("data.tag" == field.baseModel){
-                            e2 = t;
-                            a2 = entity;
-                        }
-                        //console.log(e2[am7model.jsonModelKey], e2.objectId, (!field.virtual ? field?.name : null), a2[am7model.jsonModelKey], a2.objectId);
-                        /// Need to be smarter about whether e2 is an actor or object depending on the instance model
-                        /*
-                        let obj = e2;
-                        let act = a2;
-                        if(e2.schema == "data.tag"){
-                            obj = a2;
-                            act = e2;
-                        }
-                        */
-                       let fn = (!field.name == "data.tag" && !field.virtual ? field?.name : null);
-                        am7client.member(e2[am7model.jsonModelKey], e2.objectId, fn, a2[am7model.jsonModelKey], a2.objectId, true, function(v){
-                            console.log("Member: " + v);
-                            res(v);
-                        })
-                    }));
-                });
-            }
-            if(!aP.length){
-                console.warn("Nothing picked!");
-            }
-            Promise.all(aP).then(()=>{
-                delete foreignData['members'];
-                cancelPicker();
-            });
-        }
+
         objectPage.deleteChild = function(name, field, tableType, tableForm, props){
             let aP = [];
             let aC = [];
@@ -1738,6 +1678,38 @@
             });
         }
 
+        /// TODO: pickMember and pickEntity are almost identical, need to refactor
+        function pickMember(field, members){
+            let aP = [];
+            if(am7model.hasIdentity(entity)){
+                members.forEach((t)=>{
+                    aP.push(new Promise((res, rej)=>{
+                        /// TODO: Differentiate which is the container, eg: entity should participate in a tag, not the other way around
+                        let e2 = entity;
+                        let a2 = t;
+                        if("data.tag" == field.baseModel){
+                            e2 = t;
+                            a2 = entity;
+                        }
+
+                       let fn = (!field.name == "data.tag" && !field.virtual ? field?.name : null);
+                        am7client.member(e2[am7model.jsonModelKey], e2.objectId, fn, a2[am7model.jsonModelKey], a2.objectId, true, function(v){
+                            console.log("Member: " + v);
+                            res(v);
+                        })
+                    }));
+                });
+            }
+            if(!aP.length){
+                console.warn("Nothing picked!");
+            }
+            Promise.all(aP).then(()=>{
+                delete foreignData['members'];
+                cancelPicker();
+            });
+        }
+
+        /// TODO: pickMember and pickEntity are almost identical, need to refactor
         function pickEntity(name, field, data){
             console.log("Pick entity", data, field);
             let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);

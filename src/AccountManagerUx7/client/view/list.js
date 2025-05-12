@@ -519,14 +519,16 @@
     }
 
     function doFilter() {
-      console.log(pagination.filter + "");
+      //console.log(pagination);
+      navFilter = document.querySelector("[id=listFilter]").value;
+      if (!navFilter.length) navFilter = null;
+      let red = false;
       if (embeddedMode || pickerMode) {
-        navFilter = document.querySelector("[id=listFilter]").value;
-        if (!navFilter.length) navFilter = null;
-        m.redraw();
+        //m.redraw();
+        red = true;
       }
 
-      else pagination.filter(app);
+      else pagination.filter(navFilter, red);
     }
 
     function getListView() {

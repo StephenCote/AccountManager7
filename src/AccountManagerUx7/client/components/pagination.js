@@ -36,7 +36,7 @@
     }
     let pages = newPagination();
 
-    function getSearchQuery() {
+    async function getSearchQuery() {
 
       let q = am7client.newQuery(pages.resultType);
       q.entity.request = getRequestFields(pages.resultType);
@@ -55,23 +55,34 @@
       q.order(pages.order);
       q.field("organizationId", page.user.organizationId);
 
+      if(am7model.hasField(pages.resultType, "tags")){ 
+        q.entity.request.push("tags");
+      }
+
+      if(!pages.containerId){
+        am7client.search(q, handleList);
+      }
+      else{
+        let gq = am7view.viewQuery(am7model.newInstance(pages.containerType));
+        gq.field("objectId", pages.containerId  );
+        let g = await page.search(gq);
+        let id = 0;
+        if(g && g.results){
+          id = g.results[0].id;
+        }
+        /// auth.group is a special case where it is a parent/child hierarchy, so the parentId is used
+        /// some models like data.note can be hierarchical by group and parent
+        if(am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, "groupId")){
+          q.field("groupId", id);
+        }
+        else if(am7model.isParent(pages.resultType)){
+          q.field("parentId", id);
+        }
+      }
+
       return q;
     }
-    /*
-    function handleMemberList(v) {
-      let aL = v || [];
-      pages.pageResults = [];
-      pages.counted = true;
-      requesting = false;
-      pages.totalCount = aL.length;
-      pages.pageCount = Math.ceil(pages.totalCount / pages.recordCount);
-      for (let i = 1; i <= pages.pageCount; i++) {
-        let iStart = (i - 1) * pages.recordCount;
-        pages.pageResults[i] = aL.slice(iStart, iStart + pages.recordCount);
-      }
-      m.redraw();
-    }
-    */
+
     function handleCount(v) {
       pages.pageResults = [];
       pages.counted = true;
@@ -129,10 +140,9 @@
         /// filter is used for count and list through the search API, which allows for scoping to the current group and recurse through child group structures
         ///
         requesting = true;
-        let sFields = getRequestFields(pages.resultType);
+
         if (pages.containerSubType != null && pages.containerSubType.match(/^(user|account|person|bucket)$/gi)) {
           am7client.members(pages.containerType, pages.containerId, pages.resultType, pages.startRecord, pages.recordCount, function (v) {
-            //console.log(v);
             handleList(v);
           });
         }
@@ -152,45 +162,14 @@
 
         }
         else if (pages.resultType.match(/^request$/)) {
-          console.log("List Req");
-          am7client.listRequests("USER", page.user.objectId, pages.startRecord, pages.recordCount, handleList);
-        }
-
-        else if (pages.filter == null) {
-          //console.log("List: " + pages.resultType + " / " + pages.containerId + " / " + sFields + " / " + pages.startRecord + " / " + pages.recordCount);
-          //am7client.list(pages.resultType, pages.containerId, sFields, pages.startRecord, pages.recordCount, handleList);
-          
-          let q = getSearchQuery();
-          if(am7model.hasField(pages.resultType, "tags")){ 
-            q.entity.request.push("tags");
-          }
-
-          if(!pages.containerId){
-            am7client.search(q, handleList);
-          }
-          else{
-            let gq = am7view.viewQuery(am7model.newInstance("auth.group"));
-            gq.field("objectId", pages.containerId  );
-            page.search(gq).then((g) => {
-              let id = 0;
-              if(g && g.results){
-                id = g.results[0].id;
-              }
-              /// auth.group is a special case where it is a parent/child hierarchy, so the parentId is used
-              /// some models like data.note can be hierarchical by group and parent
-              if(am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, "groupId")){
-                q.field("groupId", id);
-              }
-              else if(am7model.isParent(pages.resultType)){
-                q.field("parentId", id);
-              }
-              am7client.search(q, handleList);
-            });
-          }
-            
+          console.warn("REFACTOR LIST REQUESTS");
+          // am7client.listRequests("USER", page.user.objectId, pages.startRecord, pages.recordCount, handleList);
         }
         else {
-          am7client.search(getSearchQuery(), handleList);
+          getSearchQuery().then((q) => {
+            console.log(q);
+            am7client.search(q, handleList);
+          });
         }
       }
     }
@@ -282,22 +261,27 @@
           }
         }
         else if (type.match(/^request$/gi)) {
-
+          console.warn("REFACTOR COUNT REQUESTS");
+          /*
           am7client.countRequests("USER", page.user.objectId, function (v) {
             handleCount(v);
           });
-        }
-        else if (pages.filter == null) {
-          //am7client[navigateByParent ? "countInParent" : "count"](type, containerId, handleCount);
-          am7client.count(type, containerId, handleCount);
+          */
         }
         else {
 
-          let req = getSearchQuery();
+          //let req = getSearchQuery();
+          //am7client.searchCount(req, handleCount);
           /// Set record count to 0 because searchCount operates differently than the regular count, counting authorized identifiers outside of a view versus counting rows
           ///
-          req.recordCount = 0;
-          am7client.searchCount(req, handleCount);
+          getSearchQuery().then((req) => {
+            req.recordCount = 0;
+            console.log(req);
+            page.count(req).then((v) => {
+              handleCount(v);
+            });
+          });
+
         }
 
       }
@@ -319,14 +303,21 @@
 
       }
     }
-    function doFilter(app) {
+    function doFilter(sFilt, bRedrawOnly) {
       let url = page.getRawUrl() + "?startRecord=0";
       pages = newPagination();
+      entity.listFilter = sFilt || "";
+      console.log("Filter: ", entity);
       if (entity.listFilter != null && entity.listFilter.length) {
         url += "&filter=" + encodeURI(entity.listFilter);
         pages.filter = entity.listFilter;
       }
-      listRouter(url);
+      if(bRedrawOnly){
+        m.redraw();
+      }
+      else{
+        listRouter(url);
+      }
     }
 
     function getPageUrl(iPage, iCount) {
@@ -417,7 +408,7 @@
       next: navNext,
       prev: navPrev,
       filter: doFilter,
-      changePage: updatePage,
+      //changePage: updatePage,
       url: getPageUrl,
       pageButtons: pageButtons,
       state: getPageState,

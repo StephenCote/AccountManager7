@@ -195,31 +195,38 @@
                         if (idx == 0) {
                             path = path.slice(idx + origin.path.length + 1);
                         }
+
+                        console.log(path, am7view.typeByPath(path));
+                        let pathType;
                         if (path.indexOf("/") > -1) {
                             let np = node.path;
                             np = np.replace(/\/Gallery$/, "/Gallery");
-                            let pathType = am7view.typeByPath(np) || "data.data";
-                            if (pathType) {
-                                fListType = pathType;
-                                let modType = am7model.getModel(pathType);
-                                if (modType) {
-                                    if (modType.icon) {
-                                        ico = modType.icon;
-                                    }
-                                    if (modType.limit && modType.limit.length) {
-                                        fListType = modType.limit[0];
-                                    }
-                                    else if (modType.type) {
-                                        fListType = modType.type;
-                                    }
-                                }
-                                //builtIn = true;
-                            }
-                            else
-                            if (node.path == page.user.homeDirectory.path) {
-                                ico = "gite";
-                            }
+                            pathType = am7view.typeByPath(np) || "data.data";
                         }
+                        else{
+                            pathType = am7view.typeByPath(path) || "data.data";
+                        }
+                        if (pathType) {
+                            fListType = pathType;
+                            let modType = am7model.getModel(pathType);
+                            if (modType) {
+                                if (modType.icon) {
+                                    ico = modType.icon;
+                                }
+                                if (modType.limit && modType.limit.length) {
+                                    fListType = modType.limit[0];
+                                }
+                                else if (modType.type) {
+                                    fListType = modType.type;
+                                }
+                            }
+                            //builtIn = true;
+                        }
+                        else
+                        if (node.path == page.user.homeDirectory.path) {
+                            ico = "gite";
+                        }
+                        
                     }
                 }
                 else if (node[am7model.jsonModelKey].match(/^(auth\.role|auth\.permission)$/gi)) {

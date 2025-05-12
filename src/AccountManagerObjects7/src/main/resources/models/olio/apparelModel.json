@@ -8,7 +8,7 @@
 		"common.baseLight"
 	],
 	"group": "Apparel",
-	"icon": "category",
+	"icon": "styler",
 	"label": "Apparel",
 	"query": ["id", "groupId", "name"],
 	"dedicatedParticipation": true,

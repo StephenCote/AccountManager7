@@ -374,9 +374,14 @@ public class FieldUtil {
 						l1 = (long)val;
 					}
 				}
-		
-				if(fs.getDefaultValue() != null) {
-					l2 = (long)fs.getDefaultValue();
+				Object val2 = fs.getDefaultValue();
+				if(val2 != null) {
+					if(val2 instanceof Integer) {
+						l2  = ((Integer)val2).longValue();
+					}
+					else {
+						l2 = (long)val2;
+					}
 				}
 				outBool = l1 == l2;
 				break;

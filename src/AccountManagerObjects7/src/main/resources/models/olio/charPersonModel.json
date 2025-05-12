@@ -4,8 +4,8 @@
 		"identity.person",
 		"common.alignment"
 	],
-	"group": "Persons",
-	"icon": "note",
+	"group": "Characters",
+	"icon": "face",
 	"label": "Character Person",
 	"dedicatedParticipation": true,
 	"factory": "org.cote.accountmanager.olio.CharPersonFactory",

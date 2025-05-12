@@ -187,7 +187,8 @@
         return basePath + "/" + m.group;
     }
     let worldView = {
-        "Population": "olio.charPerson"
+        "Population": "olio.charPerson",
+        "Characters": "olio.charPerson"
     }
     function getTypeByPath(sPath) {
         let subPath = sPath.substring(sPath.lastIndexOf("/") + 1);

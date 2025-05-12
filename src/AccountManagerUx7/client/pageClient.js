@@ -231,6 +231,9 @@
     }
 
     async function favorites(){
+        if(!page.user){
+            return;
+        }
         let origin = page.user.homeDirectory;
 
         let grp = await page.openObjectByName("auth.group", origin.objectId, "Favorites");
