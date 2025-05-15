@@ -53,6 +53,15 @@ public class VectorUtil {
 	private static Pattern tablePat = Pattern.compile("\\$\\{tableName\\}");
 	private static Pattern tagFilterPat = Pattern.compile("\\$\\{tagFilter\\}");
 	
+	/// DISTINCT_WRAPPER
+	private static final String DISTINCT_PREFACE = "SELECT distinct on (vectorReference, vectorReferenceType) id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, score, content, chunk FROM(";
+	private static final String DISTINCT_SUFFIX = """
+)
+WHERE score >= ?
+ORDER BY vectorReference, vectorReferenceType
+LIMIT ?
+""";
+
 	/// Derived from PG Vector example hybrid search query
 	///
 	private static final String HYBRID_SQL = """
@@ -62,7 +71,7 @@ WITH semantic_search AS (
     ${tagFilter}
     WHERE (vectorReference = ? or ? = 0) and (vectorReferenceType = ? or ? IS NULL)
     ORDER BY embedding <=> ?
-    LIMIT 20
+    LIMIT ?
 ),
 keyword_search AS (
     SELECT id, keyId, vaultId, vaulted, organizationId, vectorReference, vectorReferenceType, RANK () OVER (ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC), content, chunk
@@ -70,7 +79,7 @@ keyword_search AS (
     WHERE to_tsvector('english', content) @@ query
     AND (vectorReference = ? or ? = 0) and (vectorReferenceType = ? or ? IS NULL)
     ORDER BY ts_rank_cd(to_tsvector('english', content), query) DESC
-    LIMIT 20
+    LIMIT ?
 )
 SELECT
     COALESCE(semantic_search.id, keyword_search.id) AS id,
@@ -150,18 +159,18 @@ LIMIT ?
 		return find(model, new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query);
 	}
 	public List<BaseRecord> find(BaseRecord model, String[] vectorModels, String query){
-		return findByEmbedding(model, (model != null ? model.getSchema() : null), new BaseRecord[0], vectorModels, query, 10, 60);
+		return findByEmbedding(model, (model != null ? model.getSchema() : null), new BaseRecord[0], vectorModels, query, 10, 60, false);
 	}
 	public List<BaseRecord> find(BaseRecord model, String query, int limit, double k){
-		return find(model, null, query, limit, k);
+		return find(model, null, query, limit, k, false);
 	}
-	public List<BaseRecord> find(BaseRecord model, String modelName, String query, int limit, double k){
-		return find(model, modelName, new BaseRecord[0], new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k);
+	public List<BaseRecord> find(BaseRecord model, String modelName, String query, int limit, double k, boolean distinct){
+		return find(model, modelName, new BaseRecord[0], new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, query, limit, k, distinct);
 	}
-	public List<BaseRecord> find(BaseRecord model, String modelName, BaseRecord[] tags, String[] vectorModels, String query, int limit, double k){
-		return findByEmbedding(model, modelName, tags, vectorModels, query, limit, k);
+	public List<BaseRecord> find(BaseRecord model, String modelName, BaseRecord[] tags, String[] vectorModels, String query, int limit, double k, boolean distinct){
+		return findByEmbedding(model, modelName, tags, vectorModels, query, limit, k, distinct);
 	}	
-	private List<BaseRecord> findByEmbedding(BaseRecord model, String modelName, BaseRecord[] tags, String[] vectorModels, String query, int limit, double k){
+	private List<BaseRecord> findByEmbedding(BaseRecord model, String modelName, BaseRecord[] tags, String[] vectorModels, String query, int limit, double k, boolean distinct){
 		List<BaseRecord> content = new ArrayList<>();
 		long id = 0L;
 		String refType = null;
@@ -185,7 +194,8 @@ LIMIT ?
 			;
 		}
 		for(String tableName : tables) {
-			String sql = tablePat.matcher(HYBRID_SQL).replaceAll(tableName);
+			String selectTemplate = (distinct ? DISTINCT_PREFACE : "") + HYBRID_SQL + (distinct ? DISTINCT_SUFFIX : "");
+			String sql = tablePat.matcher(selectTemplate).replaceAll(tableName);
 			sql = tagFilterPat.matcher(sql).replaceAll(tagFilter);
 	
 			try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); PreparedStatement stat = con.prepareStatement(sql)){
@@ -197,15 +207,23 @@ LIMIT ?
 		        stat.setString(4, refType);
 		        stat.setString(5, refType);
 		        stat.setObject(6, new PGvector(queryEmbedding));
-		        stat.setString(7, query);
-		        stat.setLong(8, id);
+		        stat.setInt(7, limit);
+		        stat.setString(8, query);
 		        stat.setLong(9, id);
-		        stat.setString(10, refType);
+		        stat.setLong(10, id);
 		        stat.setString(11, refType);
-		        stat.setDouble(12, k);
-		        stat.setDouble(13, k);
-		        stat.setInt(14, limit);
-		        //logger.info(stat);
+		        stat.setString(12, refType);
+		        stat.setInt(13, limit);
+		        stat.setDouble(14, k);
+		        stat.setDouble(15, k);
+		        stat.setInt(16, limit);
+		        
+		        if(distinct) {
+		        	stat.setDouble(17, k);
+		        	stat.setInt(18, limit);	
+		        }
+		        
+		        logger.info(stat);
 		        ResultSet rs = stat.executeQuery();
 		        MemoryReader mem = new MemoryReader();
 		        while (rs.next()) {

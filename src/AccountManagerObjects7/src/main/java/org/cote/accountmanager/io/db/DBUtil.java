@@ -703,7 +703,7 @@ $$;""";
 				if(!enableVectorExtension) {
 					logger.warn("Vector extension is not enabled");
 				}
-				outType = "vector";
+				outType = "vector" + (schema.getMaxLength() > 0 ? "(" + schema.getMaxLength() + ")" : "");
 				break;
 			default:
 				logger.error("Unhandled: " + fet.toString());

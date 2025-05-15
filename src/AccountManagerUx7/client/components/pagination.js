@@ -126,7 +126,7 @@
     function updatePage(iPage) {
       if (requesting) return;
       if (iPage <= 0 || iPage > pages.pageCount) {
-        console.debug("Invalid page: " + iPage + " / " + pages.pageCount);
+        // console.debug("Invalid page: " + iPage + " / " + pages.pageCount);
         return;
       }
 
@@ -219,7 +219,6 @@
         pages.recordCount = (!isNaN(recordCount) && recordCount > 0 ? recordCount : pages.recordCount);
         pages.filter = (entity.listFilter.length ? entity.listFilter : null);
 
-        console.log(pages);
       }
       pages.navigateByParent = navigateByParent;
       pages.listSystem = bSystem;
@@ -276,7 +275,6 @@
           ///
           getSearchQuery().then((req) => {
             req.recordCount = 0;
-            console.log(req);
             page.count(req).then((v) => {
               handleCount(v);
             });

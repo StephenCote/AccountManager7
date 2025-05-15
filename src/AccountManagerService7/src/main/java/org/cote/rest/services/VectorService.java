@@ -91,9 +91,9 @@ public class VectorService {
 	
 	@RolesAllowed({"user"})
 	@POST
-	@Path("/reference/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/{count:[0-9]+}/{dist:[0-9\\.]+}")
+	@Path("/reference/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/{count:[0-9]+}/{dist:[0-9\\.]+}/{distinct:(true|false)}")
 	@Produces(MediaType.APPLICATION_JSON)
-	public Response vectorReference(String statement, @PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("count") int count, @PathParam("dist") double dist, @Context HttpServletRequest request, @Context HttpServletResponse response){
+	public Response vectorReference(String statement, @PathParam("type") String type, @PathParam("objectId") String objectId, @PathParam("count") int count, @PathParam("dist") double dist, @PathParam("distinct") boolean distinct, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		List<BaseRecord> vects = new ArrayList<>();
 		BaseRecord rec = null;
@@ -108,9 +108,9 @@ public class VectorService {
 		//String[] tables = new String[0];
 		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
 		if(type != null && type.equals(OlioModelNames.MODEL_CHAR_PERSON)) {
-			vects.addAll(vu.find(rec, ModelNames.MODEL_DATA, new BaseRecord[0], new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist));
+			vects.addAll(vu.find(rec, ModelNames.MODEL_DATA, new BaseRecord[0], new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, statement, count, dist, distinct));
 		}
-		vects.addAll(vu.find(rec, type, statement, count, dist));
+		vects.addAll(vu.find(rec, type, statement, count, dist, distinct));
 		List<BaseRecord> ovects = vu.sortAndLimit(vects, count);
 		logger.info("Found " + ovects.size() + " chunks");
 		return Response.status(200).entity(JSONUtil.exportObject(ovects, RecordSerializerConfig.getForeignUnfilteredModuleRecurse())).build();

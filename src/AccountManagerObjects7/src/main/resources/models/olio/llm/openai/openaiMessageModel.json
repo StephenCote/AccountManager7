@@ -5,7 +5,11 @@
 	],
 	"inherits": ["olio.llm.message"],
 	"fields": [
-
+		{
+			"name": "annotations",
+			"type": "list",
+			"baseType": "string"
+		},
 		{
 			"name": "context",
 			"type": "list",
