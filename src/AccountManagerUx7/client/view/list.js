@@ -32,8 +32,8 @@
 
     let dnd;
 
-    function textField(sClass, id, fKeyHandler) {
-      return m("input", { onkeydown: fKeyHandler, id: id, type: "text", class: sClass });
+    function textField(sClass, id, plc, fKeyHandler) {
+      return m("input", { placeholder: plc, onkeydown: fKeyHandler, id: id, type: "text", class: sClass });
     }
 
     function addNew() {
@@ -160,7 +160,7 @@
             else {
               page.listByType((containerMode ? baseListType : type), id);
             }
-          });;
+          });
         }
         else if (am7model.isParent(modType) && navigateByParent) {
           let objectId = m.route.param("objectId");
@@ -226,6 +226,16 @@
       let fav = await page.favorites();
       navigateToPathId(fav);
     }
+
+    async function openPath(path) {
+      let grp = await page.findObject("auth.group", "DATA", path);
+      if(!grp){
+        page.toast("error", "Path not found: " + path);
+        return;
+      }
+      navigateToPathId(grp);
+    }
+
 
     function navigateDown(sel) {
       let idx = getSelectedIndices();
@@ -454,7 +464,10 @@
     function getGroupSearchButtons(){
       let buttons = [];
       if (am7model.isGroup(modType)) {
-        buttons.push(textField("text-field", "listFilter", function (e) { if (e.which == 13) doFilter(); },));
+        let plc = "";
+        let cnt = pagination.pages().container;
+        if(cnt && cnt.path) plc = cnt.path;
+        buttons.push(textField("text-field", "listFilter", plc, function (e) { if (e.which == 13) doFilter(); },));
         buttons.push(pagination.button("button", "search", null, doFilter));
       }
       return buttons;
@@ -519,9 +532,17 @@
     }
 
     function doFilter() {
-      //console.log(pagination);
       navFilter = document.querySelector("[id=listFilter]").value;
       if (!navFilter.length) navFilter = null;
+
+      else if(navFilter.indexOf("..") > -1 || navFilter.indexOf("~") > -1 || navFilter.indexOf("/") > -1){
+        let npath = page.normalizePath(navFilter, pagination.pages().container);
+        if(npath){
+          openPath(npath);
+        }
+        return;
+      }
+
       let red = false;
       if (embeddedMode || pickerMode) {
         //m.redraw();

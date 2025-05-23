@@ -72,11 +72,13 @@
         }
         /// auth.group is a special case where it is a parent/child hierarchy, so the parentId is used
         /// some models like data.note can be hierarchical by group and parent
-        if(am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, "groupId")){
-          q.field("groupId", id);
-        }
-        else if(am7model.isParent(pages.resultType)){
-          q.field("parentId", id);
+        if(pages.resultType){
+          if(am7model.isGroup(pages.resultType) && am7model.hasField(pages.resultType, "groupId")){
+            q.field("groupId", id);
+          }
+          else if(am7model.isParent(pages.resultType)){
+            q.field("parentId", id);
+          }
         }
       }
 

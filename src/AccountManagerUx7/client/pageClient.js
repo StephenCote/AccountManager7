@@ -167,8 +167,32 @@
             return b[parseInt(Math.random() * b.length)] + " " + c[parseInt(Math.random() * c.length)] + " " + a[parseInt(Math.random() * a.length)];
           },
         searchFirst,
-        chatAvatar
+        chatAvatar,
+        normalizePath
     };
+
+    function normalizePath(path, grp){
+      let opath;
+      let cnt = grp || page.user.homeDirectory;
+      if(cnt && cnt.path){
+        if(path.startsWith("./")){
+          opath = cnt.path + path.substring(1);
+        }
+        else if(path.startsWith("../")){
+          let p = cnt.path.split("/");
+          p.pop();
+          opath = p.join("/") + path.substring(2);
+        }
+        else if(path.startsWith("/") || path.startsWith("~")){
+          opath = path;
+        }
+        else{
+          opath = cnt.path + "/" + path;
+        }
+      }
+      return opath;
+    }
+
     async function chatAvatar(){
         await am7model.forms.commands.character("Basi Lisk", undefined, 42, "M", "/media/logo_512.png")
     }
