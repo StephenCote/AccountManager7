@@ -8,6 +8,7 @@
 	"icon": "note",
 	"label": "Realm",
 	"dedicatedParticipation": true,
+	"description": "This model represents a realm, which is a collection of communities and their associated data. It includes information about the realm's population, groups, locations, and other relevant details.",
 	"fields": [
 		{
 			"name": "population",

@@ -4,6 +4,7 @@
 "icon": "contact_page",
 "label": "Contact",
 "group": "Contacts",
+"description": "A contact is a method of reaching an individual or group. Contacts can be phone numbers, email or website addresses.",
 "fields": [
 	{
 		"name": "contactValue",

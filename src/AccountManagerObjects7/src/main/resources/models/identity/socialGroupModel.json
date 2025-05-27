@@ -10,6 +10,7 @@
 	"icon": "category",
 	"label": "Social Group",
 	"dedicatedParticipation": true,
+	"description": "A social group is a set of positive and negative social behaviors",
 	"fields": [
 		{
 			"name": "positive",

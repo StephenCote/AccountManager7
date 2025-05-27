@@ -9,6 +9,7 @@
 	"icon": "category",
 	"label": "Item Statistics",
 	"query": ["id", "groupId"],
+	"description": "Item statistics represent various attributes of an item that can affect its performance, usability, and interaction within the Olio universe. These statistics include damage, protection, entrapment capabilities, range, and consumption/replenishment characteristics.",
 	"fields": [
 		{
 			"name": "damage",

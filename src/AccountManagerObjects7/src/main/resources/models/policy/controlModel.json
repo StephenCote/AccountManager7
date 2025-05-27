@@ -8,6 +8,7 @@
 	"group": "Controls",
 	"icon": "app_blocking",
 	"label": "Control",
+	"description": "A control is a specific action or set of actions that can be applied to a resource or policy to enforce security or compliance requirements.",
 	"fields": [
 		{
 			"name": "controlId",

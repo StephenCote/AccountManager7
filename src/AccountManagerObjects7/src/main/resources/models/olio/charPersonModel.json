@@ -11,6 +11,7 @@
 	"factory": "org.cote.accountmanager.olio.CharPersonFactory",
 	"vector": "org.cote.accountmanager.olio.VectorProvider",
 	"query": ["profile"],
+	"description": "A character person is a specific type of person that has attributes such as appearance, traits, and statistics. They can be involved in various interactions and actions within the system, and they may have specific roles or functions.",
 	"fields": [
 		{
 			"name": "eyeColor",

@@ -5,6 +5,7 @@
 	"icon": "shield",
 	"label": "Permission",
 	"dedicatedParticipation": true,
+	"description": "Permissions are used to control access to resources and actions within the system. They are assigned to users, accounts, persons, groups, or roles through participations.",
 	"fields": [
 		{
 			"label": "Type",

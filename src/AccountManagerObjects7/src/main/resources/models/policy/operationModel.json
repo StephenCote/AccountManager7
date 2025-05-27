@@ -4,6 +4,7 @@
 "group": "Operations",
 "icon": "call_to_action",
 "label": "Operation",
+"description": "An operation is a specific action or set of actions that can be performed on a resource or policy to achieve a desired outcome. Operations can be used to manipulate data, enforce policies, or derive new information based on existing data.",
 "fields": [
 	{
 		"name": "operation",

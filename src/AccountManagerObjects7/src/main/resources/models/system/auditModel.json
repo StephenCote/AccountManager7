@@ -1,62 +1,70 @@
 {
-"name": "system.audit",
-"inherits": ["common.dateTime", "system.organizationExt", "common.description2K", "system.primaryKey", "crypto.signature", "crypto.hashExt", "identity.subject"],
-"factory": "org.cote.accountmanager.factory.AuditFactory",
-"autoCreateForeignReference": false,
-"fields": [
-
-	{
-		"name": "objectId",
-		"type": "string",
-		"identity": true,
-		"readOnly": true,
-		"maxLength": 40
-	},
-	{
-		"name": "action",
-		"baseClass": "org.cote.accountmanager.schema.type.ActionEnumType",
-		"type": "enum",
-		"index": true,
-		"maxLength": 16
-	},
-	{
-		"name": "response",
-		"baseClass": "org.cote.accountmanager.schema.type.ResponseEnumType",
-		"type": "enum",
-		"index": true,
-		"maxLength": 16
-	},
-	{
-		"name": "resource",
-		"baseModel": "$flex",
-		"type": "model",
-		"foreign": true,
-		"foreignType": "resourceType"
-	},
-	{
-		"name": "resourceType",
-		"type": "string",
-		"maxLength": 64
-	},
-
-	{
-		"name": "contextUser",
-		"baseModel": "system.user",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "message",
-		"type": "string",
-		"maxLength": 2048
-	},
-	{
-		"name": "query",
-		"type": "string"
-	},
-	{
-		"name": "policy",
-		"baseModel": "policy.policyResponse",
-		"type": "model"
-	}
-]}
+	"name": "system.audit",
+	"inherits": [
+		"common.dateTime",
+		"system.organizationExt",
+		"common.description2K",
+		"system.primaryKey",
+		"crypto.signature",
+		"crypto.hashExt",
+		"identity.subject"
+	],
+	"factory": "org.cote.accountmanager.factory.AuditFactory",
+	"autoCreateForeignReference": false,
+	"description": "Audit records for actions taken in the system",
+	"fields": [
+		{
+			"name": "objectId",
+			"type": "string",
+			"identity": true,
+			"readOnly": true,
+			"maxLength": 40
+		},
+		{
+			"name": "action",
+			"baseClass": "org.cote.accountmanager.schema.type.ActionEnumType",
+			"type": "enum",
+			"index": true,
+			"maxLength": 16
+		},
+		{
+			"name": "response",
+			"baseClass": "org.cote.accountmanager.schema.type.ResponseEnumType",
+			"type": "enum",
+			"index": true,
+			"maxLength": 16
+		},
+		{
+			"name": "resource",
+			"baseModel": "$flex",
+			"type": "model",
+			"foreign": true,
+			"foreignType": "resourceType"
+		},
+		{
+			"name": "resourceType",
+			"type": "string",
+			"maxLength": 64
+		},
+		{
+			"name": "contextUser",
+			"baseModel": "system.user",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "message",
+			"type": "string",
+			"maxLength": 2048
+		},
+		{
+			"name": "query",
+			"type": "string"
+		},
+		{
+			"name": "policy",
+			"baseModel": "policy.policyResponse",
+			"type": "model"
+		}
+	]
+}

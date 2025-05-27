@@ -4,6 +4,7 @@
 	"group": "Actions",
 	"icon": "category",
 	"label": "Action",
+	"description": "An action that can be performed by a character or entity, which may have various effects on their attributes, skills, and states.",
 	"fields": [
 		{
 			"name": "provider",

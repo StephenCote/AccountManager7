@@ -1,6 +1,7 @@
 {
 "name": "auth.authenticationResponse",
 "inherits": ["policy.response"],
+"description": "Authentication response used to return the result of an authentication request. This is typically used to return a token and a reference to the authenticated principle.",
 "fields": [
 
 	{

@@ -37,6 +37,7 @@
 			}
 		}
 	},
+	"description": "A contact information record for a person or organization.  This is used to store phone numbers, emails, and other contact information.",
 	"followReference": false,
 	"dedicatedParticipation": true,
 	"query": [

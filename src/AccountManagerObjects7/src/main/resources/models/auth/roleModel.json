@@ -5,6 +5,7 @@
 "icon": "badge",
 "label": "Role",
 "dedicatedParticipation": true,
+"description": "Roles are used to group permissions and are typically assigned to users, accounts, persons, or groups. System role membership is also used for coarse API authorization.",
 "fields": [
 	{
 	"name": "type",

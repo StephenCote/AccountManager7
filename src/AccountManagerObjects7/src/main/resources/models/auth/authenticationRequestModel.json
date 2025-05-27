@@ -1,6 +1,7 @@
 {
 "name": "auth.authenticationRequest",
 "inherits": ["access.request"],
+"description": "Authentication request used to pass credentials or tokens for an actor, such as a user, person, or account.",
 "fields": [
 
 	{

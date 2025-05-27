@@ -12,6 +12,7 @@
 	"label": "Apparel",
 	"query": ["id", "groupId", "name"],
 	"dedicatedParticipation": true,
+	"description": "Apparel is a set of wearable items designed to be worn by characters or entities. It can include various types of clothing, accessories, and other wearable items that enhance the appearance or functionality of the wearer.",
 	"fields": [
 		{
 			"name": "type",

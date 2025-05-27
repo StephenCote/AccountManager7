@@ -5,6 +5,7 @@
 		"common.reference"
 	],
 	"followReference": false,
+	"description": "Attributes are used to store key/value pairs for objects. The valueType is used to determine how the value should be interpreted.",
 	"access": {
 		"roles": {
 			"create": [

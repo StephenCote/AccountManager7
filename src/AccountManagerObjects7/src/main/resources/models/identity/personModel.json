@@ -9,6 +9,7 @@
 	"label": "Person",
 	"group": "Persons",
 	"dedicatedParticipation": true,
+	"description": "Represents an individual identity which may or may not be associated with an account or user.",
 	"fields": [
 		{
 			"name": "race",

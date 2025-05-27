@@ -4,6 +4,7 @@
 "group": "Notes",
 "icon": "note",
 "label": "Note",
+"description": "Generic note model used to store text-based notes.",
 "vectorize": true,
 "fields": [
 	{

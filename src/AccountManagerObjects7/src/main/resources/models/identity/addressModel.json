@@ -7,6 +7,7 @@
 	"icon": "maps_home_work",
 	"label": "Address",
 	"group": "Addresses",
+	"description": "An address represents a physical location, such as a home or office, that can be associated with an account or individual. It includes details like street, city, state, and postal code.",
 	"fields": [
 		{
 			"name": "street",

@@ -4,6 +4,7 @@
 "factory": "org.cote.accountmanager.factory.AccessRequestFactory",
 "icon": "switch_access_shortcut",
 "label": "Access Request",
+"description": "A request for access to a resource.  This is typically used to request membership in a group, role, or request an entitlement to a resource that requires approval.",
 "access": {
 	"roles": {
 		"create": ["Requesters"],

@@ -9,6 +9,7 @@
 	"group": "Personalities",
 	"icon": "category",
 	"label": "Personality",
+	"description": "A personality is a set of characteristics and traits that define an individual's consistent patterns of thinking, feeling, and behaving. Personalities can be assessed through various models such as the Big Five, MBTI, and Dark Tetrad.",
 	"fields": [
 		{
 			"name": "openness",

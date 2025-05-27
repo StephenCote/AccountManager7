@@ -1,50 +1,58 @@
 {
-"name": "system.participation",
-"inherits": ["system.organizationExt", "system.primaryKey"],
-"provider": "org.cote.accountmanager.provider.ParticipationProvider",
-"hints": ["participationId, participationModel", "participantId, participantModel", "participationId, participationModel, participantId, participantModel"],
-"fields": [
-	{
-		"name": "ownerId",
-		"type": "long",
-		"required": true,
-		"private": true
-	},
-
-	{
-		"name": "participationId",
-		"type": "long",
-		"required": true
-	},
-	{
-		"name": "participationModel",
-		"type": "string",
-		"required": true,
-		"maxLength": 32
-	},
-	{
-		"name": "participantId",
-		"type": "long",
-		"required": true
-	},
-	{
-		"name": "participantModel",
-		"type": "string",
-		"required": true,
-		"maxLength": 32
-	},
-	{
-		"name": "permissionId",
-		"type": "long"
-	},
-	{
-		"name": "effectType",
-		"baseClass": "org.cote.accountmanager.schema.type.EffectEnumType",
-		"type": "enum",
-		"maxLength": 16
-	},
-	{
-		"name": "enabled",
-		"type": "boolean"
-	}
-]}
+	"name": "system.participation",
+	"inherits": [
+		"system.organizationExt",
+		"system.primaryKey"
+	],
+	"provider": "org.cote.accountmanager.provider.ParticipationProvider",
+	"hints": [
+		"participationId, participationModel",
+		"participantId, participantModel",
+		"participationId, participationModel, participantId, participantModel"
+	],
+	"description": "Participation model for defining relationships between participants and resources.",
+	"fields": [
+		{
+			"name": "ownerId",
+			"type": "long",
+			"required": true,
+			"private": true
+		},
+		{
+			"name": "participationId",
+			"type": "long",
+			"required": true
+		},
+		{
+			"name": "participationModel",
+			"type": "string",
+			"required": true,
+			"maxLength": 32
+		},
+		{
+			"name": "participantId",
+			"type": "long",
+			"required": true
+		},
+		{
+			"name": "participantModel",
+			"type": "string",
+			"required": true,
+			"maxLength": 32
+		},
+		{
+			"name": "permissionId",
+			"type": "long"
+		},
+		{
+			"name": "effectType",
+			"baseClass": "org.cote.accountmanager.schema.type.EffectEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "enabled",
+			"type": "boolean"
+		}
+	]
+}

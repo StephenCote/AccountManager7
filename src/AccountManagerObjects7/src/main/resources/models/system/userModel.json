@@ -18,6 +18,7 @@
 	"io": {
 		"writer": "org.cote.accountmanager.io.factory.UserWriter"
 	},
+	"description": "User model for defining system users.",
 	"access": {
 		"roles": {
 			"create": ["AccountAdministrators"],

@@ -9,6 +9,7 @@
 	"group": "Behaviors",
 	"icon": "category",
 	"label": "Behavior",
+	"description": "A behavior is a pattern of actions or reactions of an individual or group in response to external or internal stimuli. Behaviors can be influenced by various factors including environment, genetics, and social interactions.",
 	"dedicatedParticipation": true,
 	"fields": [
 		{

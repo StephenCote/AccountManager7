@@ -6,6 +6,7 @@
 	"group": "Words",
 	"icon": "category",
 	"label": "Census Word",
+	"description": "Word model used to store words such as names with corresponding census statistics.",
 	"query": [
 		"groupId"
 	],

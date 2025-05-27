@@ -10,6 +10,7 @@
 	"label": "Narrative",
 	"group": "Narratives",
 	"dedicatedParticipation": true,
+	"description": "A narrative is a structured story or account that includes various elements such as characters, scenes, interactions, and descriptions. It can be used to create immersive experiences in games or simulations, providing detailed backgrounds and contexts for characters and events.",
 	"fields": [
 		{
 			"name": "name",

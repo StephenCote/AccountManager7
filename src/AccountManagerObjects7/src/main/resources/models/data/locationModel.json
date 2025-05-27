@@ -9,6 +9,7 @@
 		"common.baseLight"
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
+	"description": "Model used to store locations with various attributes.",
 	"dedicatedParticipation": true,
 	"query": ["name", "id", "objectId", "ownerId"],
 	"fields": [

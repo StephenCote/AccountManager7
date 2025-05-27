@@ -10,6 +10,7 @@
 	"group": "Traits",
 	"icon": "category",
 	"label": "Trait",
+	"description": "A trait is a characteristic or quality that can be associated with an object, often used to define behaviors or attributes in a flexible manner. Traits can be used to categorize objects or define specific functionalities.",
 	"fields": [
 		{
 			"name": "type",

@@ -3,6 +3,7 @@
 "inherits": ["data.directory", "common.description", "common.dateTime", "data.contentType", "crypto.vaultExt"],
 "provider": "org.cote.accountmanager.provider.StreamProvider",
 "query": ["contentType", "type"],
+"description": "Model used to store and retrieve streams of data.",
 "fields": [
 	{
 		"name": "streamSource",

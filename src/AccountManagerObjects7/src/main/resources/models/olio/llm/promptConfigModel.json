@@ -4,6 +4,7 @@
 	"group": "Chat",
 	"icon": "chat",
 	"label": "Prompt Configuration",
+	"description": "Configuration for prompts used in chat sessions with an LLM (Large Language Model). This includes system prompts, user prompts, and various settings to control the chat experience.",
 	"fields": [
 		{
 			"name": "system",

@@ -8,6 +8,7 @@
 		"common.baseLight",
 		"olio.llm.request"
 	],
+	"description": "An OpenAI request model that defines the parameters for making requests to OpenAI's language models. This includes settings like temperature, max tokens, and the messages to be processed by the model.",
 	"group": "Chat",
 	"icon": "chat",
 	"label": "Requests",

@@ -16,6 +16,7 @@
 	"query": [
 		"name", "groupId"
 	],
+	"description": "A word with WordNet annotations and synset.",
 	"fields": [
 		{
 			"name": "definition",

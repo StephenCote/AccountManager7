@@ -1,6 +1,7 @@
 {
 	"name": "policy.policyResponse",
 	"inherits": ["common.attributeList", "policy.score", "common.description"],
+	"description": "A policy response is a structured response to a policy evaluation that includes messages, rule chains, pattern chains, and response data. It can also include metadata such as type, URN, and expiry date.",
 	"fields": [
 		{
 			"name": "messages",

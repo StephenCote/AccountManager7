@@ -6,7 +6,7 @@
 "icon": "folder",
 "label": "Group",
 "dedicatedParticipation": true,
-
+"description": "Containers used to store collections of principles such as users, accounts, or persons, or other groups.  Nested groups of type 'data' are frequently used to emulate directory structures for organizing information.",
 "query": ["type", "path", "organizationId"],
 "fields": [
 	{

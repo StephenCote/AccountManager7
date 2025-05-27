@@ -7,7 +7,7 @@
 	"icon": "chat",
 	"label": "Requests",
 	"query": ["id", "groupId", "chatConfig", "promptConfig", "session", "sessionType"],
-	"description": "Used for proxying requests",
+	"description": "Used for proxying chat requests",
 	"fields": [
 		{
 			"name": "message",

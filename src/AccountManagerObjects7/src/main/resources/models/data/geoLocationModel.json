@@ -6,6 +6,7 @@
 	],
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"dedicatedParticipation": true,
+	"description": "Model used to store geographical locations with various attributes.",
 	"constraints": ["geonameid, altgeonameid, parentId, groupId, organizationId"],
 	"hints": ["geonameid, groupId", "parentId, groupId"],
 	"fields": [

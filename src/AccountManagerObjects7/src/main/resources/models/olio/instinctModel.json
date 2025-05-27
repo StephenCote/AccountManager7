@@ -7,6 +7,7 @@
 	],
 	"group": "Instincts",
 	"icon": "category",
+	"description": "Instincts are innate behaviors or tendencies that guide the actions and reactions of characters or entities in the Olio universe. They can influence various aspects of behavior, such as survival, social interaction, and emotional responses.",
 	"label": "Instinct",
 	"fields": [
 		{

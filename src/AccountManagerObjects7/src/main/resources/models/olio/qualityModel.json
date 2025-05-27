@@ -9,6 +9,7 @@
 	"icon": "category",
 	"label": "Quality",
 	"query": ["id", "groupId"],
+	"description": "This model represents the quality attributes of an item, including physical properties, adjustments, and various quality metrics. It is used to define how items behave in terms of their physical characteristics and performance in the game world.",
 	"fields": [
 		{
 			"name": "unit",

@@ -2,6 +2,7 @@
 "name": "access.approver",
 "abstract": true,
 "inherits": ["crypto.signature"],
+"description": "An approver for an access request.  This could be a user, a person, an account, a group, or a role.",
 "fields": [
 	{
 		"name": "approver",

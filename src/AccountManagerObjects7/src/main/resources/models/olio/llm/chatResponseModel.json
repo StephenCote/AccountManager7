@@ -3,7 +3,7 @@
 	"ioConstraints": [
 		"unknown"
 	],
-	"description": "Used for proxying responses",
+	"description": "Used for proxying chat responses",
 	"fields": [
 		{
 			"name": "messages",

@@ -3,6 +3,7 @@
 "inherits": ["data.directory", "common.dateTime"],
 "ephemeral": false,
 "group": ".vault",
+"description": "Specialized key store used to store encrypted cryptographic keys outside of the database.",
 "fields": [
 	{
 		"name": "alias",

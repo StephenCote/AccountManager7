@@ -1,69 +1,72 @@
 {
-"name": "policy.pattern",
-"inherits": ["policy.baseAuthorization"],
-"group": "Patterns",
-"icon": "texture",
-"label": "Pattern",
-"fields": [
-	{
-		"name": "fact",
-		"baseModel": "policy.fact",
-		"type": "model",
-		"foreign": true
-	}
-	,{
-		"name": "match",
-		"baseModel": "policy.fact",
-		"type": "model",
-		"foreign": true
-	}
-	,{
-		"name": "operation",
-		"baseModel": "policy.operation",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "operationClass",
-		"type": "string",
-		"maxLength": 255
-	}
-	,{
-		"name": "factUrn",
-		"type": "string",
-		"maxLength": 255
-	}
-	,{
-		"name": "comparator",
-		"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
-		"type": "enum",
-		"maxLength": 16
-	}
-	,{
-		"name": "type",
-		"baseClass": "org.cote.accountmanager.schema.type.PatternEnumType",
-		"type": "enum",
-		"maxLength": 16
-	}
-	,{
-		"name": "matchUrn",
-		"type": "string",
-		"maxLength": 255
-	}
-	,{
-		"name": "operationUrn",
-		"type": "string",
-		"maxLength": 255
-	},
-	{
-		"name": "entitlementType",
-		"type": "string",
-		"maxLength": 32
-	},
-	{
-		"name": "entitlementPath",
-		"type": "string",
-		"maxLength": 127
-	}
-	
-]}
+	"name": "policy.pattern",
+	"inherits": [
+		"policy.baseAuthorization"
+	],
+	"group": "Patterns",
+	"icon": "texture",
+	"label": "Pattern",
+	"description": "A pattern is a reusable template or structure that defines how data or policies should be organized or processed. Patterns can be used to enforce consistency, derive new information, or apply specific logic to data or policies.",
+	"fields": [
+		{
+			"name": "fact",
+			"baseModel": "policy.fact",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "match",
+			"baseModel": "policy.fact",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "operation",
+			"baseModel": "policy.operation",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "operationClass",
+			"type": "string",
+			"maxLength": 255
+		},
+		{
+			"name": "factUrn",
+			"type": "string",
+			"maxLength": 255
+		},
+		{
+			"name": "comparator",
+			"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.PatternEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "matchUrn",
+			"type": "string",
+			"maxLength": 255
+		},
+		{
+			"name": "operationUrn",
+			"type": "string",
+			"maxLength": 255
+		},
+		{
+			"name": "entitlementType",
+			"type": "string",
+			"maxLength": 32
+		},
+		{
+			"name": "entitlementPath",
+			"type": "string",
+			"maxLength": 127
+		}
+	]
+}

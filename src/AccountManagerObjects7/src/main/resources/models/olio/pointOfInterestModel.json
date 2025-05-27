@@ -12,6 +12,7 @@
 	"sortField": "name",
 	"sortOrder": "ASCENDING",
 	"query": ["location", "groupId", "organizationId"],
+	"description": "This model represents a point of interest in a realm, such as a building, landmark, or other significant location. It includes details about the point's name, type, location, and associated store or builder.",
 	"fields": [
 		{
 			"name": "name",

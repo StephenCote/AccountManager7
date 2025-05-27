@@ -3,6 +3,7 @@
 "abstract": false,
 "emitModel": true,
 "inherits": ["crypto.hashExt"],
+"description": "Record of a model change.",
 "fields": [
 	{
 		"name": "journalDate",

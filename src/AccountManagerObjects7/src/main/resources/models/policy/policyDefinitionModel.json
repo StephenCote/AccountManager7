@@ -1,6 +1,7 @@
 {
 	"name": "policy.policyDefinition",
 	"inherits": ["common.dateTime", "system.organizationExt"],
+	"description": "A policy definition is a publicly consummable version of a policy that identifies parameters to be populated.",
 	"fields": [
 		{
 			"name": "parameters",

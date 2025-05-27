@@ -1,19 +1,21 @@
 {
-"name": "policy.response",
-"inherits": ["system.organizationExt"],
-"abstract": true,
-"fields": [
-
-	{
-		"name": "message",
-		"type": "string",
-		"maxLength": 255
-	},
-	{
-		"name": "type",
-		"baseClass": "org.cote.accountmanager.schema.type.OperationResponseEnumType",
-		"type": "enum",
-		"index": true,
-		"maxLength": 16
-	}
-]}
+	"name": "policy.response",
+	"inherits": [
+		"system.organizationExt"
+	],
+	"abstract": true,
+	"fields": [
+		{
+			"name": "message",
+			"type": "string",
+			"maxLength": 255
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.OperationResponseEnumType",
+			"type": "enum",
+			"index": true,
+			"maxLength": 16
+		}
+	]
+}

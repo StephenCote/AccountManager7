@@ -1,9 +1,10 @@
 {
-"name": "policy.score",
-"abstract": true,
-"fields": [
-	{
-	"name": "score",
-	"type": "int"
-	}
-]}
+	"name": "policy.score",
+	"abstract": true,
+	"fields": [
+		{
+			"name": "score",
+			"type": "int"
+		}
+	]
+}

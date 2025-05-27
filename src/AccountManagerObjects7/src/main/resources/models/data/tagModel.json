@@ -9,6 +9,7 @@
 		"common.name",
 		"common.baseLight"
 	],
+	"description": "A tag is a label that can be applied to objects for categorization or filtering purposes. Tags are often used to organize content in a flexible way, allowing users to find related items easily.",
 	"factory": "org.cote.accountmanager.factory.DirectoryFactory",
 	"group": "Tags",
 	"icon": "category",

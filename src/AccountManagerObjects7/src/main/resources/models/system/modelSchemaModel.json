@@ -3,6 +3,7 @@
 "inherits": ["common.nameId"],
 "constraints": ["name, organizationId"],
 "query": ["name", "schemaData"],
+"description": "Model schema for persisting model structures",
 "fields": [
 	{
 		"name": "schemaData",

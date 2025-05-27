@@ -12,6 +12,7 @@
 	"icon": "category",
 	"label": "Social Behavior",
 	"dedicatedParticipation": true,
+	"description": "A social behavior is set of positive and negative traits.",
 	"fields": [
 		{
 			"name": "positive",

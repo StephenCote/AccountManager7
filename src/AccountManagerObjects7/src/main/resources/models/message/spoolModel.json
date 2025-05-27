@@ -8,6 +8,7 @@
 		"message.recipient",
 		"message.sender"
 	],
+	"description": "A spool is a temporary storage for messages that are queued for processing or delivery. Spools can be used to manage message flow, handle retries, and ensure that messages are delivered even if the recipient is temporarily unavailable.",
 	"fields": [
 		{
 			"name": "data",

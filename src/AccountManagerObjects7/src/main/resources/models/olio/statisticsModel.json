@@ -9,6 +9,7 @@
 	"icon": "category",
 	"label": "Character Statistics",
 	"query": ["id", "groupId"],
+	"description": "This model represents the statistical attributes of a character in a realm, including physical and mental attributes, derived statistics, and overall potential. It is used to define how characters perform in various aspects of the game world.",
 	"fields": [
 		{
 			"name": "physicalStrength",

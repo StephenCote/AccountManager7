@@ -16,6 +16,7 @@
 	"dedicatedParticipation": true,
 	"constraints": ["name, parentId, groupId, organizationId"],
 	"query": ["name", "id", "objectId", "ownerId", "parentId", "type", "state"],
+	"description": "An event is a significant occurrence or happening within the Olio universe, which can involve various entities, interactions, and states. Events can have multiple participants, actors, and observers, and they may be influenced by various factors such as location, time, and preceding or subsequent events.",
 	"fields": [
 		{
 			"name": "type",

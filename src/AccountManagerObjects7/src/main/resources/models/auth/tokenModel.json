@@ -2,6 +2,7 @@
 	"name": "auth.token",
 	"inherits": ["message.spool"],
 	"factory": "org.cote.accountmanager.factory.TokenFactory",
+	"description": "Not used",
 	"fields": [
 	]
 }

@@ -10,6 +10,7 @@
 			}
 		}
 	},
+	"description": "Smaller representation of an image.",
 	"fields": [
 		{
 			"name": "referenceId",

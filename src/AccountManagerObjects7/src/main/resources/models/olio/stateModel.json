@@ -10,6 +10,7 @@
 	"label": "State",
 	"dedicatedParticipation": true,
 	"query": ["groupId", "organizationId"],
+	"description": "This model represents the state of an entity in a realm, including its current event, location, actions, and various status flags. It is used to track the condition and activities of entities such as players or NPCs within the game world.",
 	"fields": [
 		{
 			"name": "currentEvent",

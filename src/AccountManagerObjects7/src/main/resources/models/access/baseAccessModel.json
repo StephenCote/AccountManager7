@@ -1,5 +1,6 @@
 {
 "name": "access.baseAccess",
+"abstract": "true",
 "inherits": ["common.nameId", "common.parent", "access.request", "auth.entitlement", "common.dateTime", "common.description"],
 "fields": [
 	{

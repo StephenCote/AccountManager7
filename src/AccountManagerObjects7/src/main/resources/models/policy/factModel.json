@@ -4,6 +4,7 @@
 "group": "Facts",
 "icon": "fact_check",
 "label": "Fact",
+"description": "A fact is a piece of information that can be used in policies to make decisions. Facts can be derived from various sources and can have different types and values.",
 "fields": [
 	{
 		"name": "factReference",

@@ -15,6 +15,7 @@
 	"label": "Builder",
 	"query": ["id", "groupId", "name", "tags"],
 	"dedicatedParticipation": true,
+	"description": "A builder is an entity that can create or produce items, apparel, or other objects using various materials and skills. Builders can have specific types, schedules, and renewable capabilities, and they may require certain materials and skills to perform their tasks.",
 	"fields": [
 		{
 			"name": "type",

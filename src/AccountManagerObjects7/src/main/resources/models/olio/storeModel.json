@@ -11,6 +11,7 @@
 	"dedicatedParticipation": true,
 	"sortField": "name",
 	"sortOrder": "ASCENDING",
+	"description": "This model represents a store in a realm, which can be a physical or virtual place where items, apparel, and other goods are sold or stored. It includes details about the store's name, inventory, items, apparel, and locations associated with the store.",
 	"fields": [
 		{
 			"name": "name",

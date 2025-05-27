@@ -1,5 +1,6 @@
 {
 	"name": "crypto.rsaKey",
+	"description": "Not used",
 	"fields": [
 		{
 			"name": "modulus",

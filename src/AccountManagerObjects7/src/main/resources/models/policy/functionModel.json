@@ -3,6 +3,7 @@
 "inherits": ["policy.baseAuthorization"],
 "icon": "functions",
 "label": "Function",
+"description": "A function is a reusable piece of logic that can be applied to data or policies to perform specific actions or calculations. Functions can be used to manipulate data, enforce policies, or derive new information based on existing data.",
 "fields": [
 	{
 		"name": "data",

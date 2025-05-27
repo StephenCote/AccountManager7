@@ -14,6 +14,7 @@
 	"sortField": "name",
 	"sortOrder": "ASCENDING",
 	"query": ["contentType", "organizationId"],
+	"description": "Generic data storage model used to store various types of data, including files and streams.",
 	"fields": [
 		{
 			"name": "dimensions",

@@ -1,7 +1,7 @@
 {
 "name": "data.journal",
 "inherits": ["common.base"],
-"abstract": false,
+"description": "Journal containing model change records.",
 "fields": [
 	{
 		"name": "journaled",

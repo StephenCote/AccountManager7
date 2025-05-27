@@ -11,6 +11,7 @@
 	"label": "Action Result",
 	"query": ["id", "groupId"],
 	"dedicatedParticipation": true,
+	"description": "An action result is a record of the outcome of an action performed by an actor, which may include various attributes, statistics, and states that are affected by the action. It can also include interactions with other entities and dependent actions.",
 	"fields": [
 		{
 			"name": "action",

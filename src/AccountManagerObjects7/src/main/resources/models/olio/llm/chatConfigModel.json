@@ -4,6 +4,7 @@
 	"group": "Chat",
 	"icon": "chat",
 	"label": "Chat Configuration",
+	"description": "Configuration for a chat session with an LLM (Large Language Model). This includes settings for characters, narratives, interactions, and various options to control the chat experience.",
 	"fields": [
 		{
 			"name": "rating",

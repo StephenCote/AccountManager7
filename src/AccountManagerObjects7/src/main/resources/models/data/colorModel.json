@@ -16,6 +16,7 @@
 	"query": [
 		"name", "hex", "groupId"
 	],
+	"description": "Model used to store colors with various representations.",
 	"fields": [
 		{
 			"name": "hex",

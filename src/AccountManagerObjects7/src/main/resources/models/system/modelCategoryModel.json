@@ -1,6 +1,7 @@
 {
 "name": "system.modelCategory",
 "inherits": ["common.nameId", "common.description"],
+"description": "Model category for grouping models together",
 "fields": [
 	{
 		"name": "icon",

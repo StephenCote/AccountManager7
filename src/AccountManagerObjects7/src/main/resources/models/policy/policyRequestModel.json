@@ -1,6 +1,7 @@
 {
 	"name": "policy.policyRequest",
 	"factory": "org.cote.accountmanager.factory.PolicyRequestFactory",
+	"description": "A policy request is a request for a policy to be applied to a resource or subject. It contains the necessary attributes and facts to evaluate the policy.",
 	"fields": [
 		{
 			"name": "attributes",

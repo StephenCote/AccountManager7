@@ -1,6 +1,7 @@
 {
 	"name": "crypto.cipherKey",
 	"inherits": ["common.base"],
+	"description": "Symmetric cipher key.",
 	"fields": [
 		{
 			"name": "key",

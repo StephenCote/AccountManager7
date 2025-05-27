@@ -10,6 +10,7 @@
 	"icon": "category",
 	"label": "Schedule",
 	"dedicatedParticipation": true,
+	"description": "This model represents a schedule for recurring events or actions within a realm. It includes details about the schedule's timing, recurrence, and associated actions. Schedules can be used to automate tasks or manage events that occur at specific times or intervals.",
 	"fields": [
 		{
 			"name": "beginDate",

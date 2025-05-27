@@ -12,6 +12,7 @@
 		"groupId",
 		"portrait"
 	  ],
+	 "description": "A profile is a collection of shareable information about a person, such as for use in composing UX displays or generating content titles.",
 	"icon": "person",
 	"label": "Profile",
 	"group": "Profiles",

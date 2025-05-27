@@ -7,6 +7,7 @@
 	"icon": "account_circle",
 	"label": "Account",
 	"group": "Accounts",
+	"description": "An account represents a system or application identity outside the context of the AccountManager system.",
 	"fields": [
 		{
 			"name": "type",

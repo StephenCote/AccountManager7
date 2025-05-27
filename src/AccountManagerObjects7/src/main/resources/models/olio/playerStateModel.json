@@ -9,6 +9,7 @@
 	"icon": "category",
 	"label": "Player State",
 	"dedicatedParticipation": true,
+	"description": "This model represents the state of a player in a realm, including their character, current event, location, and actions.",
 	"fields": [
 		{
 			"name": "realm",

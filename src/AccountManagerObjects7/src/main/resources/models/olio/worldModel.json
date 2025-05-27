@@ -1,245 +1,250 @@
 {
-"name": "olio.world",
-"inherits": ["data.directory", "common.description"],
-"factory": "org.cote.accountmanager.olio.WorldFactory",
-"group": "Worlds",
-"icon": "note",
-"label": "World",
-"fields": [
-	{
-		"name": "population",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "locations",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "addresses",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "contacts",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "features",
-		"type": "list",
-		"baseType": "string"
-	},
-	{
-		"name": "events",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "words",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "names",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "surnames",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "occupations",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "dictionary",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "traits",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "colors",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "patterns",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "apparel",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "wearables",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "qualities",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "statistics",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "instincts",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "behaviors",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "states",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "personalities",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "basis",
-		"baseModel": "olio.world",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "schedules",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "actions",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "actionResults",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "builders",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "stores",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "inventories",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "interactions",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "items",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "animals",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "gallery",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "narratives",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "tagsGroup",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true,
-		"description": "Using an alternate name so as not to conflict with the existing 'tags' property"
-	},
-	{
-		"name": "realmsGroup",
-		"baseModel": "auth.group",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "profiles",
-		"type": "model",
-		"baseModel": "auth.group",
-		"foreign": true
-	},
-	{
-		"name": "pointsOfInterest",
-		"type": "model",
-		"baseModel": "auth.group",
-		"foreign": true
-	},
-	{
-		"name": "realms",
-		"type": "list",
-		"baseType": "model",
-		"baseModel": "olio.realm",
-		"foreign": true,
-		"followReference": false
-	}
-]}
+	"name": "olio.world",
+	"inherits": [
+		"data.directory",
+		"common.description"
+	],
+	"factory": "org.cote.accountmanager.olio.WorldFactory",
+	"group": "Worlds",
+	"icon": "note",
+	"label": "World",
+	"description": "Collection of groups used to represent a world.",
+	"fields": [
+		{
+			"name": "population",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "locations",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "addresses",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "contacts",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "features",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
+			"name": "events",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "words",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "names",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "surnames",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "occupations",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "dictionary",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "traits",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "colors",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "patterns",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "apparel",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "wearables",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "qualities",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "statistics",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "instincts",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "behaviors",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "states",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "personalities",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "basis",
+			"baseModel": "olio.world",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "schedules",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "actions",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "actionResults",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "builders",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "stores",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "inventories",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "interactions",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "items",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "animals",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "gallery",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "narratives",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "tagsGroup",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true,
+			"description": "Using an alternate name so as not to conflict with the existing 'tags' property"
+		},
+		{
+			"name": "realmsGroup",
+			"baseModel": "auth.group",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "profiles",
+			"type": "model",
+			"baseModel": "auth.group",
+			"foreign": true
+		},
+		{
+			"name": "pointsOfInterest",
+			"type": "model",
+			"baseModel": "auth.group",
+			"foreign": true
+		},
+		{
+			"name": "realms",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.realm",
+			"foreign": true,
+			"followReference": false
+		}
+	]
+}

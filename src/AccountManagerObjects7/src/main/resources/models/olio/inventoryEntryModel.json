@@ -9,6 +9,7 @@
 	"icon": "category",
 	"label": "Inventory Entry",
 	"dedicatedParticipation": true,
+	"description": "An inventory entry represents a specific item or apparel in the inventory system. It includes details such as quantity, age, usage status, and the associated item or apparel model.",
 	"fields": [
 		{
 			"name": "quantity",

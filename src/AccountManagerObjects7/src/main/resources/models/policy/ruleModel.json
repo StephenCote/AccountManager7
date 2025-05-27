@@ -1,34 +1,38 @@
 {
-"name": "policy.rule",
-"inherits": ["policy.baseAuthorization"],
-"group": "Rules",
-"icon": "rule",
-"label": "Rule",
-"fields": [
-	{
-	"name": "rules",
-	"baseModel": "policy.rule",
-	"type": "list",
-	"baseType": "model",
-	"foreign": true
-	}
-	,{
-	"name": "patterns",
-	"baseModel": "policy.pattern",
-	"baseType": "model",
-	"type": "list",
-	"foreign": true
-	}
-	,{
-	"name": "type",
-	"baseClass": "org.cote.accountmanager.schema.type.RuleEnumType",
-	"type": "enum",
-	"maxLength": 16
-	}
-	,{
-	"name": "condition",
-	"baseClass": "org.cote.accountmanager.schema.type.ConditionEnumType",
-	"type": "enum",
-	"maxLength": 16
-	}
-]}
+	"name": "policy.rule",
+	"inherits": [
+		"policy.baseAuthorization"
+	],
+	"group": "Rules",
+	"icon": "rule",
+	"label": "Rule",
+	"description": "A rule is a specific condition or set of conditions that must be met for a policy to be enforced or an operation to be executed. Rules can be used to define the logic and criteria for decision-making within policies and operations.",
+	"fields": [
+		{
+			"name": "rules",
+			"baseModel": "policy.rule",
+			"type": "list",
+			"baseType": "model",
+			"foreign": true
+		},
+		{
+			"name": "patterns",
+			"baseModel": "policy.pattern",
+			"baseType": "model",
+			"type": "list",
+			"foreign": true
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.RuleEnumType",
+			"type": "enum",
+			"maxLength": 16
+		},
+		{
+			"name": "condition",
+			"baseClass": "org.cote.accountmanager.schema.type.ConditionEnumType",
+			"type": "enum",
+			"maxLength": 16
+		}
+	]
+}

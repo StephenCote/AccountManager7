@@ -1,16 +1,24 @@
 {
-"name": "system.organization",
-"inherits": ["common.nameId", "common.parent", "common.path"],
-"constraints": ["name, parentId"],
-"icon": "public",
-"label": "Organization",
-"fields": [
-	{
-		"name": "type",
-		"baseClass": "org.cote.accountmanager.schema.type.OrganizationEnumType",
-		"type": "enum",
-		"required": true,
-		"index": true,
-		"maxLength": 16
-	}
-]}
+	"name": "system.organization",
+	"inherits": [
+		"common.nameId",
+		"common.parent",
+		"common.path"
+	],
+	"constraints": [
+		"name, parentId"
+	],
+	"icon": "public",
+	"label": "Organization",
+	"description": "Organization model for defining scope of all other models.",
+	"fields": [
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.OrganizationEnumType",
+			"type": "enum",
+			"required": true,
+			"index": true,
+			"maxLength": 16
+		}
+	]
+}

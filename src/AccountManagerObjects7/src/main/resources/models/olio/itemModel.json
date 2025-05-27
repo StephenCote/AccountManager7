@@ -15,6 +15,7 @@
 	"label": "Item",
 	"query": ["id", "groupId", "name"],
 	"dedicatedParticipation": true,
+	"description": "An item is a physical object that can be used, traded, or interacted with in various ways. Items can have specific types, categories, and attributes that define their characteristics and uses. They may also include patterns, colors, and other traits that enhance their functionality or aesthetics.",
 	"fields": [
 		{
 			"name": "type",

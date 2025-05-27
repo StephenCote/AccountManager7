@@ -1,44 +1,47 @@
 {
-"name": "olio.llm.vectorChatHistory",
-"inherits": ["data.vectorModelStore"],
-"query": [],
-"hints": [],
-"fields": [
-	{
-		"name": "systemCharacter",
-		"baseModel": "olio.charPerson",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "userCharacter",
-		"baseModel": "olio.charPerson",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "event",
-		"baseModel": "olio.event",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "session",
-		"baseModel": "data.data",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "chatConfig",
-		"baseModel": "olio.llm.chatConfig",
-		"type": "model",
-		"foreign": true
-	},
-	{
-		"name": "promptConfig",
-		"baseModel": "olio.llm.promptConfig",
-		"type": "model",
-		"foreign": true
-	}
-	
-]}
+	"name": "olio.llm.vectorChatHistory",
+	"inherits": [
+		"data.vectorModelStore"
+	],
+	"query": [],
+	"hints": [],
+	"description": "Used for storing chat history with vector embeddings",
+	"fields": [
+		{
+			"name": "systemCharacter",
+			"baseModel": "olio.charPerson",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "userCharacter",
+			"baseModel": "olio.charPerson",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "event",
+			"baseModel": "olio.event",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "session",
+			"baseModel": "data.data",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "chatConfig",
+			"baseModel": "olio.llm.chatConfig",
+			"type": "model",
+			"foreign": true
+		},
+		{
+			"name": "promptConfig",
+			"baseModel": "olio.llm.promptConfig",
+			"type": "model",
+			"foreign": true
+		}
+	]
+}

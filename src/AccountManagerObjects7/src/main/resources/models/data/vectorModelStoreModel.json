@@ -3,6 +3,7 @@
 "inherits": ["common.objectId", "common.dateTime", "common.vectorExt", "system.organizationExt", "system.primaryKey"],
 "query": ["vectorReference", "vectorReferenceType", "chunk", "chunkCount"],
 "hints": ["vectorReference, vectorReferenceType"],
+"description": "A model store for embedding vectors for use with retrieval-augmented generation (RAG).",
 "fields": [
 	{
 		"name": "vectorReference",

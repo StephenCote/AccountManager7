@@ -1,6 +1,7 @@
 {
 	"name": "crypto.key",
 	"inherits": ["common.base"],
+	"description": "Asymmetric key for cryptographic operations.",
 	"fields": [
 		{
 			"name": "key",

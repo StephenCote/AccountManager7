@@ -1,68 +1,73 @@
 {
-"name": "policy.validationRule",
-"inherits": ["data.directory", "common.description"],
-"icon": "rule",
-"label": "Validation Rule",
-"group": "Validation Rules",
-"fields": [
-	{
-		"name": "errorMessage",
-		"type": "string",
-		"maxLength": 255
-	},
-	{
-		"name": "replacementValue",
-		"type": "flex",
-		"valueType": "replacementValueType"
-	},
-	{
-		"name": "replacementValueType",
-		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
-		"type": "enum",
-		"maxLength": 16,
-		"default": "UNKNOWN"
-	},
-	{
-		"name": "rules",
-		"baseModel": "policy.validationRule",
-		"baseType": "model",
-		"type": "list",
-		"foreign": true,
-		"followReference": false
-	},
-	{
-		"name": "expression",
-		"type": "string",
-		"maxLength": 255
-	},
-	{
-		"name": "function",
-		"type": "model",
-		"baseModel": "policy.function",
-		"foreign": true,
-		"followReference": false
-	},
-	{
-		"name": "type",
-		"baseClass": "org.cote.accountmanager.schema.type.ValidationEnumType",
-		"type": "enum",
-		"maxLength": 16,
-		"default": "UNKNOWN"
-	},
-	{
-		"name": "comparison",
-		"type": "boolean",
-		"default": true
-	},
-	{
-		"name": "comparator",
-		"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
-		"type": "enum",
-		"maxLength": 16,
-		"default": "UNKNOWN"
-	},
-	{
-		"name": "allowNull",
-		"type": "boolean"
-	}
-]}
+	"name": "policy.validationRule",
+	"inherits": [
+		"data.directory",
+		"common.description"
+	],
+	"icon": "rule",
+	"label": "Validation Rule",
+	"group": "Validation Rules",
+	"description": "A validation rule is a specific condition or set of conditions that must be met for data to be considered valid. Validation rules can be used to enforce data integrity, ensure compliance with business rules, and prevent errors in data entry or processing.",
+	"fields": [
+		{
+			"name": "errorMessage",
+			"type": "string",
+			"maxLength": 255
+		},
+		{
+			"name": "replacementValue",
+			"type": "flex",
+			"valueType": "replacementValueType"
+		},
+		{
+			"name": "replacementValueType",
+			"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
+			"type": "enum",
+			"maxLength": 16,
+			"default": "UNKNOWN"
+		},
+		{
+			"name": "rules",
+			"baseModel": "policy.validationRule",
+			"baseType": "model",
+			"type": "list",
+			"foreign": true,
+			"followReference": false
+		},
+		{
+			"name": "expression",
+			"type": "string",
+			"maxLength": 255
+		},
+		{
+			"name": "function",
+			"type": "model",
+			"baseModel": "policy.function",
+			"foreign": true,
+			"followReference": false
+		},
+		{
+			"name": "type",
+			"baseClass": "org.cote.accountmanager.schema.type.ValidationEnumType",
+			"type": "enum",
+			"maxLength": 16,
+			"default": "UNKNOWN"
+		},
+		{
+			"name": "comparison",
+			"type": "boolean",
+			"default": true
+		},
+		{
+			"name": "comparator",
+			"baseClass": "org.cote.accountmanager.schema.type.ComparatorEnumType",
+			"type": "enum",
+			"maxLength": 16,
+			"default": "UNKNOWN"
+		},
+		{
+			"name": "allowNull",
+			"type": "boolean"
+		}
+	]
+}

@@ -4,6 +4,7 @@
 	"group": "Policies",
 	"icon": "policy",
 	"label": "Policy",
+	"description": "A policy is a set of rules or guidelines that govern the behavior of users, systems, or processes within an organization. Policies can be used to enforce security, compliance, and operational standards across various domains.",
 	"fields": [
 		{
 			"name": "rules",

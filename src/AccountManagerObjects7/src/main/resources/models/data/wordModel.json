@@ -9,6 +9,7 @@
 	"group": "Words",
 	"icon": "category",
 	"label": "Word",
+	"description": "Represent a single word and any gender or frequency.",
 	"constraints": [
 		"name, gender, groupId, organizationId"
 	],
