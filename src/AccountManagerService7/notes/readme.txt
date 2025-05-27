@@ -52,6 +52,14 @@ CREATE TABLE vecttest (
 	
 );
 
+/// Vector Index Notes
+/// vector dimensions must be defined
+/// Ref: https://github.com/prisma/prisma/issues/21850
+ALTER TABLE A7_data_vectorModelStore_0_1 ALTER COLUMN embedding TYPE vector(768);
+/// Example
+/// Ref: https://www.tembo.io/blog/vector-indexes-in-pgvector
+CREATE INDEX ON A7_data_vectorModelStore_0_1 USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)
+
 
 //// Java setup
 Use embedTool.py python script

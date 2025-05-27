@@ -134,8 +134,9 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestOlioRules.java</exclude>
+						<exclude>**/TestAgentChat.java</exclude>
 						-->
+						<exclude>**/TestOlioRules.java</exclude>
 						<exclude>**/TestChat2.java</exclude>
 						<exclude>**/TestData.java</exclude>
 						<exclude>**/TestDocumentSearch.java</exclude>

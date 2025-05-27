@@ -2,6 +2,7 @@ package org.cote.accountmanager.util;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -346,6 +347,19 @@ public class RecordUtil {
 		}
 		return outBool;
 	}
+	
+	public static Set<String> inheritence(ModelSchema ms) {
+		Set<String> inh = new HashSet<>();
+		for(String s: ms.getInherits()) {
+			if(!inh.contains(s)) {
+				inh.add(s);
+				ModelSchema ims = RecordFactory.getSchema(s);
+				inh.addAll(inheritence(ims));
+			}
+		}
+		return inh;
+	}
+	
 	public static boolean isIdentityModel(ModelSchema schema) {
 		boolean hasIdentity = false;
 		if(schema != null) {
