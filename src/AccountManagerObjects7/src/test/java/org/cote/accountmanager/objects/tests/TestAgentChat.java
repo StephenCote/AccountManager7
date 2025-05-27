@@ -13,6 +13,7 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
@@ -32,23 +33,52 @@ public class TestAgentChat extends BaseTest {
 
 	@Test
 	public void TestSchemaPrompt() {
+		
+		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String dataPath = testProperties.getProperty("test.datagen.path");
+
+		
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON);
 		q.planMost(false);
 		ModelSchema ms = RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_PERSON);
 		//logger.info(JSONUtil.exportObject(ms));
-		logger.info(getModels());
-		logger.info(getSchemaDescription(ms));
+		//logger.info(getModels(false));
+		OlioContext ctx = OlioTestUtil.getContext(orgContext, dataPath);
+		String agenticQuestion = "Who is Laurel? Describe her in detail.";
+		
+		
+		String prompt = "Answer all questions by identifying an operation (CREATE, READ, UPDATE, DELETE, LIST, MEMBER) and selecting the most appropriate models from the following list:" + System.lineSeparator() + getModels(false) + System.lineSeparator() + "Format all responses in JSON using the following example syntax: {\"operation\": \"READ\", \"models\": [\"data.data\"]}"  + System.lineSeparator() + "Example:" + System.lineSeparator() + "(user)Tell me about the character Bob?"+ System.lineSeparator() + "(assistant) {\"operation\": \"READ\", \"models\": [\"olio.charPerson\"]}";
+		String response = getChatResponse(testUser1, "Agentic.prompt", "Open AI.chat", prompt, agenticQuestion);
+		logger.info("RESPONSE 1: '" + response + "'");
+		
+		String prompt2 = "Identifying which of the following model fields should be used to effectively answer the question:" + System.lineSeparator() + getSchemaDescription(ms) + System.lineSeparator() + "Format all responses in JSON using the following example syntax: {\"model\": \"data.data\", \"fields\": [\"name\", \"description\"]}"  + System.lineSeparator() + "Example:" + System.lineSeparator() + "(user)Tell me about the character Bob?"+ System.lineSeparator() + "(assistant) {\"model\": \"olio.charPerson\", \"fields\": [\"firstName\", \"lastName\", \"eyeColor\", \"hairColor\"]}";
+		String response2 = getChatResponse(testUser1, "Agentic.prompt 2", "Open AI.chat", prompt2, agenticQuestion);
+		logger.info("RESPONSE 2: '" + response2 + "'");		
+
+		
+		//logger.info(getSchemaDescription(ms));
 	}
 	
 	
-	private String getModels() {
+	private String getModels(boolean incInherits) {
 		StringBuilder buff = new StringBuilder();
 		ModelNames.MODELS.sort((f1, f2) -> f1.compareTo(f2));
 		for (String model : ModelNames.MODELS) {
 			ModelSchema ms = RecordFactory.getSchema(model);
-			if(ms.isAbs()) continue;
-			String inh = ms.getInherits().stream().collect(Collectors.joining(", "));
-			buff.append(ms.getName() + (inh.length() > 0 ? " [inherits: " + inh + "]" : ""));
+			if(ms.isAbs() || ms.isEphemeral()) continue;
+			if(ms.getIoConstraints().size() > 0 && (ms.getIoConstraints().get(0).equals("file") || ms.getIoConstraints().get(0).equals("unknown"))) {
+				continue;
+			}
+			buff.append(ms.getName());
+			if(incInherits) {
+				String inh = ms.getInherits().stream().collect(Collectors.joining(", "));
+				buff.append((inh.length() > 0 ? " [inherits: " + inh + "]" : ""));
+			}
+			if(ms.getDescription() != null) {
+				buff.append(" - " + ms.getDescription());
+			}
 			buff.append(System.lineSeparator());
 		}
 		//return ModelNames.MODELS.stream().collect(Collectors.joining(System.lineSeparator()));
@@ -172,6 +202,38 @@ public class TestAgentChat extends BaseTest {
 		}
 		return buff.toString();
 	}
+	
+	private String getChatResponse(BaseRecord user, String promptName, String configName, String prompt, String message) {
+		BaseRecord cfg = OlioTestUtil.getOpenAIConfig(user, configName, testProperties);
+		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(user, promptName);
+		if(prompt != null) {
+			List<String> system = pcfg.get("system");
+			system.clear();
+			system.add(prompt);
+		}
+		IOSystem.getActiveContext().getAccessPoint().update(user, pcfg);
+		String chatName = "Gruffy Chat Test " + UUID.randomUUID().toString();
+		BaseRecord creq = ChatUtil.getCreateChatRequest(user, chatName, cfg, pcfg);
+		assertNotNull("Chat request is null", creq);
+		
+		OpenAIRequest req = ChatUtil.getChatSession(user, chatName, cfg, pcfg);
+		//String flds = req.getFields().stream().map(f -> f.getName()).collect(Collectors.joining(", "));
+		// logger.info(flds);
+		// logger.info(JSONUtil.exportObject(ChatUtil.getPrunedRequest(req), RecordSerializerConfig.getHiddenForeignUnfilteredModule()));
+		
+		assertNotNull("Request is null", req);
+		
+	
+		Chat chat = new Chat(user, cfg, pcfg);
+		chat.continueChat(req, message);
+		List<OpenAIMessage> msgs = req.getMessages();
+		String msg = null;
+		if (msgs.size() > 0) {
+			msg = msgs.get(msgs.size() - 1).getContent();
+		}
+		return msg;
+	}
+	
 	
 	/*
 	/// Copied from TestChat2 to use/refactor into a utility
