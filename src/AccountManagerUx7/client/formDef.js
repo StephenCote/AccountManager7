@@ -3358,13 +3358,17 @@
                 }
             },
             description: {
-                layout: "third",
+                layout: "full",
             },
             trades: {
                 layout: "third",
                 format: "textlist"
             },
             race: {
+                layout: "third",
+                format: "textlist"
+            },
+            ethnicity: {
                 layout: "third",
                 format: "textlist"
             }
