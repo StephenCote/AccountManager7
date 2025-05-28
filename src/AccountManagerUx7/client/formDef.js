@@ -3016,23 +3016,26 @@
     }
 
     async function character(name, gender, age, race, profUrl, op){
+
         let obj = await am7model.forms.commands.rollCharacter(undefined, undefined, gender);
         obj.age = age;
         obj.race = [race];
-        obj.name = name;
-        let nms = name.split(" ");
-        if(nms.length){
-            obj.firstName = nms[0];
-            obj.lastName = nms[nms.length - 1];
-            if(nms.length > 2){
-                obj.middleName = nms[1];
+        if(name && name.length > 0) {
+            obj.name = name;
+            let nms = name.split(" ");
+            if(nms.length){
+                obj.firstName = nms[0];
+                obj.lastName = nms[nms.length - 1];
+                if(nms.length > 2){
+                    obj.middleName = nms[1];
+                }
+                else obj.middleName = null;
             }
-            else obj.middleName = null;
-        }
-        else{
-            obj.firstName = name;
-            obj.middleName = null;
-            obj.lastName = null;
+            else{
+                obj.firstName = name;
+                obj.middleName = null;
+                obj.lastName = null;
+            }
         }
 
         let char = await createCharacter(obj, profUrl);
@@ -3047,19 +3050,28 @@
         if(!obj){
             obj = await am7model.forms.commands.rollCharacter();
         }
-    // 	let pdir = await page.makePath("auth.group", "data", "~/Profiles");
-        let cdir = await page.makePath("auth.group", "data", "~/Persons");
+
+        // 	let pdir = await page.makePath("auth.group", "data", "~/Profiles");
+        let cdir = await page.makePath("auth.group", "data", "~/Characters");
         let char = await page.searchFirst("olio.charPerson", cdir.id, obj.name); 
 
         if(char == null){
             
             let charN = am7model.prepareEntity(obj, "olio.charPerson", true);
+            let w = charN.store.apparel[0].wearables;
+            for(let i = 0; i < w.length; i++){
+                w[i] = am7model.prepareEntity(w[i], "olio.wearable", false);
+                w[i].qualities[0] = am7model.prepareEntity(w[i].qualities[0], "olio.quality", false);
+            }
     
-            console.log("Creating", charN);
-            char = await page.createObject(charN, false);
+            char = await page.createObject(charN);
     
             if(char != null){
                 char = await page.searchFirst("olio.charPerson", cdir.id, obj.name); 
+                if(char == null){
+                    console.error("Failed to find character", cdir.id, obj.name);
+                    return null;
+                }
             }
             else{
                 console.error("Failed to create character " + obj.name, char);

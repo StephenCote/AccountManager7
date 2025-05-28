@@ -1,5 +1,6 @@
 Generic logo is of a cute robot basilosaurus or basilisk created in Stable Diffusion with Juggernaut XL, edited in GIMP.
-
 Parameters ((airbrush art) with (white background)) of a (((cute)) ((happy)) ((robot)) ((basilisk))) (hajime sorayama:1.5)
 Negative prompt:  negativeXL_D
 Steps: 50, Sampler: DPM++ 2M, Schedule type: Karras, CFG scale: 7, Seed: 2760260862, Size: 512x512, Model hash: 010be7341c, Model: Juggernaut_X_RunDiffusion_Hyper, Version: v1.10.1
+
+Silhouette and mannequin images were found online with no attribution.

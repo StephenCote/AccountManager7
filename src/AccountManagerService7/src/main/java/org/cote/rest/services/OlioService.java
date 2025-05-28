@@ -45,6 +45,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.service.util.ServiceUtil;
 
@@ -181,16 +182,32 @@ public class OlioService {
 	}
 	
 	private BaseRecord rollCharacter(BaseRecord user, String gender) {
-Factory f = IOSystem.getActiveContext().getFactory();
+		Factory f = IOSystem.getActiveContext().getFactory();
+		OlioContext octx = OlioContextUtil.getOlioContext(user, context.getInitParameter("datagen.path"));
+		BaseRecord world = octx.getWorld();
+		BaseRecord parWorld = world.get(OlioFieldNames.FIELD_BASIS);
+		if(parWorld == null) {
+			logger.error("A basis world is required");
+			return null;
+		}
+
+		BaseRecord namesDir = parWorld.get(OlioFieldNames.FIELD_NAMES);
+		BaseRecord surDir = parWorld.get(OlioFieldNames.FIELD_SURNAMES);
 		
+		Query fnq = QueryUtil.createQuery(ModelNames.MODEL_WORD, FieldNames.FIELD_GROUP_ID, namesDir.get(FieldNames.FIELD_ID));
+		fnq.field(FieldNames.FIELD_GENDER, gender.substring(0, 1).toUpperCase());
+		String firstName = OlioUtil.randomSelectionName(user, fnq);
+		String middleName = OlioUtil.randomSelectionName(user, fnq);
+		String lastName = OlioUtil.randomSelectionName(user, QueryUtil.createQuery(ModelNames.MODEL_CENSUS_WORD, FieldNames.FIELD_GROUP_ID, surDir.get(FieldNames.FIELD_ID)));	
+
 		BaseRecord a1 = null;
 		try{
 			a1 = f.newInstance(OlioModelNames.MODEL_CHAR_PERSON, user, null, null);
 		
-			a1.set(FieldNames.FIELD_FIRST_NAME, "Jay");
-			a1.set(FieldNames.FIELD_MIDDLE_NAME, "Kippy");
-			a1.set(FieldNames.FIELD_LAST_NAME, "Smith");
-			a1.set(FieldNames.FIELD_NAME, "Jay Kippy Smith");
+			a1.set(FieldNames.FIELD_FIRST_NAME, firstName);
+			a1.set(FieldNames.FIELD_MIDDLE_NAME, middleName);
+			a1.set(FieldNames.FIELD_LAST_NAME, lastName);
+			a1.set(FieldNames.FIELD_NAME, firstName + " " + middleName + " " + lastName);
 
 			a1.set(FieldNames.FIELD_GENDER, gender);
 			a1.set("age", (new Random()).nextInt(7, 70));
