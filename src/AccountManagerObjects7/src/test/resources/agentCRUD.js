@@ -7,7 +7,7 @@
 console.log("Agent CRUD Function");
 
 /// org.cote.accountmanager
-org.cote.accountmanager.io.Query q = org.cote.accountmanager.io.QueryUtil.createQuery();
+let q = org.cote.accountmanager.io.QueryUtil.createQuery();
 null;
 /*
 let recs = ioSearch.findByUrn(fact.modelType, fact.sourceUrn);
