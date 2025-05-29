@@ -3051,7 +3051,6 @@
             obj = await am7model.forms.commands.rollCharacter();
         }
 
-        // 	let pdir = await page.makePath("auth.group", "data", "~/Profiles");
         let cdir = await page.makePath("auth.group", "data", "~/Characters");
         let char = await page.searchFirst("olio.charPerson", cdir.id, obj.name); 
 

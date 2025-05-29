@@ -480,21 +480,7 @@
         let ecls = "";
         let bectl = false;
         if(hideThoughts && !editMode){
-          let tdx1 = cnt.toLowerCase().indexOf("<citation");
-          let check = 0;
-          let maxCheck = 20;
-          while (tdx1 > -1) {
-            if (check++ >= maxCheck) {
-              console.error("Break on loop!");
-              break;
-            }
-
-            let tdx2 = cnt.toLowerCase().indexOf("</citation>");
-            if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
-              cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + 11, cnt.length);
-            }
-            tdx1 = cnt.toLowerCase().indexOf("<citation");
-          }
+          cnt = pruneTag(cnt, "citation");
         }
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
@@ -507,21 +493,8 @@
             if (rdx > -1) {
               cnt = cnt.substring(0, rdx);
             }
-            let tdx1 = cnt.toLowerCase().indexOf("<thought>");
-            let maxCheck = 20;
-            let check = 0;
-            while (tdx1 > -1) {
-              if (check++ >= maxCheck) {
-                console.error("Break on loop!");
-                break;
-              }
-
-              let tdx2 = cnt.toLowerCase().indexOf("</thought>");
-              if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
-                cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + 10, cnt.length);
-              }
-              tdx1 = cnt.toLowerCase().indexOf("<thought>");
-            }
+            cnt = pruneTag(cnt, "think");
+            cnt = pruneTag(cnt, "thought");
 
           }
 
@@ -575,6 +548,25 @@
       ])];
 
       return ret;
+    }
+    
+    function pruneTag(cnt, tag){
+        let tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
+        let maxCheck = 20;
+        let check = 0;
+        while (tdx1 > -1) {
+          if (check++ >= maxCheck) {
+            console.error("Break on loop!");
+            break;
+          }
+
+          let tdx2 = cnt.toLowerCase().indexOf("</" + tag + ">");
+          if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
+            cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + tag.length + 3, cnt.length);
+          }
+          tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
+        }
+        return cnt;
     }
 
     function getChatBottomMenuView() {
