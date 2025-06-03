@@ -137,6 +137,9 @@ public class CacheDBSearch extends DBSearch implements ICache {
 			qr = super.find(query);
 			addToCache(cache, query, qr, hash);
 		}
+		else if (qr.getCount() == 0 || qr.getResults().length == 0) {
+			logger.info("CACHE ZERO " + query.key());
+		}
 		return qr;
 	}
 

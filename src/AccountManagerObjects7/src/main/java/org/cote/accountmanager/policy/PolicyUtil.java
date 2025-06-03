@@ -56,6 +56,7 @@ import org.cote.accountmanager.schema.type.GroupEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
 import org.cote.accountmanager.schema.type.SystemPermissionEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
@@ -702,13 +703,16 @@ public class PolicyUtil {
 		
 		if(resource != null && g.find()) {
 			if(resource.inherits(ModelNames.MODEL_DIRECTORY)) {
+				//IOSystem.getActiveContext().getReader().populate(rec, new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID});
 				BaseRecord grp = null;
+				String dbgRoute = null;
+				// IOSystem.getActiveContext().getPathUtil().setTrace(true);
 				if(resource.hasField(FieldNames.FIELD_GROUP_PATH) && resource.get(FieldNames.FIELD_GROUP_PATH) != null) {
-					// logger.info("Resolve resource by groupPath: " + resource.get(FieldNames.FIELD_GROUP_PATH));
+					dbgRoute = "Resolve resource by groupPath: " + resource.get(FieldNames.FIELD_GROUP_PATH);
 					grp = pathUtil.findPath(null, ModelNames.MODEL_GROUP, resource.get(FieldNames.FIELD_GROUP_PATH), GroupEnumType.DATA.toString(), resource.get(FieldNames.FIELD_ORGANIZATION_ID));
 				}
 				else if(resource.hasField(FieldNames.FIELD_GROUP_ID)) {
-					//logger.info("Resolve resource by groupId: " + resource.get(FieldNames.FIELD_GROUP_ID));
+					dbgRoute = "Resolve resource by groupId: " + resource.get(FieldNames.FIELD_GROUP_ID);
 					grp = reader.read(ModelNames.MODEL_GROUP, (long)resource.get(FieldNames.FIELD_GROUP_ID));
 				}
 				if(grp != null) {
@@ -716,7 +720,15 @@ public class PolicyUtil {
 				}
 				else {
 					logger.error("Group could not be found");
+					logger.error(dbgRoute);
+					logger.error(resource.copyRecord(new String[] {
+							FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+							FieldNames.FIELD_NAME, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH,
+							FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH
+						}).toFullString());
+					ErrorUtil.printStackTrace();
 				}
+				// IOSystem.getActiveContext().getPathUtil().setTrace(false);
 			}
 			else {
 				removeGroupUrn = true;

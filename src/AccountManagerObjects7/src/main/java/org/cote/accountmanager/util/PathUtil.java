@@ -118,7 +118,7 @@ public abstract class PathUtil implements IPath {
 					}
 					if(!doCreate) {
 						if(trace) {
-							logger.warn("Failed to find '" + e + "' " + (type != null ? "of type (" + type + ") " : "") + "in parent " + parentId + " in path " + path + ", create = false");
+							logger.warn("Failed to find '" + e + "' " + (utype != null ? "of type (" + utype + ") " : "") + "in parent " + parentId + " in path " + path + " in organization " + organizationId + ", create = false");
 						}
 						node = null;
 						break;

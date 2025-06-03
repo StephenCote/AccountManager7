@@ -19,6 +19,7 @@ import org.cote.accountmanager.objects.generated.PolicyType;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.CryptoUtil;
+import org.cote.accountmanager.util.ErrorUtil;
 
 public class CachePolicyUtil extends PolicyUtil implements ICache {
 	
@@ -83,7 +84,17 @@ public class CachePolicyUtil extends PolicyUtil implements ICache {
 				recId = resource.hash();
 			}
 		}
-		String key = name + "-" + actor.get(FieldNames.FIELD_URN)+ "-" + token + "-" + recId;
+		String urn = "anonymous";
+		if (actor != null) {
+			if(actor.hasField(FieldNames.FIELD_URN)) {
+				urn = actor.get(FieldNames.FIELD_URN);
+			}
+			else {
+				logger.error("Urn is not populated");
+				ErrorUtil.printStackTrace();
+			}
+		}
+		String key = name + "-" + urn + "-" + token + "-" + recId;
 		String hash = CryptoUtil.getDigestAsString(key);
 		if(!policyCache.containsKey(hash)) {
 			BaseRecord opol = super.getResourcePolicy(name, actor, token, resource);

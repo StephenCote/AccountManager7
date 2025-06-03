@@ -28,6 +28,7 @@ public class ThumbnailUtil {
 		String contentType = record.get(FieldNames.FIELD_CONTENT_TYPE);
 		if(contentType == null || !contentType.startsWith("image/")) {
 			logger.warn("Record does not define a content type");
+			ErrorUtil.printStackTrace();
 			return false;
 		}
 		if(!record.inherits(ModelNames.MODEL_DIRECTORY) || (long)record.get(FieldNames.FIELD_GROUP_ID) == 0L) {
@@ -40,6 +41,7 @@ public class ThumbnailUtil {
 		}
 		return true;
 	}
+	
 	public static BaseRecord getCreateThumbnail(BaseRecord irecord, int width, int height) throws IndexException, ReaderException, FactoryException, IOException, FieldException, ValueException, ModelNotFoundException {
 		//OrganizationContext oct = ioContext.getOrganizationContext(record.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(irecord == null) {

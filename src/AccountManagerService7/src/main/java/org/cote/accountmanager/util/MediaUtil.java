@@ -187,7 +187,6 @@ public class MediaUtil {
 
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 
-		/// if(user == null) user = org.getDocumentControl();
 		BaseRecord audit = AuditUtil.startAudit(user, ActionEnumType.READ, user, null);
 		writeBinaryContent(request, response, options, audit, type, org, user, objPath, objName);
 	}
@@ -264,10 +263,22 @@ public class MediaUtil {
 					group.get(FieldNames.FIELD_ID));
 			q.field(FieldNames.FIELD_NAME, objName);
 			if (options.isThumbnail()) {
-				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN, FieldNames.FIELD_NAME,
-						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID,
-						FieldNames.FIELD_OWNER_ID });
+				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+						FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID,
+						FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
+				if (sdata == null) {
+					logger.error("Failed to find record:");
+					logger.error(q.copyRecord(new String[] {
+						FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
+						FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE,
+						FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH,
+						FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH
+					}).toFullString());
+					ErrorUtil.printStackTrace();
+					response.sendError(404);
+					return;
+				}
 				data = ThumbnailUtil.getCreateThumbnail(sdata, options.getThumbWidth(), options.getThumbHeight());
 				if (data == null) {
 					logger.warn("Thumbnail data is null for data name " + objName + " and user "
@@ -275,15 +286,11 @@ public class MediaUtil {
 				}
 			} /// End if thumbnail
 			else {
-				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
-						FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_BYTE_STORE,
-						FieldNames.FIELD_STREAM, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
+				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID,
+						FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID,
+						FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM,
+						FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
 				data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
-				// data = IOSystem.getActiveContext().getAccessPoint().findByNameInGroup(user,
-				// ModelNames.MODEL_DATA, (long)group.get(FieldNames.FIELD_ID), objName);
-				if (data != null) {
-					// logger.info(data.toFullString());
-				}
 				if (data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null
 						&& ((String) data.get(FieldNames.FIELD_CONTENT_TYPE)).startsWith("image/") && restrictSize) {
 					logger.info("Redirecting to restricted image path");
@@ -333,8 +340,6 @@ public class MediaUtil {
 			StreamSegmentUtil ssu = new StreamSegmentUtil();
 			value = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0, 0);
 		} else {
-			// value = data.get(FieldNames.FIELD_BYTE_STORE);
-
 			try {
 				value = ByteModelUtil.getValue(data);
 			} catch (ValueException | FieldException e) {
