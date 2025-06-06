@@ -139,7 +139,11 @@ public abstract class BaseRecord {
 		return copy;
 	}
 	public BaseRecord copyIntoRecord(BaseRecord copy, String[] outFieldNames) {
-
+		
+		if(copy == null) {
+			return null;
+		}
+		
 		List<FieldType> lflds = getFields();
 		Set<String> fset = new HashSet<>(Arrays.asList(outFieldNames));
 		List<FieldType> ofields = new CopyOnWriteArrayList<>();
