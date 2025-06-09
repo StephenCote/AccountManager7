@@ -75,7 +75,11 @@ public class ThumbnailUtil {
 		///
 		//BaseRecord thumbDir = ctx.getPathUtil().makePath(owner, ModelNames.MODEL_GROUP, thumbPath, GroupEnumType.DATA.toString(), owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		BaseRecord thumbDir = ctx.getAccessPoint().findById(owner, ModelNames.MODEL_GROUP, irecord.get(FieldNames.FIELD_GROUP_ID));
-		
+		if (thumbDir == null) {
+			logger.error("Unable to find group for thumbnail in group " + irecord.get(FieldNames.FIELD_GROUP_ID));
+			
+			return null;
+		}
 		String thumbName = record.get(FieldNames.FIELD_NAME) + " " + width + "x" + height;
 		//BaseRecord thumb = ioContext.getSearch().findByPath(owner, thumbPath, thumbName,  owner.get(FieldNames.FIELD_ORGANIZATION_ID));
 		// logger.info(owner.toFullString());

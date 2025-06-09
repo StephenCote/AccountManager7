@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.file.IndexEntry;
 import org.cote.accountmanager.provider.ProviderUtil;
 import org.cote.accountmanager.record.BaseRecord;
@@ -29,6 +30,9 @@ public class CacheUtil {
 		});
 		ProviderUtil.clearCache();
 		ResourceUtil.clearCache();
+		if (IOSystem.isOpen()) {
+			IOSystem.getActiveContext().getPathUtil().clearCache();
+		}
 	}
 
 	public static void clearCache(String key) {

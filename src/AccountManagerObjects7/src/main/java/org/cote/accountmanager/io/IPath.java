@@ -7,4 +7,5 @@ public interface IPath {
 	public BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId);
 	public void setTrace(boolean b);
 	public boolean isTrace();
+	public void clearCache();
 }

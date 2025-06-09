@@ -47,44 +47,7 @@
 			</plugins>
 		</pluginManagement>
 		<plugins>
-			<!--
-		<plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <version>2.10</version>
-        <executions>
-          <execution>
-            <id>copy-dependencies</id>
-            <phase>package</phase>
-            <goals>
-              <goal>copy-dependencies</goal>
-            </goals>
-            <configuration>
-              <outputDirectory>${project.build.directory}/lib</outputDirectory>
-              <overWriteReleases>false</overWriteReleases>
-              <overWriteSnapshots>false</overWriteSnapshots>
-              <overWriteIfNewer>true</overWriteIfNewer>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      
-		  	<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-jar-plugin</artifactId>
-				<version>3.2.0</version>
-				<configuration>
-					<archive>
-						<manifest>
-							<addClasspath>true</addClasspath>
-							<mainClass>org.cote.accountmanager.olio.llm.ChatMain</mainClass>
-							<classpathPrefix>./lib/</classpathPrefix>
-						</manifest>
-					</archive>
-				</configuration>
-
-			</plugin>
-		-->
+			
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -123,7 +86,7 @@
 					<environmentVariables>
 
 					</environmentVariables>
-					<skipTests>true</skipTests>
+					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
 						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
@@ -134,8 +97,9 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestAgentChat.java</exclude>
+						<exclude>**/TestPerformance.java</exclude>
 						-->
+						<exclude>**/TestAgentChat.java</exclude>
 						<exclude>**/TestOlioRules.java</exclude>
 						<exclude>**/TestChat2.java</exclude>
 						<exclude>**/TestData.java</exclude>

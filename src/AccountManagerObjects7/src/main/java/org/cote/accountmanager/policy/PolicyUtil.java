@@ -706,15 +706,16 @@ public class PolicyUtil {
 				//IOSystem.getActiveContext().getReader().populate(rec, new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID});
 				BaseRecord grp = null;
 				String dbgRoute = null;
-				// IOSystem.getActiveContext().getPathUtil().setTrace(true);
-				if(resource.hasField(FieldNames.FIELD_GROUP_PATH) && resource.get(FieldNames.FIELD_GROUP_PATH) != null) {
-					dbgRoute = "Resolve resource by groupPath: " + resource.get(FieldNames.FIELD_GROUP_PATH);
-					grp = pathUtil.findPath(null, ModelNames.MODEL_GROUP, resource.get(FieldNames.FIELD_GROUP_PATH), GroupEnumType.DATA.toString(), resource.get(FieldNames.FIELD_ORGANIZATION_ID));
-				}
-				else if(resource.hasField(FieldNames.FIELD_GROUP_ID)) {
+				//IOSystem.getActiveContext().getPathUtil().setTrace(true);
+				if(resource.hasField(FieldNames.FIELD_GROUP_ID) && ((long)resource.get(FieldNames.FIELD_GROUP_ID)) > 0L) {
 					dbgRoute = "Resolve resource by groupId: " + resource.get(FieldNames.FIELD_GROUP_ID);
 					grp = reader.read(ModelNames.MODEL_GROUP, (long)resource.get(FieldNames.FIELD_GROUP_ID));
 				}
+				else if(resource.hasField(FieldNames.FIELD_GROUP_PATH) && resource.get(FieldNames.FIELD_GROUP_PATH) != null) {
+					dbgRoute = "Resolve resource by groupPath: " + resource.get(FieldNames.FIELD_GROUP_PATH);
+					grp = pathUtil.findPath(null, ModelNames.MODEL_GROUP, resource.get(FieldNames.FIELD_GROUP_PATH), GroupEnumType.DATA.toString(), resource.get(FieldNames.FIELD_ORGANIZATION_ID));
+				}
+
 				if(grp != null) {
 					policyBase = g.replaceAll((String)grp.get(FieldNames.FIELD_URN));
 				}
@@ -728,7 +729,7 @@ public class PolicyUtil {
 						}).toFullString());
 					ErrorUtil.printStackTrace();
 				}
-				// IOSystem.getActiveContext().getPathUtil().setTrace(false);
+				//IOSystem.getActiveContext().getPathUtil().setTrace(false);
 			}
 			else {
 				removeGroupUrn = true;

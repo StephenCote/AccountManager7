@@ -1,5 +1,8 @@
 package org.cote.accountmanager.util;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -30,6 +33,8 @@ public abstract class PathUtil implements IPath {
 	private final ISearch search;
 	private boolean trace = false;
 	
+	private Map<String, BaseRecord> pathMap = new ConcurrentHashMap<>();
+	
 	public PathUtil(IReader reader, ISearch search) {
 		this(reader, null, search);
 	}
@@ -40,6 +45,9 @@ public abstract class PathUtil implements IPath {
 	}
 	
 	
+	public void clearCache() {
+		pathMap.clear();
+	}
 	
 	public boolean isTrace() {
 		return trace;
@@ -51,6 +59,8 @@ public abstract class PathUtil implements IPath {
 		return makePath(owner, model, path, type, organizationId, false);
 	}
 	
+	
+	
 	/// Synchronized make path - when concurrent sessions hit the hierarchical create method, it's possible that the same object can be created twice, violating any constraint condition
 	/// This in turn MAY result in a corrupted cache entry (still looking into that currency issue)
 	///
@@ -59,7 +69,11 @@ public abstract class PathUtil implements IPath {
 	}
 	private BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId, boolean doCreate) {
 		BaseRecord node = null;
-
+		String key = organizationId + "-" + type + "-" + path;
+		if(!doCreate && pathMap.containsKey(key)) {
+			return pathMap.get(key);
+		}
+		
 		if(owner != null) {
 			IOSystem.getActiveContext().getRecordUtil().populate(owner);
 		}
@@ -171,6 +185,10 @@ public abstract class PathUtil implements IPath {
 		catch(ValueException | WriterException | ReaderException | FieldException | ModelNotFoundException e) {
 			logger.error(e.getMessage());
 			node = null;
+		}
+		
+		if(!doCreate && node != null) {
+			pathMap.put(key,  node);
 		}
 
 		return node;
