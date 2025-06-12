@@ -67,9 +67,13 @@ public abstract class PathUtil implements IPath {
 	public synchronized BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId) {
 		return makePath(owner, model, path, type, organizationId, true);
 	}
-	private BaseRecord makePath(BaseRecord owner, String model, String path, String type, long organizationId, boolean doCreate) {
+	
+	private synchronized BaseRecord makePath(final BaseRecord owner, final String model, final String basePath, final String type, final long organizationId, boolean doCreate) {
 		BaseRecord node = null;
-		String key = organizationId + "-" + type + "-" + path;
+		String path = basePath;
+		long parentId = 0L;
+		String ptype = type;
+		String key = organizationId + "-" + ptype + "-" + path;
 		if(!doCreate && pathMap.containsKey(key)) {
 			return pathMap.get(key);
 		}
@@ -100,15 +104,14 @@ public abstract class PathUtil implements IPath {
 		}
 
 		String[] pathE = path.split("/");
-		long parentId = 0L;
-		
 
+		
 		try {
 			for(String e : pathE) {
 				if(e == null || e.length() == 0) {
 					continue;
 				}
-				String utype = type;
+				String utype = ptype;
 				
 				/// When trying to get type specific paths, allow to build off a singular base such as /home/{name} vs. duplicating /home/{name}
 				/// TODO: This needs to be configurable because it would also be helpful in the Community layout
@@ -143,7 +146,7 @@ public abstract class PathUtil implements IPath {
 						node.set(FieldNames.FIELD_PARENT_ID, parentId);
 						node.set(FieldNames.FIELD_ORGANIZATION_ID, organizationId);
 						if(type != null && node.hasField(FieldNames.FIELD_TYPE)) {
-							node.set(FieldNames.FIELD_TYPE, type);
+							node.set(FieldNames.FIELD_TYPE, ptype);
 						}
 						if(owner != null) {
 							node.set(FieldNames.FIELD_OWNER_ID, owner.get(FieldNames.FIELD_ID));
@@ -157,7 +160,7 @@ public abstract class PathUtil implements IPath {
 								||
 								(prr = IOSystem.getActiveContext().getPolicyUtil().evaluateResourcePolicy(owner, PolicyUtil.POLICY_SYSTEM_CREATE_OBJECT, owner, node)).getType() != PolicyResponseEnumType.PERMIT)
 						) {
-							logger.error("Not authorized to create " + model + " " + (type != null ? "of type (" + type + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path);
+							logger.error("Not authorized to create " + model + " " + (ptype != null ? "of type (" + ptype + ") " : "") + "node " + e + " with parent #" + parentId + " in path " + path);
 							return null;
 						}
 						
@@ -170,7 +173,7 @@ public abstract class PathUtil implements IPath {
 					node = nodes[0];
 					parentId = node.get(FieldNames.FIELD_ID);
 					if(type == null) {
-						type = node.get(FieldNames.FIELD_TYPE);
+						ptype = node.get(FieldNames.FIELD_TYPE);
 					}
 				}
 				else {
