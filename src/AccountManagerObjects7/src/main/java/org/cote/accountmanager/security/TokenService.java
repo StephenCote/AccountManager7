@@ -61,10 +61,13 @@ import org.cote.accountmanager.schema.type.ValueEnumType;
 import org.cote.accountmanager.util.RecordUtil;
 
 import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ClaimsBuilder;
 import io.jsonwebtoken.CompressionCodecs;
 import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.JwtBuilder;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.io.CompressionAlgorithm;
+import io.jsonwebtoken.security.SecureDigestAlgorithm;
 
 public class TokenService {
 	public static final Logger logger = LogManager.getLogger(TokenService.class);
@@ -87,7 +90,8 @@ public class TokenService {
 	public static final int TOKEN_EXPIRY_1_WEEK = TOKEN_EXPIRY_1_DAY * 7;
 	private static int DEFAULT_TOKEN_EXPIRY_HOURS = TOKEN_EXPIRY_6_HOURS;
 	public static final String DEFAULT_REFERENCE_SUFFIX = "jwt";
-	private static final SignatureAlgorithm SIGNATURE_ALGORITHM = SignatureAlgorithm.HS256;
+
+	private static final SecureDigestAlgorithm DIGEST_ALGORITHM = Jwts.SIG.HS256;
 	private static final String JWT_HASH_SPEC = "HmacSHA256";
 	private static final String JWT_KEY_SPEC = "HmacSHA256";
 	private static final int JWT_KEY_SIZE = 256;
@@ -174,19 +178,18 @@ public class TokenService {
 	}
 	
 	public static Jws<Claims> extractJWTClaims(String token){
-		return Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token);
+		return Jwts.parser().keyLocator(new AM7SigningKeyLocator()).build().parseSignedClaims(token);
 	}
 	
 	public static String validateTokenToSubject(String token){
-		// logger.info("Validating token: '" + token + "'");
-		return Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token).getBody().getSubject();
+		return Jwts.parser().keyLocator(new AM7SigningKeyLocator()).build().parseSignedClaims(token).getPayload().getSubject();
 	}
 	
 	public static Claims validateSpooledJWTToken(String token) throws IndexException, ReaderException {
 		return validateSpooledJWTToken(token, false, false);
 	}
 	public static Claims validateSpooledJWTToken(String token, boolean skipExpirationCheck, boolean skipSpoolCheck) throws IndexException, ReaderException {
-		Claims c = extractJWTClaims(token).getBody();
+		Claims c = extractJWTClaims(token).getPayload();
 		Date now = Calendar.getInstance().getTime();
 
 		if(!skipExpirationCheck && c.getExpiration() != null && c.getExpiration().getTime() < now.getTime()) {
@@ -315,37 +318,45 @@ public class TokenService {
 		}
 		
 		String[] buff = getScope(persona, resourceClaims);
-		
-	    Claims claims = Jwts.claims().setSubject(persona.get(FieldNames.FIELD_NAME));
-	    claims.put(CLAIM_SCOPES, Arrays.asList(buff));
-		claims.put(CLAIM_OBJECT_ID, persona.get(FieldNames.FIELD_OBJECT_ID));
-		claims.put(CLAIM_TOKEN_ID, tokenId);
-		claims.put(CLAIM_ORGANIZATION_PATH, persona.get(FieldNames.FIELD_ORGANIZATION_PATH));
-		claims.put(CLAIM_SUBJECT_TYPE,persona.getSchema());
+		ClaimsBuilder claimsBuilder = Jwts.claims();
+
+	    claimsBuilder.subject((String)persona.get(FieldNames.FIELD_NAME));
+	    
+	    claimsBuilder.add(CLAIM_SCOPES, Arrays.asList(buff));
+	    claimsBuilder.add(CLAIM_OBJECT_ID, persona.get(FieldNames.FIELD_OBJECT_ID));
+	    claimsBuilder.add(CLAIM_TOKEN_ID, tokenId);
+	    claimsBuilder.add(CLAIM_ORGANIZATION_PATH, persona.get(FieldNames.FIELD_ORGANIZATION_PATH));
+	    claimsBuilder.add(CLAIM_SUBJECT_TYPE,persona.getSchema());
 		if(resource != null) {
 			if(RecordUtil.isIdentityRecord(resource)) {
-				claims.put(CLAIM_RESOURCE_TYPE, resource.getSchema());
-				claims.put(CLAIM_RESOURCE_ID, resource.get(FieldNames.FIELD_OBJECT_ID));
+				claimsBuilder.add(CLAIM_RESOURCE_TYPE, resource.getSchema());
+				claimsBuilder.add(CLAIM_RESOURCE_ID, resource.get(FieldNames.FIELD_OBJECT_ID));
 			}
 			else {
 				logger.error("Cannot authorize a resource without an identity");
 			}
 		}
-		claims.put(CLAIM_SBI, true);
+		claimsBuilder.add(CLAIM_SBI, true);
 		Calendar cal = Calendar.getInstance();
 		Date now = cal.getTime();
 		cal.add(Calendar.MINUTE, expiryMinutes);
 		Date expires = cal.getTime();
-		return Jwts.builder()
-		  //.setId(UUID.randomUUID().toString())
-		  .setClaims(claims)
-		  .setIssuer(authorizingUser.get(FieldNames.FIELD_URN))
-		  .setIssuedAt(now)
-		  .setExpiration(expires)
-		  .setSubject(persona.get(FieldNames.FIELD_NAME))
-		  .setId(persona.get(FieldNames.FIELD_URN))
-		  .compressWith(CompressionCodecs.GZIP)
-		  .signWith(bean.getSecretKey(), SIGNATURE_ALGORITHM)
+		JwtBuilder builder = Jwts.builder();
+		
+		builder.header().keyId(authorizingUser.get(FieldNames.FIELD_URN))
+			.add(CLAIM_SUBJECT_TYPE,persona.getSchema())
+			.add("sbi", true)
+			.and()
+		;
+		return builder
+		  .claims(claimsBuilder.build())
+		  .issuer(authorizingUser.get(FieldNames.FIELD_URN))
+		  .issuedAt(now)
+		  .expiration(expires)
+		  .subject(persona.get(FieldNames.FIELD_NAME))
+		  .id(persona.get(FieldNames.FIELD_URN))
+		  .compressWith(Jwts.ZIP.GZIP)
+		  .signWith(bean.getSecretKey(), DIGEST_ALGORITHM)
 		  .compact();
 	}
 	
@@ -403,28 +414,37 @@ public class TokenService {
 			}
 		}
 		
-	    Claims claims = Jwts.claims().setSubject(persona.get(FieldNames.FIELD_NAME));
-	    claims.put(CLAIM_SCOPES, Arrays.asList(buff));
-		claims.put(CLAIM_OBJECT_ID, persona.get(FieldNames.FIELD_OBJECT_ID));
-		claims.put(CLAIM_TOKEN_ID, tokenId);
-		claims.put(CLAIM_ORGANIZATION_PATH, persona.get(FieldNames.FIELD_ORGANIZATION_PATH));
-		claims.put(CLAIM_SUBJECT_TYPE,persona.getSchema());
+	    ClaimsBuilder claims = Jwts.claims();
+	    claims.subject(persona.get(FieldNames.FIELD_NAME));
+	    claims.add(CLAIM_SCOPES, Arrays.asList(buff));
+		claims.add(CLAIM_OBJECT_ID, persona.get(FieldNames.FIELD_OBJECT_ID));
+		claims.add(CLAIM_TOKEN_ID, tokenId);
+		claims.add(CLAIM_ORGANIZATION_PATH, persona.get(FieldNames.FIELD_ORGANIZATION_PATH));
+		claims.add(CLAIM_SUBJECT_TYPE,persona.getSchema());
 		Calendar cal = Calendar.getInstance();
 		Date now = cal.getTime();
 		cal.add(Calendar.MINUTE, expiryMinutes);
 		Date expires = cal.getTime();
 		
-		return Jwts.builder()
-		  //.setId(UUID.randomUUID().toString())
-		  .setClaims(claims)
-		  .setIssuer(contextUser.get(FieldNames.FIELD_URN))
-		  .setIssuedAt(now)
-		  .setExpiration(expires)
-		  .setSubject(persona.get(FieldNames.FIELD_NAME))
-		  .setId(persona.get(FieldNames.FIELD_URN))
-		  .compressWith(CompressionCodecs.GZIP)
-		  .signWith(bean.getSecretKey(), SIGNATURE_ALGORITHM)
+		JwtBuilder builder = Jwts.builder();
+		builder.header().keyId(contextUser.get(FieldNames.FIELD_URN))
+			.add(CLAIM_SUBJECT_TYPE,persona.getSchema())
+			.add("issuerUrn", contextUser.get(FieldNames.FIELD_URN))
+			.add("sbi", true)
+			.and()
+		;
+		
+		return builder
+		  .claims(claims.build())
+		  .issuer(contextUser.get(FieldNames.FIELD_URN))
+		  .issuedAt(now)
+		  .expiration(expires)
+		  .subject(persona.get(FieldNames.FIELD_NAME))
+		  .id(persona.get(FieldNames.FIELD_URN))
+		  .compressWith(Jwts.ZIP.GZIP)
+		  .signWith(bean.getSecretKey(), DIGEST_ALGORITHM)
 		  .compact();
+
 	}
 
 	public static String createSimpleJWTToken(BaseRecord user){
@@ -440,16 +460,17 @@ public class TokenService {
 			return null;
 		}
 		
-		Map<String,Object> claims = new HashMap<>();
-		claims.put(FieldNames.FIELD_OBJECT_ID, (String)user.get(FieldNames.FIELD_OBJECT_ID));
-		claims.put(FieldNames.FIELD_ORGANIZATION_PATH, (String)user.get(FieldNames.FIELD_ORGANIZATION_PATH));
+		ClaimsBuilder claims = Jwts.claims();
+		claims.add(FieldNames.FIELD_OBJECT_ID, (String)user.get(FieldNames.FIELD_OBJECT_ID));
+		claims.add(FieldNames.FIELD_ORGANIZATION_PATH, (String)user.get(FieldNames.FIELD_ORGANIZATION_PATH));
+		
 		return Jwts.builder()
 		  //.setId(UUID.randomUUID().toString())
-		  .setClaims(claims)
-		  .setSubject(user.get(FieldNames.FIELD_NAME))
-		  .setId(user.get(FieldNames.FIELD_URN))
-		  .compressWith(CompressionCodecs.GZIP)
-		  .signWith(bean.getSecretKey(), SIGNATURE_ALGORITHM)
+		  .claims(claims.build())
+		  .subject(user.get(FieldNames.FIELD_NAME))
+		  .id(user.get(FieldNames.FIELD_URN))
+		  .compressWith(Jwts.ZIP.GZIP)
+		  .signWith(bean.getSecretKey(), DIGEST_ALGORITHM)
 		  .compact();
 	}
 	

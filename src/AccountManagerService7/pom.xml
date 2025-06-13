@@ -11,9 +11,7 @@
 	<name>AccountManagerService7</name>
 	<url>http://maven.apache.org</url>
 
-
 	<pluginRepositories>
-
 		<pluginRepository>
 			<id>jboss-public-repository-group</id>
 			<name>JBoss Public Maven Repository Group</name>
@@ -28,25 +26,18 @@
 				<updatePolicy>never</updatePolicy>
 			</snapshots>
 		</pluginRepository>
-
-		<pluginRepository>
-			<id>maven2-repository.java.net</id>
-			<name>Java.net Repository for Maven</name>
-			<url>http://download.java.net/maven/2/</url>
-			<layout>default</layout>
-		</pluginRepository>
-
 	</pluginRepositories>
-
+	
 	<properties>
 		<endorsed.dir>${project.build.directory}/endorsed</endorsed.dir>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-		<jersey2.version>2.41</jersey2.version>
+		<jersey.version>3.1.5</jersey.version>
+		<jaxrs.version>3.1.0</jaxrs.version>
+		<jakartaee.version>11.0.0-M2</jakartaee.version>
 		<!--
-		<jersey2.version>3.1.3</jersey2.version>
--->
-		<jaxrs.version>2.1.1</jaxrs.version>
-
+		<graalvm.version>24.2.1</graalvm.version>
+		-->
+		<graalvm.version>23.0.1</graalvm.version>
 	</properties>
 
 	<dependencies>
@@ -63,81 +54,82 @@
 		</dependency>
 
 		<dependency>
-			<groupId>com.twelvemonkeys.servlet</groupId>
-			<artifactId>servlet</artifactId>
-			<version>3.12.0</version>
+		    <groupId>org.apache.commons</groupId>
+		    <artifactId>commons-fileupload2-jakarta-servlet6</artifactId>
+		    <version>2.0.0-M2</version>
 		</dependency>
 
 		<dependency>
-			<groupId>commons-fileupload</groupId>
-			<artifactId>commons-fileupload</artifactId>
-			<version>1.5</version>
+			<groupId>commons-io</groupId>
+			<artifactId>commons-io</artifactId>
+			<version>2.19.0</version>
 		</dependency>
 
-<dependency>
-    <groupId>commons-io</groupId>
-    <artifactId>commons-io</artifactId>
-    <version>2.18.0</version>
-</dependency>
-
 		<dependency>
-			<groupId>javax.servlet</groupId>
-			<artifactId>javax.servlet-api</artifactId>
-			<version>3.0.1</version>
-			<!--
-			<version>4.0.1</version>
-			-->
+			<groupId>jakarta.servlet</groupId>
+			<artifactId>jakarta.servlet-api</artifactId>
+			<version>6.1.0</version>
 			<scope>provided</scope>
 		</dependency>
 
-		<!-- JAX-RS -->
 		<dependency>
-			<groupId>javax.ws.rs</groupId>
-			<artifactId>javax.ws.rs-api</artifactId>
+			<groupId>jakarta.ws.rs</groupId>
+			<artifactId>jakarta.ws.rs-api</artifactId>
 			<version>${jaxrs.version}</version>
 		</dependency>
-		<!-- WebSocket -->
 		<dependency>
-			<groupId>javax</groupId>
-			<artifactId>javaee-api</artifactId>
-			<version>8.0.1</version>
+			<groupId>jakarta.platform</groupId>
+			<artifactId>jakarta.jakartaee-api</artifactId>
+			<version>${jakartaee.version}</version>
+			<scope>provided</scope>
 		</dependency>
-		<!-- Jersey 2.19 -->
 		<dependency>
 			<groupId>org.glassfish.jersey.containers</groupId>
 			<artifactId>jersey-container-servlet</artifactId>
-			<version>${jersey2.version}</version>
+			<version>${jersey.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.glassfish.jersey.inject</groupId>
 			<artifactId>jersey-hk2</artifactId>
-			<version>${jersey2.version}</version>
+			<version>${jersey.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.glassfish.jersey.core</groupId>
 			<artifactId>jersey-server</artifactId>
-			<version>${jersey2.version}</version>
+			<version>${jersey.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.glassfish.jersey.core</groupId>
 			<artifactId>jersey-client</artifactId>
-			<version>${jersey2.version}</version>
+			<version>${jersey.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.glassfish.jersey.media</groupId>
 			<artifactId>jersey-media-json-jackson</artifactId>
-			<version>2.41</version>
+			<version>${jersey.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.core</groupId>
 			<artifactId>jackson-core</artifactId>
-			<version>2.15.2</version>
+			<version>2.18.3</version>
 		</dependency>
 		<dependency>
 			<groupId>com.fasterxml.jackson.jaxrs</groupId>
 			<artifactId>jackson-jaxrs-json-provider</artifactId>
-			<version>2.15.2</version>
+			<version>2.18.3</version>
 		</dependency>
+		<!--
+		<dependency>
+		    <groupId>jakarta.xml.bind</groupId>
+		    <artifactId>jakarta.xml.bind-api</artifactId>
+		    <version>4.0.2</version>
+		</dependency>
+		<dependency>
+		    <groupId>org.glassfish.jaxb</groupId>
+		    <artifactId>jaxb-runtime</artifactId>
+		    <version>4.0.5</version>
+		</dependency>
+		-->
 		<dependency>
 			<groupId>org.cote.accountmanager</groupId>
 			<artifactId>AccountManagerObjects7</artifactId>
@@ -149,21 +141,20 @@
 			<version>1.18.0</version>
 		</dependency>
 		<dependency>
-			<groupId>javax.servlet</groupId>
-			<artifactId>jstl</artifactId>
-			<version>1.2</version>
+			<groupId>jakarta.servlet.jsp.jstl</groupId>
+			<artifactId>jakarta.servlet.jsp.jstl-api</artifactId>
+			<version>3.0.0</version>
 		</dependency>
-
+		<dependency>
+			<groupId>org.glassfish.web</groupId>
+			<artifactId>jakarta.servlet.jsp.jstl</artifactId>
+			<version>3.0.1</version>
+		</dependency>
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcprov-jdk18on</artifactId>
 			<version>1.80</version>
 			<scope>provided</scope>
-		</dependency>
-		<dependency>
-			<groupId>javax.security.jacc</groupId>
-			<artifactId>javax.security.jacc-api</artifactId>
-			<version>1.6</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.logging.log4j</groupId>
@@ -181,7 +172,6 @@
 			<version>2.24.3</version>
 		</dependency>
 
-		<!-- test -->
 		<dependency>
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
@@ -189,78 +179,50 @@
 			<scope>test</scope>
 		</dependency>
 
-
-		<!-- JWT Libraries -->
-		<!-- https://mvnrepository.com/artifact/io.jsonwebtoken/jjwt -->
-		<!--
-		<dependency>
-			<groupId>io.jsonwebtoken</groupId>
-			<artifactId>jjwt</artifactId>
-			<version>0.9.1</version>
-		</dependency>
-		-->
-		<!-- https://mvnrepository.com/artifact/io.jsonwebtoken/jjwt-api -->
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-api</artifactId>
-			<version>0.11.5</version>
+			<version>0.12.6</version>
 		</dependency>
 		<dependency>
 			<groupId>io.jsonwebtoken</groupId>
 			<artifactId>jjwt-impl</artifactId>
-			<version>0.11.5</version>
+			<version>0.12.6</version>
 			<scope>runtime</scope>
 		</dependency>
-		<!-- SCIM -->
-		<!--
 		<dependency>
-			<groupId>com.unboundid.product.scim2</groupId>
-			<artifactId>scim2-sdk-server</artifactId>
-			<version>2.4.0</version>
+		    <groupId>io.jsonwebtoken</groupId>
+		    <artifactId>jjwt-jackson</artifactId>
+		    <version>0.12.6</version>
+		    <scope>runtime</scope>
 		</dependency>
--->
-		<!--  WebAuthN -->
-		<!--
-		<dependency>
-			<groupId>com.yubico</groupId>
-			<artifactId>webauthn-server-core</artifactId>
-			<version>2.5.0</version>
-		</dependency>
--->
-		<!-- GraalVM -->
-		<dependency>
+		
+		
+
+		<!-- https://mvnrepository.com/artifact/org.graalvm.sdk/graal-sdk -->
+<dependency>
 			<groupId>org.graalvm.js</groupId>
 			<artifactId>js</artifactId>
-			<version>23.0.1</version>
+			<version>${graalvm.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.graalvm.js</groupId>
 			<artifactId>js-scriptengine</artifactId>
-			<version>23.0.1</version>
+			<version>${graalvm.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.graalvm.sdk</groupId>
 			<artifactId>graal-sdk</artifactId>
-			<version>23.0.1</version>
+			<version>${graalvm.version}</version>
 		</dependency>
-
 	</dependencies>
 	<build>
 		<testSourceDirectory>${basedir}/src/test/java</testSourceDirectory>
 		<finalName>AccountManagerService7</finalName>
-		<pluginManagement>
-			<plugins>
-				<plugin>
-					<groupId>org.sonarsource.scanner.maven</groupId>
-					<artifactId>sonar-maven-plugin</artifactId>
-					<version>3.9</version>
-				</plugin>
-			</plugins>
-		</pluginManagement>
 		<plugins>
 			<plugin>
 				<artifactId>maven-clean-plugin</artifactId>
-				<version>2.2</version>
+				<version>3.3.2</version>
 				<configuration>
 					<filesets>
 						<fileset>
@@ -275,27 +237,27 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.8.0</version>
+				<version>3.13.0</version>
 				<configuration>
-					<source>24</source>
-					<target>24</target>
+					<source>17</source>
+					<target>17</target>
 					<compilerArguments>
 						<endorseddirs>${endorsed.dir}</endorseddirs>
 					</compilerArguments>
 				</configuration>
 			</plugin>
-			<plugin>
-				<groupId>org.apache.maven.plugins</groupId>
-				<artifactId>maven-war-plugin</artifactId>
-				<version>3.2.0</version>
-				<configuration>
-					<failOnMissingWebXml>false</failOnMissingWebXml>
-				</configuration>
-			</plugin>
+        <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-war-plugin</artifactId>
+            <version>3.4.0</version> <configuration>
+
+            </configuration>
+        </plugin>
+
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-resources-plugin</artifactId>
-				<version>2.7</version>
+				<version>3.3.1</version>
 				<configuration>
 					<encoding>UTF-8</encoding>
 				</configuration>
@@ -303,45 +265,27 @@
 			<plugin>
 				<groupId>org.wildfly.plugins</groupId>
 				<artifactId>wildfly-maven-plugin</artifactId>
-				<version>1.1.0.Alpha2</version>
+				<version>4.2.2.Final</version>
 				<configuration>
 					<hostname>localhost</hostname>
 					<filename>${project.build.finalName}.war</filename>
 				</configuration>
 			</plugin>
 			<plugin>
-				<groupId>org.jboss.as.plugins</groupId>
-				<artifactId>jboss-as-maven-plugin</artifactId>
-				<version>7.1.1.Final</version>
-				<configuration>
-					<hostname>127.0.0.1</hostname>
-					<port>9999</port>
-					<filename>${project.build.finalName}.war</filename>
-				</configuration>
-			</plugin>
-
-			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-surefire-plugin</artifactId>
-				<version>2.22.2</version>
+				<version>3.2.5</version>
 				<dependencies>
-
 					<dependency>
 						<groupId>org.apache.maven.surefire</groupId>
 						<artifactId>surefire-junit47</artifactId>
-						<version>3.1.2</version>
+						<version>3.2.5</version>
 					</dependency>
-
 				</dependencies>
-
 				<configuration>
 					<skipTests>true</skipTests>
 					<excludes>
-						<!--
-						<exclude>**/TestResources.java</exclude>
-					-->
-					</excludes>
-
+						</excludes>
 					<systemProperties>
 						<property>
 							<name>log4j.configurationFile</name>

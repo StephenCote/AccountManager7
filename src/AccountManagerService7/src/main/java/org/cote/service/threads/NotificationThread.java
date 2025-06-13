@@ -2,13 +2,13 @@ package org.cote.service.threads;
 
 import java.util.List;
 
-import javax.websocket.Session;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.sockets.WebSocketService;
+
+import jakarta.websocket.Session;
 
 
 public class NotificationThread extends Threaded {

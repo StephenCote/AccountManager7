@@ -1,11 +1,11 @@
 package org.cote.listeners;
 
-import javax.servlet.ServletContextEvent;
-import javax.servlet.ServletContextListener;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.sockets.WebSocketService;
+
+import jakarta.servlet.ServletContextEvent;
+import jakarta.servlet.ServletContextListener;
 
 public class AccountManagerContextListener implements ServletContextListener{
 	public static final Logger logger = LogManager.getLogger(AccountManagerContextListener.class);

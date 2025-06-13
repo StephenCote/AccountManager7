@@ -5,8 +5,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 import javax.security.auth.login.LoginException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletRequestWrapper;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -15,6 +13,9 @@ import org.cote.accountmanager.data.security.UserPrincipal;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 
 public class AM7RequestWrapper extends HttpServletRequestWrapper {
 	public static final Logger logger = LogManager.getLogger(AM7RequestWrapper.class);

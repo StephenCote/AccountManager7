@@ -26,16 +26,10 @@ package org.cote.servlets;
 import java.io.IOException;
 import java.io.InputStream;
 
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServlet;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
-import org.apache.commons.fileupload.FileItemIterator;
-import org.apache.commons.fileupload.FileItemStream;
-import org.apache.commons.fileupload.FileUploadException;
-import org.apache.commons.fileupload.servlet.ServletFileUpload;
-import org.apache.commons.fileupload.util.Streams;
+import org.apache.commons.fileupload2.core.FileItemInput;
+import org.apache.commons.fileupload2.core.FileItemInputIterator;
+import org.apache.commons.fileupload2.jakarta.servlet6.JakartaServletFileUpload;
+import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -49,6 +43,11 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.StreamUtil;
 import org.cote.service.util.ServiceUtil;
+
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 
 /**
@@ -81,7 +80,7 @@ public class MediaFormServlet extends HttpServlet {
 		boolean bBit = false;
 		
 		// Create a new file upload handler
-		ServletFileUpload upload = new ServletFileUpload();
+		JakartaServletFileUpload upload = new JakartaServletFileUpload();
 		String responseId = null;
 		String name = null;
 		String description = null;
@@ -97,34 +96,34 @@ public class MediaFormServlet extends HttpServlet {
 		logger.info("Parsing ...");
 		// Parse the request
 		try{
-			FileItemIterator iter = upload.getItemIterator(request);
+			FileItemInputIterator iter = upload.getItemIterator(request);
 
 			while (iter.hasNext()) {
-			    FileItemStream item = iter.next();
+			    FileItemInput item = iter.next();
 
 			    String fname = item.getFieldName();
-			    InputStream stream = item.openStream();
+			    InputStream stream = item.getInputStream();
 			    if (item.isFormField()) {
 			    	if(fname.equals("responseId")){
-			    		responseId = Streams.asString(stream);
+			    		responseId = IOUtils.toString(stream);
 			    	}
 			    	else if(fname.equals("description")){
-			    		description = Streams.asString(stream);
+			    		description = IOUtils.toString(stream);
 			    	}
 			    	else if(fname.equals("groupId")){
-			    		groupId = Long.parseLong(Streams.asString(stream));
+			    		groupId = Long.parseLong(IOUtils.toString(stream));
 			    	}
 			    	else if(fname.equals("groupPath")){
-			    		groupPath = Streams.asString(stream);
+			    		groupPath = IOUtils.toString(stream);
 			    	}
 			    	else if(fname.equals("organizationPath")){
-			    		orgPath = Streams.asString(stream);
+			    		orgPath = IOUtils.toString(stream);
 			    	}
 			    	else if(fname.equals(FieldNames.FIELD_NAME)){
-			    		name = Streams.asString(stream);
+			    		name = IOUtils.toString(stream);
 			    	}
 			    	else if(fname.equals(FieldNames.FIELD_ID)){
-			    		id = Long.parseLong(Streams.asString(stream));
+			    		id = Long.parseLong(IOUtils.toString(stream));
 			    	}
 			    } else {
 			    	logger.info("Handle file upload stream");
@@ -134,7 +133,7 @@ public class MediaFormServlet extends HttpServlet {
 			    stream.close();
 			}
 		}
-		catch(FieldException | ValueException | ModelNotFoundException | FactoryException | NumberFormatException | FileUploadException | IndexException | ReaderException | ModelException e){
+		catch(FieldException | ValueException | ModelNotFoundException | FactoryException | NumberFormatException | IndexException | ReaderException | ModelException e){
 			logger.error(e);
 		}
 		

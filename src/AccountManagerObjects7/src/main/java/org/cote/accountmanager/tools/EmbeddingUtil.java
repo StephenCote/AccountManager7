@@ -2,8 +2,8 @@ package org.cote.accountmanager.tools;
 
 import java.util.List;
 
-import javax.ws.rs.ProcessingException;
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.core.MediaType;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

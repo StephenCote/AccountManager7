@@ -2,12 +2,12 @@ package org.cote.sockets;
 
 import java.security.Principal;
 
-import javax.websocket.HandshakeResponse;
-import javax.websocket.server.HandshakeRequest;
-import javax.websocket.server.ServerEndpointConfig;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+
+import jakarta.websocket.HandshakeResponse;
+import jakarta.websocket.server.HandshakeRequest;
+import jakarta.websocket.server.ServerEndpointConfig;
 
 public class WebSocketSecurityConfigurator extends ServerEndpointConfig.Configurator {
 	public static final Logger logger = LogManager.getLogger(WebSocketSecurityConfigurator.class);

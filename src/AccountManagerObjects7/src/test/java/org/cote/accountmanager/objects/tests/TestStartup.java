@@ -80,11 +80,11 @@ public class TestStartup extends BaseTest {
 			
 			BaseRecord tok = mf.newInstance(ModelNames.MODEL_TOKEN, testMember1, null, ParameterUtil.parameters("""
 					{
-						FieldNames.FIELD_NAME: FieldNames.FIELD_NAME,
+						"name": "name",
 						"value": "Demo Token"
 					},
 					{
-						FieldNames.FIELD_NAME: "expirySeconds",
+						"name": "expirySeconds",
 						"value": 30
 					}
 			"""));
@@ -92,7 +92,7 @@ public class TestStartup extends BaseTest {
 			
 			BaseRecord dok = mf.template(ModelNames.MODEL_DATA, """
 					{
-						FieldNames.FIELD_NAME: "Demo Data",
+						"name": "Demo Data",
 						"contentType": "text/plain"
 						
 					}

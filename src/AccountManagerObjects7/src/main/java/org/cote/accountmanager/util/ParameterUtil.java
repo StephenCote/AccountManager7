@@ -61,6 +61,8 @@ public class ParameterUtil {
 			parameterConstruct = "{\"parameters\": [" + parameterConstruct.trim() + "]}";
 		}
 		
+		logger.info(parameterConstruct);
+		
 		return new ParameterList(RecordFactory.importRecord(ModelNames.MODEL_PARAMETER_LIST, parameterConstruct));
 	}
 	
