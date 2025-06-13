@@ -35,9 +35,11 @@ public class RestServiceConfig extends ResourceConfig {
 
 	public RestServiceConfig() {
 		logger.info("Starting up RestServiceConfig...");
-
+		packages("org.cote.rest.services");
 		register(RestServiceEventListener.class);
 		register(RolesAllowedDynamicFeature.class);
+		
+		
 	}
 
 	/*

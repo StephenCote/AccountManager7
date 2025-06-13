@@ -13,16 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import javax.servlet.http.HttpServlet;
-import javax.websocket.CloseReason;
-import javax.websocket.OnClose;
-import javax.websocket.OnError;
-import javax.websocket.OnMessage;
-import javax.websocket.OnOpen;
-import javax.websocket.RemoteEndpoint;
-import javax.websocket.Session;
-import javax.websocket.server.ServerEndpoint;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.data.security.UserPrincipal;
@@ -47,11 +37,20 @@ import org.cote.accountmanager.schema.type.SpoolBucketEnumType;
 import org.cote.accountmanager.schema.type.SpoolNameEnumType;
 import org.cote.accountmanager.schema.type.SpoolStatusEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
-import org.cote.accountmanager.security.AM7SigningKeyResolver;
+import org.cote.accountmanager.security.AM7SigningKeyLocator;
 import org.cote.accountmanager.security.TokenService;
 import org.cote.accountmanager.util.JSONUtil;
 
 import io.jsonwebtoken.Jwts;
+import jakarta.servlet.http.HttpServlet;
+import jakarta.websocket.CloseReason;
+import jakarta.websocket.OnClose;
+import jakarta.websocket.OnError;
+import jakarta.websocket.OnMessage;
+import jakarta.websocket.OnOpen;
+import jakarta.websocket.RemoteEndpoint;
+import jakarta.websocket.Session;
+import jakarta.websocket.server.ServerEndpoint;
 
 @ServerEndpoint(value = "/wss", configurator = WebSocketSecurityConfigurator.class)
 public class WebSocketService  extends HttpServlet {
@@ -132,7 +131,7 @@ public class WebSocketService  extends HttpServlet {
 			if(user == null) {
 				String token = msg.get(FieldNames.FIELD_TOKEN);
 				if(token != null) {
-			    	String urn = Jwts.parserBuilder().setSigningKeyResolver(new AM7SigningKeyResolver()).build().parseClaimsJws(token).getBody().getId();
+			    	String urn = Jwts.parser().keyLocator(new AM7SigningKeyLocator()).build().parseSignedClaims(token).getPayload().getId();
 			    	user = IOSystem.getActiveContext().getRecordUtil().getRecordByUrn(null, ModelNames.MODEL_USER, urn);
 			    	if(user != null) {
 			    		logger.info("Register user by token");

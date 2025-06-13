@@ -265,7 +265,7 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			}
 
 			AM7LoginModule.setRoleMap(roleMap);
-		} catch (SystemException e) {
+		} catch (Exception e) {
 			logger.error(e);
 		}
 	}
