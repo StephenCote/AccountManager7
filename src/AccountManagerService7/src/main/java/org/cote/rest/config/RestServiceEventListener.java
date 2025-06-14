@@ -63,11 +63,9 @@ public class RestServiceEventListener implements ApplicationEventListener {
     public void onEvent(ApplicationEvent event) {
         switch (event.getType()) {
             case INITIALIZATION_FINISHED:
-            		logger.info("Init");
                 	startup();
                 break;
             case DESTROY_FINISHED:
-            		logger.info("Destroy");
             		shutdown();
             	break;
 		default:

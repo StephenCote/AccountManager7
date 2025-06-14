@@ -28,36 +28,13 @@ import org.apache.logging.log4j.Logger;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.glassfish.jersey.server.filter.RolesAllowedDynamicFeature;
 
-import jakarta.servlet.ServletContext;
-
 public class RestServiceConfig extends ResourceConfig {
 	private static final Logger logger = LogManager.getLogger(RestServiceConfig.class);
 
 	public RestServiceConfig() {
-		logger.info("Starting up RestServiceConfig...");
 		packages("org.cote.rest.services");
 		register(RestServiceEventListener.class);
 		register(RolesAllowedDynamicFeature.class);
-		
-		
 	}
-
-	/*
-	public RestServiceConfig(ServletContext servletContext) {
-		logger.info("Starting up RestServiceConfig...");
-
-		// register(new RestServiceEventListener(RestContextHolder.getServletContext()));
-		ServletContext ctx = servletContext;
-		if(ctx == null) {
-			ctx = RestContextHolder.getServletContext();
-		}
-		//register(new RestServiceEventListener(ctx));
-		register(RestServiceEventListener.class);
-		register(RolesAllowedDynamicFeature.class);
-		
-		// packages("org.cote.accountmanager.rest.services");
-		
-	}
-	*/
 
 }

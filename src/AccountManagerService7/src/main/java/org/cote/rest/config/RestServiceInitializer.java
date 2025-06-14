@@ -16,11 +16,6 @@ public class RestServiceInitializer implements ServletContainerInitializer {
 	
     @Override
     public void onStartup(Set<Class<?>> c, ServletContext ctx) throws ServletException {
-    		System.out.println("DEBUG INIT TEST");
-    		if(ctx == null) {
-	    		// logger.error("ServletContext is null in RestServiceInitializer.onStartup()");
-	    	}
-	    	// logger.info("Configure RestServiceConfig...");
-    		//RestServiceConfig cfg = new RestServiceConfig(ctx);
+		logger.info("Initializing container ...");
     }
 }
