@@ -42,7 +42,7 @@ public class ThumbnailUtil {
 		return true;
 	}
 	
-	public static BaseRecord getCreateThumbnail(BaseRecord irecord, int width, int height) throws IndexException, ReaderException, FactoryException, IOException, FieldException, ValueException, ModelNotFoundException {
+	public static synchronized BaseRecord getCreateThumbnail(BaseRecord irecord, int width, int height) throws IndexException, ReaderException, FactoryException, IOException, FieldException, ValueException, ModelNotFoundException {
 		//OrganizationContext oct = ioContext.getOrganizationContext(record.get(FieldNames.FIELD_ORGANIZATION_PATH), null);
 		if(irecord == null) {
 			logger.error("Record is null");

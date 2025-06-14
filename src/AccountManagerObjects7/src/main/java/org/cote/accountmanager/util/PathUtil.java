@@ -55,7 +55,7 @@ public abstract class PathUtil implements IPath {
 	public void setTrace(boolean trace) {
 		this.trace = trace;
 	}
-	public BaseRecord findPath(BaseRecord owner, String model, String path, String type, long organizationId) {
+	public synchronized BaseRecord findPath(BaseRecord owner, String model, String path, String type, long organizationId) {
 		return makePath(owner, model, path, type, organizationId, false);
 	}
 	
