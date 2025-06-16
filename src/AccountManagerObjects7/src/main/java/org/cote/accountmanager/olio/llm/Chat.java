@@ -975,7 +975,7 @@ public class Chat {
 		}
 
 		int mark = ((Long)req.getMessages().stream().filter(m -> userRole.equals(m.getRole())).count()).intValue();
-		if ( (remind % 2) != (mark % 2)) {
+		if ( (keyFrameEvery % 2) != (mark % 2)) {
 			mark++;
 		}
 
@@ -1003,6 +1003,7 @@ public class Chat {
 			if ( (remind % 2) != (mark % 2)) {
 				mark++;
 			}
+			logger.info("Remind: " + remind + " " + mark + " = " + (mark % remind));
 
 			if (promptConfig != null && (mark % remind) == 0) {
 				/// Add the assistant warning as the last message
