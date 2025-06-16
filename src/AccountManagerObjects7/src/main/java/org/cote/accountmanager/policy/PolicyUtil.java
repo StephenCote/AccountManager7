@@ -713,7 +713,7 @@ public class PolicyUtil {
 				}
 				else if(resource.hasField(FieldNames.FIELD_GROUP_PATH) && resource.get(FieldNames.FIELD_GROUP_PATH) != null) {
 					dbgRoute = "Resolve resource by groupPath: " + resource.get(FieldNames.FIELD_GROUP_PATH);
-					grp = pathUtil.findPath(null, ModelNames.MODEL_GROUP, resource.get(FieldNames.FIELD_GROUP_PATH), GroupEnumType.DATA.toString(), resource.get(FieldNames.FIELD_ORGANIZATION_ID));
+					grp = pathUtil.findPath(null, ModelNames.MODEL_GROUP, resource.get(FieldNames.FIELD_GROUP_PATH), GroupEnumType.DATA.toString().intern(), resource.get(FieldNames.FIELD_ORGANIZATION_ID));
 				}
 
 				if(grp != null) {

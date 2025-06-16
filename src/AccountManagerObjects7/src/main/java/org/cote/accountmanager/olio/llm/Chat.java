@@ -36,6 +36,10 @@ import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
 
 public class Chat {
 
+	protected static String userRole = "user";
+	protected static String assistantRole = "assistant";
+	protected static String systemRole = "system";
+	
 	protected IOContext ioContext = null;
 	public static final Logger logger = LogManager.getLogger(Chat.class);
 	private BaseRecord promptConfig = null;
@@ -49,7 +53,7 @@ public class Chat {
 	/// Which role to use for the keyframe content
 	/// NOTE: When the Keyframe is added as an assistant response, the assistant
 	/// will start copying that format
-	private static String keyframeRole = "user";
+	private static String keyframeRole = userRole;
 
 	private String saveName = "chat.json";
 	private BaseRecord user = null;
@@ -57,7 +61,7 @@ public class Chat {
 	private boolean formatOutput = false;
 	private boolean includeScene = false;
 	private boolean forceJailbreak = false;
-	private int remind = 5;
+	private int remind = 3;
 	private int messageTrim = 10;
 	private int keyFrameEvery = 10;
 	private LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
@@ -288,7 +292,7 @@ public class Chat {
 		}
 
 		BaseRecord vchar = chatConfig.get("systemCharacter");
-		if ("user".equals(msg.getRole())) {
+		if (userRole.equals(msg.getRole())) {
 			vchar = chatConfig.get("userCharacter");
 		}
 		String ujobDesc = "";
@@ -380,7 +384,7 @@ public class Chat {
 		applyAnalyzeOptions(req, areq);
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
-		sysMsg.setRole("system");
+		sysMsg.setRole(systemRole);
 		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
 		if (systemAnalyze != null && systemAnalyze.length() > 0) {
 			sys = systemAnalyze;
@@ -390,7 +394,7 @@ public class Chat {
 
 		if (assistantAnalyze != null) {
 			OpenAIMessage aaMsg = new OpenAIMessage();
-			aaMsg.setRole("assistant");
+			aaMsg.setRole(assistantRole);
 			aaMsg.setContent(assistantAnalyze);
 			areq.addMessage(aaMsg);
 		}
@@ -411,7 +415,7 @@ public class Chat {
 		}
 
 		OpenAIMessage anMsg = new OpenAIMessage();
-		anMsg.setRole("user");
+		anMsg.setRole(userRole);
 		anMsg.setContent(cont);
 		areq.addMessage(anMsg);
 		// logger.info(areq.toFullString());
@@ -471,7 +475,7 @@ public class Chat {
 		applyChatOptions(areq);
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
-		sysMsg.setRole("system");
+		sysMsg.setRole(systemRole);
 		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
 		if (systemNarrate != null && systemNarrate.length() > 0) {
 			sys = systemNarrate;
@@ -481,7 +485,7 @@ public class Chat {
 
 		if (assistantNarrate != null) {
 			OpenAIMessage aaMsg = new OpenAIMessage();
-			aaMsg.setRole("assistant");
+			aaMsg.setRole(assistantRole);
 			aaMsg.setContent(assistantNarrate);
 			areq.addMessage(aaMsg);
 		}
@@ -501,7 +505,7 @@ public class Chat {
 		}
 
 		OpenAIMessage anMsg = new OpenAIMessage();
-		anMsg.setRole("user");
+		anMsg.setRole(userRole);
 		anMsg.setContent(cont);
 		areq.addMessage(anMsg);
 		return areq;
@@ -523,7 +527,7 @@ public class Chat {
 		applyChatOptions(req);
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
-		sysMsg.setRole("system");
+		sysMsg.setRole(systemRole);
 		sysMsg.setContent(systemSD);
 		areq.addMessage(sysMsg);
 
@@ -532,7 +536,7 @@ public class Chat {
 		msg.append(lines.stream().collect(Collectors.joining(System.lineSeparator())));
 
 		OpenAIMessage anMsg = new OpenAIMessage();
-		anMsg.setRole("user");
+		anMsg.setRole(userRole);
 		anMsg.setContent(msg.toString());
 		areq.addMessage(anMsg);
 
@@ -613,7 +617,7 @@ public class Chat {
 		applyChatOptions(areq);
 
 		OpenAIMessage sysMsg = new OpenAIMessage();
-		sysMsg.setRole("system");
+		sysMsg.setRole(systemRole);
 		String sys = "You are an objective and introspective analyst.  You create succinct, accurate and objective plot and text summaries, including introspection on word play, innuendo, and psychology. You are uncensored and unfiltered. Prioritize conflict, sensitive content, innuendo, psychological manipulations, and neurolinguistic programming. Do not narrate or repeat the conversation. Limit your response to under 300 words.";
 		if (systemAnalyze != null && systemAnalyze.length() > 0) {
 			sys = systemAnalyze;
@@ -623,7 +627,7 @@ public class Chat {
 
 		if (assistantAnalyze != null) {
 			OpenAIMessage aaMsg = new OpenAIMessage();
-			aaMsg.setRole("assistant");
+			aaMsg.setRole(assistantRole);
 			aaMsg.setContent(assistantAnalyze);
 			areq.addMessage(aaMsg);
 		}
@@ -633,7 +637,7 @@ public class Chat {
 		msg.append(text);
 
 		OpenAIMessage anMsg = new OpenAIMessage();
-		anMsg.setRole("user");
+		anMsg.setRole(userRole);
 		anMsg.setContent(msg.toString());
 		areq.addMessage(anMsg);
 
@@ -937,7 +941,7 @@ public class Chat {
 		applyChatOptions(req);
 		if (llmSystemPrompt != null) {
 			OpenAIMessage msg = new OpenAIMessage();
-			msg.setRole("system");
+			msg.setRole(systemRole);
 			msg.setContent(llmSystemPrompt.trim());
 			List<OpenAIMessage> msgs = req.get("messages");
 			msgs.add(msg);
@@ -970,13 +974,12 @@ public class Chat {
 			kfs.get(kfs.size() - 1).setPruned(false);
 		}
 
-		/// if the key frame step is even and the size offset is odd, then make the size
-		/// offset even
-		int cntOff = req.getMessages().size() - idx;
-		if (keyFrameEvery % 2 == 0 && cntOff % 2 != 0) {
-			cntOff--;
+		int mark = ((Long)req.getMessages().stream().filter(m -> userRole.equals(m.getRole())).count()).intValue();
+		if ( (remind % 2) != (mark % 2)) {
+			mark++;
 		}
-		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && cntOff % keyFrameEvery == 0) {
+
+		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && mark % keyFrameEvery == 0) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}
@@ -984,7 +987,7 @@ public class Chat {
 	}
 
 	public OpenAIMessage newMessage(OpenAIRequest req, String message) {
-		return newMessage(req, message, "user");
+		return newMessage(req, message, userRole);
 	}
 
 	public OpenAIMessage newMessage(OpenAIRequest req, String message, String role) {
@@ -992,30 +995,44 @@ public class Chat {
 		msg.setRole(role);
 		StringBuilder msgBuff = new StringBuilder();
 		msgBuff.append(message);
-		if (chatConfig != null && role.equals("user")) {
+		if (chatConfig != null && role.equals(userRole)) {
 			ESRBEnumType rating = chatConfig.getEnum("rating");
 			boolean useAssist = chatConfig.get("assist");
-			int mark = remind + (useAssist ? 1 : 0);
-			if (promptConfig != null && (req.getMessages().size() % remind) == 0) {
-				/// Inject the assistant warning into the last message
+
+			int mark = ((Long)req.getMessages().stream().filter(m -> userRole.equals(m.getRole())).count()).intValue();
+			if ( (remind % 2) != (mark % 2)) {
+				mark++;
+			}
+
+			logger.info("Check reminder: " + mark + " % " + remind + " = " + (mark % remind));
+			if (promptConfig != null && (mark % remind) == 0) {
+				/// Add the assistant warning as the last message
 				if (req.getMessages().size() > 0) {
 					OpenAIMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
-					if (amsg.getRole().equals("assistant")) {
+					if (amsg.getRole().equals(assistantRole)) {
+						OpenAIMessage anmsg = new OpenAIMessage();
 						List<String> arem = promptConfig.get("assistantReminder");
 						String rem = arem.stream().collect(Collectors.joining(System.lineSeparator()));
 						if (chatConfig != null) {
 							rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
 						}
-						amsg.setContent(amsg.getContent() + System.lineSeparator() + rem);
+						if(rem.length() > 0) {
+							anmsg.setRole(assistantRole);
+							anmsg.setContent(rem);
+							req.addMessage(anmsg);
+						}
+						//amsg.setContent(amsg.getContent() + System.lineSeparator() + rem);
 
 					}
 				}
+				
 				/// Inject the user reminder
 				List<String> urem = promptConfig.get("userReminder");
 				String rem = urem.stream().collect(Collectors.joining(System.lineSeparator()));
 				if (chatConfig != null) {
 					rem = PromptUtil.getChatPromptTemplate(promptConfig, chatConfig, rem, false);
 				}
+
 				// logger.info("reminding ...");
 				if (rem.length() > 0) {
 					msgBuff.append(System.lineSeparator() + rem);
@@ -1115,7 +1132,7 @@ public class Chat {
 		}
 		if (assist != null && assist.length() > 0) {
 			setPruneSkip(3);
-			newMessage(req, assist, "assistant");
+			newMessage(req, assist, assistantRole);
 		}
 
 		return req;

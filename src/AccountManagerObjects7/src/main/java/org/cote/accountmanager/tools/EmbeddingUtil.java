@@ -2,9 +2,6 @@ package org.cote.accountmanager.tools;
 
 import java.util.List;
 
-import jakarta.ws.rs.ProcessingException;
-import jakarta.ws.rs.core.MediaType;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FieldException;
@@ -16,6 +13,9 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.util.ClientUtil;
+
+import jakarta.ws.rs.ProcessingException;
+import jakarta.ws.rs.core.MediaType;
 
 public class EmbeddingUtil {
 	public static final Logger logger = LogManager.getLogger(EmbeddingUtil.class);

@@ -196,7 +196,7 @@ public class MediaUtil {
 			String objPath, String objName) throws IOException {
 
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().findPath(user, ModelNames.MODEL_GROUP, objPath,
-				GroupEnumType.DATA.toString(), org.getOrganizationId());
+				GroupEnumType.DATA.toString().intern(), org.getOrganizationId());
 		if (dir == null) {
 			AuditUtil.closeAudit(audit, ResponseEnumType.INVALID,
 					"Path '" + objPath + "' is invalid for "

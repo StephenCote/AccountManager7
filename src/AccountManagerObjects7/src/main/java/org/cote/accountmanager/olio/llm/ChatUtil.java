@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import jakarta.ws.rs.ProcessingException;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -52,6 +50,8 @@ import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
+
+import jakarta.ws.rs.ProcessingException;
 
 public class ChatUtil {
 	
@@ -218,8 +218,8 @@ public class ChatUtil {
 		// req.setSystem(sysPrompt);
 		
 		Chat c = new Chat();
-		c.newMessage(req, uPrompt, "user");
-		c.newMessage(req, asPrompt, "assistant");
+		c.newMessage(req, uPrompt, Chat.userRole);
+		c.newMessage(req, asPrompt, Chat.assistantRole);
 
 		c.newMessage(req, prompt);
 		OpenAIResponse rep = c.chat(req);
@@ -498,7 +498,7 @@ public class ChatUtil {
 		
 		Chat c = new Chat();
 		c.newMessage(req, userOutfit);
-		c.newMessage(req, assistantOutfit, "assistant");
+		c.newMessage(req, assistantOutfit, Chat.assistantRole);
 		c.newMessage(req, prompt);
 		// logger.info(JSONUtil.exportObject(req));
 		OpenAIResponse rep = c.chat(req);
@@ -769,7 +769,7 @@ public class ChatUtil {
 					}
 					*/
 					String cmd = summarizeUserCommand + prevSum + contentBuffer.toString();
-					chat.newMessage(req, cmd, "user");
+					chat.newMessage(req, cmd, Chat.userRole);
 	
 					OpenAIResponse resp = null;
 					if(remote) {
@@ -809,7 +809,7 @@ public class ChatUtil {
 					if (summaries.size() > 1) {
 						String userCommand = "Create a summary from the following summaries using 1000 words or less:" + System.lineSeparator() + summaries.stream().collect(Collectors.joining(System.lineSeparator()));
 						OpenAIRequest req = chat.getChatPrompt();
-						chat.newMessage(req, userCommand, "user");
+						chat.newMessage(req, userCommand, Chat.userRole);
 						OpenAIResponse resp = null;
 						if(remote) {
 							resp = chat.checkRemote(req, null, false);
@@ -1104,7 +1104,7 @@ public class ChatUtil {
 				continue;
 			}
 			String name = null;
-			boolean isUser = msg.getRole().equals("user");
+			boolean isUser = msg.getRole().equals(Chat.userRole);
 			if (chatConfig != null) {
 				String parm = "systemCharacter";
 				if (isUser)
@@ -1112,7 +1112,7 @@ public class ChatUtil {
 				name = chatConfig.get(parm + ".firstName");
 			}
 			String charPos = "#1";
-			if (msg.getRole().equals("user")) {
+			if (msg.getRole().equals(Chat.userRole)) {
 				charPos = "#2";
 			}
 			buff.add("(" + charPos + (name != null ? " " + name : "") + "): " + cont);

@@ -515,7 +515,7 @@
           }
 
         }
-        if(!editMode && cnt.replace(/^\s*/).replace(/\s*$/).length == 0){
+        if(!editMode && cnt.trim().length == 0){
           return "";
         }
 
