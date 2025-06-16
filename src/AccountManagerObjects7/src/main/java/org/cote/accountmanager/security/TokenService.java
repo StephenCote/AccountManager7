@@ -460,11 +460,13 @@ public class TokenService {
 			return null;
 		}
 		
+		JwtBuilder builder = Jwts.builder();
+		builder.header().keyId(user.get(FieldNames.FIELD_URN)).and();
 		ClaimsBuilder claims = Jwts.claims();
 		claims.add(FieldNames.FIELD_OBJECT_ID, (String)user.get(FieldNames.FIELD_OBJECT_ID));
 		claims.add(FieldNames.FIELD_ORGANIZATION_PATH, (String)user.get(FieldNames.FIELD_ORGANIZATION_PATH));
 		
-		return Jwts.builder()
+		return builder
 		  //.setId(UUID.randomUUID().toString())
 		  .claims(claims.build())
 		  .subject(user.get(FieldNames.FIELD_NAME))

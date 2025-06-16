@@ -9,6 +9,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.model.field.CryptoBean;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.util.JSONUtil;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Header;
@@ -19,6 +20,7 @@ public class AM7SigningKeyLocator implements Locator<Key>{
 
 	public static final Logger logger = LogManager.getLogger(AM7SigningKeyLocator.class);
 
+	/*
 	public Key resolveSigningKey(JwsHeader arg0, Claims arg1) {
 		String urn = arg1.getId();
 		String modelName = ModelNames.MODEL_USER;
@@ -57,9 +59,12 @@ public class AM7SigningKeyLocator implements Locator<Key>{
 				logger.error("Failed to retrieve persona by urn " + urn);
 			}
 		}
+		else {
+			logger.error("No URN provided in claims for key resolution");
+		}
 		return key;
 	}
-
+	*/
 
 	public Key resolveSigningKey(JwsHeader arg0, String arg1) {
 		return null;
@@ -96,6 +101,7 @@ public class AM7SigningKeyLocator implements Locator<Key>{
 				CryptoBean bean = TokenService.getCreateCipher(persona);
 				if(bean != null && bean.getSecretKey() != null){
 					key = bean.getSecretKey();
+					logger.info("Retrieved key for " + urn);
 				}
 				else {
 					logger.error("Invalid security key for " + urn);
@@ -104,6 +110,10 @@ public class AM7SigningKeyLocator implements Locator<Key>{
 			else {
 				logger.error("Failed to retrieve persona by urn " + urn);
 			}
+		}
+		else {
+			logger.error("No URN provided in header for key resolution");
+			logger.error(JSONUtil.exportObject(header));
 		}
 		return key;
 		
