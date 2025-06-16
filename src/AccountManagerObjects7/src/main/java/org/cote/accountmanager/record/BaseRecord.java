@@ -494,6 +494,8 @@ public abstract class BaseRecord {
 	   FieldType f = FieldFactory.zoneTimeFieldType(name);
 	   updateField(f, val);
    }
+   
+   /// TODO: DEPRECATE THIS
    public void convertField(String name, FieldEnumType type) throws FieldException, ValueException, ModelNotFoundException {
 	   if(!hasField(name)) {
 		   throw new FieldException(String.format(FieldException.FIELD_NOT_FOUND, model, name));
@@ -531,6 +533,7 @@ public abstract class BaseRecord {
 
 	   updateField(newField, null, true);
    }
+   
    private <T> void updateField(FieldType f, T val) throws ValueException, FieldException, ModelNotFoundException {
 	   updateField(f, val, false);
    }

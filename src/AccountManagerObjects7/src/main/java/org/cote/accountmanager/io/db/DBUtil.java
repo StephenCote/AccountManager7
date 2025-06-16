@@ -728,7 +728,7 @@ $$;""";
 		if(fschema.isReferenced()) {
 			return null;
 		}
-		FieldEnumType fet = FieldEnumType.valueOf(fschema.getType().toUpperCase());
+		FieldEnumType fet = FieldEnumType.valueOf(fschema.getType().intern().toUpperCase());
 		String dataType = getDataType(fschema, fet);
 		if(dataType == null) {
 			return null;

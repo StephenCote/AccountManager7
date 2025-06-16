@@ -211,7 +211,7 @@ public class RecordFactory {
 	}
 
 	public static FieldType newFieldInstance(FieldType field) {
-		FieldType nft = FieldFactory.fieldByType(field.getValueType(), field.getName());
+		FieldType nft = FieldFactory.fieldByType(field.getValueType(), field.getName().intern());
 		nft.getFieldValueType().setBaseClass(field.getFieldValueType().getBaseClass());
 		nft.getFieldValueType().setBaseModel(field.getFieldValueType().getBaseModel());
 		nft.getFieldValueType().setBaseType(field.getFieldValueType().getBaseType());
@@ -246,10 +246,10 @@ public class RecordFactory {
 		List<FieldType> fields = new CopyOnWriteArrayList<>();
 		int errors = 0;
 		for(FieldSchema lft : lmod.getFields()) {
-			String typev = lft.getType().toUpperCase();
+			String typev = lft.getType().intern().toUpperCase();
 			if(EnumUtils.isValidEnum(FieldEnumType.class, typev)) {
 				FieldEnumType type = FieldEnumType.valueOf(typev);
-				FieldType f = FieldFactory.fieldByType(type, lft.getName());
+				FieldType f = FieldFactory.fieldByType(type, lft.getName().intern());
 				if(f != null) {
 					if(lft.getDefaultValue() != null) {
 						try {
@@ -264,8 +264,8 @@ public class RecordFactory {
 						}
 					}
 					f.getFieldValueType().setBaseClass(lft.getBaseClass());
-					f.getFieldValueType().setBaseModel(lft.getBaseModel());
-					f.getFieldValueType().setBaseType(lft.getBaseType());
+					f.getFieldValueType().setBaseModel(lft.getBaseModel() != null ? lft.getBaseModel().intern() : null);
+					f.getFieldValueType().setBaseType(lft.getBaseType() != null ? lft.getBaseType().intern() : null);
 					fields.add(f);
 				}
 				else {

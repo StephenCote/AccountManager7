@@ -100,7 +100,7 @@ public class StatementUtil {
 			for(FieldSchema fs : ms.getFields()) {
 				if(fs.isForeign() && fs.getBaseModel() != null) {
 					/// Direct foreign key - this value would be deleted along with the record
-					if(model.equals(rmodel) && fs.getType().toUpperCase().equals(FieldEnumType.MODEL.toString())) {
+					if(model.equals(rmodel) && fs.getType().intern().toUpperCase().equals(FieldEnumType.MODEL.toString())) {
 						// Note: there's the possibility that orphans would be left
 					}
 					/// Foreign key references from other record models
@@ -560,18 +560,18 @@ public class StatementUtil {
 			if(fs.isVirtual() || fs.isEphemeral() || (fs.isReferenced() && !followRef) || (fs.isForeign() && !followRef)) {
 				continue;
 			}
-			
+			String fsType = fs.getType().intern().toUpperCase();
 			if((followRef && fs.isFollowReference()) || fs.isIdentity() || (schema.isReferenced() && isReferenceField(fs))) {
 				if(fs.isReferenced()) {
 					logger.warn("**** Handle deep reference for " + model + "." + fs.getName());
 					cols.add(getInnerReferenceSelectTemplate(subQuery, fs));
 					fields.add(fs.getName());
 				}
-				else if(fs.isForeign() && fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
+				else if(fs.isForeign() && fsType.equals(FieldEnumType.LIST.toString())) {
 					cols.add(getInnerSelectTemplate(subQuery, fs, schema.isFollowReference(), true));
 					fields.add(fs.getName());
 				}
-				else if(fs.getType().toUpperCase().equals(FieldEnumType.LIST.toString())) {
+				else if(fsType.equals(FieldEnumType.LIST.toString())) {
 					if(util.getConnectionType() == ConnectionEnumType.H2) {
 						cols.add(salias + "." + util.getColumnName(fs.getName()) + " format json");
 					}
@@ -584,7 +584,7 @@ public class StatementUtil {
 					fields.add(fs.getName());
 				}
 				
-				else if(fs.getType().toUpperCase().equals(FieldEnumType.MODEL.toString())){
+				else if(fsType.equals(FieldEnumType.MODEL.toString())){
 					cols.add(getInnerSelectTemplate(subQuery, fs, true, true));
 					fields.add(fs.getName());
 				}
@@ -592,7 +592,7 @@ public class StatementUtil {
 				else {
 					
 					String colName = salias + "." + util.getColumnName(fs.getName());
-					if(fs.getType().toUpperCase().equals(FieldEnumType.BLOB.toString())) {
+					if(fsType.equals(FieldEnumType.BLOB.toString())) {
 						if(util.getConnectionType() == ConnectionEnumType.POSTGRE) {
 							colName = "encode(" + colName + ",'base64')";
 						}

@@ -163,7 +163,7 @@ public abstract class RecordReader extends RecordTranslator implements IReader {
 									(f.getValueType() == FieldEnumType.ENUM && "UNKNOWN".equals(rec.get(f.getName())))
 									
 								){
-									if(fs.getType().toUpperCase().equals(FieldEnumType.FLEX.toString())) {
+									if(fs.getType().intern().toUpperCase().equals(FieldEnumType.FLEX.toString())) {
 										rec.setFlex(f.getName(), frec.get(f.getName()));
 									}
 									else {
