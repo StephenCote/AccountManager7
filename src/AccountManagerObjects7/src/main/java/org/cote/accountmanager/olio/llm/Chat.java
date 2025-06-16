@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import jakarta.ws.rs.core.MediaType;
-
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
@@ -33,6 +31,8 @@ import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.cote.accountmanager.util.VectorUtil.ChunkEnumType;
+
+import jakarta.ws.rs.core.MediaType;
 
 public class Chat {
 
@@ -1004,7 +1004,6 @@ public class Chat {
 				mark++;
 			}
 
-			logger.info("Check reminder: " + mark + " % " + remind + " = " + (mark % remind));
 			if (promptConfig != null && (mark % remind) == 0) {
 				/// Add the assistant warning as the last message
 				if (req.getMessages().size() > 0) {
@@ -1021,8 +1020,6 @@ public class Chat {
 							anmsg.setContent(rem);
 							req.addMessage(anmsg);
 						}
-						//amsg.setContent(amsg.getContent() + System.lineSeparator() + rem);
-
 					}
 				}
 				
@@ -1039,9 +1036,6 @@ public class Chat {
 				} else {
 					logger.warn("Reminder template is empty.");
 				}
-			} else {
-				// logger.info("Don't remind because " + (chatConfig == null) + "/" +
-				// (promptConfig == null) + "/" + (req.getMessages().size() % remind));
 			}
 		}
 		msg.setContent(msgBuff.toString());

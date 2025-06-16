@@ -30,7 +30,6 @@ public class PromptUtil {
 	public static final Logger logger = LogManager.getLogger(PromptUtil.class);
 	
 	private static SecureRandom rand = new SecureRandom();
-	
 	private static Pattern locationName = Pattern.compile("\\$\\{location.name\\}");
 	private static Pattern locationTerrain = Pattern.compile("\\$\\{location.terrain\\}");
 	private static Pattern locationTerrains = Pattern.compile("\\$\\{location.terrains\\}");
@@ -106,14 +105,14 @@ public class PromptUtil {
 	}
 
 	public static String getSystemChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("system")).stream().collect(Collectors.joining(System.lineSeparator())));
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get(Chat.systemRole)).stream().collect(Collectors.joining(System.lineSeparator())));
 	}
 	public static String getUserChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("user")).stream().collect(Collectors.joining(System.lineSeparator())), true);
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get(Chat.userRole)).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
 
 	public static String getAssistChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
-		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get("assistant")).stream().collect(Collectors.joining(System.lineSeparator())), true);
+		return getChatPromptTemplate(promptConfig, chatConfig, ((List<String>)promptConfig.get(Chat.assistantRole)).stream().collect(Collectors.joining(System.lineSeparator())), true);
 	}
 	
 	public static String getSystemNarrateTemplate(BaseRecord promptConfig, BaseRecord chatConfig) {
@@ -202,6 +201,260 @@ public class PromptUtil {
 		return null;
 	}
 	
+	public static String getChatPromptTemplatePLACEHOLDER(BaseRecord promptConfig, BaseRecord chatConfig, String templ, boolean firstPerson) {
+		if(promptConfig == null) {
+			logger.error("Prompt configuration is null");
+			return null;
+		}
+		if(chatConfig == null) {
+			// logger.info("No chat configuration provided");
+			return templ;
+		}
+		
+	    PromptBuilderContext ctx = new PromptBuilderContext(promptConfig, chatConfig, templ, firstPerson);
+	    
+	    buildRaceReplacements(ctx);
+	    buildSceneReplacements(ctx);
+	    buildEpisodeReplacements(ctx);
+	    buildRatingNlpConsentReplacements(ctx);
+	    buildPronounAgeTradeReplacements(ctx);
+	    buildRatingReplacements(ctx);
+	    buildCharacterDescriptionReplacements(ctx);
+	    return ctx.template.trim();
+	
+	}
+	
+	private static void buildRaceReplacements(PromptBuilderContext ctx) {
+		String asupp = "";
+		String srace = "";
+		String urace = "";
+		List<BaseRecord> races = ctx.promptConfig.get("races");
+		List<String> sysRaces = ctx.sysProf.getRace();
+
+		if(sysRaces.contains("L") || sysRaces.contains("S") || sysRaces.contains("V") || sysRaces.contains("R") || sysRaces.contains("W") || sysRaces.contains("X") || sysRaces.contains("Y") || sysRaces.contains("Z")) {
+			Optional<BaseRecord> osupp = races.stream().filter(r -> sysRaces.contains(r.get("raceType"))).findFirst();
+			if(osupp.isPresent()) {
+				srace = composeTemplate(osupp.get().get(OlioFieldNames.FIELD_RACE));
+			}
+		}
+		List<String> usrRaces = ctx.usrProf.getRace();
+		if(usrRaces.contains("L") || usrRaces.contains("S") || usrRaces.contains("V") || usrRaces.contains("R") || usrRaces.contains("W") || usrRaces.contains("X") || usrRaces.contains("Y") || usrRaces.contains("Z")) {
+			Optional<BaseRecord> osupp = races.stream().filter(r -> usrRaces.contains(r.get("raceType"))).findFirst();
+			if(osupp.isPresent()) {
+				urace = composeTemplate(osupp.get().get(OlioFieldNames.FIELD_RACE));
+			}
+		}
+		ctx.replace(TemplatePatternEnumType.USER_RACE, urace);
+		ctx.replace(TemplatePatternEnumType.SYSTEM_RACE, srace);
+		ctx.replace(TemplatePatternEnumType.ANNOTATE_SUPPLEMENT, asupp);
+	}
+	
+	private static void buildSceneReplacements(PromptBuilderContext ctx) {
+		String scenel = "";
+		String iscene = ctx.chatConfig.get("userNarrative.interactionDescription");
+		String cscene = ctx.chatConfig.get("scene");
+		if(cscene == null) {
+			cscene = iscene;
+		}
+		boolean auto = (cscene != null && cscene.length() > 0);
+		if((boolean)ctx.chatConfig.get("includeScene")) {
+			scenel = ((List<String>)ctx.promptConfig.get("scene")).stream().collect(Collectors.joining(System.lineSeparator()));
+		}
+		ctx.replace(TemplatePatternEnumType.SCENE, scenel);
+
+	}
+	
+	private static void buildEpisodeReplacements(PromptBuilderContext ctx) {
+		BaseRecord episodeRec = getNextEpisode(ctx.chatConfig);
+		String episodicLabel = "";
+		String episodeText = "";
+		String episodeReminderText = "";
+		String episodeRuleText = "1) Always stay in character";
+		String episodeAssistText = "";
+		// boolean isEpisode = false;
+		if(episodeRec != null) {
+			// isEpisode = true;
+			ctx.episode = true;
+			episodeAssistText = episodeRec.get("episodeAssist");
+			if(episodeAssistText == null) episodeAssistText = "";
+			episodicLabel = "episodic";
+			episodeRuleText =  Matcher.quoteReplacement(((List<String>)ctx.promptConfig.get("episodeRule")).stream().collect(Collectors.joining(System.lineSeparator())));
+			StringBuilder elBuff = new StringBuilder();
+			StringBuilder epBuff = new StringBuilder(); 
+			elBuff.append("EPISODE GUIDANCE:" + System.lineSeparator());
+			
+			epBuff.append("* Theme: " + episodeRec.get("theme") + System.lineSeparator());
+			List<String> stages = episodeRec.get("stages");
+			for(String st: stages) {
+				epBuff.append("* Stage: " + st + System.lineSeparator());	
+			}
+			BaseRecord lastEp = getLastEpisode(ctx.chatConfig);
+			if(lastEp != null) {
+				String sum = lastEp.get("summary");
+				if(sum != null) {
+					epBuff.append("* Previous Episode: " + sum + System.lineSeparator());
+				}
+			}
+			elBuff.append(epBuff.toString());
+			episodeText = elBuff.toString();
+			episodeReminderText = "(Reminder - Follow Episode Stages: " + System.lineSeparator() + epBuff.toString() + ")";
+		}
+		
+		ctx.replace(TemplatePatternEnumType.EPISODIC, episodicLabel);
+		ctx.replace(TemplatePatternEnumType.EPISODE_ASSIST, episodeAssistText);
+		ctx.replace(TemplatePatternEnumType.EPISODE, episodeText);
+		ctx.replace(TemplatePatternEnumType.EPISODE_REMINDER, episodeReminderText);
+		ctx.replace(TemplatePatternEnumType.EPISODE_RULE, episodeRuleText);
+		
+	}
+
+	
+	private static void buildRatingNlpConsentReplacements(PromptBuilderContext ctx) {
+
+		String sysNlp = "";
+		String assistNlp = "";
+		boolean useNLP = ctx.chatConfig.get("useNLP");
+		String nlpCommand = null;
+		if(useNLP) {
+			nlpCommand = ctx.chatConfig.get("nlpCommand");
+			sysNlp = composeTemplate(ctx.promptConfig.get("systemNlp"));
+			assistNlp = composeTemplate(ctx.promptConfig.get("assistantNlp"));
+		}
+		
+		ctx.replace(TemplatePatternEnumType.NLP, sysNlp);
+		ctx.replace(TemplatePatternEnumType.NLP_WARN, assistNlp);
+		
+		String sysCens = "";
+		String assistCens = "";
+		ESRBEnumType rating = ctx.chatConfig.getEnum("rating");
+		if(rating == ESRBEnumType.AO || rating == ESRBEnumType.RC) {
+			sysCens = composeTemplate(ctx.promptConfig.get("systemCensorWarning"));
+			assistCens = composeTemplate(ctx.promptConfig.get("assistantCensorWarning"));
+			
+		}
+
+		String uconpref = composeTemplate(ctx.promptConfig.get("userConsentPrefix"));
+		String ucons = "";
+		if(rating == ESRBEnumType.M || rating == ESRBEnumType.AO || rating == ESRBEnumType.RC) {
+			ucons = composeTemplate(ctx.promptConfig.get("userConsentRating"));
+		}
+		if(useNLP) {
+			if(ucons.length() > 0) ucons += " and ";
+			ucons += composeTemplate(ctx.promptConfig.get("userConsentNlp"));
+		}
+		ctx.replace(TemplatePatternEnumType.NLP_REMINDER, useNLP ? "(Reminder: \"${nlp.command}\")" : "");
+		ctx.replace(TemplatePatternEnumType.USER_CONSENT, ucons.length() > 0 ? uconpref + ucons + ".": "");
+		ctx.replace(TemplatePatternEnumType.NLP_COMMAND, nlpCommand);
+		ctx.replace(TemplatePatternEnumType.CENSOR_WARN, sysCens);
+		ctx.replace(TemplatePatternEnumType.ASSISTANT_CENSOR_WARN, assistCens);
+	}
+	
+	private static void buildPronounAgeTradeReplacements(PromptBuilderContext ctx) {
+		
+		String ugen = ctx.userChar.get(FieldNames.FIELD_GENDER);
+		String sgen = ctx.systemChar.get(FieldNames.FIELD_GENDER);
+		String ucppro = "His";
+		String uppro = "his";
+		String ucpro = "He";
+		String upro = "he";
+
+		if(ugen.equals("female")) {
+			ucppro = "Her";
+			ucpro = "She";
+			uppro = "her";
+			upro = "she";
+		}
+		
+		String scppro = "His";
+		String sppro = "his";
+		String scpro = "He";
+		String spro = "he";
+
+		if(sgen.equals("female")) {
+			scppro = "Her";
+			scpro = "She";
+			sppro = "her";
+			spro = "she";
+		}
+
+		String ujobDesc = "";
+		List<String> utrades = ctx.userChar.get(OlioFieldNames.FIELD_TRADES);
+		if(utrades.size() > 0) {
+			ujobDesc =" " + utrades.get(0).toLowerCase();
+		}
+		
+		String sjobDesc = "";
+		List<String> strades = ctx.systemChar.get(OlioFieldNames.FIELD_TRADES);
+		if(strades.size() > 0) {
+			sjobDesc =" " + strades.get(0).toLowerCase();
+		}		
+		int sage = ctx.systemChar.get(FieldNames.FIELD_AGE);
+		int uage = ctx.userChar.get(FieldNames.FIELD_AGE);
+
+		String sper = "";
+		if(sgen.equals("male") || sgen.equals("female")) {
+			List<String> per = ctx.promptConfig.get(sgen + "Perspective");
+			if(per != null && per.size() > 0) {
+				sper = Matcher.quoteReplacement(per.stream().collect(Collectors.joining(System.lineSeparator())));
+			}
+		}
+
+		
+		String whoStart = "I'll start" + (ctx.episode ? " the episode" : "") + ":";
+		if(!"system".equals(ctx.chatConfig.get("startMode"))) {
+			whoStart = "You start" + (ctx.episode ? " the episode" : "") + ".";
+		}
+
+		ctx.replace(TemplatePatternEnumType.FIRST_SECOND_POSSESSIVE, ctx.firstPerson ? "my" : "your");
+		ctx.replace(TemplatePatternEnumType.FIRST_SECOND_WHO, whoStart);
+		ctx.replace(TemplatePatternEnumType.FIRST_SECOND_TO_BE, ctx.firstPerson ? "I am" : "You are");
+		ctx.replace(TemplatePatternEnumType.FIRST_SECOND_NAME, (String)(ctx.firstPerson ? ctx.systemChar.get(FieldNames.FIELD_FIRST_NAME) : ctx.userChar.get(FieldNames.FIELD_FIRST_NAME)));
+		ctx.replace(TemplatePatternEnumType.USER_GENDER, ugen);
+		ctx.replace(TemplatePatternEnumType.SYSTEM_GENDER, sgen);
+
+		ctx.replace(TemplatePatternEnumType.PERSPECTIVE, sper);
+		ctx.replace(TemplatePatternEnumType.SYSTEM_ASG, sage + " year old " + sgen + sjobDesc);
+		ctx.replace(TemplatePatternEnumType.USER_ASG, uage + " year old " + ugen + ujobDesc);
+
+		ctx.replace(TemplatePatternEnumType.USER_CAPITAL_PRONOUN, ucpro);
+		ctx.replace(TemplatePatternEnumType.USER_PRONOUN, upro);
+		ctx.replace(TemplatePatternEnumType.USER_POSSESSIVE_PRONOUN, uppro);
+		ctx.replace(TemplatePatternEnumType.USER_CAPITAL_POSSESSIVE_PRONOUN, ucppro);
+
+		ctx.replace(TemplatePatternEnumType.SYSTEM_CAPITAL_PRONOUN, scpro);
+		ctx.replace(TemplatePatternEnumType.SYSTEM_PRONOUN, spro);
+		ctx.replace(TemplatePatternEnumType.SYSTEM_POSSESSIVE_PRONOUN, sppro);
+		ctx.replace(TemplatePatternEnumType.SYSTEM_CAPITAL_POSSESSIVE_PRONOUN, scppro);
+		
+		ctx.replace(TemplatePatternEnumType.SYSTEM_TRADE, (sjobDesc.length() > 0 ? sjobDesc : "unemployed"));
+		ctx.replace(TemplatePatternEnumType.USER_TRADE, (ujobDesc.length() > 0 ? ujobDesc : "unemployed"));
+		
+	}
+	
+	private static void buildRatingReplacements(PromptBuilderContext ctx) {
+		ESRBEnumType rating = ctx.chatConfig.getEnum("rating");
+		ctx.replace(TemplatePatternEnumType.RATING_NAME, ESRBEnumType.getESRBName(rating));
+		ctx.replace(TemplatePatternEnumType.RATING, rating.toString());
+		ctx.replace(TemplatePatternEnumType.RATING_DESCRIPTION, ESRBEnumType.getESRBShortDescription(rating));
+		ctx.replace(TemplatePatternEnumType.RATING_RESTRICT, ESRBEnumType.getESRBRestriction(rating));
+		ctx.replace(TemplatePatternEnumType.RATING_MPA, ESRBEnumType.getESRBMPA(rating));
+	}
+	
+	private static void buildCharacterDescriptionReplacements(PromptBuilderContext ctx) {
+
+		ctx.replace(TemplatePatternEnumType.USER_FIRST_NAME, (String)ctx.userChar.get(FieldNames.FIELD_FIRST_NAME));
+		ctx.replace(TemplatePatternEnumType.SYSTEM_FIRST_NAME, (String)ctx.systemChar.get(FieldNames.FIELD_FIRST_NAME));
+		ctx.replace(TemplatePatternEnumType.USER_FULL_NAME, (String)ctx.userChar.get(FieldNames.FIELD_NAME));
+		ctx.replace(TemplatePatternEnumType.SYSTEM_FULL_NAME, (String)ctx.systemChar.get(FieldNames.FIELD_NAME));
+		ctx.replace(TemplatePatternEnumType.USER_CHARACTER_DESCRIPTION, NarrativeUtil.describe(null, ctx.userChar));
+		ctx.replace(TemplatePatternEnumType.SYSTEM_CHARACTER_DESCRIPTION, NarrativeUtil.describe(null, ctx.systemChar));
+		ctx.replace(TemplatePatternEnumType.USER_CHARACTER_DESCRIPTION_PUBLIC, NarrativeUtil.describe(null, ctx.userChar, true, false, false));
+		ctx.replace(TemplatePatternEnumType.SYSTEM_CHARACTER_DESCRIPTION_PUBLIC, NarrativeUtil.describe(null, ctx.systemChar, true, false, false));
+		ctx.replace(TemplatePatternEnumType.USER_CHARACTER_DESCRIPTION_LIGHT, NarrativeUtil.describe(null, ctx.userChar, false, true, false));
+		ctx.replace(TemplatePatternEnumType.SYSTEM_CHARACTER_DESCRIPTION_LIGHT, NarrativeUtil.describe(null, ctx.systemChar, false, true, false));
+	}
+	
+
 	public static String getChatPromptTemplate(BaseRecord promptConfig, BaseRecord chatConfig, String templ, boolean firstPerson) {
 
 		if(promptConfig == null) {
@@ -536,6 +789,44 @@ public class PromptUtil {
 		templ = userPrompt.matcher(templ).replaceAll((iPrompt != null ? iPrompt : ""));
 		
 		return templ.trim();
+	}
+
+	private static class PromptBuilderContext {
+	    private BaseRecord promptConfig;
+	    private BaseRecord chatConfig;
+	    private BaseRecord userChar;
+	    private BaseRecord systemChar;
+	    private PersonalityProfile sysProf;
+	    private PersonalityProfile usrProf;
+	    private ProfileComparison profComp;
+	    private ESRBEnumType rating;
+	    private boolean firstPerson;
+	    private boolean episode = false;
+	    private String template = null;
+
+	    public PromptBuilderContext(BaseRecord promptConfig, BaseRecord chatConfig, String template, boolean firstPerson) {
+	        this.promptConfig = promptConfig;
+	        this.chatConfig = chatConfig;
+	        this.template = template;
+	        this.firstPerson = firstPerson;
+	        
+	        this.userChar = chatConfig.get("userCharacter");
+	        this.systemChar = chatConfig.get("systemCharacter");
+	        this.sysProf = ProfileUtil.getProfile(null, this.systemChar);
+	        this.usrProf = ProfileUtil.getProfile(null, this.userChar);
+	        this.profComp = new ProfileComparison(null, this.sysProf, this.usrProf);
+	        this.rating = chatConfig.getEnum("rating");
+	    }
+
+	    public void replace(Pattern pattern, String value) {
+	        if (value != null) {
+	            this.template = pattern.matcher(this.template).replaceAll(Matcher.quoteReplacement(value));
+	        }
+	    }
+	    
+	    public void replace(TemplatePatternEnumType patternType, String value) {
+	    	this.template = patternType.replace(template, value);
+	    }
 	}
 	
 }
