@@ -142,7 +142,7 @@ public class MediaUtil {
 		}
 
 		String orgPath = "/" + m.group(1).trim().replace('.', '/');
-		String type = m.group(2).trim();
+		String type = m.group(2).trim().intern();
 		String subPath = m.group(3).trim();
 		String name = null;
 		int index = 0;
