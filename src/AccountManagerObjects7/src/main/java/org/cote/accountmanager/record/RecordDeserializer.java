@@ -141,17 +141,21 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 		
         JsonNode node = jsonParser.getCodec().readTree(jsonParser);
         String modelName = null;
+        
         if(node.has(RecordFactory.JSON_MODEL_KEY)) {
-        	modelName = node.get(RecordFactory.JSON_MODEL_KEY).asText();
+        	modelName = node.get(RecordFactory.JSON_MODEL_KEY).asText().intern();
         }
         else if((detectCondensedFields || condensedFields) && node.has(RecordFactory.JSON_MODEL_SHORT_KEY)) {
         	logger.warn("Deserializing by condensed fields");
-        	modelName = node.get(RecordFactory.JSON_MODEL_SHORT_KEY).asText();
+        	modelName = node.get(RecordFactory.JSON_MODEL_SHORT_KEY).asText().intern();
         	condensedFields = true;
         }
         else {
         	modelName = findModel(jsonParser, node, currentNode);
         }
+
+        
+        
         if(modelName == null) {
         	if(lastModel.containsKey(level)) {
         		modelName = lastModel.get(level);
@@ -212,12 +216,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         level++;
         while(pairs.hasNext()) {
         	Map.Entry<String, JsonNode> entry = pairs.next();
-        	String fname = entry.getKey();
-        	if(fname.equals(RecordFactory.JSON_MODEL_KEY)) {
+        	String fname = entry.getKey().intern();
+        	if(fname == RecordFactory.JSON_MODEL_KEY) {
         		continue;
         	}
         	if(condensedFields) {
-        		if(fname.equals(RecordFactory.JSON_MODEL_SHORT_KEY)) {
+        		if(fname == RecordFactory.JSON_MODEL_SHORT_KEY) {
         			continue;
         		}
         		fname = getName(ltype, fname);
@@ -225,7 +229,6 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
          	JsonNode value = entry.getValue();
          	boolean possibleForeign = false;
          	if(fname.endsWith(FieldNames.FIELD_SUFFIX_FOREIGN_KEY)) {
-         		
          		fname = fname.substring(0, fname.lastIndexOf(FieldNames.FIELD_SUFFIX_FOREIGN_KEY));
          		possibleForeign = true;
          	}
