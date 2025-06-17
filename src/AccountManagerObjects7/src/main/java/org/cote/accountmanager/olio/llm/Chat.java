@@ -61,9 +61,9 @@ public class Chat {
 	private boolean formatOutput = false;
 	private boolean includeScene = false;
 	private boolean forceJailbreak = false;
-	private int remind = 3;
+	private int remind = 6;
 	private int messageTrim = 10;
-	private int keyFrameEvery = 10;
+	private int keyFrameEvery = 20;
 	private LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
 	private String model = null;
 	private String serverUrl = null;
@@ -974,18 +974,31 @@ public class Chat {
 			kfs.get(kfs.size() - 1).setPruned(false);
 		}
 
-		int mark = ((Long)req.getMessages().stream().filter(m -> userRole.equals(m.getRole())).count()).intValue();
-		if ( (keyFrameEvery % 2) != (mark % 2)) {
-			mark++;
-		}
-
-		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && mark % keyFrameEvery == 0) {
+		int qual = countBackTo(req, "(KeyFrame:");
+		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}
 
 	}
 
+	private int countBackTo(OpenAIRequest req, String pattern) {
+		int idx = getMessageOffset();
+		int eidx = req.getMessages().size() - 1;
+		int qual = 0;
+		for (int i = eidx; i >= idx; i--) {
+			OpenAIMessage imsg = req.getMessages().get(i);
+			if(imsg.isPruned() || imsg.getContent().contains(pattern)) {
+				break;
+			}
+			//  || imsg.getContent().startsWith("(KeyFrame:")
+			if(imsg.getContent() == null) continue;
+			qual++;
+		}
+		return qual;
+		
+	}
+	
 	public OpenAIMessage newMessage(OpenAIRequest req, String message) {
 		return newMessage(req, message, userRole);
 	}
@@ -998,14 +1011,9 @@ public class Chat {
 		if (chatConfig != null && role.equals(userRole)) {
 			ESRBEnumType rating = chatConfig.getEnum("rating");
 			boolean useAssist = chatConfig.get("assist");
+			int qual = countBackTo(req, "(Reminder:");
 
-			int mark = ((Long)req.getMessages().stream().filter(m -> userRole.equals(m.getRole())).count()).intValue();
-			if ( (remind % 2) != (mark % 2)) {
-				mark++;
-			}
-			logger.info("Remind: " + remind + " " + mark + " = " + (mark % remind));
-
-			if (promptConfig != null && (mark % remind) == 0) {
+			if (promptConfig != null && qual >= remind) {
 				/// Add the assistant warning as the last message
 				if (req.getMessages().size() > 0) {
 					OpenAIMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
