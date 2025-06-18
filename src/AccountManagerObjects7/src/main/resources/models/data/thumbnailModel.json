@@ -1,6 +1,6 @@
 {
 	"name": "data.thumbnail",
-	"inherits": ["data.directory", "crypto.cryptoByteStore"],
+	"inherits": ["data.directory", "crypto.cryptoByteStore", "common.dateTime"],
 	"access": {
 		"policies": {
 			"bind": {
