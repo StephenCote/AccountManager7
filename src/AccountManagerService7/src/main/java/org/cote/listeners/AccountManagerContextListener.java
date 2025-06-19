@@ -1,5 +1,7 @@
 package org.cote.listeners;
 
+import javax.imageio.ImageIO;
+
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.cote.sockets.WebSocketService;
@@ -16,6 +18,10 @@ public class AccountManagerContextListener implements ServletContextListener{
     	WebSocketService.activeUsers().forEach(user ->{
     		WebSocketService.chirpUser(user, new String[] {"Service going offline"});
     	});
+        
+        logger.info("Deregistering ImageIO service providers to prevent ClassLoader leaks.");
+        ImageIO.scanForPlugins();
+        
 		logger.info("Context destroyed");
 	}
 

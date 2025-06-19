@@ -92,7 +92,7 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			// WebSocketService.chirpUser(user, new String[] {"Service going offline"});
 			WebSocketService.sendMessage(session, new String[] { "Service going offline" }, true, false, true);
 		});
-
+        
 		logger.info("Cleaning up AccountManager");
 
 		IOSystem.close();

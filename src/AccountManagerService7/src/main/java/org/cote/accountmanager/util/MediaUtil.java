@@ -27,6 +27,7 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.ZonedDateTime;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -338,9 +339,9 @@ public class MediaUtil {
 
 		byte[] value = new byte[0];
 		if(data.hasField(FieldNames.FIELD_MODIFIED_DATE)) {
-			ZonedDateTime mod = data.get(FieldNames.FIELD_MODIFIED_DATE);
+			Date mod = data.get(FieldNames.FIELD_MODIFIED_DATE);
 			if(mod != null) {
-				response.setDateHeader("Last-Modified", mod.toInstant().toEpochMilli());
+				response.setDateHeader("Last-Modified", mod.getTime());
 			}
 		}
 		if (data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
