@@ -70,7 +70,7 @@ public class MediaServlet extends HttpServlet {
 		
 		response.setHeader("Cache-Control", "public,max-age="+ defCacheSeconds);
 		response.addHeader("Cache-Control", "must-revalidate");//optional
-		response.setDateHeader("Last-Modified", now);
+		//response.setDateHeader("Last-Modified", now);
 	    response.setDateHeader("Expires", expiry);
 	    response.setCharacterEncoding(StandardCharsets.UTF_8.toString());
 		MediaUtil.writeBinaryContent(request, response);

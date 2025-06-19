@@ -26,6 +26,7 @@ package org.cote.accountmanager.util;
 import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.ZonedDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -265,7 +266,9 @@ public class MediaUtil {
 			if (options.isThumbnail()) {
 				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_URN,
 						FieldNames.FIELD_NAME, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID,
-						FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
+						FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID,
+						FieldNames.FIELD_MODIFIED_DATE
+				});
 				BaseRecord sdata = IOSystem.getActiveContext().getSearch().findRecord(q);
 				if (sdata == null) {
 					logger.error("Failed to find record:");
@@ -289,7 +292,7 @@ public class MediaUtil {
 				q.setRequest(new String[] { FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID,
 						FieldNames.FIELD_URN, FieldNames.FIELD_CONTENT_TYPE, FieldNames.FIELD_GROUP_ID,
 						FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_BYTE_STORE, FieldNames.FIELD_STREAM,
-						FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID });
+						FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_MODIFIED_DATE });
 				data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 				if (data != null && data.get(FieldNames.FIELD_CONTENT_TYPE) != null
 						&& ((String) data.get(FieldNames.FIELD_CONTENT_TYPE)).startsWith("image/") && restrictSize) {
@@ -334,7 +337,12 @@ public class MediaUtil {
 		response.setContentType(data.get(FieldNames.FIELD_CONTENT_TYPE));
 
 		byte[] value = new byte[0];
-
+		if(data.hasField(FieldNames.FIELD_MODIFIED_DATE)) {
+			ZonedDateTime mod = data.get(FieldNames.FIELD_MODIFIED_DATE);
+			if(mod != null) {
+				response.setDateHeader("Last-Modified", mod.toInstant().toEpochMilli());
+			}
+		}
 		if (data.hasField(FieldNames.FIELD_STREAM) && data.get(FieldNames.FIELD_STREAM) != null) {
 			BaseRecord stream = data.get(FieldNames.FIELD_STREAM);
 			StreamSegmentUtil ssu = new StreamSegmentUtil();
