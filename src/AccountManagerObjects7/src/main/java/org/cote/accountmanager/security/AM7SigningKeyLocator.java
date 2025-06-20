@@ -74,14 +74,14 @@ public class AM7SigningKeyLocator implements Locator<Key>{
 
 		String urn = (String)header.get("kid");
 		String modelName = ModelNames.MODEL_USER;
-		String fetStr = (String)header.get("subjectType");
+		String fetStr = (String)header.get(TokenService.CLAIM_SUBJECT_TYPE);
 
-		Boolean bUseIssuer = (Boolean)header.get("sbi");
+		Boolean bUseIssuer = (Boolean)header.get(TokenService.CLAIM_SBI);
 		boolean useIssuer = (bUseIssuer != null && bUseIssuer.booleanValue());
 		if(!useIssuer && fetStr != null && fetStr.length() > 0) modelName = fetStr;
+		
 		if(useIssuer) {
-			urn = (String)header.get("issuerUrn");
-			logger.info("Restoring issuer key for: " + urn);
+			urn = (String)header.get(TokenService.CLAIM_ISSUER_URN);
 		}
 		Key key = null;
 		if(IOSystem.getActiveContext() == null) {
@@ -100,7 +100,6 @@ public class AM7SigningKeyLocator implements Locator<Key>{
 				CryptoBean bean = TokenService.getCreateCipher(persona);
 				if(bean != null && bean.getSecretKey() != null){
 					key = bean.getSecretKey();
-					logger.info("Retrieved key for " + urn);
 				}
 				else {
 					logger.error("Invalid security key for " + urn);

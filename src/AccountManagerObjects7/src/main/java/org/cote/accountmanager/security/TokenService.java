@@ -78,6 +78,7 @@ public class TokenService {
 	public static final String CLAIM_SBI = "sbi";
 	public static final String CLAIM_RESOURCE_TYPE = "resourceType";
 	public static final String CLAIM_RESOURCE_ID = "resourceId";
+	public static final String CLAIM_ISSUER_URN = "issuerUrn";
 	public static final int TOKEN_EXPIRY_1_MINUTE = 60;
 	public static final int TOKEN_EXPIRY_10_MINUTES = TOKEN_EXPIRY_1_MINUTE * 10;
 	public static final int TOKEN_EXPIRY_1_HOUR = TOKEN_EXPIRY_10_MINUTES * 6;
@@ -339,9 +340,10 @@ public class TokenService {
 		Date expires = cal.getTime();
 		JwtBuilder builder = Jwts.builder();
 		
-		builder.header().keyId(authorizingUser.get(FieldNames.FIELD_URN))
+		builder.header().keyId(persona.get(FieldNames.FIELD_URN))
+			.add(CLAIM_ISSUER_URN, authorizingUser.get(FieldNames.FIELD_URN))
 			.add(CLAIM_SUBJECT_TYPE,persona.getSchema())
-			.add("sbi", true)
+			.add(CLAIM_SBI, true)
 			.and()
 		;
 		return builder
@@ -360,18 +362,18 @@ public class TokenService {
 	/// This is still (hopefully obvious) very loose per the spec and likely very wrong
 	/// however, it's being used primarily for node-to-node communication versus trying to provide third party access
 	///
-	public static String createJWTToken(BaseRecord contextUser) throws ReaderException, IndexException{
-		return createJWTToken(contextUser, contextUser);
+	public static String createJWTToken(BaseRecord issuer) throws ReaderException, IndexException{
+		return createJWTToken(issuer, issuer);
 	}
-	public static String createJWTToken(BaseRecord contextUser, BaseRecord persona) throws ReaderException, IndexException{
-		return createJWTToken(contextUser, persona, UUID.randomUUID().toString(), TOKEN_EXPIRY_10_MINUTES);
+	public static String createJWTToken(BaseRecord issuer, BaseRecord persona) throws ReaderException, IndexException{
+		return createJWTToken(issuer, persona, UUID.randomUUID().toString(), TOKEN_EXPIRY_10_MINUTES);
 	}
-	public static String createJWTToken(BaseRecord contextUser, BaseRecord persona, String tokenId, int expiryMinutes) throws ReaderException, IndexException{
+	public static String createJWTToken(BaseRecord issuer, BaseRecord persona, String tokenId, int expiryMinutes) throws ReaderException, IndexException{
 		if(!personaType.matcher(persona.getSchema()).find()){
 			logger.error("Unsupported persona type: {0}", persona.getSchema());
 			return null;
 		}
-		CryptoBean bean = getCreateCipher(persona);
+		CryptoBean bean = getCreateCipher(issuer);
 		if(bean == null){
 			logger.error("Null security bean");
 			return null;
@@ -423,16 +425,16 @@ public class TokenService {
 		Date expires = cal.getTime();
 		
 		JwtBuilder builder = Jwts.builder();
-		builder.header().keyId(contextUser.get(FieldNames.FIELD_URN))
+		builder.header().keyId(persona.get(FieldNames.FIELD_URN))
 			.add(CLAIM_SUBJECT_TYPE,persona.getSchema())
-			.add("issuerUrn", contextUser.get(FieldNames.FIELD_URN))
-			.add("sbi", true)
+			.add(CLAIM_ISSUER_URN, issuer.get(FieldNames.FIELD_URN))
+			.add(CLAIM_SBI, true)
 			.and()
 		;
 		
 		return builder
 		  .claims(claims.build())
-		  .issuer(contextUser.get(FieldNames.FIELD_URN))
+		  .issuer(issuer.get(FieldNames.FIELD_URN))
 		  .issuedAt(now)
 		  .expiration(expires)
 		  .subject(persona.get(FieldNames.FIELD_NAME))

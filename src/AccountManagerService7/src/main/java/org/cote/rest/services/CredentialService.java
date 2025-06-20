@@ -158,7 +158,7 @@ public class CredentialService {
 	private String getTokenForUser(BaseRecord user, BaseRecord apiUser, HttpServletRequest request){
 		String outToken = null;
 		try {
-			outToken = TokenService.createJWTToken(user, apiUser, UUID.randomUUID().toString(), TokenService.TOKEN_EXPIRY_1_WEEK);
+			outToken = TokenService.createJWTToken(apiUser, user, UUID.randomUUID().toString(), TokenService.TOKEN_EXPIRY_1_WEEK);
 		} catch (ReaderException | IndexException e) {
 			logger.error(e);
 			e.printStackTrace();
