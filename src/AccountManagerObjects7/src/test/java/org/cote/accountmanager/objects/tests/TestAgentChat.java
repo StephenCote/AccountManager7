@@ -29,6 +29,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
+import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
@@ -86,13 +87,13 @@ public class TestAgentChat extends BaseTest {
 		String agenticQuestion = "Who is Laurel? Describe her in detail.";
 		
 		
-		String prompt = "Answer all questions by identifying an operation (CREATE, READ, UPDATE, DELETE, LIST, MEMBER) and selecting the most appropriate models from the following list:" + System.lineSeparator() + getModels(false) + System.lineSeparator() + "Format all responses in JSON using the following example syntax: {\"operation\": \"READ\", \"models\": [\"data.data\"]}"  + System.lineSeparator() + "Example:" + System.lineSeparator() + "(user)Tell me about the character Bob?"+ System.lineSeparator() + "(assistant) {\"operation\": \"READ\", \"models\": [\"olio.charPerson\"]}";
+		String prompt = "Answer all questions by identifying an operation (CREATE, READ, UPDATE, DELETE, LIST, MEMBER) and selecting the most appropriate models from the following list:" + System.lineSeparator() + SchemaUtil.getModelDescriptions(false) + System.lineSeparator() + "Format all responses in JSON using the following example syntax: {\"operation\": \"READ\", \"models\": [\"data.data\"]}"  + System.lineSeparator() + "Example:" + System.lineSeparator() + "(user)Tell me about the character Bob?"+ System.lineSeparator() + "(assistant) {\"operation\": \"READ\", \"models\": [\"olio.charPerson\"]}";
 		String response = getChatResponse(testUser1, "Agentic.prompt", "Open AI.chat", prompt, agenticQuestion);
 		logger.info("RESPONSE 1: '" + response + "'");
 		
-		//String prompt2 = "Identify which of the following model fields should be used to effectively answer the question:" + System.lineSeparator() + getSchemaDescription(ms) + System.lineSeparator() + "Format all responses in JSON using the following example syntax: {\"model\": \"data.data\", \"fields\": [\"name\", \"description\"]}"  + System.lineSeparator() + "Example:" + System.lineSeparator() + "(user)Tell me about the character Bob?"+ System.lineSeparator() + "(assistant) {\"model\": \"olio.charPerson\", \"fields\": [\"firstName\", \"lastName\", \"eyeColor\", \"hairColor\"]}";
+		//String prompt2 = "Identify which of the following model fields should be used to effectively answer the question:" + System.lineSeparator() + getModelDescription(ms) + System.lineSeparator() + "Format all responses in JSON using the following example syntax: {\"model\": \"data.data\", \"fields\": [\"name\", \"description\"]}"  + System.lineSeparator() + "Example:" + System.lineSeparator() + "(user)Tell me about the character Bob?"+ System.lineSeparator() + "(assistant) {\"model\": \"olio.charPerson\", \"fields\": [\"firstName\", \"lastName\", \"eyeColor\", \"hairColor\"]}";
 		String contextInfo = "Scope Information:" + System.lineSeparator() + "organizationId=" + testUser1.get(FieldNames.FIELD_ORGANIZATION_ID) + System.lineSeparator(); 
-		String queryPrompt = "Compose a query using the following query schema definitions for a Query, a QueryField, and a QueryPlan (used for nested queries):" + System.lineSeparator() + getSchemaDescription(RecordFactory.getSchema(ModelNames.MODEL_QUERY)) + System.lineSeparator() + getSchemaDescription(RecordFactory.getSchema(ModelNames.MODEL_QUERY_FIELD)) + System.lineSeparator() + getSchemaDescription(RecordFactory.getSchema(ModelNames.MODEL_QUERY_PLAN));			
+		String queryPrompt = "Compose a query using the following query schema definitions for a Query, a QueryField, and a QueryPlan (used for nested queries):" + System.lineSeparator() + SchemaUtil.getModelDescription(RecordFactory.getSchema(ModelNames.MODEL_QUERY)) + System.lineSeparator() + SchemaUtil.getModelDescription(RecordFactory.getSchema(ModelNames.MODEL_QUERY_FIELD)) + System.lineSeparator() + SchemaUtil.getModelDescription(RecordFactory.getSchema(ModelNames.MODEL_QUERY_PLAN));			
 		String queryExample = """
 		Example Query Output: 
 		{
@@ -118,150 +119,9 @@ public class TestAgentChat extends BaseTest {
 
 		
 		
-		//logger.info(getSchemaDescription(ms));
+		//logger.info(getModelDescription(ms));
 	}
 	
-	
-	private String getModels(boolean incInherits) {
-		StringBuilder buff = new StringBuilder();
-		ModelNames.MODELS.sort((f1, f2) -> f1.compareTo(f2));
-		for (String model : ModelNames.MODELS) {
-			ModelSchema ms = RecordFactory.getSchema(model);
-			if(ms.isAbs() || ms.isEphemeral()) continue;
-			if(ms.getIoConstraints().size() > 0 && (ms.getIoConstraints().get(0).equals("file") || ms.getIoConstraints().get(0).equals("unknown"))) {
-				continue;
-			}
-			buff.append(ms.getName());
-			if(incInherits) {
-				String inh = ms.getInherits().stream().collect(Collectors.joining(", "));
-				buff.append((inh.length() > 0 ? " [inherits: " + inh + "]" : ""));
-			}
-			if(ms.getDescription() != null) {
-				buff.append(" - " + ms.getDescription());
-			}
-			buff.append(System.lineSeparator());
-		}
-		//return ModelNames.MODELS.stream().collect(Collectors.joining(System.lineSeparator()));
-		return buff.toString();
-	}
-	
-	
-	private String getNameTypeStatement(FieldSchema fs) {
-
-		String name = fs.getName();
-		FieldEnumType ftype = fs.getFieldType();
-		String type = ftype.toString().toLowerCase();
-		String arr = "";
-		switch (ftype) {
-			case BOOLEAN:
-				type = "bool";
-				break;
-
-			case BLOB:
-				type = "byte";
-				arr = "[]";
-				break;
-			case LIST:
-				arr = "[]";
-				type = fs.getBaseType();
-				if(type != null && type.equals(FieldEnumType.MODEL.toString().toLowerCase())) {
-					type = fs.getBaseModel();
-				}
-				break;
-			case BYTE:
-				logger.warn("Unused");
-				break;
-			case TIMESTAMP:
-			case ZONETIME:
-			case CALENDAR:
-				type = "datetime";
-				break;
-				
-			case FLEX:
-				type = "var";
-				break;
-			case MODEL:
-				type = fs.getBaseModel();
-				break;
-			case STRING:
-				type = "str";
-				break;
-			case INT:
-			case LONG:
-			case DOUBLE:
-			case ENUM:
-			case VECTOR:
-				break;
-			default:
-				logger.error("Unhandled type: " + type.toString());
-				break;
-		}
-		String prim = "";
-		if (fs.isPrimaryKey()) {
-			prim = "(primary key) ";
-		}
-		else if(fs.isIdentity()) {
-			prim = "(identity) ";
-		}
-		return prim + type + " " + name + arr;
-
-
-	}
-	
-	private String getSchemaDescription(ModelSchema schema) {
-		StringBuilder buff = new StringBuilder();
-		String sep =  System.lineSeparator();
-		buff.append((schema.isEphemeral() ? "Ephemeral " : "") + (schema.isAbs() ? "Abstract " : "") + "Model: " + schema.getName());
-		if (schema.getDescription() != null && schema.getDescription().length() > 0) {
-			buff.append(sep + "Description: " + schema.getDescription());
-		}
-		String inh = schema.getInherits().stream().collect(Collectors.joining(", "));
-		// String inh = RecordUtil.inheritence(schema).stream().collect(Collectors.joining(", "));
-		if (inh != null && inh.length() > 0) {
-			buff.append(System.lineSeparator() + "Inherits: " + inh);
-		}
-		RecordUtil.sortFields(schema);
-		if (schema.getFields() != null && schema.getFields().size() > 0) {
-			buff.append(sep + "Fields:" + sep);
-			for (FieldSchema fld : schema.getFields()) {
-				buff.append(getNameTypeStatement(fld) + sep);
-				/*
-				String ft = "";
-				if(fld.isForeign()) {
-					if(fld.getBaseModel() == ModelNames.MODEL_SELF) {
-						ft = "foreign type: " + fld.getForeignType();
-					}
-					else {
-						ft = fld.getBaseModel() + " (table " + IOSystem.getActiveContext().getDbUtil().getTableName(fld.getBaseModel()) + ")";
-					}
-				}
-				else if(fld.getBaseModel() != null && fld.getBaseModel().length() > 0) {
-					ft = "model: " + fld.getBaseModel() + " (table " + IOSystem.getActiveContext().getDbUtil().getTableName(fld.getBaseModel()) + ")";
-				}
-				String bc = "";
-				if (fld.getBaseClass() != null && fld.getBaseClass().length() > 0) {
-					bc = " (class: " + fld.getBaseClass() + ")";
-				}
-				String pref = "";
-				if (fld.isVirtual()) {
-					pref = "virtual ";
-				} else if (fld.isEphemeral()) {
-					pref = "ephemeral ";
-				} else if (fld.isInternal()) {
-					pref = "internal ";
-				}
-				String key = "";
-				if (fld.isPrimaryKey()) {
-					key = "(primary key) ";
-				}
-				String fgn = (ft.length() > 0 ? " " + ft : "");
-				buff.append(System.lineSeparator() + key + pref + fld.getName() + " (" + fld.getType() + fgn + ")" + bc);
-				*/
-
-			}
-		}
-		return buff.toString();
-	}
 	
 	private String getChatResponse(BaseRecord user, String promptName, String configName, String prompt, String message) {
 		BaseRecord cfg = OlioTestUtil.getOpenAIConfig(user, configName, testProperties);

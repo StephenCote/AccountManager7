@@ -169,7 +169,7 @@
 		{
 			"name": "apiKey",
 			"type": "string",
-			"maxLength": 128,
+			"maxLength": 256,
 			"provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
 			"encrypt": true
 		}

@@ -83,6 +83,7 @@ import org.cote.accountmanager.schema.type.ValidationEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.util.CategoryUtil;
+import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.ValidationUtil;
 
@@ -195,4 +196,116 @@ public class SchemaUtil {
 	public static String getSchemaJSON() {
 		return "{\"jsonModelKey\" : \"" + RecordFactory.JSON_MODEL_KEY + "\", " + getCategoriesJSON() + ",\n" + getEnumSchemaJSON() + ",\n" + getModelSchemaJSON() + ",\n" + getValidationRulesJSON() + "\n}";
 	}
+	
+	public static String getModelDescriptions(boolean incInherits) {
+		StringBuilder buff = new StringBuilder();
+		ModelNames.MODELS.sort((f1, f2) -> f1.compareTo(f2));
+		for (String model : ModelNames.MODELS) {
+			ModelSchema ms = RecordFactory.getSchema(model);
+			if(ms.isAbs() || ms.isEphemeral()) continue;
+			if(ms.getIoConstraints().size() > 0 && (ms.getIoConstraints().get(0).equals("file") || ms.getIoConstraints().get(0).equals("unknown"))) {
+				continue;
+			}
+			buff.append(ms.getName());
+			if(incInherits) {
+				String inh = ms.getInherits().stream().collect(Collectors.joining(", "));
+				buff.append((inh.length() > 0 ? " [inherits: " + inh + "]" : ""));
+			}
+			if(ms.getDescription() != null) {
+				buff.append(" - " + ms.getDescription());
+			}
+			buff.append(System.lineSeparator());
+		}
+
+		return buff.toString();
+	}
+	
+	public static String getModelDescription(String schemaName) {
+		return getModelDescription(RecordFactory.getSchema(schemaName));
+	}
+	public static String getModelDescription(ModelSchema schema) {
+		StringBuilder buff = new StringBuilder();
+		String sep =  System.lineSeparator();
+		buff.append((schema.isEphemeral() ? "Ephemeral " : "") + (schema.isAbs() ? "Abstract " : "") + "Model: " + schema.getName());
+		if (schema.getDescription() != null && schema.getDescription().length() > 0) {
+			buff.append(sep + "Description: " + schema.getDescription());
+		}
+		String inh = schema.getInherits().stream().collect(Collectors.joining(", "));
+		// String inh = RecordUtil.inheritence(schema).stream().collect(Collectors.joining(", "));
+		if (inh != null && inh.length() > 0) {
+			buff.append(System.lineSeparator() + "Inherits: " + inh);
+		}
+		RecordUtil.sortFields(schema);
+		if (schema.getFields() != null && schema.getFields().size() > 0) {
+			buff.append(sep + "Fields:" + sep);
+			for (FieldSchema fld : schema.getFields()) {
+				buff.append("  " + getNameTypeStatement(fld) + sep);
+
+			}
+		}
+		return buff.toString();
+	}
+	
+	public static String getNameTypeStatement(FieldSchema fs) {
+
+		String name = fs.getName();
+		FieldEnumType ftype = fs.getFieldType();
+		String type = ftype.toString().toLowerCase();
+		String arr = "";
+		switch (ftype) {
+			case BOOLEAN:
+				type = "bool";
+				break;
+
+			case BLOB:
+				type = "byte";
+				arr = "[]";
+				break;
+			case LIST:
+				arr = "[]";
+				type = fs.getBaseType();
+				if(type != null && type.equals(FieldEnumType.MODEL.toString().toLowerCase())) {
+					type = fs.getBaseModel();
+				}
+				break;
+			case BYTE:
+				logger.warn("Unused");
+				break;
+			case TIMESTAMP:
+			case ZONETIME:
+			case CALENDAR:
+				type = "datetime";
+				break;
+				
+			case FLEX:
+				type = "var";
+				break;
+			case MODEL:
+				type = fs.getBaseModel();
+				break;
+			case STRING:
+				type = "str";
+				break;
+			case INT:
+			case LONG:
+			case DOUBLE:
+			case ENUM:
+			case VECTOR:
+				break;
+			default:
+				logger.error("Unhandled type: " + type.toString());
+				break;
+		}
+		String prim = "";
+		if (fs.isPrimaryKey()) {
+			prim = "(primary key) ";
+		}
+		else if(fs.isIdentity()) {
+			prim = "(identity) ";
+		}
+		return prim + type + " " + name + arr;
+
+
+	}
+	
 }
