@@ -62,7 +62,7 @@ public class Chat {
 	private boolean includeScene = false;
 	private boolean forceJailbreak = false;
 	private int remind = 6;
-	private int messageTrim = 10;
+	private int messageTrim = 20;
 	private int keyFrameEvery = 20;
 	private LLMServiceEnumType serviceType = LLMServiceEnumType.OPENAI;
 	private String model = null;
@@ -975,6 +975,7 @@ public class Chat {
 		}
 
 		int qual = countBackTo(req, "(KeyFrame:");
+		logger.info(req.getMessages().size() + " > " + (pruneSkip + keyFrameEvery) + " && " + qual + " >= " + keyFrameEvery);
 		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
@@ -988,7 +989,11 @@ public class Chat {
 		int qual = 0;
 		for (int i = eidx; i >= idx; i--) {
 			OpenAIMessage imsg = req.getMessages().get(i);
-			if(imsg.isPruned() || imsg.getContent().contains(pattern)) {
+			if(systemRole.equals(imsg.getRole())) {
+				continue;
+			}
+			/// imsg.isPruned() || 
+			if(imsg.getContent().contains(pattern)) {
 				break;
 			}
 			//  || imsg.getContent().startsWith("(KeyFrame:")
