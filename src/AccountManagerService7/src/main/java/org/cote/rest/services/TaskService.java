@@ -37,7 +37,7 @@ public class TaskService {
 	@Context
 	ServletContext context;
 	
-	@RolesAllowed({"admin","apiUser"})
+	@RolesAllowed({"admin","api"})
 	@GET
 	@Path("/activate")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
@@ -48,7 +48,7 @@ public class TaskService {
 		return Response.status(200).entity(ser).build();
 	}
 	
-	@RolesAllowed({"admin", "apiUser"})
+	@RolesAllowed({"admin", "api"})
 	@POST
 	@Path("/complete")
 	@Produces(MediaType.APPLICATION_JSON)
