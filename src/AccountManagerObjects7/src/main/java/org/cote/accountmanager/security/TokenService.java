@@ -78,6 +78,7 @@ public class TokenService {
 	public static final String CLAIM_SBI = "sbi";
 	public static final String CLAIM_RESOURCE_TYPE = "resourceType";
 	public static final String CLAIM_RESOURCE_ID = "resourceId";
+	public static final String CLAIM_ISSUER_URN = "issuerUrn";
 	public static final int TOKEN_EXPIRY_1_MINUTE = 60;
 	public static final int TOKEN_EXPIRY_10_MINUTES = TOKEN_EXPIRY_1_MINUTE * 10;
 	public static final int TOKEN_EXPIRY_1_HOUR = TOKEN_EXPIRY_10_MINUTES * 6;
@@ -339,9 +340,10 @@ public class TokenService {
 		Date expires = cal.getTime();
 		JwtBuilder builder = Jwts.builder();
 		
-		builder.header().keyId(authorizingUser.get(FieldNames.FIELD_URN))
+		builder.header().keyId(persona.get(FieldNames.FIELD_URN))
+			.add(CLAIM_ISSUER_URN, authorizingUser.get(FieldNames.FIELD_URN))
 			.add(CLAIM_SUBJECT_TYPE,persona.getSchema())
-			.add("sbi", true)
+			.add(CLAIM_SBI, true)
 			.and()
 		;
 		return builder
@@ -371,7 +373,7 @@ public class TokenService {
 			logger.error("Unsupported persona type: {0}", persona.getSchema());
 			return null;
 		}
-		CryptoBean bean = getCreateCipher(persona);
+		CryptoBean bean = getCreateCipher(contextUser);
 		if(bean == null){
 			logger.error("Null security bean");
 			return null;
@@ -423,10 +425,10 @@ public class TokenService {
 		Date expires = cal.getTime();
 		
 		JwtBuilder builder = Jwts.builder();
-		builder.header().keyId(contextUser.get(FieldNames.FIELD_URN))
+		builder.header().keyId(persona.get(FieldNames.FIELD_URN))
 			.add(CLAIM_SUBJECT_TYPE,persona.getSchema())
-			.add("issuerUrn", contextUser.get(FieldNames.FIELD_URN))
-			.add("sbi", true)
+			.add(CLAIM_ISSUER_URN, contextUser.get(FieldNames.FIELD_URN))
+			.add(CLAIM_SBI, true)
 			.and()
 		;
 		
