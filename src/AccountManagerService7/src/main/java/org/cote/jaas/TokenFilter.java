@@ -1,6 +1,8 @@
 package org.cote.jaas;
 
 import java.io.IOException;
+import java.util.Arrays;
+import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -20,6 +22,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 public class TokenFilter implements Filter{
 	private static final Logger logger = LogManager.getLogger(TokenFilter.class);
+	
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException{
 	    HttpServletRequest req = (HttpServletRequest) request;
 	    String stringToken = req.getHeader("Authorization");
@@ -27,22 +30,22 @@ public class TokenFilter implements Filter{
 	    
 	    int idx = -1;
 	    if (stringToken != null && (idx = stringToken.indexOf("Bearer")) > -1) {
-	    	String token = stringToken.substring(idx + 7, stringToken.length()).trim();
-	    	String urn = Jwts.parser().keyLocator(new AM7SigningKeyLocator()).build().parseSignedClaims(token).getPayload().getId();
-	    	BaseRecord user = IOSystem.getActiveContext().getRecordUtil().getRecordByUrn(null, ModelNames.MODEL_USER, urn);
-	    	if(user != null){
-	    		didChain = true;
-	    		chain.doFilter(new AM7RequestWrapper(user, (HttpServletRequest)request), response);
-	    	}
-	    	else {
-	    		logger.warn("Null user for urn " + urn);
-	    	}
+		    	String token = stringToken.substring(idx + 7, stringToken.length()).trim();
+		    	String urn = Jwts.parser().keyLocator(new AM7SigningKeyLocator()).build().parseSignedClaims(token).getPayload().getId();
+		    	BaseRecord user = IOSystem.getActiveContext().getRecordUtil().getRecordByUrn(null, ModelNames.MODEL_USER, urn);
+		    	if(user != null){
+		    		didChain = true;
+		    		chain.doFilter(new AM7RequestWrapper(user, (HttpServletRequest)request), response);
+		    	}
+		    	else {
+		    		logger.warn("Null user for urn " + urn);
+		    	}
 	    }
 	    else {
-	    	// logger.warn("No bearer");
+	    		// logger.warn("No bearer");
 	    }
 	    if(didChain == false){
-	    	chain.doFilter(request, response);
+	    		chain.doFilter(request, response);
 	    }
 	  }
 
