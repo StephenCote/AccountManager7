@@ -1,6 +1,5 @@
 package org.cote.accountmanager.agent;
 
-import java.lang.annotation.Annotation;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -8,14 +7,10 @@ import java.util.stream.Collectors;
 
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryResult;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 

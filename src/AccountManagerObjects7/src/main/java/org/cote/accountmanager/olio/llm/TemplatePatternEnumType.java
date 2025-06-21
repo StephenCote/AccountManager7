@@ -1,6 +1,6 @@
 package org.cote.accountmanager.olio.llm;
-import java.util.regex.Pattern;
 import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public enum TemplatePatternEnumType {
 

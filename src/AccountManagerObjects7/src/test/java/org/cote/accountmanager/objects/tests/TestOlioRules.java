@@ -22,7 +22,6 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioException;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.OverwatchException;
-import org.cote.accountmanager.olio.WearLevelEnumType;
 import org.cote.accountmanager.olio.actions.ActionUtil;
 import org.cote.accountmanager.olio.actions.Actions;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;

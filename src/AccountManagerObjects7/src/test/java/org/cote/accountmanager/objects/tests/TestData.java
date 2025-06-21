@@ -29,14 +29,8 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.SchemaUtil;
-import org.cote.accountmanager.schema.type.GroupEnumType;
-import org.cote.accountmanager.schema.type.StreamEnumType;
 import org.cote.accountmanager.util.AttributeUtil;
-import org.cote.accountmanager.util.ByteModelUtil;
-import org.cote.accountmanager.util.ContentTypeUtil;
-import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.accountmanager.util.ThumbnailUtil;
 import org.junit.Test;
 
 public class TestData extends BaseTest {
