@@ -1,6 +1,9 @@
 package org.cote.accountmanager.objects.tests;
 
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertTrue;
+
+import java.util.List;
 
 import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.AgentToolManager;
@@ -13,9 +16,13 @@ import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
+import org.cote.accountmanager.olio.llm.OpenAIMessage;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
@@ -32,18 +39,32 @@ public class TestAgent extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
-		BaseRecord cfg = getChatConfig(testUser1, "AM7 AgentTool OpenAI.chat");
+		BaseRecord cfg = getChatConfig(testUser1, "AM7 AgentTool OpenAI.chat 2");
 		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey"}));
 
 		AM7AgentTool agentTool = new AM7AgentTool(testUser1);
 		AgentToolManager toolManager = new AgentToolManager(testUser1, cfg, agentTool);
-		BaseRecord prompt = toolManager.getPromptConfig();
+		BaseRecord prompt = toolManager.getPlanPromptConfig("Demo Prompt");
 		assertNotNull("Prompt config is null", prompt);
 		logger.info(prompt.toFullString());
 		
+		Chat chat = new Chat(testUser1, cfg, prompt);
+		// OpenAIRequest req = new OpenAIRequest(ChatUtil.getCreateChatRequest(testUser1, "Rando Question 1", cfg, prompt));
+		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, "Rando Chat", cfg, prompt);
+		if(creq != null) {
+			/// Fetch again since the create will only return the identifiers. 
+			creq = ChatUtil.getChatRequest(testUser1, "Rando Chat", cfg, prompt);
+		}
+		OpenAIRequest req = ChatUtil.getOpenAIRequest(testUser1, new ChatRequest(creq));
+		//OpenAIRequest req = chat.getChatPrompt();
+		chat.continueChat(req, "Who has red hair?");
+		List<OpenAIMessage> msgs = req.getMessages();
+		assertTrue("Expected at least three messages", msgs.size() >= 3);
+		
+		logger.info("Response: " + msgs.get(msgs.size() - 1).getContent());
 		//logger.info(agentTool.summarizeModels().stream().collect(Collectors.joining(System.lineSeparator())));
 		//logger.info(getModelDescriptions(false));
-		logger.info(SchemaUtil.getModelDescription(RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_PERSON)));
+		//logger.info(SchemaUtil.getModelDescription(RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_PERSON)));
 	}
 	
 

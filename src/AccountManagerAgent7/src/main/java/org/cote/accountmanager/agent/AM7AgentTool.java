@@ -37,12 +37,22 @@ public class AM7AgentTool {
 	    }
 
 
-	    @AgentTool(description = "Find auth.role models based on criteria.", parameters = "queryFields: [{name: \"name\", comparator: \"LIKE\", value: \"Administrator\"}]")
+	    @AgentTool(
+	    		description = "Find auth.role models based on criteria.",
+   			inputs = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"${name}\", comparator: \"${comparator}\", value: ${value}}]}",
+	    		example = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"name\", comparator: \"LIKE\", value: \"Administrator\"}]}",
+	    		output = "{name: \"return\", valueType: \"list\", value: [${baseRecord}, ...]}"
+	    	)
 	    public List<BaseRecord> findRoles(List<BaseRecord> queryFields) {
 	        return findObjects(ModelNames.MODEL_ROLE, queryFields);
 	    }
 
-	    @AgentTool(description = "Finds all members (user, person, account) for a given list of roles.", parameters = "roles: [roleObject1, roleObject2]")
+	    @AgentTool(
+	    		description = "Finds all members (user, person, account) for a given list of roles.",
+	    		inputs = "{name: \"memberModel\", valueType: \"string\", value: \"${modelName}\"}, {name: \"roles\", valueType: \"list\", value: [${auth.role}, ...]}",
+    	    		example = "[{name: \"memberModel\", valueType = \"string\", value: \"olio.charPerson\"}, [{name: \"Account Administrators\", id: 13]}]",
+	    		output = "{name: \"return\", valueType: \"list\", value: [${auth.role}, ...]}"
+        	)
 	    public List<BaseRecord> findMembersOfRoles(String memberModel, List<BaseRecord> roles) {
 	        List<BaseRecord> members = new ArrayList<>();
 	        if(roles.size() == 0) {
@@ -62,23 +72,29 @@ public class AM7AgentTool {
 
 	    }
 
-	    @AgentTool(description = "Find identity.person models based on attributes.", parameters = "queryFields: [{name: \"hairColor\", comparator: \"EQUALS\", value: \"red\"}]")
+	    @AgentTool(
+	    		description = "Find identity.person models based on attributes.",
+    	    		inputs = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"${name}\", comparator: \"${comparator}\", value: ${value}}]}",
+	    	    	example = "{name: \"queryFields\", valueType: \"list\", value: [{name: \"hairColor\", comparator: \"EQUALS\", value: \"red\"}]",
+    	    		output = "{name: \"return\", valueType: \"list\", value: [${baseRecord}, ...]}"
+	    	)
+
 	    public List<BaseRecord> findPersons(List<BaseRecord> queryFields) {
 	        // As noted before, assuming 'hairColor' exists on the person model for this example
 	        return findObjects(ModelNames.MODEL_PERSON, queryFields);
 	    }
 	    
-	    @AgentTool(description = "Finds the intersection of two lists of records.", parameters = "list1: [], list2: []")
+	    @AgentTool(description = "Finds the intersection of two lists of records.", inputs = "list1: [], list2: []")
 	    public List<BaseRecord> intersect(List<BaseRecord> list1, List<BaseRecord> list2) {
 	    		return new ArrayList<>();
 	    }
 	    
-	    @AgentTool(description = "Returns a list of available models including any description.", parameters = "")
+	    @AgentTool(description = "Returns a list of available models including any description.", inputs = "")
         public String describeAllModels() {
 	    		return SchemaUtil.getModelDescriptions(false);
         }
 
-	    @AgentTool(description = "Returns a summary of the specified model schema, including inheritence and fields", parameters = "modelName: \"identity.person\"")
+	    @AgentTool(description = "Returns a summary of the specified model schema, including inheritence and fields", inputs = "[\"input\": [{\"name\": \"modelName\", \"valueType\": \"${type}\", \"value\": \"${value}\"}]]", example = "[{name=\"modelName\", valueType: \"string\", value: \"identity.person\"}]")
         public String describeModel(String modelName) {
 	    		return SchemaUtil.getModelDescription(modelName);
         }

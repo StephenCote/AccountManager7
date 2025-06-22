@@ -1,0 +1,26 @@
+{
+	"name": "tool.planStep",
+	"ioConstraints": ["undefined"],
+	"fields": [
+		{
+			"name": "toolName",
+			"type": "string"
+		},
+		{
+			"name": "step",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "inputs",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "dev.parameter"
+		},
+		{
+			"name": "output",
+			"type": "model",
+			"baseModel": "dev.parameter"
+		}
+	]
+}

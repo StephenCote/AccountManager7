@@ -9,5 +9,7 @@ import java.lang.annotation.Target;
 @Target(ElementType.METHOD)
 public @interface AgentTool {
     public String description() default "";
-    public String parameters() default "";
+    public String inputs() default "";
+    public String output() default "";
+    public String example() default "";
 }

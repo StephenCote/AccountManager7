@@ -1,0 +1,12 @@
+{
+	"name": "tool.plan",
+	"ioConstraints": ["undefined"],
+	"fields": [
+		{
+			"name": "steps",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "tool.planStep"
+		}
+	]
+}

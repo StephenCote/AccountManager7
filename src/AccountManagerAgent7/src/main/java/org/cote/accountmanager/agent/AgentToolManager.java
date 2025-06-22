@@ -5,7 +5,9 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -63,16 +65,83 @@ public class AgentToolManager {
         }
     }
 
+    public String getToolForPlanStep(String toolName) {
+        JSONArray toolsArray = new JSONArray();
+        Optional<Method> ometh = discoveredTools.stream().filter(m -> toolName.equals(m.getName())).findFirst();
+		if (!ometh.isPresent()) {
+			logger.error("Tool " + toolName + " not found");
+			return null;
+		}
+		Method meth = ometh.get();
+        AgentTool annotation = meth.getAnnotation(AgentTool.class);
+        JSONObject toolJson = new JSONObject();
+        toolJson.put("toolName", meth.getName());
+        toolJson.put("description", annotation.description());
+        toolJson.put("inputs", annotation.inputs());
+        toolJson.put("example", annotation.example());
+        toolJson.put("output", annotation.output());
 
+        toolJson.put("planStepSchema", """
+        	{
+			"name": "toolName",
+			"type": "string"
+		},
+		{
+			"name": "step",
+			"type": "int",
+			"default": 0
+		},
+		{
+			"name": "input",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "dev.parameter"
+		},
+		{
+			"name": "output",
+			"type": "model",
+			"baseModel": "dev.parameter"
+		}
 
-    public String getToolsForPrompt() {
+        	""");
+        
+        toolJson.put("planStepExample", """
+        		{
+        		"toolName": "${toolName}",
+        		"step": 1,
+        		"input": [
+        			{
+        				"name": "modelName",
+        				"valueType": "string",
+        				"value": "olio.charPerson"
+        			}
+        		],
+        		"output": {
+				    "name": "return",
+					"valueType": "list",
+					"value": [
+						{
+							"name": "John Doe",
+							"id": 12345
+						}
+					]
+				}
+        		}
+        		
+        	""");
+
+        return toolJson.toString(2);
+    }
+
+    public String getToolsForPlan() {
         JSONArray toolsArray = new JSONArray();
         for (Method method : this.discoveredTools) {
             AgentTool annotation = method.getAnnotation(AgentTool.class);
             JSONObject toolJson = new JSONObject();
             toolJson.put("toolName", method.getName());
             toolJson.put("description", annotation.description());
-            toolJson.put("parameters_example", annotation.parameters());
+            // toolJson.put("parameters", annotation.parameters());
+            // toolJson.put("example", annotation.example());
             toolsArray.put(toolJson);
         }
         return toolsArray.toString(2);
@@ -99,13 +168,28 @@ public class AgentToolManager {
 		return opcfg;
 	}
     
-    public BaseRecord getPromptConfig() {
-        BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName());
+    public BaseRecord getPlanPromptConfig(String planName) {
+        BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName() + " " + planName);
         List<String> sysPrompt = prompt.get("system");
         // if(sysPrompt.size() == 0) {
-            String toolDescriptions = getToolsForPrompt();
+            String toolDescriptions = getToolsForPlan();
             String promptStr = "You are a helpful assistant that creates an execution plan to answer a user's question.\n"
-                                + "Respond with a JSON plan that uses the following tools:\n"
+                                //+ "Respond with a JSON plan that uses the following tools:\n"
+            		                + "Respond with a JSON array containing the names of the tools to call in the relevant order.:\n"
+                                + toolDescriptions;
+            sysPrompt.add(promptStr);
+            IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);
+        //}
+
+        return prompt;
+    }
+    
+    public BaseRecord getPlanStepPromptConfig(String planName, int step, String toolName) {
+        BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName() + " " + planName + " Step " + step);
+        List<String> sysPrompt = prompt.get("system");
+            String toolDescriptions = getToolForPlanStep(toolName);
+            String promptStr = "You are a helpful assistant that creates an execution step of an overall plan to answer a user's question.\n"
+                                + "Respond with a JSON plan step that uses the following tools:\n"
                                 + toolDescriptions;
             sysPrompt.add(promptStr);
             IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);

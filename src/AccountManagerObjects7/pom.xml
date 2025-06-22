@@ -70,9 +70,10 @@
 					</includes>
 					<excludes>
 						<!--
-							<exclude>**/TestStartup.java</exclude>
+							<exclude>**/TestToken.java</exclude>
 						
 						-->
+						<exclude>**/TestStartup.java</exclude>
 						<exclude>**/TestPerformance.java</exclude>
 						<exclude>**/TestAgentChat.java</exclude>
 						<exclude>**/TestOlioRules.java</exclude>
@@ -118,7 +119,7 @@
 						<exclude>**/TestDBPerformance.java</exclude>
 						<exclude>**/TestFieldRevisions.java</exclude>
 						<exclude>**/TestMembership.java</exclude>
-						<exclude>**/TestToken.java</exclude>
+						
 						
 						
 						<exclude>**/TestAutoDBAuthZPolicy.java</exclude>
