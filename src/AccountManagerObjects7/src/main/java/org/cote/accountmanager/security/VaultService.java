@@ -968,7 +968,7 @@ public class VaultService
 			throw new ModelException("Model " + obj.getSchema() + " field " + field.getName() + " is not configured to be encrypted");
 		}
 		if(FieldUtil.isNullOrEmpty(obj.getSchema(), field)) {
-			logger.warn("Do not vault null or empty value");
+			logger.warn("Do not vault null or empty value for " + obj.getSchema() + "." + field.getName());
 			return outBool;
 		}
 		

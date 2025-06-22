@@ -4,6 +4,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.AgentToolManager;
@@ -25,10 +26,14 @@ import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.LooseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.SchemaUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
 public class TestAgent extends BaseTest {
@@ -39,35 +44,64 @@ public class TestAgent extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
-		BaseRecord cfg = getChatConfig(testUser1, "AM7 AgentTool OpenAI.chat 2");
-		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey"}));
+		BaseRecord cfg = getChatConfig(testUser1, "AM7 AgentTool OpenAI.chat 7");
+		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey", "keyId", "vaulted", "vaultedFields"}));
 
 		AM7AgentTool agentTool = new AM7AgentTool(testUser1);
 		AgentToolManager toolManager = new AgentToolManager(testUser1, cfg, agentTool);
 		BaseRecord prompt = toolManager.getPlanPromptConfig("Demo Prompt");
 		assertNotNull("Prompt config is null", prompt);
-		logger.info(prompt.toFullString());
+		// logger.info(prompt.toFullString());
 		
 		Chat chat = new Chat(testUser1, cfg, prompt);
 		// OpenAIRequest req = new OpenAIRequest(ChatUtil.getCreateChatRequest(testUser1, "Rando Question 1", cfg, prompt));
-		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, "Rando Chat", cfg, prompt);
+		String chatName = "Rando Chat - " + UUID.randomUUID().toString();
+		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, chatName, cfg, prompt);
 		if(creq != null) {
 			/// Fetch again since the create will only return the identifiers. 
-			creq = ChatUtil.getChatRequest(testUser1, "Rando Chat", cfg, prompt);
+			creq = ChatUtil.getChatRequest(testUser1, chatName, cfg, prompt);
 		}
 		OpenAIRequest req = ChatUtil.getOpenAIRequest(testUser1, new ChatRequest(creq));
+		//logger.info(cfg.toFullString());
+		
 		//OpenAIRequest req = chat.getChatPrompt();
+		
 		chat.continueChat(req, "Who has red hair?");
 		List<OpenAIMessage> msgs = req.getMessages();
 		assertTrue("Expected at least three messages", msgs.size() >= 3);
 		
 		logger.info("Response: " + msgs.get(msgs.size() - 1).getContent());
+		
+		List<BaseRecord> steps = extractJSON(msgs.get(msgs.size() - 1).getContent());
+		assertNotNull("Steps are null", steps);
+		assertTrue("Expected at least one step", steps.size() > 0);
+		logger.info(steps.get(0).toFullString());
 		//logger.info(agentTool.summarizeModels().stream().collect(Collectors.joining(System.lineSeparator())));
 		//logger.info(getModelDescriptions(false));
 		//logger.info(SchemaUtil.getModelDescription(RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_PERSON)));
+		///
+		 
 	}
 	
+	public static List<BaseRecord> extractJSON(final String contents){
 
+		int fbai = contents.indexOf("{");
+		String uconts = contents.substring(0, fbai + 1) + "\"schema\":\"tool.planStep\"," + contents.substring(fbai + 1, contents.length());
+		int fai = uconts.indexOf("[");
+		fbai = uconts.indexOf("{");
+		int lai = uconts.lastIndexOf("]");
+		int lbai = uconts.lastIndexOf("}");
+
+
+		if(fai == -1 || fai > fbai) {
+			uconts = "[" + uconts.substring(fbai, lbai + 1) + "]";
+		}
+		else {
+			uconts = uconts.substring(fai, lai + 1);
+		}
+		logger.info("Extract JSON From: " + uconts);
+		return JSONUtil.getList(uconts, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+	}
 	
 	public static BaseRecord getChatConfig(BaseRecord user, String name) {
 		
@@ -98,7 +132,6 @@ public class TestAgent extends BaseTest {
 			cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server"));
 			cfg.setValue("model", "gpt-4o");
 			cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
-
 			
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
 		}
