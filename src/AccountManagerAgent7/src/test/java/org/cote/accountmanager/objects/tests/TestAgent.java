@@ -10,9 +10,11 @@ import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.AgentToolManager;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.factory.Factory;
 import org.cote.accountmanager.io.IOSystem;
+import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
@@ -113,7 +115,7 @@ public class TestAgent extends BaseTest {
 			cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
 			cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version").trim());
 			cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server").trim());
-			cfg.setValue("model", "o1");
+			cfg.setValue("model", testProperties.getProperty("test.llm.openai.model").trim());
 			cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
 			
 			BaseRecord opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
@@ -125,8 +127,18 @@ public class TestAgent extends BaseTest {
 			cfg.set("chatOptions",  opts);
 			
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
+			
+			if(cfg != null) {
+				/// Read again because the key value will have been encrypted after writing, and the model needs to be 'read' again
+				///
+				///
+				MemoryReader memReader = new MemoryReader();
+				cfg = memReader.read(cfg);
+				//cfg = IOSystem.getActiveContext().getSearch().findRecord(q);
+			}
+			
 		}
-		catch(StackOverflowError | ModelNotFoundException | FieldException | ValueException e) {
+		catch(StackOverflowError | ModelNotFoundException | FieldException | ValueException | ReaderException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
