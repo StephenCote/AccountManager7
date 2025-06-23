@@ -5,6 +5,7 @@ import static org.junit.Assert.assertTrue;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.AgentToolManager;
@@ -41,20 +42,22 @@ import org.junit.Test;
 
 public class TestAgent extends BaseTest {
 	
+	private String testPlanPromptName = "Demo Plan Prompt";
+	private String testPlanChatName = "Demo Plan Chat - " + UUID.randomUUID().toString();
+	private String testPlanFile = "./plan.json";
+	private String testChatConfig = "AM7 AgentTool OpenAI.chat";
+	private String testQuery = "Who has red hair?";
 	@Test
 	public void TestAgent1() {
-		OrganizationContext testOrgContext = getTestOrganization("/Development/World Building");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Agentic");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
-		BaseRecord cfg = getChatConfig(testUser1, "AM7 AgentTool OpenAI.chat - " + UUID.randomUUID().toString());
-		logger.info(cfg.toFullString());
-		//ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey", "keyId", "vaulted", "vaultedFields"}));
+		BaseRecord cfg = getChatConfig(testUser1, testChatConfig);
 
 		BaseRecord plan = null;
-		String planStr = FileUtil.getFileAsString("./plan.json");
+		String planStr = FileUtil.getFileAsString(testPlanFile);
 		if(planStr != null && planStr.length() > 0) {
-			// logger.info("Import: '" + planStr + "'");
 			plan = JSONUtil.importObject(planStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
 			assertNotNull("Imported plan was null", plan);
 		}
@@ -63,21 +66,29 @@ public class TestAgent extends BaseTest {
 		AgentToolManager toolManager = new AgentToolManager(testUser1, cfg, agentTool);
 		
 		if(plan == null) {
-			plan = toolManager.createPlan("Demo Plan Prompt 3", "Demo Plan Chat - " + UUID.randomUUID().toString(), "Who has red hair?");
+			logger.info("Creating plan outline ...");
+			plan = toolManager.createPlan(testPlanPromptName, testPlanChatName, testQuery);
 			assertNotNull(plan);
 			List<BaseRecord> steps = plan.get("steps");
 			assertTrue("Expected steps", steps.size() > 0);
 			// logger.info(plan.toFullString());
-			FileUtil.emitFile("./plan.json", plan.toFullString());
+			FileUtil.emitFile(testPlanFile, plan.toFullString());
 		}
 		List<BaseRecord> steps = plan.get("steps");
 		int stepIdx = 1;
-		for(BaseRecord step : steps) {
-			step.setValue("step", stepIdx++);
-			BaseRecord stepr = toolManager.createStepPlan("Demo Step Prompt 3", "Demo Step Chat - " + UUID.randomUUID(), plan, step);
-			assertNotNull("Step was null", stepr);
-			logger.info(step.toFullString());
-		}
+        List<BaseRecord> steps2 = steps.stream().filter(s -> (int)s.get("step") == 0).collect(Collectors.toList());
+        if(steps2.size() > 0) {
+        		logger.info("Populating " + steps2.size() + " plan steps ...");
+			for(BaseRecord step : steps) {
+				step.setValue("step", stepIdx++);
+				BaseRecord stepr = toolManager.createStepPlan("Demo Step Prompt 3", "Demo Step Chat - " + UUID.randomUUID(), plan, step);
+				assertNotNull("Step was null", stepr);
+				
+			}
+			FileUtil.emitFile(testPlanFile, plan.toFullString());
+        }
+		
+        toolManager.executePlan(plan);
 		
 		//logger.info(agentTool.summarizeModels().stream().collect(Collectors.joining(System.lineSeparator())));
 		//logger.info(getModelDescriptions(false));
