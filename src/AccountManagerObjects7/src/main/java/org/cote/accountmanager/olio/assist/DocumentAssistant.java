@@ -221,7 +221,7 @@ DO NOT RESPOND WITH *REVISED LINE*, *PREVIOUS LINE*, *CURRENT LINE*, or *NEXT LI
 
 	protected OpenAIRequest getRequest(Chat chat) {
 		OpenAIRequest req = chat.getChatPrompt();
-		req.setValue("max_tokens", 2048);
+		req.setValue("max_completion_tokens", 2048);
 		req.setValue("frequency_penalty", 1.5);
 		req.setValue("presence_penalty", 1.5);
 		return req;

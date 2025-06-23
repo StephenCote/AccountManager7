@@ -3,6 +3,23 @@
 	"ioConstraints": ["undefined"],
 	"fields": [
 		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "planQuery",
+			"type": "string"
+		},
+		{
+			"name": "planPromptConfigName",
+			"type": "string"
+		},
+		{
+			"name": "planChatName",
+			"type": "string"
+		},
+
+		{
 			"name": "steps",
 			"type": "list",
 			"baseType": "model",

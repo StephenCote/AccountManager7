@@ -33,6 +33,7 @@ import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.SchemaUtil;
+import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.junit.Test;
 
@@ -44,38 +45,38 @@ public class TestAgent extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
-		BaseRecord cfg = getChatConfig(testUser1, "AM7 AgentTool OpenAI.chat 7");
-		ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey", "keyId", "vaulted", "vaultedFields"}));
+		BaseRecord cfg = getChatConfig(testUser1, "AM7 AgentTool OpenAI.chat - " + UUID.randomUUID().toString());
+		logger.info(cfg.toFullString());
+		//ioContext.getAccessPoint().update(testUser1, cfg.copyRecord(new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, "serviceType", "apiVersion", "serverUrl", "model", "apiKey", "keyId", "vaulted", "vaultedFields"}));
 
+		BaseRecord plan = null;
+		String planStr = FileUtil.getFileAsString("./plan.json");
+		if(planStr != null && planStr.length() > 0) {
+			// logger.info("Import: '" + planStr + "'");
+			plan = JSONUtil.importObject(planStr, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
+			assertNotNull("Imported plan was null", plan);
+		}
+		
 		AM7AgentTool agentTool = new AM7AgentTool(testUser1);
 		AgentToolManager toolManager = new AgentToolManager(testUser1, cfg, agentTool);
-		BaseRecord prompt = toolManager.getPlanPromptConfig("Demo Prompt");
-		assertNotNull("Prompt config is null", prompt);
-		// logger.info(prompt.toFullString());
 		
-		Chat chat = new Chat(testUser1, cfg, prompt);
-		// OpenAIRequest req = new OpenAIRequest(ChatUtil.getCreateChatRequest(testUser1, "Rando Question 1", cfg, prompt));
-		String chatName = "Rando Chat - " + UUID.randomUUID().toString();
-		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, chatName, cfg, prompt);
-		if(creq != null) {
-			/// Fetch again since the create will only return the identifiers. 
-			creq = ChatUtil.getChatRequest(testUser1, chatName, cfg, prompt);
+		if(plan == null) {
+			plan = toolManager.createPlan("Demo Plan Prompt 3", "Demo Plan Chat - " + UUID.randomUUID().toString(), "Who has red hair?");
+			assertNotNull(plan);
+			List<BaseRecord> steps = plan.get("steps");
+			assertTrue("Expected steps", steps.size() > 0);
+			// logger.info(plan.toFullString());
+			FileUtil.emitFile("./plan.json", plan.toFullString());
 		}
-		OpenAIRequest req = ChatUtil.getOpenAIRequest(testUser1, new ChatRequest(creq));
-		//logger.info(cfg.toFullString());
+		List<BaseRecord> steps = plan.get("steps");
+		int stepIdx = 1;
+		for(BaseRecord step : steps) {
+			step.setValue("step", stepIdx++);
+			BaseRecord stepr = toolManager.createStepPlan("Demo Step Prompt 3", "Demo Step Chat - " + UUID.randomUUID(), plan, step);
+			assertNotNull("Step was null", stepr);
+			logger.info(step.toFullString());
+		}
 		
-		//OpenAIRequest req = chat.getChatPrompt();
-		
-		chat.continueChat(req, "Who has red hair?");
-		List<OpenAIMessage> msgs = req.getMessages();
-		assertTrue("Expected at least three messages", msgs.size() >= 3);
-		
-		logger.info("Response: " + msgs.get(msgs.size() - 1).getContent());
-		
-		List<BaseRecord> steps = extractJSON(msgs.get(msgs.size() - 1).getContent());
-		assertNotNull("Steps are null", steps);
-		assertTrue("Expected at least one step", steps.size() > 0);
-		logger.info(steps.get(0).toFullString());
 		//logger.info(agentTool.summarizeModels().stream().collect(Collectors.joining(System.lineSeparator())));
 		//logger.info(getModelDescriptions(false));
 		//logger.info(SchemaUtil.getModelDescription(RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_PERSON)));
@@ -83,25 +84,7 @@ public class TestAgent extends BaseTest {
 		 
 	}
 	
-	public static List<BaseRecord> extractJSON(final String contents){
 
-		int fbai = contents.indexOf("{");
-		String uconts = contents.substring(0, fbai + 1) + "\"schema\":\"tool.planStep\"," + contents.substring(fbai + 1, contents.length());
-		int fai = uconts.indexOf("[");
-		fbai = uconts.indexOf("{");
-		int lai = uconts.lastIndexOf("]");
-		int lbai = uconts.lastIndexOf("}");
-
-
-		if(fai == -1 || fai > fbai) {
-			uconts = "[" + uconts.substring(fbai, lbai + 1) + "]";
-		}
-		else {
-			uconts = uconts.substring(fai, lai + 1);
-		}
-		logger.info("Extract JSON From: " + uconts);
-		return JSONUtil.getList(uconts, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule());
-	}
 	
 	public static BaseRecord getChatConfig(BaseRecord user, String name) {
 		
@@ -128,10 +111,18 @@ public class TestAgent extends BaseTest {
 			cfg.set("rating", ESRBEnumType.E);
 
 			cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
-			cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version"));
-			cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server"));
-			cfg.setValue("model", "gpt-4o");
-			cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
+			cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version").trim());
+			cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server").trim());
+			cfg.setValue("model", "o1");
+			cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
+			
+			BaseRecord opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
+			opts.set("temperature", 0.4);
+			opts.set("top_p", 1.0);
+			opts.set("repeat_penalty", 1.2);
+			opts.set("typical_p", 0.85);
+			opts.set("num_ctx", 8192);
+			cfg.set("chatOptions",  opts);
 			
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);
 		}

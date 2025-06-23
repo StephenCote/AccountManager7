@@ -1069,7 +1069,7 @@ public class ChatUtil {
 			req.set("top_p", top_p);
 			req.set("frequency_penalty", repeat_penalty);
 			req.set("presence_penalty", typical_p);
-			req.set("max_tokens", num_ctx);
+			req.set("max_completion_tokens", num_ctx);
 		}
 		catch (ModelNotFoundException | FieldException | ValueException ex) {
 			logger.error("Error applying chat options: " + ex.getMessage());

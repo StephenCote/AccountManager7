@@ -11,6 +11,15 @@
 			"type": "int",
 			"default": 0
 		},
+
+		{
+			"name": "stepPromptConfigName",
+			"type": "string"
+		},
+		{
+			"name": "stepChatName",
+			"type": "string"
+		},
 		{
 			"name": "inputs",
 			"type": "list",

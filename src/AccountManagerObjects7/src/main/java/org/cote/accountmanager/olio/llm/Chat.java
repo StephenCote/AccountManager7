@@ -70,6 +70,8 @@ public class Chat {
 	private String apiVersion = null;
 	private String authorizationToken = null;
 	private boolean deferRemote = false;
+	private boolean enableKeyFrame = true;
+	
 	private String llmSystemPrompt = """
 			You play the role of an assistant named Siren.
 			Begin conversationally.
@@ -78,6 +80,20 @@ public class Chat {
 	public Chat() {
 
 	}
+	
+	
+
+	public boolean isEnableKeyFrame() {
+		return enableKeyFrame;
+	}
+
+
+
+	public void setEnableKeyFrame(boolean enableKeyFrame) {
+		this.enableKeyFrame = enableKeyFrame;
+	}
+
+
 
 	public static String getKeyframeRole() {
 		return keyframeRole;
@@ -439,7 +455,7 @@ public class Chat {
 			areq.set("top_p", top_p);
 			areq.set("frequency_penalty", repeat_penalty);
 			areq.set("presence_penalty", typical_p);
-			areq.set("max_tokens", num_ctx);
+			areq.set("max_completion_tokens", num_ctx);
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 		}
