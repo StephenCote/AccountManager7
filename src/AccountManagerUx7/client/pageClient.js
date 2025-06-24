@@ -623,7 +623,7 @@
         obj.object.dataBytesStore = uwm.base64Encode(JSON.stringify(obj.entity));
         let bUp = await promisePatch(obj.object);
 
-        dialogUp = false;
+        page.components.dialog.endDialog();
         m.redraw();
     }
 

@@ -110,7 +110,7 @@
     }
 
     async function chatInto(){
-      page.components.dialog.chatInto(undefined, undefined, aCCfg)
+      page.components.dialog.chatInto(undefined, inst, aCCfg)
     }
 
     async function doCancel() {

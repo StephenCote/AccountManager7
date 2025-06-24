@@ -26,7 +26,6 @@
         */
         let aCPs = [];
         if(aCCfg){
-
             let aC = aCCfg.filter(c => c.name == inst.api.chatConfig()?.name);
             if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
                 aCPs.push(aC[0].userCharacter.name);
