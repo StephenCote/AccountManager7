@@ -45,7 +45,7 @@ public class TestAgent extends BaseTest {
 	private String testPlanPromptName = "Demo Plan Prompt";
 	private String testPlanChatName = "Demo Plan Chat - " + UUID.randomUUID().toString();
 	private String testPlanFile = "./plan.json";
-	private String testChatConfig = "AM7 AgentTool OpenAI.chat";
+	private String testChatConfig = "AM7 AgentTool OpenAI 4.chat";
 	private String testQuery = "Who has red hair?";
 	@Test
 	public void TestAgent1() {
@@ -88,7 +88,13 @@ public class TestAgent extends BaseTest {
 			FileUtil.emitFile(testPlanFile, plan.toFullString());
         }
 		
-        toolManager.executePlan(plan);
+        try {
+        	toolManager.getPlanExecutor().executePlan(plan);
+        }
+        catch(Exception e) {
+			logger.error("Error executing plan", e);
+			e.printStackTrace();
+        }
 		
 		//logger.info(agentTool.summarizeModels().stream().collect(Collectors.joining(System.lineSeparator())));
 		//logger.info(getModelDescriptions(false));

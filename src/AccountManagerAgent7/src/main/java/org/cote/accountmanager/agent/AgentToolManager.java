@@ -51,7 +51,6 @@ public class AgentToolManager {
 	private String defaultPlanChatName = "Plan Chat";
 	private String defaultStepPromptName = "Tool Prompt";
 	private String defaultStepChatName = "Tool Chat";
-	private static final Pattern CONTEXT_VARIABLE_PATTERN = Pattern.compile("\\{\\{(.+?)\\}\\}");
 	
 	public AgentToolManager(BaseRecord user, BaseRecord chatConfig, Object toolInstance) {
 		this.toolInstance = toolInstance;
@@ -60,75 +59,22 @@ public class AgentToolManager {
 		discoverTools();
 	}
 
-	public String executePlan(BaseRecord plan) {
-		if (plan == null) {
-			logger.error("Plan is null");
-			return null;
-		}
-		List<BaseRecord> steps = (List<BaseRecord>) plan.get("steps");
-		if (steps == null || steps.size() == 0) {
-			logger.error("No steps in plan");
-			return null;
-		}
-		steps.sort(Comparator.comparingInt(s -> (int) s.get("step")));
-		List<String> stepResults = new ArrayList<>();
-		Map<String, Object> context = new HashMap<>();
-		StringBuilder buff = new StringBuilder();
-		logger.info("Executing plan: " + plan.get("planQuery") + " with " + steps.size() + " steps");
-		Object lastResult = null;
-		for (BaseRecord step : steps) {
-			String toolName = step.get("toolName");
-			Method meth = toolMap.get(toolName);
-			if (meth == null) {
-				logger.error("Tool " + toolName + " not found for step " + step.get("step"));
-				continue;
-			}
-			Object[] arguments = prepareArguments(step, context, meth.getParameterTypes());
-			try {
-	            // Invoke the tool method using reflection
-	            lastResult = meth.invoke(toolInstance, arguments);
-	            String outputVarName = step.get("output");
-	            if (outputVarName != null && !outputVarName.isEmpty()) {
-	                context.put(outputVarName, lastResult);
-	            }
-			} catch (Exception e) {
-				logger.error("Error executing step #" + step.get("step") + " for tool " + toolName, e);
-			}
-		}
-		return buff.toString();
+	protected Object getToolInstance() {
+		return toolInstance;
 	}
 	
-	 private Object[] prepareArguments(BaseRecord step, Map<String, Object> context, Class<?>[] parameterTypes) {
-	        List<Object> preparedArgs = new ArrayList<>();
-	        BaseRecord inputs = step.get("inputs");
-
-	        if (inputs != null) {
-	            List<BaseRecord> parameters = inputs.get("parameters");
-	            for (BaseRecord param : parameters) {
-	                Object value = param.get("value");
-	                if (value instanceof String) {
-	                    // Check if the string value is a context reference (e.g., "{{var}}")
-	                    Matcher matcher = CONTEXT_VARIABLE_PATTERN.matcher((String) value);
-	                    if (matcher.matches()) {
-	                        String contextKey = matcher.group(1);
-	                        // Replace the reference with the actual value from the context
-	                        preparedArgs.add(context.get(contextKey));
-	                    } else {
-	                    	
-	                        preparedArgs.add(value);
-	                    }
-	                } else {
-	                	    logger.info("Handle value type: " + value);
-	                    preparedArgs.add(value);
-	                }
-	            }
-	        }
-	        
-	        // Ensure the arguments match the method signature, basic conversion if needed.
-	        // A more robust implementation might handle type casting more gracefully.
-	        return preparedArgs.toArray(new Object[0]);
-	    }
-
+	public PlanExecutor getPlanExecutor() {
+		return new PlanExecutor(this);
+	}
+	
+	protected Method getToolMethod(String toolName) {
+		Optional<Method> ometh = discoveredTools.stream().filter(m -> toolName.equals(m.getName())).findFirst();
+		if (!ometh.isPresent()) {
+			logger.error("Tool " + toolName + " not found");
+			return null;
+		}
+		return ometh.get();
+	}
 
 	public BaseRecord createPlan(String query) {
 		return createPlan(defaultPlanPromptName, defaultPlanChatName, query);
