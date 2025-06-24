@@ -223,7 +223,6 @@ LIMIT ?
 		        	stat.setInt(18, limit);	
 		        }
 		        
-		        logger.info(stat);
 		        ResultSet rs = stat.executeQuery();
 		        MemoryReader mem = new MemoryReader();
 		        while (rs.next()) {
