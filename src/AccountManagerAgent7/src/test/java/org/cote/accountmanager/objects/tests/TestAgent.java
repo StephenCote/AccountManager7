@@ -42,7 +42,7 @@ import org.junit.Test;
 
 public class TestAgent extends BaseTest {
 	
-	private String testPlanPromptName = "Demo Plan Prompt";
+	private String testPlanPromptName = "Demo Plan Prompt 9";
 	private String testPlanChatName = "Demo Plan Chat - " + UUID.randomUUID().toString();
 	private String testPlanFile = "./plan.json";
 	private String testChatConfig = "AM7 AgentTool OpenAI 4.chat";
@@ -64,7 +64,39 @@ public class TestAgent extends BaseTest {
 		
 		AM7AgentTool agentTool = new AM7AgentTool(testUser1);
 		AgentToolManager toolManager = new AgentToolManager(testUser1, cfg, agentTool);
+		//logger.info(toolManager.getPlanPromptConfig(testPlanPromptName).toFullString());
+
+		if(plan == null) {
+			try {
+				logger.info("Creating plan outline ...");
+				plan = toolManager.createPlan(testPlanPromptName, testPlanChatName, testQuery);
+				assertNotNull(plan);
+				List<BaseRecord> steps = plan.get("steps");
+				assertTrue("Expected steps", steps.size() > 0);
+				// logger.info(plan.toFullString());
+				FileUtil.emitFile(testPlanFile, plan.toFullString());
+			}
+			catch(Exception e) {
+				logger.error("Error creating plan outline", e);
+				e.printStackTrace();
+			}
+		}
 		
+		assertNotNull("Plan was null", plan);
+		List<BaseRecord> steps = plan.get("steps");
+		assertTrue("Expected steps", steps.size() > 0);
+		BaseRecord step1 = steps.get(0);
+		List<BaseRecord> inputs = step1.get("inputs");
+		assertTrue("Expected inputs", inputs.size() > 0);
+		BaseRecord input1 = inputs.get(0);
+		assertNotNull("Input was null", input1);
+		logger.info(input1.toFullString());
+		List<BaseRecord> flds = input1.get("value");
+		assertTrue("Expected fields", flds.size() > 0);
+		BaseRecord fld1 = flds.get(0);
+		logger.info(fld1.toFullString());
+		
+		/*
 		if(plan == null) {
 			logger.info("Creating plan outline ...");
 			plan = toolManager.createPlan(testPlanPromptName, testPlanChatName, testQuery);
@@ -74,6 +106,9 @@ public class TestAgent extends BaseTest {
 			// logger.info(plan.toFullString());
 			FileUtil.emitFile(testPlanFile, plan.toFullString());
 		}
+		*/
+		//toolManager.preparePlanSteps(plan);
+		/*
 		List<BaseRecord> steps = plan.get("steps");
 		int stepIdx = 1;
         List<BaseRecord> steps2 = steps.stream().filter(s -> (int)s.get("step") == 0).collect(Collectors.toList());
@@ -95,6 +130,7 @@ public class TestAgent extends BaseTest {
 			logger.error("Error executing plan", e);
 			e.printStackTrace();
         }
+        */
 		
 		//logger.info(agentTool.summarizeModels().stream().collect(Collectors.joining(System.lineSeparator())));
 		//logger.info(getModelDescriptions(false));

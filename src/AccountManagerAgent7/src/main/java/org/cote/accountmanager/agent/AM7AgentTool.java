@@ -5,9 +5,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
@@ -15,45 +19,42 @@ import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
 public class AM7AgentTool {
+	public static final Logger logger = LogManager.getLogger(AM7AgentTool.class);
 	private BaseRecord toolUser = null;
+	
 	public AM7AgentTool(BaseRecord user) {
 		this.toolUser = user;
 	}
 	
 	
-	 private List<BaseRecord> findObjects(String modelName, List<BaseRecord> queryFields){
-	      Query query = QueryUtil.createQuery(modelName, FieldNames.FIELD_ORGANIZATION_ID, toolUser.get(FieldNames.FIELD_ORGANIZATION_ID));
-	      if(queryFields != null){
-	          for(BaseRecord field : queryFields){
-                  query.field(
-                      field.get("name"),
-                      field.getEnum("comparator"),
-                      field.get("value")
-                  );
-	          }
-	      }
-	      query.planMost(true);
-	      return Arrays.asList(IOSystem.getActiveContext().getSearch().findRecords(query));
-	    }
+
 
 
 	    @AgentTool(
-	    		description = "Find auth.role models based on criteria.",
-   			inputs = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"${name}\", comparator: \"${comparator}\", value: ${value}}]}",
-	    		example = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"name\", comparator: \"LIKE\", value: \"Administrator\"}]}",
-	    		output = "{name: \"return\", valueType: \"list\", value: [${baseRecord}, ...]}"
-	    	)
-	    public List<BaseRecord> findRoles(List<BaseRecord> queryFields) {
-	        return findObjects(ModelNames.MODEL_ROLE, queryFields);
+    		description = "Find auth.role models based on criteria.",
+    		example = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"name\", comparator: \"LIKE\", value: \"Administrator\"}]}",
+    		returnType = FieldEnumType.LIST,
+    		returnModel = ModelNames.MODEL_MODEL
+    	)
+	    public List<BaseRecord> findRoles(
+	    		@AgentToolParameter(name = "queryFields", type = FieldEnumType.LIST, model = ModelNames.MODEL_QUERY_FIELD)
+	    		List<BaseRecord> queryFields
+	    ) {
+	        return AgentUtil.findObjects(toolUser, ModelNames.MODEL_ROLE, queryFields);
 	    }
 
 	    @AgentTool(
-	    		description = "Finds all members (user, person, account) for a given list of roles.",
-	    		inputs = "{name: \"memberModel\", valueType: \"string\", value: \"${modelName}\"}, {name: \"roles\", valueType: \"list\", value: [${auth.role}, ...]}",
-    	    		example = "[{name: \"memberModel\", valueType = \"string\", value: \"olio.charPerson\"}, [{name: \"Account Administrators\", id: 13]}]",
-	    		output = "{name: \"return\", valueType: \"list\", value: [${auth.role}, ...]}"
-        	)
-	    public List<BaseRecord> findMembersOfRoles(String memberModel, List<BaseRecord> roles) {
+    		description = "Finds all members (user, person, account) for a given list of roles.",
+	    	example = "inputs: [{name: \"memberModel\", valueType = \"string\", value: \"olio.charPerson\"}, [{name: \"roles\", valueType: \"list\", valueModel: \"auth.role\", value: [{\"Account Administrators\", id: 13}]}]",
+    		returnType = FieldEnumType.LIST,
+    		returnModel = ModelNames.MODEL_MODEL
+    	)
+	    public List<BaseRecord> findMembersOfRoles(
+	    		@AgentToolParameter(name = "memberModel", type = FieldEnumType.STRING)
+	    		String memberModel,
+	    		@AgentToolParameter(name = "roles", type = FieldEnumType.LIST, model = ModelNames.MODEL_ROLE)
+	    		List<BaseRecord> roles
+	    	) {
 	        List<BaseRecord> members = new ArrayList<>();
 	        if(roles.size() == 0) {
                 return members;
@@ -73,30 +74,49 @@ public class AM7AgentTool {
 	    }
 
 	    @AgentTool(
-	    		description = "Find identity.person models based on attributes.",
-    	    		inputs = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"${name}\", comparator: \"${comparator}\", value: ${value}}]}",
-	    	    	example = "{name: \"queryFields\", valueType: \"list\", value: [{name: \"hairColor\", comparator: \"EQUALS\", value: \"red\"}]",
-    	    		output = "{name: \"return\", valueType: \"list\", value: [${baseRecord}, ...]}"
-	    	)
-
-	    public List<BaseRecord> findPersons(List<BaseRecord> queryFields) {
+    		description = "Find identity.person models based on attributes.",
+    	    example = "inputs:[{name: \"queryFields\", valueModel: \"io.queryField\", valueType: \"list\", value: [{name: \"hairColor\", comparator: \"EQUALS\", value: \"red\"}]}]",
+    		returnType = FieldEnumType.LIST,
+    		returnModel = OlioModelNames.MODEL_CHAR_PERSON
+    	)
+	    public List<BaseRecord> findPersons(
+	    	@AgentToolParameter(name = "queryFields", type = FieldEnumType.LIST, model = ModelNames.MODEL_QUERY_FIELD)
+	    	List<BaseRecord> queryFields
+	    ) {
 	        // As noted before, assuming 'hairColor' exists on the person model for this example
-	        return findObjects(ModelNames.MODEL_PERSON, queryFields);
+	        return AgentUtil.findObjects(toolUser, OlioModelNames.MODEL_CHAR_PERSON, queryFields);
 	    }
-	    
-	    @AgentTool(description = "Finds the intersection of two lists of records.", inputs = "list1: [], list2: []")
-	    public List<BaseRecord> intersect(List<BaseRecord> list1, List<BaseRecord> list2) {
-	    		return new ArrayList<>();
+
+	    /*
+	    @AgentTool(
+    		description = "Refine the upcoming plan step with a response from the current or a previous step",
+    		returnType = FieldEnumType.MODEL,
+    		returnModel = ModelNames.MODEL_PLAN_STEP
+    	)
+	    public BaseRecord refinePlanStep(
+	    	@AgentToolParameter(name = "stepIndex", type = FieldEnumType.INT)
+	    	int stepIndex,
+	    	@AgentToolParameter(name = "previousStepToolName", type = FieldEnumType.STRING)
+	    	String previousStepToolName,
+	    	@AgentToolParameter(name = "reviseStepToolName", type = FieldEnumType.STRING)
+	    	String reviseStepToolName
+
+	    ) {
+	    	logger.info("Refine plan step " + stepIndex + " with tool " + previousStepToolName + " and revise with " + reviseStepToolName);
+	    	return null;
 	    }
+		*/
 	    
-	    @AgentTool(description = "Returns a list of available models including any description.", inputs = "")
+	    @AgentTool(description = "Returns a list of available models including any description.")
         public String describeAllModels() {
-	    		return SchemaUtil.getModelDescriptions(false);
+	    	return SchemaUtil.getModelDescriptions(false);
         }
 
-	    @AgentTool(description = "Returns a summary of the specified model schema, including inheritence and fields", inputs = "[\"input\": [{\"name\": \"modelName\", \"valueType\": \"${type}\", \"value\": \"${value}\"}]]", example = "[{name=\"modelName\", valueType: \"string\", value: \"identity.person\"}]")
-        public String describeModel(String modelName) {
-	    		return SchemaUtil.getModelDescription(modelName);
+	    @AgentTool(description = "Returns a summary of the specified model schema, including inheritence and fields")
+        public String describeModel(
+        	@AgentToolParameter(name = "modelName", type = FieldEnumType.STRING) String modelName
+        ) {
+	    	return SchemaUtil.getModelDescription(modelName);
         }
 
 

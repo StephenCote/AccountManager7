@@ -18,7 +18,16 @@
 	{
 		"name": "value",
 		"type": "flex",
+		"valueType": "valueType",
 		"required": true
+	},
+	{
+		"name": "valueType",
+		"description": "valueType is only meant to be used for certain serialization cases",
+		"baseClass": "org.cote.accountmanager.model.field.FieldEnumType",
+		"type": "enum",
+		"maxLength": 16,
+		"shortName": "vt"
 	},
 	{
 		"name": "fields",

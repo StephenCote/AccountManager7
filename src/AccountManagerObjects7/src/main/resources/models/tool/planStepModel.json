@@ -1,6 +1,9 @@
 {
 	"name": "tool.planStep",
 	"ioConstraints": ["undefined"],
+	"inherits": [
+        "common.description"
+    ],
 	"fields": [
 		{
 			"name": "toolName",

@@ -83,6 +83,7 @@ import org.cote.accountmanager.schema.type.ValidationEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.util.CategoryUtil;
+import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.ValidationUtil;
@@ -252,6 +253,7 @@ public class SchemaUtil {
 		FieldEnumType ftype = fs.getFieldType();
 		String type = ftype.toString().toLowerCase();
 		String arr = "";
+		String suppl = "";
 		switch (ftype) {
 			case BOOLEAN:
 				type = "bool";
@@ -279,6 +281,12 @@ public class SchemaUtil {
 				
 			case FLEX:
 				type = "var";
+
+				if(fs.getValueType() != null) {
+					Class<? extends Enum<?>> fcls = FieldEnumType.class;
+					String ftypes = Stream.of(fcls.getEnumConstants()).map(Enum::name).collect(Collectors.joining(","));
+					suppl = System.lineSeparator() + "enum(" + ftypes.toLowerCase() + ") " + fs.getValueType();
+				}
 				break;
 			case MODEL:
 				type = fs.getBaseModel();
@@ -286,10 +294,15 @@ public class SchemaUtil {
 			case STRING:
 				type = "str";
 				break;
+			case ENUM:
+				Class<? extends Enum<?>> ecls = (Class<? extends Enum<?>>)RecordFactory.getClass(fs.getBaseClass());
+				
+				type = "enum(" + Stream.of(ecls.getEnumConstants()).map(Enum::name).collect(Collectors.joining(",")).toLowerCase() + ")";
+				break;
 			case INT:
 			case LONG:
 			case DOUBLE:
-			case ENUM:
+			
 			case VECTOR:
 				break;
 			default:
@@ -303,7 +316,7 @@ public class SchemaUtil {
 		else if(fs.isIdentity()) {
 			prim = "(identity) ";
 		}
-		return prim + type + " " + name + arr;
+		return prim + type + " " + name + arr + suppl;
 
 
 	}

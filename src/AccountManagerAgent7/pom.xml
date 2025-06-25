@@ -83,6 +83,7 @@
 					<compilerArguments>
 						<endorseddirs>${endorsed.dir}</endorseddirs>
 					</compilerArguments>
+					<parameters>true</parameters>
 				</configuration>
 			</plugin>
 			<plugin>

@@ -991,7 +991,7 @@ public class Chat {
 		}
 
 		int qual = countBackTo(req, "(KeyFrame:");
-		logger.info(req.getMessages().size() + " > " + (pruneSkip + keyFrameEvery) + " && " + qual + " >= " + keyFrameEvery);
+		// logger.info(req.getMessages().size() + " > " + (pruneSkip + keyFrameEvery) + " && " + qual + " >= " + keyFrameEvery);
 		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
@@ -1064,7 +1064,7 @@ public class Chat {
 				if (rem.length() > 0) {
 					msgBuff.append(System.lineSeparator() + rem);
 				} else {
-					logger.warn("Reminder template is empty.");
+					// logger.warn("Reminder template is empty.");
 				}
 			}
 		}

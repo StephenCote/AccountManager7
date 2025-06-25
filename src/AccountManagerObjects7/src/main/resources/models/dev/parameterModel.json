@@ -1,6 +1,11 @@
 {
 	"name": "dev.parameter",
 	"inherits": ["common.attribute"],
-	"ioConstraints": ["file"],
-	"fields": []
+	"ioConstraints": ["unknown"],
+	"fields": [
+		{
+			"name": "valueSchema",
+			"type": "string"
+		}
+	]
 }

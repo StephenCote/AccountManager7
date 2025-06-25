@@ -1,6 +1,7 @@
 package org.cote.accountmanager.agent;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -22,6 +23,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
+import org.cote.accountmanager.model.field.FieldEnumType;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
@@ -34,6 +36,7 @@ import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.json.JSONArray;
@@ -51,11 +54,12 @@ public class AgentToolManager {
 	private String defaultPlanChatName = "Plan Chat";
 	private String defaultStepPromptName = "Tool Prompt";
 	private String defaultStepChatName = "Tool Chat";
-	
+	private PlanExecutor planExec = null;
 	public AgentToolManager(BaseRecord user, BaseRecord chatConfig, Object toolInstance) {
 		this.toolInstance = toolInstance;
 		this.toolUser = user;
 		this.chatConfig = chatConfig;
+		planExec = new PlanExecutor(this);
 		discoverTools();
 	}
 
@@ -64,7 +68,7 @@ public class AgentToolManager {
 	}
 	
 	public PlanExecutor getPlanExecutor() {
-		return new PlanExecutor(this);
+		return planExec;
 	}
 	
 	protected Method getToolMethod(String toolName) {
@@ -75,13 +79,130 @@ public class AgentToolManager {
 		}
 		return ometh.get();
 	}
+	
+	public boolean preparePlanSteps(BaseRecord plan) {
+		List<BaseRecord> steps = plan.get("steps");
+		int err = 0;
+		for(BaseRecord step : steps) {
+			String toolName = step.get("toolName");
+			if(toolName == null || !toolMap.containsKey(toolName)) {
+				logger.error("Tool " + toolName + " not found for step " + step.get("step"));
+				err++;
+				continue;
+			}
+			preparePlanStep(step, toolMap.get(toolName));
+		}
+		return (err == 0);
+	}
+	
+	public void preparePlanStep(BaseRecord step, Method method) {
+		List<BaseRecord> inputs = step.get("inputs");
+		inputs.clear();
+		step.setValue("output", prepareOutput(method));
+		try {
+			for(Parameter param : method.getParameters()) {
+	            inputs.add(prepareInput(param));
+			}
+		}
+		catch(ModelNotFoundException | FieldException e) {
+			logger.error(e);
+		}
+    }
+	
+	private BaseRecord prepareOutput(Method method) {
+		BaseRecord output = null;
+		try {
+			output = RecordFactory.newInstance("dev.parameter");
+			AgentTool annotation = method.getAnnotation(AgentTool.class);
+			if(annotation.returnType() == null || annotation.returnType() == FieldEnumType.UNKNOWN) {
+				return null;
+			}
+			output.setValue("valueType", annotation.returnType());
+			if(annotation.returnModel() != null && !annotation.returnModel().isEmpty()) {
+				output.setValue("valueModel", annotation.returnModel());
+			}
+		}
+		catch(ModelNotFoundException | FieldException e) {
+			logger.error(e);
+		}
+		return output;
+	}
+	
+	private BaseRecord prepareInput(Parameter param) throws FieldException, ModelNotFoundException {
+		BaseRecord input = RecordFactory.newInstance("dev.parameter");
+        if (!param.isAnnotationPresent(AgentToolParameter.class)) {
+            throw new IllegalArgumentException("Parameter " + param.getName() + " is not annotated with @AgentToolParameter");	
+        }
+        AgentToolParameter atp = param.getAnnotation(AgentToolParameter.class);
+		
+        input.setValue("name", atp.name());
+        input.setValue("valueType", atp.type());
+        if(atp.model() != null && !atp.model().isEmpty()) {
+        	input.setValue("valueModel", atp.model());
+        	if(!atp.model().equals(ModelNames.MODEL_MODEL)) {
+        		logger.info("Model: " + atp.model());
+        		input.setValue("valueSchema", SchemaUtil.getModelDescription(atp.model()));
+        	}
+        }
+        
+        return input;
+	}
 
 	public BaseRecord createPlan(String query) {
 		return createPlan(defaultPlanPromptName, defaultPlanChatName, query);
 	}
-
+	
 	public BaseRecord createPlan(String planPromptConfigName, String planChatName, String query) {
 		BaseRecord prompt = getPlanPromptConfig(planPromptConfigName);
+		if (prompt == null) {
+			logger.error("Prompt configuration was null");
+			return null;
+		}
+
+		Chat chat = new Chat(toolUser, chatConfig, prompt);
+		chat.setEnableKeyFrame(false);
+
+		BaseRecord creq = ChatUtil.getCreateChatRequest(toolUser, planChatName, chatConfig, prompt);
+		if (creq != null) {
+
+			creq = ChatUtil.getChatRequest(toolUser, planChatName, chatConfig, prompt);
+		}
+		OpenAIRequest req = ChatUtil.getOpenAIRequest(toolUser, new ChatRequest(creq));
+
+		chat.continueChat(req, query);
+		List<OpenAIMessage> msgs = req.getMessages();
+
+		/// Account for system prompt and question
+		///
+		if (msgs.size() <= 2) {
+			logger.error("No messages in chat response");
+			return null;
+		}
+		String cnt = msgs.get(msgs.size() - 1).getContent();
+		List<BaseRecord> steps = extractJSON(cnt);
+		if (steps == null || steps.size() == 0) {
+			logger.error("No steps in chat response: " + cnt);
+			return null;
+		}
+		BaseRecord plan = null;
+		try {
+			plan = RecordFactory.newInstance(ModelNames.MODEL_PLAN);
+			((List<BaseRecord>) plan.get("steps")).addAll(steps);
+			plan.set("planPromptConfigName", planPromptConfigName);
+			plan.set("planChatName", planChatName);
+			plan.set("planQuery", query);
+		} catch (FieldException | ModelNotFoundException | ValueException e) {
+			logger.error(e);
+		}
+		if (plan == null || ((List<BaseRecord>) plan.get("steps")).size() == 0) {
+			logger.error("Plan is null or no steps in plan");
+			return null;
+		}
+		return plan;
+	}
+
+	public BaseRecord createPlanXXX(String planPromptConfigName, String planChatName, String query) {
+		BaseRecord prompt = getPlanPromptConfigXXX(planPromptConfigName);
 		if (prompt == null) {
 			logger.error("Prompt configuration was null");
 			return null;
@@ -128,13 +249,13 @@ public class AgentToolManager {
 		return plan;
 	}
 
-	public BaseRecord createStepPlan(BaseRecord plan, BaseRecord step) {
-		return createStepPlan(defaultStepPromptName, defaultStepChatName, plan, step);
+	public BaseRecord createStepPlanXXX(BaseRecord plan, BaseRecord step) {
+		return createStepPlanXXX(defaultStepPromptName, defaultStepChatName, plan, step);
 	}
 
-	public BaseRecord createStepPlan(String stepPromptConfigName, String stepChatName, BaseRecord plan,
+	public BaseRecord createStepPlanXXX(String stepPromptConfigName, String stepChatName, BaseRecord plan,
 			BaseRecord step) {
-		BaseRecord stepPrompt = getPlanStepPromptConfig(stepPromptConfigName, step.get("step"), step.get("toolName"));
+		BaseRecord stepPrompt = getPlanStepPromptConfigXXX(stepPromptConfigName, step.get("step"), step.get("toolName"));
 
 		if (stepPrompt == null) {
 			logger.error("Prompt configuration was null");
@@ -188,7 +309,7 @@ public class AgentToolManager {
 	}
 
 	public static List<BaseRecord> extractJSON(final String contents) {
-
+		logger.info("Extracting JSON from contents: " + contents);
 		int fbai = contents.indexOf("{");
 		String uconts = contents.substring(0, fbai + 1) + "\"schema\":\"tool.planStep\","
 				+ contents.substring(fbai + 1, contents.length());
@@ -251,8 +372,102 @@ public class AgentToolManager {
 			findAnnotatedMethods(iface, methodSet);
 		}
 	}
+	
+	public String getPlanStepSchema() {
 
-	public String getToolForPlanStep(String toolName) {
+		StringBuilder buff = new StringBuilder();
+		String sep = System.lineSeparator();
+		buff.append("tool.planStep Schema:" + sep);
+		buff.append("""
+				{    
+					"name": "toolName",
+					"type": "string"
+				},
+				{
+					"name": "step",
+					"type": "int",
+					"default": 0
+				},
+				{
+					"name": "inputs",
+					"type": "list",
+					"baseType": "model",
+					"baseModel": "dev.parameter"
+				},
+				{
+					"name": "output",
+					"type": "model",
+					"baseModel": "dev.parameter"
+				}
+		""");
+
+		buff.append("dev.parameter Schema:" + sep);
+		buff.append("""
+		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "value",
+			"type": "flex",
+			"valueType": "valueType",
+			"description": "If the valueType is 'model' then use the provided information or request the model schema before using it."
+		},
+		{
+			"name": "valueType",
+			"type": "enum"
+		},
+		{
+			"name": "valueModel",
+			"type": "string"
+		}
+
+		""");
+
+		buff.append(sep + "tool.planStep Example:" + sep);
+		buff.append("""
+				{
+		    		"toolName": "findMembersOfRoles",
+		    		"step": 1,
+		    		"inputs": [
+		    			{
+		    				"name": "modelName",
+		    				"valueType": "string",
+		    				"value": "olio.charPerson"
+		    			},
+		    			{
+				  			"name": "roles",
+				  			"valueType": "list",
+				  			"valueModel": "olio.role",
+				  			"value": [
+				  				{
+				  					"name": "Account Administrators",
+				  					"id": 13
+				  				}
+				  			]
+		    			}
+		    		]
+			}
+		""");
+/*
+ ,
+		    		"output": {
+				    	"name": "return",
+						"valueType": "list",
+						"valueModel": "olio.charPerson",
+						"value": [
+							{
+								"name": "John Doe",
+								"id": 12345
+							}
+						]
+					}
+ */
+		return buff.toString();
+
+	}
+
+	public String getToolForPlanStepXXX(String toolName) {
 
 		StringBuilder buff = new StringBuilder();
 		String sep = System.lineSeparator();
@@ -265,8 +480,8 @@ public class AgentToolManager {
 		AgentTool annotation = meth.getAnnotation(AgentTool.class);
 		buff.append("\ttoolName: " + meth.getName() + sep);
 		buff.append("\tdescription: " + annotation.description() + sep);
-		buff.append("\tinputs: " + annotation.inputs() + sep);
-		buff.append("\toutput: " + annotation.output() + sep);
+		//buff.append("\tinputs: " + annotation.inputs() + sep);
+		//buff.append("\toutput: " + annotation.output() + sep);
 		buff.append("\texample: " + annotation.example() + sep);
 
 		buff.append("Plan Step Schema:" + sep);
@@ -321,14 +536,34 @@ public class AgentToolManager {
 		return buff.toString();
 
 	}
-
-	public String getToolsForPlan() {
+	public String getMasterPlan() {
+		BaseRecord plan = null;
+		List<BaseRecord> steps = new ArrayList<>();
+		try {
+			plan = RecordFactory.newInstance(ModelNames.MODEL_PLAN);
+			steps = plan.get("steps");
+			for (Method method : this.discoveredTools) {
+				BaseRecord step = RecordFactory.newInstance(ModelNames.MODEL_PLAN_STEP);
+				step.setValue("toolName", method.getName());
+				AgentTool annotation = method.getAnnotation(AgentTool.class);
+				step.setValue("description", annotation.description());
+				steps.add(step);
+			}
+			preparePlanSteps(plan);
+		}
+		catch (ModelNotFoundException | FieldException e) {
+			logger.error(e);
+		}
+		return steps.stream().map(s -> s.toFullString()).collect(Collectors.joining(System.lineSeparator()));
+	}
+	public String getToolsForPlanXXX() {
 		JSONArray toolsArray = new JSONArray();
 		for (Method method : this.discoveredTools) {
 			AgentTool annotation = method.getAnnotation(AgentTool.class);
 			JSONObject toolJson = new JSONObject();
 			toolJson.put("toolName", method.getName());
 			toolJson.put("description", annotation.description());
+
 			// toolJson.put("parameters", annotation.parameters());
 			// toolJson.put("example", annotation.example());
 			toolsArray.put(toolJson);
@@ -356,15 +591,38 @@ public class AgentToolManager {
 		}
 		return opcfg;
 	}
-
+	
 	public BaseRecord getPlanPromptConfig(String planName) {
 		BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName() + " " + planName);
 		List<String> sysPrompt = prompt.get("system");
+		
+		if(sysPrompt.size() == 0) {
+			String toolDescriptions = getMasterPlan();
+			String promptStr = "You are a helpful assistant that creates an execution plan to answer a user's question."
+					+ System.lineSeparator()
+					+ "Respond with a JSON array containing tool.planStep models of the tools to call in the relevant order." + System.lineSeparator()
+					+ "The following JSON schema describes tool.planStep tools available to you, including field names and types, return value, and descriptions." + System.lineSeparator()
+					+ toolDescriptions + System.lineSeparator()
+					+ "The following describes the tool.planStep schema you must use to create the plan steps:" + System.lineSeparator()
+					+ getPlanStepSchema() + System.lineSeparator()
+					+ "It is important to use the correct model schemas - ALWAYS lookup a desired schema definition before using it."
+					+ System.lineSeparator() + "Your response MUST BE VALID JSON!"
+					+ " Ensure that all string values are enclosed in double quotes without additional escape characters or mismatched quotation types.";
+			sysPrompt.addAll(promptStr.lines().collect(Collectors.toList()));
+			IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);
+		}
+
+		return prompt;
+	}
+
+	public BaseRecord getPlanPromptConfigXXX(String planName) {
+		BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName() + " " + planName);
+		List<String> sysPrompt = prompt.get("system");
 		// if(sysPrompt.size() == 0) {
-		String toolDescriptions = getToolsForPlan();
+		String toolDescriptions = getToolsForPlanXXX();
 		String promptStr = "You are a helpful assistant that creates an execution plan to answer a user's question."
 				+ System.lineSeparator()
-				+ "Respond with a JSON array containing the names of the tools to call in the relevant order.:"
+				+ "Respond with a JSON array of tool.planStep objects containing the names of the tools to call in the relevant order.:"
 				+ System.lineSeparator() + toolDescriptions + System.lineSeparator()
 				+ "It is important to use the correct model schemas - ALWAYS lookup a desired schema definition before using it."
 				+ System.lineSeparator() + "Your response MUST BE VALID JSON!"
@@ -376,11 +634,11 @@ public class AgentToolManager {
 		return prompt;
 	}
 
-	public BaseRecord getPlanStepPromptConfig(String planName, int step, String toolName) {
+	public BaseRecord getPlanStepPromptConfigXXX(String planName, int step, String toolName) {
 		BaseRecord prompt = getCreatePromptConfig(
 				toolInstance.getClass().getName() + " " + planName + " Step " + step + " " + toolName);
 		List<String> sysPrompt = prompt.get("system");
-		String toolDescriptions = getToolForPlanStep(toolName);
+		String toolDescriptions = getToolForPlanStepXXX(toolName);
 		String promptStr = "You are a helpful assistant that creates an execution step of an overall plan to answer a user's question."
 				+ System.lineSeparator() + "You identified the tool \"" + toolName + "\" to use for step #" + step
 				+ " in a plan you created." + System.lineSeparator()

@@ -45,6 +45,12 @@
 			"shortName": "vt"
 		},
 		{
+			"name": "valueModel",
+			"type": "string",
+			"maxLength": 64,
+			"shortName": "vm"
+		},
+		{
 			"name": "name",
 			"type": "string",
 			"maxLength": 64,
