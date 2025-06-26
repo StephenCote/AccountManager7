@@ -103,7 +103,10 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 	public String findModel(JsonParser jsonParser, JsonNode node, NodeLink link) {
 		String model = null;
 		if(link != null) {
-			if(link.getSchema() != null && link.getSchema().getBaseModel() != null) {
+			if(link.getListElementModel() != null && !link.getListElementModel().isEmpty()) {
+				model = link.getListElementModel();
+			}
+			else if(link.getSchema() != null && link.getSchema().getBaseModel() != null) {
 				model = link.getSchema().getBaseModel();
 				if(model.equals(ModelNames.MODEL_SELF) && link.getModel() != null) {
 					model = link.getModel();
@@ -197,7 +200,6 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         }
         catch(FieldException | ModelNotFoundException e) {
         	logger.error(e);
-        	
         }
         
         if(ltype == null || type == null) {
@@ -286,20 +288,34 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         	FieldSchema lft = ltype.getFieldSchema(k);
         	FieldEnumType valType = null;
 			Optional<FieldType> ofld = fields.stream().filter(f -> f.getName().equals(lft.getValueType())).findFirst();
+			
 			if(ofld.isPresent()) {
 				valType = FieldEnumType.valueOf(ofld.get().getValue());
+				Optional<FieldType> ofld2 = fields.stream().filter(f -> f.getName().equals("valueModel")).findFirst();
+				if(ofld2.isPresent()) {
+					String valModel = ofld2.get().getValue();
+					if(valModel != null && !valModel.isEmpty() && !valModel.equals(ModelNames.MODEL_FLEX)) {
+						currentNode.setListElementModel(valModel);
+					}
+					
+				}
 			}
 			else {
 				valType = ifld.getValueType();
 			}
 			try {
 				FieldType fld = FieldFactory.fieldByType(valType, k, ifld.getValue());
-				fld = setFieldValue(jsonParser, fld, fld, lft, null, false, fieldFlex.get(k));
 				if(fld == null) {
 					logger.error("Null field for " + k + " as " + valType);
 				}
 				else {
-					fields.add(fld);
+				fld = setFieldValue(jsonParser, fld, fld, lft, null, false, fieldFlex.get(k));
+					if(fld != null) {
+						fields.add(fld);
+					}
+					else {
+						logger.error("Null field for " + k + " as " + valType);
+					}
 				}
 			}
 			catch (ValueException | IOException e) {
@@ -390,6 +406,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     			case LIST:
     				fld.getFieldValueType().setBaseModel(lft.getBaseModel());
     				fld.getFieldValueType().setBaseType(lft.getBaseType());
+    				/// DEBUG: Try to cleanup flexible lists
+    				if(lft.getBaseType() == null && foreignType != null) {
+        				fld.getFieldValueType().setBaseModel(foreignType);
+        				//fld.getFieldValueType().setBaseType("model");
+
+    				}
     				if(possibleForeign && lft.isForeign()) {
     					TypeReference tr = new TypeReference<List<?>>() {};
     					ObjectReader reader = mapper.readerFor(tr);
@@ -431,7 +453,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				}
     				else {
 	    				TypeReference tr = null;
-	    				if(lft.getBaseType() != null && lft.getBaseType().equals(FieldTypes.TYPE_MODEL)) {
+	    				String dbg = value.toString();
+
+	    				if(currentNode.getListElementModel() != null || (lft.getBaseType() != null && lft.getBaseType().equals(FieldTypes.TYPE_MODEL))) {
 	    					tr = new TypeReference<List<LooseRecord>>() {};
 	    				}
 	    				else {
@@ -531,9 +555,18 @@ class NodeLink{
 	private NodeLink parent = null;
 	private NodeLink previous = null;
 	private FieldSchema schema = null;
+	private String listElementModel = null;
 
 	public NodeLink(NodeLink parent) {
 		this.parent = parent;
+	}
+	
+	public String getListElementModel() {
+		return listElementModel;
+	}
+	
+	public void setListElementModel(String listElementModel) {
+		this.listElementModel = listElementModel;
 	}
 	
 	public NodeLink getPrevious() {

@@ -5,7 +5,8 @@
 	"fields": [
 		{
 			"name": "valueSchema",
-			"type": "string"
+			"type": "string",
+			"description": "A JSON schema for the parameter value, for use when the entire object model may not be available."
 		}
 	]
 }
