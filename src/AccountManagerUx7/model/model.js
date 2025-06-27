@@ -66,7 +66,28 @@
 	};
 
 	am7model.hasField = function (model, n) {
-		let f = am7model.getModelField(model, n);
+		let f;
+		if(n.match(/\./)){
+			let an = n.split(".");
+			let om = model;
+			for (let i = 0; i < an.length; i++) {
+				f = am7model.getModelField(om, an[i]);
+				if(!f){
+					console.error("Failed to find field " + an[i] + " in " + model + ", " + n);
+					break;
+				}
+				if(f.type == "model" && f.baseModel){
+					om = am7model.getModel(f.baseModel);
+					if(!om){
+						break;
+					}
+				}
+			}
+		}
+		else{
+			f = am7model.getModelField(model, n);
+		}
+		
 		return (f ? true : false);
 	};
 

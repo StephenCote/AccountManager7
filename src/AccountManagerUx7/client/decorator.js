@@ -193,6 +193,8 @@
         "modifiedDate",
         "age",
         "gender",
+        /// Need to correctly plan out embedded fields
+        //"userCharacter.name",
         // "_thumbnail",
         "_tags",
         "_favorite"
@@ -207,12 +209,13 @@
         let mod = am7model.getModel(type);
         let pages = ctl.pagination.pages();
         let headers = getHeaders(type, map).map((h) => {
+            
             let fld = am7model.getModelField(type, h);
             let lbl = fld?.label || h;
             if(h.match(/^_/)){
                 lbl = "";
                 if(h == "_tags"){
-                    lbl = "tags";
+                    lbl = "Tags";
                 }
             }
             let ico = "";
@@ -327,21 +330,47 @@
             console.warn("Unhandled special column: " + h);
             return "";
         }
-        let fld = am7model.getModelField(p[am7model.jsonModelKey], h);
-        if(!fld){
-            console.warn("Couldn't find field", h);
-            return p[h];
-        }
+        let ah = h.split(".");
+        let lastFld;
+        let val;
+        let om = p;
+        for(let i = 0; i < ah.length; i++){
+            let um;
+            if(lastFld){
+                um = am7model.getModelField(lastFld.baseModel, ah[i]);
+            }
+            else{
+                um = am7model.getModelField(p[am7model.jsonModelKey], ah[i]);
+            }
 
-        if(fld.type == "timestamp"){
-            //  { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' }
-            return (p[h] ? " " + (new Date(p[h])).toLocaleDateString("en-US", {year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }) : "");
-        }
+            if(!um){
+                console.warn("Couldn't find field", ah[i]);
+                return;
+            }
 
-        return p[h];
+            if(um.type == "timestamp"){
+                //  { weekday: 'short', year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric' }
+                val = (om[um.name] ? " " + (new Date(om[um.name])).toLocaleDateString("en-US", {year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }) : "");
+            }
+
+            if(um.type == "model"){
+                if(!om[um.name]){
+                    console.warn("Couldn't find model for field", um.name, "in", p);
+                    return "";
+                }
+                lastFld = um;
+                om = om[um.name];
+            }
+            else{
+                val = om[um.name];
+            }
+
+        }
+        return val;
     }
 
     function getTabularView(ctl, rset){
+
         let results = (rset || []).map((p, i) => {
           return getTabularRow(ctl, p, i);
         });

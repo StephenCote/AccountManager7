@@ -1,3 +1,4 @@
+
 (function () {
   /*
   am7model.getModel("olio.llm.chatRequest").fields.push({
@@ -10,7 +11,7 @@
       format: "list"
   });
   */
-  am7model.forms.chatRequest = {
+   am7model.forms.chatRequest = {
     label: "Chat Request",
     commands: {
       cmdPeek: {
@@ -520,7 +521,8 @@
         }
 
         if(typeof cnt == "string"){
-          cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
+          //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
+          cnt = m.trust(marked.parse(cnt = cnt.replace(/\r/,"")));
         }
 
         return m("div", { class: "relative receive-chat flex " + align },

@@ -169,7 +169,6 @@
         }
         else {
           getSearchQuery().then((q) => {
-            console.log(q);
             am7client.search(q, handleList);
           });
         }

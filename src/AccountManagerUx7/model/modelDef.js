@@ -9748,7 +9748,7 @@
         ],
         "fields": [
           {
-            "name": "max_tokens",
+            "name": "max_completion_tokens",
             "type": "int",
             "default": 2048,
             "minValue": 0,
