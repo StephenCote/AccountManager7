@@ -153,6 +153,46 @@
         page.navigable.pendContextMenu("#" + mid, "#" + bid, null, "context-menu-96");
         return tray;
     }
+    function emojiContextButton() {
+        let ico = m("span", { class: "material-symbols-outlined" }, "add_reaction");
+        return m("button", { class: "context-menu-button" }, [ico]);
+
+    }
+    let emojiResults = [];
+    /// page.navigable.contextMenuButton(".context-menu-48", "Your Settings", "settings"),
+    /// page.navigable.contextMenuButton(".context-menu-48", "Sign Out", "lock", page.logout)
+    function searchEmojis(e) {
+        let search = e.target.value.toLowerCase();
+        am7view.findEmojis(search).then((results) => {
+            emojiResults = results.map((o) => {
+                return m("button", {
+                    class: "context-menu-item text-left",
+                    onclick: function () {
+                        page.navigable.menu(".context-menu-48");
+                        navigator.clipboard.writeText(o.emoji);
+                        page.toast("info", o.emoji + " copied to clipboard", 2000);
+                    }
+                }, [
+                    m("span", { class: "emoji" }, o.emoji),
+                    m("span", { class: "ml-2" }, o.name)
+                ]);
+            });
+            if (emojiResults.length == 0) {
+                emojiResults = [m("div", { class: "context-menu-item" }, "No emojis found")];
+            }
+            m.redraw();
+        });
+
+    }
+    function emojiButton() {
+        return m("div", { class: "context-menu-container" }, [
+            emojiContextButton(),
+            m("div", { class: "transition transition-0 context-menu-48" }, [
+                m("input", {type: "text", class: "ml-0 mr-0 context-menu-input", placeholder: "Search emojis", oninput: searchEmojis}),
+                emojiResults
+            ])
+        ])
+    }
 
     topMenu.component = {
         menuButton: button,
@@ -197,6 +237,7 @@
                     (x.attrs.customTray ? x.attrs.customTray() : ""),
                     shuffleTray(),
                     m("div", { class: "flex-center2" }, [
+                        emojiButton(),
                         m("div", { class: "context-menu-container" }, [
                             profileContextButton(),
                             m("div", { class: "transition transition-0 context-menu-48" }, [

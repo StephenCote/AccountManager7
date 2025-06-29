@@ -522,7 +522,7 @@
 
         if(typeof cnt == "string"){
           //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
-          cnt = m.trust(marked.parse(cnt = decorateEmojis(cnt.replace(/\r/,""))));
+          cnt = m.trust(marked.parse(cnt = am7view.markdownEmojis(cnt.replace(/\r/,""))));
         }
 
         return m("div", { class: "relative receive-chat flex " + align },
@@ -551,62 +551,6 @@
 
       return ret;
     }
-
-    let emojiDict;
-    let emojiReq;
-    function decorateEmojis(text) {
-      if(!emojiDict){
-
-        if(!emojiReq){
-          emojiReq = true;
-          m.request({ method: 'GET', url: "/common/emojis.categories.json", withCredentials: true }).then((r) => {
-            emojiDict = r.emojis;
-            window.dbgEmo = r;
-            m.redraw();
-          });
-        }
-        return text;
-      }
-
-      let ea = Array.from(new Set(extractEmojis(text)));
-      for(let i = 0; i < ea.length; i++){
-        let txt = findEmojiName(ea[i]);
-        let lbl = "[" + ea[i] + "](## \"" + txt + "\")"; 
-        text = text.replaceAll(ea[i], lbl);
-      }
-      return text;
-    }
-    
-    function findEmojiName(targetEmoji) {
-            for (const categoryName in emojiDict) {
-                const subCategories = emojiDict[categoryName];
-                
-                // Iterate through the sub-categories (e.g., "face-smiling")
-                for (const subCategoryName in subCategories) {
-                    const emojiList = subCategories[subCategoryName];
-
-                    // Search for the emoji in the final array
-                    const foundEmoji = emojiList.find(emoji => emoji.emoji === targetEmoji.trim());
-                    
-                    // If found, we can return the name and exit the loops
-                    if (foundEmoji) {
-                        return foundEmoji.name;
-                    }
-                }
-            }
-          
-          return;
-    }
-
-    function extractEmojis(text) {
-        if (!text || typeof text !== 'string') {
-            return [];
-        }
-        const emojiRegex = /\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu;
-        const matches = text.match(emojiRegex);
-        return matches || [];
-    }
-
 
     function pruneTag(cnt, tag){
         let tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
