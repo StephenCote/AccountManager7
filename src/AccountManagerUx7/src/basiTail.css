@@ -5,45 +5,39 @@
 @layer components {
 
 
-/* demo */
-.step-wizard-container > div:not(:first-child) {
-    flex-grow: 1;
-    height: 100%;
-}
-
-.step-wizard-container > div:not(:first-child) > div {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-}
-/* end demo */
 
     html,body{
         @apply min-h-screen
     }
 
-/* common */
+    /* common */
 
-h1 {
-    @apply h-common text-5xl
-}
-h2 {
-    @apply h-common text-4xl
-}
-h3 {
-    @apply h-common text-3xl
-}
-h4 {
-    @apply h-common text-2xl
-}
-h5 {
-    @apply h-common text-xl
-}
-.h-common {
-    @apply font-medium leading-tight mt-0 mb-2 text-green-900
-}
+    h1 {
+        @apply h-common text-5xl
+    }
+    h2 {
+        @apply h-common text-4xl
+    }
+    h3 {
+        @apply h-common text-3xl
+    }
+    h4 {
+        @apply h-common text-2xl
+    }
+    h5 {
+        @apply h-common text-xl
+    }
+    .h-common {
+        @apply font-medium leading-tight mt-0 mb-2 text-green-900
+    }
 
-/* end common */
+    /* end common */
+
+    /* Chat */
+    think {
+        @apply m-8 w-full block
+    }
+
     .blank {
         @apply w-full block text-base px-4 py-2 mt-2 h-auto
     }

@@ -9444,7 +9444,9 @@
           {
             "name": "num_ctx",
             "type": "int",
-            "default": 8192
+            "default": 8192,
+            "minValue": 0,
+            "maxValue": 32768
           },
           {
             "name": "num_gpu",

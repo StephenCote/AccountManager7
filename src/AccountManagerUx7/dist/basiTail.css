@@ -588,10 +588,6 @@ video {
   }
 }
 
-/* demo */
-
-/* end demo */
-
 html,body {
   min-height: 100vh;
 }
@@ -653,6 +649,14 @@ h5 {
 }
 
 /* end common */
+
+/* Chat */
+
+think {
+  margin: 2rem;
+  display: block;
+  width: 100%;
+}
 
 .blank {
   margin-top: 0.5rem;

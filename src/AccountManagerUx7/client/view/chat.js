@@ -522,7 +522,7 @@
 
         if(typeof cnt == "string"){
           //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
-          cnt = m.trust(marked.parse(cnt = am7view.markdownEmojis(cnt.replace(/\r/,""))));
+          cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/,""))));
         }
 
         return m("div", { class: "relative receive-chat flex " + align },

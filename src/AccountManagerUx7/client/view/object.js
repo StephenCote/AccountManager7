@@ -1768,7 +1768,6 @@
 
         objectPage.deleteEntity = function(name, field, tableType, tableForm, props){
             let aP = [];
-            
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
@@ -1971,12 +1970,13 @@
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 if(state.selected){
-                    if(name === 'attributes' || name === 'elementValues'){
+                    if(name === 'messages' || name === 'attributes' || name === 'elementValues'){
                         /// Need to confirm the attribute type, this assumes it's an array 
                         //entity[state.attribute][state.index] = null;
                         entity[state.attribute] = entity[state.attribute].filter((a,i) => i != state.index);
                         delete valuesState[k];
-                        updateChange();
+                        inst.change(name);
+                       //updateChange();
                     }
                     else if(name === 'controls'){
                         let model = page.context();
@@ -1992,6 +1992,9 @@
                             }
                             console.log("DELETE", ctl);
                         }
+                    }
+                    else{
+                        console.log("Handle delete " + name, state);
                     }
                 }
             });
