@@ -202,12 +202,12 @@
     },
     {
         "emoji": "🤤",
-        "description": "Drooling Face"
+        "description": "Drooling Face",
+        "alt": "Desiring someone sexually, oral sex"
     },
     {
         "emoji": "😴",
-        "description": "Sleeping Face",
-        "alt": "Desiring someone sexually (often used in response to nudes)"
+        "description": "Sleeping Face"
     },
     {
         "emoji": "🫩"
@@ -234,20 +234,20 @@
     },
     {
         "emoji": "🥵",
-        "description": "Overheated Face"
+        "description": "Overheated Face",
+        "alt": "Means \"hot\" in a sexual sense"
     },
     {
         "emoji": "🥶",
-        "alt": "Means \"hot\" in a sexual sense; a kid might comment this on their crush's Instagram selfie, for example"
+        "alt": "Often used in response to a snarky or \"savage\" comment (as in, \"That was cold\")"
     },
     {
         "emoji": "🥴",
         "description": "Face with Uneven Eyes and Wavy Mouth",
-        "alt": "Often used in response to a snarky or \"savage\" comment (as in, \"That was cold\""
+        "alt": "Used to express drunkenness, sexual arousal, or a grimace"
     },
     {
-        "emoji": "😵",
-        "alt": "Used to express drunkenness, sexual arousal, or a grimace"
+        "emoji": "😵"
     },
     {
         "emoji": "😵‍💫"
@@ -388,7 +388,8 @@
     },
     {
         "emoji": "😈",
-        "description": "Smiling Face with Horns"
+        "description": "Smiling Face with Horns",
+        "alt": "Feeling frisky or naughty"
     },
     {
         "emoji": "👿",
@@ -406,21 +407,21 @@
         "description": "Pile of Poo"
     },
     {
-        "emoji": "🤡"
+        "emoji": "🤡",
+        "alt": "Used when getting caught in a mistake or when feeling like a fraud"
     },
     {
-        "emoji": "👹",
-        "alt": "Used when getting caught in a mistake or when feeling like a fraud"
+        "emoji": "👹"
     },
     {
         "emoji": "👺"
     },
     {
-        "emoji": "👻"
+        "emoji": "👻",
+        "alt": "Indicates being “ghosted” (dumped with no explanation)"
     },
     {
-        "emoji": "👽",
-        "alt": "Indicates being “ghosted” (dumped with no explanation)"
+        "emoji": "👽"
     },
     {
         "emoji": "👾"
@@ -562,11 +563,11 @@
     },
     {
         "emoji": "💯",
-        "description": "Hundred Points Symbol"
+        "description": "Hundred Points Symbol",
+        "alt": "Stamp of approval; “I agree”"
     },
     {
-        "emoji": "💢",
-        "alt": "A stamp of approval; “I agree”"
+        "emoji": "💢"
     },
     {
         "emoji": "💥",
@@ -577,11 +578,11 @@
     },
     {
         "emoji": "💦",
-        "description": "Splashing Sweat Symbol"
+        "description": "Splashing Sweat Symbol",
+        "alt": "Ejaculation"
     },
     {
-        "emoji": "💨",
-        "alt": "Ejaculation"
+        "emoji": "💨"
     },
     {
         "emoji": "🕳"
@@ -775,11 +776,11 @@
         "emoji": "👃"
     },
     {
-        "emoji": "🧠"
+        "emoji": "🧠",
+        "alt": "Oral sex"
     },
     {
-        "emoji": "🫀",
-        "alt": "Oral sex"
+        "emoji": "🫀"
     },
     {
         "emoji": "🫁"
@@ -792,18 +793,18 @@
     },
     {
         "emoji": "👀",
-        "description": "Eyes"
+        "description": "Eyes",
+        "alt": "Leering; used when sending or receiving nudes"
     },
     {
-        "emoji": "👁",
-        "alt": "Used when sending or receiving nudes"
+        "emoji": "👁"
     },
     {
-        "emoji": "👅"
-    },
-    {
-        "emoji": "👄",
+        "emoji": "👅",
         "alt": "May indicate sexual activity, especially oral sex"
+    },
+    {
+        "emoji": "👄"
     },
     {
         "emoji": "🫦"
@@ -2272,11 +2273,11 @@
         "emoji": "🍂"
     },
     {
-        "emoji": "🍃"
+        "emoji": "🍃",
+        "alt": "Emoji slang for Marijuana/weed"
     },
     {
-        "emoji": "🪹",
-        "alt": "Emoji slang for Marijuana/weed"
+        "emoji": "🪹"
     },
     {
         "emoji": "🪺"
@@ -2324,15 +2325,15 @@
         "emoji": "🍐"
     },
     {
-        "emoji": "🍑"
-    },
-    {
-        "emoji": "🍒",
+        "emoji": "🍑",
         "alt": "Butt"
     },
     {
-        "emoji": "🍓",
+        "emoji": "🍒",
         "alt": "Breasts/testicles/virginity"
+    },
+    {
+        "emoji": "🍓"
     },
     {
         "emoji": "🫐"
@@ -2353,21 +2354,21 @@
         "emoji": "🥑"
     },
     {
-        "emoji": "🍆"
+        "emoji": "🍆",
+        "alt": "Penis"
     },
     {
-        "emoji": "🥔",
-        "alt": "Penis"
+        "emoji": "🥔"
     },
     {
         "emoji": "🥕"
     },
     {
-        "emoji": "🌽"
+        "emoji": "🌽",
+        "alt": "Represents \"porn\""
     },
     {
-        "emoji": "🌶",
-        "alt": "Represents \"porn,\" especially on TikTok"
+        "emoji": "🌶"
     },
     {
         "emoji": "🫑"
@@ -2463,11 +2464,11 @@
         "emoji": "🥪"
     },
     {
-        "emoji": "🌮"
+        "emoji": "🌮",
+        "alt": "Vagina"
     },
     {
-        "emoji": "🌯",
-        "alt": "Vagina"
+        "emoji": "🌯"
     },
     {
         "emoji": "🫔"
@@ -2530,11 +2531,11 @@
         "emoji": "🍜"
     },
     {
-        "emoji": "🍝"
+        "emoji": "🍝",
+        "alt": "Represents nudes, which are often called “noods”"
     },
     {
-        "emoji": "🍠",
-        "alt": "Represents nudes, which are often called “noods”"
+        "emoji": "🍠"
     },
     {
         "emoji": "🍢"
@@ -2969,11 +2970,11 @@
         "emoji": "🚚"
     },
     {
-        "emoji": "🚛"
+        "emoji": "🚛",
+        "alt": "“Dump truck,” which refers to a large and/or shapely bottom"
     },
     {
-        "emoji": "🚜",
-        "alt": "“Dump truck,” which refers to a large and/or shapely bottom"
+        "emoji": "🚜"
     },
     {
         "emoji": "🏎"
@@ -3111,14 +3112,15 @@
         "emoji": "🧳"
     },
     {
-        "emoji": "⌛"
-    },
-    {
-        "emoji": "⏳"
-    },
-    {
-        "emoji": "⌚",
+        "emoji": "⌛",
         "alt": "Used when someone has an “hourglass” body shape"
+    },
+    {
+        "emoji": "⏳",
+        "alt": "Used when someone has an “hourglass” body shape"
+    },
+    {
+        "emoji": "⌚"
     },
     {
         "emoji": "⏰"
@@ -3734,11 +3736,11 @@
         "emoji": "🎓"
     },
     {
-        "emoji": "🧢"
+        "emoji": "🧢",
+        "alt": "Symbolizes a lie, which could also be called a “cap”"
     },
     {
-        "emoji": "🪖",
-        "alt": "Symbolizes a lie, which could also be called a “cap”"
+        "emoji": "🪖"
     },
     {
         "emoji": "⛑"
@@ -4031,8 +4033,7 @@
         "emoji": "💳"
     },
     {
-        "emoji": "🧾",
-        "alt": "Often used on TikTok to express wanting something portrayed in the video"
+        "emoji": "🧾"
     },
     {
         "emoji": "💹"
@@ -4185,11 +4186,11 @@
         "emoji": "🗝"
     },
     {
-        "emoji": "🔨"
+        "emoji": "🔨",
+        "alt": "Used to refer to sexual activity"
     },
     {
-        "emoji": "🪓",
-        "alt": "Used to refer to sexual activity"
+        "emoji": "🪓"
     },
     {
         "emoji": "⛏"
@@ -4396,11 +4397,11 @@
         "emoji": "⚱"
     },
     {
-        "emoji": "🧿"
+        "emoji": "🧿",
+        "alt": "Represents warding off the \"evil eye\""
     },
     {
-        "emoji": "🪬",
-        "alt": "Represents warding off the \"evil eye\""
+        "emoji": "🪬"
     },
     {
         "emoji": "🗿"

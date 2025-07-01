@@ -896,7 +896,7 @@ public class ChatUtil {
 		}
 		if(tags.size() > 0 && frecs.size() == 0) {
 			logger.info("Find by tags only");
-			vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6, false));
+			vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 10, 0.6, false));
 			vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6, false));
 		}
 		else {
@@ -907,7 +907,7 @@ public class ChatUtil {
 					if(
 						frec.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)
 					) {
-						vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 5, 0.6, false));
+						vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 10, 0.6, false));
 					}
 					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6, false));
 					//if(findSummaryNote) {

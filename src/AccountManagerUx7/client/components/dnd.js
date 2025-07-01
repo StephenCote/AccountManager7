@@ -126,11 +126,10 @@
     }
 
     dnd.doDragStart = function (e, obj) {
-        //console.log("Drag start", obj.name);
         e.dataTransfer.setData('text', obj.objectId);
         dnd.dragTarget = obj;
-        //m.redraw();
     }
+
     dnd.doDragOver = function (e, obj) {
         if (obj && dnd.dragTarget) {
 

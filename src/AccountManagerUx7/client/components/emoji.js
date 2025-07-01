@@ -110,7 +110,7 @@
         return m("div", { class: "context-menu-container" }, [
             emojiContextButton(),
             m("div", { id: "emojiContextMenu", class: "transition transition-0 context-menu-48" }, [
-                m("input", {type: "text", class: "ml-0 mr-0 context-menu-input", placeholder: "Search emojis", oninput: searchEmojis}),
+                m("input", {type: "text", class: "ml-0 mr-0 context-menu-input text-field", placeholder: "Search emojis", oninput: searchEmojis}),
                 (emojiResults && emojiResults.length > 0 ? emojiResults : emojiCategories())
             ])
         ])
