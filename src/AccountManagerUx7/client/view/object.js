@@ -163,7 +163,7 @@
             }
             let bpatch = am7model.hasIdentity(entity);
 
-            if(!inst.validate()){
+            if(!inst.validate(true)){
                 page.toast("warn", "Please fill in all fields");
                 return;
             }

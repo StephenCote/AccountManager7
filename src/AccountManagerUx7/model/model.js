@@ -385,7 +385,7 @@
 		return vri;
 	};
 
-	am7model.validateField = function (o, f, rules) {
+	am7model.validateField = function (o, f, rules, applyReplacement) {
 
 		var r = 0,
 			ir = 1,
@@ -464,7 +464,7 @@
 			}
 
 			if (vr.api.rules()?.length) {
-				tir = am7model.validateField(o, f, vr.api.rules());
+				tir = am7model.validateField(o, f, vr.api.rules(), applyReplacement);
 				if (ir && !tir) {
 					ir = 0;
 					break;
@@ -492,7 +492,7 @@
 					switch (vr.api.type()) {
 						case "replacement":
 							r = 1;
-							if (typeof vr.api.replacementValue() == "string") {
+							if (applyReplacement && typeof vr.api.replacementValue() == "string") {
 								v = v.replace(re, vr.api.replacementValue());
 								o.api[f.name](v);
 							}
@@ -925,11 +925,11 @@
 				inst.decorate(f.name, numberDecorator);
 			}
 
-			inst.validateField[f.name] = () => {
+			inst.validateField[f.name] = (applyReplacement) => {
 				if (field?.skipValidation) {
 					return true;
 				}
-				let r = am7model.validateField(inst, f, f.rules);
+				let r = am7model.validateField(inst, f, f.rules, applyReplacement);
 				inst.validations[f.name] = (r == 1);
 				if (r == 0 && !inst.validationErrors[f.name]) {
 					inst.validationErrors[f.name] = "Invalid value for " + f.name;
@@ -941,10 +941,10 @@
 			}
 		});
 
-		inst.validate = () => {
+		inst.validate = (applyReplacement) => {
 			let fv = [];
 			am7model.getModelFields(inst.model).forEach((f) => {
-				fv.push(inst.validateField[f.name]());
+				fv.push(inst.validateField[f.name](applyReplacement));
 			});
 			return !fv.includes(false);
 		}
