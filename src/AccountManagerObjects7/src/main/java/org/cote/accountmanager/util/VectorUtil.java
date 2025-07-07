@@ -308,8 +308,6 @@ LIMIT ?
 	public List<BaseRecord> createVectorStore(BaseRecord model, ChunkEnumType chunkType, int chunkSize) throws FieldException {
 
 		
-		//BaseRecord vector = RecordFactory.newInstance(ModelNames.MODEL_VECTOR_MODEL_STORE);
-		//BaseRecord vectorRef = model.get(FieldNames.FIELD_VECTOR_REFERENCE);
 		if(model == null) {
 			throw new FieldException("Model is null");
 		}

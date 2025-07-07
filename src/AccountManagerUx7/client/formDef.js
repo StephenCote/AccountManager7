@@ -4437,6 +4437,26 @@
         fields: {
             model: {
                 layout: 'one'
+            },
+            vectorize: {
+                format: "button",
+                layout: "one",
+                icon: 'polyline',
+                requiredAttributes: ["objectId"],
+                field: {
+                    label: "Vectorize",
+                    command: page.components.dialog.vectorize
+                }
+            },
+            summarize: {
+                format: "button",
+                layout: "one",
+                icon: 'summarize',
+                requiredAttributes: ["objectId"],
+                field: {
+                    label: "Summarize",
+                    command: page.components.dialog.summarize
+                }
             }
             /*
             ,

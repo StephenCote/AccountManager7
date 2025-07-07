@@ -4,6 +4,7 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -1083,7 +1084,12 @@ public class Chat {
 		if (req == null) {
 			return null;
 		}
-		String ser = JSONUtil.exportObject(ChatUtil.getPrunedRequest(req),
+		
+		List<String> ignoreFields = new ArrayList<>(ChatUtil.IGNORE_FIELDS);
+		String tokField = ChatUtil.getMaxTokenField(chatConfig);
+		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));	
+		
+		String ser = JSONUtil.exportObject(ChatUtil.getPrunedRequest(req, ignoreFields),
 				RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 
 		OpenAIResponse orec = null;

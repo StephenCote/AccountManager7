@@ -23,9 +23,25 @@
 			"type": "int",
 			"default": 2048,
 			"minValue": 0,
+			"maxValue": 120000,
+			"description": "For o1 and later models"
+		},
+		{
+			"name": "max_tokens",
+			"type": "int",
+			"default": 2048,
+			"minValue": 0,
 			"maxValue": 120000
 		},
 		{
+			"name": "num_ctx",
+			"type": "int",
+			"default": 2048,
+			"minValue": 0,
+			"maxValue": 120000,
+			"description": "Cross compat for Ollama OpenAI"
+		},
+	    {
 			"name": "temperature",
 			"type": "double",
 			"default": 0.75

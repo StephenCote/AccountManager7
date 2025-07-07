@@ -590,9 +590,23 @@ public class ChatUtil {
 	
 	private static String notePath = "~/Notes/Summaries";
 	private static String summarySuffix = " - Summary";
+	public static String getSummaryName(BaseRecord ref) {
+		String name = ref.getSchema();
+		if(ref.hasField(FieldNames.FIELD_NAME)) {
+			name = ref.getSchema() + " " + ref.get(FieldNames.FIELD_NAME);
+		}
+		else if(ref.hasField(FieldNames.FIELD_URN)) {
+			name = ref.getSchema() + " " + ref.get(FieldNames.FIELD_URN);
+		}
+		else if(ref.hasField(FieldNames.FIELD_OBJECT_ID)) {
+			name = ref.getSchema() + " " + ref.get(FieldNames.FIELD_OBJECT_ID);
+		}
+		return name;
+	}
+	
 	public static BaseRecord getSummary(BaseRecord user, BaseRecord ref) {
 
-		String name = ref.get(FieldNames.FIELD_NAME) + summarySuffix;
+		String name = getSummaryName(ref) + summarySuffix;
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, ref.get(FieldNames.FIELD_GROUP_ID));
 		q.field(FieldNames.FIELD_NAME, name);
 		return IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -605,8 +619,9 @@ public class ChatUtil {
 	
 	public static BaseRecord createSummary(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig, BaseRecord ref, ChunkEnumType chunkType, int chunkCount, boolean recreate, boolean remote) {
 		logger.info("Creating summary ...");
-		String setName = ref.get(FieldNames.FIELD_NAME) + " - Summary Set";
-		String summName = ref.get(FieldNames.FIELD_NAME) + summarySuffix;
+		String name = getSummaryName(ref);
+		String setName = name + " - Summary Set";
+		String summName = name + summarySuffix;
 		// ref.get(FieldNames.FIELD_GROUP_PATH)
 		BaseRecord summSet = DocumentUtil.getNote(user, setName, notePath);
 		BaseRecord summFin = DocumentUtil.getNote(user, summName, notePath);
@@ -653,7 +668,7 @@ public class ChatUtil {
 		}
 		
 		summSet = DocumentUtil.getCreateNote(user, setName, notePath, summaries.stream().collect(Collectors.joining(System.lineSeparator())));
-		String lastSumm = "Summary of " + ref.get(FieldNames.FIELD_NAME) + System.lineSeparator() + summaries.get(summaries.size() - 1);
+		String lastSumm = "Summary of " + name + System.lineSeparator() + summaries.get(summaries.size() - 1);
 		summFin = DocumentUtil.getCreateNote(user, summName, notePath, lastSumm);
 		DocumentUtil.applyTag(user, "Summary", summFin.getSchema(), summFin, true);
 		
@@ -828,41 +843,7 @@ public class ChatUtil {
 		return summaries;
 	}
 	
-	/*
-	public static List<String> getDataSummaryChunks(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
-		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
-		List<String> dataCit = new ArrayList<>();
-		VectorUtil vu = IOSystem.getActiveContext().getVectorUtil();
-		List<BaseRecord> vects = new ArrayList<>();
-		List<BaseRecord> frecs = new ArrayList<>();
-		for(String dataR : dataRef) {
-			BaseRecord recRef = RecordFactory.importRecord(dataR);
-			String objId = recRef.get(FieldNames.FIELD_OBJECT_ID);
-			Query rq = QueryUtil.createQuery(recRef.getSchema(), FieldNames.FIELD_OBJECT_ID, objId);
-			rq.field(FieldNames.FIELD_ORGANIZATION_ID, user.get(FieldNames.FIELD_ORGANIZATION_ID));
-			rq.planMost(false);
-			rq.setValue(FieldNames.FIELD_SORT_FIELD, "chunk");
-			rq.setValue(FieldNames.FIELD_ORDER, OrderEnumType.ASCENDING);
-			BaseRecord frec = IOSystem.getActiveContext().getAccessPoint().find(user, rq);
-			if(frec != null) {
-				frecs.add(frec);
-			}
-		}
 
-		for(BaseRecord frec : frecs) {
-			vects.addAll(vu.getVectorStore(frec));
-		}
-
-		for(BaseRecord vect : vects) {
-			String txt = getFilteredCitationText(req, vect, "chunk");
-			if(txt != null) {
-				dataCit.add(txt);
-			}
-		}
-		return dataCit;
-	}
-	*/
-	
 	public static List<String> getDataCitations(BaseRecord user, OpenAIRequest req, ChatRequest creq) {
 		List<String> dataRef = creq.get(FieldNames.FIELD_DATA);
 		List<String> dataCit = new ArrayList<>();
@@ -903,7 +884,7 @@ public class ChatUtil {
 			for(BaseRecord frec : frecs) {
 				if(msg != null && msg.length() > 0) {
 					//  + (findSummaryNote ? " and include any summary note" : "")
-					logger.info("Building citations with " + dataRef.size() + " references of which " + tags.size() + " are tags");
+					logger.info("Building citations with " + frecs.size() + " references of which " + tags.size() + " are tags");
 					if(
 						frec.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)
 					) {
@@ -1045,14 +1026,34 @@ public class ChatUtil {
 		}
 		return rec;
 	}
+	
+	/// TEMPORARY - this should be a chat configuration option to indicate API nuances like this
+	///
+	public static String getMaxTokenField(BaseRecord cfg) {
+		String maxTokenField = "max_tokens";
+		String modelName = cfg.get("model");
+		if(modelName.startsWith("o")) {
+			maxTokenField = "max_completion_tokens";
+		}
+		else if(cfg.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) {
+			maxTokenField = "num_ctx";
+		}
+		else {
+			maxTokenField = "max_tokens";
+		}
+		return maxTokenField;
+	}
 
 	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
+		String modelName = null;
+		BaseRecord opts = null;
+
+		if(cfg != null) {
+			modelName = cfg.get("model");
+			opts = cfg.get("chatOptions");
+		}
 		try {
-			req.setModel(cfg.get("model"));
-			BaseRecord opts = null;
-			if (cfg != null) {
-				opts = cfg.get("chatOptions");
-			}
+			req.setModel(modelName);
 			double temperature = 0.9; 
 			double top_p = 0.5;
 			double repeat_penalty = 1.3;
@@ -1069,26 +1070,24 @@ public class ChatUtil {
 			req.set("top_p", top_p);
 			req.set("frequency_penalty", repeat_penalty);
 			req.set("presence_penalty", typical_p);
-			req.set("max_completion_tokens", num_ctx);
+
+			req.set(getMaxTokenField(cfg), num_ctx);
+
 		}
 		catch (ModelNotFoundException | FieldException | ValueException ex) {
 			logger.error("Error applying chat options: " + ex.getMessage());
 		}
 	}
 	
-	private static List<String> ignoreFields = Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_URN, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH);
+	public static final List<String> IGNORE_FIELDS = Arrays.asList(FieldNames.FIELD_ID, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_GROUP_PATH, FieldNames.FIELD_OWNER_ID, FieldNames.FIELD_URN, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_ORGANIZATION_PATH);
 	public static OpenAIRequest getPrunedRequest(OpenAIRequest inReq) {
+		return getPrunedRequest(inReq, IGNORE_FIELDS);
+	}
+	
+	public static OpenAIRequest getPrunedRequest(OpenAIRequest inReq, List<String> ignoreFields) {
 
 		List<String> flds = inReq.getFields().stream().map(f -> f.getName()).filter(f -> !ignoreFields.contains(f)).collect(Collectors.toList());
 		OpenAIRequest outReq = OpenAIRequest.importRecord(inReq.copyRecord(flds.toArray(new String[0])).toFullString());
-		// outReq.setModel(inReq.getModel());
-		// String jbt = PromptUtil.getJailBreakTemplate(promptConfig);
-		// boolean useJB = (forceJailbreak || chatConfig != null &&
-		// (boolean)chatConfig.get("useJailBreak"));
-
-		// outReq.addMessage(inReq.getMessages().stream().filter(m ->
-		// (m.isPruned()==false))
-		// .collect(Collectors.toList()));
 		outReq.setMessages(
 				outReq.getMessages().stream().filter(m -> (m.isPruned() == false)).collect(Collectors.toList()));
 
