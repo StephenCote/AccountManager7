@@ -8612,6 +8612,24 @@
             "maxLength": 128,
             "provider": "org.cote.accountmanager.provider.EncryptFieldProvider",
             "encrypt": true
+          },
+          {
+            "name": "remindEvery",
+            "type": "int",
+            "default": 0,
+            "description": "When assist is true, the number of user messages before any reminder text is included in the conversation history"
+          },
+          {
+            "name": "keyframeEvery",
+            "type": "int",
+            "default": 0,
+            "description": "When assist is true and prune is true, the number of messages after any previous keyframe or after the beginning of the message history before conducting a conversation analysis.  This is intended to be an objective summary of the conversation to preserve context and important details"
+          },
+          {
+            "name": "messageTrim",
+            "type": "int",
+            "default": 0,
+            "description": "When prune is true, sets the size of the message history to include in each request. messageTrim and keyframeEvery should be the same size when used in conjunction.  Note: The entire conversation is always preserved and may be used for summarization and analysis, this only affects the number of messages to include when using the chat capability."
           }
         ]
       },

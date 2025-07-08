@@ -126,6 +126,9 @@ public class Chat {
 			setAuthorizationToken(chatConfig.get("apiKey"));
 			setModel(chatConfig.get("model"));
 			setServiceType(chatConfig.getEnum("serviceType"));
+			remind = chatConfig.get("remindEvery");
+			keyFrameEvery = chatConfig.get("keyframeEvery");
+			messageTrim = chatConfig.get("messageTrim");
 		}
 	}
 
@@ -990,10 +993,9 @@ public class Chat {
 		if (kfs.size() > 0) {
 			kfs.get(kfs.size() - 1).setPruned(false);
 		}
-
+		boolean useAssist = chatConfig.get("assist");
 		int qual = countBackTo(req, "(KeyFrame:");
-		// logger.info(req.getMessages().size() + " > " + (pruneSkip + keyFrameEvery) + " && " + qual + " >= " + keyFrameEvery);
-		if (req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
+		if (useAssist && keyFrameEvery > 0 && req.getMessages().size() > (pruneSkip + keyFrameEvery) && qual >= keyFrameEvery) {
 			logger.info("(Adding key frame)");
 			addKeyFrame(req);
 		}
@@ -1035,7 +1037,7 @@ public class Chat {
 			boolean useAssist = chatConfig.get("assist");
 			int qual = countBackTo(req, "(Reminder:");
 
-			if (promptConfig != null && qual >= remind) {
+			if (useAssist && promptConfig != null && qual >= remind) {
 				/// Add the assistant warning as the last message
 				if (req.getMessages().size() > 0) {
 					OpenAIMessage amsg = req.getMessages().get(req.getMessages().size() - 1);

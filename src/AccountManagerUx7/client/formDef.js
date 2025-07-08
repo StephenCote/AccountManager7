@@ -4246,12 +4246,23 @@
                     limit: ["E", "E10", "T", "M", "AO", "RC"]
                 }
             },
-            assist: {
-                layout: "one"
+            startMode: {
+                layout: "one",
+                field: {
+                    label: 'Who Starts?',
+                    type: 'list',
+                    limit: ['none', 'system', 'user']
+                }
             },
-            prune: {
-                layout: "one"
+            blank : {
+                layout : "one",
+                format: "blank",
+                field: {
+                    label: "",
+                    readOnly: true
+                }
             },
+
             serverUrl:{
                 layout: "third"
             },
@@ -4300,21 +4311,41 @@
                 layout: "third",
                 label: "Setting"
             },
-            startMode: {
+            assist: {
+                layout: "one"
+            },
+            prune: {
+                layout: "one"
+            },
+            remindEvery: {
                 layout: "one",
+                label: "Remind Every"
+            },
+            keyframeEvery: {
+                layout: "one",
+                label: "Keyframe Every"
+            },
+            messageTrim: {
+                layout: "one",
+                label: "Message Trim"
+            },
+            blank2 : {
+                layout : "one",
+                format: "blank",
                 field: {
-                    label: 'Who Starts?',
-                    type: 'list',
-                    limit: ['none', 'system', 'user']
+                    label: "",
+                    readOnly: true
                 }
+            },
+
+
+            includeScene: {
+                layout: "one",
+                label: "Include Scene"
             },
             scene: {
                 layout: "third",
                 label: "Scene"
-            },
-            includeScene: {
-                layout: "one",
-                label: "Include Scene"
             },
             useNLP: {
                 layout: "one"
