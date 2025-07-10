@@ -825,7 +825,8 @@ public class PromptUtil {
 	    }
 	    
 	    public void replace(TemplatePatternEnumType patternType, String value) {
-	    	this.template = patternType.replace(template, value);
+	    	//this.template = patternType.replace(template, value);
+	    	replace(patternType.getPattern(), value);
 	    }
 	}
 	

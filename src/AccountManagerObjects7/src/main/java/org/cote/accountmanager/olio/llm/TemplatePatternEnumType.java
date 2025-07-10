@@ -86,6 +86,10 @@ public enum TemplatePatternEnumType {
     public String getKey() {
         return this.key;
     }
+    
+    public Pattern getPattern() {
+		return this.pattern;
+	}
 
     public String replace(String template, String replacement) {
         if (template == null) {

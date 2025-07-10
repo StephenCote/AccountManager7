@@ -63,6 +63,7 @@ public class QueryUtil {
 			case IS_NULL_EQUALS:
 			case IS_NULL_NOT_EQUALS:
 			case LIKE:
+			case ILIKE:
 			case NOT_ANY:
 			case NOT_EQUALS:
 			case NOT_IN:
@@ -143,7 +144,7 @@ public class QueryUtil {
 					if(f.getField(FieldNames.FIELD_VALUE).getValueType().equals(FieldEnumType.STRING)) {
 						quote = "\"";
 					}
-					else if(f.getField(FieldNames.FIELD_VALUE).getValueType().equals(FieldEnumType.MODEL)) {
+					else if(value != null && f.getField(FieldNames.FIELD_VALUE).getValueType().equals(FieldEnumType.MODEL)) {
 						BaseRecord mod = (BaseRecord)value;
 						value = mod.copyRecord(RecordUtil.getPossibleFields(mod.getSchema(), keyFields));
 					}

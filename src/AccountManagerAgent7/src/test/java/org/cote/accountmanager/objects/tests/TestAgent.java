@@ -9,6 +9,7 @@ import java.util.stream.Collectors;
 
 import org.cote.accountmanager.agent.AM7AgentTool;
 import org.cote.accountmanager.agent.AgentToolManager;
+import org.cote.accountmanager.agent.PlanExecutionError;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
@@ -19,6 +20,8 @@ import org.cote.accountmanager.io.MemoryReader;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatRequest;
@@ -27,6 +30,7 @@ import org.cote.accountmanager.olio.llm.ESRBEnumType;
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIMessage;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -35,6 +39,7 @@ import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -42,10 +47,12 @@ import org.junit.Test;
 
 public class TestAgent extends BaseTest {
 	
-	private String testPlanPromptName = "Demo Plan Prompt 9";
+	private String testPlanName = "Test Plan - " + UUID.randomUUID().toString();
+	private String testPlanPromptName = "Demo Plan Prompt 10";
 	private String testPlanChatName = "Demo Plan Chat - " + UUID.randomUUID().toString();
 	private String testPlanFile = "./plan.json";
-	private String testChatConfig = "AM7 AgentTool OpenAI 4.chat";
+	//private String testChatConfig = "AM7 AgentTool Openai 5.chat";
+	private String testChatConfigPrefix = "AM7 AgentTool";
 	private String testQuery = "Who has red hair?";
 	@Test
 	public void TestAgent1() {
@@ -53,6 +60,24 @@ public class TestAgent extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		
+		/*
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		OlioContext ctx = OlioTestUtil.getContext(testOrgContext, dataPath);
+		List<BaseRecord> realms = ctx.getRealms();
+		assertTrue("Expected some realms", realms.size() > 0);
+		BaseRecord realm = realms.get(0);
+		BaseRecord popGroup = realm.get(OlioFieldNames.FIELD_POPULATION);
+		assertNotNull("Pop group is null", popGroup);
+		List<BaseRecord> pop = ctx.getRealmPopulation(realm);
+		
+		logger.info("Imprint Characters");
+		BaseRecord per1 = OlioTestUtil.getImprintedCharacter(ctx, pop, OlioTestUtil.getLaurelPrint());
+		assertNotNull("Person was null", per1);
+		BaseRecord per2 = OlioTestUtil.getImprintedCharacter(ctx, pop, OlioTestUtil.getDukePrint());
+		assertNotNull("Person was null", per2);		
+		*/
+		
+		String testChatConfig = testChatConfigPrefix + " " + testProperties.getProperty("test.llm.serviceType").trim().toUpperCase() + " 9.chat";
 		BaseRecord cfg = getChatConfig(testUser1, testChatConfig);
 
 		BaseRecord plan = null;
@@ -69,11 +94,22 @@ public class TestAgent extends BaseTest {
 		if(plan == null) {
 			try {
 				logger.info("Creating plan outline ...");
-				plan = toolManager.createPlan(testPlanPromptName, testPlanChatName, testQuery);
+				plan = toolManager.createPlan(testPlanName, testPlanPromptName, testPlanChatName, testQuery);
 				assertNotNull(plan);
 				List<BaseRecord> steps = plan.get("steps");
 				assertTrue("Expected steps", steps.size() > 0);
-				// logger.info(plan.toFullString());
+				int err = 0;
+				for(BaseRecord step: steps) {
+				
+					BaseRecord rstep = toolManager.refineStep(plan,  step, testPlanChatName);
+					if(rstep == null) {
+						logger.error("Failed to refine step " + step.get("step") + " " + step.get("toolName"));
+						err++;
+						break;
+					}
+				}
+				assertTrue("Refined steps", err == 0);
+
 				FileUtil.emitFile(testPlanFile, plan.toFullString());
 			}
 			catch(Exception e) {
@@ -82,60 +118,31 @@ public class TestAgent extends BaseTest {
 			}
 		}
 		
-		assertNotNull("Plan was null", plan);
-		List<BaseRecord> steps = plan.get("steps");
-		assertTrue("Expected steps", steps.size() > 0);
-		BaseRecord step1 = steps.get(0);
-		List<BaseRecord> inputs = step1.get("inputs");
-		assertTrue("Expected inputs", inputs.size() > 0);
-		BaseRecord input1 = inputs.get(0);
-		assertNotNull("Input was null", input1);
-		logger.info(input1.toFullString());
-		List<BaseRecord> flds = input1.get("value");
-		assertTrue("Expected fields", flds.size() > 0);
-		BaseRecord fld1 = flds.get(0);
-		logger.info(fld1.toFullString());
-		
-		/*
-		if(plan == null) {
-			logger.info("Creating plan outline ...");
-			plan = toolManager.createPlan(testPlanPromptName, testPlanChatName, testQuery);
-			assertNotNull(plan);
-			List<BaseRecord> steps = plan.get("steps");
-			assertTrue("Expected steps", steps.size() > 0);
-			// logger.info(plan.toFullString());
-			FileUtil.emitFile(testPlanFile, plan.toFullString());
-		}
-		*/
-		//toolManager.preparePlanSteps(plan);
-		/*
-		List<BaseRecord> steps = plan.get("steps");
-		int stepIdx = 1;
-        List<BaseRecord> steps2 = steps.stream().filter(s -> (int)s.get("step") == 0).collect(Collectors.toList());
-        if(steps2.size() > 0) {
-        		logger.info("Populating " + steps2.size() + " plan steps ...");
-			for(BaseRecord step : steps) {
-				step.setValue("step", stepIdx++);
-				BaseRecord stepr = toolManager.createStepPlan("Demo Step Prompt 3", "Demo Step Chat - " + UUID.randomUUID(), plan, step);
-				assertNotNull("Step was null", stepr);
-				
+		if((boolean)plan.get("executed") == false) {
+			try {
+				toolManager.getPlanExecutor().executePlan(plan);
+				FileUtil.emitFile(testPlanFile, plan.toFullString());
 			}
-			FileUtil.emitFile(testPlanFile, plan.toFullString());
-        }
+			catch(PlanExecutionError e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
+		}
+		if(plan.get("output") == null) {
+			try {
+			BaseRecord output = toolManager.getPlanExecutor().evaluateResult(plan);
+			assertNotNull("Plan output was null", output);
+			logger.info("Plan output: " + output.toFullString());
+			}
+			catch(Exception e) {
+				logger.error(e);
+				e.printStackTrace();
+			}
+		}
 		
-        try {
-        	toolManager.getPlanExecutor().executePlan(plan);
-        }
-        catch(Exception e) {
-			logger.error("Error executing plan", e);
-			e.printStackTrace();
-        }
-        */
-		
-		//logger.info(agentTool.summarizeModels().stream().collect(Collectors.joining(System.lineSeparator())));
-		//logger.info(getModelDescriptions(false));
-		//logger.info(SchemaUtil.getModelDescription(RecordFactory.getSchema(OlioModelNames.MODEL_CHAR_PERSON)));
-		///
+		assertNotNull("Plan was null", plan);
+
+
 		 
 	}
 	
@@ -164,19 +171,25 @@ public class TestAgent extends BaseTest {
 			cfg.set("includeScene", false);
 			cfg.set("prune", true);
 			cfg.set("rating", ESRBEnumType.E);
-
-			cfg.setValue("serviceType", LLMServiceEnumType.OPENAI);
-			cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version").trim());
-			cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server").trim());
-			cfg.setValue("model", testProperties.getProperty("test.llm.openai.model").trim());
-			cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
-			
+			LLMServiceEnumType serviceType = LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.serviceType").trim().toUpperCase());
+			cfg.setValue("serviceType", serviceType);
+			if(serviceType == LLMServiceEnumType.OPENAI) {
+				cfg.setValue("apiVersion", testProperties.getProperty("test.llm.openai.version").trim());
+				cfg.setValue("serverUrl", testProperties.getProperty("test.llm.openai.server").trim());
+				cfg.setValue("model", testProperties.getProperty("test.llm.openai.model").trim());
+				cfg.setValue("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken").trim());
+			}
+			else if(serviceType == LLMServiceEnumType.OLLAMA) {
+				cfg.setValue("serverUrl", testProperties.getProperty("test.llm.ollama.server").trim());
+				cfg.setValue("model", testProperties.getProperty("test.llm.ollama.model").trim());
+				
+			}
 			BaseRecord opts = RecordFactory.newInstance(OlioModelNames.MODEL_CHAT_OPTIONS);
 			opts.set("temperature", 0.4);
 			opts.set("top_p", 1.0);
 			opts.set("repeat_penalty", 1.2);
 			opts.set("typical_p", 0.85);
-			opts.set("num_ctx", 8192);
+			opts.set("num_ctx", 8192*2);
 			cfg.set("chatOptions",  opts);
 			
 			cfg = IOSystem.getActiveContext().getAccessPoint().update(user, cfg);

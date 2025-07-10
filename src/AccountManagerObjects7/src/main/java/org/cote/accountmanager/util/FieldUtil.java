@@ -101,6 +101,9 @@ public class FieldUtil {
 				case MODEL:
 					record.setModel(fieldName, value);
 					break;
+				case LIST:
+					record.setList(fieldName, value);
+					break;
 				default:
 					logger.error("Unhandled type (setFlex): " + type.toString());
 					break;

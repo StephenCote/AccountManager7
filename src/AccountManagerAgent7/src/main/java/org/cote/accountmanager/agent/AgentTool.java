@@ -12,6 +12,7 @@ import org.cote.accountmanager.model.field.FieldEnumType;
 public @interface AgentTool {
     public String description() default "";
     public String example() default "";
+    public String returnName();
     public FieldEnumType returnType() default FieldEnumType.STRING;
     public String returnModel() default "";
 }

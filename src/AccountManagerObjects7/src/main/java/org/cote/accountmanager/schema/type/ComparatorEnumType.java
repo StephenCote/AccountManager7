@@ -65,6 +65,7 @@ public enum ComparatorEnumType {
     IS_NULL_EQUALS,
     IS_NULL_NOT_EQUALS,
     LIKE,
+    ILIKE,
     GROUP_AND,
     GROUP_OR;
 

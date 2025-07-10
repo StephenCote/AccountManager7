@@ -34,11 +34,13 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
 import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.cote.accountmanager.util.ResourceUtil;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -55,6 +57,16 @@ public class AgentToolManager {
 	private String defaultStepPromptName = "Tool Prompt";
 	private String defaultStepChatName = "Tool Chat";
 	private PlanExecutor planExec = null;
+	
+	private static Pattern toolDescsPat = Pattern.compile("\\$\\{toolDescriptions\\}");
+	private static Pattern planStepSchemaPat = Pattern.compile("\\$\\{planStepSchema\\}");
+	private static Pattern paramSchemaPat = Pattern.compile("\\$\\{parameterSchema\\}");
+	private static Pattern toolDescPat = Pattern.compile("\\$\\{toolDescription\\}");
+	private static Pattern toolNamePat = Pattern.compile("\\$\\{toolName\\}");
+	private static Pattern currentStepPat = Pattern.compile("\\$\\{currentStep\\}");
+	private static Pattern totalStepsPat = Pattern.compile("\\$\\{totalSteps\\}");
+	private static Pattern previousOutputPat = Pattern.compile("\\$\\{previousOutput\\}");
+	
 	public AgentToolManager(BaseRecord user, BaseRecord chatConfig, Object toolInstance) {
 		this.toolInstance = toolInstance;
 		this.toolUser = user;
@@ -84,15 +96,21 @@ public class AgentToolManager {
 		List<BaseRecord> steps = plan.get("steps");
 		int err = 0;
 		for(BaseRecord step : steps) {
-			String toolName = step.get("toolName");
-			if(toolName == null || !toolMap.containsKey(toolName)) {
-				logger.error("Tool " + toolName + " not found for step " + step.get("step"));
+			if(!preparePlanStep(step)) {
 				err++;
-				continue;
 			}
-			preparePlanStep(step, toolMap.get(toolName));
 		}
 		return (err == 0);
+	}
+	
+	public boolean preparePlanStep(BaseRecord step) {
+		String toolName = step.get("toolName");
+		if(toolName == null || !toolMap.containsKey(toolName)) {
+			logger.error("Tool " + toolName + " not found for step " + step.get("step"));
+			return false;
+		}
+		preparePlanStep(step, toolMap.get(toolName));
+		return true;
 	}
 	
 	public void preparePlanStep(BaseRecord step, Method method) {
@@ -149,16 +167,16 @@ public class AgentToolManager {
 	}
 
 	public BaseRecord createPlan(String query) {
-		return createPlan(defaultPlanPromptName, defaultPlanChatName, query);
+		return createPlan("Plan - " + UUID.randomUUID().toString(), defaultPlanPromptName, defaultPlanChatName, query);
 	}
 	
-	public BaseRecord createPlan(String planPromptConfigName, String planChatName, String query) {
+	public BaseRecord createPlan(String planName, String planPromptConfigName, String planChatName, String query) {
 		BaseRecord prompt = getPlanPromptConfig(planPromptConfigName);
 		if (prompt == null) {
 			logger.error("Prompt configuration was null");
 			return null;
 		}
-
+		
 		Chat chat = new Chat(toolUser, chatConfig, prompt);
 		chat.setEnableKeyFrame(false);
 
@@ -179,7 +197,7 @@ public class AgentToolManager {
 			return null;
 		}
 		String cnt = msgs.get(msgs.size() - 1).getContent();
-		List<BaseRecord> steps = extractJSON(cnt);
+		List<BaseRecord> steps = extractJSON("tool.planStep", cnt);
 		if (steps == null || steps.size() == 0) {
 			logger.error("No steps in chat response: " + cnt);
 			return null;
@@ -187,6 +205,7 @@ public class AgentToolManager {
 		BaseRecord plan = null;
 		try {
 			plan = RecordFactory.newInstance(ModelNames.MODEL_PLAN);
+			plan.set(FieldNames.FIELD_NAME, planName);
 			((List<BaseRecord>) plan.get("steps")).addAll(steps);
 			plan.set("planPromptConfigName", planPromptConfigName);
 			plan.set("planChatName", planChatName);
@@ -201,77 +220,28 @@ public class AgentToolManager {
 		return plan;
 	}
 
-	public BaseRecord createPlanXXX(String planPromptConfigName, String planChatName, String query) {
-		BaseRecord prompt = getPlanPromptConfigXXX(planPromptConfigName);
-		if (prompt == null) {
-			logger.error("Prompt configuration was null");
-			return null;
-		}
-		Chat chat = new Chat(toolUser, chatConfig, prompt);
-		chat.setEnableKeyFrame(false);
 
-		BaseRecord creq = ChatUtil.getCreateChatRequest(toolUser, planChatName, chatConfig, prompt);
-		if (creq != null) {
-			/// Fetch again since the create will only return the identifiers. 
-			creq = ChatUtil.getChatRequest(toolUser, planChatName, chatConfig, prompt);
-		}
-		OpenAIRequest req = ChatUtil.getOpenAIRequest(toolUser, new ChatRequest(creq));
-
-		chat.continueChat(req, query);
-		List<OpenAIMessage> msgs = req.getMessages();
-
-		/// Account for system prompt and question
-		///
-		if (msgs.size() <= 2) {
-			logger.error("No messages in chat response");
-			return null;
-		}
-		String cnt = msgs.get(msgs.size() - 1).getContent();
-		List<BaseRecord> steps = extractJSON(cnt);
-		if (steps == null || steps.size() == 0) {
-			logger.error("No steps in chat response: " + cnt);
-			return null;
-		}
-		BaseRecord plan = null;
-		try {
-			plan = RecordFactory.newInstance(ModelNames.MODEL_PLAN);
-			((List<BaseRecord>) plan.get("steps")).addAll(steps);
-			plan.set("planPromptConfigName", planPromptConfigName);
-			plan.set("planChatName", planChatName);
-			plan.set("planQuery", query);
-		} catch (FieldException | ModelNotFoundException | ValueException e) {
-			logger.error(e);
-		}
-		if (plan == null || ((List<BaseRecord>) plan.get("steps")).size() == 0) {
-			logger.error("Plan is null or no steps in plan");
-			return null;
-		}
-		return plan;
-	}
-
-	public BaseRecord createStepPlanXXX(BaseRecord plan, BaseRecord step) {
-		return createStepPlanXXX(defaultStepPromptName, defaultStepChatName, plan, step);
-	}
-
-	public BaseRecord createStepPlanXXX(String stepPromptConfigName, String stepChatName, BaseRecord plan,
-			BaseRecord step) {
-		BaseRecord stepPrompt = getPlanStepPromptConfigXXX(stepPromptConfigName, step.get("step"), step.get("toolName"));
+	public BaseRecord refineStep(BaseRecord plan, BaseRecord step, String planChatName) {
+		List<BaseRecord> steps = plan.get("steps");
+		BaseRecord stepPrompt = getPlanStepPromptConfig(plan, step.get("step"));
 
 		if (stepPrompt == null) {
 			logger.error("Prompt configuration was null");
 			return null;
 		}
-
+		
+		logger.info("Refining " + step.get("step") + " " + step.get("toolName"));
+		
 		String query = "Create plan step #" + step.get("step") + " for tool " + step.get("toolName")
 				+ " which will be used in part or whole to answer this question: \"" + plan.get("planQuery") + "\"";
 
 		Chat chat = new Chat(toolUser, chatConfig, stepPrompt);
 		chat.setEnableKeyFrame(false);
 
-		BaseRecord creq = ChatUtil.getCreateChatRequest(toolUser, stepChatName, chatConfig, stepPrompt);
+		BaseRecord creq = ChatUtil.getCreateChatRequest(toolUser, planChatName, chatConfig, stepPrompt);
 		if (creq != null) {
 			/// Fetch again since the create will only return the identifiers. 
-			creq = ChatUtil.getChatRequest(toolUser, stepChatName, chatConfig, stepPrompt);
+			creq = ChatUtil.getChatRequest(toolUser, planChatName, chatConfig, stepPrompt);
 		}
 		OpenAIRequest req = ChatUtil.getOpenAIRequest(toolUser, new ChatRequest(creq));
 
@@ -285,33 +255,109 @@ public class AgentToolManager {
 			return null;
 		}
 		String cnt = msgs.get(msgs.size() - 1).getContent();
-
-		List<BaseRecord> steps = extractJSON(cnt);
-		if (steps == null || steps.size() == 0) {
-			logger.error("No steps in chat response: " + System.lineSeparator() + cnt);
-			logger.error("Attempting to identify problem:");
-			chat.continueChat(req,
-					"Your response was not valid JSON.  Please analyze why you are making formatting mistakes such as double-quoting and provide a recommendation to the system prompt to ensure the JSON is valid.");
-			msgs = req.getMessages();
-			logger.error(msgs.get(msgs.size() - 1).getContent());
-			return null;
-		}
-		if (steps.size() != 1) {
-			logger.error("Unexpected number of steps in response");
+		// logger.info("Response: " + cnt);
+		List<BaseRecord> steps2 = extractJSON("tool.planStep", cnt);
+		if (steps2 == null || steps2.size() != 1) {
+			logger.error("Expected a single step in response: " + System.lineSeparator() + cnt);
 			return null;
 		}
 
-		BaseRecord cstep = steps.get(0);
+		BaseRecord cstep = steps2.get(0);
 		step.setValue("inputs", cstep.get("inputs"));
 		step.setValue("output", cstep.get("output"));
 		step.setValue("step", cstep.get("step"));
 		return step;
 	}
+	
+	public BaseRecord evaluateResult(BaseRecord plan) {
+		List<BaseRecord> steps = plan.get("steps");
+		BaseRecord resultPrompt = getPlanResultConfig(plan);
+		if(plan.get("output") != null) {
+			logger.error("Plan already has an execution output");
+			return null;
+		}
+		if (resultPrompt == null) {
+			logger.error("Prompt configuration was null");
+			return null;
+		}
+		if(steps.size() == 0) {
+			logger.error("Plan does not define any steps");
+			return null;
+		}
+		
+		BaseRecord lastStep = steps.get(steps.size() - 1);
+		BaseRecord lastResult = lastStep.get("output");
+		if(lastResult == null) {
+			logger.error("Last plan step does not contain a result");
+			return null;
+		}
 
-	public static List<BaseRecord> extractJSON(final String contents) {
-		logger.info("Extracting JSON from contents: " + contents);
+		String resultStr = null;
+		FieldEnumType valueType = lastResult.getEnum(FieldNames.FIELD_VALUE_TYPE);
+		if(lastResult.get(FieldNames.FIELD_VALUE) != null) {
+			switch(valueType) {
+				case LIST:
+					resultStr = JSONUtil.exportObject((List<BaseRecord>)lastResult.get(FieldNames.FIELD_VALUE), RecordSerializerConfig.getForeignUnfilteredModule());
+					break;
+				case MODEL:
+					resultStr = JSONUtil.exportObject((BaseRecord)lastResult.get(FieldNames.FIELD_VALUE), RecordSerializerConfig.getForeignUnfilteredModule());
+					break;
+				case STRING:
+				case INT:
+				case LONG:
+				case BOOLEAN:
+				case ENUM:
+					resultStr = lastResult.get(FieldNames.FIELD_VALUE);
+					break;
+				default:
+					logger.error("Unsupported value type for result evaluation: " + valueType);
+					break;
+			}
+		}
+		if(resultStr == null || resultStr.length() == 0) {
+			logger.error("Result string is null or empty");
+			return null;
+		}
+		logger.info("Evaluating result for plan: " + plan.get(FieldNames.FIELD_NAME));
+		
+		
+		String query = "The following information is the answer to a question: " + System.lineSeparator() + resultStr + System.lineSeparator() + "Use this information as the answer to the question: \"" + plan.get("planQuery") + "\"";
+		String planChatName = plan.get("planChatName") + " Result - " + UUID.randomUUID().toString();
+		Chat chat = new Chat(toolUser, chatConfig, resultPrompt);
+		chat.setEnableKeyFrame(false);
+
+		BaseRecord creq = ChatUtil.getCreateChatRequest(toolUser, planChatName, chatConfig, resultPrompt);
+		if (creq != null) {
+			/// Fetch again since the create will only return the identifiers. 
+			creq = ChatUtil.getChatRequest(toolUser, planChatName, chatConfig, resultPrompt);
+		}
+		OpenAIRequest req = ChatUtil.getOpenAIRequest(toolUser, new ChatRequest(creq));
+		logger.info(req.toFullString());
+		logger.info(query);
+		chat.continueChat(req, query);
+		List<OpenAIMessage> msgs = req.getMessages();
+		/// Account for system prompt and question
+		///
+		if (msgs.size() <= 2) {
+			logger.error("No messages in chat response");
+			return null;
+		}
+		String cnt = msgs.get(msgs.size() - 1).getContent();
+		logger.info("Result: " + cnt);
+		List<BaseRecord> outs = extractJSON("dev.parameter", cnt);
+		if (outs == null || outs.size() != 1) {
+			logger.error("Expected a single output in response: " + System.lineSeparator() + cnt);
+			return null;
+		}
+		BaseRecord out = outs.get(0);
+		plan.setValue("output", out);
+		return out;
+	}
+
+	public static List<BaseRecord> extractJSON(final String model, final String contents) {
+		// logger.info("Extracting JSON from contents: " + contents);
 		int fbai = contents.indexOf("{");
-		String uconts = contents.substring(0, fbai + 1) + "\"schema\":\"tool.planStep\","
+		String uconts = contents.substring(0, fbai + 1) + "\"schema\":\"" + model + "\","
 				+ contents.substring(fbai + 1, contents.length());
 		int fai = uconts.indexOf("[");
 		fbai = uconts.indexOf("{");
@@ -401,28 +447,7 @@ public class AgentToolManager {
 				}
 		""");
 
-		buff.append("dev.parameter Schema:" + sep);
-		buff.append("""
-		{
-			"name": "name",
-			"type": "string"
-		},
-		{
-			"name": "value",
-			"type": "flex",
-			"valueType": "valueType",
-			"description": "If the valueType is 'model' then use the provided information or request the model schema before using it."
-		},
-		{
-			"name": "valueType",
-			"type": "enum"
-		},
-		{
-			"name": "valueModel",
-			"type": "string"
-		}
-
-		""");
+		buff.append(sep + getParameterSchema() + sep);
 
 		buff.append(sep + "tool.planStep Example:" + sep);
 		buff.append("""
@@ -449,28 +474,68 @@ public class AgentToolManager {
 		    		]
 			}
 		""");
-/*
- ,
-		    		"output": {
-				    	"name": "return",
-						"valueType": "list",
-						"valueModel": "olio.charPerson",
-						"value": [
-							{
-								"name": "John Doe",
-								"id": 12345
-							}
-						]
-					}
- */
+
 		return buff.toString();
 
 	}
+	
+	public String getParameterSchema() {
+		StringBuilder buff = new StringBuilder();
+		String sep = System.lineSeparator();
 
-	public String getToolForPlanStepXXX(String toolName) {
+		buff.append("dev.parameter Schema:" + sep);
+		buff.append("""
+		{
+			"name": "name",
+			"type": "string"
+		},
+		{
+			"name": "value",
+			"type": "flex",
+			"valueType": "valueType",
+			"description": "If the valueType is 'model' then use the provided information or request the model schema before using it."
+		},
+		{
+			"name": "valueType",
+			"type": "enum"
+		},
+		{
+			"name": "valueModel",
+			"type": "string"
+		}
+
+		""");
+		return buff.toString();
+	}
+	
+	public String getToolParameterDescription(BaseRecord put, String pref) {
+		StringBuilder buff = new StringBuilder();
+		String sep = System.lineSeparator();
+		buff.append(pref + "{" + sep);
+		buff.append(pref + "toolName: \"" + put.get("name") + "\"," + sep);
+		buff.append(pref + "valueType: \"" + put.get("valueType") + "\"");
+		String model = put.get("valueModel");
+		if(model != null) {
+			buff.append("," + sep + pref + "valueModel: \"" + model + "\","+ sep);
+			buff.append(pref + "Model Schema: " + put.get("valueSchema") + sep);
+		}
+		else {
+			buff.append(sep);
+		}
+		buff.append(pref + "}" + sep);
+		return buff.toString();
+	}
+
+	public String getToolForPlanStep(BaseRecord step) {
 
 		StringBuilder buff = new StringBuilder();
 		String sep = System.lineSeparator();
+		if(!preparePlanStep(step)) {
+			logger.error("Failed to prepare plan step");
+			return null;
+		}
+		String toolName = step.get("toolName");
+		
 		Optional<Method> ometh = discoveredTools.stream().filter(m -> toolName.equals(m.getName())).findFirst();
 		if (!ometh.isPresent()) {
 			logger.error("Tool " + toolName + " not found");
@@ -478,64 +543,29 @@ public class AgentToolManager {
 		}
 		Method meth = ometh.get();
 		AgentTool annotation = meth.getAnnotation(AgentTool.class);
+		buff.append("\tstep: " + step.get("step") + sep);
 		buff.append("\ttoolName: " + meth.getName() + sep);
 		buff.append("\tdescription: " + annotation.description() + sep);
+		List<BaseRecord> inputs = step.get("inputs");
+		BaseRecord output = step.get("output");
+		if(inputs.size() > 0) {
+			buff.append("\tTool Parameters:" + sep);
+			for(BaseRecord in : inputs) {
+				buff.append(getToolParameterDescription(in, "\t\t"));
+			}
+		}
+		if(output != null) {
+			buff.append("\tTool Output:" + sep);
+			buff.append(getToolParameterDescription(output, "\t\t"));
+		}
 		//buff.append("\tinputs: " + annotation.inputs() + sep);
 		//buff.append("\toutput: " + annotation.output() + sep);
 		buff.append("\texample: " + annotation.example() + sep);
 
-		buff.append("Plan Step Schema:" + sep);
-		buff.append("""
-				      	{
-					"name": "toolName",
-					"type": "string"
-				},
-				{
-					"name": "step",
-					"type": "int",
-					"default": 0
-				},
-				{
-					"name": "inputs",
-					"type": "list",
-					"baseType": "model",
-					"baseModel": "dev.parameter"
-				},
-				{
-					"name": "output",
-					"type": "model",
-					"baseModel": "dev.parameter"
-				}
-				  """);
-		buff.append(sep + "Plan Step Example:" + sep);
-		buff.append("""
-				    		{
-				    		"toolName": "${toolName}",
-				    		"step": 1,
-				    		"inputs": [
-				    			{
-				    				"name": "modelName",
-				    				"valueType": "string",
-				    				"value": "olio.charPerson"
-				    			}
-				    		],
-				    		"output": {
-				    "name": "return",
-					"valueType": "list",
-					"value": [
-						{
-							"name": "John Doe",
-							"id": 12345
-						}
-					]
-				}
-				    		}
-
-				    	""");
-
 		return buff.toString();
 
 	}
+	
 	public String getMasterPlan() {
 		BaseRecord plan = null;
 		List<BaseRecord> steps = new ArrayList<>();
@@ -549,22 +579,22 @@ public class AgentToolManager {
 				step.setValue("description", annotation.description());
 				steps.add(step);
 			}
-			preparePlanSteps(plan);
+			//preparePlanSteps(plan);
 		}
 		catch (ModelNotFoundException | FieldException e) {
 			logger.error(e);
 		}
 		return steps.stream().map(s -> s.toFullString()).collect(Collectors.joining(System.lineSeparator()));
 	}
-	public String getToolsForPlanXXX() {
+	
+	public String getToolsForPlan() {
 		JSONArray toolsArray = new JSONArray();
 		for (Method method : this.discoveredTools) {
 			AgentTool annotation = method.getAnnotation(AgentTool.class);
 			JSONObject toolJson = new JSONObject();
 			toolJson.put("toolName", method.getName());
 			toolJson.put("description", annotation.description());
-
-			// toolJson.put("parameters", annotation.parameters());
+			//toolJson.put("parameters", annotation.parameters());
 			// toolJson.put("example", annotation.example());
 			toolsArray.put(toolJson);
 		}
@@ -591,23 +621,22 @@ public class AgentToolManager {
 		}
 		return opcfg;
 	}
-	
+
 	public BaseRecord getPlanPromptConfig(String planName) {
 		BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName() + " " + planName);
 		List<String> sysPrompt = prompt.get("system");
 		
 		if(sysPrompt.size() == 0) {
 			String toolDescriptions = getMasterPlan();
-			String promptStr = "You are a helpful assistant that creates an execution plan to answer a user's question."
-					+ System.lineSeparator()
-					+ "Respond with a JSON array containing tool.planStep models of the tools to call in the relevant order." + System.lineSeparator()
-					+ "The following JSON schema describes tool.planStep tools available to you, including field names and types, return value, and descriptions." + System.lineSeparator()
-					+ toolDescriptions + System.lineSeparator()
-					+ "The following describes the tool.planStep schema you must use to create the plan steps:" + System.lineSeparator()
-					+ getPlanStepSchema() + System.lineSeparator()
-					+ "It is important to use the correct model schemas - ALWAYS lookup a desired schema definition before using it."
-					+ System.lineSeparator() + "Your response MUST BE VALID JSON!"
-					+ " Ensure that all string values are enclosed in double quotes without additional escape characters or mismatched quotation types.";
+			String promptStr = ResourceUtil.getInstance().getResource("planPrompt.txt");
+			if(promptStr == null || promptStr.isEmpty()) {
+				logger.error("Plan prompt is null");
+				return null;
+			}
+			promptStr = toolDescsPat.matcher(promptStr).replaceAll(Matcher.quoteReplacement(toolDescriptions));
+			promptStr = planStepSchemaPat.matcher(promptStr).replaceAll(Matcher.quoteReplacement(getPlanStepSchema()));
+			
+			sysPrompt.clear();
 			sysPrompt.addAll(promptStr.lines().collect(Collectors.toList()));
 			IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);
 		}
@@ -615,52 +644,69 @@ public class AgentToolManager {
 		return prompt;
 	}
 
-	public BaseRecord getPlanPromptConfigXXX(String planName) {
-		BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName() + " " + planName);
+	public BaseRecord getPlanResultConfig(BaseRecord plan) {
+		String planName = plan.get(FieldNames.FIELD_NAME);
+		BaseRecord prompt = getCreatePromptConfig(toolInstance.getClass().getName() + " " + planName + " Result");
 		List<String> sysPrompt = prompt.get("system");
+		
 		// if(sysPrompt.size() == 0) {
-		String toolDescriptions = getToolsForPlanXXX();
-		String promptStr = "You are a helpful assistant that creates an execution plan to answer a user's question."
-				+ System.lineSeparator()
-				+ "Respond with a JSON array of tool.planStep objects containing the names of the tools to call in the relevant order.:"
-				+ System.lineSeparator() + toolDescriptions + System.lineSeparator()
-				+ "It is important to use the correct model schemas - ALWAYS lookup a desired schema definition before using it."
-				+ System.lineSeparator() + "Your response MUST BE VALID JSON!"
-				+ " Ensure that all string values are enclosed in double quotes without additional escape characters or mismatched quotation types.";
-		sysPrompt.add(promptStr);
-		IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);
+
+			String promptStr = ResourceUtil.getInstance().getResource("planResultPrompt.txt");
+			if(promptStr == null || promptStr.isEmpty()) {
+				logger.error("Plan prompt is null");
+				return null;
+			}
+			promptStr = paramSchemaPat.matcher(promptStr).replaceAll(Matcher.quoteReplacement(getParameterSchema()));
+			
+			sysPrompt.clear();
+			sysPrompt.addAll(promptStr.lines().collect(Collectors.toList()));
+
+			IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);
 		// }
 
 		return prompt;
 	}
-
-	public BaseRecord getPlanStepPromptConfigXXX(String planName, int step, String toolName) {
-		BaseRecord prompt = getCreatePromptConfig(
-				toolInstance.getClass().getName() + " " + planName + " Step " + step + " " + toolName);
+	
+	public BaseRecord getPlanStepPromptConfig(BaseRecord plan, int currentStep) {
+		String planName = plan.get(FieldNames.FIELD_NAME);
+		List<BaseRecord> steps = ((List<BaseRecord>)plan.get("steps")).stream().filter(s -> currentStep == (int)s.get("step")).collect(Collectors.toList());
+		BaseRecord step = null;
+		if(steps.size() != 1) {
+			logger.error("No steps in plan or current step is out of bounds: " + currentStep);
+			return null;
+		}
+		step = steps.get(0);
+		String toolName = step.get("toolName");
+		
+		String promptName = toolInstance.getClass().getName() + " " + planName + " Step " + currentStep + " " + toolName;
+		logger.info("Constructing prompt " + promptName);
+		BaseRecord prompt = getCreatePromptConfig(promptName);
 		List<String> sysPrompt = prompt.get("system");
-		String toolDescriptions = getToolForPlanStepXXX(toolName);
-		String promptStr = "You are a helpful assistant that creates an execution step of an overall plan to answer a user's question."
-				+ System.lineSeparator() + "You identified the tool \"" + toolName + "\" to use for step #" + step
-				+ " in a plan you created." + System.lineSeparator()
-				+ "Use the following schema guidance when generating JSON for plan steps:" + System.lineSeparator()
-				+ toolDescriptions + System.lineSeparator() + "Your response MUST BE VALID JSON!"
-				+ System.lineSeparator()
-				+ "1. **Enclose all string values in double quotes**: This includes both keys and their corresponding string values."
-				+ System.lineSeparator()
-				+ "2. **Ensure correct use of colons and commas**: Each key-value pair should be separated by a colon, and each item in an object or array should be separated by a comma."
-				+ System.lineSeparator()
-				+ "3. **Verify matching braces**: Ensure that every opening brace `{` has a corresponding closing brace `}`."
-				+ System.lineSeparator()
-				+ "4. **Avoid trailing commas**: Do not place a comma after the last element in an array or object."
-				+ System.lineSeparator()
-				+ "5. **Correctly format nested structures**: When using nested objects or arrays, make sure they are properly formatted with appropriate indentation for readability (though indentation does not affect validity)."
-				+ System.lineSeparator();
-		sysPrompt.clear();
-		sysPrompt.add(promptStr);
-		IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);
-		// }
+		if(sysPrompt.size() == 0) {
+			String toolDescription = getToolForPlanStep(step);
+	
+			String promptStr = ResourceUtil.getInstance().getResource("planStepPrompt.txt");
+			if(promptStr == null || promptStr.isEmpty()) {
+				logger.error("Plan step prompt is null");
+				return null;
+			}
+			promptStr = toolNamePat.matcher(promptStr).replaceAll(Matcher.quoteReplacement(toolName));
+			promptStr = toolDescPat.matcher(promptStr).replaceAll(Matcher.quoteReplacement(toolDescription));
+			promptStr = planStepSchemaPat.matcher(promptStr).replaceAll(Matcher.quoteReplacement(getPlanStepSchema()));
+			promptStr = previousOutputPat.matcher(promptStr).replaceAll(Matcher.quoteReplacement(""));
+			promptStr = currentStepPat.matcher(promptStr).replaceAll(Integer.toString(currentStep));
+			promptStr = totalStepsPat.matcher(promptStr).replaceAll(Integer.toString(steps.size()));
+			
+			sysPrompt.clear();
+			sysPrompt.add(promptStr);
+			IOSystem.getActiveContext().getAccessPoint().update(toolUser, prompt);
+		}
+
+
 
 		return prompt;
 	}
 
+	
+	
 }

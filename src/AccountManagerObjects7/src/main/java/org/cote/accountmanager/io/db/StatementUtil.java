@@ -960,9 +960,10 @@ public class StatementUtil {
 				{
 					matchBuff.append(String.format("NOT %s = %s", fieldName, paramToken));
 				}
-				else if (fieldComp == ComparatorEnumType.LIKE)
+				else if (fieldComp == ComparatorEnumType.LIKE || fieldComp == ComparatorEnumType.ILIKE)
 				{
-					matchBuff.append(String.format("%s LIKE %s", fieldName, paramToken));
+					String likeStr = (fieldComp == ComparatorEnumType.ILIKE ? "ILIKE" : "LIKE");
+					matchBuff.append(String.format("%s %s %s", fieldName, likeStr, paramToken));
 				}
 				else if (fieldComp == ComparatorEnumType.IN || fieldComp == ComparatorEnumType.NOT_IN)
 				{
@@ -1181,6 +1182,7 @@ public class StatementUtil {
 				|| comp == ComparatorEnumType.LESS_THAN
 				|| comp == ComparatorEnumType.LESS_THAN_OR_EQUALS
 				|| comp == ComparatorEnumType.LIKE
+				|| comp == ComparatorEnumType.ILIKE
 			){
 				setStatementParameter(statement, model, field.get(FieldNames.FIELD_NAME), comp, fet, field.get(FieldNames.FIELD_VALUE), paramMarker++);
 			}
@@ -1263,7 +1265,7 @@ public class StatementUtil {
 					}
 					else {
 						String sval = (String)value;
-						if(comp == ComparatorEnumType.LIKE && sval != null && sval.indexOf("%") == -1) {
+						if((comp == ComparatorEnumType.LIKE || comp == ComparatorEnumType.ILIKE) && sval != null && sval.indexOf("%") == -1) {
 							sval = "%" + sval + "%";
 						}
 						statement.setString(index,  sval);

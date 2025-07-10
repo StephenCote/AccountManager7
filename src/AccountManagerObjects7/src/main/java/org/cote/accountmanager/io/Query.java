@@ -232,7 +232,7 @@ public class Query extends LooseRecord{
 	}
 	public void setRequest(String[] requestFields) {
 		try {
-			set(FieldNames.FIELD_REQUEST, Arrays.asList(requestFields));
+			set(FieldNames.FIELD_REQUEST, new ArrayList<String>(Arrays.asList(requestFields)));
 		} catch (FieldException | ValueException | ModelNotFoundException e) {
 			logger.error(e);
 			

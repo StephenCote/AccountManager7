@@ -18,12 +18,21 @@
 			"name": "planChatName",
 			"type": "string"
 		},
-
+		{
+			"name": "executed",
+			"type": "boolean",
+			"default": false
+		},
 		{
 			"name": "steps",
 			"type": "list",
 			"baseType": "model",
 			"baseModel": "tool.planStep"
+		},
+		{
+			"name": "output",
+			"type": "model",
+			"baseModel": "dev.parameter"
 		}
 	]
 }

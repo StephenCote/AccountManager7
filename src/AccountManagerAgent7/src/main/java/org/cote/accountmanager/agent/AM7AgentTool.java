@@ -7,15 +7,23 @@ import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.exceptions.FieldException;
+import org.cote.accountmanager.exceptions.ModelException;
+import org.cote.accountmanager.exceptions.ModelNotFoundException;
+import org.cote.accountmanager.exceptions.ValueException;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryField;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.model.field.FieldEnumType;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.schema.SchemaUtil;
 import org.cote.accountmanager.schema.type.ComparatorEnumType;
 
@@ -32,6 +40,7 @@ public class AM7AgentTool {
 		description = "Create a new query field object.",
 		returnType = FieldEnumType.MODEL,
 		returnModel = ModelNames.MODEL_QUERY_FIELD,
+		returnName = "queryField",
 		example = "BaseRecord queryField = newQueryField(\"name\", ComparatorEnumType.LIKE, \"Administrator\");"
 	)
     public BaseRecord newQueryField(
@@ -56,20 +65,25 @@ public class AM7AgentTool {
 		description = "Find auth.role models based on criteria.",
 		example = "{name: \"queryFields\", valueType = \"list\", value: [{name: \"name\", comparator: \"LIKE\", value: \"Administrator\"}]}",
 		returnType = FieldEnumType.LIST,
-		returnModel = ModelNames.MODEL_MODEL
+		returnModel = ModelNames.MODEL_MODEL,
+		returnName = "roles"
 	)
     public List<BaseRecord> findRoles(
     		@AgentToolParameter(name = "queryFields", type = FieldEnumType.LIST, model = ModelNames.MODEL_QUERY_FIELD)
     		List<BaseRecord> queryFields
     ) {
-        return AgentUtil.findObjects(toolUser, ModelNames.MODEL_ROLE, queryFields);
+    	String[] flds = new String[] {
+    		FieldNames.FIELD_ID, FieldNames.FIELD_NAME, FieldNames.FIELD_PARENT_ID, FieldNames.FIELD_ORGANIZATION_ID
+        };
+        return AgentUtil.findObjects(toolUser, ModelNames.MODEL_ROLE, queryFields, flds);
     }
 
     @AgentTool(
 		description = "Finds all members (user, person, account) for a given list of roles.",
     	example = "inputs: [{name: \"memberModel\", valueType = \"string\", value: \"olio.charPerson\"}, [{name: \"roles\", valueType: \"list\", valueModel: \"auth.role\", value: [{\"Account Administrators\", id: 13}]}]",
 		returnType = FieldEnumType.LIST,
-		returnModel = ModelNames.MODEL_MODEL
+		returnModel = ModelNames.MODEL_MODEL,
+		returnName = "members"
 	)
     public List<BaseRecord> findMembersOfRoles(
     		@AgentToolParameter(name = "memberModel", type = FieldEnumType.STRING)
@@ -96,18 +110,40 @@ public class AM7AgentTool {
     }
 
     @AgentTool(
-		description = "Find identity.person models based on attributes.",
+		description = "Find olio.charPerson models using a list of io.queryField objects named 'queryFields'.",
 	    example = "inputs:[{name: \"queryFields\", valueModel: \"io.queryField\", valueType: \"list\", value: [{name: \"hairColor\", comparator: \"EQUALS\", value: \"red\"}]}]",
 		returnType = FieldEnumType.LIST,
-		returnModel = OlioModelNames.MODEL_CHAR_PERSON
+		returnModel = OlioModelNames.MODEL_CHAR_PERSON,
+		returnName = "persons"
 	)
     public List<BaseRecord> findPersons(
     	@AgentToolParameter(name = "queryFields", type = FieldEnumType.LIST, model = ModelNames.MODEL_QUERY_FIELD)
     	List<BaseRecord> queryFields
     ) {
         // As noted before, assuming 'hairColor' exists on the person model for this example
-        return AgentUtil.findObjects(toolUser, OlioModelNames.MODEL_CHAR_PERSON, queryFields);
+
+    	logger.info("Finding persons..");
+    	if(queryFields.isEmpty()) {
+    		logger.error("No query fields were defined");
+
+    		return new ArrayList<>();
+    	}
+
+    	List<BaseRecord> sanQueryFields = AgentUtil.sanitizeQueryFields(toolUser, OlioModelNames.MODEL_CHAR_PERSON, queryFields);
+    	if(sanQueryFields.isEmpty()) {
+    		logger.error("No query fields were sanitized");
+    		return new ArrayList<>();
+    	}
+    	String[] flds = new String[] {
+    		FieldNames.FIELD_ID, FieldNames.FIELD_NAME, "age", "gender", FieldNames.FIELD_ORGANIZATION_ID
+    		//,"hairColor", "hairStyle", "eyeColor"
+    	};
+        List<BaseRecord> res = AgentUtil.findObjects(toolUser, OlioModelNames.MODEL_CHAR_PERSON, sanQueryFields, flds);
+        logger.info("Found " + res.size() + " matches");
+        return res;
     }
+    
+
 
     /*
     @AgentTool(
@@ -129,12 +165,12 @@ public class AM7AgentTool {
     }
 	*/
     
-    @AgentTool(description = "Returns a list of available models including any description.")
+    @AgentTool(description = "Returns a list of available models including any description.", returnName = "modelList", returnType = FieldEnumType.STRING)
     public String describeAllModels() {
     	return SchemaUtil.getModelDescriptions(false);
     }
 
-    @AgentTool(description = "Returns a summary of the specified model schema, including inheritence and fields")
+    @AgentTool(description = "Returns a summary of the specified model schema, including inheritence and fields", returnName = "modelDescription", returnType = FieldEnumType.STRING)
     public String describeModel(
     	@AgentToolParameter(name = "modelName", type = FieldEnumType.STRING) String modelName
     ) {

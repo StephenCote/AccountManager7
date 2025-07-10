@@ -77,6 +77,7 @@ public abstract class SearchBase implements ISearch {
 			result = find(query);
 		} catch (NullPointerException | ReaderException e) {
 			logger.error(e);
+			e.printStackTrace();
 			
 		}
 		if(result != null && result.getCount() > 0) {
