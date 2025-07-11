@@ -1,5 +1,5 @@
 {
-	"schema": "olio.sd.sdConfigData",
+	"schema": "olio.sd.configData",
 	
 	"stillCameras": ["Korona", "Leica M3", "Canon AE-1 SLR", "Hasselblad 500C", "Rolleiflex 2.8F", "Mamiya RZ67", "Contax 645", "Polaroid SX-70,Nikon F", "Pentax 67", "Hasselblad 1600F SLR", "Minolta HI-Matic E SLR", "Olympus XA 2", "Globus M large format", "Polaroid Supercolor 1000 instant", "Kodak 35mm stereo", "Widelux F7 panoramic", "Baldafix folding", "Kodak Brownie box", "Graflex Speed Graphic press"],
 	"films": ["Black and White", "Kodak Tri-X", "Kodak Ektachrome", "Kodak Kodachrome", "Fujifilm Velvia", "Kodak Portra 400", "Fujifilm Pro 400H", "Kodak Portra 800", "Polaroid Instant", "Ilford HP5 Plus", "Fujifilm Superia 400", "Lomography 100", "Kodak Ektar 100", "Kodak Portra 160", "Kodak Gold 200"],
