@@ -21,6 +21,7 @@ import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.security.AuthorizationUtil;
+import org.cote.accountmanager.tools.VoiceUtil;
 import org.cote.accountmanager.util.MemberUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.VectorUtil;
@@ -47,6 +48,7 @@ public class IOContext {
 	private String guid = null;
 	private DBUtil dbUtil = null;
 	private VectorUtil vectorUtil = null;
+	private VoiceUtil voiceUtil = null;
 	private AccessPoint accessPoint = null;
 	private boolean enforceAuthorization = true;
 	private boolean enforceValidation = true;
@@ -89,6 +91,14 @@ public class IOContext {
 	}
 	
 	
+
+	public VoiceUtil getVoiceUtil() {
+		return voiceUtil;
+	}
+
+	public void setVoiceUtil(VoiceUtil voiceUtil) {
+		this.voiceUtil = voiceUtil;
+	}
 
 	public VectorUtil getVectorUtil() {
 		return vectorUtil;

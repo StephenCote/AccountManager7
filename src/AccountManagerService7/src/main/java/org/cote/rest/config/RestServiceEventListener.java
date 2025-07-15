@@ -27,6 +27,7 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordIO;
 import org.cote.accountmanager.schema.type.OrganizationEnumType;
 import org.cote.accountmanager.thread.Threaded;
+import org.cote.accountmanager.tools.VoiceUtil;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -183,11 +184,17 @@ public class RestServiceEventListener implements ApplicationEventListener {
 		try {
 			IOContext ioContext = IOSystem.open(RecordIO.DATABASE, props);
 			String authToken = context.getInitParameter("embedding.authorizationToken");
-			if (authToken != null && authToken.length() == 0)
-				authToken = null;
+			if (authToken != null && authToken.length() == 0) authToken = null;
 			ioContext.setVectorUtil(new VectorUtil(
 					LLMServiceEnumType.valueOf(context.getInitParameter("embedding.type").toUpperCase()),
 					context.getInitParameter("embedding.server"), authToken));
+			authToken = context.getInitParameter("voice.authorizationToken");
+			
+			if (authToken != null && authToken.length() == 0) authToken = null;
+			ioContext.setVoiceUtil(new VoiceUtil(
+					LLMServiceEnumType.valueOf(context.getInitParameter("voice.type").toUpperCase()),
+					context.getInitParameter("voice.server"), authToken));
+			
 			boolean testVector = false;
 			for (String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
 				OrganizationContext octx = ioContext.getOrganizationContext(org,

@@ -91,6 +91,7 @@
 
     function doClear(){
       clearEditMode();
+      audioMap = {};
       chatCfg = newChatConfig();
     }
     
@@ -383,6 +384,13 @@
     let hideThoughts = true;
     let editIndex = -1;
     let editMode = false;
+    let audio = false;
+    let audioMap = {};
+
+    function toggleAudio(){
+      audio = !audio;
+    }
+
     function toggleThoughts() {
       hideThoughts = !hideThoughts;
     }
@@ -480,11 +488,13 @@
         let ectl = "";
         let ecls = "";
         let bectl = false;
+        let lastMsg = (midx == (chatCfg.history.messages.length - 1));
         if(hideThoughts && !editMode){
           cnt = pruneTag(cnt, "citation");
         }
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
+                  
           /// Only edit last message
           if (midx == chatCfg.history.messages.length - 1) {
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
@@ -524,10 +534,38 @@
           //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
           cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/,""))));
         }
+        let aud = "";
+        if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
+          let name = chatCfg.chat.objectId + " - " + midx;
+          if(!audioMap[name]){
+            console.log("Synthethize " + name);
+              m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: {"text": msg.content}}).then((d) => {
+                audioMap[name] = d;
+                console.log(d);
+              }).catch(()=>{
+                audioMap[name] = {error:true};
+              });
 
+          }
+
+          else if(audioMap[name] && !audioMap[name].error){
+            let path = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + audioMap[name].groupPath + "/Voice - " + name + ".mp3";
+            let props = { class: "", preload: "auto", controls: "controls" };
+            if(lastMsg){
+              props.autoplay = "autoplay";
+            }
+            let mt = audioMap[name].contentType;
+            if (mt.match(/mpeg3$/)) mt = "audio/mpeg";
+            aud = m("audio", props,
+                  m("source", { src: path, type: mt })
+            );
+          }
+            
+        }
         return m("div", { class: "relative receive-chat flex " + align },
           [ectl, m("div", { class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light" },
-            m("p", cnt)
+            m("p", cnt),
+            aud
           )]
         );
       });
@@ -601,6 +639,7 @@
               m("div", { class: "tab-container result-nav w-full" }, [
                 m("button", { class: "button", onclick: toggleFullMode }, m("span", { class: "material-symbols-outlined material-icons-24" }, (fullMode ? "close_fullscreen" : "open_in_new"))),
                 m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
+                m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : "volume_mute"))),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
                 //m("input[" + (chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown: function (e) { if (e.which == 13) doChat(e); } }),

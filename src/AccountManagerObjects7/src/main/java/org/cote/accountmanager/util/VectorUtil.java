@@ -200,6 +200,10 @@ LIMIT ?
 	
 			try (Connection con = IOSystem.getActiveContext().getDbUtil().getDataSource().getConnection(); PreparedStatement stat = con.prepareStatement(sql)){
 		        float[] queryEmbedding = generateEmbeddings(new String[] {query}).get(0);
+	        	if(queryEmbedding == null || queryEmbedding.length == 0) {
+	        		logger.error("Embedding is null or empty");
+	        		return content;
+	        	}
 
 		        stat.setObject(1, new PGvector(queryEmbedding));
 		        stat.setLong(2, id);
@@ -349,6 +353,11 @@ LIMIT ?
 	        List<float[]> embeddings = generateEmbeddings(chunks.toArray(new String[0]));
 	        int size = chunks.size();
 	        for (int i = 0; i < chunks.size(); i++) {
+	        	
+	        	if(embeddings.get(i) == null || embeddings.get(i).length == 0) {
+	        		throw new FieldException("Embedding for chunk " + (i + 1) + " is null or empty");
+	        	}
+
 	        	BaseRecord chunkModel = RecordFactory.newInstance(ModelNames.MODEL_VECTOR_MODEL_STORE);
 	        	chunkModel.setValue(FieldNames.FIELD_CHUNK, (i + 1));
 	        	chunkModel.setValue(FieldNames.FIELD_CHUNK_COUNT, size);
