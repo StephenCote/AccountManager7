@@ -71,6 +71,7 @@ public class ContentTypeUtil {
 		types.put("wmv", "video/x-ms-wmv");
 		types.put("flv", "video/x-flv");
 		types.put("mp4", "video/mp4");
+		types.put("m4a", "audio/mp4");
 		types.put("3dm","x-world/x-3dmf");
 		types.put("3dmf","x-world/x-3dmf");
 		types.put("3gp","video/3gpp");

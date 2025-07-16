@@ -29,7 +29,7 @@ class SynthesisRequest(BaseModel):
     text: str
     speed: float = 1.0
     language: str = "en"
-    voice_sample_base64: Optional[str] = None
+    voice_sample: Optional[str] = None
 
 # --- GLOBAL VARIABLES & MODEL LOADING ---
 
@@ -86,10 +86,10 @@ async def synthesize_speech(request: SynthesisRequest):
         # and will be cleaned up automatically.
         with tempfile.TemporaryDirectory() as temp_dir:
             speaker_wav_path = None
-            if request.voice_sample_base64:
+            if request.voice_sample:
                 # If a base64 voice sample is provided, decode and save it
                 try:
-                    audio_bytes = base64.b64decode(request.voice_sample_base64)
+                    audio_bytes = base64.b64decode(request.voice_sample)
                     speaker_wav_path = os.path.join(temp_dir, "uploaded_voice.wav")
                     with open(speaker_wav_path, "wb") as f:
                         f.write(audio_bytes)

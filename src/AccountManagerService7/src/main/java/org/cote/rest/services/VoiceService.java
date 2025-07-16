@@ -83,6 +83,29 @@ public class VoiceService {
 
 	private static Set<String> synthesized = ConcurrentHashMap.newKeySet();
 	
+	private VoiceResponse getVoice(BaseRecord user, VoiceRequest req) {
+		
+		if(req.getVoiceSampleId() != null) {
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, req.getVoiceSampleId());
+			q.planMost(false);
+			BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+			if(data != null) {
+				try {
+					req.setVoice_sample(ByteModelUtil.getValue(data));
+				} catch (ValueException | FieldException e) {
+					logger.error(e);
+				}
+			}
+		}
+		if(req.getEngine() == null || req.getEngine().isEmpty()) {
+			req.setEngine("piper");
+			req.setSpeaker("en_GB-alba-medium");
+			logger.info("Defaulting voice engine to piper and speaker to en_GB-alba-medium");
+		}
+		return IOSystem.getActiveContext().getVoiceUtil().getVoice(req);
+	}
+	
+	
 	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/{referenceId:[\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
@@ -103,13 +126,13 @@ public class VoiceService {
 				logger.info("Voice already synthesized: " + voiceName);
 				return Response.status(400).entity(null).build();
 			}
-			VoiceRequest chatReq = JSONUtil.importObject(json, VoiceRequest.class);
-			if(chatReq == null) {
+			VoiceRequest voiceReq = JSONUtil.importObject(json, VoiceRequest.class);
+			if(voiceReq == null) {
 				logger.error("Failed to parse chat request");
 				return Response.status(400).entity("Failed to parse chat request").build();
 			}
 			synthesized.add(referenceId);
-			VoiceResponse vr = IOSystem.getActiveContext().getVoiceUtil().getVoice(chatReq.getText());
+			VoiceResponse vr = getVoice(user, voiceReq);
 			if(vr != null && vr.getAudio().length > 0) {
 				try {
 					data = RecordFactory.newInstance(ModelNames.MODEL_DATA);

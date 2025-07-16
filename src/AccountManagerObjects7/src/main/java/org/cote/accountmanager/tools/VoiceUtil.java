@@ -36,7 +36,7 @@ public class VoiceUtil {
 		return serviceType;
 	}
 
-	public VoiceResponse getVoice(String content){
+	public VoiceResponse getVoice(VoiceRequest req){
 		VoiceResponse voice = null;
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Voice is not supported");
@@ -44,7 +44,7 @@ public class VoiceUtil {
 		}
 
 		try {
-			voice = ClientUtil.post(VoiceResponse.class, ClientUtil.getResource(serverUrl + "/synthesize/"), null, new VoiceRequest(content), MediaType.APPLICATION_JSON_TYPE);
+			voice = ClientUtil.post(VoiceResponse.class, ClientUtil.getResource(serverUrl + "/synthesize/"), null, req, MediaType.APPLICATION_JSON_TYPE);
 
 		}
 		catch(ProcessingException e) {
