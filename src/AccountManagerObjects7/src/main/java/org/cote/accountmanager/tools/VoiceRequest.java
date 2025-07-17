@@ -8,6 +8,7 @@ public class VoiceRequest{
 	private String speaker = "en_GB-alba-medium";
 	private byte[] voice_sample = new byte[0];
 	private String voiceSampleId = null;
+	private String voiceProfileId = null;
 	
 	public VoiceRequest() {
 		
@@ -27,6 +28,14 @@ public class VoiceRequest{
 	
 	
 	
+	public String getVoiceProfileId() {
+		return voiceProfileId;
+	}
+
+	public void setVoiceProfileId(String voiceProfileId) {
+		this.voiceProfileId = voiceProfileId;
+	}
+
 	public String getVoiceSampleId() {
 		return voiceSampleId;
 	}

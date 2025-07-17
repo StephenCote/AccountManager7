@@ -1,0 +1,38 @@
+{
+	"name": "identity.voice",
+	"inherits": [
+		"data.directory",
+		"identity.contactInformationExt"
+	],
+	"icon": "volume_up",
+	"label": "Voice",
+	"group": "Voices",
+	"description": "Voice configuration information",
+	"fields": [
+		{
+			"name": "engine",
+			"type": "string",
+			"default": "xtts",
+			"limit": ["piper", "xtts"]
+		},
+		{
+			"name": "voiceSample",
+			"type": "model",
+			"baseModel": "data.data",
+			"foreign": true
+		},
+		{
+			"name": "speaker",
+			"type": "string",
+			"default": "Unknown",
+			"limit": ["Unknown", "en_GB-alba-medium"]
+		},
+		{
+			"name": "speed",
+			"type": "double",
+			"minValue": 0.1,
+			"maxValue": 4.0,
+			"default": 1.3	
+		}
+	]
+}

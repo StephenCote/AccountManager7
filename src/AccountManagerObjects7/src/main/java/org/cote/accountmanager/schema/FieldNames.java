@@ -188,6 +188,7 @@ public class FieldNames {
 		public static final String FIELD_MIDDLE_NAME = "middleName";
 		public static final String FIELD_LAST_NAME = "lastName";
 		public static final String FIELD_AGE = "age";
+		public static final String FIELD_VOICE = "voice";
 		
 		// Spool
 		public static final String FIELD_SPOOL_BUCKET_TYPE = "spoolBucketType";

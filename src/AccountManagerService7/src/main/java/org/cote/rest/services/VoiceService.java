@@ -82,10 +82,42 @@ public class VoiceService {
 	private static final Logger logger = LogManager.getLogger(ListService.class);
 
 	private static Set<String> synthesized = ConcurrentHashMap.newKeySet();
+	public static void clearCache() {
+		synthesized.clear();
+	}
 	
 	private VoiceResponse getVoice(BaseRecord user, VoiceRequest req) {
 		
-		if(req.getVoiceSampleId() != null) {
+		boolean appliedProfile = false;
+		if(req.getVoiceProfileId() != null) {
+			Query q = QueryUtil.createQuery(ModelNames.MODEL_PROFILE, FieldNames.FIELD_OBJECT_ID, req.getVoiceProfileId());
+			q.setRequest(new String[] {FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_VOICE});
+			BaseRecord prof = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+			if(prof != null && prof.get(FieldNames.FIELD_VOICE) != null) {
+				BaseRecord voice = prof.get(FieldNames.FIELD_VOICE);
+				IOSystem.getActiveContext().getReader().populate(voice);
+				String engine = voice.get("engine");
+				String speaker = voice.get("speaker");
+				double speed = voice.get("speed");
+				BaseRecord sample = voice.get("voiceSample");
+				if(sample != null) {
+					IOSystem.getActiveContext().getReader().populate(sample);
+					try {
+						req.setVoice_sample(ByteModelUtil.getValue(sample));
+					} catch (ValueException | FieldException e) {
+						logger.error(e);
+					}
+				}
+				req.setSpeed(speed);
+				req.setSpeaker(speaker);
+				req.setEngine(engine);
+				logger.info("Using Voice Profile ... " + voice.get(FieldNames.FIELD_NAME));
+				// logger.info(JSONUtil.exportObject(req));
+				appliedProfile = true;
+			}
+		}
+		if(!appliedProfile && req.getVoiceSampleId() != null && req.getEngine().equals("xtts")) {
+			logger.info("Using Voice Sample ID Reference ... " + req.getVoiceSampleId());
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_OBJECT_ID, req.getVoiceSampleId());
 			q.planMost(false);
 			BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
@@ -96,8 +128,9 @@ public class VoiceService {
 					logger.error(e);
 				}
 			}
+			appliedProfile = true;
 		}
-		if(req.getEngine() == null || req.getEngine().isEmpty()) {
+		if(!appliedProfile && (req.getEngine() == null || req.getEngine().isEmpty())) {
 			req.setEngine("piper");
 			req.setSpeaker("en_GB-alba-medium");
 			logger.info("Defaulting voice engine to piper and speaker to en_GB-alba-medium");
@@ -127,10 +160,12 @@ public class VoiceService {
 				return Response.status(400).entity(null).build();
 			}
 			VoiceRequest voiceReq = JSONUtil.importObject(json, VoiceRequest.class);
+			
 			if(voiceReq == null) {
 				logger.error("Failed to parse chat request");
 				return Response.status(400).entity("Failed to parse chat request").build();
 			}
+
 			synthesized.add(referenceId);
 			VoiceResponse vr = getVoice(user, voiceReq);
 			if(vr != null && vr.getAudio().length > 0) {
@@ -147,6 +182,11 @@ public class VoiceService {
 					logger.error("Failed to create data record for voice", e);
 					return Response.status(500).entity("Failed to create data record for voice").build();
 				}
+			}
+			else {
+				logger.error("Failed to synthesize voice for " + referenceId);
+				synthesized.remove(referenceId);
+				return Response.status(500).entity("Failed to synthesize voice for " + referenceId).build();
 			}
 			
 		}

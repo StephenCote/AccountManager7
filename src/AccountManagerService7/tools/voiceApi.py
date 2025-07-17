@@ -1,4 +1,3 @@
-
 # main_unified.py
 # Description: A unified FastAPI server for long-form text-to-speech (TTS)
 # that supports both Piper and Coqui XTTS models.
@@ -21,6 +20,7 @@ import io
 import json
 import inspect
 import wave
+import uuid  # Import the uuid module for generating random names
 from contextlib import asynccontextmanager
 from pydub import AudioSegment
 from typing import Dict, Set, Optional, Literal
@@ -131,15 +131,10 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
         def find_valid_args(data: Dict, valid_args: Set[str]) -> Dict:
             found = {k: v for k, v in data.items() if k in valid_args}
             for k, v in data.items():
-                # If the key is a valid argument, add it and its value.
-                # Do NOT recurse into it, as the config expects the whole object.
                 if k in valid_args:
                     found[k] = v
-                # Handle the special 'voice' -> 'espeak_voice' case
                 elif k == 'voice' and 'espeak_voice' in valid_args:
                     found['espeak_voice'] = v
-                # If the key is NOT a valid argument, but its value is a dictionary,
-                # then it might contain valid arguments, so we recurse.
                 elif isinstance(v, dict):
                    found.update(find_valid_args(v, valid_args))
             return found
@@ -155,7 +150,6 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
         voice_model = PiperVoice(session=session, config=config)
         piper_model_cache[request.speaker] = voice_model
 
-    # Synthesize each sentence
     sentences = nltk.sent_tokenize(request.text)
     audio_segments = []
     print(f"Synthesizing {len(sentences)} sentences with Piper...")
@@ -170,7 +164,6 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
             wav_io.seek(0)
             audio_segments.append(AudioSegment.from_wav(wav_io))
 
-    # Stitch audio together and return MP3 bytes
     combined_audio = sum(audio_segments, AudioSegment.empty())
     with io.BytesIO() as buffer:
         combined_audio.export(buffer, format="mp3", bitrate="320k")
@@ -186,10 +179,14 @@ def synthesize_with_xtts(request: SynthesisRequest) -> bytes:
         if request.voice_sample:
             try:
                 audio_bytes = base64.b64decode(request.voice_sample)
-                speaker_wav_path = os.path.join(temp_dir, "user_voice.wav")
+                # --- MODIFICATION START ---
+                # Generate a unique filename to prevent race conditions
+                unique_filename = f"{uuid.uuid4()}.wav"
+                speaker_wav_path = os.path.join(temp_dir, unique_filename)
+                # --- MODIFICATION END ---
                 with open(speaker_wav_path, "wb") as f:
                     f.write(audio_bytes)
-                print("Using provided base64 voice sample for XTTS.")
+                print(f"Using provided base64 voice sample for XTTS, saved to {unique_filename}.")
             except Exception:
                 raise ValueError("Invalid base64 string for 'voice_sample'.")
         else:
@@ -214,7 +211,6 @@ def synthesize_with_xtts(request: SynthesisRequest) -> bytes:
             )
             audio_segments.append(AudioSegment.from_wav(chunk_file))
 
-        # Stitch audio together and return MP3 bytes
         combined_audio = sum(audio_segments, AudioSegment.empty())
         with io.BytesIO() as buffer:
             combined_audio.export(buffer, format="mp3", bitrate="320k")
@@ -236,13 +232,10 @@ async def synthesize_speech(request: SynthesisRequest):
     try:
         print(f"Received request for TTS engine: '{request.engine}'")
         if request.engine == 'piper':
-            # Run Piper synthesis in a thread pool to avoid blocking
             audio_bytes = await run_in_threadpool(synthesize_with_piper, request)
         elif request.engine == 'xtts':
-            # Run XTTS synthesis in a thread pool
             audio_bytes = await run_in_threadpool(synthesize_with_xtts, request)
         else:
-            # This case should ideally be caught by Pydantic/FastAPI validation
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Invalid engine '{request.engine}'. Must be 'piper' or 'xtts'."
@@ -253,11 +246,9 @@ async def synthesize_speech(request: SynthesisRequest):
         return JSONResponse(content={"audio_base64": base64_audio})
 
     except (FileNotFoundError, ValueError) as e:
-        # Handle user-correctable errors (e.g., missing model, bad base64)
         print(f"Client Error: {e}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
-        # Handle unexpected server errors
         print(f"An internal error occurred: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
@@ -270,7 +261,7 @@ async def root():
         "synthesize_endpoint": {
             "path": "/synthesize/",
             "method": "POST",
-            "body": SynthesisRequest.schema()
+            "body": SynthesisRequest.model_json_schema()
         }
     }
 

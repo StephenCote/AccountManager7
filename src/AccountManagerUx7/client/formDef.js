@@ -2994,6 +2994,27 @@
         });
     };
 
+      async function pickVoice(object, inst, name) {
+        let n = "";
+        let p = object.caller();
+        let np = "";
+        if (p && p.getInstance()?.entity?.name) {
+            let pe = p.getInstance().entity;
+            let gp = "/Voices";
+            let tp = pe.groupPath.substring(0, pe.groupPath.lastIndexOf("/"));
+            np = tp + gp;
+        }
+        console.info(inst.formField("voice"));
+        object.picker(inst.formField("voice")?.field, undefined, undefined, np, function (objectPage, inst, field, useName, data) {
+            if (p && p.getInstance()?.entity?.profile) {
+                let od = {id: p.getInstance().entity.profile.id, voice: {id: data.id}};
+                p.getInstance().entity.profile.voice = data;
+                od[am7model.jsonModelKey] = "identity.voice";
+                page.patchObject(od);
+               
+            }
+        });
+    };
  
 
 
@@ -3859,6 +3880,33 @@
                     command: pickProfile
                 }
             },
+            pickVoice: {
+                format: "button",
+                layout: "one",
+                icon: 'run_circle',
+                requiredAttributes: [],
+                field: {
+                    label: "Pick Voice",
+                    pickerType: "identity.voice",
+                    command: pickVoice
+                }
+            },
+            voice: {
+                layout: 'one',
+                format: 'picker',
+                label: "Voice",
+                field: {
+                    readOnly: false,
+                    requiredAttributes: [],
+                    pickerType: "identity.voice",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "voice",
+                        path: "~/Voices"
+                    }
+                }
+            }
+            
         }
     };
 
@@ -4559,6 +4607,53 @@
             }
         }
     };
+
+   forms.voice = {
+        label: "Voice Form",
+        fields: {
+            name: {
+                layout: "one"
+            },
+            engine: {
+                label: "Engine",
+                layout: "one",
+                field: {
+                    type: 'list',
+                    limit: ['piper', 'xtts']
+                }
+            },
+            speaker: {
+                label: "Speaker",
+                layout: "one",
+                field: {
+                    type: 'list',
+                    limit: ['Unknown', 'en_GB-alba-medium']
+                }
+            },
+            voiceSample: {
+                layout: 'one',
+                format: 'picker',
+                label: "Voice Sample",
+                field: {
+                    format: "picker",
+                    pickerType: "data.data",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "voiceSample",
+                        path: "~/Voices"
+                    }
+                }
+            },
+            speed: {
+                label: "Speed",
+                layout: "one",
+                format: "range"
+            }
+
+        },
+        forms: ["grouptypeinfo", "attributes"]
+    };
+
     forms.commands = {
         character,
         createCharacter,

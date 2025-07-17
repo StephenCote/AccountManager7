@@ -10,7 +10,8 @@
 		"id",
 		"objectId",
 		"groupId",
-		"portrait"
+		"portrait",
+		"voice"
 	  ],
 	 "description": "A profile is a collection of shareable information about a person, such as for use in composing UX displays or generating content titles.",
 	"icon": "person",
@@ -30,6 +31,12 @@
 			"name": "portrait",
 			"type": "model",
 			"baseModel": "data.data",
+			"foreign": true
+		},
+		{
+			"name": "voice",
+			"type": "model",
+			"baseModel": "identity.voice",
 			"foreign": true
 		},
 		{

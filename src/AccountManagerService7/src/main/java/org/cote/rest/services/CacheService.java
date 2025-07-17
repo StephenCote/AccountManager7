@@ -65,6 +65,7 @@ public class CacheService {
 		ServiceUtil.clearCache();
 		StreamUtil.clearAllUnboxedStreams();
 		OlioUtil.clearCache();
+		VoiceService.clearCache();
 	}
 	
 	@RolesAllowed({"admin","user"})

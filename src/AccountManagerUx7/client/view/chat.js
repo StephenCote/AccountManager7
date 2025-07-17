@@ -500,10 +500,7 @@
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
           }
           if (hideThoughts && !editMode) {
-            let rdx = cnt.indexOf("<|reserved_special_token");
-            if (rdx > -1) {
-              cnt = cnt.substring(0, rdx);
-            }
+            cnt = pruneToMark(cnt, "<|reserved_special_token");
             cnt = pruneTag(cnt, "think");
             cnt = pruneTag(cnt, "thought");
 
@@ -516,15 +513,8 @@
 
         }
         if (!bectl && hideThoughts) {
-          let idx = cnt.indexOf("(Reminder");
-          if (idx > -1) {
-            cnt = cnt.substring(0, idx);
-          }
-          idx = cnt.indexOf("(KeyFrame");
-          if (idx > -1) {
-            cnt = cnt.substring(0, idx);
-          }
-
+          cnt = pruneToMark(cnt, "(Reminder");
+          cnt = pruneToMark(cnt,"(KeyFrame");
         }
         if(!editMode && cnt.trim().length == 0){
           return "";
@@ -538,14 +528,19 @@
         //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
         if(chatCfg.chat && audio){
           let name = chatCfg.chat.objectId + " - " + midx;
+          
           if(!audioMap[name]){
             console.log("Synthethize " + name);
-            let vprops = {"text": msg.content, "speed": 1.2};
+            let vprops = {"text": pruneAll(msg.content), "speed": 1.2};
             if(msg.role == "assistant"){
-              vprops.engine = "piper";
-              vprops.speaker = "en_GB-alba-medium";
+              vprops.voiceProfileId = chatCfg?.system?.profile?.objectId;
+              //vprops.engine = "piper";
+              //vprops.speaker = "en_GB-alba-medium";
+              vprops.engine = "xtts";
+              vprops.voiceSampleId = "b8b8cf67-3a1a-4f8b-af92-c8fb92428803";
             }
             else{
+              vprops.voiceProfileId = chatCfg?.user?.profile?.objectId;
               vprops.engine = "xtts";
               vprops.voiceSampleId = "307abdbf-9293-49d8-9dbe-1b93f023c43c";
             }
@@ -598,6 +593,23 @@
       ])];
 
       return ret;
+    }
+
+    function pruneAll(cnt){
+      cnt = pruneToMark(cnt, "<|reserved_special_token");
+      cnt = pruneTag(cnt, "think");
+      cnt = pruneTag(cnt, "thought");
+      cnt = pruneToMark(cnt, "(Reminder");
+      cnt = pruneToMark(cnt,"(KeyFrame");
+      return cnt;
+    }
+
+    function pruneToMark(cnt, mark){
+      let idx = cnt.indexOf(mark);
+      if (idx > -1) {
+        cnt = cnt.substring(0, idx);
+      }
+      return cnt;
     }
 
     function pruneTag(cnt, tag){
