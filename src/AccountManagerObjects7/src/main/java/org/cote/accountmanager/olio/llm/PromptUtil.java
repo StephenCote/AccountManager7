@@ -364,7 +364,6 @@ public class PromptUtil {
 			nlpCommand = ctx.chatConfig.get("nlpCommand");
 			sysNlp = composeTemplate(ctx.promptConfig.get("systemNlp"));
 			assistNlp = composeTemplate(ctx.promptConfig.get("assistantNlp"));
-			logger.info(sysNlp);
 		}
 		
 		ctx.replace(TemplatePatternEnumType.NLP, sysNlp);
