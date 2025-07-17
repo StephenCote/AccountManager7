@@ -587,7 +587,7 @@
     ctf.type = "enum";
     ctf.default = "text/plain";
     ctf.enum = am7model.enums.mimeTypeEnumType;
-    ctf.filter = /(^text\/(plain|css|csv|html|xml)$|\/json$|javascript$|^video\/(webm|webp|mpeg|avi|mp4|3gpp)$|^audio\/(wav|mp3)|^image\/(gif|jpeg|png)|application\/vnd.openxmlformats-officedocument.wordprocessingml.document)/;
+    ctf.filter = /(^text\/(plain|css|csv|html|xml)$|\/json$|javascript$|^video\/(webm|webp|mpeg|avi|mp4|3gpp)$|^audio\/(wav|mp3|mp4)|^image\/(gif|jpeg|png)|application\/vnd.openxmlformats-officedocument.wordprocessingml.document)/;
 
     let tagM = am7model.getModel("data.tag");
     let tagf = am7model.getModelField(tagM, "type");

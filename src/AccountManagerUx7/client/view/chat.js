@@ -535,11 +535,21 @@
           cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/,""))));
         }
         let aud = "";
-        if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
+        //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
+        if(chatCfg.chat && audio){
           let name = chatCfg.chat.objectId + " - " + midx;
           if(!audioMap[name]){
             console.log("Synthethize " + name);
-              m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: {"text": msg.content}}).then((d) => {
+            let vprops = {"text": msg.content, "speed": 1.2};
+            if(msg.role == "assistant"){
+              vprops.engine = "piper";
+              vprops.speaker = "en_GB-alba-medium";
+            }
+            else{
+              vprops.engine = "xtts";
+              vprops.voiceSampleId = "307abdbf-9293-49d8-9dbe-1b93f023c43c";
+            }
+              m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops}).then((d) => {
                 audioMap[name] = d;
                 console.log(d);
               }).catch(()=>{
@@ -555,7 +565,7 @@
               props.autoplay = "autoplay";
             }
             let mt = audioMap[name].contentType;
-            if (mt.match(/mpeg3$/)) mt = "audio/mpeg";
+            if (mt && mt.match(/mpeg3$/)) mt = "audio/mpeg";
             aud = m("audio", props,
                   m("source", { src: path, type: mt })
             );
