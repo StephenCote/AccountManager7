@@ -12,6 +12,7 @@
         "/media",
         "/dist",
         "/node_modules/@fortawesome/fontawesome-free/webfonts",
+        "/node_modules/audiomotion-analyzer/dist",
         "/node_modules/codemirror/addon/lint",
         "/node_modules/codemirror/lib",
         "/node_modules/codemirror/mode/javascript",

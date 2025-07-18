@@ -3401,6 +3401,18 @@ button.button-tab-active:hover {
   content: "";
 }
 
+.audio-container {
+  position: relative;
+  height: 4rem;
+  width: 100%;
+  cursor: pointer;
+  overflow: hidden;
+  border-radius: 9999px;
+  border-width: 1px;
+  --tw-bg-opacity: 1;
+  background-color: rgb(255 255 255 / var(--tw-bg-opacity, 1));
+}
+
 @keyframes shimmer {
   100% {
     transform: translateX(0%);

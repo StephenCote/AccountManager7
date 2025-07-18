@@ -24,9 +24,15 @@
 		{
 			"name": "speaker",
 			"type": "string",
-			"default": "Unknown",
-			"limit": ["Unknown", "en_GB-alba-medium"]
+			"default": "en_GB-alba-medium",
+			"limit": ["Unknown", "en_US-libritts_r-medium", "en_GB-alba-medium"]
 		},
+		{
+			"name": "speakerId",
+			"type": "int",
+			"default": -1
+		},
+
 		{
 			"name": "speed",
 			"type": "double",

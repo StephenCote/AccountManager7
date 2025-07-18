@@ -9,7 +9,7 @@ public class VoiceRequest{
 	private byte[] voice_sample = new byte[0];
 	private String voiceSampleId = null;
 	private String voiceProfileId = null;
-	
+	private int speaker_id = -1;
 	public VoiceRequest() {
 		
 	}
@@ -26,8 +26,16 @@ public class VoiceRequest{
 		this.voice_sample = sample;
 	}
 	
-	
-	
+
+
+	public int getSpeaker_id() {
+		return speaker_id;
+	}
+
+	public void setSpeaker_id(int speaker_id) {
+		this.speaker_id = speaker_id;
+	}
+
 	public String getVoiceProfileId() {
 		return voiceProfileId;
 	}

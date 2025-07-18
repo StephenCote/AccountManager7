@@ -23,8 +23,11 @@
  *******************************************************************************/
 package org.cote.rest.services;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -46,7 +49,9 @@ import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.FieldSchema;
 import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.tools.VoiceRequest;
 import org.cote.accountmanager.tools.VoiceResponse;
 import org.cote.accountmanager.util.BinaryUtil;
@@ -86,6 +91,20 @@ public class VoiceService {
 		synthesized.clear();
 	}
 	
+	private static String getNormalizedVoice(String voice) {
+		if(voice == null || voice.length() == 0 || voice.toLowerCase().equals("unknown")) {
+			return voice;
+		}
+		
+		ModelSchema ms = RecordFactory.getSchema(ModelNames.MODEL_VOICE);
+		FieldSchema fs = ms.getFieldSchema("speaker");
+		List<String> vcl = fs.getLimit().stream().map(v -> (String)v).filter(v -> v != null && v.toLowerCase().equals(voice.toLowerCase())).collect(Collectors.toList());
+		if(vcl.size() > 0) {
+			return vcl.get(0);
+		}
+		return voice;
+	}
+	
 	private VoiceResponse getVoice(BaseRecord user, VoiceRequest req) {
 		
 		boolean appliedProfile = false;
@@ -97,8 +116,9 @@ public class VoiceService {
 				BaseRecord voice = prof.get(FieldNames.FIELD_VOICE);
 				IOSystem.getActiveContext().getReader().populate(voice);
 				String engine = voice.get("engine");
-				String speaker = voice.get("speaker");
+				String speaker = getNormalizedVoice(voice.get("speaker"));
 				double speed = voice.get("speed");
+				int speakerId = voice.get("speakerId");
 				BaseRecord sample = voice.get("voiceSample");
 				if(sample != null) {
 					IOSystem.getActiveContext().getReader().populate(sample);
@@ -108,6 +128,7 @@ public class VoiceService {
 						logger.error(e);
 					}
 				}
+				req.setSpeaker_id(speakerId);
 				req.setSpeed(speed);
 				req.setSpeaker(speaker);
 				req.setEngine(engine);
@@ -149,7 +170,7 @@ public class VoiceService {
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		
 		String voiceName = "Voice - " + referenceId + ".mp3";
-		BaseRecord dir = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP,  "~/Data", "DATA");
+		BaseRecord dir = IOSystem.getActiveContext().getAccessPoint().make(user, ModelNames.MODEL_GROUP,  "~/Data/Synthesis", "DATA");
 		Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_NAME, voiceName);
 		q.field(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 		q.planMost(false);
@@ -170,6 +191,7 @@ public class VoiceService {
 			VoiceResponse vr = getVoice(user, voiceReq);
 			if(vr != null && vr.getAudio().length > 0) {
 				try {
+					logger.info("Storing synthesized voice with " + vr.getAudio().length + " bytes");
 					data = RecordFactory.newInstance(ModelNames.MODEL_DATA);
 					data.set(FieldNames.FIELD_NAME, voiceName);
 					data.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));

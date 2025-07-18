@@ -51,6 +51,7 @@ class SynthesisRequest(BaseModel):
     engine: Literal['piper', 'xtts'] = Field(..., description="The TTS engine to use: 'piper' or 'xtts'.")
     # Piper-specific arguments
     speaker: Optional[str] = Field(None, description="The Piper speaker model name (e.g., 'en_US-lessac-medium'). Required if engine is 'piper'.")
+    speaker_id: Optional[int] = Field(None, description="The integer ID of the speaker to use for multi-speaker Piper models.")
     # XTTS-specific arguments
     voice_sample: Optional[str] = Field(None, description="Base64 encoded WAV audio for voice cloning in XTTS.")
     language: str = Field("en", description="Language for XTTS synthesis.")
@@ -149,6 +150,14 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
         session = ort.InferenceSession(onnx_path, providers=providers)
         voice_model = PiperVoice(session=session, config=config)
         piper_model_cache[request.speaker] = voice_model
+    
+    synthesis_kwargs = {}
+    if request.speaker_id is not None and request.speaker_id >= 0:
+        # Check if the model is actually a multi-speaker model
+        if not voice_model.config.num_speakers > 1:
+            raise ValueError(f"Model '{request.speaker}' is not a multi-speaker model, but a 'speaker_id' was provided.")
+        synthesis_kwargs['speaker_id'] = request.speaker_id
+        print(f"Using speaker ID: {request.speaker_id} for model '{request.speaker}'")
 
     sentences = nltk.sent_tokenize(request.text)
     audio_segments = []
@@ -160,10 +169,11 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
                 wf.setnchannels(1)
                 wf.setsampwidth(2)
                 wf.setframerate(voice_model.config.sample_rate)
-                voice_model.synthesize_wav(sentence, wf)
+                voice_model.synthesize_wav(sentence, wf, **synthesis_kwargs)
             wav_io.seek(0)
             audio_segments.append(AudioSegment.from_wav(wav_io))
-
+    if not audio_segments:
+         raise ValueError("Input text did not produce any valid audio segments. Please provide meaningful text.")
     combined_audio = sum(audio_segments, AudioSegment.empty())
     with io.BytesIO() as buffer:
         combined_audio.export(buffer, format="mp3", bitrate="320k")
@@ -210,7 +220,9 @@ def synthesize_with_xtts(request: SynthesisRequest) -> bytes:
                 file_path=chunk_file
             )
             audio_segments.append(AudioSegment.from_wav(chunk_file))
-
+        
+        if not audio_segments:
+             raise ValueError("Input text did not produce any valid audio segments. Please provide meaningful text.")
         combined_audio = sum(audio_segments, AudioSegment.empty())
         with io.BytesIO() as buffer:
             combined_audio.export(buffer, format="mp3", bitrate="320k")

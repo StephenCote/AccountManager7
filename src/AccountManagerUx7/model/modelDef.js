@@ -5955,6 +5955,11 @@
           ]
         },
         {
+          "name": "speakerId",
+          "type": "int",
+          "default": -1
+        },
+        {
           "name": "voiceSample",
           "type": "model",
           "baseModel": "data.data",

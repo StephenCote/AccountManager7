@@ -874,6 +874,10 @@
         animation: shimmer 3s ease-out infinite;
         content: "";
       }
+
+      .audio-container{
+        @apply relative w-full h-16 rounded-full overflow-hidden cursor-pointer bg-white border
+      }
       
       @keyframes shimmer {
         100% {

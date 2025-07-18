@@ -162,17 +162,6 @@
             };
         }
         return desc;
-        for (const categoryName in emojiDict) {
-            const subCategories = emojiDict[categoryName];
-            for (const subCategoryName in subCategories) {
-                const emojiList = subCategories[subCategoryName];
-                const foundEmoji = emojiList.find(emoji => emoji.emoji === targetEmoji.trim());
-                if (foundEmoji) {
-                    return foundEmoji.name;
-                }
-            }
-        }
-        return;
     }
 
     function findEmojiName(targetEmoji) {

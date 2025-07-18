@@ -386,9 +386,12 @@
     let editMode = false;
     let audio = false;
     let audioMap = {};
-
+    let profile = false;
     function toggleAudio(){
       audio = !audio;
+    }
+    function toggleProfile(){
+      profile = !profile;
     }
 
     function toggleThoughts() {
@@ -475,6 +478,7 @@
       }
 
       let midx = -1;
+      let aidx = 1;
       let msgs = (chatCfg?.history?.messages || []).map((msg) => {
         midx++;
         let align = "justify-start";
@@ -526,10 +530,12 @@
         }
         let aud = "";
         //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
+
         if(chatCfg.chat && audio){
           let name = chatCfg.chat.objectId + " - " + midx;
           
           if(!audioMap[name]){
+            aud = m("div", {class: "audio-container"}, "Synthesizing...");
             console.log("Synthethize " + name);
             let vprops = {"text": pruneAll(msg.content), "speed": 1.2};
             if(msg.role == "assistant"){
@@ -546,7 +552,7 @@
             }
               m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops}).then((d) => {
                 audioMap[name] = d;
-                console.log(d);
+                // console.log(d);
               }).catch(()=>{
                 audioMap[name] = {error:true};
               });
@@ -555,22 +561,29 @@
 
           else if(audioMap[name] && !audioMap[name].error){
             let path = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + audioMap[name].groupPath + "/Voice - " + name + ".mp3";
-            let props = { class: "", preload: "auto", controls: "controls" };
+            let props = {
+              class: "hide",
+              preload: "auto"
+              // ,controls: "controls"
+            };
             if(lastMsg){
               props.autoplay = "autoplay";
             }
             let mt = audioMap[name].contentType;
             if (mt && mt.match(/mpeg3$/)) mt = "audio/mpeg";
-            aud = m("audio", props,
+            props.id = "chatAudio-" + (aidx);
+            props.crossorigin = "use-credentials"; 
+            aud = m("div", {class: "audio-container", id: "chatAudioContainer-" + (aidx), onclick: function(){togglePlayAudio(props.id);}}, m("audio", props,
                   m("source", { src: path, type: mt })
-            );
+            ));
+            aidx++;
           }
             
         }
         return m("div", { class: "relative receive-chat flex " + align },
           [ectl, m("div", { class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light" },
-            m("p", cnt),
-            aud
+            (audio ? aud : m("p", cnt))
+            //,aud
           )]
         );
       });
@@ -587,7 +600,7 @@
         ])
       ];
 
-      let ret = [m("div", { class: "bg-white user-info-header px-5 py-3" }, flds), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
+      let ret = [(profile ? m("div", { class: "bg-white user-info-header px-5 py-3" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
         
         msgs
       ])];
@@ -661,6 +674,7 @@
               m("div", { class: "tab-container result-nav w-full" }, [
                 m("button", { class: "button", onclick: toggleFullMode }, m("span", { class: "material-symbols-outlined material-icons-24" }, (fullMode ? "close_fullscreen" : "open_in_new"))),
                 m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
+                m("button", { class: "button", onclick: toggleProfile }, m("span", { class: "material-symbols-outlined material-icons-24" }, (profile ? "account_circle" : "account_circle_off"))),
                 m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : "volume_mute"))),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
@@ -705,6 +719,58 @@
 
       }
 
+    }
+
+    let visualizers = {};
+    function togglePlayAudio(id){
+      let aud = document.getElementById(id);
+      if(!aud) return;
+      aud.paused ? aud.play() : aud.pause();
+    }
+
+    function unconfigureAudio() {
+      if(audio) return;
+      for(let id in visualizers){
+        console.log("Unconfiguring audio visualizer for", id);
+        if(visualizers[id]){
+          visualizers[id].stop();
+          visualizers[id].destroy();
+          delete visualizers[id];
+        }
+      }
+    }
+
+    function configureAudio() {
+      if(!audio){
+        unconfigureAudio();
+        return;
+      }
+      let aa = document.querySelectorAll("audio");
+      for(let i = 0; i < aa.length; i++){
+        let aud = aa[i];
+        if(visualizers[aud.id]){
+          console.warn("Audio visualizer already configured for", aud.id);
+          continue;
+        }
+        console.info("Configuring audio visualizer for", aud.id);
+        let cont = aud.parentNode;
+        let props = {
+          source: aud,
+          height: 60,
+          overlay: true,
+          bgAlpha: 0,
+          showBgColor: true,
+          showSource: false,
+          gradient: "prism",
+          showScaleY: false,
+          showScaleX: false
+
+        };
+        const audioMotion = new AudioMotionAnalyzer(cont, props);
+        //audioMotion.start();
+        visualizers[aud.id] = audioMotion;
+
+      }
     }
     
     async function loadConfigList() {
@@ -828,6 +894,7 @@
       onupdate: function (x) {
         page.navigable.setupPendingContextMenus();
         scrollToLast();
+        configureAudio();
       },
       onremove: function (x) {
         page.navigable.cleanupContextMenus();

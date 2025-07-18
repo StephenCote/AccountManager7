@@ -4627,8 +4627,12 @@
                 layout: "one",
                 field: {
                     type: 'list',
-                    limit: ['Unknown', 'en_GB-alba-medium']
+                    limit: ['Unknown', 'en_US-libritts_r-medium', 'en_GB-alba-medium']
                 }
+            },
+            speakerId: {
+                label: "Speaker Id",
+                layout: "one"
             },
             voiceSample: {
                 layout: 'one',
