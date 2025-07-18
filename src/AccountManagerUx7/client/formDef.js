@@ -2962,6 +2962,54 @@
         },
         forms: ["grouptypeinfo", "attributes", "tags"]
     };
+    
+    async function cleanupTestVoice(data){
+        page.toast("info", "Cleaning up test voice data for " + data.objectId);
+        await page.deleteObject(data[am7model.jsonModelKey], data.objectId);
+    }
+
+    async function testVoice(object, inst, name) {
+        let refId = "Test Voice - " + page.uid();
+        let cnt = inst.api.sampleText() || "Hello, this is a test of the voice synthesis system.";
+        let vprops = {"text": cnt, "speed": 1.2, engine: inst.api.engine(), speaker: inst.api.speaker(), speaker_id: inst.api.speakerId()};
+        if(inst.api.engine() == "xtts" && inst.api.voiceSample()){
+            let sinst = am7model.newInstance("data.data");
+            let q = am7client.newQuery("data.data");
+            q.entity.request = am7view.viewFields(sinst);
+            q.field("organizationId", page.user.organizationId);
+            q.field("objectId", inst.api.voiceSample().objectId);
+            let sdr = await page.search(q);
+            let sd;
+            if(sdr && sdr.results && sdr.results.length > 0){
+                sd = sdr.results[0];
+            }
+            
+            if(!sd || !sd.dataBytesStore || sd.dataBytesStore.length == 0){
+                page.toast("error", "No voice sample data found for " + inst.api.voiceSample().objectId);
+                return;
+            }
+            vprops.voice_sample = sd.dataBytesStore;
+        }
+        
+        let d = await m.request({method: 'POST', url: g_application_path + "/rest/voice/" + refId, withCredentials: true, body: vprops});
+        inst.api.sampleAudio(d);
+        if(d){
+            page.toast("success", "Voice synthesis test successful");
+            /// If there is already an audio component, then update it:
+            let aud = document.querySelector("#sampleAudio");
+            if(aud){
+                let apath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + d.groupPath + "/" + d.name;
+                let amt = d.contentType;
+                if (amt.match(/mpeg3$/)) amt = "audio/mpeg";
+                aud.src = apath;
+            }
+            setTimeout(() => {cleanupTestVoice(d);}, 20000);
+        }
+        else{
+            page.toast("error", "Voice synthesis test failed");
+        }
+        m.redraw();
+    }
 
     async function pickProfile(object, inst, name) {
         //console.log("~/GalleryHome/Characters/" + inst.api.name());
@@ -4608,6 +4656,24 @@
         }
     };
 
+    let voice = am7model.getModel("identity.voice");
+    voice.fields.push({
+        name: "sampleText",
+        label: "Sample Text",
+        type: "string",
+        default: "My voice is my passport, verify me.",
+        virtual: true,
+        ephemeral: true
+    });
+    voice.fields.push({
+        name: "sampleAudio",
+        label: "Sample Audio",
+        type: "model",
+        baseModel: "data.data",
+        virtual: true,
+        ephemeral: true
+    });
+
    forms.voice = {
         label: "Voice Form",
         fields: {
@@ -4652,7 +4718,25 @@
                 label: "Speed",
                 layout: "one",
                 format: "range"
+            },
+            sampleText:{
+                layout: "third"
+            },
+            createSample: {
+                format: "button",
+                layout: "one",
+                icon: 'run_circle',
+                requiredAttributes: [],
+                field: {
+                    label: "Test Voice",
+                    command: testVoice
+                }
+            },
+            sampleAudio: {
+                layout: 'one',
+                format: 'audio'
             }
+
 
         },
         forms: ["grouptypeinfo", "attributes"]

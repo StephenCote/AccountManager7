@@ -824,6 +824,17 @@
                         view.push("Missing PDF viewer");
                     }
                     break;
+                case "audio":
+                    if(defVal && typeof defVal == 'object'){
+                        let apath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + defVal.groupPath + "/" + defVal.name;
+                        console.log(apath);
+                        let amt = defVal.contentType;
+                        if (amt.match(/mpeg3$/)) amt = "audio/mpeg";
+                        view.push(m("audio", { class: "", id: useName, preload: "auto", controls: "controls", autoplay: "autoplay" },
+                            m("source", { src: apath, type: amt })
+                        ));
+                    }
+                    break;
                 case "image":
                     fieldClass += " image-field";
                     let dataUrl;

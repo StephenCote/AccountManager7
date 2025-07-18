@@ -155,7 +155,7 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
     if request.speaker_id is not None and request.speaker_id >= 0:
         # Check if the model is actually a multi-speaker model
         if not voice_model.config.num_speakers > 1:
-            raise ValueError(f"Model '{request.speaker}' is not a multi-speaker model, but a 'speaker_id' was provided.")
+            raise ValueError(f"Model '{request.speaker}' is not a multi-speaker model, but a 'speaker_id' '{request.speaker_id}' was provided.")
         synthesis_kwargs['speaker_id'] = request.speaker_id
         print(f"Using speaker ID: {request.speaker_id} for model '{request.speaker}'")
 
@@ -170,6 +170,9 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
                 wf.setsampwidth(2)
                 wf.setframerate(voice_model.config.sample_rate)
                 voice_model.synthesize_wav(sentence, wf, **synthesis_kwargs)
+                #samples = voice_model.synthesize(sentence, speaker_id=request.speaker_id if request.speaker_id is not None and request.speaker_id >= 0 and voice_model.config.num_speakers > 1 else None)
+                wf.writeframes(samples.tobytes())
+
             wav_io.seek(0)
             audio_segments.append(AudioSegment.from_wav(wav_io))
     if not audio_segments:

@@ -417,6 +417,7 @@
         form,
         fieldView: getFieldView,
         formField: getFormField,
+        viewFields: getViewFields,
         field: getField,
         label,
         icon,

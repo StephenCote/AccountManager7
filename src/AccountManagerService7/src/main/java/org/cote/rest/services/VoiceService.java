@@ -108,6 +108,7 @@ public class VoiceService {
 	private VoiceResponse getVoice(BaseRecord user, VoiceRequest req) {
 		
 		boolean appliedProfile = false;
+		req.setSpeaker(getNormalizedVoice(req.getSpeaker()));
 		if(req.getVoiceProfileId() != null) {
 			Query q = QueryUtil.createQuery(ModelNames.MODEL_PROFILE, FieldNames.FIELD_OBJECT_ID, req.getVoiceProfileId());
 			q.setRequest(new String[] {FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_ID, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_VOICE});
@@ -191,7 +192,7 @@ public class VoiceService {
 			VoiceResponse vr = getVoice(user, voiceReq);
 			if(vr != null && vr.getAudio().length > 0) {
 				try {
-					logger.info("Storing synthesized voice with " + vr.getAudio().length + " bytes");
+					logger.info("Storing synthesized voice with " + vr.getAudio().length + " bytes as " + voiceName);
 					data = RecordFactory.newInstance(ModelNames.MODEL_DATA);
 					data.set(FieldNames.FIELD_NAME, voiceName);
 					data.set(FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
