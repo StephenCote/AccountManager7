@@ -59,16 +59,28 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     private Map<Integer, String> lastModel = new ConcurrentHashMap<>();
     private boolean condensedFields = false;
     private boolean detectCondensedFields = true;
+    private boolean suppressInvalidFieldWarning = false;
     
     public RecordDeserializer() {
-    	this(null);
+    		this(null);
     }
+    
     public RecordDeserializer(Class<?> c) {
-    	super(c);
-    	mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
+    		super(c);
+    		mapper.enable(JsonReadFeature.ALLOW_UNQUOTED_FIELD_NAMES.mappedFeature());
     }
 
-    public boolean isTrace() {
+    
+    
+    public boolean isSuppressInvalidFieldWarning() {
+		return suppressInvalidFieldWarning;
+	}
+
+	public void setSuppressInvalidFieldWarning(boolean suppressInvalidFieldWarning) {
+		this.suppressInvalidFieldWarning = suppressInvalidFieldWarning;
+	}
+
+	public boolean isTrace() {
 		return trace;
 	}
 	public void setTrace(boolean trace) {
@@ -236,7 +248,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
          	}
         	FieldType ifld = type.getField(fname);
         	if(ifld == null) {
-        		logger.error("Invalid field: " + modelName + "." + fname);
+        		if(!suppressInvalidFieldWarning) {
+        			logger.error("Invalid field: " + modelName + "." + fname);
+        		}
         	}
         	else {
         		FieldType fld = null;

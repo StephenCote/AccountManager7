@@ -1,9 +1,16 @@
 package org.cote.accountmanager.util;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLContext;
@@ -167,7 +174,7 @@ public class ClientUtil {
 	public static BaseRecord postToRecord(String modelName, WebTarget resource, String authZ, String json, MediaType responseType) {
 		BaseRecord outObj = null;
 		try {
-			Builder bld = ClientUtil.getRequestBuilder(resource).accept(responseType);
+			Builder bld = getRequestBuilder(resource).accept(responseType);
 	
 			if (authZ != null) {
 				bld.header("api-key", authZ);
@@ -194,6 +201,30 @@ public class ClientUtil {
 		}
 		return outObj;
 	}
+	
+	public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(String url, String authorizationToken, String json) {
+
+		HttpClient client = HttpClient.newHttpClient();
+		HttpRequest request = HttpRequest.newBuilder()
+				.uri(URI.create(url))
+				.header("Authorization", "Bearer " + authorizationToken)
+				.header("Content-Type", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofString(json))
+				.build();
+
+		return client.sendAsync(request, HttpResponse.BodyHandlers.ofLines());
+		/*
+			.thenAccept(response -> {
+				response.body().forEach(lineConsumer);
+			})
+			.whenComplete((result, error) -> {
+				if (error != null) {
+					logger.error("Error during streaming chat response", error);
+				}
+			});
+		*/
+	}
+	
 	
 	public static WebTarget getResource(String path){
 		return getClient().target(path);

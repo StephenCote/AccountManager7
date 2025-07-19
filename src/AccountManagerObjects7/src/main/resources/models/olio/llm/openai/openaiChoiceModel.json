@@ -23,6 +23,13 @@
 			"baseModel": "olio.llm.openai.openaiMessage"
 		},
 		{
+			"name": "delta",
+			"type": "model",
+			"baseModel": "olio.llm.openai.openaiMessage",
+			"ephemeral": true
+		},
+
+		{
 			"name": "content_filter_results",
 			"type": "model",
 			"baseModel": "olio.llm.openai.openaiFilterResults"

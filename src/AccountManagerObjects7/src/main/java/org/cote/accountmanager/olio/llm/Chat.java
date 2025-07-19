@@ -3,11 +3,18 @@ package org.cote.accountmanager.olio.llm;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.http.HttpResponse;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -24,8 +31,11 @@ import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.util.AuditUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -72,6 +82,7 @@ public class Chat {
 	private String authorizationToken = null;
 	private boolean deferRemote = false;
 	private boolean enableKeyFrame = true;
+	private IChatListener listener = null;
 	
 	private String llmSystemPrompt = """
 			You play the role of an assistant named Siren.
@@ -82,7 +93,26 @@ public class Chat {
 
 	}
 	
-	
+	public Chat(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig) {
+		this.user = user;
+		this.chatConfig = chatConfig;
+		this.promptConfig = promptConfig;
+		configureChat();
+	}
+
+
+
+	public IChatListener getListener() {
+		return listener;
+	}
+
+
+
+	public void setListener(IChatListener listener) {
+		this.listener = listener;
+	}
+
+
 
 	public boolean isEnableKeyFrame() {
 		return enableKeyFrame;
@@ -110,13 +140,6 @@ public class Chat {
 
 	public void setDeferRemote(boolean deferRemote) {
 		this.deferRemote = deferRemote;
-	}
-
-	public Chat(BaseRecord user, BaseRecord chatConfig, BaseRecord promptConfig) {
-		this.user = user;
-		this.chatConfig = chatConfig;
-		this.promptConfig = promptConfig;
-		configureChat();
 	}
 
 	private void configureChat() {
@@ -262,7 +285,7 @@ public class Chat {
 		}
 		return oresp;
 	}
-
+	
 	public void continueChat(OpenAIRequest req, String message) {
 		if (deferRemote) {
 			checkRemote(req, message, true);
@@ -286,15 +309,23 @@ public class Chat {
 		if (message != null && message.length() > 0) {
 			newMessage(req, message);
 		}
-		lastRep = chat(req);
-
-		if (lastRep != null) {
-			handleResponse(req, lastRep, false);
-		} else {
-			logger.warn("Last rep is null");
+		boolean stream = req.get("stream");
+		
+		if(!stream) {
+			lastRep = chat(req);
+			if (lastRep != null) {
+				handleResponse(req, lastRep, false);
+			} else {
+				logger.warn("Last rep is null");
+			}
+			saveSession(req);
 		}
-		saveSession(req);
+		else {
 
+			logger.info("Defer to async processing");
+			chat(req);
+			
+		}
 	}
 
 	public void saveSession(OpenAIRequest req) {
@@ -1091,17 +1122,121 @@ public class Chat {
 		String tokField = ChatUtil.getMaxTokenField(chatConfig);
 		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));	
 		
-		String ser = JSONUtil.exportObject(ChatUtil.getPrunedRequest(req, ignoreFields),
-				RecordSerializerConfig.getHiddenForeignUnfilteredModule());
+		String ser = JSONUtil.exportObject(ChatUtil.getPrunedRequest(req, ignoreFields), RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 
 		OpenAIResponse orec = null;
+		boolean stream = req.get("stream");
+		if(!stream) {
+			BaseRecord rec = ClientUtil.postToRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, ClientUtil.getResource(getServiceUrl(req)), authorizationToken, ser, MediaType.APPLICATION_JSON_TYPE);
+			if (rec != null) {
+				orec = new OpenAIResponse(rec);
+			} else {
+				logger.warn("Null response");
+			}
+		}
+		else {
+			OpenAIResponse aresp = new OpenAIResponse();
+			/*
+	        Consumer<String> lineConsumer = (line) -> {
+	            if (line.startsWith("data: ")) {
+	                String json = line.substring(6);
+	                if ("[DONE]".equals(json)) {
+	                    logger.info("Stream completed with [DONE].");
+	                    return;
+	                }
+	                BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
+	                if(asyncResp == null) {
+	                		logger.error("Failed to import response object from: " + json);
+	                }
+	                else {
+	                		BaseRecord amsg = aresp.get("message");
+	                		//BaseRecord msg = asyncResp.get("delta");
+	                		List<BaseRecord> choices = asyncResp.get("choices");
+	                		for(BaseRecord choice : choices) {
+	                			BaseRecord delta = choice.get("delta");
+		                		if(delta == null) {
+		                			logger.warn("Did not receive a message: " + json);
+		                		}
+		                		else {
+			                		logger.info("Received: " + delta.get("content"));
+			                		if(delta.get("content") != null) {
+				                		if(amsg == null) {
+				                			if(delta.get("role") == null) {
+				                				delta.setValue("role", "assistant");
+				                			}
+										aresp.setValue("message", delta);
+										
+									} else {
+										amsg.setValue("content", (String)amsg.get("content") + (String)delta.get("content"));
+				                		}
+			                		}
+			                		else {
+			                			logger.info("Received null ... treat as completed");
+			                		}
+		                		}
+	                		}
+	                }
+	                // Send the JSON part to the WebSocketService
+	                //listener.sendToClient(json);
+	                //logger.info("Received line: " + json);
+	            }
+	        };
+	        */
 
-		BaseRecord rec = ClientUtil.postToRecord(OlioModelNames.MODEL_OPENAI_RESPONSE,
-				ClientUtil.getResource(getServiceUrl(req)), authorizationToken, ser, MediaType.APPLICATION_JSON_TYPE);
-		if (rec != null) {
-			orec = new OpenAIResponse(rec);
-		} else {
-			logger.warn("Null response");
+	        // Call the new streaming method in ClientUtil
+	        CompletableFuture<HttpResponse<Stream<String>>> streamFuture  = ClientUtil.postToRecordAndStream(getServiceUrl(req), authorizationToken, ser);
+	        streamFuture.thenAccept(response -> {
+	            response.body()
+	                .takeWhile(line -> !listener.isStopStream(req))
+	                .forEach(line -> {
+	                    if (line.startsWith("data: ")) {
+	                        String json = line.substring(6);
+	                        if ("[DONE]".equals(json)) {
+	                            return;
+	                        }
+
+	                        BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
+	                        if (asyncResp == null) {
+	                            logger.error("Failed to import response object from: " + json);
+	                            return;
+	                        }
+
+	                        List<BaseRecord> choices = asyncResp.get("choices");
+	                        for (BaseRecord choice : choices) {
+	                            BaseRecord delta = choice.get("delta");
+	                            if (delta != null && delta.hasField("content")) {
+	                                String contentChunk = delta.get("content");
+	                                if (contentChunk != null) {
+	                                    // 1. Send the individual chunk to the client via WebSocket
+	                                    //listener.sendMessageToClient(delta.toString());
+
+	                                    // 2. Aggregate the chunk into the final response object
+	                                    BaseRecord amsg = aresp.get("message");
+	                                    if (amsg == null) {
+	                                        if (delta.get("role") == null) {
+	                                            delta.setValue("role", "assistant");
+	                                        }
+	                                        aresp.setValue("message", delta);
+	                                    } else {
+	                                        amsg.setValue("content", (String) amsg.get("content") + contentChunk);
+	                                    }
+	                                }
+	                            }
+	                        }
+	                    }
+	                });
+	        }).whenComplete((result, error) -> {
+	            if (error != null) {
+	                logger.error("Error during streaming chat response", error);
+	            } else {
+	                logger.info("Chat stream completed.");
+	            }
+	            if (listener != null) {
+	                // Pass the final aggregated response to the completion handler
+	                listener.oncomplete(user, req, aresp);
+	            }
+	        });
+
 		}
 		return orec;
 	}
