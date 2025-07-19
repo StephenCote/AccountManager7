@@ -65,6 +65,10 @@ public class ChatListener implements IChatListener {
 		vChatReq.setValue(FieldNames.FIELD_MESSAGE, chatReq.get(FieldNames.FIELD_MESSAGE));
 		
 		OpenAIRequest req = ChatUtil.getOpenAIRequest(user, vChatReq);
+		if(req == null) {
+			logger.error("Failed to create OpenAIRequest from chat request.");
+			return;
+		}
 		if(false == (boolean)req.get("stream")) {
 			logger.warn("Chat request is not a stream request - forcing to stream");
 			req.setValue("stream", true);
