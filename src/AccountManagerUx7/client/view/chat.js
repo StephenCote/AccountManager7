@@ -532,7 +532,8 @@
         //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
 
         if(chatCfg.chat && audio){
-          let name = chatCfg.chat.objectId + " - " + midx;
+          //let name = chatCfg.chat.objectId + " - " + midx;
+          let name = inst.api.objectId() + " - " + midx;
           
           if(!audioMap[name]){
             aud = m("div", {class: "audio-container"}, "Synthesizing...");
