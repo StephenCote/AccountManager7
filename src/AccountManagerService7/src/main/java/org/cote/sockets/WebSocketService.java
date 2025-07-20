@@ -27,8 +27,10 @@ import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
 import org.cote.accountmanager.olio.llm.ChatListener;
 import org.cote.accountmanager.olio.llm.ChatRequest;
+import org.cote.accountmanager.olio.llm.IChatHandler;
 import org.cote.accountmanager.olio.llm.IChatListener;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
@@ -60,7 +62,7 @@ import jakarta.websocket.Session;
 import jakarta.websocket.server.ServerEndpoint;
 
 @ServerEndpoint(value = "/wss", configurator = WebSocketSecurityConfigurator.class)
-public class WebSocketService  extends HttpServlet {
+public class WebSocketService  extends HttpServlet implements IChatHandler {
 	private static final long serialVersionUID = 1L;
 
 	public static final Logger logger = LogManager.getLogger(WebSocketService.class);
@@ -68,6 +70,12 @@ public class WebSocketService  extends HttpServlet {
 	private static Map<String, BaseRecord> userMap = Collections.synchronizedMap(new HashMap<>());
 	private static Map<String, Session> urnToSession = Collections.synchronizedMap(new HashMap<>());
 	private static Set<Session> sessions = Collections.synchronizedSet(new HashSet<>());
+	
+	private IChatListener listener = null;
+	public WebSocketService() {
+		listener = new ChatListener();
+		listener.addChatHandler(this);
+	}
 	
 	public static List<Session> activeSessions(){
 		return new ArrayList<>(sessions);
@@ -184,11 +192,12 @@ public class WebSocketService  extends HttpServlet {
 			}
 			else {
 				BaseRecord smsg = msg.getMessage();
-				if(smsg != null && OlioModelNames.MODEL_CHAT_REQUEST.equals(smsg.get("modelType"))) {
+				if(smsg != null && "chat".equals(smsg.get(FieldNames.FIELD_NAME))) {
 					handleChatRequest(session, user, msg);
 				}
-						
-				logger.warn("Handle message with no recipient");
+				else {
+					logger.warn("Handle message with no recipient");
+				}
 			}
 		}
 		else {
@@ -197,7 +206,8 @@ public class WebSocketService  extends HttpServlet {
 		//session.getBasicRemote().sendText(txt.toUpperCase());
 	}
 	
-	private static Map<String, IChatListener> listeners = new ConcurrentHashMap<>();
+	// private static Map<String, IChatListener> listeners = new ConcurrentHashMap<>();
+
 	private void handleChatRequest(Session session, BaseRecord user, SocketMessage msg) {
 		BaseRecord smsg = msg.getMessage();
 		if (smsg == null) {
@@ -209,6 +219,7 @@ public class WebSocketService  extends HttpServlet {
 			logger.error("Chat request is null");
 			return;
 		}
+		/*
 		String oid = user.get(FieldNames.FIELD_OBJECT_ID);
 		IChatListener listener = null;
 		if (!listeners.containsKey(oid)) {
@@ -219,7 +230,8 @@ public class WebSocketService  extends HttpServlet {
 			logger.warn("Stop any current request?");
 		}
 		logger.info("Sending in the request - need to handle async response");
-		OpenAIRequest req = listener.sendMessageToServer(user, chatReq);
+		*/
+		listener.sendMessageToServer(user, chatReq);
 	}
 
 	@OnClose
@@ -319,30 +331,7 @@ public class WebSocketService  extends HttpServlet {
 		*/
 		return null;
 	}
-	
-	/*
-	private List<BaseRecord> getTransmitMessages(Session session){
-		BaseRecord user = null;
-		if(!userMap.containsKey(session.getId())) {
-			return null;
-		}
-		user = userMap.get(session.getId());
-		List<BaseRecord> msgs = new ArrayList<>();
-		try {
-			MessageFactory mfact = Factories.getFactory(FactoryEnumType.MESSAGE);
-			msgs = mfact.getMessagesFromUserGroup(null, SpoolNameEnumType.MESSAGE, SpoolStatusEnumType.SPOOLED, null, user);
-			for(BaseRecord m : msgs) {
-				m.setSpoolStatus(SpoolStatusEnumType.TRANSMITTED);
-				mfact.update(m);
-			}
-		}
-		catch(FactoryException | ArgumentException e) {
-			logger.error(e);
-		}
-		return msgs;
-	}
-	*/
-	
+
 	private static int countNewMessages(Session session){
 		BaseRecord user = null;
 		if(!userMap.containsKey(session.getId())) {
@@ -351,6 +340,7 @@ public class WebSocketService  extends HttpServlet {
 		user = userMap.get(session.getId());
 		return countNewMessages(user);
 	}
+	
 	private static int countNewMessages(BaseRecord user) {
 
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/.messages", GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -361,6 +351,7 @@ public class WebSocketService  extends HttpServlet {
 		q.field(FieldNames.FIELD_SPOOL_STATUS, SpoolStatusEnumType.SPOOLED);
 		return IOSystem.getActiveContext().getSearch().count(q);
 	}
+	
 	public static boolean chirpUser(BaseRecord user, String[] chirps) {
 		if(user == null) {
 			logger.error("Null user");
@@ -430,19 +421,26 @@ public class WebSocketService  extends HttpServlet {
 			asyncRemote.sendText(JSONUtil.exportObject(msg, RecordSerializerConfig.getUnfilteredModule()));
 		}
 	}
-	/*
-	private void registerUserSession(Session session, String objectId) {
-		if(objectId == null || objectId.equals("undefined")) {
-			return;
-		}
-		BaseRecord user = IOSystem.getActiveContext().getRecordUtil().getRecordByObjectId(null, ModelNames.MODEL_USER, objectId);
-		if(user != null) {
-			registerUserSession(session, user);
-		}
+
+	@Override
+	public void onChatComplete(BaseRecord user, OpenAIRequest request, OpenAIResponse response) {
+		chirpUser(user, new String[] {"Chat completed: " + request.get(FieldNames.FIELD_OBJECT_ID)});
 	}
-	*/
 
+	@Override
+	public void onChatUpdate(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String message) {
+		chirpUser(user, new String[] {"Chat update: " + request.get(FieldNames.FIELD_OBJECT_ID), message});
+	}
 
+	@Override
+	public void onChatError(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String msg) {
+		chirpUser(user, new String[] {"Chat error: " + request.get(FieldNames.FIELD_OBJECT_ID) + " " + msg});
+	}
+
+	@Override
+	public void onChatStart(BaseRecord user, ChatRequest chatRequest, OpenAIRequest request) {
+		chirpUser(user, new String[] {"Chat started: " + request.get(FieldNames.FIELD_OBJECT_ID)});
+	}
 
 		
 }

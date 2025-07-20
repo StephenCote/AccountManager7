@@ -4407,9 +4407,13 @@
                 layout: "third",
                 label: "Setting"
             },
+            stream: {
+                layout: "one"
+            },
             assist: {
                 layout: "one"
             },
+
             prune: {
                 layout: "one"
             },
@@ -4425,15 +4429,6 @@
                 layout: "one",
                 label: "Message Trim"
             },
-            blank2 : {
-                layout : "one",
-                format: "blank",
-                field: {
-                    label: "",
-                    readOnly: true
-                }
-            },
-
 
             includeScene: {
                 layout: "one",

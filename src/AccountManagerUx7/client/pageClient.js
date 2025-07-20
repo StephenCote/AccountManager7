@@ -413,12 +413,12 @@
         }
         if(msg.chirps){
             msg.chirps.forEach((s) => {
-                // console.log("Chirp", s);
+                page.toast("info", s, 5000);
             });
         }
       }
   
-      async function wssSend(name, message, recipient) {
+      async function wssSend(name, message, recipient, schema) {
         let recipientId = null;
         if(typeof recipient == "number") recipientId = recipient;
         else if(typeof recipient == "string"){
@@ -433,6 +433,7 @@
         }
         let msg = {
             data : uwm.base64Encode(message),
+            modelType: schema,
             name : name,
             // userId: (page?.user?.objectId),
             recipientId,

@@ -175,6 +175,11 @@
 			"type": "boolean"
 		},
 		{
+			"name": "stream",
+			"type": "boolean"
+		},
+
+		{
 			"name": "remindEvery",
 			"type": "int",
 			"default": 6,

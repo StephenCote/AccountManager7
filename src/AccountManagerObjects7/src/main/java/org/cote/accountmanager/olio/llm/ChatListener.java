@@ -3,6 +3,7 @@ package org.cote.accountmanager.olio.llm;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
@@ -24,11 +25,16 @@ public class ChatListener implements IChatListener {
 	private static Map<String, Boolean> asyncRequestStop = new ConcurrentHashMap<>();
 	private boolean deferRemote = false;
 	private int maximumResponseTokens = 5;
+	private List<IChatHandler> handlers = new CopyOnWriteArrayList<>();
 	
 	public ChatListener() {
 		
 	}
 	
+	@Override
+	public void addChatHandler(IChatHandler handler) {
+		handlers.add(handler);
+	}
 	
 	
 	public boolean isDeferRemote() {
@@ -101,9 +107,10 @@ public class ChatListener implements IChatListener {
 		}
 		logger.info("Chat request object id: " + oid);
 		chat.continueChat(req, vChatReq.getMessage() + citRef);
+		
+		handlers.forEach(h -> h.onChatStart(user, chatReq, req));
+		
 		return req;
-		
-		
 	}
 
 	@Override
@@ -173,6 +180,7 @@ public class ChatListener implements IChatListener {
 			logger.info("Maximum response tokens reached for request: " + oid + " (" + tokenCount + ") - Stopping stream");
 			stopStream(request);
 		}
+		handlers.forEach(h -> h.onChatUpdate(user, request, response, message));
 
 	}
 
@@ -193,7 +201,7 @@ public class ChatListener implements IChatListener {
 		Chat chat = asyncChats.get(oid);
 		chat.handleResponse(request, response, false);
 		chat.saveSession(request);
-		
+		handlers.forEach(h -> h.onChatComplete(user, request, response));
 		asyncRequests.remove(oid);
 		asyncRequestCount.remove(oid);
 		asyncRequestStop.remove(oid);
@@ -232,6 +240,7 @@ public class ChatListener implements IChatListener {
 			logger.warn("OpenAIRequest does not have an object id");
 			return;
 		}
+		handlers.forEach(h -> h.onChatError(user, request, response, msg));
 		asyncRequests.remove(oid);
 		asyncRequestCount.remove(oid);
 		asyncRequestStop.remove(oid);

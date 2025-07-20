@@ -8753,6 +8753,10 @@
           "type": "boolean"
         },
         {
+          "name": "stream",
+          "type": "boolean"
+        },
+        {
           "name": "nlpCommand",
           "type": "string",
           "description": "Brief phrase (not a complete sentence) of what to reinfore through NLP during a chat conversation"

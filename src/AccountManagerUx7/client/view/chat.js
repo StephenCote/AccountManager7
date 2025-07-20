@@ -158,11 +158,16 @@
           data
         };
         try{
-          m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
-            if (!chatCfg.history) chatCfg.history = {};
-            chatCfg.history.messages = r?.messages || [];
-            chatCfg.pending = false;
-          });
+          if(chatCfg?.chat.stream){
+            page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
+          }
+          else{
+            m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
+              if (!chatCfg.history) chatCfg.history = {};
+              chatCfg.history.messages = r?.messages || [];
+              chatCfg.pending = false;
+            });
+          }
         }
         catch(e){
           console.error("Error in chat", e);
