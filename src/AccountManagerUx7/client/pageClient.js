@@ -439,7 +439,7 @@
             recipientType: (recipientId != null ? "USER" : "UNKNOWN")
 
         };
-        return webSocket.send(JSON.stringify({schema: "socketMessage", token: page?.token, message: msg}));
+        return webSocket.send(JSON.stringify({schema: "message.socketMessage", token: page?.token, message: msg}));
       }
  
 

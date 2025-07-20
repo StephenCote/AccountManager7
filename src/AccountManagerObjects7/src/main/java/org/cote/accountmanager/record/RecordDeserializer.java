@@ -249,7 +249,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
         	FieldType ifld = type.getField(fname);
         	if(ifld == null) {
         		if(!suppressInvalidFieldWarning) {
-        			logger.error("Invalid field: " + modelName + "." + fname);
+        			logger.error("Invalid field: " + modelName + "." + fname + " " + (entry.getValue() != null ? entry.getValue().textValue() : "null"));
         		}
         	}
         	else {

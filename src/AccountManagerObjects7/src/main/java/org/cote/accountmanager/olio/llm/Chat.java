@@ -1136,81 +1136,75 @@ public class Chat {
 		}
 		else {
 			OpenAIResponse aresp = new OpenAIResponse();
-			/*
-	        Consumer<String> lineConsumer = (line) -> {
-	            if (line.startsWith("data: ")) {
-	                String json = line.substring(6);
-	                if ("[DONE]".equals(json)) {
-	                    logger.info("Stream completed with [DONE].");
-	                    return;
-	                }
-	                BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
-	                if(asyncResp == null) {
-	                		logger.error("Failed to import response object from: " + json);
-	                }
-	                else {
-	                		BaseRecord amsg = aresp.get("message");
-	                		//BaseRecord msg = asyncResp.get("delta");
-	                		List<BaseRecord> choices = asyncResp.get("choices");
-	                		for(BaseRecord choice : choices) {
-	                			BaseRecord delta = choice.get("delta");
-		                		if(delta == null) {
-		                			logger.warn("Did not receive a message: " + json);
-		                		}
-		                		else {
-			                		logger.info("Received: " + delta.get("content"));
-			                		if(delta.get("content") != null) {
-				                		if(amsg == null) {
-				                			if(delta.get("role") == null) {
-				                				delta.setValue("role", "assistant");
-				                			}
-										aresp.setValue("message", delta);
-										
-									} else {
-										amsg.setValue("content", (String)amsg.get("content") + (String)delta.get("content"));
-				                		}
-			                		}
-			                		else {
-			                			logger.info("Received null ... treat as completed");
-			                		}
-		                		}
-	                		}
-	                }
-	                // Send the JSON part to the WebSocketService
-	                //listener.sendToClient(json);
-	                //logger.info("Received line: " + json);
-	            }
-	        };
-	        */
-
-	        // Call the new streaming method in ClientUtil
+	
 	        CompletableFuture<HttpResponse<Stream<String>>> streamFuture  = ClientUtil.postToRecordAndStream(getServiceUrl(req), authorizationToken, ser);
+	        
 	        streamFuture.thenAccept(response -> {
+				if (response == null || response.body() == null) {
+					logger.warn("Null response from streaming chat");
+					return;
+				}
 	            response.body()
 	                .takeWhile(line -> !listener.isStopStream(req))
 	                .forEach(line -> {
-	                    if (line.startsWith("data: ")) {
-	                        String json = line.substring(6);
-	                        if ("[DONE]".equals(json)) {
-	                            return;
-	                        }
+	                		String json = null;
+	                		if (serviceType == LLMServiceEnumType.OPENAI && line.startsWith("data: ")) {
+	                        json = line.substring(6);
+	                		}
+	                		else {
+	                			json = line;
+	                		}
+                        if ("[DONE]".equals(json)) {
+                            return;
+                        }
 
-	                        BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
-	                        if (asyncResp == null) {
-	                            logger.error("Failed to import response object from: " + json);
-	                            return;
-	                        }
+                        BaseRecord asyncResp = RecordFactory.importRecord(OlioModelNames.MODEL_OPENAI_RESPONSE, json);
+                        if (asyncResp == null) {
+                            listener.onerror(user, req, aresp, "Failed to import response object from: " + json);
+                            return;
+                        }
+                        if(asyncResp.get("error") != null) {
+                            listener.onerror(user, req, aresp, "Received an error: " + asyncResp.get("error"));
+                            return;
+                        }
+                        List<BaseRecord> choices = asyncResp.get("choices");
+                        if(choices.isEmpty()) {
+                            BaseRecord amsg = aresp.get("message");
+                            BaseRecord deltaMessage = asyncResp.get("message");
+                            if(deltaMessage == null) {
+	                            	logger.info("Received empty message ... treat as completed");
+	                            	logger.info(json);
+	                            	logger.info(getServiceUrl(req) + " '" + authorizationToken + "'");
+	                            	return;
+                            }
+                            String contentChunk = deltaMessage.get("content");
+                            boolean done = asyncResp.get("done");
+                            if(done) {
+								return;
+                            }
+                            if (contentChunk != null && contentChunk.length() > 0) {
 
-	                        List<BaseRecord> choices = asyncResp.get("choices");
+	                            if (amsg == null) {
+	                                if (deltaMessage.get("role") == null) {
+	                                	deltaMessage.setValue("role", "assistant");
+	                                }
+	                                aresp.setValue("message", deltaMessage);
+	                            } else {
+	                                amsg.setValue("content", (String) amsg.get("content") + contentChunk);
+	                            }
+	                            listener.onupdate(user, req,  aresp, contentChunk);
+                            }
+                            else {
+                            		logger.info("Received null ... treat as completed");
+                            		return;
+                            }
+                        }
+                        else {
 	                        for (BaseRecord choice : choices) {
 	                            BaseRecord delta = choice.get("delta");
 	                            if (delta != null && delta.hasField("content")) {
 	                                String contentChunk = delta.get("content");
 	                                if (contentChunk != null) {
-	                                    // 1. Send the individual chunk to the client via WebSocket
-	                                    //listener.sendMessageToClient(delta.toString());
-
-	                                    // 2. Aggregate the chunk into the final response object
 	                                    BaseRecord amsg = aresp.get("message");
 	                                    if (amsg == null) {
 	                                        if (delta.get("role") == null) {
@@ -1220,22 +1214,26 @@ public class Chat {
 	                                    } else {
 	                                        amsg.setValue("content", (String) amsg.get("content") + contentChunk);
 	                                    }
+	                                    listener.onupdate(user, req,  aresp, contentChunk);
 	                                }
 	                            }
 	                        }
-	                    }
+                        }
+                        
+	                    
 	                });
 	        }).whenComplete((result, error) -> {
 	            if (error != null) {
-	                logger.error("Error during streaming chat response", error);
+	            		listener.onerror(user, req, aresp, "Error during streaming chat response: " + error.getMessage());
 	            } else {
-	                logger.info("Chat stream completed.");
-	            }
-	            if (listener != null) {
-	                // Pass the final aggregated response to the completion handler
 	                listener.oncomplete(user, req, aresp);
 	            }
-	        });
+                
+	            
+	        }).exceptionally(ex -> {
+	        		listener.onerror(user, req, aresp, ex.getMessage());
+                return null;
+            });
 
 		}
 		return orec;

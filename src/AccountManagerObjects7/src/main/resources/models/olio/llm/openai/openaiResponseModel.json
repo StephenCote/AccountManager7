@@ -24,6 +24,11 @@
 			"type": "string"
 		},
 		{
+			"name": "error",
+			"type": "string"
+		},
+
+		{
 			"name": "usage",
 			"type": "model",
 			"baseModel": "olio.llm.openai.openaiUsage"

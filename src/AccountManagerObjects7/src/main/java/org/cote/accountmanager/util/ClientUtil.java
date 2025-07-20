@@ -6,6 +6,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -204,10 +205,16 @@ public class ClientUtil {
 	
 	public static CompletableFuture<HttpResponse<Stream<String>>> postToRecordAndStream(String url, String authorizationToken, String json) {
 
-		HttpClient client = HttpClient.newHttpClient();
+	    HttpClient client = HttpClient.newBuilder()
+	            .version(HttpClient.Version.HTTP_1_1)  // Important for SSE
+	            .connectTimeout(Duration.ofSeconds(10))
+	            .build();
+
 		HttpRequest request = HttpRequest.newBuilder()
 				.uri(URI.create(url))
-				.header("Authorization", "Bearer " + authorizationToken)
+				//.header("Authorization", "Bearer " + authorizationToken)
+				 .header("Accept", "text/event-stream")
+				 .version(HttpClient.Version.HTTP_1_1)  
 				.header("Content-Type", "application/json")
 				.POST(HttpRequest.BodyPublishers.ofString(json))
 				.build();

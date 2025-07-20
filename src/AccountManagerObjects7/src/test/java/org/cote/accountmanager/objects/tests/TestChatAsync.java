@@ -36,7 +36,8 @@ public class TestChatAsync extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 		//BaseRecord cfg = OlioTestUtil.getOpenAIConfig(testUser1, "Open AI.chat", testProperties);
-		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser1, LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.type")), testProperties.getProperty("test.llm.type").toUpperCase() + " Open AI.chat", testProperties);
+		String chatCfgName = "Open AI 2.chat";
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser1, LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.type").toUpperCase()), testProperties.getProperty("test.llm.type").toUpperCase() + " " + chatCfgName, testProperties);
 		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser1, "Gruffy Test");
 		List<String> system = pcfg.get("system");
 		system.clear();
@@ -58,7 +59,16 @@ public class TestChatAsync extends BaseTest {
 		MockWebSocket mockWebSocket = new MockWebSocket(testUser1);
 		creq.setValue("uid", UUID.randomUUID().toString());
 		creq.setValue("message",  "Hi, Gruffy");
-		mockWebSocket.sendMessageToServer(new ChatRequest(creq));
+		OpenAIRequest req = mockWebSocket.sendMessageToServer(new ChatRequest(creq));
+		assertNotNull("Chat request is null", req);
+		while (mockWebSocket.isRequesting(req)) {
+			try {
+				Thread.sleep(200);
+			} catch (InterruptedException e) {
+				logger.error(e);
+			}
+		}
+		logger.info("Chat request completed");
 		//chat.setListener(mockWebSocket);
 		//chat.continueChat(req, "Hello Gruffy! How are you today?");
 	}

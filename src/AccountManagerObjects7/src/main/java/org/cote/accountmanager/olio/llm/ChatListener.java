@@ -18,8 +18,12 @@ import jakarta.ws.rs.core.Response;
 
 public class ChatListener implements IChatListener {
 	private static final Logger logger = LogManager.getLogger(ChatListener.class);
+	private static Map<String, Chat> asyncChats = new ConcurrentHashMap<>();
 	private static Map<String, OpenAIRequest> asyncRequests = new ConcurrentHashMap<>();
+	private static Map<String, Integer> asyncRequestCount = new ConcurrentHashMap<>();
+	private static Map<String, Boolean> asyncRequestStop = new ConcurrentHashMap<>();
 	private boolean deferRemote = false;
+	private int maximumResponseTokens = 5;
 	
 	public ChatListener() {
 		
@@ -37,23 +41,19 @@ public class ChatListener implements IChatListener {
 		this.deferRemote = deferRemote;
 	}
 
+	
 
 
 	@Override
-	public void sendMessageToClient(BaseRecord user, OpenAIRequest request, String message) {
-		logger.info("sendMessageToClient: " + message);
-	}
-
-	@Override
-	public void sendMessageToServer(BaseRecord user, ChatRequest chatReq) {
+	public OpenAIRequest sendMessageToServer(BaseRecord user, ChatRequest chatReq) {
 		logger.info("sendMessageToServer");
 		if(chatReq.getUid() == null) {
 			logger.warn("A uid is required for every chat");
-			return;
+			return null;
 		}
 		if(ChatUtil.getChatTrack().contains(chatReq.getUid())) {
 			logger.warn("Uid already used in a chat");
-			return;
+			return null;
 		}
 		ChatUtil.getChatTrack().add(chatReq.getUid());
 
@@ -67,7 +67,7 @@ public class ChatListener implements IChatListener {
 		OpenAIRequest req = ChatUtil.getOpenAIRequest(user, vChatReq);
 		if(req == null) {
 			logger.error("Failed to create OpenAIRequest from chat request.");
-			return;
+			return null;
 		}
 		if(false == (boolean)req.get("stream")) {
 			logger.warn("Chat request is not a stream request - forcing to stream");
@@ -91,12 +91,17 @@ public class ChatListener implements IChatListener {
 		String oid = req.get(FieldNames.FIELD_OBJECT_ID);
 		if (oid == null || oid.length() == 0) {
 			logger.warn("Request does not have an object id");
+			return null;
 		}
 		else {
 			asyncRequests.put(oid, req);
+			asyncRequestCount.put(oid, 0);
+			asyncRequestStop.put(oid, false);
+			asyncChats.put(oid, chat);
 		}
-		
+		logger.info("Chat request object id: " + oid);
 		chat.continueChat(req, vChatReq.getMessage() + citRef);
+		return req;
 		
 		
 	}
@@ -109,14 +114,128 @@ public class ChatListener implements IChatListener {
 
 	@Override
 	public boolean isStopStream(OpenAIRequest request) {
-		// TODO Auto-generated method stub
-		return false;
+		String oid = getRequestId(request);
+		if(oid == null) {
+			return false;
+		}
+
+		if(!asyncRequestStop.containsKey(oid)) {
+            logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+            return false;
+        }
+		return asyncRequestStop.get(oid);
+	}
+	
+	@Override
+	public void stopStream(OpenAIRequest request) {
+		String oid = getRequestId(request);
+		if(oid == null) {
+			return;
+		}
+		
+		if(!asyncRequestStop.containsKey(oid)) {
+            logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+            return;
+        }
+		asyncRequestStop.put(oid, true);
+	}
+	
+	private String getRequestId(OpenAIRequest request) {
+		if (request == null) {
+			logger.warn("OpenAIRequest is null");
+			return null;
+		}
+		
+		String oid = request.get(FieldNames.FIELD_OBJECT_ID);
+		if(oid == null) {
+			logger.warn("OpenAIRequest does not have an object id");
+			return null;
+		}
+		return oid;
+	}
+
+	@Override
+	public void onupdate(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String message) {
+		logger.info("sendMessageToClient: '" + message + "'");
+		String oid = getRequestId(request);
+		if(oid == null) {
+			return;
+		}
+		int tokenCount = 0;
+		if (!asyncRequests.containsKey(oid)) {
+			logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+		}
+		else {
+			tokenCount = asyncRequestCount.get(oid) + 1;
+		}
+		asyncRequestCount.put(oid, tokenCount);
+		if (maximumResponseTokens > -1 && tokenCount >= maximumResponseTokens) {
+			logger.info("Maximum response tokens reached for request: " + oid + " (" + tokenCount + ") - Stopping stream");
+			stopStream(request);
+		}
+
 	}
 
 	@Override
 	public void oncomplete(BaseRecord user, OpenAIRequest request, OpenAIResponse response) {
 		// TODO Auto-generated method stub
 		logger.info("MockWebSocket.oncomplete");
+		String oid = getRequestId(request);
+		if(oid == null) {
+			return;
+		}
+
+		if (!asyncRequests.containsKey(oid)) {
+			logger.warn("OpenAIRequest object id not found in async requests: " + oid);
+			return;
+		}
+		
+		Chat chat = asyncChats.get(oid);
+		chat.handleResponse(request, response, false);
+		chat.saveSession(request);
+		
+		asyncRequests.remove(oid);
+		asyncRequestCount.remove(oid);
+		asyncRequestStop.remove(oid);
+		asyncChats.remove(oid);
+	}
+
+
+	@Override
+	public boolean isRequesting(OpenAIRequest request) {
+		if (request == null) {
+			logger.warn("OpenAIRequest is null");
+			return false;
+		}
+		
+		String oid = request.get(FieldNames.FIELD_OBJECT_ID);
+		if(oid == null) {
+			logger.warn("OpenAIRequest does not have an object id");
+			return false;
+		}
+		return asyncRequests.containsKey(oid);
+	}
+
+
+
+	@Override
+	public void onerror(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String msg) {
+		// TODO Auto-generated method stub
+		logger.error("Error received: " + msg);
+		if (request == null) {
+			logger.warn("OpenAIRequest is null");
+			return;
+		}
+		
+		String oid = request.get(FieldNames.FIELD_OBJECT_ID);
+		if(oid == null) {
+			logger.warn("OpenAIRequest does not have an object id");
+			return;
+		}
+		asyncRequests.remove(oid);
+		asyncRequestCount.remove(oid);
+		asyncRequestStop.remove(oid);
+		asyncChats.remove(oid);
 		
 	}
 

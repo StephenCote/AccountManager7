@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -24,6 +25,11 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.OrganizationContext;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.llm.ChatListener;
+import org.cote.accountmanager.olio.llm.ChatRequest;
+import org.cote.accountmanager.olio.llm.IChatListener;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -39,6 +45,7 @@ import org.cote.accountmanager.schema.type.SpoolStatusEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
 import org.cote.accountmanager.security.AM7SigningKeyLocator;
 import org.cote.accountmanager.security.TokenService;
+import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.JSONUtil;
 
 import io.jsonwebtoken.Jwts;
@@ -176,6 +183,11 @@ public class WebSocketService  extends HttpServlet {
 				}
 			}
 			else {
+				BaseRecord smsg = msg.getMessage();
+				if(smsg != null && OlioModelNames.MODEL_CHAT_REQUEST.equals(smsg.get("modelType"))) {
+					handleChatRequest(session, user, msg);
+				}
+						
 				logger.warn("Handle message with no recipient");
 			}
 		}
@@ -183,6 +195,31 @@ public class WebSocketService  extends HttpServlet {
 			logger.error("User or message was null");
 		}
 		//session.getBasicRemote().sendText(txt.toUpperCase());
+	}
+	
+	private static Map<String, IChatListener> listeners = new ConcurrentHashMap<>();
+	private void handleChatRequest(Session session, BaseRecord user, SocketMessage msg) {
+		BaseRecord smsg = msg.getMessage();
+		if (smsg == null) {
+			logger.error("Chat request message is null");
+			return;
+		}
+		ChatRequest chatReq = ChatRequest.importRecord(BinaryUtil.fromBase64Str((byte[])smsg.get("data")));
+		if(chatReq == null) {
+			logger.error("Chat request is null");
+			return;
+		}
+		String oid = user.get(FieldNames.FIELD_OBJECT_ID);
+		IChatListener listener = null;
+		if (!listeners.containsKey(oid)) {
+			listener = new ChatListener();
+			listeners.put(oid, listener);
+		} else {
+			listener = listeners.get(oid);
+			logger.warn("Stop any current request?");
+		}
+		logger.info("Sending in the request - need to handle async response");
+		OpenAIRequest req = listener.sendMessageToServer(user, chatReq);
 	}
 
 	@OnClose

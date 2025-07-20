@@ -14,7 +14,7 @@ public class MockWebSocket extends ChatListener implements IChatListener {
 		this.user = user;
 	}
 	
-	public void sendMessageToServer(ChatRequest req) {
-		this.sendMessageToServer(req, req);
+	public OpenAIRequest sendMessageToServer(ChatRequest req) {
+		return this.sendMessageToServer(user, req);
 	}
 }
