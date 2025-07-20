@@ -413,6 +413,7 @@
         }
         if(msg.chirps){
             msg.chirps.forEach((s) => {
+                console.log(s);
                 page.toast("info", s, 5000);
             });
         }

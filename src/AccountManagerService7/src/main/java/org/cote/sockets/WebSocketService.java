@@ -214,11 +214,14 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			logger.error("Chat request message is null");
 			return;
 		}
-		ChatRequest chatReq = ChatRequest.importRecord(BinaryUtil.fromBase64Str((byte[])smsg.get("data")));
+		String chatReqStr = new String((byte[])smsg.get("data"));
+		logger.info(chatReqStr);
+		ChatRequest chatReq = ChatRequest.importRecord(chatReqStr);
 		if(chatReq == null) {
 			logger.error("Chat request is null");
 			return;
 		}
+		logger.info(chatReq.toFullString());
 		/*
 		String oid = user.get(FieldNames.FIELD_OBJECT_ID);
 		IChatListener listener = null;

@@ -159,6 +159,7 @@
         };
         try{
           if(chatCfg?.chat.stream){
+            console.log("Sending to socket", chatReq);
             page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
           }
           else{
