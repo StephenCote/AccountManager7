@@ -17,6 +17,7 @@ import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatUtil;
+import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
@@ -34,7 +35,8 @@ public class TestChatAsync extends BaseTest {
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Olio LLM Revisions");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
-		BaseRecord cfg = OlioTestUtil.getOpenAIConfig(testUser1, "Open AI.chat", testProperties);
+		//BaseRecord cfg = OlioTestUtil.getOpenAIConfig(testUser1, "Open AI.chat", testProperties);
+		BaseRecord cfg = OlioTestUtil.getChatConfig(testUser1, LLMServiceEnumType.valueOf(testProperties.getProperty("test.llm.type")), testProperties.getProperty("test.llm.type").toUpperCase() + " Open AI.chat", testProperties);
 		BaseRecord pcfg = OlioTestUtil.getObjectPromptConfig(testUser1, "Gruffy Test");
 		List<String> system = pcfg.get("system");
 		system.clear();

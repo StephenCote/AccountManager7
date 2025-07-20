@@ -456,6 +456,36 @@ public class OlioTestUtil {
 		return opcfg;
 	}
 	
+	public static BaseRecord getChatConfig(BaseRecord user, LLMServiceEnumType type, String name, Properties testProperties) {
+		if(type == LLMServiceEnumType.OLLAMA) {
+			return getOllamaOpenAIConfig(user, name, testProperties);
+		}
+		else if(type == LLMServiceEnumType.OPENAI) {
+            return getOpenAIConfig(user, name, testProperties);
+        }
+        logger.error("Unsupported LLM service type: " + type);
+        return null;
+	}
+	public static BaseRecord getOllamaOpenAIConfig(BaseRecord user, String name, Properties testProperties) {
+		BaseRecord ocfg = null;
+		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
+		if (cfg != null) {
+			return cfg;
+		}
+		ParameterList plist = ParameterList.newParameterList(FieldNames.FIELD_PATH, "~/Chat");
+		plist.parameter(FieldNames.FIELD_NAME, name);
+		try {
+			cfg = IOSystem.getActiveContext().getFactory().newInstance(OlioModelNames.MODEL_CHAT_CONFIG, user, null, plist);
+			cfg.set("serviceType", LLMServiceEnumType.OLLAMA);
+			cfg.set("serverUrl", testProperties.getProperty("test.llm.ollama.server"));
+			cfg.set("model", testProperties.getProperty("test.llm.ollama.model"));
+			ocfg = IOSystem.getActiveContext().getAccessPoint().create(user, cfg);
+		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
+			logger.error(e);
+		}
+		return ocfg;
+	}
+	
 	public static BaseRecord getOpenAIConfig(BaseRecord user, String name, Properties testProperties) {
 		BaseRecord ocfg = null;
 		BaseRecord cfg = DocumentUtil.getRecord(user, OlioModelNames.MODEL_CHAT_CONFIG, name, "~/Chat");
@@ -469,7 +499,7 @@ public class OlioTestUtil {
 			cfg.set("serviceType", LLMServiceEnumType.OPENAI);
 			cfg.set("apiVersion", testProperties.getProperty("test.llm.openai.version"));
 			cfg.set("serverUrl", testProperties.getProperty("test.llm.openai.server"));
-			cfg.set("model", "gpt-4o");
+			cfg.set("model", testProperties.getProperty("test.llm.openai.model"));
 			cfg.set("apiKey", testProperties.getProperty("test.llm.openai.authorizationToken"));
 			
 			ocfg = IOSystem.getActiveContext().getAccessPoint().create(user, cfg);

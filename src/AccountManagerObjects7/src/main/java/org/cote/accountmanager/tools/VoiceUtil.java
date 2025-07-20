@@ -36,7 +36,7 @@ public class VoiceUtil {
 		return serviceType;
 	}
 
-	public VoiceResponse getVoice(VoiceRequest req){
+	public synchronized VoiceResponse getVoice(VoiceRequest req){
 		VoiceResponse voice = null;
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Voice is not supported");
