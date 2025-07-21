@@ -419,7 +419,6 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 
 	@Override
 	public void onChatUpdate(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String message) {
-		logger.info(response.getMessage().toFullString());
 		chirpUser(user, new String[] {"chatUpdate", request.get(FieldNames.FIELD_OBJECT_ID), message});
 	}
 
