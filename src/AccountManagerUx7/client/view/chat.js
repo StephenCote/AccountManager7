@@ -1,16 +1,6 @@
 
 (function () {
-  /*
-  am7model.getModel("olio.llm.chatRequest").fields.push({
-      name: "sesssions",
-      label: 'Sessions',
-      virtual: true,
-      ephemeral: true,
-      type: "string",
-      baseType: "string",
-      format: "list"
-  });
-  */
+
    am7model.forms.chatRequest = {
     label: "Chat Request",
     commands: {
@@ -75,6 +65,7 @@
 
   function newChatControl() {
 
+    let inst;
     const chat = {};
     let fullMode = false;
     let showFooter = false;
@@ -94,11 +85,6 @@
       audioMap = {};
       chatCfg = newChatConfig();
     }
-    
-
-    // window.dbgCfg = chatCfg;
-    let inst;
-    // = am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest);
     
     function pickSession(obj){
       doClear();
@@ -131,10 +117,83 @@
       });
     }
 
+    function newChatStream(){
+      
+      let cfg = {
+        streamId: undefined,
+        request: undefined,
+
+        onchatcomplete: (id) => {
+          console.log("Chat completed: " + id);
+          if(page.chatStream && !page.chatStream.streamId == id){
+            console.warn("Mismatched stream identifiers");
+          }
+          clearChat();
+          m.redraw();
+        },
+        onchaterror: (id, msg)=> {
+          page.toast("error", "Chat error: " + msg, 5000);
+          clearChat();
+          m.redraw();
+        },
+        onchatstart: (id, req)=> {
+          // console.log("Start chat...");
+          if(!chatCfg){
+            console.warn("Invalid chat configuration");
+            return;
+          }
+          if (!chatCfg.history) chatCfg.history = {};
+          if (!chatCfg.history.messages) chatCfg.history.messages = [];
+          chatCfg.history.messages.push({ role: "assistant", content: "" });
+        },
+        onchatupdate: (id, msg)=> {
+          // console.log("Chat update: " + msg);
+          if(!chatCfg.history.messages.length){
+            console.error("Unexpected chat history");
+            return;
+          }
+          let m1 = chatCfg.history.messages[chatCfg.history.messages.length - 1];
+          if(m1.role != "assistant"){
+            console.error("Expected assistant message to be the most recent");
+            return;
+          }
+          
+          m1.content += msg;
+          m.redraw();
+        }
+      }
+
+      function clearChat(){
+        page.chatStream = undefined;
+        chatCfg.streaming = false;
+        chatCfg.pending = false;
+      }
+
+      return cfg;
+    }
+
+    function doStop(){
+      if(!chatCfg.streaming){
+        return;
+      }
+        let chatReq = {
+          schema: inst.model.name,
+          objectId: inst.api.objectId(),
+          uid: page.uid(),
+          message: "[stop]"
+        };
+
+      page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
+    }
+
     function doChat() {
       clearEditMode();
       if (chatCfg.pending) {
         console.warn("Chat is pending");
+        return;
+      }
+      if(chatCfg.streaming){
+        console.warn("Chat is streaming - TODO - interrupt");
         return;
       }
       let msg = document.querySelector("[name='chatmessage']").value; ///e?.target?.value;
@@ -151,15 +210,14 @@
         let chatReq = {
           schema: inst.model.name,
           objectId: inst.api.objectId(),
-          // chatConfig: {inst.api.chatConfig()?.objectId},
-          // promptConfig: {inst.api.promptConfig()?.objectId},
           uid: page.uid(),
           message: msg,
           data
         };
         try{
           if(chatCfg?.chat.stream){
-            console.log("Sending to socket", chatReq);
+            page.chatStream = newChatStream();
+            chatCfg.streaming = true;
             page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
           }
           else{
@@ -221,7 +279,6 @@
     }
 
     function getHistory() {
-      // console.log(chatCfg);
       if(!inst){
         return;
       }
@@ -537,7 +594,7 @@
         let aud = "";
         //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
 
-        if(chatCfg.chat && audio){
+        if(chatCfg.chat && audio && !chatCfg.streaming){
           //let name = chatCfg.chat.objectId + " - " + midx;
           let name = inst.api.objectId() + " - " + midx;
           
@@ -547,15 +604,13 @@
             let vprops = {"text": pruneAll(msg.content), "speed": 1.2};
             if(msg.role == "assistant"){
               vprops.voiceProfileId = chatCfg?.system?.profile?.objectId;
-              //vprops.engine = "piper";
-              //vprops.speaker = "en_GB-alba-medium";
-              vprops.engine = "xtts";
-              vprops.voiceSampleId = "b8b8cf67-3a1a-4f8b-af92-c8fb92428803";
             }
             else{
               vprops.voiceProfileId = chatCfg?.user?.profile?.objectId;
-              vprops.engine = "xtts";
-              vprops.voiceSampleId = "307abdbf-9293-49d8-9dbe-1b93f023c43c";
+            }
+            if(!vprops.voiceProfileId){
+              vprops.engine = "piper";
+              vprops.speaker = "en_GB-alba-medium";
             }
               m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops}).then((d) => {
                 audioMap[name] = d;
@@ -685,8 +740,8 @@
                 m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : "volume_mute"))),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
-                //m("input[" + (chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: "Message", onkeydown: function (e) { if (e.which == 13) doChat(e); } }),
                 (chatCfg.pending ? pendBar : input),
+                m("button", { class: "button", onclick: doStop}, m("span", { class: "material-symbols-outlined material-icons-24" }, "stop")),
                 m("button", { class: "button", onclick: doChat }, m("span", { class: "material-symbols-outlined material-icons-24" }, "chat"))
               ])
             )
@@ -756,7 +811,7 @@
       for(let i = 0; i < aa.length; i++){
         let aud = aa[i];
         if(visualizers[aud.id]){
-          console.warn("Audio visualizer already configured for", aud.id);
+          /// console.warn("Audio visualizer already configured for", aud.id);
           continue;
         }
         console.info("Configuring audio visualizer for", aud.id);

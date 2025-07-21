@@ -168,7 +168,8 @@
           },
         searchFirst,
         chatAvatar,
-        normalizePath
+        normalizePath,
+        chatStream: undefined
     };
 
     function normalizePath(path, grp){
@@ -412,10 +413,20 @@
             page.token = msg.token;
         }
         if(msg.chirps){
+            let c1 = msg.chirps[0] || "";
+            if(c1.match(/(chatStart|chatComplete|chatUpdate|chatError)/)){
+                if(!page.chatStream){
+                    console.error("Chat stream isn't available");
+                    return;
+                }
+                page.chatStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2], msg.chirps[3]);
+            }
+            /*
             msg.chirps.forEach((s) => {
                 console.log(s);
                 page.toast("info", s, 5000);
             });
+            */
         }
       }
   

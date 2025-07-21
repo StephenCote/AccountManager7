@@ -221,19 +221,6 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			logger.error("Chat request is null");
 			return;
 		}
-		logger.info(chatReq.toFullString());
-		/*
-		String oid = user.get(FieldNames.FIELD_OBJECT_ID);
-		IChatListener listener = null;
-		if (!listeners.containsKey(oid)) {
-			listener = new ChatListener();
-			listeners.put(oid, listener);
-		} else {
-			listener = listeners.get(oid);
-			logger.warn("Stop any current request?");
-		}
-		logger.info("Sending in the request - need to handle async response");
-		*/
 		listener.sendMessageToServer(user, chatReq);
 	}
 
@@ -427,22 +414,23 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 
 	@Override
 	public void onChatComplete(BaseRecord user, OpenAIRequest request, OpenAIResponse response) {
-		chirpUser(user, new String[] {"Chat completed: " + request.get(FieldNames.FIELD_OBJECT_ID)});
+		chirpUser(user, new String[] {"chatComplete", request.get(FieldNames.FIELD_OBJECT_ID)});
 	}
 
 	@Override
 	public void onChatUpdate(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String message) {
-		chirpUser(user, new String[] {"Chat update: " + request.get(FieldNames.FIELD_OBJECT_ID), message});
+		logger.info(response.getMessage().toFullString());
+		chirpUser(user, new String[] {"chatUpdate", request.get(FieldNames.FIELD_OBJECT_ID), message});
 	}
 
 	@Override
 	public void onChatError(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String msg) {
-		chirpUser(user, new String[] {"Chat error: " + request.get(FieldNames.FIELD_OBJECT_ID) + " " + msg});
+		chirpUser(user, new String[] {"chatError", request.get(FieldNames.FIELD_OBJECT_ID), msg});
 	}
 
 	@Override
 	public void onChatStart(BaseRecord user, ChatRequest chatRequest, OpenAIRequest request) {
-		chirpUser(user, new String[] {"Chat started: " + request.get(FieldNames.FIELD_OBJECT_ID)});
+		chirpUser(user, new String[] {"chatStart", request.get(FieldNames.FIELD_OBJECT_ID), request.toFullString()});
 	}
 
 		

@@ -24,7 +24,7 @@ public class ChatListener implements IChatListener {
 	private static Map<String, Integer> asyncRequestCount = new ConcurrentHashMap<>();
 	private static Map<String, Boolean> asyncRequestStop = new ConcurrentHashMap<>();
 	private boolean deferRemote = false;
-	private int maximumResponseTokens = 5;
+	private int maximumResponseTokens = -1;
 	private List<IChatHandler> handlers = new CopyOnWriteArrayList<>();
 	
 	public ChatListener() {
@@ -47,7 +47,12 @@ public class ChatListener implements IChatListener {
 		this.deferRemote = deferRemote;
 	}
 
-	
+	private void clearCache(String oid) {
+		asyncRequests.remove(oid);
+		asyncRequestCount.remove(oid);
+		asyncRequestStop.remove(oid);
+		asyncChats.remove(oid);
+	}
 
 
 	@Override
@@ -75,11 +80,25 @@ public class ChatListener implements IChatListener {
 			logger.error("Failed to create OpenAIRequest from chat request.");
 			return null;
 		}
+		
+		String oid = req.get(FieldNames.FIELD_OBJECT_ID);
+		if (oid == null || oid.length() == 0) {
+			logger.warn("Request does not have an object id");
+			return null;
+		}
+		logger.info("Chat request object id: " + oid);
+		
 		if(false == (boolean)req.get("stream")) {
 			logger.warn("Chat request is not a stream request - forcing to stream");
 			req.setValue("stream", true);
 		}
-
+		
+		if(vChatReq.getMessage() != null && vChatReq.getMessage().equals("[stop]") && asyncRequests.containsKey(oid)) {
+			logger.info("Stopping chat request: " + oid);
+			asyncRequestStop.put(oid, true);
+			return req;
+		}
+		
 		String citRef = "";
 		if(vChatReq.getMessage() != null && vChatReq.getMessage().length() > 0) {
 			List<String> cits = ChatUtil.getDataCitations(user, req, vChatReq);
@@ -94,18 +113,11 @@ public class ChatListener implements IChatListener {
 		Chat chat = ChatUtil.getChat(user, vChatReq, deferRemote);	
 		chat.setListener(this);
 		
-		String oid = req.get(FieldNames.FIELD_OBJECT_ID);
-		if (oid == null || oid.length() == 0) {
-			logger.warn("Request does not have an object id");
-			return null;
-		}
-		else {
-			asyncRequests.put(oid, req);
-			asyncRequestCount.put(oid, 0);
-			asyncRequestStop.put(oid, false);
-			asyncChats.put(oid, chat);
-		}
-		logger.info("Chat request object id: " + oid);
+		asyncRequests.put(oid, req);
+		asyncRequestCount.put(oid, 0);
+		asyncRequestStop.put(oid, false);
+		asyncChats.put(oid, chat);
+
 		chat.continueChat(req, vChatReq.getMessage() + citRef);
 		
 		handlers.forEach(h -> h.onChatStart(user, chatReq, req));
@@ -126,7 +138,7 @@ public class ChatListener implements IChatListener {
 			return false;
 		}
 
-		if(!asyncRequestStop.containsKey(oid)) {
+		if(!asyncRequests.containsKey(oid)) {
             logger.warn("OpenAIRequest object id not found in async requests: " + oid);
             return false;
         }
@@ -140,7 +152,7 @@ public class ChatListener implements IChatListener {
 			return;
 		}
 		
-		if(!asyncRequestStop.containsKey(oid)) {
+		if(!asyncRequests.containsKey(oid)) {
             logger.warn("OpenAIRequest object id not found in async requests: " + oid);
             return;
         }
@@ -197,15 +209,24 @@ public class ChatListener implements IChatListener {
 			logger.warn("OpenAIRequest object id not found in async requests: " + oid);
 			return;
 		}
-		
 		Chat chat = asyncChats.get(oid);
 		chat.handleResponse(request, response, false);
+
+		if(asyncRequestStop.containsKey(oid)) {
+			List<BaseRecord> msgs = request.get("messages");
+			if(msgs != null && msgs.size() > 0) {
+				BaseRecord lastMsg = msgs.get(msgs.size() - 1);
+				if(lastMsg.get("content") != null) {
+					lastMsg.setValue("content", lastMsg.get("content") + System.lineSeparator() + "[interrupted]");
+				}
+			}
+		}		
+
 		chat.saveSession(request);
+		logger.info("Chat session saved for request: " + oid);
+		logger.info(request.toFullString());
 		handlers.forEach(h -> h.onChatComplete(user, request, response));
-		asyncRequests.remove(oid);
-		asyncRequestCount.remove(oid);
-		asyncRequestStop.remove(oid);
-		asyncChats.remove(oid);
+		clearCache(oid);
 	}
 
 
@@ -241,10 +262,7 @@ public class ChatListener implements IChatListener {
 			return;
 		}
 		handlers.forEach(h -> h.onChatError(user, request, response, msg));
-		asyncRequests.remove(oid);
-		asyncRequestCount.remove(oid);
-		asyncRequestStop.remove(oid);
-		asyncChats.remove(oid);
+		clearCache(oid);
 		
 	}
 
