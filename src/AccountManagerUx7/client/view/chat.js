@@ -82,7 +82,7 @@
 
     function doClear(){
       clearEditMode();
-      audioMap = {};
+      page.components.audio.unconfigureAudio(audio);
       chatCfg = newChatConfig();
     }
     
@@ -243,14 +243,16 @@
           try{
             let qr = await page.search(q);
             if(qr && qr.results && qr.results.length > 0){
-              console.log("Deleting session data", qr.results[0].objectId);
+              page.toast("info", "Deleting session data - " + qr.results[0].objectId);
               await page.deleteObject(s.sessionType, qr.results[0].objectId);
             }
             else{
-              console.error("Failed to find session data to delete", qr);
+              page.toast("error","Failed to find session data to delete", 5000);
+              console.error("Failed to delete session data", qr);
             }
           }
           catch(e){
+            page.toast("error", "Error deleting session data", 5000);
             console.error("Error deleting session data", e); 
           }
 
@@ -448,7 +450,6 @@
     let editIndex = -1;
     let editMode = false;
     let audio = false;
-    let audioMap = {};
     let profile = false;
     function toggleAudio(){
       audio = !audio;
@@ -570,7 +571,7 @@
             cnt = pruneToMark(cnt, "<|reserved_special_token");
             cnt = pruneTag(cnt, "think");
             cnt = pruneTag(cnt, "thought");
-
+            cnt = pruneOther(cnt);
           }
 
           if (bectl) {
@@ -597,50 +598,21 @@
         if(chatCfg.chat && audio && !chatCfg.streaming){
           //let name = chatCfg.chat.objectId + " - " + midx;
           let name = inst.api.objectId() + " - " + midx;
-          
-          if(!audioMap[name]){
-            aud = m("div", {class: "audio-container"}, "Synthesizing...");
-            console.log("Synthethize " + name);
-            let vprops = {"text": pruneAll(msg.content), "speed": 1.2};
-            if(msg.role == "assistant"){
-              vprops.voiceProfileId = chatCfg?.system?.profile?.objectId;
-            }
-            else{
-              vprops.voiceProfileId = chatCfg?.user?.profile?.objectId;
-            }
-            if(!vprops.voiceProfileId){
-              vprops.engine = "piper";
-              vprops.speaker = "en_GB-alba-medium";
-            }
-              m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops}).then((d) => {
-                audioMap[name] = d;
-                // console.log(d);
-              }).catch(()=>{
-                audioMap[name] = {error:true};
-              });
-
+          let profileId;
+          if(msg.role == "assistant"){
+            profileId = chatCfg?.system?.profile?.objectId;
           }
-
-          else if(audioMap[name] && !audioMap[name].error){
-            let path = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + audioMap[name].groupPath + "/Voice - " + name + ".mp3";
-            let props = {
-              class: "hide",
-              preload: "auto"
-              // ,controls: "controls"
-            };
-            if(lastMsg){
-              props.autoplay = "autoplay";
-            }
-            let mt = audioMap[name].contentType;
-            if (mt && mt.match(/mpeg3$/)) mt = "audio/mpeg";
-            props.id = "chatAudio-" + (aidx);
-            props.crossorigin = "use-credentials"; 
-            aud = m("div", {class: "audio-container", id: "chatAudioContainer-" + (aidx), onclick: function(){togglePlayAudio(props.id);}}, m("audio", props,
-                  m("source", { src: path, type: mt })
-            ));
+          else{
+            profileId = chatCfg?.user?.profile?.objectId;
+          }
+          aud = page.components.audio.createAudioVisualizer(name, aidx, profileId, lastMsg, pruneAll(msg.content));
+          if(!aud || typeof aud == "string"){
+            aud = "";
+          }
+          else{
             aidx++;
           }
-            
+
         }
         return m("div", { class: "relative receive-chat flex " + align },
           [ectl, m("div", { class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light" },
@@ -676,6 +648,12 @@
       cnt = pruneTag(cnt, "thought");
       cnt = pruneToMark(cnt, "(Reminder");
       cnt = pruneToMark(cnt,"(KeyFrame");
+      cnt = pruneOther(cnt);
+      return cnt;
+    }
+
+    function pruneOther(cnt){
+      cnt = cnt.replace(/\[interrupted\]/g,"");
       return cnt;
     }
 
@@ -709,11 +687,12 @@
     function getChatBottomMenuView() {
       // if(!showFooter) return "";
 
-    let pendBar = m("div", {class: "w-[80%] p-4 flex flex-col"},
+      let pendBar = m("div", {class: "w-[80%] p-4 flex flex-col"},
         m("div", {class: "relative bg-gray-200 rounded"},
           m("div", {class: "absolute top-0 h-4 w-full rounded pending-blue"})
         )
       );
+      
       let placeText = "Start typing...";
       if(!inst){
         placeText = "Select or create a chat to begin...";
@@ -740,7 +719,8 @@
                 m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : "volume_mute"))),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
-                (chatCfg.pending ? pendBar : input),
+                page.components.audio.recordButton(),
+                (page.components.audio.recording() ? page.components.audio.recordWithVisualizer() : (chatCfg.pending ? pendBar : input)),
                 m("button", { class: "button", onclick: doStop}, m("span", { class: "material-symbols-outlined material-icons-24" }, "stop")),
                 m("button", { class: "button", onclick: doChat }, m("span", { class: "material-symbols-outlined material-icons-24" }, "chat"))
               ])
@@ -783,57 +763,7 @@
 
     }
 
-    let visualizers = {};
-    function togglePlayAudio(id){
-      let aud = document.getElementById(id);
-      if(!aud) return;
-      aud.paused ? aud.play() : aud.pause();
-    }
-
-    function unconfigureAudio() {
-      if(audio) return;
-      for(let id in visualizers){
-        console.log("Unconfiguring audio visualizer for", id);
-        if(visualizers[id]){
-          visualizers[id].stop();
-          visualizers[id].destroy();
-          delete visualizers[id];
-        }
-      }
-    }
-
-    function configureAudio() {
-      if(!audio){
-        unconfigureAudio();
-        return;
-      }
-      let aa = document.querySelectorAll("audio");
-      for(let i = 0; i < aa.length; i++){
-        let aud = aa[i];
-        if(visualizers[aud.id]){
-          /// console.warn("Audio visualizer already configured for", aud.id);
-          continue;
-        }
-        console.info("Configuring audio visualizer for", aud.id);
-        let cont = aud.parentNode;
-        let props = {
-          source: aud,
-          height: 60,
-          overlay: true,
-          bgAlpha: 0,
-          showBgColor: true,
-          showSource: false,
-          gradient: "prism",
-          showScaleY: false,
-          showScaleX: false
-
-        };
-        const audioMotion = new AudioMotionAnalyzer(cont, props);
-        //audioMotion.start();
-        visualizers[aud.id] = audioMotion;
-
-      }
-    }
+ 
     
     async function loadConfigList() {
       am7client.clearCache(undefined, true);
@@ -859,9 +789,6 @@
 
       if (aPCfg == undefined && aCCfg == undefined) {
         loadConfigList().then(() => {
-          // am7model.getModelField("chatSettings", "prompt").limit = aPCfg.map((c) => { return c.name; });
-          // am7model.getModelField("chatSettings", "chat").limit = aCCfg.map((c) => { return c.name; });
-          // am7model.getModelField("chatSettings", "sessions").limit = [inst.api.session()].concat(aSess.map((c) => { return c.name; }));
           if(aCCfg.length > 0){
             doPeek();
           }
@@ -956,12 +883,13 @@
       onupdate: function (x) {
         page.navigable.setupPendingContextMenus();
         scrollToLast();
-        configureAudio();
+        page.components.audio.configureAudio(audio);
       },
       onremove: function (x) {
         page.navigable.cleanupContextMenus();
         pagination.stop();
         document.documentElement.removeEventListener("keydown", navKey);
+        page.components.audio.unconfigureAudio(false);
       },
 
       view: function (vnode) {

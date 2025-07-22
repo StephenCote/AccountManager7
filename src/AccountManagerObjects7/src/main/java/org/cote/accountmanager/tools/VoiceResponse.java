@@ -8,6 +8,7 @@ public class VoiceResponse {
 	private String text = null;
 	private String status_code = null;
 	private String detail = null;
+	private String uid = null;
 	public VoiceResponse() {
 	
 	}
@@ -17,6 +18,12 @@ public class VoiceResponse {
 	
 	
 	
+	public String getUid() {
+		return uid;
+	}
+	public void setUid(String uid) {
+		this.uid = uid;
+	}
 	public String getText() {
 		return text;
 	}

@@ -69,7 +69,7 @@ class SynthesisRequest(BaseModel):
     speed: float = Field(1.0, description="Playback speed for the synthesized audio.")
 
 class STTRequest(BaseModel):
-    audio_base64: str = Field(..., description="Base64 encoded audio stream (e.g., WAV, MP3).")
+    audio_sample: str = Field(..., description="Base64 encoded audio stream (e.g., WAV, MP3).")
     model_name: Optional[str] = Field("base", description="The whisper model size to use (e.g., 'tiny', 'base', 'small', 'medium', 'large').")
 
 
@@ -193,10 +193,19 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
     sentences = nltk.sent_tokenize(request.text)
     audio_segments = []
     print(f"Synthesizing {len(sentences)} sentences with Piper...")
-    with io.BytesIO() as wav_io:
-        voice_model.synthesize(request.text, wav_io, **synthesis_kwargs)
-        wav_io.seek(0)
-        audio_segments.append(AudioSegment.from_wav(wav_io))
+    for sentence in sentences:
+        if not sentence.strip(): continue
+        with io.BytesIO() as wav_io:
+            with wave.open(wav_io, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(voice_model.config.sample_rate)
+                voice_model.synthesize_wav(sentence, wf, **synthesis_kwargs)
+                #samples = voice_model.synthesize(sentence, speaker_id=request.speaker_id if request.speaker_id is not None and request.speaker_id >= 0 and voice_model.config.num_speakers > 1 else None)
+                #wf.writeframes(samples.tobytes())
+
+            wav_io.seek(0)
+            audio_segments.append(AudioSegment.from_wav(wav_io))
 
     if not audio_segments:
          raise ValueError("Input text did not produce any valid audio segments. Please provide meaningful text.")
@@ -229,20 +238,25 @@ def synthesize_with_xtts(request: SynthesisRequest) -> bytes:
             print(f"Using default XTTS voice: {XTTS_DEFAULT_VOICE}")
 
         # The tts_to_file function now handles sentence splitting internally.
-        output_file = os.path.join(temp_dir, "output.wav")
-        print(f"Synthesizing text with XTTS...")
-        xtts_model.tts_to_file(
-            text=request.text,
-            speaker_wav=speaker_wav_path,
-            language=request.language,
-            speed=request.speed,
-            file_path=output_file
-        )
+        sentences = nltk.sent_tokenize(request.text)
+        audio_segments = []
+        print(f"Synthesizing {len(sentences)} sentences with XTTS...")
 
-        if not os.path.exists(output_file):
-            raise ValueError("Input text did not produce any valid audio. Please provide meaningful text.")
-        
-        combined_audio = AudioSegment.from_wav(output_file)
+        for i, sentence in enumerate(sentences):
+            if not sentence.strip(): continue
+            chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
+            xtts_model.tts_to_file(
+                text=sentence,
+                speaker_wav=speaker_wav_path,
+                language=request.language,
+                speed=request.speed,
+                file_path=chunk_file
+            )
+            audio_segments.append(AudioSegment.from_wav(chunk_file))
+            
+        if not audio_segments:
+             raise ValueError("Input text did not produce any valid audio segments. Please provide meaningful text.")
+        combined_audio = sum(audio_segments, AudioSegment.empty())
         with io.BytesIO() as buffer:
             combined_audio.export(buffer, format="mp3", bitrate="320k")
             return buffer.getvalue()
@@ -270,7 +284,7 @@ def transcribe_with_whisper(request: STTRequest) -> str:
             raise RuntimeError(f"Failed to load Whisper model '{model_key}'. It may be an invalid model size. Error: {e}")
 
     try:
-        audio_bytes = base64.b64decode(request.audio_base64)
+        audio_bytes = base64.b64decode(request.audio_sample)
     except Exception:
         raise ValueError("Invalid base64 string for 'audio_base64'.")
 
@@ -330,7 +344,7 @@ async def speech_to_text(request: STTRequest):
     Endpoint to perform speech-to-text using Whisper.
     Accepts a base64 encoded audio stream and returns the transcribed text.
     """
-    if not request.audio_base64.strip():
+    if not request.audio_sample.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="The 'audio_base64' field cannot be empty."

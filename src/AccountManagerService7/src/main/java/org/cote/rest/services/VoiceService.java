@@ -87,8 +87,10 @@ public class VoiceService {
 	private static final Logger logger = LogManager.getLogger(ListService.class);
 
 	private static Set<String> synthesized = ConcurrentHashMap.newKeySet();
+	private static Set<String> textToSpeech = ConcurrentHashMap.newKeySet();
 	public static void clearCache() {
 		synthesized.clear();
+		textToSpeech.clear();
 	}
 	
 	private static String getNormalizedVoice(String voice) {
@@ -160,14 +162,50 @@ public class VoiceService {
 		return IOSystem.getActiveContext().getVoiceUtil().getVoice(req);
 	}
 	
+	@RolesAllowed({"admin","user"})
+	@POST
+	@Path("/tts")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response textToSpeach(String json, @Context HttpServletRequest request){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		
+		
+		VoiceRequest voiceReq = JSONUtil.importObject(json, VoiceRequest.class);
+			
+		if(voiceReq == null) {
+			logger.error("Failed to parse chat request");
+			return Response.status(400).entity("Failed to parse chat request").build();
+		}
+		
+		String uid = voiceReq.getUid();
+		if(uid == null || uid.length() == 0) {
+			logger.error("Voice request uid is null or empty");
+			return Response.status(400).entity("Failed to parse voice request").build();
+		}
+
+		if(textToSpeech.contains(uid)) {
+			logger.info("Request already handled: " + uid);
+			return Response.status(400).entity(null).build();
+		}
+		textToSpeech.add(uid);
+
+		
+		if(voiceReq.getText() == null || voiceReq.getText().length() == 0) {
+			logger.error("Voice request text is null or empty");
+			return Response.status(400).entity("Failed to parse chat request").build();
+		}
+
+		VoiceResponse vr = IOSystem.getActiveContext().getVoiceUtil().getText(voiceReq);
+		
+		return Response.status((vr != null ? 200 : 404)).entity(vr != null ? JSONUtil.exportObject(vr) : null).build();
+	}
+
 	
 	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/{referenceId:[\\(\\)@%\\sa-zA-Z_0-9\\-\\.]+}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response synthesizeVoice(String json, @PathParam("referenceId") String referenceId, @Context HttpServletRequest request){
-		logger.info("Voice .... ");
-		
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
 		
 		String voiceName = "Voice - " + referenceId + ".mp3";

@@ -12,12 +12,13 @@ public class VoiceRequest{
 	private int speaker_id = -1;
 	private byte[] audio_sample = null;
 	private String model_name = "base";
+	private String uid = null;
 	public VoiceRequest() {
 		
 	}
 
-	public VoiceRequest(byte[] audio) {
-		this.audio_sample = audio;
+	public VoiceRequest(byte[] audio_base64) {
+		this.audio_sample = audio_base64;
 	}
 	
 	public VoiceRequest(String engine, String speaker, String text) {
@@ -33,6 +34,14 @@ public class VoiceRequest{
 	}
 	
 
+
+	public String getUid() {
+		return uid;
+	}
+
+	public void setUid(String uid) {
+		this.uid = uid;
+	}
 
 	public byte[] getAudio_sample() {
 		return audio_sample;
@@ -72,10 +81,6 @@ public class VoiceRequest{
 
 	public void setVoiceSampleId(String voiceSampleId) {
 		this.voiceSampleId = voiceSampleId;
-	}
-
-	public VoiceRequest(String text) {
-		this.text = text;
 	}
 	
 	public byte[] getVoice_sample() {

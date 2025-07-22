@@ -37,22 +37,15 @@ public class VoiceUtil {
 	}
 
 	public synchronized VoiceResponse getText(VoiceRequest req){
-		VoiceResponse voice = null;
-		if(serviceType != LLMServiceEnumType.LOCAL) {
-			logger.error("Voice is not supported");
-			return voice;
-		}
-
-		try {
-			voice = ClientUtil.post(VoiceResponse.class, ClientUtil.getResource(serverUrl + "/speech-to-text/"), null, req, MediaType.APPLICATION_JSON_TYPE);
-		}
-		catch(ProcessingException e) {
-			logger.error(e);
-		}
-		return voice;
+		return postVoiceRequest(req, "speech-to-text");
 	}
 	
 	public synchronized VoiceResponse getVoice(VoiceRequest req){
+		return postVoiceRequest(req, "synthesize");
+	}
+	
+	private synchronized VoiceResponse postVoiceRequest(VoiceRequest req, String apiName) {
+
 		VoiceResponse voice = null;
 		if(serviceType != LLMServiceEnumType.LOCAL) {
 			logger.error("Voice is not supported");
@@ -60,7 +53,10 @@ public class VoiceUtil {
 		}
 
 		try {
-			voice = ClientUtil.post(VoiceResponse.class, ClientUtil.getResource(serverUrl + "/synthesize/"), null, req, MediaType.APPLICATION_JSON_TYPE);
+			voice = ClientUtil.post(VoiceResponse.class, ClientUtil.getResource(serverUrl + "/" + apiName + "/"), null, req, MediaType.APPLICATION_JSON_TYPE);
+			if(voice != null) {
+				voice.setUid(req.getUid());
+			}
 
 		}
 		catch(ProcessingException e) {
@@ -69,7 +65,6 @@ public class VoiceUtil {
 		return voice;
 	}
 	
-
 
 	
 }
