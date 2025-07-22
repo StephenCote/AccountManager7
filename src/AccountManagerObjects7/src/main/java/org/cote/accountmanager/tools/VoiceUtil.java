@@ -36,6 +36,22 @@ public class VoiceUtil {
 		return serviceType;
 	}
 
+	public synchronized VoiceResponse getText(VoiceRequest req){
+		VoiceResponse voice = null;
+		if(serviceType != LLMServiceEnumType.LOCAL) {
+			logger.error("Voice is not supported");
+			return voice;
+		}
+
+		try {
+			voice = ClientUtil.post(VoiceResponse.class, ClientUtil.getResource(serverUrl + "/speech-to-text/"), null, req, MediaType.APPLICATION_JSON_TYPE);
+		}
+		catch(ProcessingException e) {
+			logger.error(e);
+		}
+		return voice;
+	}
+	
 	public synchronized VoiceResponse getVoice(VoiceRequest req){
 		VoiceResponse voice = null;
 		if(serviceType != LLMServiceEnumType.LOCAL) {

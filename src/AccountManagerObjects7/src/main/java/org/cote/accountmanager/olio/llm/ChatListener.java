@@ -212,7 +212,7 @@ public class ChatListener implements IChatListener {
 		Chat chat = asyncChats.get(oid);
 		chat.handleResponse(request, response, false);
 
-		if(asyncRequestStop.containsKey(oid)) {
+		if(asyncRequestStop.containsKey(oid) && asyncRequestStop.containsKey(oid) == true) {
 			List<BaseRecord> msgs = request.get("messages");
 			if(msgs != null && msgs.size() > 0) {
 				BaseRecord lastMsg = msgs.get(msgs.size() - 1);

@@ -25,6 +25,11 @@ public class TestVoice extends BaseTest {
 		assertNotNull("Voice response is null", voice);
 		FileUtil.emitFile("./test_piper_voice.mp3", voice.getAudio());
 		
+		VoiceRequest stt = new VoiceRequest(voice.getAudio());
+		VoiceResponse sttResponse = eu.getText(stt);
+		assertNotNull("STT response is null", sttResponse);
+		logger.info(sttResponse.getText());
+		
 		/*
 		logger.info("Testing Xtts ...");
 		VoiceRequest vreq2 = new VoiceRequest("xtts", FileUtil.getFile("./media/English Female American.mp3"), content);

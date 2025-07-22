@@ -10,10 +10,16 @@ public class VoiceRequest{
 	private String voiceSampleId = null;
 	private String voiceProfileId = null;
 	private int speaker_id = -1;
+	private byte[] audio_sample = null;
+	private String model_name = "base";
 	public VoiceRequest() {
 		
 	}
 
+	public VoiceRequest(byte[] audio) {
+		this.audio_sample = audio;
+	}
+	
 	public VoiceRequest(String engine, String speaker, String text) {
 		this.engine = engine;
 		this.text = text;
@@ -27,6 +33,22 @@ public class VoiceRequest{
 	}
 	
 
+
+	public byte[] getAudio_sample() {
+		return audio_sample;
+	}
+
+	public void setAudio_sample(byte[] audio_sample) {
+		this.audio_sample = audio_sample;
+	}
+
+	public String getModel_name() {
+		return model_name;
+	}
+
+	public void setModel_name(String model_name) {
+		this.model_name = model_name;
+	}
 
 	public int getSpeaker_id() {
 		return speaker_id;

@@ -1,14 +1,16 @@
 # main_unified.py
 # Description: A unified FastAPI server for long-form text-to-speech (TTS)
-# that supports both Piper and Coqui XTTS models.
+# and speech-to-text (STT) that supports Piper, Coqui XTTS, and Whisper models.
 #
-# This script sets up a web server with a single endpoint that can:
-# 1. Receive a JSON payload with text and synthesis parameters.
-# 2. Intelligently determine whether to use Piper or XTTS based on the request.
-# 3. For Piper: Use a pre-defined speaker model.
-# 4. For XTTS: Use a default voice or a user-provided voice sample (via base64).
-# 5. Synthesize text into audio chunks, stitch them together, and encode to MP3.
-# 6. Return a JSON response with the base64 encoded audio.
+# This script sets up a web server with endpoints that can:
+# 1. TTS: Receive a JSON payload with text and synthesis parameters.
+# 2. TTS: Intelligently determine whether to use Piper or XTTS based on the request.
+# 3. TTS: For Piper, use a pre-defined speaker model.
+# 4. TTS: For XTTS, use a default voice or a user-provided voice sample (via base64).
+# 5. TTS: Synthesize text into audio chunks, stitch them together, and encode to MP3.
+# 6. STT: Receive a base64 encoded audio stream.
+# 7. STT: Use a Whisper model to perform speech-to-text transcription.
+# 8. Return a JSON response with the appropriate data (base64 audio or transcribed text).
 
 import os
 import torch
@@ -35,17 +37,26 @@ from piper.voice import PiperVoice
 from piper.config import PiperConfig
 import onnxruntime as ort
 
-# XTTS specific imports
+# XTTS and STT specific imports
 from TTS.api import TTS
-
+import whisper
+from whisper.model import Whisper
+import torch.serialization
+from TTS.tts.configs.xtts_config import XttsConfig
+from TTS.tts.models.xtts import XttsAudioConfig
+from TTS.tts.models.xtts import XttsArgs
+from TTS.config.shared_configs import BaseDatasetConfig
 # --- Configuration ---
 PIPER_MODELS_DIR = "./piper_models"
 XTTS_DEFAULT_VOICE = "female_speaker_0.mp3"  # Default voice for XTTS
+
+torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
+
 # Ensure ffmpeg is installed for pydub to work correctly.
 # On Debian/Ubuntu: sudo apt-get install ffmpeg
 # On macOS (with Homebrew): brew install ffmpeg
 
-# --- Pydantic Model for a Unified JSON Request ---
+# --- Pydantic Models for API Requests ---
 class SynthesisRequest(BaseModel):
     text: str
     engine: Literal['piper', 'xtts'] = Field(..., description="The TTS engine to use: 'piper' or 'xtts'.")
@@ -57,9 +68,15 @@ class SynthesisRequest(BaseModel):
     language: str = Field("en", description="Language for XTTS synthesis.")
     speed: float = Field(1.0, description="Playback speed for the synthesized audio.")
 
+class STTRequest(BaseModel):
+    audio_base64: str = Field(..., description="Base64 encoded audio stream (e.g., WAV, MP3).")
+    model_name: Optional[str] = Field("base", description="The whisper model size to use (e.g., 'tiny', 'base', 'small', 'medium', 'large').")
+
+
 # --- Global Variables & Model Caching ---
 piper_model_cache: Dict[str, PiperVoice] = {}
 xtts_model = None
+stt_model_cache: Dict[str, Whisper] = {} # <-- CORRECTED: Cache will hold STT objects
 PIPER_CONFIG_ARGS: Set[str] = set()
 
 # --- Application Lifespan (Startup & Shutdown) ---
@@ -71,6 +88,9 @@ async def lifespan(app: FastAPI):
     - Sets up necessary directories and downloads NLTK data.
     """
     print("--- Server starting up ---")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"Using device: {device}")
+    is_gpu = torch.cuda.is_available()
 
     # --- NLTK Setup ---
     try:
@@ -90,17 +110,29 @@ async def lifespan(app: FastAPI):
 
     # --- XTTS Setup ---
     global xtts_model
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"Using device: {device}")
-    model_name = "tts_models/multilingual/multi-dataset/xtts_v2"
-    print(f"Loading XTTS model: {model_name}...")
-    xtts_model = TTS(model_name).to(device)
+    xtts_model_name = "tts_models/multilingual/multi-dataset/xtts_v2"
+    print(f"Loading XTTS model: {xtts_model_name}...")
+
+    xtts_model = TTS(xtts_model_name, gpu=is_gpu)
     print("--- XTTS model loaded successfully ---")
+
+    # --- Whisper STT Setup ---
+    global stt_model_cache
+    default_stt_model = "base"
+    print(f"Loading default Whisper STT model: '{default_stt_model}'...")
+    # --- CORRECTED MODEL LOADING ---
+    # Use the STT class and the correct model name format
+    model_name = f"openai/whisper-{default_stt_model}"
+    #stt_model_cache[default_stt_model] = STT(model_name=model_name, gpu=is_gpu)
+    stt_model_cache[default_stt_model] = whisper.load_model(default_stt_model)
+    print("--- Whisper STT model loaded successfully ---")
+
 
     yield
 
     print("--- Server shutting down ---")
     piper_model_cache.clear()
+    stt_model_cache.clear()
     xtts_model = None
 
 # --- FastAPI App Initialization ---
@@ -153,7 +185,6 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
     
     synthesis_kwargs = {}
     if request.speaker_id is not None and request.speaker_id >= 0:
-        # Check if the model is actually a multi-speaker model
         if not voice_model.config.num_speakers > 1:
             raise ValueError(f"Model '{request.speaker}' is not a multi-speaker model, but a 'speaker_id' '{request.speaker_id}' was provided.")
         synthesis_kwargs['speaker_id'] = request.speaker_id
@@ -162,19 +193,11 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
     sentences = nltk.sent_tokenize(request.text)
     audio_segments = []
     print(f"Synthesizing {len(sentences)} sentences with Piper...")
-    for sentence in sentences:
-        if not sentence.strip(): continue
-        with io.BytesIO() as wav_io:
-            with wave.open(wav_io, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(voice_model.config.sample_rate)
-                voice_model.synthesize_wav(sentence, wf, **synthesis_kwargs)
-                #samples = voice_model.synthesize(sentence, speaker_id=request.speaker_id if request.speaker_id is not None and request.speaker_id >= 0 and voice_model.config.num_speakers > 1 else None)
-                wf.writeframes(samples.tobytes())
+    with io.BytesIO() as wav_io:
+        voice_model.synthesize(request.text, wav_io, **synthesis_kwargs)
+        wav_io.seek(0)
+        audio_segments.append(AudioSegment.from_wav(wav_io))
 
-            wav_io.seek(0)
-            audio_segments.append(AudioSegment.from_wav(wav_io))
     if not audio_segments:
          raise ValueError("Input text did not produce any valid audio segments. Please provide meaningful text.")
     combined_audio = sum(audio_segments, AudioSegment.empty())
@@ -192,11 +215,8 @@ def synthesize_with_xtts(request: SynthesisRequest) -> bytes:
         if request.voice_sample:
             try:
                 audio_bytes = base64.b64decode(request.voice_sample)
-                # --- MODIFICATION START ---
-                # Generate a unique filename to prevent race conditions
                 unique_filename = f"{uuid.uuid4()}.wav"
                 speaker_wav_path = os.path.join(temp_dir, unique_filename)
-                # --- MODIFICATION END ---
                 with open(speaker_wav_path, "wb") as f:
                     f.write(audio_bytes)
                 print(f"Using provided base64 voice sample for XTTS, saved to {unique_filename}.")
@@ -208,30 +228,67 @@ def synthesize_with_xtts(request: SynthesisRequest) -> bytes:
             speaker_wav_path = XTTS_DEFAULT_VOICE
             print(f"Using default XTTS voice: {XTTS_DEFAULT_VOICE}")
 
-        sentences = nltk.sent_tokenize(request.text)
-        audio_segments = []
-        print(f"Synthesizing {len(sentences)} sentences with XTTS...")
+        # The tts_to_file function now handles sentence splitting internally.
+        output_file = os.path.join(temp_dir, "output.wav")
+        print(f"Synthesizing text with XTTS...")
+        xtts_model.tts_to_file(
+            text=request.text,
+            speaker_wav=speaker_wav_path,
+            language=request.language,
+            speed=request.speed,
+            file_path=output_file
+        )
 
-        for i, sentence in enumerate(sentences):
-            if not sentence.strip(): continue
-            chunk_file = os.path.join(temp_dir, f"chunk_{i}.wav")
-            xtts_model.tts_to_file(
-                text=sentence,
-                speaker_wav=speaker_wav_path,
-                language=request.language,
-                speed=request.speed,
-                file_path=chunk_file
-            )
-            audio_segments.append(AudioSegment.from_wav(chunk_file))
+        if not os.path.exists(output_file):
+            raise ValueError("Input text did not produce any valid audio. Please provide meaningful text.")
         
-        if not audio_segments:
-             raise ValueError("Input text did not produce any valid audio segments. Please provide meaningful text.")
-        combined_audio = sum(audio_segments, AudioSegment.empty())
+        combined_audio = AudioSegment.from_wav(output_file)
         with io.BytesIO() as buffer:
             combined_audio.export(buffer, format="mp3", bitrate="320k")
             return buffer.getvalue()
 
-# --- Unified API Endpoint ---
+
+# --- Whisper Transcription Logic ---
+def transcribe_with_whisper(request: STTRequest) -> str:
+    """
+    Handles the speech-to-text process using a Whisper model.
+    """
+    global stt_model_cache
+    model_key = request.model_name
+    
+    stt_model = stt_model_cache.get(model_key)
+    if not stt_model:
+        print(f"Whisper model '{model_key}' not in cache. Loading now...")
+        try:
+            is_gpu = torch.cuda.is_available()
+            model_name = f"openai/whisper-{model_key}"
+            # --- CORRECTED MODEL LOADING ---
+            stt_model = STT(model_name=model_name, gpu=is_gpu)
+            stt_model_cache[model_key] = stt_model
+            print(f"--- Whisper STT model '{model_key}' loaded successfully ---")
+        except Exception as e:
+            raise RuntimeError(f"Failed to load Whisper model '{model_key}'. It may be an invalid model size. Error: {e}")
+
+    try:
+        audio_bytes = base64.b64decode(request.audio_base64)
+    except Exception:
+        raise ValueError("Invalid base64 string for 'audio_base64'.")
+
+    with tempfile.NamedTemporaryFile(delete=False) as temp_audio_file:
+        temp_audio_file.write(audio_bytes)
+        temp_audio_path = temp_audio_file.name
+
+    print(f"Transcribing audio with Whisper model '{model_key}'...")
+    # --- CORRECTED TRANSCRIPTION CALL ---
+    #transcribed_text = stt_model.stt(temp_audio_path)
+    result = stt_model.transcribe(temp_audio_path)
+    transcribed_text = result['text']
+    os.remove(temp_audio_path) # Clean up the temporary file
+
+    print("Transcription successful.")
+    return transcribed_text
+
+# --- API Endpoints ---
 @app.post("/synthesize/")
 async def synthesize_speech(request: SynthesisRequest):
     """
@@ -267,16 +324,44 @@ async def synthesize_speech(request: SynthesisRequest):
         print(f"An internal error occurred: {e}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
+@app.post("/speech-to-text/")
+async def speech_to_text(request: STTRequest):
+    """
+    Endpoint to perform speech-to-text using Whisper.
+    Accepts a base64 encoded audio stream and returns the transcribed text.
+    """
+    if not request.audio_base64.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The 'audio_base64' field cannot be empty."
+        )
+    
+    try:
+        text_result = await run_in_threadpool(transcribe_with_whisper, request)
+        return JSONResponse(content={"text": text_result})
+    except (ValueError, RuntimeError) as e:
+        print(f"Client or Runtime Error: {e}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        print(f"An internal error occurred during STT: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="An internal error occurred during transcription.")
+
+
 # --- Root Endpoint for Health Check ---
 @app.get("/")
 async def root():
     return {
-        "message": "Unified TTS Server (Piper & XTTS) is running.",
+        "message": "Unified TTS and STT Server is running.",
         "docs_url": "/docs",
         "synthesize_endpoint": {
             "path": "/synthesize/",
             "method": "POST",
             "body": SynthesisRequest.model_json_schema()
+        },
+        "speech_to_text_endpoint": {
+            "path": "/speech-to-text/",
+            "method": "POST",
+            "body": STTRequest.model_json_schema()
         }
     }
 

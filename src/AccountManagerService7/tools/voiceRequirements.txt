@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+coqui-tts[all]
+piper-tts
+pydub
+nltk

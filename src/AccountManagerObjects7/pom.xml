@@ -71,9 +71,10 @@
 					<excludes>
 						<!--
 							
-						<exclude>**/TestChatAsync.java</exclude>
-						-->
 						<exclude>**/TestVoice.java</exclude>
+						-->
+						<exclude>**/TestChatAsync.java</exclude>
+						
 						<exclude>**/TestChat.java</exclude>
 						<exclude>**/TestToken.java</exclude>
 						<exclude>**/TestStartup.java</exclude>
