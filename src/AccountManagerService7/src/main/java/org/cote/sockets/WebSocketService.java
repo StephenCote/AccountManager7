@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -61,9 +64,18 @@ import jakarta.websocket.RemoteEndpoint;
 import jakarta.websocket.Session;
 import jakarta.websocket.server.ServerEndpoint;
 
+import jakarta.websocket.ContainerProvider;
+import jakarta.websocket.DeploymentException;
+import jakarta.websocket.WebSocketContainer;
+import java.net.URI;
+import java.nio.ByteBuffer;
+
 @ServerEndpoint(value = "/wss", configurator = WebSocketSecurityConfigurator.class)
 public class WebSocketService  extends HttpServlet implements IChatHandler {
 	private static final long serialVersionUID = 1L;
+	
+	// Map to hold connections from this Java service to the Python service
+	private static Map<Session, jakarta.websocket.Session> pythonProxySessions = new ConcurrentHashMap<>();
 
 	public static final Logger logger = LogManager.getLogger(WebSocketService.class);
 
@@ -76,6 +88,22 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		listener = new ChatListener();
 		listener.addChatHandler(this);
 	}
+	
+    private static final ExecutorService asyncExecutor = Executors.newCachedThreadPool();
+
+    // Add a shutdown hook for the executor
+    public static void shutdownExecutor() {
+        logger.info("Shutting down async executor service...");
+        asyncExecutor.shutdown();
+        try {
+            if (!asyncExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
+                asyncExecutor.shutdownNow();
+            }
+        } catch (InterruptedException ie) {
+            asyncExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+    }
 	
 	public static List<Session> activeSessions(){
 		return new ArrayList<>(sessions);
@@ -138,6 +166,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 
 	@OnMessage
 	public void onMessage(String txt, Session session) throws IOException {
+		logger.info("Received message from " + session.getId() + ": " + txt);
 		BaseRecord user = getRegisterUser(session);
 
 		SocketMessage msg = new SocketMessage(JSONUtil.importObject(txt, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()));
@@ -177,7 +206,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 					
 				BaseRecord targUser = IOSystem.getActiveContext().getRecordUtil().getRecordById(null, recType, recId);
 				if (targUser != null) {
-					newMessage(user, targUser, message.get(FieldNames.FIELD_NAME), new String(message.get(FieldNames.FIELD_DATA), StandardCharsets.UTF_8), user);
+					newMessage(user, targUser, message.get("messageId"), message.get(FieldNames.FIELD_NAME), new String(message.get(FieldNames.FIELD_DATA), StandardCharsets.UTF_8), user);
 					if(!targUser.get(FieldNames.FIELD_OBJECT_ID).equals(user.get(FieldNames.FIELD_OBJECT_ID)) && urnToSession.containsKey(targUser.get(FieldNames.FIELD_URN))) {
 						logger.info("Let active session for " + targUser.get(FieldNames.FIELD_URN) + " know about their message");
 						sendMessage(urnToSession.get(targUser.get(FieldNames.FIELD_URN)));
@@ -192,8 +221,17 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			}
 			else {
 				BaseRecord smsg = msg.getMessage();
-				if(smsg != null && "chat".equals(smsg.get(FieldNames.FIELD_NAME))) {
-					handleChatRequest(session, user, msg);
+				if(smsg != null){
+					if("chat".equals(smsg.get(FieldNames.FIELD_NAME))) {
+					
+						handleChatRequest(session, user, msg);
+					}
+					else if("audio".equals(smsg.get(FieldNames.FIELD_NAME))) {
+						handleAudioStream(session, user, msg);
+					}
+					else {
+						logger.warn("Unknown message type: " + smsg.get(FieldNames.FIELD_NAME));
+					}
 				}
 				else {
 					logger.warn("Handle message with no recipient");
@@ -262,15 +300,15 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		}
 	}
 	
-	private BaseRecord newMessage(Session session, String messageName, String messageContent) {
+	private BaseRecord newMessage(Session session, String messageId, String messageName, String messageContent) {
 		BaseRecord user = null;
 		if(!userMap.containsKey(session.getId())) {
 			return null;
 		}
 		user = userMap.get(session.getId());
-		return newMessage(null, user, messageName, messageContent, null);
+		return newMessage(null, user, messageId, messageName, messageContent, null);
 	}
-	private BaseRecord newMessage(BaseRecord sender, BaseRecord recipient, String messageName, String messageContent, BaseRecord ref) {
+	private BaseRecord newMessage(BaseRecord sender, BaseRecord recipient, String messageId, String messageName, String messageContent, BaseRecord ref) {
 
 		List<BaseRecord> msgs = new ArrayList<>();
 		try {
@@ -289,6 +327,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 				msg.set("senderId", sender.get(FieldNames.FIELD_ID));
 				msg.set("senderType", sender.getSchema());
 			}
+			msg.set("messageId", messageId);
 			msg.set(FieldNames.FIELD_DATA, messageContent.getBytes(StandardCharsets.UTF_8));
 			msg.set(FieldNames.FIELD_VALUE_TYPE, ValueEnumType.STRING);
 			msg.set(FieldNames.FIELD_SPOOL_STATUS, SpoolStatusEnumType.SPOOLED);
@@ -432,6 +471,57 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		chirpUser(user, new String[] {"chatStart", request.get(FieldNames.FIELD_OBJECT_ID), request.toFullString()});
 	}
 
+	// This method will handle forwarding audio to Python and receiving transcripts
+	private void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
+		asyncExecutor.submit(() -> {
+			logger.info("Handling audio stream for user: " + user.get(FieldNames.FIELD_URN));
+			BaseRecord smsg = msg.getMessage();
+			if (smsg == null) {
+				logger.error("Chat request message is null");
+				return;
+			}
+			byte[] audioData = smsg.get("data");
+			
+			Session pythonSession = pythonProxySessions.get(clientSession);
+	
+		    // 1. Establish connection to Python if it doesn't exist for this client
+		    if (pythonSession == null || !pythonSession.isOpen()) {
+		        try {
+		        	logger.info("Connecting to Python WebSocket for audio processing");
+		            WebSocketContainer container = ContainerProvider.getWebSocketContainer();
+		            URI pythonWsUri = new URI("ws://localhost:8001/ws/transcribe");
+		            // Create a new client endpoint to handle messages from Python
+		            jakarta.websocket.Endpoint endpoint = new jakarta.websocket.Endpoint() {
+		                @Override
+		                public void onOpen(jakarta.websocket.Session session, jakarta.websocket.EndpointConfig config) {
+		                    // When Python sends a transcript, add a message handler
+		                    session.addMessageHandler(String.class, message -> {
+		                        // We received a transcript from Python, e.g., {"transcript": "Hello"}
+		                        // Now, "chirp" it back to the original browser client
+		                        logger.info("Received from Python: " + message);
+		                        chirpUser(user, new String[] {"audioUpdate", message});
+		                    });
+		                }
+		            };
+	
+		            pythonSession = container.connectToServer(endpoint, pythonWsUri);
+		            pythonProxySessions.put(clientSession, pythonSession);
+		            logger.info("Connected to Python WebSocket for session: " + clientSession.getId());
+	
+		        } catch (Exception e) {
+		            logger.error("Failed to connect to Python WebSocket", e);
+		            return;
+		        }
+		    }
+			logger.info("Forwarding audio data to Python WebSocket for session: " + clientSession.getId());
+		    // 2. Forward the audio chunk to the Python service
+		    try {
+		        pythonSession.getBasicRemote().sendBinary(ByteBuffer.wrap(audioData));
+		    } catch (Exception e) {
+		        logger.error("Failed to forward audio to Python", e);
+		    }
+		});
+	}
 		
 }
 
@@ -473,6 +563,9 @@ class SocketMessage extends LooseRecord {
 	public List<String> getChirps(){
 		return this.get("chirps");
 	}
+
+	
+
 	
 }
 

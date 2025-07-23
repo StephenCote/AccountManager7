@@ -190,8 +190,8 @@ public class VoiceService {
 		textToSpeech.add(uid);
 
 		
-		if(voiceReq.getText() == null || voiceReq.getText().length() == 0) {
-			logger.error("Voice request text is null or empty");
+		if(voiceReq.getAudio_sample() == null || voiceReq.getAudio_sample().length == 0) {
+			logger.error("Audio sample is null or empty");
 			return Response.status(400).entity("Failed to parse chat request").build();
 		}
 

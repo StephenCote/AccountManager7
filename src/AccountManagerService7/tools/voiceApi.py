@@ -27,7 +27,7 @@ from contextlib import asynccontextmanager
 from pydub import AudioSegment
 from typing import Dict, Set, Optional, Literal
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status, WebSocket
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -261,7 +261,89 @@ def synthesize_with_xtts(request: SynthesisRequest) -> bytes:
             combined_audio.export(buffer, format="mp3", bitrate="320k")
             return buffer.getvalue()
 
+def transcribe_audio_buffer(audio_buffer: io.BytesIO, stt_model: Whisper) -> str:
+    """
+    Handles speech-to-text from an in-memory audio buffer using a Whisper model.
+    The buffer should contain WAV-formatted data.
+    """
+    # The transcribe function can directly handle a numpy array, but to ensure
+    # format consistency, we can read it with pydub first.
+    audio_buffer.seek(0)
+    audio_segment = AudioSegment.from_file(audio_buffer)
 
+    # Export to a temporary file for Whisper, as it's most reliable with file paths
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
+        temp_audio_path = temp_audio_file.name
+    
+    try:
+        audio_segment.export(temp_audio_path, format="wav")
+        result = stt_model.transcribe(temp_audio_path, fp16=torch.cuda.is_available())
+        transcribed_text = result.get('text', '')
+    finally:
+        if os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
+
+    return transcribed_text
+
+@app.websocket("/ws/transcribe")
+async def websocket_transcribe(websocket: WebSocket):
+    """
+    Handles live audio streaming by accumulating chunks into a single
+    buffer before processing to ensure a valid media stream.
+    """
+    await websocket.accept()
+    print("WebSocket client connected. Ready to accumulate audio chunks.")
+
+    model_key = "base"
+    stt_model = stt_model_cache.get(model_key)
+    if not stt_model:
+        stt_model = whisper.load_model(model_key)
+        stt_model_cache[model_key] = stt_model
+
+    # Create a single, long-lived buffer for this client's entire session
+    session_audio_buffer = io.BytesIO()
+
+    try:
+        while True:
+            # Receive a raw audio chunk (WebM fragment)
+            data = await websocket.receive_bytes()
+            
+            # Append the new chunk to our session-long buffer
+            session_audio_buffer.write(data)
+            
+            # --- This is the key change ---
+            # Instead of transcribing immediately, we wait until we have a
+            # meaningful amount of audio. This ensures the buffer is a valid,
+            # continuous WebM stream that pydub can process.
+            #
+            # For a simple pseudo-live approach, you can transcribe the whole
+            # buffer every time, which gets progressively slower. A better way
+            # is to do it periodically. Let's send an update every ~5 seconds
+            # assuming 2 chunks per second from the client.
+            
+            # To prevent transcribing an empty buffer on connection
+            if session_audio_buffer.tell() > 0:
+            
+                # Create a temporary copy for transcription so we don't
+                # interfere with the main buffer being written to.
+                temp_buffer_for_transcription = io.BytesIO(session_audio_buffer.getvalue())
+
+                # Run transcription in a threadpool
+                text_result = await run_in_threadpool(transcribe_audio_buffer, temp_buffer_for_transcription, stt_model)
+                
+                # Send the latest full transcript back to the client
+                if text_result.strip():
+                    await websocket.send_json({"transcript": text_result})
+
+    except websockets.exceptions.ConnectionClosedOK:
+        print("Client disconnected gracefully.")
+    except Exception as e:
+        print(f"Error in WebSocket session: {e}")
+    finally:
+        # Clean up the buffer when the session ends
+        session_audio_buffer.close()
+        print("WebSocket session finished and buffer closed.")
+        
 # --- Whisper Transcription Logic ---
 def transcribe_with_whisper(request: STTRequest) -> str:
     """
@@ -274,10 +356,7 @@ def transcribe_with_whisper(request: STTRequest) -> str:
     if not stt_model:
         print(f"Whisper model '{model_key}' not in cache. Loading now...")
         try:
-            is_gpu = torch.cuda.is_available()
-            model_name = f"openai/whisper-{model_key}"
-            # --- CORRECTED MODEL LOADING ---
-            stt_model = STT(model_name=model_name, gpu=is_gpu)
+            stt_model = whisper.load_model(model_key)
             stt_model_cache[model_key] = stt_model
             print(f"--- Whisper STT model '{model_key}' loaded successfully ---")
         except Exception as e:
@@ -286,18 +365,30 @@ def transcribe_with_whisper(request: STTRequest) -> str:
     try:
         audio_bytes = base64.b64decode(request.audio_sample)
     except Exception:
-        raise ValueError("Invalid base64 string for 'audio_base64'.")
+        raise ValueError("Invalid base64 string for 'audio_sample'.")
 
-    with tempfile.NamedTemporaryFile(delete=False) as temp_audio_file:
-        temp_audio_file.write(audio_bytes)
+    # Use pydub to read the in-memory audio bytes and ensure format consistency
+    try:
+        audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
+    except Exception as e:
+        raise ValueError(f"Could not read audio data. Ensure it's a valid format (e.g., MP3, WAV, M4A). Error: {e}")
+
+    # Create a temporary file path for the standardized WAV file
+    temp_audio_path = None
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_audio_file:
         temp_audio_path = temp_audio_file.name
-
-    print(f"Transcribing audio with Whisper model '{model_key}'...")
-    # --- CORRECTED TRANSCRIPTION CALL ---
-    #transcribed_text = stt_model.stt(temp_audio_path)
-    result = stt_model.transcribe(temp_audio_path)
-    transcribed_text = result['text']
-    os.remove(temp_audio_path) # Clean up the temporary file
+    
+    try:
+        # Export the audio to the temporary file in WAV format
+        audio_segment.export(temp_audio_path, format="wav")
+        
+        print(f"Transcribing standardized WAV file with Whisper model '{model_key}'...")
+        result = stt_model.transcribe(temp_audio_path, fp16=torch.cuda.is_available())
+        transcribed_text = result['text']
+    finally:
+        # Ensure the temporary file is cleaned up
+        if temp_audio_path and os.path.exists(temp_audio_path):
+            os.remove(temp_audio_path)
 
     print("Transcription successful.")
     return transcribed_text

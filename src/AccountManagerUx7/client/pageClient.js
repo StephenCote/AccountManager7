@@ -170,14 +170,20 @@
         chatAvatar,
         normalizePath,
         chatStream: undefined,
-        blobToBase64: (blob)=>{
-            return new Promise((resolve, _) => {
+
+       blobToBase64: (blob) => {
+            return new Promise((resolve, reject) => {
                 const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(blob);
+                reader.onloadend = () => {
+                    const base64data = reader.result.split(',')[1]; // Remove data:audio/webm;codecs=opus;base64,
+                    resolve(base64data);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);  // <- key difference!
             });
         }
     };
+
 
     function normalizePath(path, grp){
       let opath;
@@ -438,29 +444,35 @@
       }
   
       async function wssSend(name, message, recipient, schema) {
-        let recipientId = null;
-        if(typeof recipient == "number") recipientId = recipient;
-        else if(typeof recipient == "string"){
-            let obj = await promiseOpenObjectByName("USER", null, recipient);
-            if(obj){
-                recipientId = obj.id;
+        try{
+            let recipientId = null;
+            if(typeof recipient == "number") recipientId = recipient;
+            else if(typeof recipient == "string"){
+                let obj = await promiseOpenObjectByName("USER", null, recipient);
+                if(obj){
+                    recipientId = obj.id;
+                }
             }
-        }
-        if(recipient && !recipientId){
-            console.warn("Invalid recipientId (" + recipientId + ") for recipient " + recipient);
-            return;
-        }
-        let msg = {
-            data : uwm.base64Encode(message),
-            modelType: schema,
-            name : name,
-            // userId: (page?.user?.objectId),
-            recipientId,
-            recipientType: (recipientId != null ? "USER" : "UNKNOWN")
+            if(recipient && !recipientId){
+                console.warn("Invalid recipientId (" + recipientId + ") for recipient " + recipient);
+                return;
+            }
+            let msg = {
+                data : uwm.base64Encode(message),
+                modelType: schema,
+                messageId: page.uid(),
+                name : name,
+                // userId: (page?.user?.objectId),
+                recipientId,
+                recipientType: (recipientId != null ? "USER" : "UNKNOWN")
 
-        };
-        return webSocket.send(JSON.stringify({schema: "message.socketMessage", token: page?.token, message: msg}));
-      }
+            };
+            webSocket.send(JSON.stringify({schema: "message.socketMessage", token: page?.token, message: msg}));
+        }
+        catch(e){
+            console.error(e);
+        }
+    }
  
 
     async function resetCredential(obj, newCredential, currentCredential){

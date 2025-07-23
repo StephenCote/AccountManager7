@@ -102,6 +102,11 @@
 			"name": "modelType",
 			"type": "string",
 			"maxLength": 32
+		},
+		{
+		    "name": "messageId",
+		    "type": "string",
+		    "maxLength": 64
 		}
 	]
 }

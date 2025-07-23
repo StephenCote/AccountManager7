@@ -66,9 +66,10 @@
                         let analyzer = audioCtx.createAnalyser();
                         analyzer.fftSize = 2048;
                         recorder.analyzer = analyzer;
-                        console.log(analyzer)
+                        /// console.log(analyzer)
                         let source = audioCtx.createMediaStreamSource(stream);
                         source.connect(analyzer);
+                        console.log(source.context.destination);
 
                         let props = {
                             source: analyzer,
@@ -88,7 +89,17 @@
                         recorder.stream = stream;
                         let chunks = [];
                         const mediaRecorder = new MediaRecorder(stream);
-                        
+                        let chunkStream = [];
+                        let shifting = false;
+                        async function shiftChunkStream(){
+                            if(shifting || !chunkStream.length) return;
+                            console.log("Start shift")
+                            shifting = true;
+                            let dat = await page.blobToBase64(chunkStream.shift());
+                            page.wss.send("audio", dat, undefined, undefined);
+                            console.log("End shift");
+                            shifting = false;
+                        }
                         mediaRecorder.ondataavailable = async event => {
                             
                             if (event.data.size > 0) {
@@ -98,9 +109,10 @@
                                 
                                 if (!isSilent) {
                                     chunks.push(event.data);
-                                    console.log(event.data);
-                                    extractText(page.blobToBase64(event.data));
-                                    console.log('Status: Recording (Sound Detected)');
+                                    chunkStream.push(event.data);
+                                    shiftChunkStream();
+                                    //let dat = await page.blobToBase64(event.data);
+                                    //page.wss.send("audio", Base64.decode(event.data), undefined, undefined);
                                 } else {
                                     // console.log('Status: Recording (Silence Detected)');
                                 }
@@ -112,13 +124,18 @@
                         };
 
                         mediaRecorder.onstop = () => {
-                            const audioBlob = new Blob(chunks, { type: 'audio/webm' });
-                            // Do something with the recorded audio, e.g., save it or play it back
-                            const audioUrl = URL.createObjectURL(audioBlob);
-                            console.log('Recorded audio URL:', audioUrl);
+                            if(chunks.length == 0){
+                                return;
+                            }
+                            let tchunks = chunks;
+      
+                            const audioBlob = new Blob(tchunks, { type: 'audio/webm' });
+                            /// complete?
+                            shiftChunkStream();
+
                         };
                         recorder.recorder = mediaRecorder;
-                         mediaRecorder.start(1000);
+                         mediaRecorder.start(2000);
 
 
                     }).catch(err => {
@@ -151,10 +168,11 @@
         }
     }
 
-    function extractText(data){
-        let vprops = {"audio_sample": Base64.encode(data), "uid": page.uid()};
+    function extractText(dataB64){
+        window.dbgBase64 = dataB64;
+        let vprops = {"audio_sample": dataB64, "uid": page.uid()};
             m.request({method: 'POST', url: g_application_path + "/rest/voice/tts", withCredentials: true, body: vprops}).then((d) => {
-                console.log(d);
+                console.log("Received", d);
                 }).catch((x)=>{
                 page.toast("error", "Failed to extract text from audio - is the audio service running?");
             });
@@ -266,6 +284,7 @@
         cleanup,
         recordButton,
         recordWithVisualizer,
+        extractText,
         recording: ()=> recording,
         component: {
             
