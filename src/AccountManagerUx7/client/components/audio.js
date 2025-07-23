@@ -95,7 +95,18 @@
                             if(shifting || !chunkStream.length) return;
                             console.log("Start shift")
                             shifting = true;
-                            let dat = await page.blobToBase64(chunkStream.shift());
+                            let blob = chunkStream.shift();
+                            let dat = await page.blobToBase64(blob);
+                            // new Uint8Array(await blob.arrayBuffer());//
+                            /*
+                            let binaryString = '';
+                            dat.forEach(byte => {
+                                binaryString += String.fromCharCode(byte);
+                            });
+                            console.log(binaryString);
+                            */
+                           //console.log(dat);
+                            window.dbgBlob = blob;
                             page.wss.send("audio", dat, undefined, undefined);
                             console.log("End shift");
                             shifting = false;

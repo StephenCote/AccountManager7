@@ -473,7 +473,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 
 	// This method will handle forwarding audio to Python and receiving transcripts
 	private void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
-		asyncExecutor.submit(() -> {
+		//asyncExecutor.submit(() -> {
 			logger.info("Handling audio stream for user: " + user.get(FieldNames.FIELD_URN));
 			BaseRecord smsg = msg.getMessage();
 			if (smsg == null) {
@@ -481,7 +481,13 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 				return;
 			}
 			byte[] audioData = smsg.get("data");
-			
+			if(audioData == null || audioData.length == 0) {
+				logger.error("Audio data is null or empty");
+				return;
+			}
+	
+		    // Check if we have an existing Python WebSocket session for this client
+		    jakarta.websocket.
 			Session pythonSession = pythonProxySessions.get(clientSession);
 	
 		    // 1. Establish connection to Python if it doesn't exist for this client
@@ -520,7 +526,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		    } catch (Exception e) {
 		        logger.error("Failed to forward audio to Python", e);
 		    }
-		});
+		//});
 	}
 		
 }
