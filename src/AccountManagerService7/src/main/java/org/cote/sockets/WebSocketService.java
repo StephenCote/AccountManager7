@@ -77,7 +77,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 	private static final long serialVersionUID = 1L;
 	
 	public static final Logger logger = LogManager.getLogger(WebSocketService.class);
-	private static Map<Session, jakarta.websocket.Session> pythonProxySessions = new ConcurrentHashMap<>();
+	private static Map<Session, Session> pythonProxySessions = new ConcurrentHashMap<>();
 	private static Map<String, BaseRecord> userMap = Collections.synchronizedMap(new HashMap<>());
 	private static Map<String, Session> urnToSession = Collections.synchronizedMap(new HashMap<>());
 	private static Set<Session> sessions = Collections.synchronizedSet(new HashSet<>());
@@ -87,7 +87,18 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		listener = new ChatListener();
 		listener.addChatHandler(this);
 	}
-	
+	public static void closeProxySessions() {
+		for(Session session : pythonProxySessions.values()) {
+			if(session != null && session.isOpen()) {
+				try {
+					session.close();
+				} catch (IOException e) {
+					logger.error("Failed to close Python WebSocket session", e);
+				}
+			}
+		}
+		pythonProxySessions.clear();
+	}
 	public static List<Session> activeSessions(){
 		return new ArrayList<>(sessions);
 	}
@@ -251,6 +262,17 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 		//newMessage(session, "Hangup the phone", "Session ended");
 		if(userMap.containsKey(session.getId())){
 			cleanupUserSession(userMap.get(session.getId()));
+		}
+		if(pythonProxySessions.containsKey(session)) {
+			Session pythonSession = pythonProxySessions.get(session);
+			if(pythonSession != null && pythonSession.isOpen()) {
+				try {
+					pythonSession.close();
+				} catch (IOException e) {
+					logger.error("Failed to close Python WebSocket session", e);
+				}
+			}
+			pythonProxySessions.remove(session);
 		}
 		sessions.remove(session);
 
@@ -476,9 +498,11 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 
 	        if (pythonSession == null || !pythonSession.isOpen()) {
 	            try {
-	                logger.info("Connecting to Python WebSocket for audio processing...");
+	            	String url = IOSystem.getActiveContext().getVoiceUtil().getServerSTTUrl();
+	            	url = url.replace("http://", "").replace("https://", "");
+	                logger.info("Connecting to Python WebSocket " + url + " for audio processing...");
 	                WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-	                URI pythonWsUri = new URI("ws://localhost:8001/ws/transcribe");
+	                URI pythonWsUri = new URI("ws://" + url  + "/ws/transcribe");
 
 	                AudioClientEndpoint endpoint = new AudioClientEndpoint(user);
 
@@ -494,7 +518,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 	        }
 
 	        // 2. Forward the audio chunk to the Python service
-	        logger.info("Forwarding audio data to Python WebSocket for session: " + clientSession.getId());
+	        logger.info("Forwarding audio data to Python WebSocket for session: " + clientSession.getId() + " / " + audioData.length + " bytes");
 	        try {
 	            pythonSession.getBasicRemote().sendBinary(ByteBuffer.wrap(audioData));
 	        } catch (Exception e) {

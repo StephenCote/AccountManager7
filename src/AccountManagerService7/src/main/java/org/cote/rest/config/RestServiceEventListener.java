@@ -193,7 +193,7 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			if (authToken != null && authToken.length() == 0) authToken = null;
 			ioContext.setVoiceUtil(new VoiceUtil(
 					LLMServiceEnumType.valueOf(context.getInitParameter("voice.type").toUpperCase()),
-					context.getInitParameter("voice.server"), authToken));
+					context.getInitParameter("voice.tts.server"), context.getInitParameter("voice.stt.server"), authToken));
 			
 			boolean testVector = false;
 			for (String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {

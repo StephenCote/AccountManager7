@@ -145,6 +145,7 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
     """
     Handles the synthesis process for the Piper TTS engine.
     """
+    print(f"Received request for TTS engine: '{request.engine}'")
     if not request.speaker:
         raise ValueError("A 'speaker_model' must be provided for the Piper engine.")
 
@@ -290,11 +291,11 @@ def transcribe_audio_buffer(audio_buffer: io.BytesIO, stt_model: Whisper) -> str
 @app.websocket("/ws/transcribe")
 async def websocket_transcribe(websocket: WebSocket):
     """
-    Handles live audio streaming by accumulating chunks into a single
-    buffer before processing to ensure a valid media stream.
+    Handles live audio streaming by accumulating chunks into a valid audio stream,
+    transcribing the full stream for context, and sending only the new text back.
     """
     await websocket.accept()
-    print("WebSocket client connected. Ready to accumulate audio chunks.")
+    print("WebSocket client connected. Ready for stateful transcription.")
 
     model_key = "base"
     stt_model = stt_model_cache.get(model_key)
@@ -302,40 +303,45 @@ async def websocket_transcribe(websocket: WebSocket):
         stt_model = whisper.load_model(model_key)
         stt_model_cache[model_key] = stt_model
 
-    # Create a single, long-lived buffer for this client's entire session
+    # Buffer to reconstruct the audio stream for the duration of the session
     session_audio_buffer = io.BytesIO()
+    # Variable to store the last sent transcript to calculate the "diff"
+    last_sent_transcript = ""
 
     try:
         while True:
-            # Receive a raw audio chunk (WebM fragment)
+            # Receive a raw audio chunk (e.g., a WebM fragment)
             data = await websocket.receive_bytes()
             
-            # Append the new chunk to our session-long buffer
+            # Append the new chunk to our session-long buffer to reconstruct the stream
             session_audio_buffer.write(data)
             
-            # --- This is the key change ---
-            # Instead of transcribing immediately, we wait until we have a
-            # meaningful amount of audio. This ensures the buffer is a valid,
-            # continuous WebM stream that pydub can process.
-            #
-            # For a simple pseudo-live approach, you can transcribe the whole
-            # buffer every time, which gets progressively slower. A better way
-            # is to do it periodically. Let's send an update every ~5 seconds
-            # assuming 2 chunks per second from the client.
+            # For transcription, we need a readable copy of the buffer.
+            # We create it from the entire accumulated value.
+            transcription_buffer = io.BytesIO(session_audio_buffer.getvalue())
             
-            # To prevent transcribing an empty buffer on connection
-            if session_audio_buffer.tell() > 0:
-            
-                # Create a temporary copy for transcription so we don't
-                # interfere with the main buffer being written to.
-                temp_buffer_for_transcription = io.BytesIO(session_audio_buffer.getvalue())
+            # Ensure the buffer is not empty before processing
+            if transcription_buffer.getbuffer().nbytes == 0:
+                continue
 
-                # Run transcription in a threadpool
-                text_result = await run_in_threadpool(transcribe_audio_buffer, temp_buffer_for_transcription, stt_model)
+            # Run transcription on the entire buffer in a threadpool for accuracy
+            full_transcript = await run_in_threadpool(
+                transcribe_audio_buffer, transcription_buffer, stt_model
+            )
+            
+            # --- This is the key logic for sending only new text ---
+            new_text = ""
+            if full_transcript and full_transcript.strip():
+                # Check if the new transcript is longer than the last one
+                if len(full_transcript) > len(last_sent_transcript):
+                    # Extract the newly added text portion
+                    new_text = full_transcript[len(last_sent_transcript):].strip()
                 
-                # Send the latest full transcript back to the client
-                if text_result.strip():
-                    await websocket.send_json({"text": text_result})
+            # If there is new, meaningful text, send it to the client
+            if new_text:
+                await websocket.send_json({"text": new_text})
+                # Update the last sent transcript to the new full transcript
+                last_sent_transcript = full_transcript
 
     except WebSocketDisconnect:
         print("Client disconnected gracefully.")

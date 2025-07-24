@@ -76,7 +76,7 @@
     let aPCfg;
     let aCCfg;
     let aSess;
-
+    let audioText = "";
     let chatCfg = newChatConfig();
 
 
@@ -196,7 +196,7 @@
         console.warn("Chat is streaming - TODO - interrupt");
         return;
       }
-      let msg = document.querySelector("[name='chatmessage']").value; ///e?.target?.value;
+      let msg = page.components.audio.recording() ? audioText : document.querySelector("[name='chatmessage']").value; ///e?.target?.value;
       if (!chatCfg.peek) {
         doPeek().then(() => {
           doChat();
@@ -270,13 +270,19 @@
 
       });
     }
-
+    
+    /// Note: Chatmessage isn't defined in its own model, and should be to avoid all the goofy checks
     function pushHistory() {
-      let msg = document.querySelector("[name='chatmessage']").value;
+      let msg = page.components.audio.recording() ? audioText : document.querySelector("[name='chatmessage']").value;
       if (!chatCfg.history) chatCfg.history = {};
       if (!chatCfg.history.messages) chatCfg.history.messages = [];
       chatCfg.history.messages.push({ role: "user", content: msg });
-      document.querySelector("[name='chatmessage']").value = "";
+      if(page.components.audio.recording()){
+        audioText = "";
+      }
+      else {
+        document.querySelector("[name='chatmessage']").value = "";
+      }
       m.redraw();
     }
 
@@ -683,7 +689,7 @@
         }
         return cnt;
     }
-
+    
     function getChatBottomMenuView() {
       // if(!showFooter) return "";
 
@@ -700,7 +706,8 @@
       else if(chatCfg.pending){
         placeText = "Waiting ...";
       }
-      let input = m("input[" + (!inst || chatCfg.pending ? "disabled='true'" : "") + "]", { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } });
+      let msgProps = { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
+      let input = m("input[" + (!inst || chatCfg.pending ? "disabled='true'" : "") + "]", msgProps);
 
       return m("div", { class: "result-nav-outer" },
         m("div", { class: "results-fixed" },
@@ -720,7 +727,7 @@
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
                 page.components.audio.recordButton(),
-                (page.components.audio.recording() ? page.components.audio.recordWithVisualizer() : (chatCfg.pending ? pendBar : input)),
+                (page.components.audio.recording() ? page.components.audio.recordWithVisualizer(true,function(text){ audioText += text; console.log(text);}, function(contentType, b64){ handleAudioSave(contentType, b64); }) : (chatCfg.pending ? pendBar : input)),
                 m("button", { class: "button", onclick: doStop}, m("span", { class: "material-symbols-outlined material-icons-24" }, "stop")),
                 m("button", { class: "button", onclick: doChat }, m("span", { class: "material-symbols-outlined material-icons-24" }, "chat"))
               ])
@@ -737,7 +744,20 @@
       );
       */
     }
+    async function handleAudioSave(mimeType, base64){
+      let name = inst.api.objectId() + " - " + (chatCfg?.history?.messages?.length || 1);
+      console.log("Save:", name);
+      let cdir = await page.makePath("auth.group", "data", "~/Data/Recordings");
+      let sinst = am7model.newInstance("data.data");
+      sinst.api.groupPath(cdir.path);
+      sinst.api.organizationId(page.user.organizationId);
+      sinst.api.contentType(mimeType);
+      sinst.api.name(name);
 
+      sinst.entity.dataBytesStore = base64;
+
+
+    }
     function navKey(e) {
       switch (e.keyCode) {
         /// ESC

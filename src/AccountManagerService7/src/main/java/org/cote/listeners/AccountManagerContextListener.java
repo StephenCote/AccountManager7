@@ -14,6 +14,9 @@ public class AccountManagerContextListener implements ServletContextListener{
 	
 	@Override
 	public void contextDestroyed(ServletContextEvent arg0) {
+		logger.info("Closing proxy sessions");
+		WebSocketService.closeProxySessions();
+
     	logger.info("Chirping users");
     	WebSocketService.activeUsers().forEach(user ->{
     		WebSocketService.chirpUser(user, new String[] {"Service going offline"});

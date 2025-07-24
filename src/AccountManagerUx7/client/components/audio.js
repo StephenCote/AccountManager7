@@ -21,7 +21,7 @@
             return;
         }
         // You may need to adjust this threshold based on microphone sensitivity
-        const SILENCE_THRESHOLD = 2; 
+        const SILENCE_THRESHOLD = 3; 
         
         // Create a buffer to hold the time-domain data
         const bufferLength = recorder.analyzer.fftSize;
@@ -39,11 +39,12 @@
                 maxAmplitude = amplitude;
             }
         }
+        console.log(maxAmplitude + " < " + SILENCE_THRESHOLD);
         return maxAmplitude < SILENCE_THRESHOLD;
     }
     /// currently only setup for live streaming to extract text, not to actually record the audio
     ///
-    function recordWithVisualizer(){
+    function recordWithVisualizer(stream, handler, saveHandler){
         if(recorder){
             return recorder.view;
         }
@@ -67,10 +68,15 @@
                         let analyzer = audioCtx.createAnalyser();
                         analyzer.fftSize = 2048;
                         recorder.analyzer = analyzer;
+                        analyzer.volume = 0;
                         /// console.log(analyzer)
                         let source = audioCtx.createMediaStreamSource(stream);
+                        // let gain = audioCtx.createGain();
+                        // gain.gain.value = 0;
                         source.connect(analyzer);
-                        console.log(source.context.destination);
+                        // analyzer.connect(gain);
+                        // gain.connect(audioCtx.destination)
+
 
                         let props = {
                             source: analyzer,
@@ -86,32 +92,14 @@
                         };
 
                         recorder.motionAnalyzer = new AudioMotionAnalyzer(vnode.dom, props);
+                        recorder.motionAnalyzer.volume = 0;
                         recorder.context = audioCtx;
                         recorder.stream = stream;
                         let chunks = [];
                         const mediaRecorder = new MediaRecorder(stream);
-                        let chunkStream = [];
-                        let shifting = false;
-                        async function shiftChunkStream(){
-                            if(shifting || !chunkStream.length) return;
-                            console.log("Start shift")
-                            shifting = true;
-                            let blob = chunkStream.shift();
-                            let dat = await page.blobToBase64(blob);
-                            // new Uint8Array(await blob.arrayBuffer());//
-                            /*
-                            let binaryString = '';
-                            dat.forEach(byte => {
-                                binaryString += String.fromCharCode(byte);
-                            });
-                            console.log(binaryString);
-                            */
-                           //console.log(dat);
-                            window.dbgBlob = blob;
-                            page.wss.send("audio", dat, undefined, undefined);
-                            console.log("End shift");
-                            shifting = false;
-                        }
+                        let maxSilence = 5;
+                        let lastSilence = 0;
+
                         function ab_b64(buf) {
                             return btoa(buf.reduce(
                                 function (data, val) {
@@ -120,28 +108,40 @@
                                 ""
                             ));
                         }
-                        async function sendChunk(chunk){
+                        async function getAudioBase64(blob){
+                            let buff = await blob.arrayBuffer();
+                            return ab_b64(new Uint8Array(buff));
+                        }
+                        async function sendChunk(chunk, close){
                             window.dbgBlob = chunk;
-                            //chunkStream.push(event.data);
-                            //shiftChunkStream();
-                            //let dat = await page.blobToBase64(event.data);
                             console.log("Sending chunk ...");
-                            let buff = await chunk.arrayBuffer();
-                            page.wss.send("audio", ab_b64(new Uint8Array(buff)), undefined, undefined);
+                            let b64 = await getAudioBase64(chunk);
+                            
+                            await page.wss.send("audio", b64, undefined, undefined);
+                            if(close){
+                                page.audioStream = undefined;
+                            }
                         }
                         mediaRecorder.ondataavailable = event => {
                             
                             if (event.data.size > 0) {
                                 const isSilent = isStreamSilent();
-                                //console.log('Audio chunk available:', event.data, 'Is chunk silent?', isSilent);
-                                // console.log('Is chunk silent?', isSilent);
-                                
                                 if (!isSilent) {
-                                    // chunks.push(event.data);
-                                    sendChunk(event.data);
-                                    // chunks = [];
-                                } else {
-                                    console.log('Status: Recording (Silence Detected)');
+                                    lastSilence = 0;
+                                    chunks.push(event.data);
+                                    if(stream){
+                                        sendChunk(event.data);
+                                    }
+                                }
+                                else {
+                                    //console.log('Status: Recording (Silence Detected)');
+                                    lastSilence++;
+                                    if(lastSilence >= maxSilence){
+                                        console.log("Restarting recorder ...");
+                                        lastSilence = 0;
+                                        mediaRecorder.stop();
+                                        mediaRecorder.start(2000);
+                                    }
                                 }
                             }
                             else{
@@ -155,13 +155,19 @@
                                 return;
                             }
                             let tchunks = chunks;
-      
-                            const audioBlob = new Blob(tchunks, { type: 'audio/webm' });
-                            /// complete?
-                            //shiftChunkStream();
+                            let audioBlob = new Blob(tchunks, { type: 'audio/webm' });
+                            if(!stream){
+                                sendChunk(audioBlob, true);
+                            }
+                            if(saveHandler){
+                                getAudioBase64(audioBlob).then((b64)=>{
+                                    saveHandler("audio/webm", b64);
+                                });
+                            }
 
                         };
                         recorder.recorder = mediaRecorder;
+                        page.audioStream = newAudioStream(handler);
                          mediaRecorder.start(2000);
 
 
@@ -178,6 +184,22 @@
             }
         });
         return recorder?.view || "";
+    }
+
+    function newAudioStream(h){
+        return {
+            onaudioupdate: (v)=> {
+
+            },
+            onaudiosttupdate: (m)=> {
+                if(h){
+                    h(m);
+                }
+            },
+            onaudiouerror: (v)=> {
+
+            }
+        };
     }
 
     function stopRecording(){

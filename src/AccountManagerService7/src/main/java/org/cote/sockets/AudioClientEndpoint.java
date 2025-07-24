@@ -48,7 +48,7 @@ public class AudioClientEndpoint {
 			return;
 		}
         // "Chirp" the received transcript back to the original browser client
-        WebSocketService.chirpUser(user, new String[]{"audioUpdate", response.getText()});
+        WebSocketService.chirpUser(user, new String[]{"audioSTTUpdate", response.getText()});
     }
 
     @OnClose

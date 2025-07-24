@@ -170,18 +170,8 @@
         chatAvatar,
         normalizePath,
         chatStream: undefined,
+        audioStream: undefined
 
-       blobToBase64: (blob) => {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    const base64data = reader.result.split(',')[1]; // Remove data:audio/webm;codecs=opus;base64,
-                    resolve(base64data);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);  // <- key difference!
-            });
-        }
     };
 
 
@@ -433,6 +423,13 @@
                     return;
                 }
                 page.chatStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2], msg.chirps[3]);
+            }
+            else if(c1.match(/(audioUpdate|audioSTTUpdate|audioError)/)){
+                if(!page.audioStream){
+                    console.error("Audio stream isn't available");
+                    return;
+                }
+                page.audioStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2]);
             }
             else{
                 console.warn("Unhandled message type: " + c1);
