@@ -278,6 +278,7 @@
     function createAudioVisualizer(name, idx, profileId, autoPlay, content){
         let aud;
         if(!audioMap[name]){
+            audioMap[name] = {pending:true}
             aud = m("div", {class: "audio-container"}, "Synthesizing...");
             console.log("Synthethize " + name);
             let vprops = {"text": content, "speed": 1.2, voiceProfileId: profileId};
@@ -293,7 +294,7 @@
             });
         }
 
-        else if(audioMap[name] && !audioMap[name].error){
+        else if(audioMap[name] && !audioMap[name].error && !audioMap[name].pending){
             let path = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + audioMap[name].groupPath + "/Voice - " + name + ".mp3";
             let props = {
                 class: "hide",
