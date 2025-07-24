@@ -21,7 +21,7 @@
             return;
         }
         // You may need to adjust this threshold based on microphone sensitivity
-        const SILENCE_THRESHOLD = 3; 
+        const SILENCE_THRESHOLD = 2; 
         
         // Create a buffer to hold the time-domain data
         const bufferLength = recorder.analyzer.fftSize;
@@ -41,7 +41,8 @@
         }
         return maxAmplitude < SILENCE_THRESHOLD;
     }
-
+    /// currently only setup for live streaming to extract text, not to actually record the audio
+    ///
     function recordWithVisualizer(){
         if(recorder){
             return recorder.view;
@@ -111,21 +112,36 @@
                             console.log("End shift");
                             shifting = false;
                         }
-                        mediaRecorder.ondataavailable = async event => {
+                        function ab_b64(buf) {
+                            return btoa(buf.reduce(
+                                function (data, val) {
+                                    return data + String.fromCharCode(val);
+                                },
+                                ""
+                            ));
+                        }
+                        async function sendChunk(chunk){
+                            window.dbgBlob = chunk;
+                            //chunkStream.push(event.data);
+                            //shiftChunkStream();
+                            //let dat = await page.blobToBase64(event.data);
+                            console.log("Sending chunk ...");
+                            let buff = await chunk.arrayBuffer();
+                            page.wss.send("audio", ab_b64(new Uint8Array(buff)), undefined, undefined);
+                        }
+                        mediaRecorder.ondataavailable = event => {
                             
                             if (event.data.size > 0) {
                                 const isSilent = isStreamSilent();
-                                // console.log('Audio chunk available:', event.data);
+                                //console.log('Audio chunk available:', event.data, 'Is chunk silent?', isSilent);
                                 // console.log('Is chunk silent?', isSilent);
                                 
                                 if (!isSilent) {
-                                    chunks.push(event.data);
-                                    chunkStream.push(event.data);
-                                    shiftChunkStream();
-                                    //let dat = await page.blobToBase64(event.data);
-                                    //page.wss.send("audio", Base64.decode(event.data), undefined, undefined);
+                                    // chunks.push(event.data);
+                                    sendChunk(event.data);
+                                    // chunks = [];
                                 } else {
-                                    // console.log('Status: Recording (Silence Detected)');
+                                    console.log('Status: Recording (Silence Detected)');
                                 }
                             }
                             else{
@@ -142,7 +158,7 @@
       
                             const audioBlob = new Blob(tchunks, { type: 'audio/webm' });
                             /// complete?
-                            shiftChunkStream();
+                            //shiftChunkStream();
 
                         };
                         recorder.recorder = mediaRecorder;

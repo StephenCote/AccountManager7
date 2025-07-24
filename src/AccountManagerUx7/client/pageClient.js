@@ -434,6 +434,9 @@
                 }
                 page.chatStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2], msg.chirps[3]);
             }
+            else{
+                console.warn("Unhandled message type: " + c1);
+            }
             /*
             msg.chirps.forEach((s) => {
                 console.log(s);
@@ -467,7 +470,8 @@
                 recipientType: (recipientId != null ? "USER" : "UNKNOWN")
 
             };
-            webSocket.send(JSON.stringify({schema: "message.socketMessage", token: page?.token, message: msg}));
+            let dat = JSON.stringify({schema: "message.socketMessage", token: page?.token, message: msg});
+            webSocket.send(dat);
         }
         catch(e){
             console.error(e);

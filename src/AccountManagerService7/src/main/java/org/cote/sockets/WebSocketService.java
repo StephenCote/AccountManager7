@@ -55,6 +55,7 @@ import org.cote.accountmanager.util.JSONUtil;
 
 import io.jsonwebtoken.Jwts;
 import jakarta.servlet.http.HttpServlet;
+import jakarta.websocket.ClientEndpoint;
 import jakarta.websocket.CloseReason;
 import jakarta.websocket.OnClose;
 import jakarta.websocket.OnError;
@@ -66,6 +67,7 @@ import jakarta.websocket.server.ServerEndpoint;
 
 import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.DeploymentException;
+import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.WebSocketContainer;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -74,36 +76,17 @@ import java.nio.ByteBuffer;
 public class WebSocketService  extends HttpServlet implements IChatHandler {
 	private static final long serialVersionUID = 1L;
 	
-	// Map to hold connections from this Java service to the Python service
-	private static Map<Session, jakarta.websocket.Session> pythonProxySessions = new ConcurrentHashMap<>();
-
 	public static final Logger logger = LogManager.getLogger(WebSocketService.class);
-
+	private static Map<Session, jakarta.websocket.Session> pythonProxySessions = new ConcurrentHashMap<>();
 	private static Map<String, BaseRecord> userMap = Collections.synchronizedMap(new HashMap<>());
 	private static Map<String, Session> urnToSession = Collections.synchronizedMap(new HashMap<>());
 	private static Set<Session> sessions = Collections.synchronizedSet(new HashSet<>());
-	
+
 	private IChatListener listener = null;
 	public WebSocketService() {
 		listener = new ChatListener();
 		listener.addChatHandler(this);
 	}
-	
-    private static final ExecutorService asyncExecutor = Executors.newCachedThreadPool();
-
-    // Add a shutdown hook for the executor
-    public static void shutdownExecutor() {
-        logger.info("Shutting down async executor service...");
-        asyncExecutor.shutdown();
-        try {
-            if (!asyncExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
-                asyncExecutor.shutdownNow();
-            }
-        } catch (InterruptedException ie) {
-            asyncExecutor.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-    }
 	
 	public static List<Session> activeSessions(){
 		return new ArrayList<>(sessions);
@@ -166,7 +149,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 
 	@OnMessage
 	public void onMessage(String txt, Session session) throws IOException {
-		logger.info("Received message from " + session.getId() + ": " + txt);
+		// logger.info("Received message from " + session.getId() + ": " + txt);
 		BaseRecord user = getRegisterUser(session);
 
 		SocketMessage msg = new SocketMessage(JSONUtil.importObject(txt, LooseRecord.class, RecordDeserializerConfig.getUnfilteredModule()));
@@ -472,61 +455,52 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 	}
 
 	// This method will handle forwarding audio to Python and receiving transcripts
-	private void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
-		//asyncExecutor.submit(() -> {
-			logger.info("Handling audio stream for user: " + user.get(FieldNames.FIELD_URN));
-			BaseRecord smsg = msg.getMessage();
-			if (smsg == null) {
-				logger.error("Chat request message is null");
-				return;
-			}
-			byte[] audioData = smsg.get("data");
-			if(audioData == null || audioData.length == 0) {
-				logger.error("Audio data is null or empty");
-				return;
-			}
-	
-		    // Check if we have an existing Python WebSocket session for this client
-		    jakarta.websocket.
-			Session pythonSession = pythonProxySessions.get(clientSession);
-	
-		    // 1. Establish connection to Python if it doesn't exist for this client
-		    if (pythonSession == null || !pythonSession.isOpen()) {
-		        try {
-		        	logger.info("Connecting to Python WebSocket for audio processing");
-		            WebSocketContainer container = ContainerProvider.getWebSocketContainer();
-		            URI pythonWsUri = new URI("ws://localhost:8001/ws/transcribe");
-		            // Create a new client endpoint to handle messages from Python
-		            jakarta.websocket.Endpoint endpoint = new jakarta.websocket.Endpoint() {
-		                @Override
-		                public void onOpen(jakarta.websocket.Session session, jakarta.websocket.EndpointConfig config) {
-		                    // When Python sends a transcript, add a message handler
-		                    session.addMessageHandler(String.class, message -> {
-		                        // We received a transcript from Python, e.g., {"transcript": "Hello"}
-		                        // Now, "chirp" it back to the original browser client
-		                        logger.info("Received from Python: " + message);
-		                        chirpUser(user, new String[] {"audioUpdate", message});
-		                    });
-		                }
-		            };
-	
-		            pythonSession = container.connectToServer(endpoint, pythonWsUri);
-		            pythonProxySessions.put(clientSession, pythonSession);
-		            logger.info("Connected to Python WebSocket for session: " + clientSession.getId());
-	
-		        } catch (Exception e) {
-		            logger.error("Failed to connect to Python WebSocket", e);
-		            return;
-		        }
-		    }
-			logger.info("Forwarding audio data to Python WebSocket for session: " + clientSession.getId());
-		    // 2. Forward the audio chunk to the Python service
-		    try {
-		        pythonSession.getBasicRemote().sendBinary(ByteBuffer.wrap(audioData));
-		    } catch (Exception e) {
-		        logger.error("Failed to forward audio to Python", e);
-		    }
-		//});
+	public void handleAudioStream(Session clientSession, BaseRecord user, SocketMessage msg) {
+	    //asyncExecutor.submit(() -> {
+	        logger.info("Handling audio stream for user: " + user.get(FieldNames.FIELD_URN));
+	        BaseRecord smsg = msg.getMessage();
+	        if (smsg == null) {
+	            logger.error("Chat request message is null");
+	            return;
+	        }
+
+	        // The audio data is base64 encoded, and the message was also base64 encoded
+	        // TODO: Fix the double encoding on the client side
+	        byte[] audioData = BinaryUtil.fromBase64((byte[]) smsg.get("data"));
+	        if (audioData == null || audioData.length == 0) {
+	            logger.error("Audio data is null or empty");
+	            return;
+	        }
+
+	        Session pythonSession = pythonProxySessions.get(clientSession);
+
+	        if (pythonSession == null || !pythonSession.isOpen()) {
+	            try {
+	                logger.info("Connecting to Python WebSocket for audio processing...");
+	                WebSocketContainer container = ContainerProvider.getWebSocketContainer();
+	                URI pythonWsUri = new URI("ws://localhost:8001/ws/transcribe");
+
+	                AudioClientEndpoint endpoint = new AudioClientEndpoint(user);
+
+	                // Connect to the server using the annotated class instance
+	                pythonSession = container.connectToServer(endpoint, pythonWsUri);
+	                pythonProxySessions.put(clientSession, pythonSession);
+	                logger.info("Connected to Python WebSocket for session: " + clientSession.getId());
+
+	            } catch (Exception e) {
+	                logger.error("Failed to connect to Python WebSocket", e);
+	                return;
+	            }
+	        }
+
+	        // 2. Forward the audio chunk to the Python service
+	        logger.info("Forwarding audio data to Python WebSocket for session: " + clientSession.getId());
+	        try {
+	            pythonSession.getBasicRemote().sendBinary(ByteBuffer.wrap(audioData));
+	        } catch (Exception e) {
+	            logger.error("Failed to forward audio to Python", e);
+	        }
+	    //});
 	}
 		
 }

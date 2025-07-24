@@ -29,6 +29,8 @@ from typing import Dict, Set, Optional, Literal
 
 from fastapi import FastAPI, HTTPException, status, WebSocket
 from fastapi.responses import JSONResponse
+#from starlette.exceptions import WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnect
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
@@ -333,9 +335,9 @@ async def websocket_transcribe(websocket: WebSocket):
                 
                 # Send the latest full transcript back to the client
                 if text_result.strip():
-                    await websocket.send_json({"transcript": text_result})
+                    await websocket.send_json({"text": text_result})
 
-    except websockets.exceptions.ConnectionClosedOK:
+    except WebSocketDisconnect:
         print("Client disconnected gracefully.")
     except Exception as e:
         print(f"Error in WebSocket session: {e}")
