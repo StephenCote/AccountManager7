@@ -78,14 +78,29 @@
 		<param-value>true</param-value>
 	</context-param>
 	<context-param>
-		<description>Poll  for Remote Tasks</description>
+		<description>Poll for Remote Tasks</description>
 		<param-name>task.poll.remote</param-name>
 		<param-value>false</param-value>
 	</context-param>
 	<context-param>
 		<description>Defer to Remote Tasks</description>
 		<param-name>task.defer.remote</param-name>
-		<param-value>true</param-value>
+		<param-value>false</param-value>
+	</context-param>
+	<context-param>
+		<description>Voice Server</description>
+		<param-name>voice.server</param-name>
+		<param-value>http://127.0.0.1:8001</param-value>
+	</context-param>
+	<context-param>
+		<description>Voice Server Type</description>
+		<param-name>voice.type</param-name>
+		<param-value>local</param-value>
+	</context-param>
+		<context-param>
+		<description>Voice Server Authorization Token</description>
+		<param-name>voice.authorizationToken</param-name>
+		<param-value></param-value>
 	</context-param>
 	<context-param>
 		<description>Embedding Server</description>
@@ -105,12 +120,12 @@
 	<context-param>
 		<description>Task Server</description>
 		<param-name>task.server</param-name>
-		<param-value>https://192.168.1.7:8443/AccountManagerService7</param-value>
+		<param-value>https://192.168.1.12:8443/AccountManagerService7</param-value>
 	</context-param>
 	<context-param>
 		<description>Task API Key</description>
 		<param-name>task.api.key</param-name>
-		<param-value>eyJhbGciOiJIUzI1NiIsInppcCI6IkdaSVAifQ.H4sIAAAAAAAA_4WQPW_DIBCG_wuzScHGX2yRunSIlKFblOGAc0tqg2Vw1LTqfy84S6UMXZ-7572PbxJWRSQBM1lHChK0nzEQeTqRZ4iwz9iGuED0S0j1vdZ-dfGBH7zB8YHeU8_ngnh1QR1fTBo11BW2OADt9cCpYL2iSjVATSPKlnV1qXqd3Og_0G2C5kJ0DJBCJRoqlDJJNYxybJKo-soYlgS_vIGzXxCtd0eI78l8Oq5qtDktXZkXeL3NmHi4hYjTbg24pJoNIX9gauQfvnN-mWCU85YgE79i7oVIJG8FL3nZ864g-Dln0LY1Yxu4RPtv2v0vP79dKqldfQEAAA.HjqkCfLQ6L8csZVXwnRh-1IiijFLf0HEknzIfVFKPHU</param-value>
+		<param-value>eyJraWQiOiJhbTY6c3lzdGVtLnVzZXIubm9ybWFsOnB1YmxpYzpzdGV2ZSIsInN1YmplY3RUeXBlIjoic3lzdGVtLnVzZXIiLCJpc3N1ZXJVcm4iOiJhbTY6c3lzdGVtLnVzZXIubm9ybWFsOnB1YmxpYzphZG1pbiIsInNiaSI6dHJ1ZSwiemlwIjoiR1pJUCIsImFsZyI6IkhTMjU2In0.H4sIAAAAAAAA_4WQT0-EMBDFv4qZM10X6B_ojaMnN0ZPmz0UOqxdoUXaGlfjd7egJN68zbzOb-a9foKPLUjwAd8QMvCdm9CDPB6h6ToXbXjyOPv00kxmKx_wNWIi1mYj7wfjbho9Grs1yzicThm49oJduNPpDqt0rSgviWAlEtrzgtSIlJR537KiYizPeeKDe0G7AhW2nNeUEi10RyhnSFSvEyVqLfK-2JeFSICbz8qaDxWMswcVnhN5e4jtYLrFYlwNPF4nXKJek-VxFxd3GRif0oIaufyj76ybRzXIad0g1W8qowLIXLA9LWsuqgzwfVqEiotCrMIlmH-3_XzY1zeUspAAegEAAA.M1_LUd3jxJ6qxExsxXtogd_AL0-aJ0TdPerKO47czgY</param-value>
 	</context-param>
 	<context-param>
 		<description>Disable SSL Verification</description>
@@ -127,6 +142,14 @@
 		<description>Maximum Image Height</description>
 		<param-name>image.maximum.height</param-name>
 		<param-value>2048</param-value>
+	</context-param>
+	<context-param>
+         <param-name>org.apache.tomcat.websocket.textBufferSize</param-name>
+         <param-value>65536</param-value>
+    </context-param>
+    <context-param>
+            <param-name>org.apache.tomcat.websocket.binaryBufferSize</param-name>
+            <param-value>65536</param-value>
 	</context-param>
 	<listener>
 		<listener-class>org.cote.listeners.AccountManagerContextListener</listener-class>
@@ -179,7 +202,7 @@
 		</init-param>
 		<init-param>
 			<param-name>cors.allowed.origins</param-name>
-			<param-value>http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.7:8899,https://192.168.1.7:8443</param-value>
+			<param-value>http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.9:8899,https://192.168.1.9:8443</param-value>
 		</init-param>
 		<init-param>
 			<param-name>cors.allowed.headers</param-name>
