@@ -513,9 +513,14 @@
       if(!aud) return;
       if(aud2 && aud2.context.state == "running") aud2.context.suspend();
       if(!aud.started){
-        aud.context.resume();
+        // aud.context.resume();
         aud.source.start(0);
         aud.started = true;
+        aud.source.onended = function() {
+          aud.started = false;
+          aud.source = aud.context.createBufferSource();
+          aud.source.buffer = aud.buffer;
+        };
       }
       else if(aud.context.state == "suspended") aud.context.resume();
       else if(aud.context.state != "closed") aud.context.suspend();
@@ -559,7 +564,7 @@
 
     }
 
-    async function configureMagic8(){
+    function configureMagic8(){
       if(!audioMagic8){
         return;
       }
@@ -590,6 +595,7 @@
       }
 
       magic8.configuring = true;
+      let aP = [];
       if(!magic8.audio1 || !magic8.audio2){
         let sysProfileId = chatCfg?.system?.profile?.objectId;
         let usrProfileId = chatCfg?.user?.profile?.objectId;
@@ -604,6 +610,17 @@
           let name = inst.api.objectId() + " - " + i;
           let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
           console.log("Create audio source...", m);
+          aP.push(page.components.audio.createAudioSource(name, profId, m.content).then((aud) => {
+            if(m.role == "assistant"){
+              magic8.audio1 = aud;
+              lastAud = 1;
+            }
+            else{
+              magic8.audio2 = aud;
+              lastAud = 2;
+            }
+          }));
+          /*
           let aud = await page.components.audio.createAudioSource(name, profId, m.content);
           if(m.role == "assistant"){
             magic8.audio1 = aud;
@@ -613,8 +630,14 @@
             magic8.audio2 = aud;
             lastAud = 2;
           }
+          */
       }
     }
+    else{
+      console.log("Skip multi-start");
+      return;
+    }
+    Promise.all(aP).then(() => {
         let props = {
           overlay: true,
           bgAlpha: 0,
@@ -645,17 +668,16 @@
       };
 
       magic8.configuring = false;
+    });
     }
 
   function getMagic8View() {
     return m("div", {key: magic8.id,
       class: `
-      relative aspect-square w-[90%] h-auto
-
-      rounded-full overflow-hidden
-      bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300
-      ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
-
+    relative aspect-square w-[90vw] max-w-[600px] max-h-[600px] mx-auto
+    rounded-full overflow-hidden
+    bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300
+    ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
       `
     }, [
 

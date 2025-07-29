@@ -354,18 +354,19 @@
 
             let o = audioMap[name];
             if(!audioSource[name]){
-                console.log("Creating audio source for " + name);
                 let audioContext = new AudioContext();
                 let audioBuffer = await audioContext.decodeAudioData(base64ToArrayBuffer(o.dataBytesStore));
-                let sourceNode = audioContext.createBufferSource();
-                sourceNode.buffer = audioBuffer;
                 audioSource[name] = {
                     context: audioContext,
-                    source: sourceNode,
-                    started: false
+                    buffer: audioBuffer
                 }
-                // sourceNode.start(0);
-                //audioContext.suspend();
+            }
+            let sourceNode = audioSource[name].context.createBufferSource();
+            sourceNode.buffer = audioSource[name].buffer;
+            return {
+                context: audioSource[name].context,
+                source: sourceNode,
+                started: false
             }
         }
         return audioSource[name];
