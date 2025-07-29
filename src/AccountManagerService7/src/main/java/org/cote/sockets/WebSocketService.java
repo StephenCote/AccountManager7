@@ -1,6 +1,8 @@
 package org.cote.sockets;
 
 import java.io.IOException;
+import java.net.URI;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,9 +15,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -34,7 +33,6 @@ import org.cote.accountmanager.olio.llm.IChatHandler;
 import org.cote.accountmanager.olio.llm.IChatListener;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
-import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -55,22 +53,16 @@ import org.cote.accountmanager.util.JSONUtil;
 
 import io.jsonwebtoken.Jwts;
 import jakarta.servlet.http.HttpServlet;
-import jakarta.websocket.ClientEndpoint;
 import jakarta.websocket.CloseReason;
+import jakarta.websocket.ContainerProvider;
 import jakarta.websocket.OnClose;
 import jakarta.websocket.OnError;
 import jakarta.websocket.OnMessage;
 import jakarta.websocket.OnOpen;
 import jakarta.websocket.RemoteEndpoint;
 import jakarta.websocket.Session;
-import jakarta.websocket.server.ServerEndpoint;
-
-import jakarta.websocket.ContainerProvider;
-import jakarta.websocket.DeploymentException;
-import jakarta.websocket.EndpointConfig;
 import jakarta.websocket.WebSocketContainer;
-import java.net.URI;
-import java.nio.ByteBuffer;
+import jakarta.websocket.server.ServerEndpoint;
 
 @ServerEndpoint(value = "/wss", configurator = WebSocketSecurityConfigurator.class)
 public class WebSocketService  extends HttpServlet implements IChatHandler {

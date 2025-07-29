@@ -3,7 +3,6 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 
 import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
-import org.cote.accountmanager.tools.EmbeddingUtil;
 import org.cote.accountmanager.tools.VoiceRequest;
 import org.cote.accountmanager.tools.VoiceResponse;
 import org.cote.accountmanager.tools.VoiceUtil;

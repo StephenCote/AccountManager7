@@ -83,7 +83,6 @@ import org.cote.accountmanager.schema.type.ValidationEnumType;
 import org.cote.accountmanager.schema.type.ValueEnumType;
 import org.cote.accountmanager.schema.type.VerificationEnumType;
 import org.cote.accountmanager.util.CategoryUtil;
-import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.RecordUtil;
 import org.cote.accountmanager.util.ResourceUtil;
 import org.cote.accountmanager.util.ValidationUtil;

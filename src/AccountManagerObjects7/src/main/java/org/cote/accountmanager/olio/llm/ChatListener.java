@@ -15,8 +15,6 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
 
-import jakarta.ws.rs.core.Response;
-
 public class ChatListener implements IChatListener {
 	private static final Logger logger = LogManager.getLogger(ChatListener.class);
 	private static Map<String, Chat> asyncChats = new ConcurrentHashMap<>();
