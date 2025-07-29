@@ -88,7 +88,7 @@
     }
     
     function pickSession(obj){
-      console.log("Pick session");
+
       doClear();
       inst = am7model.prepareInstance(obj);
       window.dbgInst = inst;
@@ -456,15 +456,6 @@
         doClear();
         await loadConfigList();
         doPeek();
-        /*
-
-        inst.api.name(esess);
-        inst.api.chatConfig(e.chat);
-        inst.api.promptConfig(e.prompt);
-        //am7model.getModelField("chatSettings", "sessions").limit = ["New Chat", inst.api.session()].concat(aSess.map((c) => { return c.name; }));
-        //pickSession();
-        doPeek();
-        */
       });
     }
 
@@ -472,7 +463,7 @@
     let editIndex = -1;
     let editMode = false;
     let audio = false;
-    let audioMagic8 = true;
+    let audioMagic8 = false;
     let profile = false;
     function toggleAudio(){
       audio = !audio;
@@ -630,7 +621,7 @@
           if(!m) continue;
           let name = inst.api.objectId() + " - " + i;
           let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
-          console.log("Create audio source...", m);
+
           let cnt = pruneAll(m.content);
           if(cnt.length){
             aP.push(page.components.audio.createAudioSource(name, profId, cnt).then((aud) => {
@@ -669,7 +660,7 @@
 
       magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
       magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
-      window.dbgMagic8 = magic8;
+
       if(magic8.lastAudio){
         console.log("Starting last audio source", magic8.lastAudio);
         //magic8["audio" + lastAud].context.resume();
@@ -687,59 +678,94 @@
     }
 
   function getMagic8View() {
-    return m("div", {key: magic8.id,
-      class: `
-    relative aspect-square w-[90vw] max-w-[600px] max-h-[600px] mx-auto
-    rounded-full overflow-hidden
-    bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300
-    ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
-      `
-    }, [
-
-      // Top waveform canvas
-      m("div", {
-        id: "waveform-top",
-        class: `
-          absolute top-0 left-0 w-full h-1/2
-        `
-      }),
-
-      // Bottom waveform canvas (inverted)
-      m("div", {
-        id: "waveform-bottom",
-        class: `
-          absolute bottom-0 left-0 w-full h-1/2
-          transform scale-y-[-1]
-        `
-      }),
-
-      // Radial glow inside for depth
-      m("div", {
-        class: `
-          absolute inset-0 rounded-full pointer-events-none
-          bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.15)_0%,transparent_70%)]
-        `
-      }),
-
-      // Curved white highlight (top left)
-      m("div", {
-        class: `
-          absolute top-0 left-0 w-full h-full pointer-events-none rounded-full
-          bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.3)_0%,transparent_40%)]
-          mix-blend-screen
-        `
-      }),
-
-      // Subtle shadow on bottom for glass depth
-      m("div", {
-        class: `
-          absolute bottom-0 left-0 w-full h-1/2
-          bg-gradient-to-t from-black/20 to-transparent
-          pointer-events-none
-        `
-      })
-    ]);
+  // Get profile image URLs if available
+  let sysUrl, usrUrl;
+  if(profile){
+    if (chatCfg.system?.profile?.portrait) {
+      let pp = chatCfg.system.profile.portrait;
+      sysUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
+    }
+    if (chatCfg.user?.profile?.portrait) {
+      let pp = chatCfg.user.profile.portrait;
+      usrUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
+    }
   }
+  return m("div", {key: magic8.id,
+    class: `
+      relative aspect-square w-[90vw] max-w-[600px] max-h-[600px] mx-auto
+      rounded-full overflow-hidden
+      bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300
+      ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
+    `
+  }, [
+    // System (assistant) profile image - upper hemisphere
+    sysUrl && m("div", {
+      class: `
+        absolute top-0 left-0 w-full h-1/2 z-0
+        pointer-events-none
+        opacity-60 blur-sm
+        bg-cover
+      `,
+      style: {
+        backgroundImage: `url('${sysUrl}')`,
+        backgroundPosition: "top center"
+      }
+    }),
+
+    // User profile image - lower hemisphere
+    usrUrl && m("div", {
+      class: `
+        absolute bottom-0 left-0 w-full h-1/2 z-0
+        pointer-events-none
+        opacity-60 blur-sm
+        bg-cover
+      `,
+      style: {
+        backgroundImage: `url('${usrUrl}')`,
+        backgroundPosition: "top center"
+      }
+    }),
+
+    // Top waveform canvas
+    m("div", {
+      id: "waveform-top",
+      class: `
+        absolute top-0 left-0 w-full h-1/2 z-10
+      `
+    }),
+
+    // Bottom waveform canvas (inverted)
+    m("div", {
+      id: "waveform-bottom",
+      class: `
+        absolute bottom-0 left-0 w-full h-1/2 z-10
+        transform scale-y-[-1]
+      `
+    }),
+
+    // ...rest of your overlays and effects...
+    m("div", {
+      class: `
+        absolute inset-0 rounded-full pointer-events-none
+        bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.15)_0%,transparent_70%)]
+      `
+    }),
+    m("div", {
+      class: `
+        absolute top-0 left-0 w-full h-full pointer-events-none rounded-full
+        bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.3)_0%,transparent_40%)]
+        mix-blend-screen
+      `
+    }),
+    m("div", {
+      class: `
+        absolute bottom-0 left-0 w-full h-1/2
+        bg-gradient-to-t from-black/20 to-transparent
+        pointer-events-none
+      `
+    })
+  ]);
+}
 
 
     function getResultsView() {
