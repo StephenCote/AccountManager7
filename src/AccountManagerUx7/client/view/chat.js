@@ -223,6 +223,7 @@
               if (!chatCfg.history) chatCfg.history = {};
               chatCfg.history.messages = r?.messages || [];
               chatCfg.pending = false;
+              clearMagic8();
             });
           }
         }
@@ -454,7 +455,7 @@
     let editIndex = -1;
     let editMode = false;
     let audio = false;
-    let audioMagic8 = true;
+    let audioMagic8 = false;
     let profile = false;
     function toggleAudio(){
       audio = !audio;
@@ -533,7 +534,10 @@
         audioMotionTop: undefined,
         audioMotionBottom: undefined,
         audio1: undefined,
+        audio1Content: undefined,
         audio2: undefined,
+        audio2Content: undefined,
+        lastAudio: 0,
         configuring: false
       };
     }
@@ -587,7 +591,7 @@
         // console.warn("No canvas for top or bottom waveform");
         return;
       }
-      let lastAud;
+      magic8.lastAudio = 0;
       let aMsg = chatCfg?.history?.messages;
       if(!aMsg || !aMsg.length){
         console.log("No messages in chat history");
@@ -613,24 +617,15 @@
           aP.push(page.components.audio.createAudioSource(name, profId, m.content).then((aud) => {
             if(m.role == "assistant"){
               magic8.audio1 = aud;
-              lastAud = 1;
+              magic8.audio1Content = m.content;
+              magic8.lastAudio = 1;
             }
             else{
               magic8.audio2 = aud;
-              lastAud = 2;
+              magic8.audio2Content = m.content;
+              magic8.lastAudio = 2;
             }
           }));
-          /*
-          let aud = await page.components.audio.createAudioSource(name, profId, m.content);
-          if(m.role == "assistant"){
-            magic8.audio1 = aud;
-            lastAud = 1;
-          }
-          else{
-            magic8.audio2 = aud;
-            lastAud = 2;
-          }
-          */
       }
     }
     else{
@@ -655,10 +650,10 @@
       magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
       magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
       window.dbgMagic8 = magic8;
-      if(lastAud){
-        console.log("Starting last audio source", lastAud);
+      if(magic8.lastAudio){
+        console.log("Starting last audio source", magic8.lastAudio);
         //magic8["audio" + lastAud].context.resume();
-        togglePlayMagic8(magic8["audio" + lastAud]);
+        togglePlayMagic8(magic8["audio" + magic8.lastAudio]);
       }
       canvasTop.onclick = function(e){
         togglePlayMagic8(magic8.audio1, magic8.audio2);
