@@ -399,6 +399,7 @@
             }
             audioMap = {};
         },
+        hasAudioMap: (name) => audioMap[name] ? true : false,
         cleanup,
         recordButton,
         recordWithVisualizer,

@@ -202,6 +202,23 @@
       }
       else {
         pushHistory();
+        if(msg && msg.length && (audio || audioMagic8)){
+            // Generate user audio prior to submitting the chat request;
+            let name = inst.api.objectId() + " - " + (chatCfg.history.length - 1);
+            if(!page.components.audio.hasAudioMap(name)){
+              console.info("Priming comment audio ... " + name);
+              let profileId = chatCfg?.user?.profile?.objectId;
+              let vprops = {"text": msg, "speed": 1.2, voiceProfileId: profileId};
+              if(!vprops.voiceProfileId){
+                  vprops.engine = "piper";
+                  vprops.speaker = "en_GB-alba-medium";
+              }
+              m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops}).then((r) => {
+                console.info("Comment audio primed");
+                clearMagic8();
+              });
+            }
+        }
         chatCfg.pending = true;
         let data = page.components.dnd.workingSet.map(r => {return JSON.stringify({schema:r.schema, objectId:r.objectId});});
 
@@ -455,7 +472,7 @@
     let editIndex = -1;
     let editMode = false;
     let audio = false;
-    let audioMagic8 = false;
+    let audioMagic8 = true;
     let profile = false;
     function toggleAudio(){
       audio = !audio;
@@ -614,15 +631,16 @@
           let name = inst.api.objectId() + " - " + i;
           let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
           console.log("Create audio source...", m);
-          aP.push(page.components.audio.createAudioSource(name, profId, m.content).then((aud) => {
+          let cnt = pruneAll(m.content);
+          aP.push(page.components.audio.createAudioSource(name, profId, cnt).then((aud) => {
             if(m.role == "assistant"){
               magic8.audio1 = aud;
-              magic8.audio1Content = m.content;
+              magic8.audio1Content = cnt;
               magic8.lastAudio = 1;
             }
             else{
               magic8.audio2 = aud;
-              magic8.audio2Content = m.content;
+              magic8.audio2Content = cnt;
               magic8.lastAudio = 2;
             }
           }));
@@ -646,7 +664,7 @@
       
       let props1 = Object.assign({height: canvasTop.offsetHeight, source: magic8.audio1?.source}, props);
       let props2 = Object.assign({height: canvasBottom.offsetHeight, source: magic8.audio2?.source}, props);
-      console.log(magic8);
+
       magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
       magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
       window.dbgMagic8 = magic8;
