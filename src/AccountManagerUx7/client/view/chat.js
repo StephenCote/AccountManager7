@@ -632,18 +632,20 @@
           let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
           console.log("Create audio source...", m);
           let cnt = pruneAll(m.content);
-          aP.push(page.components.audio.createAudioSource(name, profId, cnt).then((aud) => {
-            if(m.role == "assistant"){
-              magic8.audio1 = aud;
-              magic8.audio1Content = cnt;
-              magic8.lastAudio = 1;
-            }
-            else{
-              magic8.audio2 = aud;
-              magic8.audio2Content = cnt;
-              magic8.lastAudio = 2;
-            }
-          }));
+          if(cnt.length){
+            aP.push(page.components.audio.createAudioSource(name, profId, cnt).then((aud) => {
+              if(m.role == "assistant"){
+                magic8.audio1 = aud;
+                magic8.audio1Content = cnt;
+                magic8.lastAudio = 1;
+              }
+              else{
+                magic8.audio2 = aud;
+                magic8.audio2Content = cnt;
+                magic8.lastAudio = 2;
+              }
+            }));
+          }
       }
     }
     else{
