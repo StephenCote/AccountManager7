@@ -81,20 +81,18 @@
 
 
     function doClear(){
+      clearMagic8();
       clearEditMode();
       page.components.audio.unconfigureAudio(audio);
       chatCfg = newChatConfig();
     }
     
     function pickSession(obj){
+      console.log("Pick session");
       doClear();
       inst = am7model.prepareInstance(obj);
       window.dbgInst = inst;
       doPeek();
-    }
-
-    function setSession(obj){
-
     }
 
     async function chatInto(){
@@ -456,6 +454,7 @@
     let editIndex = -1;
     let editMode = false;
     let audio = false;
+    let audioMagic8 = true;
     let profile = false;
     function toggleAudio(){
       audio = !audio;
@@ -509,10 +508,209 @@
         editIndex = idx;
       }
     }
+    
+    function togglePlayMagic8(aud, aud2){
+      if(!aud) return;
+      if(aud2 && aud2.context.state == "running") aud2.context.suspend();
+      if(!aud.started){
+        aud.context.resume();
+        aud.source.start(0);
+        aud.started = true;
+      }
+      else if(aud.context.state == "suspended") aud.context.resume();
+      else if(aud.context.state != "closed") aud.context.suspend();
+
+    }
+
+    function newMagic8(){
+      return {
+        id: page.uid(),
+        audioMotionTop: undefined,
+        audioMotionBottom: undefined,
+        audio1: undefined,
+        audio2: undefined,
+        configuring: false
+      };
+    }
+    let magic8 = newMagic8();
+    
+    function clearMagic8(){
+      page.components.audio.clearAudioSource();
+      if(!magic8){
+        return;
+      }
+
+      if(magic8.audioMotionTop){
+        magic8.audioMotionTop.stop();
+        magic8.audioMotionTop.destroy();
+      }
+      if(magic8.audioMotionBottom){
+        magic8.audioMotionBottom.stop();
+        magic8.audioMotionBottom.destroy();
+      }
+
+      const canvasTop = document.getElementById("waveform-top");
+      const canvasBottom = document.getElementById("waveform-bottom");
+      if(canvasTop) canvasTop.innerHTML = "";
+      if(canvasBottom) canvasBottom.innerHTML = "";
+
+
+      magic8 = newMagic8();
+
+    }
+
+    async function configureMagic8(){
+      if(!audioMagic8){
+        return;
+      }
+      if(!magic8){
+        console.warn("Magic8 is not defined");
+      }
+      if(magic8.configuring){
+        console.warn("Magic8 is already configuring");
+        return;
+      }
+
+      if(magic8.audioMotionTop && magic8.audioMotionBottom){
+        console.warn("Magic8 is already configured");
+        return;
+      }
+
+      let canvasTop = document.getElementById("waveform-top");
+      let canvasBottom = document.getElementById("waveform-bottom");
+      if(!canvasTop || !canvasBottom){
+        // console.warn("No canvas for top or bottom waveform");
+        return;
+      }
+      let lastAud;
+      let aMsg = chatCfg?.history?.messages;
+      if(!aMsg || !aMsg.length){
+        console.log("No messages in chat history");
+        return;
+      }
+
+      magic8.configuring = true;
+      if(!magic8.audio1 || !magic8.audio2){
+        let sysProfileId = chatCfg?.system?.profile?.objectId;
+        let usrProfileId = chatCfg?.user?.profile?.objectId;
+        if(!sysProfileId || !usrProfileId){
+          console.warn("No system or user profile for chat");
+          return;
+        }
+
+       for(let i = aMsg.length - 2; i < aMsg.length; i++){
+          let m = aMsg[i];
+          if(!m) continue;
+          let name = inst.api.objectId() + " - " + i;
+          let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
+          console.log("Create audio source...", m);
+          let aud = await page.components.audio.createAudioSource(name, profId, m.content);
+          if(m.role == "assistant"){
+            magic8.audio1 = aud;
+            lastAud = 1;
+          }
+          else{
+            magic8.audio2 = aud;
+            lastAud = 2;
+          }
+      }
+    }
+        let props = {
+          overlay: true,
+          bgAlpha: 0,
+          gradient: 'prism',
+          showBgColor: true,
+          showSource: false,
+          gradient: "prism",
+          showScaleY: false,
+          showScaleX: false
+      };
+      
+      let props1 = Object.assign({height: canvasTop.offsetHeight, source: magic8.audio1?.source}, props);
+      let props2 = Object.assign({height: canvasBottom.offsetHeight, source: magic8.audio2?.source}, props);
+      console.log(magic8);
+      magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
+      magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
+      window.dbgMagic8 = magic8;
+      if(lastAud){
+        console.log("Starting last audio source", lastAud);
+        //magic8["audio" + lastAud].context.resume();
+        togglePlayMagic8(magic8["audio" + lastAud]);
+      }
+      canvasTop.onclick = function(e){
+        togglePlayMagic8(magic8.audio1, magic8.audio2);
+      };
+      canvasBottom.onclick = function(e){
+        togglePlayMagic8(magic8.audio2, magic8.audio1);
+      };
+
+      magic8.configuring = false;
+    }
+
+  function getMagic8View() {
+    return m("div", {key: magic8.id,
+      class: `
+      relative aspect-square w-[90%] h-auto
+
+      rounded-full overflow-hidden
+      bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300
+      ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
+
+      `
+    }, [
+
+      // Top waveform canvas
+      m("div", {
+        id: "waveform-top",
+        class: `
+          absolute top-0 left-0 w-full h-1/2
+        `
+      }),
+
+      // Bottom waveform canvas (inverted)
+      m("div", {
+        id: "waveform-bottom",
+        class: `
+          absolute bottom-0 left-0 w-full h-1/2
+          transform scale-y-[-1]
+        `
+      }),
+
+      // Radial glow inside for depth
+      m("div", {
+        class: `
+          absolute inset-0 rounded-full pointer-events-none
+          bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.15)_0%,transparent_70%)]
+        `
+      }),
+
+      // Curved white highlight (top left)
+      m("div", {
+        class: `
+          absolute top-0 left-0 w-full h-full pointer-events-none rounded-full
+          bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.3)_0%,transparent_40%)]
+          mix-blend-screen
+        `
+      }),
+
+      // Subtle shadow on bottom for glass depth
+      m("div", {
+        class: `
+          absolute bottom-0 left-0 w-full h-1/2
+          bg-gradient-to-t from-black/20 to-transparent
+          pointer-events-none
+        `
+      })
+    ]);
+  }
+
 
     function getResultsView() {
       if(!inst){
         return "";
+      }
+      if(audioMagic8){
+        return getMagic8View();
       }
       let c1g = "man";
       let c1l = "Nobody";
@@ -774,7 +972,9 @@
       if(!inst){
         return;
       }
-      let msgs = document.getElementById("messages").querySelectorAll(":scope > div");
+      let oMsg = document.getElementById("messages");
+      if(!oMsg) return;
+      let msgs = oMsg.querySelectorAll(":scope > div");
       if (msgs.length > 1 && lastCount != msgs.length) {
         lastCount = msgs.length;
         msgs[lastCount - 1].scrollIntoView();
@@ -904,6 +1104,7 @@
         page.navigable.setupPendingContextMenus();
         scrollToLast();
         page.components.audio.configureAudio(audio);
+        configureMagic8();
       },
       onremove: function (x) {
         page.navigable.cleanupContextMenus();

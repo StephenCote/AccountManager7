@@ -1,5 +1,6 @@
 (function () {
     let audioMap = {};
+    let audioSource = {};
     let visualizers = {};
     let recorder;
 
@@ -315,6 +316,61 @@
         return aud;
     }
 
+    function base64ToArrayBuffer(base64) {
+        const cleanedBase64 = base64.replace(/^data:audio\/\w+;base64,/, '');
+
+        const binaryString = atob(cleanedBase64);
+        const len = binaryString.length;
+        const bytes = new Uint8Array(len);
+
+        for (let i = 0; i < len; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        return bytes.buffer;
+    }
+
+     async function createAudioSource(name, profileId, content){
+
+        if(!audioMap[name]){
+            audioMap[name] = {pending:true}
+            let vprops = {"text": content, "speed": 1.2, voiceProfileId: profileId};
+            if(!vprops.voiceProfileId){
+                vprops.engine = "piper";
+                vprops.speaker = "en_GB-alba-medium";
+            }
+            console.log("Synthethize " + name);
+            let d = await m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops});
+            if(d){
+                audioMap[name] = d;
+            }
+            else{
+                page.toast("error", "Failed to synthesize audio - is the audio service running?");
+                audioMap[name] = {error:true};
+            };
+        }
+
+        if(audioMap[name] && !audioMap[name].error && !audioMap[name].pending){
+
+            let o = audioMap[name];
+            if(!audioSource[name]){
+                console.log("Creating audio source for " + name);
+                let audioContext = new AudioContext();
+                let audioBuffer = await audioContext.decodeAudioData(base64ToArrayBuffer(o.dataBytesStore));
+                let sourceNode = audioContext.createBufferSource();
+                sourceNode.buffer = audioBuffer;
+                audioSource[name] = {
+                    context: audioContext,
+                    source: sourceNode,
+                    started: false
+                }
+                // sourceNode.start(0);
+                //audioContext.suspend();
+            }
+        }
+        return audioSource[name];
+    }
+
     let recording = false;
     
     function toggleRecord(){
@@ -331,6 +387,17 @@
         unconfigureAudio,
         togglePlayAudio,
         createAudioVisualizer,
+        createAudioSource,
+        clearAudioSource: () => {
+            for(let id in audioSource){
+                let aud = audioSource[id];
+                if(aud && aud.started && aud.context.state != "closed"){
+                    // aud.source.stop();
+                    aud.context.close();
+                }
+            }
+            audioMap = {};
+        },
         cleanup,
         recordButton,
         recordWithVisualizer,
