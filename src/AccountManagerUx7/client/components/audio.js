@@ -331,7 +331,10 @@
     }
 
      async function createAudioSource(name, profileId, content){
-
+        if(!content || content.length == 0){
+            console.warn("No content provided for audio source creation");
+            return;
+        }
         if(!audioMap[name]){
             audioMap[name] = {pending:true}
             let vprops = {"text": content, "speed": 1.2, voiceProfileId: profileId};

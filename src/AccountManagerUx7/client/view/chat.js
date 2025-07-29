@@ -611,7 +611,7 @@
       magic8.lastAudio = 0;
       let aMsg = chatCfg?.history?.messages;
       if(!aMsg || !aMsg.length){
-        console.log("No messages in chat history");
+        // console.log("No messages in chat history");
         return;
       }
 

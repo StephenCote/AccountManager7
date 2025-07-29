@@ -432,7 +432,7 @@
                 page.audioStream["on" + c1.toLowerCase()](msg.chirps[1], msg.chirps[2]);
             }
             else{
-                console.warn("Unhandled message type: " + c1);
+                //console.warn("Unhandled message type: " + c1);
             }
             /*
             msg.chirps.forEach((s) => {
