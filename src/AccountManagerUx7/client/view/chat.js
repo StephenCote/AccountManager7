@@ -1,7 +1,7 @@
 
 (function () {
 
-   am7model.forms.chatRequest = {
+  am7model.forms.chatRequest = {
     label: "Chat Request",
     commands: {
       cmdPeek: {
@@ -37,8 +37,8 @@
           format: 'picker',
           pickerType: "olio.llm.promptConfig",
           pickerProperty: {
-              selected: "{object}",
-              entity: "promptConfig"
+            selected: "{object}",
+            entity: "promptConfig"
           },
           label: "Prompt Config"
         }
@@ -50,8 +50,8 @@
           format: 'picker',
           pickerType: "olio.llm.chatConfig",
           pickerProperty: {
-              selected: "{object}",
-              entity: "chatConfig"
+            selected: "{object}",
+            entity: "chatConfig"
           },
           label: "Chat Config"
         }
@@ -80,14 +80,14 @@
     let chatCfg = newChatConfig();
 
 
-    function doClear(){
+    function doClear() {
       clearMagic8();
       clearEditMode();
       page.components.audio.unconfigureAudio(audio);
       chatCfg = newChatConfig();
     }
-    
-    function pickSession(obj){
+
+    function pickSession(obj) {
 
       doClear();
       inst = am7model.prepareInstance(obj);
@@ -95,7 +95,7 @@
       doPeek();
     }
 
-    async function chatInto(){
+    async function chatInto() {
       page.components.dialog.chatInto(undefined, inst, aCCfg)
     }
 
@@ -115,28 +115,28 @@
       });
     }
 
-    function newChatStream(){
-      
+    function newChatStream() {
+
       let cfg = {
         streamId: undefined,
         request: undefined,
 
         onchatcomplete: (id) => {
           console.log("Chat completed: " + id);
-          if(page.chatStream && !page.chatStream.streamId == id){
+          if (page.chatStream && !page.chatStream.streamId == id) {
             console.warn("Mismatched stream identifiers");
           }
           clearChat();
           m.redraw();
         },
-        onchaterror: (id, msg)=> {
+        onchaterror: (id, msg) => {
           page.toast("error", "Chat error: " + msg, 5000);
           clearChat();
           m.redraw();
         },
-        onchatstart: (id, req)=> {
+        onchatstart: (id, req) => {
           // console.log("Start chat...");
-          if(!chatCfg){
+          if (!chatCfg) {
             console.warn("Invalid chat configuration");
             return;
           }
@@ -144,24 +144,24 @@
           if (!chatCfg.history.messages) chatCfg.history.messages = [];
           chatCfg.history.messages.push({ role: "assistant", content: "" });
         },
-        onchatupdate: (id, msg)=> {
+        onchatupdate: (id, msg) => {
           // console.log("Chat update: " + msg);
-          if(!chatCfg.history.messages.length){
+          if (!chatCfg.history.messages.length) {
             console.error("Unexpected chat history");
             return;
           }
           let m1 = chatCfg.history.messages[chatCfg.history.messages.length - 1];
-          if(m1.role != "assistant"){
+          if (m1.role != "assistant") {
             console.error("Expected assistant message to be the most recent");
             return;
           }
-          
+
           m1.content += msg;
           m.redraw();
         }
       }
 
-      function clearChat(){
+      function clearChat() {
         page.chatStream = undefined;
         chatCfg.streaming = false;
         chatCfg.pending = false;
@@ -170,16 +170,16 @@
       return cfg;
     }
 
-    function doStop(){
-      if(!chatCfg.streaming){
+    function doStop() {
+      if (!chatCfg.streaming) {
         return;
       }
-        let chatReq = {
-          schema: inst.model.name,
-          objectId: inst.api.objectId(),
-          uid: page.uid(),
-          message: "[stop]"
-        };
+      let chatReq = {
+        schema: inst.model.name,
+        objectId: inst.api.objectId(),
+        uid: page.uid(),
+        message: "[stop]"
+      };
 
       page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
     }
@@ -190,7 +190,7 @@
         console.warn("Chat is pending");
         return;
       }
-      if(chatCfg.streaming){
+      if (chatCfg.streaming) {
         console.warn("Chat is streaming - TODO - interrupt");
         return;
       }
@@ -202,25 +202,25 @@
       }
       else {
         pushHistory();
-        if(msg && msg.length && (audio || audioMagic8)){
-            // Generate user audio prior to submitting the chat request;
-            let name = inst.api.objectId() + " - " + (chatCfg.history.length - 1);
-            if(!page.components.audio.hasAudioMap(name)){
-              console.info("Priming comment audio ... " + name);
-              let profileId = chatCfg?.user?.profile?.objectId;
-              let vprops = {"text": msg, "speed": 1.2, voiceProfileId: profileId};
-              if(!vprops.voiceProfileId){
-                  vprops.engine = "piper";
-                  vprops.speaker = "en_GB-alba-medium";
-              }
-              m.request({method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops}).then((r) => {
-                console.info("Comment audio primed");
-                clearMagic8();
-              });
+        if (msg && msg.length && (audio || audioMagic8)) {
+          // Generate user audio prior to submitting the chat request;
+          let name = inst.api.objectId() + " - " + (chatCfg.history.length - 1);
+          if (!page.components.audio.hasAudioMap(name)) {
+            console.info("Priming comment audio ... " + name);
+            let profileId = chatCfg?.user?.profile?.objectId;
+            let vprops = { "text": msg, "speed": 1.2, voiceProfileId: profileId };
+            if (!vprops.voiceProfileId) {
+              vprops.engine = "piper";
+              vprops.speaker = "en_GB-alba-medium";
             }
+            m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops }).then((r) => {
+              console.info("Comment audio primed");
+              clearMagic8();
+            });
+          }
         }
         chatCfg.pending = true;
-        let data = page.components.dnd.workingSet.map(r => {return JSON.stringify({schema:r.schema, objectId:r.objectId});});
+        let data = page.components.dnd.workingSet.map(r => { return JSON.stringify({ schema: r.schema, objectId: r.objectId }); });
 
         let chatReq = {
           schema: inst.model.name,
@@ -229,13 +229,13 @@
           message: msg,
           data
         };
-        try{
-          if(chatCfg?.chat.stream){
+        try {
+          if (chatCfg?.chat.stream) {
             page.chatStream = newChatStream();
             chatCfg.streaming = true;
             page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
           }
-          else{
+          else {
             m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
               if (!chatCfg.history) chatCfg.history = {};
               chatCfg.history.messages = r?.messages || [];
@@ -244,41 +244,41 @@
             });
           }
         }
-        catch(e){
+        catch (e) {
           console.error("Error in chat", e);
           chatCfg.pending = false;
         }
       }
     }
-    
-    async function deleteChat(s){
-      page.components.dialog.confirm("Delete chat " + s + "?", async function(){
-        if(s.session){
+
+    async function deleteChat(s) {
+      page.components.dialog.confirm("Delete chat " + s + "?", async function () {
+        if (s.session) {
           let q = am7client.newQuery(s.sessionType);
           q.field("id", s.session.id);
-          try{
+          try {
             let qr = await page.search(q);
-            if(qr && qr.results && qr.results.length > 0){
+            if (qr && qr.results && qr.results.length > 0) {
               page.toast("info", "Deleting session data - " + qr.results[0].objectId);
               await page.deleteObject(s.sessionType, qr.results[0].objectId);
             }
-            else{
-              page.toast("error","Failed to find session data to delete", 5000);
+            else {
+              page.toast("error", "Failed to find session data to delete", 5000);
               console.error("Failed to delete session data", qr);
             }
           }
-          catch(e){
+          catch (e) {
             page.toast("error", "Error deleting session data", 5000);
-            console.error("Error deleting session data", e); 
+            console.error("Error deleting session data", e);
           }
 
         }
-        else{
+        else {
           console.warn("No session data found");
         }
         // console.log("Deleting request", s.objectId);
         await page.deleteObject(s[am7model.jsonModelKey], s.objectId);
-        
+
         aSess = undefined;
         await loadConfigList();
         doClear();
@@ -286,14 +286,14 @@
 
       });
     }
-    
+
     /// Note: Chatmessage isn't defined in its own model, and should be to avoid all the goofy checks
     function pushHistory() {
       let msg = page.components.audio.recording() ? audioText : document.querySelector("[name='chatmessage']").value;
       if (!chatCfg.history) chatCfg.history = {};
       if (!chatCfg.history.messages) chatCfg.history.messages = [];
       chatCfg.history.messages.push({ role: "user", content: msg });
-      if(page.components.audio.recording()){
+      if (page.components.audio.recording()) {
         audioText = "";
       }
       else {
@@ -303,7 +303,7 @@
     }
 
     function getHistory() {
-      if(!inst){
+      if (!inst) {
         return;
       }
 
@@ -315,7 +315,7 @@
       return m.request({ method: 'POST', url: g_application_path + "/rest/chat/history", withCredentials: true, body: chatReq });
     }
 
-    function newChatConfig(){
+    function newChatConfig() {
       return {
         /*
         chat: undefined,
@@ -332,7 +332,7 @@
 
     function doPeek() {
       //doClear();
-      if(chatCfg.peek || !inst){
+      if (chatCfg.peek || !inst) {
         return Promise.resolve();
       }
 
@@ -365,7 +365,7 @@
             });
         });
       }
-      else{
+      else {
         console.warn("No prompt or chat config");
 
       }
@@ -399,7 +399,7 @@
     chat.callback = function () {
 
     };
-    
+
     function getSplitLeftContainerView() {
       /*
       inst.formField("prompt").hide = sess;
@@ -414,37 +414,39 @@
           e.preventDefault();
         }
       }, [
-       // am7view.form(inst),
+        // am7view.form(inst),
         //         m("button", { class: "flyout-button", onclick: openChatSettings }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "add"), "New Chat"]),
         vsess.map((s, i) => {
           let bNew = s.objectId == undefined;
           let bDel = "";
-          if(bNew){
-            bDel = m("button", {class: "menu-button content-end mr-2", onclick: openChatSettings}, m("span", {class: "material-symbols-outlined material-icons-24"}, "add"));
+          if (bNew) {
+            bDel = m("button", { class: "menu-button content-end mr-2", onclick: openChatSettings }, m("span", { class: "material-symbols-outlined material-icons-24" }, "add"));
             //m("button", {class: "menu-button material-symbols-outlined material-icons-24 mr-2"},"add");
           }
-          else{
-            bDel = m("button", {class: "menu-button content-end mr-2", onclick: function(e){ e.preventDefault(); deleteChat(s); return false;}}, m("span", {class: "material-symbols-outlined material-icons-24"}, "delete_outline"));
+          else {
+            bDel = m("button", { class: "menu-button content-end mr-2", onclick: function (e) { e.preventDefault(); deleteChat(s); return false; } }, m("span", { class: "material-symbols-outlined material-icons-24" }, "delete_outline"));
           }
-          return m("button", { class: "flyout-button" + (inst && s.name == inst.api.name() ? " active": ""), onclick: function () {
-            pickSession(s);
-          } }, [bDel, s.name]);
+          return m("button", {
+            class: "flyout-button" + (inst && s.name == inst.api.name() ? " active" : ""), onclick: function () {
+              pickSession(s);
+            }
+          }, [bDel, s.name]);
         })
-           
+
       ]);
     }
 
 
-    function openChatSettings(){
-      page.components.dialog.chatSettings(async function(e){
+    function openChatSettings() {
+      page.components.dialog.chatSettings(async function (e) {
 
         //let obj = await page.createObject(e);
         let chatReq = {
           schema: e[am7model.jsonModelKey],
           name: e.name,
           objectId: e.objectId,
-          chatConfig: {objectId: e.chatConfig.objectId},
-          promptConfig: {objectId: e.promptConfig.objectId},
+          chatConfig: { objectId: e.chatConfig.objectId },
+          promptConfig: { objectId: e.promptConfig.objectId },
           uid: page.uid()
         };
 
@@ -465,10 +467,10 @@
     let audio = false;
     let audioMagic8 = false;
     let profile = false;
-    function toggleAudio(){
+    function toggleAudio() {
       audio = !audio;
     }
-    function toggleProfile(){
+    function toggleProfile() {
       profile = !profile;
     }
 
@@ -486,9 +488,9 @@
     async function editMessageHistory(idx, cnt) {
 
       let q = am7view.viewQuery(am7model.newInstance(inst.api.sessionType()));
-      q.field("id", inst.api.session().id);    
+      q.field("id", inst.api.session().id);
       let qr = await page.search(q);
-      if(qr && qr.results.length > 0){
+      if (qr && qr.results.length > 0) {
         console.log("Patching session data", qr.results[0].objectId);
         let req = qr.results[0];
 
@@ -500,7 +502,7 @@
         await doCancel();
         await doPeek();
       }
-      else{
+      else {
         console.error("Failed to find session data to edit", qr);
       }
       clearEditMode();
@@ -517,26 +519,26 @@
         editIndex = idx;
       }
     }
-    
-    function togglePlayMagic8(aud, aud2){
-      if(!aud) return;
-      if(aud2 && aud2.context.state == "running") aud2.context.suspend();
-      if(!aud.started){
+
+    function togglePlayMagic8(aud, aud2) {
+      if (!aud) return;
+      if (aud2 && aud2.context.state == "running") aud2.context.suspend();
+      if (!aud.started) {
         // aud.context.resume();
         aud.source.start(0);
         aud.started = true;
-        aud.source.onended = function() {
+        aud.source.onended = function () {
           aud.started = false;
           aud.source = aud.context.createBufferSource();
           aud.source.buffer = aud.buffer;
         };
       }
-      else if(aud.context.state == "suspended") aud.context.resume();
-      else if(aud.context.state != "closed") aud.context.suspend();
+      else if (aud.context.state == "suspended") aud.context.resume();
+      else if (aud.context.state != "closed") aud.context.suspend();
 
     }
 
-    function newMagic8(){
+    function newMagic8() {
       return {
         id: page.uid(),
         audioMotionTop: undefined,
@@ -550,100 +552,100 @@
       };
     }
     let magic8 = newMagic8();
-    
-    function clearMagic8(){
+
+    function clearMagic8() {
       page.components.audio.clearAudioSource();
-      if(!magic8){
+      if (!magic8) {
         return;
       }
 
-      if(magic8.audioMotionTop){
+      if (magic8.audioMotionTop) {
         magic8.audioMotionTop.stop();
         magic8.audioMotionTop.destroy();
       }
-      if(magic8.audioMotionBottom){
+      if (magic8.audioMotionBottom) {
         magic8.audioMotionBottom.stop();
         magic8.audioMotionBottom.destroy();
       }
 
       const canvasTop = document.getElementById("waveform-top");
       const canvasBottom = document.getElementById("waveform-bottom");
-      if(canvasTop) canvasTop.innerHTML = "";
-      if(canvasBottom) canvasBottom.innerHTML = "";
+      if (canvasTop) canvasTop.innerHTML = "";
+      if (canvasBottom) canvasBottom.innerHTML = "";
 
 
       magic8 = newMagic8();
 
     }
 
-    function configureMagic8(){
-      if(!audioMagic8){
+    function configureMagic8() {
+      if (!audioMagic8) {
         return;
       }
-      if(!magic8){
+      if (!magic8) {
         console.warn("Magic8 is not defined");
       }
-      if(magic8.configuring){
+      if (magic8.configuring) {
         console.warn("Magic8 is already configuring");
         return;
       }
 
-      if(magic8.audioMotionTop && magic8.audioMotionBottom){
+      if (magic8.audioMotionTop && magic8.audioMotionBottom) {
         console.warn("Magic8 is already configured");
         return;
       }
 
       let canvasTop = document.getElementById("waveform-top");
       let canvasBottom = document.getElementById("waveform-bottom");
-      if(!canvasTop || !canvasBottom){
+      if (!canvasTop || !canvasBottom) {
         // console.warn("No canvas for top or bottom waveform");
         return;
       }
       magic8.lastAudio = 0;
       let aMsg = chatCfg?.history?.messages;
-      if(!aMsg || !aMsg.length){
+      if (!aMsg || !aMsg.length) {
         // console.log("No messages in chat history");
         return;
       }
 
       magic8.configuring = true;
       let aP = [];
-      if(!magic8.audio1 || !magic8.audio2){
+      if (!magic8.audio1 || !magic8.audio2) {
         let sysProfileId = chatCfg?.system?.profile?.objectId;
         let usrProfileId = chatCfg?.user?.profile?.objectId;
-        if(!sysProfileId || !usrProfileId){
+        if (!sysProfileId || !usrProfileId) {
           console.warn("No system or user profile for chat");
           return;
         }
 
-       for(let i = aMsg.length - 2; i < aMsg.length; i++){
+        for (let i = aMsg.length - 2; i < aMsg.length; i++) {
           let m = aMsg[i];
-          if(!m) continue;
+          if (!m) continue;
           let name = inst.api.objectId() + " - " + i;
           let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
 
           let cnt = pruneAll(m.content);
-          if(cnt.length){
+          if (cnt.length) {
             aP.push(page.components.audio.createAudioSource(name, profId, cnt).then((aud) => {
-              if(m.role == "assistant"){
+              if (m.role == "assistant") {
                 magic8.audio1 = aud;
                 magic8.audio1Content = cnt;
                 magic8.lastAudio = 1;
               }
-              else{
+              else {
                 magic8.audio2 = aud;
                 magic8.audio2Content = cnt;
                 magic8.lastAudio = 2;
               }
             }));
           }
+        }
       }
-    }
-    else{
-      console.log("Skip multi-start");
-      return;
-    }
-    Promise.all(aP).then(() => {
+      else {
+        console.log("Skip multi-start");
+        return;
+      }
+      Promise.all(aP).then(() => {
         let props = {
           overlay: true,
           bgAlpha: 0,
@@ -653,126 +655,127 @@
           gradient: "prism",
           showScaleY: false,
           showScaleX: false
-      };
-      
-      let props1 = Object.assign({height: canvasTop.offsetHeight, source: magic8.audio1?.source}, props);
-      let props2 = Object.assign({height: canvasBottom.offsetHeight, source: magic8.audio2?.source}, props);
+        };
 
-      magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
-      magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
+        let props1 = Object.assign({ height: canvasTop.offsetHeight, source: magic8.audio1?.source }, props);
+        let props2 = Object.assign({ height: canvasBottom.offsetHeight, source: magic8.audio2?.source }, props);
 
-      if(magic8.lastAudio){
-        console.log("Starting last audio source", magic8.lastAudio);
-        //magic8["audio" + lastAud].context.resume();
-        togglePlayMagic8(magic8["audio" + magic8.lastAudio]);
+        magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
+        magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
+
+        if (magic8.lastAudio) {
+          console.log("Starting last audio source", magic8.lastAudio);
+          //magic8["audio" + lastAud].context.resume();
+          togglePlayMagic8(magic8["audio" + magic8.lastAudio]);
+        }
+        canvasTop.onclick = function (e) {
+          togglePlayMagic8(magic8.audio1, magic8.audio2);
+        };
+        canvasBottom.onclick = function (e) {
+          togglePlayMagic8(magic8.audio2, magic8.audio1);
+        };
+
+        magic8.configuring = false;
+      });
+    }
+
+    function getMagic8View() {
+      // Get profile image URLs if available
+      let sysUrl, usrUrl;
+      if (profile) {
+        if (chatCfg.system?.profile?.portrait) {
+          let pp = chatCfg.system.profile.portrait;
+          sysUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
+        }
+        if (chatCfg.user?.profile?.portrait) {
+          let pp = chatCfg.user.profile.portrait;
+          usrUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
+        }
       }
-      canvasTop.onclick = function(e){
-        togglePlayMagic8(magic8.audio1, magic8.audio2);
-      };
-      canvasBottom.onclick = function(e){
-        togglePlayMagic8(magic8.audio2, magic8.audio1);
-      };
-
-      magic8.configuring = false;
-    });
-    }
-
-  function getMagic8View() {
-  // Get profile image URLs if available
-  let sysUrl, usrUrl;
-  if(profile){
-    if (chatCfg.system?.profile?.portrait) {
-      let pp = chatCfg.system.profile.portrait;
-      sysUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
-    }
-    if (chatCfg.user?.profile?.portrait) {
-      let pp = chatCfg.user.profile.portrait;
-      usrUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
-    }
-  }
-  return m("div", {key: magic8.id,
-    class: `
+      return m("div", {
+        key: magic8.id,
+        class: `
       relative aspect-square w-[90vw] max-w-[600px] max-h-[600px] mx-auto
       rounded-full overflow-hidden
       bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300
       ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
     `
-  }, [
-    // System (assistant) profile image - upper hemisphere
-    sysUrl && m("div", {
-      class: `
+      }, [
+        // System (assistant) profile image - upper hemisphere
+        sysUrl && m("div", {
+          class: `
         absolute top-0 left-0 w-full h-1/2 z-0
         pointer-events-none
         opacity-60 blur-sm
         bg-cover
       `,
-      style: {
-        backgroundImage: `url('${sysUrl}')`,
-        backgroundPosition: "top center"
-      }
-    }),
+          style: {
+            backgroundImage: `url('${sysUrl}')`,
+            backgroundPosition: "top center"
+          }
+        }),
 
-    // User profile image - lower hemisphere
-    usrUrl && m("div", {
-      class: `
+        // User profile image - lower hemisphere
+        usrUrl && m("div", {
+          class: `
         absolute bottom-0 left-0 w-full h-1/2 z-0
         pointer-events-none
         opacity-60 blur-sm
         bg-cover
       `,
-      style: {
-        backgroundImage: `url('${usrUrl}')`,
-        backgroundPosition: "top center"
-      }
-    }),
+          style: {
+            backgroundImage: `url('${usrUrl}')`,
+            backgroundPosition: "top center"
+          }
+        }),
 
-    // Top waveform canvas
-    m("div", {
-      id: "waveform-top",
-      class: `
+        // Top waveform canvas
+        m("div", {
+          id: "waveform-top",
+          class: `
         absolute top-0 left-0 w-full h-1/2 z-10
       `
-    }),
+        }),
 
-    // Bottom waveform canvas (inverted)
-    m("div", {
-      id: "waveform-bottom",
-      class: `
+        // Bottom waveform canvas (inverted)
+        m("div", {
+          id: "waveform-bottom",
+          class: `
         absolute bottom-0 left-0 w-full h-1/2 z-10
         transform scale-y-[-1]
       `
-    }),
+        }),
 
-    // ...rest of your overlays and effects...
-    m("div", {
-      class: `
+        // ...rest of your overlays and effects...
+        m("div", {
+          class: `
         absolute inset-0 rounded-full pointer-events-none
         bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.15)_0%,transparent_70%)]
       `
-    }),
-    m("div", {
-      class: `
+        }),
+        m("div", {
+          class: `
         absolute top-0 left-0 w-full h-full pointer-events-none rounded-full
         bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.3)_0%,transparent_40%)]
         mix-blend-screen
       `
-    }),
-    m("div", {
-      class: `
+        }),
+        m("div", {
+          class: `
         absolute bottom-0 left-0 w-full h-1/2
         bg-gradient-to-t from-black/20 to-transparent
         pointer-events-none
       `
-    })
-  ]);
-}
+        })
+      ]);
+    }
 
 
     function getResultsView() {
-      if(!inst){
+      if (!inst) {
         return "";
       }
-      if(audioMagic8){
+      if (audioMagic8) {
         return getMagic8View();
       }
       let c1g = "man";
@@ -824,12 +827,12 @@
         let ecls = "";
         let bectl = false;
         let lastMsg = (midx == (chatCfg.history.messages.length - 1));
-        if(hideThoughts && !editMode){
+        if (hideThoughts && !editMode) {
           cnt = pruneTag(cnt, "citation");
         }
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
-                  
+
           /// Only edit last message
           if (midx == chatCfg.history.messages.length - 1) {
             ectl = m("span", { onclick: function () { toggleEditMode(midx); }, class: "material-icons-outlined text-slate-" + (bectl ? 200 : 700) }, "edit");
@@ -849,34 +852,34 @@
         }
         if (!bectl && hideThoughts) {
           cnt = pruneToMark(cnt, "(Reminder");
-          cnt = pruneToMark(cnt,"(KeyFrame");
+          cnt = pruneToMark(cnt, "(KeyFrame");
         }
-        if(!editMode && cnt.trim().length == 0){
+        if (!editMode && cnt.trim().length == 0) {
           return "";
         }
 
-        if(typeof cnt == "string"){
+        if (typeof cnt == "string") {
           //cnt = cnt.replace(/\r/,"").split("\n").map((l)=>{return m("p", l)});
-          cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/,""))));
+          cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/, ""))));
         }
         let aud = "";
         //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
 
-        if(chatCfg.chat && audio && !chatCfg.streaming){
+        if (chatCfg.chat && audio && !chatCfg.streaming) {
           //let name = chatCfg.chat.objectId + " - " + midx;
           let name = inst.api.objectId() + " - " + midx;
           let profileId;
-          if(msg.role == "assistant"){
+          if (msg.role == "assistant") {
             profileId = chatCfg?.system?.profile?.objectId;
           }
-          else{
+          else {
             profileId = chatCfg?.user?.profile?.objectId;
           }
           aud = page.components.audio.createAudioVisualizer(name, aidx, profileId, lastMsg, pruneAll(msg.content));
-          if(!aud || typeof aud == "string"){
+          if (!aud || typeof aud == "string") {
             aud = "";
           }
-          else{
+          else {
             aidx++;
           }
 
@@ -889,42 +892,42 @@
         );
       });
       let flds = [m("div", { class: "flex justify-between" }, [
-          m("div", { class: "flex items-center" }, [
-            c1i,
-            m("span", { class: "text-gray-400 text-base pl-4" }, c1l)
-          ]),
-          m("div", { class: "flex items-center" }, [
+        m("div", { class: "flex items-center" }, [
+          c1i,
+          m("span", { class: "text-gray-400 text-base pl-4" }, c1l)
+        ]),
+        m("div", { class: "flex items-center" }, [
 
-            m("span", { class: "text-gray-400 text-base pl-4" }, c2l),
-            c2i
-          ])
+          m("span", { class: "text-gray-400 text-base pl-4" }, c2l),
+          c2i
         ])
+      ])
       ];
 
       let ret = [(profile ? m("div", { class: "bg-white user-info-header px-5 py-3" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
-        
+
         msgs
       ])];
 
       return ret;
     }
 
-    function pruneAll(cnt){
+    function pruneAll(cnt) {
       cnt = pruneToMark(cnt, "<|reserved_special_token");
       cnt = pruneTag(cnt, "think");
       cnt = pruneTag(cnt, "thought");
       cnt = pruneToMark(cnt, "(Reminder");
-      cnt = pruneToMark(cnt,"(KeyFrame");
+      cnt = pruneToMark(cnt, "(KeyFrame");
       cnt = pruneOther(cnt);
       return cnt;
     }
 
-    function pruneOther(cnt){
-      cnt = cnt.replace(/\[interrupted\]/g,"");
+    function pruneOther(cnt) {
+      cnt = cnt.replace(/\[interrupted\]/g, "");
       return cnt;
     }
 
-    function pruneToMark(cnt, mark){
+    function pruneToMark(cnt, mark) {
       let idx = cnt.indexOf(mark);
       if (idx > -1) {
         cnt = cnt.substring(0, idx);
@@ -932,39 +935,39 @@
       return cnt;
     }
 
-    function pruneTag(cnt, tag){
-        let tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
-        let maxCheck = 20;
-        let check = 0;
-        while (tdx1 > -1) {
-          if (check++ >= maxCheck) {
-            console.error("Break on loop!");
-            break;
-          }
-
-          let tdx2 = cnt.toLowerCase().indexOf("</" + tag + ">");
-          if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
-            cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + tag.length + 3, cnt.length);
-          }
-          tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
+    function pruneTag(cnt, tag) {
+      let tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
+      let maxCheck = 20;
+      let check = 0;
+      while (tdx1 > -1) {
+        if (check++ >= maxCheck) {
+          console.error("Break on loop!");
+          break;
         }
-        return cnt;
+
+        let tdx2 = cnt.toLowerCase().indexOf("</" + tag + ">");
+        if (tdx1 > -1 && tdx2 > -1 && tdx2 > tdx1) {
+          cnt = cnt.substring(0, tdx1) + cnt.substring(tdx2 + tag.length + 3, cnt.length);
+        }
+        tdx1 = cnt.toLowerCase().indexOf("<" + tag + ">");
+      }
+      return cnt;
     }
-    
+
     function getChatBottomMenuView() {
       // if(!showFooter) return "";
 
-      let pendBar = m("div", {class: "w-[80%] p-4 flex flex-col"},
-        m("div", {class: "relative bg-gray-200 rounded"},
-          m("div", {class: "absolute top-0 h-4 w-full rounded pending-blue"})
+      let pendBar = m("div", { class: "w-[80%] p-4 flex flex-col" },
+        m("div", { class: "relative bg-gray-200 rounded" },
+          m("div", { class: "absolute top-0 h-4 w-full rounded pending-blue" })
         )
       );
-      
+
       let placeText = "Start typing...";
-      if(!inst){
+      if (!inst) {
         placeText = "Select or create a chat to begin...";
       }
-      else if(chatCfg.pending){
+      else if (chatCfg.pending) {
         placeText = "Waiting ...";
       }
       let msgProps = { type: "text", name: "chatmessage", class: "text-field w-[80%]", placeholder: placeText, onkeydown: function (e) { if (e.which == 13) doChat(e); } };
@@ -988,8 +991,8 @@
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
                 page.components.audio.recordButton(),
-                (page.components.audio.recording() ? page.components.audio.recordWithVisualizer(true,function(text){ audioText += text; console.log(text);}, function(contentType, b64){ handleAudioSave(contentType, b64); }) : (chatCfg.pending ? pendBar : input)),
-                m("button", { class: "button", onclick: doStop}, m("span", { class: "material-symbols-outlined material-icons-24" }, "stop")),
+                (page.components.audio.recording() ? page.components.audio.recordWithVisualizer(true, function (text) { audioText += text; console.log(text); }, function (contentType, b64) { handleAudioSave(contentType, b64); }) : (chatCfg.pending ? pendBar : input)),
+                m("button", { class: "button", onclick: doStop }, m("span", { class: "material-symbols-outlined material-icons-24" }, "stop")),
                 m("button", { class: "button", onclick: doChat }, m("span", { class: "material-symbols-outlined material-icons-24" }, "chat"))
               ])
             )
@@ -1005,7 +1008,7 @@
       );
       */
     }
-    async function handleAudioSave(mimeType, base64){
+    async function handleAudioSave(mimeType, base64) {
       let name = inst.api.objectId() + " - " + (chatCfg?.history?.messages?.length || 1);
       console.log("Save:", name);
       let cdir = await page.makePath("auth.group", "data", "~/Data/Recordings");
@@ -1032,11 +1035,11 @@
 
     let lastCount = -1;
     function scrollToLast() {
-      if(!inst){
+      if (!inst) {
         return;
       }
       let oMsg = document.getElementById("messages");
-      if(!oMsg) return;
+      if (!oMsg) return;
       let msgs = oMsg.querySelectorAll(":scope > div");
       if (msgs.length > 1 && lastCount != msgs.length) {
         lastCount = msgs.length;
@@ -1046,24 +1049,24 @@
 
     }
 
- 
-    
+
+
     async function loadConfigList() {
       am7client.clearCache(undefined, true);
       let dir = await page.findObject("auth.group", "DATA", "~/Chat");
       if (aPCfg == undefined) {
         aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
-        if(aPCfg && aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
+        if (aPCfg && aPCfg.length && inst && inst.api.promptConfig() == null) inst.api.promptConfig(aPCfg[0]);
       }
       if (aCCfg == undefined) {
         aCCfg = await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
-        if(aCCfg && aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
+        if (aCCfg && aCCfg.length && inst && inst.api.chatConfig() == null) inst.api.chatConfig(aCCfg[0]);
 
       }
       let dir2 = await page.findObject("auth.group", "DATA", "~/ChatRequests");
       if (aSess == undefined) {
         aSess = await am7client.list("olio.llm.chatRequest", dir2.objectId, null, 0, 0);
-        if(aSess && aSess.length && !inst) pickSession(aSess[0]);
+        if (aSess && aSess.length && !inst) pickSession(aSess[0]);
       }
 
     }
@@ -1072,7 +1075,7 @@
 
       if (aPCfg == undefined && aCCfg == undefined) {
         loadConfigList().then(() => {
-          if(aCCfg.length > 0){
+          if (aCCfg.length > 0) {
             doPeek();
           }
           m.redraw();
@@ -1134,7 +1137,7 @@
         let bPopSet = false;
         origin = vnode.attrs.origin || ctx;
 
-        if(window.remoteEntity){
+        if (window.remoteEntity) {
           inst = am7model.prepareInstance(remoteEntity, am7model.forms.chatSettings);
           window.dbgInst = inst;
           bPopSet = true;
@@ -1142,7 +1145,7 @@
         }
 
         let cfg = page.context().contextObjects["chatConfig"];
-        if (cfg ) {
+        if (cfg) {
           // && !inst.api.chatConfig() && !inst.api.promptConfig()
           console.warn("TODO: Refactor sending in chat config ref");
           /*
@@ -1153,7 +1156,7 @@
         }
         document.documentElement.addEventListener("keydown", navKey);
 
-        if(bPopSet){
+        if (bPopSet) {
           openChatSettings();
 
         }
