@@ -247,7 +247,7 @@
     }
     function unconfigureAudio(enabled) {
         if (enabled) return;
-        console.info("Unconfiguring audio visualizers");
+        // console.info("Unconfiguring audio visualizers");
         clearAudioSource();
         for (let id in visualizers) {
 
@@ -260,14 +260,8 @@
             }
         }
     }
-
-    function configureAudio(enabled) {
-        if (!enabled) {
-            unconfigureAudio();
-            return;
-        }
-        //let aa = document.querySelectorAll("audio");
-        let aa = document.querySelectorAll("div[id*='chatAudioContainer-']");
+    
+    function configureVisualizer(aud, autoPlay){
         let props = {
             height: 60,
             overlay: true,
@@ -278,48 +272,64 @@
             showScaleY: false,
             showScaleX: false
         };
-        for (let i = 0; i < aa.length; i++) {
 
-            let aud = aa[i];
-            if (visualizers[aud.id]) {
-                /// console.warn("Audio visualizer already configured for", aud.id);
-                continue;
+        if (visualizers[aud.id] && !visualizers[aud.id].lateLoad) {
+            /// console.warn("Audio visualizer already configured for", aud.id);
+            return;
+        }
+
+        visualizers[aud.id] = { pending: true };
+        console.info("Configuring audio visualizer for", aud.id);
+        let oM = getAudioMapForContainer(aud.id);
+        if (!oM) {
+            console.warn("Failed to find map for " + aud.id);
+            console.warn(audioMap);
+            return;
+        }
+
+        //let cont = aud.parentNode;
+
+        createAudioSource(oM.name, oM.profileId, oM.content).then((o) => {
+            if (!o) {
+                console.warn("Failed to retrieve audio source")
             }
-            visualizers[aud.id] = { pending: true };
-            console.info("Configuring audio visualizer for", aud.id);
-            let oM = getAudioMapForContainer(aud.id);
-            if (!oM) {
-                console.warn("Failed to find map for " + aud.id);
+            if (!o) {
+                console.warn("Failed to retrieve audio source", oM.name);
                 console.warn(audioMap);
-                continue;
+                console.warn(audioSource);
+                return;
             }
+            let props1 = Object.assign({ source: o.source, onclick: function(){togglePlayAudioSource(o);} }, props);
+            let audioMotion = new AudioMotionAnalyzer(aud, props1);
+            visualizers[aud.id] = audioMotion;
+            if (autoPlay || oM.autoPlay) {
+                if(getRunningAudioSources().length > 0){
+                    upNext.push(o);
+                }
+                else{
+                    togglePlayAudioSource(o);
+                }
+            }
+        });
+    }
 
-            //let cont = aud.parentNode;
+    function configureAudio(enabled) {
+        if (!enabled) {
+            unconfigureAudio();
+            return;
+        }
+        //let aa = document.querySelectorAll("audio");
+        let aa = document.querySelectorAll("div[id*='chatAudioContainer-']");
 
-            createAudioSource(oM.name, oM.profileId, oM.content).then((o) => {
-                if (!o) {
-                    console.warn("Failed to retrieve audio source")
-                }
-                if (!o) {
-                    console.warn("Failed to retrieve audio source", oM.name);
-                    console.warn(audioMap);
-                    console.warn(audioSource);
-                    return;
-                }
-                let props1 = Object.assign({ source: o.source, onclick: function(){togglePlayAudioSource(o);} }, props);
-                let audioMotion = new AudioMotionAnalyzer(aud, props1);
-                visualizers[aud.id] = audioMotion;
-                if (oM.autoPlay) {
-                    if(getRunningAudioSources().length > 0){
-                        upNext.push(o);
-                    }
-                    else{
-                        togglePlayAudioSource(o);
-                    }
-                }
-            });
-            // const audioMotion = new AudioMotionAnalyzer(aud, props);
-            // visualizers[aud.id] = audioMotion;
+        for (let i = 0; i < aa.length; i++) {
+            let aud = aa[i];
+            if(visualizers[aud.id]) continue;
+            if(i < (aa.length - 2)){
+                visualizers[aud.id] = { lateLoad: true };
+            }
+            else{
+                configureVisualizer(aud);
+            }
         }
     }
 
@@ -335,11 +345,29 @@
         return Object.values(audioSource).filter(aud => aud.started && aud.context.state == "running");
     }
 
+    function stopAudioSources(aud){
+        let running = getRunningAudioSources();
+
+        running.forEach(r => {
+            console.log("Stopping other audio sources", r);
+            if (!aud || r.id !== aud.id) {
+                togglePlayAudioSource(r, true);
+            }
+        });
+    }
+
     function togglePlayAudioSource(aud, autoStop) {
         if(autoStop){
             upNext = [];
         }
         if (typeof aud == "string") {
+            if(visualizers[aud] && visualizers[aud].lateLoad){
+                console.log("Late configure visualizer", aud);
+                stopAudioSources();
+                configureVisualizer(document.querySelectorAll("div[id*='" + aud + "']")[0], true);
+                return;
+            }
+            
             let am = getAudioMapForContainer(aud);
             if (am && audioSource[am.name]) {
                 aud = audioSource[am.name];
@@ -351,21 +379,13 @@
             return;
         }
 
-        let running = getRunningAudioSources();
-        if (running.length > 0 && !autoStop) {
-            running.forEach(r => {
-                console.log("Stopping other audio sources", r);
-                if (r.id !== aud.id) {
-                    togglePlayAudioSource(r, true);
-                }
-            });
+        if(!autoStop){
+            stopAudioSources(aud);
         }
-
         if (!aud.started) {
             if (aud.context.state === "suspended") {
-                // Resume context on user gesture
                 aud.context.resume().then(() => {
-                    aud.source.start(0);
+                    try{ aud.source.start(0); } catch{}
                     aud.started = true;
                 });
             } else if (aud.context.state === "running") {
