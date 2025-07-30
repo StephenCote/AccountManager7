@@ -79,12 +79,12 @@
     let audioText = "";
     let chatCfg = newChatConfig();
     
-    let audioMagic8 = true;
+    let audio = false;
+    let audioMagic8 = false;
   
     let hideThoughts = true;
     let editIndex = -1;
     let editMode = false;
-    let audio = true;
 
     let profile = false;
 
@@ -471,8 +471,20 @@
     }
 
     function toggleAudio() {
-      audio = !audio;
+      if(audio){
+        audio = false;
+        audioMagic8 = true;
+      }
+      else if(audioMagic8){
+        audio = false;
+        audioMagic8 = false;
+      }
+      else{
+        audio = true;
+        audioMagic8 = false;
+      }
     }
+
     function toggleProfile() {
       profile = !profile;
     }
@@ -739,7 +751,7 @@
                 m("button", { class: "button", onclick: toggleFullMode }, m("span", { class: "material-symbols-outlined material-icons-24" }, (fullMode ? "close_fullscreen" : "open_in_new"))),
                 m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
                 m("button", { class: "button", onclick: toggleProfile }, m("span", { class: "material-symbols-outlined material-icons-24" }, (profile ? "account_circle" : "account_circle_off"))),
-                m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : "volume_mute"))),
+                m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")))),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
                 m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
                 page.components.audio.recordButton(),

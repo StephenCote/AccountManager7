@@ -133,7 +133,7 @@
             magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
 
             if (magic8.lastAudio) {
-                console.log("Starting last audio source", magic8.lastAudio);
+                // console.log("Starting last audio source", magic8.lastAudio);
                 if (getRunningAudioSources().length > 0) {
                     upNext.push(o);
                 }
@@ -704,6 +704,10 @@
     }
 
     async function createAudioSource(name, profileId, content) {
+        if(content){
+            /// Strip emojis out - https://stackoverflow.com/questions/10992921/how-to-remove-emoji-code-using-javascript
+            content = content.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "");
+        }
         if (!content || content.length == 0) {
             console.warn("No content provided for audio source creation");
             return;
@@ -718,7 +722,7 @@
                 vprops.engine = "piper";
                 vprops.speaker = "en_GB-alba-medium";
             }
-            console.log("Synthethize '" + name + "'");
+            // console.log("Synthethize '" + name + "'");
             let d;
             try {
                 d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
