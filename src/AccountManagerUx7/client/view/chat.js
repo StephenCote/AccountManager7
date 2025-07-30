@@ -465,7 +465,7 @@
     let editIndex = -1;
     let editMode = false;
     let audio = false;
-    let audioMagic8 = false;
+    let audioMagic8 = true;
     let profile = false;
     function toggleAudio() {
       audio = !audio;

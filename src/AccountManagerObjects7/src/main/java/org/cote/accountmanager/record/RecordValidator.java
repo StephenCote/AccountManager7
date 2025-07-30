@@ -69,7 +69,7 @@ public class RecordValidator {
 						errors++;
 						break;
 					}
-					if(fs.getLimit().size() > 0 && !fs.getLimit().contains(val)) {
+					if(fs.getLimit().size() > 0 && fs.getLimit().stream().filter(l -> ((String)l).equalsIgnoreCase(val)).collect(Collectors.toList()).size() == 0) {
 						logger.error(fs.getName() + " value '" + val + "' is not defined in the limit '" + fs.getLimit().stream().map(e->(String)e).collect(Collectors.joining(",\n")));
 						errors++;
 						break;

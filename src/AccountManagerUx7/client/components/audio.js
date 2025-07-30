@@ -277,11 +277,10 @@
     }
 
     function createAudioVisualizer(name, idx, profileId, autoPlay, content) {
-        let aud;
+        let aud = m("div", { class: "audio-container" }, "");
         if (!audioMap[name]) {
             audioMap[name] = { pending: true }
             aud = m("div", { class: "audio-container" }, "Synthesizing...");
-            console.log("Synthethize " + name);
             let vprops = { "text": content, "speed": 1.2, voiceProfileId: profileId };
             if (!vprops.voiceProfileId) {
                 vprops.engine = "piper";
@@ -291,6 +290,7 @@
                 audioMap[name] = d;
             }).catch((x) => {
                 page.toast("error", "Failed to synthesize audio - is the audio service running?");
+                console.error("Failed to synthesize audio", x);
                 audioMap[name] = { error: true };
             });
         }
