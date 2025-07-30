@@ -23,7 +23,7 @@
     let magic8 = newMagic8();
 
     function clearMagic8(audioMagic8) {
-        page.components.audio.clearAudioSource();
+        
         if (!magic8) {
             return;
         }
@@ -469,11 +469,8 @@
 
     }
 
-    function cleanup() {
-        audioMap = {};
-    }
     function clearAudioSource() {
-
+        //console.info("Clear audio sources");
         for (let id in audioSource) {
             let aud = audioSource[id];
             if (aud && aud.started && aud.context.state != "closed") {
@@ -481,18 +478,18 @@
                 aud.context.close();
             }
         }
+        audioSource = {};
         audioMap = {};
 
     }
     function unconfigureAudio(enabled) {
-        clearMagic8();
         if (enabled) return;
         // console.info("Unconfiguring audio visualizers");
         clearAudioSource();
         for (let id in visualizers) {
 
             if (visualizers[id]) {
-                if (!visualizers[id].pending) {
+                if (!visualizers[id].pending && !visualizers[id].lateLoad) {
                     visualizers[id].stop();
                     visualizers[id].destroy();
                 }
@@ -554,7 +551,6 @@
     }
 
     function configureAudio(enabled) {
-        configureMagic8();
         if (!enabled) {
             unconfigureAudio();
             return;
@@ -592,7 +588,7 @@
         running.forEach(r => {
             console.log("Stopping other audio sources", r);
             if (!aud || r.id !== aud.id) {
-                togglePlayAudioSource(r, true);
+                togglePlayAudioSource(r, false);
             }
         });
     }
@@ -675,7 +671,7 @@
             aud.context.suspend();
         }
         else {
-            console.warn("Handle state " + aud.context.state);
+            console.error("Handle state " + aud.context.state);
         }
     }
 
@@ -708,12 +704,13 @@
             /// Strip emojis out - https://stackoverflow.com/questions/10992921/how-to-remove-emoji-code-using-javascript
             content = content.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "");
         }
+        let tmpAud;
         if (!content || content.length == 0) {
             console.warn("No content provided for audio source creation");
             return;
         }
         if (!audioMap[name]) {
-            audioMap[name] = { name, profileId, content, pending: false };
+            tmpAud = audioMap[name] = { name, profileId, content, pending: false };
         }
         if (!audioMap[name].data && !audioMap[name].pending) {
             audioMap[name].pending = true;
@@ -730,6 +727,10 @@
             catch (e) {
                 console.error("Error synthesizing audio:", e);
                 console.error(vprops);
+            }
+            if(!audioMap[name]){
+                console.error("Ruh-Roh, Raggy");
+                audioMap[name] = tmpAud;
             }
             if (d) {
                 audioMap[name].data = d;
@@ -781,7 +782,6 @@
         createAudioSource,
         clearAudioSource: clearAudioSource,
         hasAudioMap: (name) => audioMap[name] ? true : false,
-        cleanup,
         recordButton,
         recordWithVisualizer,
         extractText,

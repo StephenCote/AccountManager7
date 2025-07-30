@@ -471,15 +471,23 @@
     }
 
     function toggleAudio() {
+      
       if(audio){
         audio = false;
+        if(!audioMagic8){
+          page.components.audio.unconfigureAudio();
+        }
         audioMagic8 = true;
       }
       else if(audioMagic8){
+        page.components.audio.unconfigureAudio();
         audio = false;
         audioMagic8 = false;
       }
       else{
+        if(!audio){
+          page.components.audio.unconfigureAudio();
+        }
         audio = true;
         audioMagic8 = false;
       }
