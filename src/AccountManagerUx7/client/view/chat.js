@@ -213,6 +213,7 @@
               vprops.engine = "piper";
               vprops.speaker = "en_GB-alba-medium";
             }
+            console.log("Priming", name);
             m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops }).then((r) => {
               console.info("Comment audio primed");
               clearMagic8();

@@ -205,7 +205,7 @@ public class VoiceService {
 		BaseRecord data = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 		if(data == null) {
 			if(synthesized.contains(referenceId)) {
-				logger.info("Voice already synthesized: " + voiceName);
+				logger.warn("Voice already synthesized: " + voiceName);
 				return Response.status(400).entity(null).build();
 			}
 			VoiceRequest voiceReq = JSONUtil.importObject(json, VoiceRequest.class);

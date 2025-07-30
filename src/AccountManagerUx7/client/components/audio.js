@@ -233,14 +233,29 @@
     function cleanup() {
         audioMap = {};
     }
+    function clearAudioSource() {
 
+        for (let id in audioSource) {
+            let aud = audioSource[id];
+            if (aud && aud.started && aud.context.state != "closed") {
+                // aud.source.stop();
+                aud.context.close();
+            }
+        }
+        audioMap = {};
+
+    }
     function unconfigureAudio(enabled) {
         if (enabled) return;
+        console.info("Unconfiguring audio visualizers");
+        clearAudioSource();
         for (let id in visualizers) {
-            console.log("Unconfiguring audio visualizer for", id);
+
             if (visualizers[id]) {
-                visualizers[id].stop();
-                visualizers[id].destroy();
+                if(!visualizers[id].pending){
+                    visualizers[id].stop();
+                    visualizers[id].destroy();
+                }
                 delete visualizers[id];
             }
         }
@@ -291,7 +306,6 @@
                     console.warn(audioSource);
                     return;
                 }
-                console.log(o);
                 let props1 = Object.assign({ source: o.source, onclick: function(){togglePlayAudioSource(o);} }, props);
                 let audioMotion = new AudioMotionAnalyzer(aud, props1);
                 visualizers[aud.id] = audioMotion;
@@ -384,7 +398,6 @@
 
     function createAudioVisualizer(name, idx, profileId, autoPlay, content) {
         let contId = "chatAudioContainer-" + (idx);
-        //console.log("Create container", name, autoPlay);
         let aud = m("div", { class: "audio-container block w-full mx-auto", id: "chatAudioContainer-" + (idx), onclick: function () { togglePlayAudioSource(contId, true); } }, "");
         if (!audioMap[name]) {
             audioMap[name] = { id: page.uid(), index: idx, name, profileId, content, autoPlay, containerId: contId, pending: false };
@@ -422,8 +435,15 @@
                 vprops.engine = "piper";
                 vprops.speaker = "en_GB-alba-medium";
             }
-            console.log("Synthethize " + name);
-            let d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
+            console.log("Synthethize '" + name + "'");
+            let d;
+            try{
+                d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
+            }
+            catch(e){
+                console.error("Error synthesizing audio:", e);
+                console.error(vprops);
+            }
             if (d) {
                 audioMap[name].data = d;
                 audioMap[name].pending = false;
@@ -472,16 +492,7 @@
         togglePlayAudio,
         createAudioVisualizer,
         createAudioSource,
-        clearAudioSource: () => {
-            for (let id in audioSource) {
-                let aud = audioSource[id];
-                if (aud && aud.started && aud.context.state != "closed") {
-                    // aud.source.stop();
-                    aud.context.close();
-                }
-            }
-            audioMap = {};
-        },
+        clearAudioSource: clearAudioSource,
         hasAudioMap: (name) => audioMap[name] ? true : false,
         cleanup,
         recordButton,
