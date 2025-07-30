@@ -89,9 +89,10 @@
     let profile = false;
 
     function doClear() {
-      page.components.audio.clearMagic8(audioMagic8);
+      
       clearEditMode();
       page.components.audio.unconfigureAudio(audio);
+      page.components.audio.clearMagic8(audioMagic8);
       chatCfg = newChatConfig();
     }
 
