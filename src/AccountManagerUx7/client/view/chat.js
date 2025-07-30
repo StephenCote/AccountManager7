@@ -204,7 +204,7 @@
         pushHistory();
         if (msg && msg.length && (audio || audioMagic8)) {
           // Generate user audio prior to submitting the chat request;
-          let name = inst.api.objectId() + " - " + (chatCfg.history.length - 1);
+          let name = inst.api.objectId() + " - " + (chatCfg.history.messages.length - 1);
           if (!page.components.audio.hasAudioMap(name)) {
             console.info("Priming comment audio ... " + name);
             let profileId = chatCfg?.user?.profile?.objectId;
@@ -464,8 +464,8 @@
     let hideThoughts = true;
     let editIndex = -1;
     let editMode = false;
-    let audio = false;
-    let audioMagic8 = true;
+    let audio = true;
+    let audioMagic8 = false;
     let profile = false;
     function toggleAudio() {
       audio = !audio;

@@ -223,7 +223,14 @@
                 ico = m("span", { class: "material-icons-cm material-symbols-outlined" }, mod.icon);
             }
             else if(h == "_rowNum"){
-                ico = m("span", { class: "material-icons-cm material-symbols-outlined" }, "tag");
+                
+                function selectHandler(){
+                    let pages = ctl.pagination.pages();
+                    pages.pageResults[pages.currentPage].forEach((v) => {
+                        pages.pageState[v.objectId] = {checked:true};
+                    });
+                }
+                ico = m("span", { onclick: selectHandler, class: "material-icons-cm material-symbols-outlined" }, "tag");
             }
             let cw = getCellStyle(ctl, h);
             let sortButton = "";

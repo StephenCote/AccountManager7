@@ -4688,7 +4688,7 @@
                 layout: "one",
                 field: {
                     type: 'list',
-                    limit: ['Unknown', 'en_US-libritts_r-medium', 'en_GB-alba-medium', 'en_US-kristin-medium']
+                    limit: ['Unknown', 'jenny', 'en_US-libritts_r-medium', 'en_GB-alba-medium', 'en_US-kristin-medium']
                 }
             },
             speakerId: {

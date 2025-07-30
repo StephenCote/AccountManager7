@@ -3,6 +3,7 @@
     let audioSource = {};
     let visualizers = {};
     let recorder;
+    let upNext = [];
 
     function newRecorder() {
         return {
@@ -250,69 +251,145 @@
             unconfigureAudio();
             return;
         }
-        let aa = document.querySelectorAll("audio");
+        //let aa = document.querySelectorAll("audio");
+        let aa = document.querySelectorAll("div[id*='chatAudioContainer-']");
+        let props = {
+            height: 60,
+            overlay: true,
+            bgAlpha: 0,
+            showBgColor: true,
+            showSource: false,
+            gradient: "prism",
+            showScaleY: false,
+            showScaleX: false
+        };
         for (let i = 0; i < aa.length; i++) {
+
             let aud = aa[i];
             if (visualizers[aud.id]) {
                 /// console.warn("Audio visualizer already configured for", aud.id);
                 continue;
             }
+            visualizers[aud.id] = { pending: true };
             console.info("Configuring audio visualizer for", aud.id);
-            let cont = aud.parentNode;
-            let props = {
-                source: aud,
-                height: 60,
-                overlay: true,
-                bgAlpha: 0,
-                showBgColor: true,
-                showSource: false,
-                gradient: "prism",
-                showScaleY: false,
-                showScaleX: false
+            let oM = getAudioMapForContainer(aud.id);
+            if (!oM) {
+                console.warn("Failed to find map for " + aud.id);
+                console.warn(audioMap);
+                continue;
+            }
 
+            //let cont = aud.parentNode;
+
+            createAudioSource(oM.name, oM.profileId, oM.content).then((o) => {
+                if (!o) {
+                    console.warn("Failed to retrieve audio source")
+                }
+                if (!o) {
+                    console.warn("Failed to retrieve audio source", oM.name);
+                    console.warn(audioMap);
+                    console.warn(audioSource);
+                    return;
+                }
+                console.log(o);
+                let props1 = Object.assign({ source: o.source, onclick: function(){togglePlayAudioSource(o);} }, props);
+                let audioMotion = new AudioMotionAnalyzer(aud, props1);
+                visualizers[aud.id] = audioMotion;
+                if (oM.autoPlay) {
+                    if(getRunningAudioSources().length > 0){
+                        upNext.push(o);
+                    }
+                    else{
+                        togglePlayAudioSource(o);
+                    }
+                }
+            });
+            // const audioMotion = new AudioMotionAnalyzer(aud, props);
+            // visualizers[aud.id] = audioMotion;
+        }
+    }
+
+    function getAudioMapForContainer(containerId) {
+        let aM = Object.values(audioMap).filter(k => k.containerId == containerId);
+        if (!aM.length) {
+            return;
+        }
+        return aM[0];
+    }
+    
+    function getRunningAudioSources(){
+        return Object.values(audioSource).filter(aud => aud.started && aud.context.state == "running");
+    }
+
+    function togglePlayAudioSource(aud, autoStop) {
+        if(autoStop){
+            upNext = [];
+        }
+        if (typeof aud == "string") {
+            let am = getAudioMapForContainer(aud);
+            if (am && audioSource[am.name]) {
+                aud = audioSource[am.name];
+            }
+
+        }
+        if (!aud) {
+            console.warn("Invalid audio reference");
+            return;
+        }
+
+        let running = getRunningAudioSources();
+        if (running.length > 0 && !autoStop) {
+            running.forEach(r => {
+                console.log("Stopping other audio sources", r);
+                if (r.id !== aud.id) {
+                    togglePlayAudioSource(r, true);
+                }
+            });
+        }
+
+        if (!aud.started) {
+            if (aud.context.state === "suspended") {
+                // Resume context on user gesture
+                aud.context.resume().then(() => {
+                    aud.source.start(0);
+                    aud.started = true;
+                });
+            } else if (aud.context.state === "running") {
+                aud.source.start(0);
+                aud.started = true;
+            } else {
+                console.warn("Handle state " + aud.context.state);
+            }
+            aud.source.onended = function () {
+                aud.started = false;
+                aud.source = aud.context.createBufferSource();
+                aud.source.buffer = aud.buffer;
+                if(upNext.length > 0){
+                    togglePlayAudioSource(upNext.shift());
+                }
             };
-            const audioMotion = new AudioMotionAnalyzer(cont, props);
-            visualizers[aud.id] = audioMotion;
+        }
+        else if (aud.context.state == "suspended") {
+            console.log("Resume");
+            aud.context.resume();
+        }
+        else if (aud.context.state != "closed") {
+            console.log("Suspend");
+            aud.context.suspend();
+        }
+        else {
+            console.warn("Handle state " + aud.context.state);
         }
     }
 
     function createAudioVisualizer(name, idx, profileId, autoPlay, content) {
-        let aud = m("div", { class: "audio-container" }, "");
+        let contId = "chatAudioContainer-" + (idx);
+        //console.log("Create container", name, autoPlay);
+        let aud = m("div", { class: "audio-container block w-full mx-auto", id: "chatAudioContainer-" + (idx), onclick: function () { togglePlayAudioSource(contId, true); } }, "");
         if (!audioMap[name]) {
-            audioMap[name] = { pending: true }
-            aud = m("div", { class: "audio-container" }, "Synthesizing...");
-            let vprops = { "text": content, "speed": 1.2, voiceProfileId: profileId };
-            if (!vprops.voiceProfileId) {
-                vprops.engine = "piper";
-                vprops.speaker = "en_GB-alba-medium";
-            }
-            m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops }).then((d) => {
-                audioMap[name] = d;
-            }).catch((x) => {
-                page.toast("error", "Failed to synthesize audio - is the audio service running?");
-                console.error("Failed to synthesize audio", x);
-                audioMap[name] = { error: true };
-            });
+            audioMap[name] = { id: page.uid(), index: idx, name, profileId, content, autoPlay, containerId: contId, pending: false };
         }
 
-        else if (audioMap[name] && !audioMap[name].error && !audioMap[name].pending) {
-            let path = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + audioMap[name].groupPath + "/Voice - " + name + ".mp3";
-            let props = {
-                class: "hide",
-                preload: "auto"
-                // ,controls: "controls"
-            };
-            if (autoPlay) {
-                props.autoplay = "autoplay";
-            }
-            let mt = audioMap[name].contentType;
-            if (mt && mt.match(/mpeg3$/)) mt = "audio/mpeg";
-            props.id = "chatAudio-" + (idx);
-            props.crossorigin = "use-credentials";
-            aud = m("div", { class: "audio-container", id: "chatAudioContainer-" + (idx), onclick: function () { page.components.audio.togglePlayAudio(props.id); } }, m("audio", props,
-                m("source", { src: path, type: mt })
-            ));
-        }
         return aud;
     }
 
@@ -336,7 +413,10 @@
             return;
         }
         if (!audioMap[name]) {
-            audioMap[name] = { pending: true }
+            audioMap[name] = { name, profileId, content, pending: false };
+        }
+        if (!audioMap[name].data && !audioMap[name].pending) {
+            audioMap[name].pending = true;
             let vprops = { "text": content, "speed": 1.2, voiceProfileId: profileId };
             if (!vprops.voiceProfileId) {
                 vprops.engine = "piper";
@@ -345,31 +425,31 @@
             console.log("Synthethize " + name);
             let d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
             if (d) {
-                audioMap[name] = d;
+                audioMap[name].data = d;
+                audioMap[name].pending = false;
             }
             else {
                 page.toast("error", "Failed to synthesize audio - is the audio service running?");
-                audioMap[name] = { error: true };
+                audioMap[name].error = true;
+                audioMap[name].pending = false;
             };
         }
 
-        if (audioMap[name] && !audioMap[name].error && !audioMap[name].pending) {
+        if (audioMap[name] && audioMap[name].data && !audioMap[name].error && !audioMap[name].pending) {
 
-            let o = audioMap[name];
+            let o = audioMap[name].data;
             if (!audioSource[name]) {
                 let audioContext = new AudioContext();
                 let audioBuffer = await audioContext.decodeAudioData(base64ToArrayBuffer(o.dataBytesStore));
+                let sourceNode = audioContext.createBufferSource();
+                sourceNode.buffer = audioBuffer;
                 audioSource[name] = {
+                    id: page.uid(),
                     context: audioContext,
-                    buffer: audioBuffer
+                    buffer: audioBuffer,
+                    started: false,
+                    source: sourceNode
                 }
-            }
-            let sourceNode = audioSource[name].context.createBufferSource();
-            sourceNode.buffer = audioSource[name].buffer;
-            return {
-                context: audioSource[name].context,
-                source: sourceNode,
-                started: false
             }
         }
         return audioSource[name];
