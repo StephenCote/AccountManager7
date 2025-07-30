@@ -55,7 +55,7 @@
             console.warn("Magic8 is not defined");
         }
         if (magic8.configuring) {
-            console.warn("Magic8 is already configuring");
+            //console.warn("Magic8 is already configuring");
             return;
         }
 
@@ -138,7 +138,7 @@
                     upNext.push(o);
                 }
                 else {
-                    togglePlayAudioSource(magic8.lastAudio);
+                    togglePlayAudioSource(magic8["audio" + magic8.lastAudio]);
                 }
 
             }
@@ -599,6 +599,7 @@
 
 
     function togglePlayMagic8(aud, aud2) {
+
         /*
       if (!aud) return;
       if (aud2 && aud2.context.state == "running") aud2.context.suspend();
