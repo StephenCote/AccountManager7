@@ -17,14 +17,31 @@
             audio2: undefined,
             audio2Content: undefined,
             lastAudio: 0,
-            configuring: false
+            configuring: false,
+            lastContent: undefined // Track content changes
         };
     }
+
     let magic8 = newMagic8();
 
     function clearMagic8(audioMagic8) {
         console.log("Clear Magic8");
-        if(!audioMagic8) {
+
+        // Store the current content to preserve it if needed
+        let preserveContent = magic8.lastContent;
+
+        // Stop any pending audio
+        upNext = [];
+
+        // Stop currently playing Magic8 audio
+        if (magic8.audio1) {
+            stopAudioSources(magic8.audio1);
+        }
+        if (magic8.audio2) {
+            stopAudioSources(magic8.audio2);
+        }
+
+        if (!audioMagic8) {
             clearAudioSource();
         }
 
@@ -42,9 +59,20 @@
         if (canvasTop) canvasTop.innerHTML = "";
         if (canvasBottom) canvasBottom.innerHTML = "";
 
+        // Clear Magic8 audio references from audioSource
+        if (magic8.audio1 && magic8.audio1.name) {
+            delete audioSource[magic8.audio1.name];
+        }
+        if (magic8.audio2 && magic8.audio2.name) {
+            delete audioSource[magic8.audio2.name];
+        }
 
         magic8 = newMagic8();
 
+        // Preserve content hash if we're just clearing visualizers (not switching modes)
+        if (audioMagic8) {
+            magic8.lastContent = preserveContent;
+        }
     }
 
     function configureMagic8(inst, chatCfg, audioMagic8, prune) {
@@ -53,109 +81,147 @@
         }
 
         if (magic8.configuring) {
-            //console.warn("Magic8 is already configuring");
+            console.warn("Magic8 is already configuring, skipping...");
             return;
         }
 
-        if (magic8.audioMotionTop && magic8.audioMotionBottom) {
-            console.warn("Magic8 is already configured");
+        // Check if Magic8 is already properly configured for this content
+        let aMsg = chatCfg?.history?.messages;
+        if (!aMsg || !aMsg.length) {
             return;
         }
 
+        let messagesToProcess = aMsg.slice(-2);
+        let currentContent = messagesToProcess.map(m => m?.content || "").join("|");
+
+        // If already configured with the same content AND visualizers exist, don't reconfigure
+        if (magic8.lastContent === currentContent && magic8.audioMotionTop && magic8.audioMotionBottom) {
+            console.log("Magic8 already configured with same content, skipping...");
+            return;
+        }
+
+        // Check if canvases exist before proceeding
         let canvasTop = document.getElementById("waveform-top");
         let canvasBottom = document.getElementById("waveform-bottom");
         if (!canvasTop || !canvasBottom) {
-            // console.warn("No canvas for top or bottom waveform");
             return;
         }
-        magic8.lastAudio = 0;
-        let aMsg = chatCfg?.history?.messages;
-        if (!aMsg || !aMsg.length) {
-            // console.log("No messages in chat history");
+
+        let contentChanged = magic8.lastContent !== currentContent;
+
+        // Only clear and reconfigure if content has actually changed
+        if (contentChanged) {
+            console.log("Magic8 content changed, reconfiguring...");
+            clearMagic8(false);
+            magic8.lastContent = currentContent;
+        } else if (!magic8.audioMotionTop || !magic8.audioMotionBottom) {
+            // Only reconfigure visualizers if they don't exist but content is the same
+            console.log("Magic8 visualizers missing, recreating...");
+        } else {
+            // Everything is already configured properly
             return;
         }
 
         magic8.configuring = true;
         let aP = [];
-        if (!magic8.audio1 || !magic8.audio2) {
-            let sysProfileId = chatCfg?.system?.profile?.objectId;
-            let usrProfileId = chatCfg?.user?.profile?.objectId;
-            if (!sysProfileId || !usrProfileId) {
-                console.warn("No system or user profile for chat");
-                return;
-            }
 
-            for (let i = aMsg.length - 2; i < aMsg.length; i++) {
-                let m = aMsg[i];
-                if (!m) continue;
-                let name = inst.api.objectId() + " - " + i;
+        // Get profile IDs
+        let sysProfileId = chatCfg?.system?.profile?.objectId;
+        let usrProfileId = chatCfg?.user?.profile?.objectId;
+        if (!sysProfileId || !usrProfileId) {
+            console.warn("No system or user profile for chat");
+            magic8.configuring = false;
+            return;
+        }
+
+        // Only create new audio sources if content changed or they don't exist
+        if (contentChanged || !magic8.audio1 || !magic8.audio2) {
+            messagesToProcess.forEach((m, i) => {
+                if (!m) return;
+                let actualIndex = aMsg.length - 2 + i;
+                let name = inst.api.objectId() + " - " + actualIndex + "-magic8";
                 let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
 
                 let cnt = prune ? prune(m.content) : m.content;
                 if (cnt.length) {
-                    aP.push(page.components.audio.createAudioSource(name, profId, cnt).then((aud) => {
+                    aP.push(createAudioSource(name, profId, cnt).then((aud) => {
+                        if (!aud) return;
+
+                        aud.name = name; // Store name for cleanup
+
                         if (m.role == "assistant") {
-                            console.log("Configure audio 1");
+                            console.log("Configure Magic8 audio 1 (assistant)");
                             magic8.audio1 = aud;
                             magic8.audio1Content = cnt;
                             magic8.lastAudio = 1;
-                        }
-                        else {
-                            console.log("Configure audio 2");
+                        } else {
+                            console.log("Configure Magic8 audio 2 (user)");
                             magic8.audio2 = aud;
                             magic8.audio2Content = cnt;
                             magic8.lastAudio = 2;
                         }
+                    }).catch(err => {
+                        console.error("Error creating audio source for Magic8:", err);
                     }));
                 }
-            }
+            });
         }
-        else {
-            console.log("Skip multi-start");
-            return;
-        }
+
         Promise.all(aP).then(() => {
-            let props = {
-                overlay: true,
-                bgAlpha: 0,
-                gradient: 'prism',
-                showBgColor: true,
-                showSource: false,
-                gradient: "prism",
-                showScaleY: false,
-                showScaleX: false
-            };
-
-            let props1 = Object.assign({ height: canvasTop.offsetHeight, source: magic8.audio1?.source }, props);
-            let props2 = Object.assign({ height: canvasBottom.offsetHeight, source: magic8.audio2?.source }, props);
-
-            magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
-            magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
-
-            if (magic8.lastAudio) {
-                // console.log("Starting last audio source", magic8.lastAudio);
-                let o = magic8["audio" + magic8.lastAudio];
-                if (getRunningAudioSources().length > 0) {
-                    console.log("Waiting out running source...");
-                    upNext.push(o);
-                }
-                else {
-                    togglePlayAudioSource(o);
-                }
-
+            // Ensure we still have valid canvases after async operations
+            canvasTop = document.getElementById("waveform-top");
+            canvasBottom = document.getElementById("waveform-bottom");
+            if (!canvasTop || !canvasBottom) {
+                magic8.configuring = false;
+                return;
             }
-            canvasTop.onclick = function (e) {
-                togglePlayMagic8(magic8.audio1, magic8.audio2);
-            };
-            canvasBottom.onclick = function (e) {
-                togglePlayMagic8(magic8.audio2, magic8.audio1);
-            };
 
+            // Only create new visualizers if they don't exist
+            if (!magic8.audioMotionTop || !magic8.audioMotionBottom) {
+                let props = {
+                    overlay: true,
+                    bgAlpha: 0,
+                    gradient: 'prism',
+                    showBgColor: true,
+                    showSource: false,
+                    showScaleY: false,
+                    showScaleX: false
+                };
+
+                let props1 = Object.assign({ height: canvasTop.offsetHeight, source: magic8.audio1?.source }, props);
+                let props2 = Object.assign({ height: canvasBottom.offsetHeight, source: magic8.audio2?.source }, props);
+
+                magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
+                magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
+
+                // Set up click handlers
+                canvasTop.onclick = function (e) {
+                    togglePlayMagic8(magic8.audio1, magic8.audio2);
+                };
+                canvasBottom.onclick = function (e) {
+                    togglePlayMagic8(magic8.audio2, magic8.audio1);
+                };
+            }
+
+            // Auto-start the most recent audio when content changes
+            if (contentChanged && magic8.lastAudio && magic8["audio" + magic8.lastAudio]) {
+                let currentAudio = magic8["audio" + magic8.lastAudio];
+                console.log("Starting Magic8 audio after content change:", magic8.lastAudio);
+                setTimeout(() => {
+                    togglePlayAudioSource(currentAudio, true);
+                }, 100);
+            }
+
+            magic8.configuring = false;
+            console.log("Magic8 configuration complete");
+        }).catch(err => {
+            console.error("Error configuring Magic8:", err);
             magic8.configuring = false;
         });
     }
 
     function getMagic8View(chatCfg, profile) {
+
         // Get profile image URLs if available
         let sysUrl, usrUrl;
         if (profile) {
@@ -169,7 +235,7 @@
             }
         }
         return m("div", {
-            key: magic8.id,
+            key: "magic8-container", // Use a stable key instead of magic8.id
             class: `
       relative aspect-square w-[90vw] max-w-[600px] max-h-[600px] mx-auto
       rounded-full overflow-hidden
@@ -287,39 +353,55 @@
     }
     /// currently only setup for live streaming to extract text, not to actually record the audio
     ///
-    function recordWithVisualizer(stream, handler, saveHandler) {
+    function recordWithVisualizer(stream, handler, saveHandler, options = {}) {
         if (recorder) {
             return recorder.view;
         }
+
+        // Default options
+        const config = {
+            maxSilenceSeconds: options.maxSilenceSeconds || null, // null = no auto-stop
+            silenceThreshold: options.silenceThreshold || 3,
+            chunkInterval: options.chunkInterval || 2000,
+            autoRestart: options.autoRestart !== false, // default true
+            maxSilenceBeforeRestart: options.maxSilenceBeforeRestart || 5
+        };
+
         recorder = newRecorder();
 
         recorder.view = m("div", {
             id: "recorder-visualizer",
             class: "w-[80%]",
-            // `oncreate` is the Mithril lifecycle hook that runs after the DOM element is created.
-            // This is the ideal place to initialize a third-party library like AudioMotionAnalyzer.
             oncreate: function (vnode) {
                 // Check if a visualizer is already running
                 if (visualizers.recorder) {
-                    // Optionally, destroy the old one if you want to re-initialize
-                    visualizers.recorder.destroy();
+                    try {
+                        visualizers.recorder.destroy();
+                    } catch (e) {
+                        console.warn("Error destroying existing visualizer:", e);
+                    }
+                    delete visualizers.recorder;
                 }
 
-                navigator.mediaDevices.getUserMedia({ audio: true })
-                    .then(stream => {
+                navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true
+                    }
+                })
+                    .then(mediaStream => {
                         let audioCtx = new (window.AudioContext || window.webkitAudioContext)();
                         let analyzer = audioCtx.createAnalyser();
                         analyzer.fftSize = 2048;
-                        recorder.analyzer = analyzer;
-                        analyzer.volume = 0;
-                        /// console.log(analyzer)
-                        let source = audioCtx.createMediaStreamSource(stream);
-                        // let gain = audioCtx.createGain();
-                        // gain.gain.value = 0;
-                        source.connect(analyzer);
-                        // analyzer.connect(gain);
-                        // gain.connect(audioCtx.destination)
+                        analyzer.smoothingTimeConstant = 0.8;
 
+                        recorder.analyzer = analyzer;
+                        recorder.context = audioCtx;
+                        recorder.stream = mediaStream;
+
+                        let source = audioCtx.createMediaStreamSource(mediaStream);
+                        source.connect(analyzer);
 
                         let props = {
                             source: analyzer,
@@ -329,19 +411,44 @@
                             gradient: 'prism',
                             showBgColor: true,
                             showSource: false,
-                            gradient: "prism",
                             showScaleY: false,
-                            showScaleX: false
+                            showScaleX: false,
+                            volume: 0
                         };
 
-                        recorder.motionAnalyzer = new AudioMotionAnalyzer(vnode.dom, props);
-                        recorder.motionAnalyzer.volume = 0;
-                        recorder.context = audioCtx;
-                        recorder.stream = stream;
+                        try {
+                            recorder.motionAnalyzer = new AudioMotionAnalyzer(vnode.dom, props);
+                            recorder.motionAnalyzer.volume = 0;
+                            visualizers.recorder = recorder.motionAnalyzer;
+                        } catch (e) {
+                            console.error("Error creating AudioMotionAnalyzer:", e);
+                            vnode.dom.textContent = "Error: Could not create audio visualizer.";
+                            return;
+                        }
+
                         let chunks = [];
-                        const mediaRecorder = new MediaRecorder(stream);
-                        let maxSilence = 5;
-                        let lastSilence = 0;
+                        let mediaRecorder;
+
+                        try {
+                            mediaRecorder = new MediaRecorder(mediaStream, {
+                                mimeType: 'audio/webm;codecs=opus'
+                            });
+                        } catch (e) {
+                            try {
+                                mediaRecorder = new MediaRecorder(mediaStream);
+                            } catch (e2) {
+                                console.error("MediaRecorder not supported:", e2);
+                                vnode.dom.textContent = "Error: Recording not supported in this browser.";
+                                return;
+                            }
+                        }
+
+                        recorder.recorder = mediaRecorder;
+
+                        let silenceCount = 0;
+                        let totalSilenceTime = 0;
+                        let silenceStartTime = null;
+                        let isCurrentlySilent = false;
 
                         function ab_b64(buf) {
                             return btoa(buf.reduce(
@@ -351,81 +458,186 @@
                                 ""
                             ));
                         }
+
                         async function getAudioBase64(blob) {
-                            let buff = await blob.arrayBuffer();
-                            return ab_b64(new Uint8Array(buff));
-                        }
-                        async function sendChunk(chunk, close) {
-                            window.dbgBlob = chunk;
-                            console.log("Sending chunk ...");
-                            let b64 = await getAudioBase64(chunk);
-
-                            await page.wss.send("audio", b64, undefined, undefined);
-                            if (close) {
-                                page.audioStream = undefined;
+                            try {
+                                let buff = await blob.arrayBuffer();
+                                return ab_b64(new Uint8Array(buff));
+                            } catch (e) {
+                                console.error("Error converting audio to base64:", e);
+                                return null;
                             }
                         }
+
+                        async function sendChunk(chunk, close = false) {
+                            try {
+                                window.dbgBlob = chunk;
+                                console.log("Sending chunk...", chunk.size, "bytes");
+                                let b64 = await getAudioBase64(chunk);
+
+                                if (b64 && page.wss) {
+                                    await page.wss.send("audio", b64, undefined, undefined);
+                                }
+
+                                if (close) {
+                                    page.audioStream = undefined;
+                                }
+                            } catch (e) {
+                                console.error("Error sending audio chunk:", e);
+                            }
+                        }
+
+                        function checkSilence() {
+                            const isSilent = isStreamSilent();
+                            const currentTime = Date.now();
+
+                            if (isSilent && !isCurrentlySilent) {
+                                // Just became silent
+                                isCurrentlySilent = true;
+                                silenceStartTime = currentTime;
+                            } else if (!isSilent && isCurrentlySilent) {
+                                // Just stopped being silent
+                                if (silenceStartTime) {
+                                    const silenceDuration = (currentTime - silenceStartTime) / 1000;
+                                    totalSilenceTime += silenceDuration;
+                                }
+                                isCurrentlySilent = false;
+                                silenceStartTime = null;
+                                silenceCount = 0; // Reset restart counter on speech
+                            }
+
+                            return isSilent;
+                        }
+
                         mediaRecorder.ondataavailable = event => {
+                            try {
+                                if (event.data && event.data.size > 0) {
+                                    const isSilent = checkSilence();
 
-                            if (event.data.size > 0) {
-                                const isSilent = isStreamSilent();
-                                if (!isSilent) {
-                                    lastSilence = 0;
-                                    chunks.push(event.data);
-                                    if (stream) {
-                                        sendChunk(event.data);
-                                    }
-                                }
-                                else {
-                                    //console.log('Status: Recording (Silence Detected)');
-                                    lastSilence++;
-                                    if (lastSilence >= maxSilence) {
-                                        console.log("Restarting recorder ...");
-                                        lastSilence = 0;
-                                        mediaRecorder.stop();
-                                        mediaRecorder.start(2000);
-                                    }
-                                }
-                            }
-                            else {
-                                console.log("No data");
-                            }
+                                    if (!isSilent) {
+                                        chunks.push(event.data);
+                                        if (mediaStream && !mediaStream.getTracks().some(t => !t.enabled)) {
+                                            sendChunk(event.data);
+                                        }
+                                    } else {
+                                        silenceCount++;
 
+                                        // Check for auto-restart based on silence chunks
+                                        if (config.autoRestart && silenceCount >= config.maxSilenceBeforeRestart) {
+                                            console.log("Restarting recorder due to prolonged silence...");
+                                            silenceCount = 0;
+
+                                            try {
+                                                mediaRecorder.stop();
+                                                setTimeout(() => {
+                                                    if (recorder && recorder.recorder && recorder.recorder.state === 'inactive') {
+                                                        mediaRecorder.start(config.chunkInterval);
+                                                    }
+                                                }, 100);
+                                            } catch (e) {
+                                                console.error("Error restarting recorder:", e);
+                                            }
+                                        }
+
+                                        // Check for auto-stop based on total silence time
+                                        if (config.maxSilenceSeconds) {
+                                            const currentSilenceTime = isCurrentlySilent && silenceStartTime ?
+                                                (Date.now() - silenceStartTime) / 1000 : 0;
+                                            const totalCurrentSilence = totalSilenceTime + currentSilenceTime;
+
+                                            if (totalCurrentSilence >= config.maxSilenceSeconds) {
+                                                console.log(`Auto-stopping recording after ${totalCurrentSilence}s of silence`);
+                                                toggleRecord(); // Stop recording
+                                                return;
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    console.warn("No audio data in chunk");
+                                }
+                            } catch (e) {
+                                console.error("Error processing audio data:", e);
+                            }
                         };
 
                         mediaRecorder.onstop = () => {
-                            if (chunks.length == 0) {
-                                return;
-                            }
-                            let tchunks = chunks;
-                            let audioBlob = new Blob(tchunks, { type: 'audio/webm' });
-                            if (!stream) {
-                                sendChunk(audioBlob, true);
-                            }
-                            if (saveHandler) {
-                                getAudioBase64(audioBlob).then((b64) => {
-                                    saveHandler("audio/webm", b64);
+                            try {
+                                console.log("MediaRecorder stopped, processing", chunks.length, "chunks");
+
+                                if (chunks.length === 0) {
+                                    console.warn("No audio chunks to process");
+                                    return;
+                                }
+
+                                let audioBlob = new Blob(chunks, {
+                                    type: mediaRecorder.mimeType || 'audio/webm'
                                 });
+
+                                console.log("Created audio blob:", audioBlob.size, "bytes");
+
+                                // Send final chunk if not streaming
+                                if (!mediaStream || mediaStream.getTracks().some(t => !t.enabled)) {
+                                    sendChunk(audioBlob, true);
+                                }
+
+                                // Save if handler provided
+                                if (saveHandler) {
+                                    getAudioBase64(audioBlob).then((b64) => {
+                                        if (b64) {
+                                            saveHandler(mediaRecorder.mimeType || "audio/webm", b64);
+                                        }
+                                    }).catch(e => {
+                                        console.error("Error saving audio:", e);
+                                    });
+                                }
+
+                                chunks = []; // Clear chunks
+                            } catch (e) {
+                                console.error("Error in onstop handler:", e);
                             }
-
                         };
-                        recorder.recorder = mediaRecorder;
-                        page.audioStream = newAudioStream(handler);
-                        mediaRecorder.start(2000);
 
+                        mediaRecorder.onerror = (event) => {
+                            console.error("MediaRecorder error:", event.error);
+                            page.toast("error", "Recording error: " + (event.error?.message || "Unknown error"));
+                        };
+
+                        // Initialize audio stream handler
+                        if (handler) {
+                            page.audioStream = newAudioStream(handler);
+                        }
+
+                        // Start recording
+                        try {
+                            mediaRecorder.start(config.chunkInterval);
+                            console.log("Recording started with config:", config);
+                        } catch (e) {
+                            console.error("Error starting recorder:", e);
+                            vnode.dom.textContent = "Error: Could not start recording.";
+                        }
 
                     }).catch(err => {
                         console.error('Error accessing microphone:', err);
-                        // Optionally, display an error in the UI
-                        vnode.dom.textContent = "Error: Could not access microphone.";
+                        let errorMsg = "Error: Could not access microphone.";
+
+                        if (err.name === 'NotAllowedError') {
+                            errorMsg = "Error: Microphone access denied. Please allow microphone access and try again.";
+                        } else if (err.name === 'NotFoundError') {
+                            errorMsg = "Error: No microphone found. Please check your audio devices.";
+                        } else if (err.name === 'NotReadableError') {
+                            errorMsg = "Error: Microphone is being used by another application.";
+                        }
+
+                        vnode.dom.textContent = errorMsg;
+                        page.toast("error", errorMsg);
                     });
             },
-            // `onremove` is another lifecycle hook that runs before the DOM element is removed.
-            // This is the perfect place to clean up, stop the stream, and destroy the analyzer.
+
             onremove: function () {
                 stopRecording();
             }
         });
+
         return recorder?.view || "";
     }
 
@@ -472,7 +684,7 @@
     }
 
     function clearAudioSource() {
-        //console.info("Clear audio sources");
+        console.error("Clear audio sources");
         for (let id in audioSource) {
             let aud = audioSource[id];
             if (aud && aud.started && aud.context.state != "closed") {
@@ -553,7 +765,7 @@
 
     function configureAudio(enabled) {
         if (!enabled) {
-            unconfigureAudio();
+            // unconfigureAudio();
             return;
         }
         //let aa = document.querySelectorAll("audio");
@@ -596,7 +808,7 @@
 
 
     function togglePlayMagic8(aud, aud2) {
-
+        console.log("Toggle play Magic8", aud, aud2);
         /*
       if (!aud) return;
       if (aud2 && aud2.context.state == "running") aud2.context.suspend();
@@ -701,7 +913,7 @@
     }
 
     async function createAudioSource(name, profileId, content) {
-        if(content){
+        if (content) {
             /// Strip emojis out - https://stackoverflow.com/questions/10992921/how-to-remove-emoji-code-using-javascript
             content = content.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "");
         }
@@ -729,7 +941,7 @@
                 console.error("Error synthesizing audio:", e);
                 console.error(vprops);
             }
-            if(!audioMap[name]){
+            if (!audioMap[name]) {
                 console.error("Ruh-Roh, Raggy");
                 audioMap[name] = tmpAud;
             }

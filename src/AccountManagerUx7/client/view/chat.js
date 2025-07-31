@@ -471,29 +471,31 @@
       });
     }
 
-    function toggleAudio() {
-      
+  function toggleAudio() {
       if(audio){
-        audio = false;
-        if(!audioMagic8){
-          page.components.audio.unconfigureAudio();
-        }
-        audioMagic8 = true;
+          // Audio -> Magic8
+          audio = false;
+          page.components.audio.unconfigureAudio(false);
+          audioMagic8 = true;
+          // Force a small delay before configuring Magic8
+          setTimeout(() => {
+              page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
+          }, 200);
       }
       else if(audioMagic8){
-        page.components.audio.unconfigureAudio();
-        page.components.audio.clearMagic8(true);
-        audio = false;
-        audioMagic8 = false;
+          // Magic8 -> Off
+          page.components.audio.clearMagic8(true);
+          page.components.audio.unconfigureAudio(false);
+          audio = false;
+          audioMagic8 = false;
       }
       else{
-        if(!audio){
-          page.components.audio.unconfigureAudio();
-        }
-        audio = true;
-        audioMagic8 = false;
+          // Off -> Audio
+          page.components.audio.clearMagic8(false);
+          audio = true;
+          audioMagic8 = false;
       }
-    }
+  }
 
     function toggleProfile() {
       profile = !profile;
