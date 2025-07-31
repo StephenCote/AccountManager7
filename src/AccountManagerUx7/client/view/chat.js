@@ -78,10 +78,10 @@
     let aSess;
     let audioText = "";
     let chatCfg = newChatConfig();
-    
+
     let audio = false;
     let audioMagic8 = false;
-  
+
     let hideThoughts = true;
     let editIndex = -1;
     let editMode = false;
@@ -89,7 +89,7 @@
     let profile = false;
 
     function doClear() {
-      
+
       clearEditMode();
       // page.components.audio.unconfigureAudio(audio);
       // page.components.audio.clearMagic8(audioMagic8);
@@ -211,24 +211,6 @@
       }
       else {
         pushHistory();
-        if (msg && msg.length && (audio || audioMagic8)) {
-          // Generate user audio prior to submitting the chat request;
-          let name = inst.api.objectId() + " - " + (chatCfg.history.messages.length - 1);
-          if (!page.components.audio.hasAudioMap(name)) {
-            console.info("Priming comment audio ... " + name);
-            let profileId = chatCfg?.user?.profile?.objectId;
-            let vprops = { "text": msg, "speed": 1.2, voiceProfileId: profileId };
-            if (!vprops.voiceProfileId) {
-              vprops.engine = "piper";
-              vprops.speaker = "en_GB-alba-medium";
-            }
-            console.log("Priming", name);
-            m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops }).then((r) => {
-              console.info("Comment audio primed");
-              page.components.audio.clearMagic8();
-            });
-          }
-        }
         chatCfg.pending = true;
         let data = page.components.dnd.workingSet.map(r => { return JSON.stringify({ schema: r.schema, objectId: r.objectId }); });
 
@@ -471,31 +453,31 @@
       });
     }
 
-  function toggleAudio() {
-      if(audio){
-          // Audio -> Magic8
-          audio = false;
-          page.components.audio.unconfigureAudio(false);
-          audioMagic8 = true;
-          // Force a small delay before configuring Magic8
-          setTimeout(() => {
-              page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
-          }, 200);
+    function toggleAudio() {
+      if (audio) {
+        // Audio -> Magic8
+        audio = false;
+        page.components.audio.unconfigureAudio(false);
+        audioMagic8 = true;
+        // Force a small delay before configuring Magic8
+        setTimeout(() => {
+          page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
+        }, 200);
       }
-      else if(audioMagic8){
-          // Magic8 -> Off
-          page.components.audio.clearMagic8(true);
-          page.components.audio.unconfigureAudio(false);
-          audio = false;
-          audioMagic8 = false;
+      else if (audioMagic8) {
+        // Magic8 -> Off
+        page.components.audio.clearMagic8(true);
+        page.components.audio.unconfigureAudio(false);
+        audio = false;
+        audioMagic8 = false;
       }
-      else{
-          // Off -> Audio
-          page.components.audio.clearMagic8(false);
-          audio = true;
-          audioMagic8 = false;
+      else {
+        // Off -> Audio
+        page.components.audio.clearMagic8(false);
+        audio = true;
+        audioMagic8 = false;
       }
-  }
+    }
 
     function toggleProfile() {
       profile = !profile;

@@ -81,7 +81,7 @@
         }
 
         if (magic8.configuring) {
-            console.warn("Magic8 is already configuring, skipping...");
+            // console.warn("Magic8 is already configuring, skipping...");
             return;
         }
 
@@ -96,7 +96,7 @@
 
         // If already configured with the same content AND visualizers exist, don't reconfigure
         if (magic8.lastContent === currentContent && magic8.audioMotionTop && magic8.audioMotionBottom) {
-            console.log("Magic8 already configured with same content, skipping...");
+            /// console.log("Magic8 already configured with same content, skipping...");
             return;
         }
 
@@ -139,7 +139,7 @@
             messagesToProcess.forEach((m, i) => {
                 if (!m) return;
                 let actualIndex = aMsg.length - 2 + i;
-                let name = inst.api.objectId() + " - " + actualIndex + "-magic8";
+                let name = inst.api.objectId() + " - " + actualIndex;
                 let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
 
                 let cnt = prune ? prune(m.content) : m.content;
@@ -202,6 +202,9 @@
                     togglePlayMagic8(magic8.audio2, magic8.audio1);
                 };
             }
+
+            // Clear any existing upNext queue to prevent old audio from auto-starting
+            upNext = [];
 
             // Auto-start the most recent audio when content changes
             if (contentChanged && magic8.lastAudio && magic8["audio" + magic8.lastAudio]) {
@@ -684,7 +687,7 @@
     }
 
     function clearAudioSource() {
-        console.error("Clear audio sources");
+        // console.error("Clear audio sources");
         for (let id in audioSource) {
             let aud = audioSource[id];
             if (aud && aud.started && aud.context.state != "closed") {
