@@ -5,8 +5,6 @@
     let recorder;
     let upNext = [];
 
-
-
     function newMagic8() {
         return {
             id: page.uid(),
@@ -27,13 +25,9 @@
     function clearMagic8(audioMagic8) {
         console.log("Clear Magic8");
 
-        // Store the current content to preserve it if needed
         let preserveContent = magic8.lastContent;
-
-        // Stop any pending audio
         upNext = [];
 
-        // Stop currently playing Magic8 audio
         if (magic8.audio1) {
             stopAudioSources(magic8.audio1);
         }
@@ -54,12 +48,11 @@
             magic8.audioMotionBottom.destroy();
         }
 
-        const canvasTop = document.getElementById("waveform-top");
-        const canvasBottom = document.getElementById("waveform-bottom");
+        let canvasTop = document.getElementById("waveform-top");
+        let canvasBottom = document.getElementById("waveform-bottom");
         if (canvasTop) canvasTop.innerHTML = "";
         if (canvasBottom) canvasBottom.innerHTML = "";
 
-        // Clear Magic8 audio references from audioSource
         if (magic8.audio1 && magic8.audio1.name) {
             delete audioSource[magic8.audio1.name];
         }
@@ -69,7 +62,6 @@
 
         magic8 = newMagic8();
 
-        // Preserve content hash if we're just clearing visualizers (not switching modes)
         if (audioMagic8) {
             magic8.lastContent = preserveContent;
         }
@@ -85,7 +77,6 @@
             return;
         }
 
-        // Check if Magic8 is already properly configured for this content
         let aMsg = chatCfg?.history?.messages;
         if (!aMsg || !aMsg.length) {
             return;
@@ -332,12 +323,9 @@
             console.warn("Analyzer not available", recorder?.analyzer);
             return;
         }
-        // You may need to adjust this threshold based on microphone sensitivity
-        const SILENCE_THRESHOLD = 3;
-
-        // Create a buffer to hold the time-domain data
-        const bufferLength = recorder.analyzer.fftSize;
-        const dataArray = new Uint8Array(bufferLength);
+        let threshold = 3;
+        let bufferLength = recorder.analyzer.fftSize;
+        let dataArray = new Uint8Array(bufferLength);
 
         // Get the current waveform data
         recorder.analyzer.getByteTimeDomainData(dataArray);
@@ -346,14 +334,15 @@
         let maxAmplitude = 0;
         for (let i = 0; i < bufferLength; i++) {
             // The values are 0-255, with 128 being the center (silence)
-            const amplitude = Math.abs(dataArray[i] - 128);
+            let amplitude = Math.abs(dataArray[i] - 128);
             if (amplitude > maxAmplitude) {
                 maxAmplitude = amplitude;
             }
         }
-        console.log(maxAmplitude + " < " + SILENCE_THRESHOLD);
-        return maxAmplitude < SILENCE_THRESHOLD;
+        console.log(maxAmplitude + " < " + threshold);
+        return maxAmplitude <= threshold;
     }
+
     /// currently only setup for live streaming to extract text, not to actually record the audio
     ///
     function recordWithVisualizer(stream, handler, saveHandler, options = {}) {
@@ -362,7 +351,7 @@
         }
 
         // Default options
-        const config = {
+        let config = {
             maxSilenceSeconds: options.maxSilenceSeconds || null, // null = no auto-stop
             silenceThreshold: options.silenceThreshold || 3,
             chunkInterval: options.chunkInterval || 2000,
@@ -491,8 +480,8 @@
                         }
 
                         function checkSilence() {
-                            const isSilent = isStreamSilent();
-                            const currentTime = Date.now();
+                            let isSilent = isStreamSilent();
+                            let currentTime = Date.now();
 
                             if (isSilent && !isCurrentlySilent) {
                                 // Just became silent
@@ -501,7 +490,7 @@
                             } else if (!isSilent && isCurrentlySilent) {
                                 // Just stopped being silent
                                 if (silenceStartTime) {
-                                    const silenceDuration = (currentTime - silenceStartTime) / 1000;
+                                    let silenceDuration = (currentTime - silenceStartTime) / 1000;
                                     totalSilenceTime += silenceDuration;
                                 }
                                 isCurrentlySilent = false;
@@ -515,7 +504,7 @@
                         mediaRecorder.ondataavailable = event => {
                             try {
                                 if (event.data && event.data.size > 0) {
-                                    const isSilent = checkSilence();
+                                    let isSilent = checkSilence();
 
                                     if (!isSilent) {
                                         chunks.push(event.data);
@@ -544,9 +533,9 @@
 
                                         // Check for auto-stop based on total silence time
                                         if (config.maxSilenceSeconds) {
-                                            const currentSilenceTime = isCurrentlySilent && silenceStartTime ?
+                                            let currentSilenceTime = isCurrentlySilent && silenceStartTime ?
                                                 (Date.now() - silenceStartTime) / 1000 : 0;
-                                            const totalCurrentSilence = totalSilenceTime + currentSilenceTime;
+                                            let totalCurrentSilence = totalSilenceTime + currentSilenceTime;
 
                                             if (totalCurrentSilence >= config.maxSilenceSeconds) {
                                                 console.log(`Auto-stopping recording after ${totalCurrentSilence}s of silence`);
@@ -812,22 +801,6 @@
 
     function togglePlayMagic8(aud, aud2) {
         console.log("Toggle play Magic8", aud, aud2);
-        /*
-      if (!aud) return;
-      if (aud2 && aud2.context.state == "running") aud2.context.suspend();
-      if (!aud.started) {
-        // aud.context.resume();
-        aud.source.start(0);
-        aud.started = true;
-        aud.source.onended = function () {
-          aud.started = false;
-          aud.source = aud.context.createBufferSource();
-          aud.source.buffer = aud.buffer;
-        };
-      }
-      else if (aud.context.state == "suspended") aud.context.resume();
-      else if (aud.context.state != "closed") aud.context.suspend();
-        */
         togglePlayAudioSource(aud, true);
     }
 
@@ -902,11 +875,11 @@
     }
 
     function base64ToArrayBuffer(base64) {
-        const cleanedBase64 = base64.replace(/^data:audio\/\w+;base64,/, '');
+        let cleanedBase64 = base64.replace(/^data:audio\/\w+;base64,/, '');
 
-        const binaryString = atob(cleanedBase64);
-        const len = binaryString.length;
-        const bytes = new Uint8Array(len);
+        let binaryString = atob(cleanedBase64);
+        let len = binaryString.length;
+        let bytes = new Uint8Array(len);
 
         for (let i = 0; i < len; i++) {
             bytes[i] = binaryString.charCodeAt(i);
@@ -919,6 +892,8 @@
         if (content) {
             /// Strip emojis out - https://stackoverflow.com/questions/10992921/how-to-remove-emoji-code-using-javascript
             content = content.replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "");
+            /// Escape quotes
+            content = content.replace(/"/g, "");
         }
         let tmpAud;
         if (!content || content.length == 0) {

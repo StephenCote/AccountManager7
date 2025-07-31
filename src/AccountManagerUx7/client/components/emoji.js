@@ -87,8 +87,6 @@
                             }
                             
                             m.redraw();
-                            // navigator.clipboard.writeText(e.name);
-                            // page.toast("info", o.emoji + " copied to clipboard", 2000);
                         }
                     }, [
                         m("span", { class: "ml-2" }, e)

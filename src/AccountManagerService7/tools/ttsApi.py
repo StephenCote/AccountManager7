@@ -4,6 +4,7 @@
 
 import os
 import torch
+import numpy as np
 import nltk
 import uvicorn
 import tempfile
@@ -13,6 +14,7 @@ import json
 import inspect
 import wave
 import uuid
+import random
 from contextlib import asynccontextmanager
 from pydub import AudioSegment
 from typing import Dict, Set, Optional, Literal
@@ -40,6 +42,10 @@ PIPER_MODELS_DIR = "./piper_models"
 XTTS_DEFAULT_VOICE = "female_speaker_0.mp3"  # Default voice for XTTS
 
 torch.serialization.add_safe_globals([XttsConfig, XttsAudioConfig, BaseDatasetConfig, XttsArgs])
+seed = 32168
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed) 
 
 # --- Pydantic Models for API Requests ---
 class SynthesisRequest(BaseModel):
@@ -151,7 +157,7 @@ def synthesize_with_piper(request: SynthesisRequest) -> bytes:
         piper_model_cache[request.speaker] = voice_model
     
     synthesis_kwargs = {}
-    if request.speaker_id is not None and request.speaker_id >= 0:
+    if request.speaker_id is not None and request.speaker_id > 0:
         if not voice_model.config.num_speakers > 1:
             raise ValueError(f"Model '{request.speaker}' is not a multi-speaker model, but a 'speaker_id' '{request.speaker_id}' was provided.")
         synthesis_kwargs['speaker_id'] = request.speaker_id
