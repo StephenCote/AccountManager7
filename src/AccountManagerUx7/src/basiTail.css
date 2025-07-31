@@ -876,7 +876,7 @@
       }
 
       .audio-container{
-        @apply relative w-full h-16 rounded-full overflow-hidden cursor-pointer bg-white border
+        @apply w-full h-16 rounded-full overflow-hidden cursor-pointer bg-white border
       }
       
       @keyframes shimmer {

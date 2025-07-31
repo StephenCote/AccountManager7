@@ -91,8 +91,8 @@
     function doClear() {
       
       clearEditMode();
-      page.components.audio.unconfigureAudio(audio);
-      page.components.audio.clearMagic8(audioMagic8);
+      // page.components.audio.unconfigureAudio(audio);
+      // page.components.audio.clearMagic8(audioMagic8);
       chatCfg = newChatConfig();
     }
 
@@ -482,6 +482,7 @@
       }
       else if(audioMagic8){
         page.components.audio.unconfigureAudio();
+        page.components.audio.clearMagic8(true);
         audio = false;
         audioMagic8 = false;
       }

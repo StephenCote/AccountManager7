@@ -23,9 +23,9 @@
     let magic8 = newMagic8();
 
     function clearMagic8(audioMagic8) {
-        
-        if (!magic8) {
-            return;
+        console.log("Clear Magic8");
+        if(!audioMagic8) {
+            clearAudioSource();
         }
 
         if (magic8.audioMotionTop) {
@@ -51,9 +51,7 @@
         if (!audioMagic8) {
             return;
         }
-        if (!magic8) {
-            console.warn("Magic8 is not defined");
-        }
+
         if (magic8.configuring) {
             //console.warn("Magic8 is already configuring");
             return;
@@ -97,11 +95,13 @@
                 if (cnt.length) {
                     aP.push(page.components.audio.createAudioSource(name, profId, cnt).then((aud) => {
                         if (m.role == "assistant") {
+                            console.log("Configure audio 1");
                             magic8.audio1 = aud;
                             magic8.audio1Content = cnt;
                             magic8.lastAudio = 1;
                         }
                         else {
+                            console.log("Configure audio 2");
                             magic8.audio2 = aud;
                             magic8.audio2Content = cnt;
                             magic8.lastAudio = 2;
@@ -134,11 +134,13 @@
 
             if (magic8.lastAudio) {
                 // console.log("Starting last audio source", magic8.lastAudio);
+                let o = magic8["audio" + magic8.lastAudio];
                 if (getRunningAudioSources().length > 0) {
+                    console.log("Waiting out running source...");
                     upNext.push(o);
                 }
                 else {
-                    togglePlayAudioSource(magic8["audio" + magic8.lastAudio]);
+                    togglePlayAudioSource(o);
                 }
 
             }
@@ -484,7 +486,9 @@
     }
     function unconfigureAudio(enabled) {
         if (enabled) return;
+        //clearMagic8(true);
         // console.info("Unconfiguring audio visualizers");
+        upNext = [];
         clearAudioSource();
         for (let id in visualizers) {
 
@@ -527,9 +531,6 @@
         //let cont = aud.parentNode;
 
         createAudioSource(oM.name, oM.profileId, oM.content).then((o) => {
-            if (!o) {
-                console.warn("Failed to retrieve audio source")
-            }
             if (!o) {
                 console.warn("Failed to retrieve audio source", oM.name);
                 console.warn(audioMap);
@@ -677,7 +678,7 @@
 
     function createAudioVisualizer(name, idx, profileId, autoPlay, content) {
         let contId = "chatAudioContainer-" + (idx);
-        let aud = m("div", { class: "audio-container block w-full mx-auto", id: "chatAudioContainer-" + (idx), onclick: function () { togglePlayAudioSource(contId, true); } }, "");
+        let aud = m("div", { class: "audio-container block w-full", id: "chatAudioContainer-" + (idx), onclick: function () { togglePlayAudioSource(contId, true); } }, "");
         if (!audioMap[name]) {
             audioMap[name] = { id: page.uid(), index: idx, name, profileId, content, autoPlay, containerId: contId, pending: false };
         }
