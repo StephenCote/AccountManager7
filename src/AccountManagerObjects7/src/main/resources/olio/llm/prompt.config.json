@@ -177,6 +177,13 @@
 	"userNarrate": [
 		"Create a summary of the following conversation/roleplay between character #1, ${system.firstName}, and character #2, ${user.firstName}."
 	],
+	"userCitation": [
+		"--- CITATION INSTRUCTIONS ---",
+		"Use any previous and the following citations to generate a response to the user request: ${user.question}",
+		"--- BEGIN CITATIONS ---",
+		"${user.citations}",
+		"--- END CITATIONS ---"
+	],
 	"userAnalyze": [
 		"Create a character study analysis from the following roleplay script between character #1, ${system.firstName}, and character #2, ${user.firstName}.",
 		"Background on ${system.firstName}: ${system.race} ${system.characterDescLight}",

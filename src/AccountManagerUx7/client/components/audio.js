@@ -214,6 +214,12 @@
         });
     }
 
+    function cycleMagic8Image(){
+
+    }
+    let images = [];
+    let imgBase = 172;
+    let imgUrl;
     function getMagic8View(chatCfg, profile) {
 
         // Get profile image URLs if available
@@ -228,6 +234,51 @@
                 usrUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
             }
         }
+
+        let gimg = "";
+        if(!profile && imgBase && images.length == 0){
+            console.log("Loading magic8 images from base", imgBase);
+            let q = am7client.newQuery("data.data");
+            q.field("groupId", imgBase);
+            q.range(0, 0);
+            imgBase = 0;
+            page.search(q).then((res) => {
+
+                if (res && res.results) {
+                    images = res.results.map((r) => {
+                        return g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + r.groupPath + "/" + r.name;
+                    });
+                    console.log(images);
+                    m.redraw();
+                }
+            });
+        }
+        if(images.length > 0){
+            imgUrl = images[Math.floor(Math.random() * images.length)];
+            gimg = m("img", {
+                src: imgUrl,
+                class: "rounded-full",
+                style: {
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "contain",
+                    objectPosition: "center",
+                    zIndex: 1,
+                    opacity: 0.2,
+                    pointerEvents: "none"
+                }
+            });
+            setTimeout(() => {
+                m.redraw();
+            }, 3000);
+                    
+                
+        }
+
+
         return m("div", {
             key: "magic8-container", // Use a stable key instead of magic8.id
             class: `
@@ -237,6 +288,7 @@
       ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
     `
         }, [
+            !sysUrl && !usrUrl && gimg,
             // System (assistant) profile image - upper hemisphere
             sysUrl && m("div", {
                 class: `
@@ -302,8 +354,124 @@
         bg-gradient-to-t from-black/20 to-transparent
         pointer-events-none
       `
+            }),
+            m("canvas", {
+                id: "spiral-overlay",
+                class: `
+                    absolute z-20 pointer-events-none
+                    opacity-20 w-full h-full top-0 left-0
+                `,
+                oncreate: ({ dom }) => {
+                    // drawSpiral(dom);
+                    drawMandala(dom);
+                }
             })
         ]);
+    }
+
+    function drawMandala(canvas) {
+        const ctx = canvas.getContext("2d");
+        const width = canvas.width = canvas.offsetWidth;
+        const height = canvas.height = canvas.offsetHeight;
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        let frame = 0;
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+            ctx.save();
+
+            const pulse = 1 + 0.08 * Math.sin(frame * 0.02); // gentle scale
+            const rotation = frame * 0.002;
+            const hue = (frame * 0.6) % 360;
+            const petals = 12;
+            const layers = 4;
+
+            ctx.translate(centerX, centerY);
+            ctx.scale(pulse, pulse);
+            ctx.rotate(rotation);
+
+            for (let layer = 0; layer < layers; layer++) {
+                const radius = 60 + layer * 30;
+                const petalLength = 30 + layer * 10;
+                const petalWidth = 12;
+
+                for (let i = 0; i < petals; i++) {
+                    const angle = (i * 2 * Math.PI) / petals;
+
+                    const x = radius * Math.cos(angle);
+                    const y = radius * Math.sin(angle);
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.rotate(angle + rotation);
+
+                    ctx.beginPath();
+                    ctx.ellipse(0, 0, petalWidth, petalLength, 0, 0, 2 * Math.PI);
+                    ctx.strokeStyle = `hsl(${(hue + i * 30) % 360}, 100%, 75%)`;
+                    ctx.shadowColor = ctx.strokeStyle;
+                    ctx.shadowBlur = 8;
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+
+                    ctx.restore();
+                }
+            }
+
+            ctx.restore();
+            frame++;
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    }
+
+    function drawSpiral(canvas) {
+        const ctx = canvas.getContext("2d");
+        const width = canvas.width = canvas.offsetWidth;
+        const height = canvas.height = canvas.offsetHeight;
+        const centerX = width / 2;
+        const centerY = height / 2;
+
+        let frame = 0;
+        let spiralSpeed = 0.01;
+        let pulseSpeed = 0.005;
+        let hue = 0;
+
+        function animate() {
+            ctx.clearRect(0, 0, width, height);
+
+            const pulse = 1 + 0.1 * Math.sin(frame * pulseSpeed); // gentle scale
+
+            // Color cycling: hue shift over time
+            hue = (frame * 0.5) % 360;
+            const strokeColor = `hsl(${hue}, 100%, 80%)`;
+
+            ctx.beginPath();
+            ctx.strokeStyle = strokeColor;
+            ctx.shadowColor = strokeColor;
+            ctx.shadowBlur = 10;
+            ctx.lineWidth = 2;
+
+            let angle = 0;
+            let radius = 0;
+            ctx.moveTo(centerX, centerY);
+
+            for (let i = 0; i < 2000; i++) {
+                radius = i * 0.07 * pulse;
+                angle += 0.02;
+                const x = centerX + radius * Math.cos(angle + frame * spiralSpeed);
+                const y = centerY + radius * Math.sin(angle + frame * spiralSpeed);
+                ctx.lineTo(x, y);
+            }
+
+            ctx.stroke();
+            frame++;
+            requestAnimationFrame(animate);
+        }
+
+        animate();
     }
 
     function newRecorder() {
@@ -692,6 +860,7 @@
         if (enabled) return;
         //clearMagic8(true);
         // console.info("Unconfiguring audio visualizers");
+
         upNext = [];
         clearAudioSource();
         for (let id in visualizers) {
@@ -965,6 +1134,77 @@
     }
 
 
+    let toneCtx;
+    let leftOsc, rightOsc;
+    let leftGain, rightGain;
+    let merger;
+    let baseFreq = 440;
+    let minBeat = 4;
+    let maxBeat = 6;
+    let sweepDurationMin = 10; // total cycle time in minutes
+    let sweepInterval;
+
+    function startBinauralSweep() {
+        toneCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        const masterGain = toneCtx.createGain();
+        masterGain.gain.value = 0.35;
+
+        leftOsc = toneCtx.createOscillator();
+        rightOsc = toneCtx.createOscillator();
+
+        leftGain = toneCtx.createGain();
+        rightGain = toneCtx.createGain();
+        merger = toneCtx.createChannelMerger(2);
+
+
+
+
+        // Connect left
+        leftOsc.connect(leftGain);
+        leftGain.connect(merger, 0, 0);
+
+        // Connect right
+        rightOsc.connect(rightGain);
+        rightGain.connect(merger, 0, 1);
+
+        merger.connect(masterGain).connect(toneCtx.destination);
+
+        // Set base frequency
+        leftOsc.frequency.value = baseFreq;
+        rightOsc.frequency.value = baseFreq + maxBeat; // Start at highest beat
+
+        // Start oscillators
+        leftOsc.start();
+        rightOsc.start();
+
+        // Start the sweep cycle
+        scheduleSweep();
+        sweepInterval = setInterval(scheduleSweep, sweepDurationMin * 60 * 1000);
+    }
+
+    function scheduleSweep() {
+        const now = toneCtx.currentTime;
+        const halfCycle = (sweepDurationMin * 60) / 2;
+
+        // Descend from maxBeat to minBeat
+        rightOsc.frequency.cancelScheduledValues(now);
+        rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, now);
+        rightOsc.frequency.linearRampToValueAtTime(baseFreq + minBeat, now + halfCycle);
+
+        // Ascend back from minBeat to maxBeat
+        rightOsc.frequency.linearRampToValueAtTime(baseFreq + maxBeat, now + 2 * halfCycle);
+    }
+
+    function stopBinauralSweep() {
+        if (leftOsc) leftOsc.stop();
+        if (rightOsc) rightOsc.stop();
+        if (toneCtx) toneCtx.close();
+        if (sweepInterval) clearInterval(sweepInterval);
+    }
+
+
+
     let audio = {
         configureAudio,
         unconfigureAudio,
@@ -980,6 +1220,8 @@
         configureMagic8,
         getMagic8View,
         clearMagic8,
+        startBinauralSweep,
+        stopBinauralSweep,
         component: {
 
             oncreate: function (x) {
