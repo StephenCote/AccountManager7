@@ -269,8 +269,7 @@ public class Chat {
 			if (message != null && message.length() > 0) {
 				newMessage(req, message);
 			}
-			BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig
-					.copyRecord(new String[] { "apiVersion", "serviceType", "serverUrl", "apiKey", "model" }));
+			BaseRecord task = OlioTaskAgent.createTaskRequest(req, chatConfig.copyRecord(new String[] { "apiVersion", "serviceType", "serverUrl", "apiKey", "model", "chatOptions" }));
 			BaseRecord rtask = OlioTaskAgent.executeTask(task);
 			if (rtask != null) {
 				BaseRecord resp = rtask.get("taskModel");
@@ -1070,8 +1069,7 @@ public class Chat {
 			boolean useAssist = chatConfig.get("assist");
 			int qual = countBackTo(req, "(Reminder:");
 
-			if (useAssist && promptConfig != null && qual >= remind) {
-				/// Add the assistant warning as the last message
+			if (useAssist && promptConfig != null && qual >= remind && remind > 0) {
 				if (req.getMessages().size() > 0) {
 					OpenAIMessage amsg = req.getMessages().get(req.getMessages().size() - 1);
 					if (amsg.getRole().equals(assistantRole)) {

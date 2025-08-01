@@ -946,6 +946,7 @@
         page.navigable.cleanupContextMenus();
         pagination.stop();
         document.documentElement.removeEventListener("keydown", navKey);
+        page.components.audio.stopBinauralSweep();
         page.components.audio.unconfigureAudio(false);
       },
 

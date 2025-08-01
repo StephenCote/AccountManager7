@@ -214,12 +214,37 @@
         });
     }
 
-    function cycleMagic8Image(){
-
-    }
+    let bgAnim = false;
+    let bgImg = false;
     let images = [];
-    let imgBase = 172;
+    /// At the moment, this is just a group id 
+    let imgBase = 131;
     let imgUrl;
+    const imgCfg = {
+        isA_onTop: false,
+        isTransitioning: false,
+        imageA_src: undefined,
+        imageB_src: undefined
+    };
+
+    // The onload handler that triggers the visual transition
+    const imageTransition = () => {
+        // Prevent re-triggering during a transition
+        if (imgCfg.isTransitioning) return;
+        imgCfg.isTransitioning = true;
+        setTimeout(() => {
+            if (imgCfg.isA_onTop) {
+                imgCfg.imageA_src = images[Math.floor(Math.random() * images.length)];
+            }
+            else {
+                imgCfg.imageB_src = images[Math.floor(Math.random() * images.length)];
+            }
+            imgCfg.isA_onTop = !imgCfg.isA_onTop;
+            imgCfg.isTransitioning = false;
+            m.redraw();
+        }, 3000);
+    };
+
     function getMagic8View(chatCfg, profile) {
 
         // Get profile image URLs if available
@@ -236,7 +261,7 @@
         }
 
         let gimg = "";
-        if(!profile && imgBase && images.length == 0){
+        if (bgImg && !profile && imgBase && images.length == 0) {
             console.log("Loading magic8 images from base", imgBase);
             let q = am7client.newQuery("data.data");
             q.field("groupId", imgBase);
@@ -248,44 +273,47 @@
                     images = res.results.map((r) => {
                         return g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + r.groupPath + "/" + r.name;
                     });
-                    console.log(images);
+                    imgCfg.imageA_src = images[Math.floor(Math.random() * images.length)];
+                    imgCfg.imageB_src = images[Math.floor(Math.random() * images.length)];
+
                     m.redraw();
                 }
             });
         }
-        if(images.length > 0){
-            imgUrl = images[Math.floor(Math.random() * images.length)];
-            gimg = m("img", {
-                src: imgUrl,
-                class: "rounded-full",
-                style: {
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    height: "100%",
+        if (bgImg && images.length > 0) {
+            const imageClasses = 'absolute top-0 left-0 w-full h-full rounded-full object-cover transition-all duration-3000 ease-in-out';
+
+            gimg = m("div", { class: 'relative w-full h-full' }, [
+                // Image A
+                m("img", {
+                    key: 'A',
                     objectFit: "contain",
                     objectPosition: "center",
-                    zIndex: 1,
-                    opacity: 0.2,
-                    pointerEvents: "none"
-                }
-            });
-            setTimeout(() => {
-                m.redraw();
-            }, 3000);
-                    
-                
+                    src: imgCfg.imageA_src,
+                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 blur-0'}`,
+                    onload: !imgCfg.isA_onTop ? imageTransition : null
+                }),
+                // Image B
+                m("img", {
+                    key: 'B',
+                    objectFit: "contain",
+                    objectPosition: "center",
+                    src: imgCfg.imageB_src,
+                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 blur-0'}`,
+                    onload: imgCfg.isA_onTop ? imageTransition : null
+                })
+            ]);
+
         }
 
-
+        // bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
         return m("div", {
             key: "magic8-container", // Use a stable key instead of magic8.id
             class: `
       relative aspect-square w-[90vw] max-w-[600px] max-h-[600px] mx-auto
       rounded-full overflow-hidden
-      bg-gradient-to-br from-slate-100 via-slate-200 to-slate-300
-      ring-2 ring-white/20 shadow-[inset_0_10px_20px_rgba(255,255,255,0.1),inset_0_-10px_20px_rgba(0,0,0,0.2)]
+      
+      ring-2 ring-white/20
     `
         }, [
             !sysUrl && !usrUrl && gimg,
@@ -333,37 +361,39 @@
         transform scale-y-[-1]
       `
             }),
-
+            /// bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.15)_0%,transparent_70%)]
             // ...rest of your overlays and effects...
             m("div", {
                 class: `
         absolute inset-0 rounded-full pointer-events-none
-        bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.15)_0%,transparent_70%)]
+        
       `
             }),
+            // bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.3)_0%,transparent_40%)]
             m("div", {
                 class: `
         absolute top-0 left-0 w-full h-full pointer-events-none rounded-full
-        bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.3)_0%,transparent_40%)]
+        
         mix-blend-screen
       `
             }),
+            // bg-gradient-to-t from-black/20 to-transparent
             m("div", {
                 class: `
         absolute bottom-0 left-0 w-full h-1/2
-        bg-gradient-to-t from-black/20 to-transparent
+        
         pointer-events-none
       `
             }),
-            m("canvas", {
+            bgAnim && m("canvas", {
                 id: "spiral-overlay",
                 class: `
                     absolute z-20 pointer-events-none
                     opacity-20 w-full h-full top-0 left-0
                 `,
                 oncreate: ({ dom }) => {
-                    // drawSpiral(dom);
-                    drawMandala(dom);
+                    drawSpiral(dom);
+                    //drawMandala(dom);
                 }
             })
         ]);
@@ -459,7 +489,7 @@
             ctx.moveTo(centerX, centerY);
 
             for (let i = 0; i < 2000; i++) {
-                radius = i * 0.07 * pulse;
+                radius = i * 0.1 * pulse;
                 angle += 0.02;
                 const x = centerX + radius * Math.cos(angle + frame * spiralSpeed);
                 const y = centerY + radius * Math.sin(angle + frame * spiralSpeed);
@@ -1148,17 +1178,14 @@
         toneCtx = new (window.AudioContext || window.webkitAudioContext)();
 
         const masterGain = toneCtx.createGain();
-        masterGain.gain.value = 0.35;
+        // 1. Start the master gain at 0 to prevent the initial pop
+        //masterGain.gain.value = 0;
 
         leftOsc = toneCtx.createOscillator();
         rightOsc = toneCtx.createOscillator();
-
         leftGain = toneCtx.createGain();
         rightGain = toneCtx.createGain();
         merger = toneCtx.createChannelMerger(2);
-
-
-
 
         // Connect left
         leftOsc.connect(leftGain);
@@ -1168,15 +1195,21 @@
         rightOsc.connect(rightGain);
         rightGain.connect(merger, 0, 1);
 
-        merger.connect(masterGain).connect(toneCtx.destination);
-
+        //merger.connect(masterGain).connect(toneCtx.destination);
+        //masterGain.connect(toneCtx.destination);
+        merger.connect(toneCtx.destination);
         // Set base frequency
         leftOsc.frequency.value = baseFreq;
         rightOsc.frequency.value = baseFreq + maxBeat; // Start at highest beat
 
-        // Start oscillators
+        // Start oscillators (they will be silent initially due to masterGain being 0)
         leftOsc.start();
         rightOsc.start();
+
+        // 2. Schedule a smooth ramp-up to the target volume over 50ms
+        const targetVolume = 0.35;
+        const rampDuration = 0.05; // 50 milliseconds
+        masterGain.gain.linearRampToValueAtTime(targetVolume, toneCtx.currentTime + rampDuration);
 
         // Start the sweep cycle
         scheduleSweep();
