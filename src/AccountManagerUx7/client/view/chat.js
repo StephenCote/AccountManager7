@@ -586,7 +586,8 @@
         let bectl = false;
         let lastMsg = (midx == (chatCfg.history.messages.length - 1));
         if (hideThoughts && !editMode) {
-          cnt = pruneTag(cnt, "citation");
+          cnt = pruneOut(cnt, "--- CITATION", "END CITATIONS ---")
+          // cnt = pruneTag(cnt, "citation");
         }
         if (msg.role == "assistant") {
           bectl = (editMode && editIndex == midx);
@@ -689,6 +690,15 @@
       let idx = cnt.indexOf(mark);
       if (idx > -1) {
         cnt = cnt.substring(0, idx);
+      }
+      return cnt;
+    }
+
+    function pruneOut(cnt, start, end){
+      let idx1 = cnt.indexOf(start);
+      let idx2 = cnt.indexOf(end);
+      if(idx1 > -1 && idx2 > -1 && idx2 > idx1){
+        cnt = cnt.substring(0, idx1) + cnt.substring(idx2 + end.length, cnt.length);  
       }
       return cnt;
     }

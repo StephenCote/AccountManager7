@@ -72,7 +72,9 @@ public enum TemplatePatternEnumType {
 	USER_PRONOUN("user.pro"),
 	USER_PROMPT("userPrompt"),
 	USER_RACE("user.race"),
-	USER_TRADE("user.trade")
+	USER_TRADE("user.trade"),
+	USER_CITATION("user.citations"),
+	USER_QUESTION("user.question")
     ;
 
     private final String key;

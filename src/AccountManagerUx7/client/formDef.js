@@ -4271,6 +4271,10 @@
             userReminder: {
                 layout: "full",
                 format: "textlist"
+            },
+            userCitation: {
+                layout: "full",
+                format: "textlist"
             }
         },
         forms: []

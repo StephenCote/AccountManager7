@@ -8971,6 +8971,11 @@
           "baseType": "string"
         },
         {
+          "name": "userCitation",
+          "type": "list",
+          "baseType": "string"
+        },
+        {
           "name": "userNarrate",
           "type": "list",
           "baseType": "string"

@@ -239,7 +239,7 @@ public class WebSocketService  extends HttpServlet implements IChatHandler {
 			return;
 		}
 		String chatReqStr = new String((byte[])smsg.get("data"));
-		logger.info(chatReqStr);
+		// logger.info(chatReqStr);
 		ChatRequest chatReq = ChatRequest.importRecord(chatReqStr);
 		if(chatReq == null) {
 			logger.error("Chat request is null");

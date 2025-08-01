@@ -115,8 +115,27 @@ public class ChatListener implements IChatListener {
 		asyncRequestCount.put(oid, 0);
 		asyncRequestStop.put(oid, false);
 		asyncChats.put(oid, chat);
+		
+		String citDesc = "";
+		if(citRef.length() > 0) {
+			citDesc = PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig());
+			if(citDesc == null || citDesc.length() == 0) {
+				citDesc = 
+					"--- CITATION INSTRUCTIONS ---" + System.lineSeparator()
+					+ "Use any previous and the following citations to generate a response to the user request: \"" +  vChatReq.getMessage() + "\"" + System.lineSeparator()
+					+ "--- BEGIN CITATIONS ---" + System.lineSeparator() + citRef + System.lineSeparator() + "--- END CITATIONS ---"
+					+ System.lineSeparator() + System.lineSeparator()
+				;
+			}
+			else {
+			    PromptBuilderContext ctx = new PromptBuilderContext(chat.getPromptConfig(), chat.getChatConfig(), citDesc, true);
+			    ctx.replace(TemplatePatternEnumType.USER_QUESTION, vChatReq.getMessage());
+			    ctx.replace(TemplatePatternEnumType.USER_CITATION, citRef);
+			    citDesc = ctx.template.trim();
+			}
+		}
 
-		chat.continueChat(req, vChatReq.getMessage() + citRef);
+		chat.continueChat(req, citDesc + vChatReq.getMessage());
 		
 		handlers.forEach(h -> h.onChatStart(user, chatReq, req));
 		
@@ -173,7 +192,7 @@ public class ChatListener implements IChatListener {
 
 	@Override
 	public void onupdate(BaseRecord user, OpenAIRequest request, OpenAIResponse response, String message) {
-		logger.info("sendMessageToClient: '" + message + "'");
+		// logger.info("sendMessageToClient: '" + message + "'");
 		String oid = getRequestId(request);
 		if(oid == null) {
 			return;
@@ -196,8 +215,7 @@ public class ChatListener implements IChatListener {
 
 	@Override
 	public void oncomplete(BaseRecord user, OpenAIRequest request, OpenAIResponse response) {
-		// TODO Auto-generated method stub
-		logger.info("MockWebSocket.oncomplete");
+
 		String oid = getRequestId(request);
 		if(oid == null) {
 			return;
@@ -222,7 +240,7 @@ public class ChatListener implements IChatListener {
 
 		chat.saveSession(request);
 		logger.info("Chat session saved for request: " + oid);
-		logger.info(request.toFullString());
+
 		handlers.forEach(h -> h.onChatComplete(user, request, response));
 		clearCache(oid);
 	}

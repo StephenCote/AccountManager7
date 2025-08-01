@@ -96,6 +96,14 @@ public class Chat {
 
 
 
+	public BaseRecord getPromptConfig() {
+		return promptConfig;
+	}
+
+	public BaseRecord getChatConfig() {
+		return chatConfig;
+	}
+
 	public IChatListener getListener() {
 		return listener;
 	}

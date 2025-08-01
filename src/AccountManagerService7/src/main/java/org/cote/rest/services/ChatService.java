@@ -8,12 +8,16 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatRequest;
 import org.cote.accountmanager.olio.llm.ChatResponse;
 import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.PromptBuilderContext;
+import org.cote.accountmanager.olio.llm.PromptUtil;
+import org.cote.accountmanager.olio.llm.TemplatePatternEnumType;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
@@ -237,7 +241,27 @@ public class ChatService {
 		}
 		
 		Chat chat = ChatUtil.getChat(user, vChatReq, Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
-		chat.continueChat(req, vChatReq.getMessage() + citRef);
+		
+		String citDesc = "";
+		if(citRef.length() > 0) {
+			citDesc = PromptUtil.getUserCitationTemplate(chat.getPromptConfig(), chat.getChatConfig());
+			if(citDesc == null || citDesc.length() == 0) {
+				citDesc = 
+					"--- CITATION INSTRUCTIONS ---" + System.lineSeparator()
+					+ "Use any previous and the following citations to generate a response to the user request: \"" +  vChatReq.getMessage() + "\"" + System.lineSeparator()
+					+ "--- BEGIN CITATIONS ---" + System.lineSeparator() + citRef + System.lineSeparator() + "--- END CITATIONS ---"
+					+ System.lineSeparator() + System.lineSeparator()
+				;
+			}
+			else {
+			    PromptBuilderContext ctx = new PromptBuilderContext(chat.getPromptConfig(), chat.getChatConfig(), citDesc, true);
+			    ctx.replace(TemplatePatternEnumType.USER_QUESTION, vChatReq.getMessage());
+			    ctx.replace(TemplatePatternEnumType.USER_CITATION, citRef);
+			    citDesc = ctx.template.trim();
+			}
+
+		}
+		chat.continueChat(req, citDesc + vChatReq.getMessage());
 
 		ChatResponse creq = ChatUtil.getChatResponse(user, req, vChatReq);
 		

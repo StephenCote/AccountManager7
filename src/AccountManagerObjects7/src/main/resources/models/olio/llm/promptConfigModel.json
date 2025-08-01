@@ -88,6 +88,11 @@
 			"baseType": "string"
 		},
 		{
+			"name": "userCitation",
+			"type": "list",
+			"baseType": "string"
+		},
+		{
 			"name": "userReduce",
 			"type": "list",
 			"baseType": "string"
