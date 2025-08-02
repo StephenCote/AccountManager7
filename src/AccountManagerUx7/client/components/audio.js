@@ -214,11 +214,11 @@
         });
     }
 
-    let bgAnim = false;
-    let bgImg = false;
+    let bgAnim = true;
+    let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = 131;
+    let imgBase = 266; //267;//131;
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -1165,76 +1165,86 @@
 
 
     let toneCtx;
-    let leftOsc, rightOsc;
-    let leftGain, rightGain;
-    let merger;
-    let baseFreq = 440;
-    let minBeat = 4;
-    let maxBeat = 6;
-    let sweepDurationMin = 10; // total cycle time in minutes
-    let sweepInterval;
+let leftOsc, rightOsc;
+let leftGain, rightGain;
+let masterGain;
+let merger;
+let baseFreq = 440;
+let minBeat = 4;
+let maxBeat = 6;
+let sweepDurationMin = 10;
+let sweepInterval;
 
-    function startBinauralSweep() {
-        toneCtx = new (window.AudioContext || window.webkitAudioContext)();
+function startBinauralSweep() {
+    toneCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-        const masterGain = toneCtx.createGain();
-        // 1. Start the master gain at 0 to prevent the initial pop
-        //masterGain.gain.value = 0;
+    // Oscillators
+    leftOsc = toneCtx.createOscillator();
+    rightOsc = toneCtx.createOscillator();
 
-        leftOsc = toneCtx.createOscillator();
-        rightOsc = toneCtx.createOscillator();
-        leftGain = toneCtx.createGain();
-        rightGain = toneCtx.createGain();
-        merger = toneCtx.createChannelMerger(2);
+    // Gains
+    leftGain = toneCtx.createGain();
+    rightGain = toneCtx.createGain();
+    masterGain = toneCtx.createGain();
 
-        // Connect left
-        leftOsc.connect(leftGain);
-        leftGain.connect(merger, 0, 0);
+    // Master gain starts at 0
+    masterGain.gain.setValueAtTime(0, toneCtx.currentTime);
 
-        // Connect right
-        rightOsc.connect(rightGain);
-        rightGain.connect(merger, 0, 1);
+    // Merger to route left/right to stereo
+    merger = toneCtx.createChannelMerger(2);
 
-        //merger.connect(masterGain).connect(toneCtx.destination);
-        //masterGain.connect(toneCtx.destination);
-        merger.connect(toneCtx.destination);
-        // Set base frequency
-        leftOsc.frequency.value = baseFreq;
-        rightOsc.frequency.value = baseFreq + maxBeat; // Start at highest beat
+    // Connect chains
+    leftOsc.connect(leftGain).connect(merger, 0, 0); // Left channel
+    rightOsc.connect(rightGain).connect(merger, 0, 1); // Right channel
+    merger.connect(masterGain).connect(toneCtx.destination);
 
-        // Start oscillators (they will be silent initially due to masterGain being 0)
-        leftOsc.start();
-        rightOsc.start();
+    // Set frequencies
+    leftOsc.frequency.setValueAtTime(baseFreq, toneCtx.currentTime);
+    rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, toneCtx.currentTime);
 
-        // 2. Schedule a smooth ramp-up to the target volume over 50ms
-        const targetVolume = 0.35;
-        const rampDuration = 0.05; // 50 milliseconds
-        masterGain.gain.linearRampToValueAtTime(targetVolume, toneCtx.currentTime + rampDuration);
+    // Start oscillators
+    leftOsc.start(toneCtx.currentTime);
+    rightOsc.start(toneCtx.currentTime);
 
-        // Start the sweep cycle
-        scheduleSweep();
-        sweepInterval = setInterval(scheduleSweep, sweepDurationMin * 60 * 1000);
+    // Now ramp gain up smoothly AFTER oscillators are started
+    const rampTime = 2.0; // seconds
+    const targetVolume = 0.35;
+
+    masterGain.gain.setValueAtTime(0, toneCtx.currentTime);
+    masterGain.gain.linearRampToValueAtTime(targetVolume, toneCtx.currentTime + rampTime);
+
+    // Start the frequency sweep
+    scheduleSweep();
+    sweepInterval = setInterval(scheduleSweep, sweepDurationMin * 60 * 1000);
+}
+
+function scheduleSweep() {
+    const now = toneCtx.currentTime;
+    const halfCycle = (sweepDurationMin * 60) / 2;
+
+    rightOsc.frequency.cancelScheduledValues(now);
+    rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, now);
+    rightOsc.frequency.linearRampToValueAtTime(baseFreq + minBeat, now + halfCycle);
+    rightOsc.frequency.linearRampToValueAtTime(baseFreq + maxBeat, now + 2 * halfCycle);
+}
+
+function stopBinauralSweep() {
+    if (sweepInterval) clearInterval(sweepInterval);
+
+    if (leftOsc) {
+        leftOsc.stop();
+        leftOsc.disconnect();
     }
-
-    function scheduleSweep() {
-        const now = toneCtx.currentTime;
-        const halfCycle = (sweepDurationMin * 60) / 2;
-
-        // Descend from maxBeat to minBeat
-        rightOsc.frequency.cancelScheduledValues(now);
-        rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, now);
-        rightOsc.frequency.linearRampToValueAtTime(baseFreq + minBeat, now + halfCycle);
-
-        // Ascend back from minBeat to maxBeat
-        rightOsc.frequency.linearRampToValueAtTime(baseFreq + maxBeat, now + 2 * halfCycle);
+    if (rightOsc) {
+        rightOsc.stop();
+        rightOsc.disconnect();
     }
+    if (masterGain) masterGain.disconnect();
+    if (toneCtx) toneCtx.close();
 
-    function stopBinauralSweep() {
-        if (leftOsc) leftOsc.stop();
-        if (rightOsc) rightOsc.stop();
-        if (toneCtx) toneCtx.close();
-        if (sweepInterval) clearInterval(sweepInterval);
-    }
+    leftOsc = rightOsc = leftGain = rightGain = masterGain = merger = toneCtx = null;
+}
+
 
 
 
