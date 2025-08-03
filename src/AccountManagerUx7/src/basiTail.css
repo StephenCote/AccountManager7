@@ -1,13 +1,13 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
+@custom-variant dark (&:where(.dark, .dark *));
 @layer components {
 
 
 
     html,body{
-        @apply min-h-screen
+        @apply min-h-screen dark:bg-gray-800
     }
 
     /* common */
@@ -28,7 +28,7 @@
         @apply h-common text-xl
     }
     .h-common {
-        @apply font-medium leading-tight mt-0 mb-2 text-green-900
+        @apply font-medium leading-tight mt-0 mb-2 text-green-900 dark:text-green-100
     }
 
     /* end common */
@@ -53,12 +53,17 @@
 
     .text-field-form{
         @apply w-full px-4 py-2 mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
+        dark:focus:ring-blue-300
+        dark:text-white
     }
     .range-field-full {
         @apply w-full h-2 rounded-lg cursor-pointer bg-gray-200 dark:bg-gray-700
     }
     .text-field-full{
-        @apply w-full text-field-form
+        @apply w-full text-field-form dark:bg-black
+    }
+    input[type="datetime-local"] {
+        @apply dark:bg-black
     }
     .text-field-auto{
         @apply w-auto text-field-form
@@ -70,10 +75,11 @@
         @apply progress-field text-field-full h-10
     }
     .select-field-full{
-        @apply text-field-full bg-white
+        @apply text-field-full bg-white dark:bg-black
     }
     .text-field {
         @apply border px-2 border-gray-300 bg-white text-base font-medium text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-600
+        dark:border-gray-500 dark:bg-black dark:focus:ring-blue-300
     }
     .color-field{
         @apply box-border h-10 w-full mt-2 border rounded-md focus:outline-none focus:ring-1 focus:ring-blue-600
@@ -91,10 +97,10 @@
         @apply block mx-auto w-full flex-grow
     }
     .field-required{
-        @apply bg-blue-100
+        @apply bg-blue-100 dark:bg-blue-900
     }
     .field-error{
-        @apply bg-red-100
+        @apply bg-red-100 dark:bg-red-900
     }
     .table-field{
         @apply border-collapse w-full table-auto
@@ -140,7 +146,8 @@
     }
 
     .image-grid-item-tile {
-        @apply border border-white bg-white p-1 shadow-lg hover:bg-blue-100 hover:border-blue-300
+        @apply border border-white bg-white p-1 shadow-lg hover:bg-blue-100 hover:border-blue-300 
+        dark:border-black dark:bg-black dark:hover:bg-blue-800 dark:hover:border-blue-600
         /*mx-auto max-w-fit max-h-fit border border-white bg-white p-1 shadow-lg hover:bg-blue-100 hover:border-blue-300*/
     }
 
@@ -148,6 +155,7 @@
     
     .image-grid-item{
         @apply mx-auto h-full max-h-full w-full max-w-full overflow-hidden border border-white bg-white p-1 shadow-lg hover:bg-blue-100 hover:border-blue-300
+        dark:border-black dark:bg-black dark:hover:bg-blue-800 dark:hover:bg-blue-600
     }
     
     .image-grid-item-content{
@@ -165,7 +173,7 @@
         @apply /*flex mx-auto justify-center*/ flex w-full h-full max-h-full max-w-full mx-auto justify-center items-center
     }
     .image-grid-item-active{
-        @apply bg-blue-300 hover:bg-blue-400
+        @apply bg-blue-300 hover:bg-blue-400 dark:bg-blue-600 dark:hover:bg-blue-700
     }
     .image-grid-image{
         @apply block mx-auto
@@ -206,10 +214,10 @@
         @apply block text-sm font-medium text-gray-500
     }
     .screen-center-gray {
-        @apply flex items-center justify-center min-h-screen bg-gray-100;
+        @apply flex items-center justify-center min-h-screen bg-gray-100 dark:bg-gray-900;
     }
     .box-shadow-white{
-        @apply px-8 py-6 mt-4 text-left bg-white shadow-lg;
+        @apply px-8 py-6 mt-4 text-left bg-white shadow-lg dark:bg-black;
     }
     .box-title{
         @apply text-2xl font-bold text-center;
@@ -282,6 +290,7 @@
     .context-menu{
         @apply origin-top-right absolute right-0 mt-2 rounded-md shadow-lg py-1 bg-white ring-1 ring-black ring-opacity-5 focus:outline-none
         overflow-y-auto max-h-96
+        dark:bg-black dark:ring-white
     }
     .context-menu-48{
         @apply context-menu w-48
@@ -297,6 +306,7 @@
     }
     .context-menu.transition{
         @apply bg-white ease-in-out transition-all duration-300 z-30
+        dark:bg-black
     }
     .context-menu.transition-full{
         @apply opacity-100
@@ -318,10 +328,10 @@
         @apply relative p-0 m-0
     }
     .context-menu-container-disabled{
-        @apply bg-gray-300
+        @apply bg-gray-300 dark:bg-gray-600
     }
     aside.transition {
-        @apply transform top-0 left-0 w-64 bg-white fixed h-full overflow-auto ease-in-out transition-all duration-300 z-30
+        @apply transform top-0 left-0 w-64 bg-white fixed h-full overflow-auto ease-in-out transition-all duration-300 z-30 dark:bg-black dark:text-gray-200
     }
     aside.transition.transition-full {
         @apply -translate-x-0
@@ -330,7 +340,7 @@
         @apply -translate-x-full
     }
     .flyout-button{
-        @apply flex items-center p-2 w-full page-button hover:text-gray-800 hover:bg-blue-100
+        @apply flex items-center p-2 w-full page-button hover:text-gray-800 hover:bg-blue-100 dark:bg-gray-600 dark:text-white
     }
 
     .flyout-button.active{
@@ -348,7 +358,7 @@
     }
 
     nav.pageNav{
-        @apply flex w-full items-center justify-between px-6 h-16 bg-white text-gray-700 border-b border-gray-200 z-10
+        @apply flex w-full items-center justify-between px-6 h-16 bg-white text-gray-700 border-b border-gray-200 z-10 dark:bg-black
     }
 
     div.menuToggle{
@@ -383,22 +393,22 @@
         */
         /* font-medium inline-block align-middle page-button space-x-4 px-3 py-2  */
         /* content-center inline-flex items-center px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-blue-100 */
-        @apply content-center inline-flex items-center text-lg page-button space-x-4 px-3 py-2
+        @apply content-center inline-flex items-center text-lg page-button space-x-4 px-3 py-2 dark:bg-gray-800 dark:text-gray-300
     }
     .menu-button.active{
-        @apply border-gray-500 text-gray-700 bg-gray-200
+        @apply border-gray-500 text-gray-700 bg-gray-200 dark:bg-gray-600 dark:border-gray-700
     }
     .menu-button.active-red{
-        @apply border-gray-500 text-red-700 bg-red-200
+        @apply border-gray-500 text-red-700 bg-red-200 dark:bg-red-600 dark:border-gray-200
     }
     .menu-button-slim{
           @apply font-medium align-middle page-button pl-2 pr-2
       }
     div.content-outer{
-        @apply flex flex-col min-h-screen max-h-screen overflow-hidden
+        @apply flex flex-col min-h-screen max-h-screen overflow-hidden dark:bg-gray-800
     }
     div.content-main{
-        @apply bg-white flex-grow overflow-hidden flex
+        @apply bg-white flex-grow overflow-hidden flex dark:bg-black dark:text-white
     }
 
     div.panel-container{
@@ -428,16 +438,17 @@
     }
     */
     div.card-contents{
-        @apply flex flex-col h-full text-gray-700 bg-white rounded-xl shadow-lg ring-1 ring-gray-300 p-4
+        @apply flex flex-col h-full text-gray-700 bg-white rounded-xl shadow-lg ring-1 ring-gray-300 p-4 dark:bg-black dark:text-white
     }
     div.card-item{
-        
+
     }
     div.card-item button{
-        @apply w-full text-left py-1 page-button
+        @apply w-full text-left py-1 page-button dark:bg-black dark:text-white
     }
     .page-button{
         @apply text-gray-500 bg-white rounded-lg border-b-white border-b hover:border-solid hover:border-blue-500 hover:shadow
+        dark:bg-black dark:text-gray-300 dark:border-b-black dark:hover:border-blue-300
     }
     .page-select{
         @apply appearance-none font-normal text-gray-700 bg-white bg-clip-padding rounded
@@ -449,9 +460,11 @@
         hover:shadow
         text-gray-500
         transition ease-in-out m-0 
+        dark:text-gray-200 dark:bg-black dark:border-b-black
     }
     .page-button, .page-select:focus{
         @apply focus:text-gray-700 focus:bg-white focus:border-blue-600 focus:outline-none
+        dark:focus:text-gray-200 dark:focus:bg-black dark:focus:border-blue-200
     }
 
     nav.breadcrumb-bar{
@@ -478,7 +491,7 @@
     }
     */
     .list-results-container{
-        @apply flex-grow overflow-hidden flex bg-white border border-gray-200
+        @apply flex-grow overflow-hidden flex bg-white border border-gray-200 dark:bg-black dark:border-gray-700 dark:text-gray-200
     }
     .list-results{
         @apply flex flex-col w-full overflow-hidden p-0
@@ -529,13 +542,13 @@
 
 
     tr.tabular-row td{
-        @apply align-middle text-left text-gray-500 text-left border-r border-gray-300 pl-2 pr-2
+        @apply align-middle text-left text-gray-500 text-left border-r border-gray-300 pl-2 pr-2 dark:border-gray-500 dark:text-gray-300
     }
     tr.tabular-row{
-        @apply hover:bg-blue-100 hover:border-blue-300
+        @apply hover:bg-blue-100 hover:border-blue-300 dark:hover:bg-blue-800 dark:hover:border-blue-600
     }
     tr.tabular-row-active{
-        @apply bg-blue-300 hover:bg-blue-400
+        @apply bg-blue-300 hover:bg-blue-400 dark:bg-blue-600 dark:hover:bg-blue-800
     }
 
     .results-overflow{
@@ -617,7 +630,7 @@
     }
 
     .result-nav-outer{
-        @apply bg-white px-1 py-1 flex items-center justify-between border-t border-gray-200
+        @apply bg-white px-1 py-1 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 dark:bg-black
     }
 
     .result-nav-inner {
@@ -625,7 +638,7 @@
     }
 
     .result-nav-inner .count-label{
-        @apply text-sm text-gray-700
+        @apply text-sm text-gray-700 dark:text-gray-200
     }
 
     .result-nav-inner .result-nav{
@@ -639,15 +652,16 @@
     }
     .result-nav .button{
         @apply content-center inline-flex items-center px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-blue-100
+        dark:bg-black dark:border-gray-600
     }
     .result-nav .button.active{
-        @apply border-gray-500 text-gray-700 bg-gray-200
+        @apply border-gray-500 text-gray-700 bg-gray-200 dark:bg-gray-700 dark:text-gray-200
     }
     .result-nav .button.focus{
-        @apply ring-1 ring-blue-600 bg-blue-300;
+        @apply ring-1 ring-blue-600 bg-blue-300 dark:bg-blue-600 dark:ring-blue-300
     }
     .result-nav .button.inactive{
-        @apply text-gray-300 bg-gray-100 hover:bg-gray-200
+        @apply text-gray-300 bg-gray-100 hover:bg-gray-200 dark:bg-gray-900 dark:text-gray-600
     }
     .result-nav .previous{
         @apply rounded-l-md 
@@ -733,7 +747,7 @@
 
     .carousel{
         /* min-h-screen max-h-screen */
-        @apply  overflow-hidden flex flex-grow shadow-2xl bg-white
+        @apply  overflow-hidden flex flex-grow shadow-2xl bg-white dark:bg-black
         
     }
 
@@ -752,16 +766,16 @@
         @apply transition-opacity duration-500  ease-out hidden
     }
     .carousel-item-flex{
-        @apply flex max-w-full max-h-full w-full h-full bg-white
+        @apply flex max-w-full max-h-full w-full h-full bg-white dark:bg-black
     }
     .carousel-item-abs{
         @apply carousel-item-flex mx-auto absolute 
     }
     .carousel-article-outer{
-        @apply w-full bg-gray-100 flex
+        @apply w-full bg-gray-100 flex dark:bg-gray-900
     }
     .carousel-article{
-        @apply results-overflow bg-white shadow-md text-lg
+        @apply results-overflow bg-white shadow-md text-lg dark:bg-black
     }
     .carousel-article div{
         @apply pt-4 pb-4
@@ -821,13 +835,14 @@
     }
     
     button.button-tab{
-        @apply inline-flex items-center w-40 px-2 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-blue-100 text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-600
+        @apply inline-flex items-center w-40 px-2 py-2 border border-gray-300 bg-white text-sm font-medium hover:bg-blue-100 text-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-600
+        dark:border-gray-600 dark:bg-black dark:text-gray-200 dark:hover:bg-blue-900 dark:focus:ring-blue-300
     }
     button.button-tab-active{
-        @apply bg-blue-100 hover:bg-blue-400
+        @apply bg-blue-100 hover:bg-blue-400 dark:bg-blue-900 dark:hover:bg-blue-600
     }
     div.tab-pane-active{
-        @apply bg-blue-100;
+        @apply bg-blue-100 dark:bg-blue-900;
     }
 
     
@@ -876,7 +891,11 @@
       }
 
       .audio-container{
-        @apply w-full h-16 rounded-full overflow-hidden cursor-pointer bg-white border
+        @apply w-full h-16 rounded-full overflow-hidden cursor-pointer bg-white border dark:bg-black
+      }
+
+      .dark .material-symbols-outlined{
+        @apply dark:text-gray-200;
       }
       
       @keyframes shimmer {

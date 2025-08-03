@@ -218,7 +218,7 @@
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = 266; //267;//131;
+    let imgBase = 265; //266; 265 //267;//131;
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -1109,7 +1109,7 @@
                 vprops.engine = "piper";
                 vprops.speaker = "en_GB-alba-medium";
             }
-            // console.log("Synthethize '" + name + "'");
+            console.log("Synthethize '" + name + "'");
             let d;
             try {
                 d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
@@ -1163,90 +1163,167 @@
         return m("button", { class: "button", onclick: toggleRecord }, m("span", { class: "material-symbols-outlined material-icons-24" }, "adaptive_audio_mic" + (recording ? "" : "_off")));
     }
 
+    /*
+    let toneCtx;
+    let leftOsc, rightOsc;
+    let leftGain, rightGain;
+    let masterGain;
+    let merger;
+    let baseFreq = 440;
+    let minBeat = 4;
+    let maxBeat = 6;
+    let sweepDurationMin = 10;
+    let sweepInterval;
+
+    function startBinauralSweep() {
+        toneCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        // Oscillators
+        leftOsc = toneCtx.createOscillator();
+        rightOsc = toneCtx.createOscillator();
+
+        // Gains
+        leftGain = toneCtx.createGain();
+        rightGain = toneCtx.createGain();
+        masterGain = toneCtx.createGain();
+
+        let dcBlocker = toneCtx.createBiquadFilter();
+        dcBlocker.type = "highpass";
+        dcBlocker.frequency.value = 20; // 20 Hz blocks DC
+
+
+        // Set master gain to 0 before connecting
+        masterGain.gain.setValueAtTime(0, toneCtx.currentTime);
+
+        // Merger to route left/right to stereo
+        merger = toneCtx.createChannelMerger(2);
+
+        // Connect chains
+        leftOsc.connect(leftGain).connect(merger, 0, 0); // Left channel
+        rightOsc.connect(rightGain).connect(merger, 0, 1); // Right channel
+
+        // Connect merger to master gain
+        merger.connect(masterGain);
+
+        // Connect master gain to DC blocker
+        masterGain.connect(dcBlocker);
+
+        // Connect DC blocker to destination
+        dcBlocker.connect(toneCtx.destination);
+
+        // Set frequencies
+        leftOsc.frequency.setValueAtTime(baseFreq, toneCtx.currentTime);
+        rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, toneCtx.currentTime);
+
+        // Start oscillators
+        leftOsc.start();
+        rightOsc.start();
+
+        // Now ramp gain up smoothly AFTER oscillators are started, with a slight delay
+        const rampTime = 0.5; // seconds
+        const targetVolume = 0.35;
+        const delay = 0.05; // 50ms delay
+
+        const startTime = toneCtx.currentTime + delay;
+        masterGain.gain.cancelScheduledValues(toneCtx.currentTime);
+        masterGain.gain.setValueAtTime(0, toneCtx.currentTime);
+        masterGain.gain.linearRampToValueAtTime(targetVolume, startTime + rampTime);
+
+        // Start the frequency sweep
+        scheduleSweep();
+        sweepInterval = setInterval(scheduleSweep, sweepDurationMin * 60 * 1000);
+    }
+
+    function stopBinauralSweep() {
+        if (sweepInterval) clearInterval(sweepInterval);
+
+        if (masterGain && toneCtx) {
+            const now = toneCtx.currentTime;
+            masterGain.gain.cancelScheduledValues(now);
+            masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+            masterGain.gain.linearRampToValueAtTime(0, now + 0.3); // ramp down over 0.3s
+
+            setTimeout(() => {
+                if (leftOsc) {
+                    try { leftOsc.stop(); } catch { }
+                    leftOsc.disconnect();
+                }
+                if (rightOsc) {
+                    try { rightOsc.stop(); } catch { }
+                    rightOsc.disconnect();
+                }
+                if (masterGain) masterGain.disconnect();
+                if (toneCtx) toneCtx.close();
+
+                leftOsc = rightOsc = leftGain = rightGain = masterGain = merger = toneCtx = null;
+            }, 320); // Wait for ramp down before stopping/disconnecting
+        } else {
+            // fallback: just stop everything
+            if (leftOsc) { try { leftOsc.stop(); } catch { } leftOsc.disconnect(); }
+            if (rightOsc) { try { rightOsc.stop(); } catch { } rightOsc.disconnect(); }
+            if (masterGain) masterGain.disconnect();
+            if (toneCtx) toneCtx.close();
+
+            leftOsc = rightOsc = leftGain = rightGain = masterGain = merger = toneCtx = null;
+        }
+    }
+
+    function scheduleSweep() {
+        const now = toneCtx.currentTime;
+        const halfCycle = (sweepDurationMin * 60) / 2;
+
+        rightOsc.frequency.cancelScheduledValues(now);
+        rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, now);
+        rightOsc.frequency.linearRampToValueAtTime(baseFreq + minBeat, now + halfCycle);
+        rightOsc.frequency.linearRampToValueAtTime(baseFreq + maxBeat, now + 2 * halfCycle);
+    }
+    */
 
     let toneCtx;
-let leftOsc, rightOsc;
-let leftGain, rightGain;
-let masterGain;
-let merger;
-let baseFreq = 440;
-let minBeat = 4;
-let maxBeat = 6;
-let sweepDurationMin = 10;
-let sweepInterval;
+    let leftOsc, rightOsc;
+    let leftGain, rightGain;
+    let merger;
 
-function startBinauralSweep() {
-    toneCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function startBinauralSweep(baseFreq = 440, beatFreq = 4) {
+    return;
+      toneCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Oscillators
-    leftOsc = toneCtx.createOscillator();
-    rightOsc = toneCtx.createOscillator();
+      // Create two oscillators
+      leftOsc = toneCtx.createOscillator();
+      rightOsc = toneCtx.createOscillator();
 
-    // Gains
-    leftGain = toneCtx.createGain();
-    rightGain = toneCtx.createGain();
-    masterGain = toneCtx.createGain();
+      // Left: base frequency, Right: base + beat frequency
+      leftOsc.frequency.value = baseFreq;
+      rightOsc.frequency.value = baseFreq + beatFreq;
 
-    // Master gain starts at 0
-    masterGain.gain.setValueAtTime(0, toneCtx.currentTime);
+      // Create stereo panning
+      leftGain = toneCtx.createGain();
+      leftGain.gain.value = 0.2;
+      rightGain = toneCtx.createGain();
+    rightGain.gain.value = 0.2;
+      // Pan hard left/right
+      const splitter = toneCtx.createChannelSplitter(2);
+      const merger = toneCtx.createChannelMerger(2);
 
-    // Merger to route left/right to stereo
-    merger = toneCtx.createChannelMerger(2);
+      leftOsc.connect(leftGain);
+      rightOsc.connect(rightGain);
 
-    // Connect chains
-    leftOsc.connect(leftGain).connect(merger, 0, 0); // Left channel
-    rightOsc.connect(rightGain).connect(merger, 0, 1); // Right channel
-    merger.connect(masterGain).connect(toneCtx.destination);
+      leftGain.connect(merger, 0, 0);  // left to left channel
+      rightGain.connect(merger, 0, 1); // right to right channel
 
-    // Set frequencies
-    leftOsc.frequency.setValueAtTime(baseFreq, toneCtx.currentTime);
-    rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, toneCtx.currentTime);
+      merger.connect(toneCtx.destination);
 
-    // Start oscillators
-    leftOsc.start(toneCtx.currentTime);
-    rightOsc.start(toneCtx.currentTime);
-
-    // Now ramp gain up smoothly AFTER oscillators are started
-    const rampTime = 2.0; // seconds
-    const targetVolume = 0.35;
-
-    masterGain.gain.setValueAtTime(0, toneCtx.currentTime);
-    masterGain.gain.linearRampToValueAtTime(targetVolume, toneCtx.currentTime + rampTime);
-
-    // Start the frequency sweep
-    scheduleSweep();
-    sweepInterval = setInterval(scheduleSweep, sweepDurationMin * 60 * 1000);
-}
-
-function scheduleSweep() {
-    const now = toneCtx.currentTime;
-    const halfCycle = (sweepDurationMin * 60) / 2;
-
-    rightOsc.frequency.cancelScheduledValues(now);
-    rightOsc.frequency.setValueAtTime(baseFreq + maxBeat, now);
-    rightOsc.frequency.linearRampToValueAtTime(baseFreq + minBeat, now + halfCycle);
-    rightOsc.frequency.linearRampToValueAtTime(baseFreq + maxBeat, now + 2 * halfCycle);
-}
-
-function stopBinauralSweep() {
-    if (sweepInterval) clearInterval(sweepInterval);
-
-    if (leftOsc) {
-        leftOsc.stop();
-        leftOsc.disconnect();
+      // Start oscillators
+      leftOsc.start();
+      rightOsc.start();
     }
-    if (rightOsc) {
-        rightOsc.stop();
-        rightOsc.disconnect();
+
+    function stopBinauralSweep() {
+        return;
+      if (leftOsc) leftOsc.stop();
+      if (rightOsc) rightOsc.stop();
+      if (toneCtx) toneCtx.close();
     }
-    if (masterGain) masterGain.disconnect();
-    if (toneCtx) toneCtx.close();
-
-    leftOsc = rightOsc = leftGain = rightGain = masterGain = merger = toneCtx = null;
-}
-
-
-
 
     let audio = {
         configureAudio,

@@ -75,6 +75,7 @@
                     //getCategories(),
                 ]),
                 m("div", { class: "flyout-gutter" }, [
+                    button("Dark Mode", "dark_mode", null, undefined, async function(){ let de = document.documentElement; let cls = de.className; if(cls != "dark") de.className = "dark"; else de.className = "light";}),
                     button("Breadcrumb Bar", "footprint", null, undefined, async function(){ page.components.breadCrumb.toggleBreadcrumb();}),
                     button("Clear Cache", "cached", null, undefined, async function(){ await am7client.clearCache();}),
                     button("Cleanup", "cached", null, undefined, async function(){ await page.cleanup();})

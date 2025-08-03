@@ -56,26 +56,26 @@
     let toastConfig = {
         info: {
             ico: "info",
-            style: "text-gray-500 bg-white",
-            icoStyle: "text-blue-500",
+            style: "text-gray-500 bg-white dark:bg-black dark:text-gray-300",
+            icoStyle: "text-blue-500 dark:text-blue-300",
             timeout: 5000
         },
         success: {
             ico: "check",
-            style: "text-gray-500 bg-green-200",
-            icoStyle: "text-black",
+            style: "text-gray-500 bg-green-200 dark:bg-green-800 dark:text-gray-300",
+            icoStyle: "text-black dark:text-white",
             timeout: 5000
         },
         warn: {
             ico: "warning",
-            style: "bg-yellow-200 text-black",
-            icoStyle: "text-black",
+            style: "bg-yellow-200 text-black dark:text-white dark:bg-yellow-800",
+            icoStyle: "text-black dark:text-white",
             timeout: 10000
         },
         error: {
             ico: "stop",
-            style: "bg-red-200 text-black",
-            icoStyle: "text-black",
+            style: "bg-red-200 text-black dark:text-white dark:bg-red-700",
+            icoStyle: "text-black dark:text-white",
             timeout: 15000
         }
     };
@@ -714,7 +714,7 @@
         // transition-full transition-0 transition-100
         let items = toast.map((t)=>{
             let cfg = toastConfig[t.type];
-            let closeBtn = m("button", {onclick: ()=>{ burnToast(t);}, type: "button", class: "ms-auto -mx-1.5 -my-1.5  rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 inline-flex items-center justify-center h-8 w-8 "}, 
+            let closeBtn = m("button", {onclick: ()=>{ burnToast(t);}, type: "button", class: "ms-auto -mx-1.5 -my-1.5  rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 hover:bg-gray-100 dark:bg-gray-900 dark:text-gray-200 inline-flex items-center justify-center h-8 w-8 "}, 
                 m("span", {class: "material-symbols-outlined"}, "close")
             );
             return m("div", {id: "toast-box-" + t.id, class: "transition transition-" + (t.visible ? "100":"0") + " toast-box " + cfg.style}, [
