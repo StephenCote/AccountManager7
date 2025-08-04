@@ -25,6 +25,7 @@
         }
         */
         let aCPs = [];
+        
         if(aCCfg){
             let aC = aCCfg.filter(c => c.name == inst.api.chatConfig()?.name);
             if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
@@ -35,7 +36,26 @@
         else if(ref && ref[am7model.jsonModelKey] == "olio.charPerson" || ref[am7model.jsonModelKey] == "identity.person"){
             aCPs.push(ref.name);
         }
-
+        
+        if(inst.api.session && inst.api.session() != null && inst.api.session()[am7model.jsonModelKey]){
+            let sq = am7view.viewQuery(inst.api.session()[am7model.jsonModelKey]);
+            sq.entity.request = ["id", "objectId", "groupId", "groupPath", "organizationId", "organizationPath"];
+            sq.field("id", inst.api.session().id);
+            let sess = await page.search(sq);
+            if(sess && sess.results && sess.results.length){
+                let x = await m.request({ method: 'GET', url: am7client.base() + "/vector/vectorize/" + inst.api.session()[am7model.jsonModelKey] + "/" + sess.results[0].objectId + "/WORD/500", withCredentials: true });
+                if(x){
+                    wset.push(sess.results[0]);
+                }
+                else{
+                    page.toast("error", "Session vectorization failed: " + inst.api.session().id);
+                }
+            }
+            else{
+                page.toast("error", "Session not found: " + inst.api.session().id);
+            }
+        }
+        
         if(aCPs.length){
             let grp = await page.findObject("auth.group", "data", "~/Tags");
             let q = am7view.viewQuery(am7model.newInstance("data.tag"));
@@ -58,7 +78,7 @@
     
             let qr = await page.search(q);
             if(qr && qr.results){
-                wset = qr.results;
+                wset.push(...qr.results);
             }
         }
         

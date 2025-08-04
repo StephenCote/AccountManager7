@@ -129,7 +129,7 @@
         if (contentChanged || !magic8.audio1 || !magic8.audio2) {
             messagesToProcess.forEach((m, i) => {
                 if (!m) return;
-                let actualIndex = aMsg.length - 2 + i;
+                let actualIndex = aMsg.length - 1 + i;
                 let name = inst.api.objectId() + " - " + actualIndex;
                 let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
 
@@ -218,7 +218,7 @@
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = 265; //266; 265 //267;//131;
+    let imgBase = [172,130];//265; //266; 265 //267;//131;
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -261,12 +261,21 @@
         }
 
         let gimg = "";
-        if (bgImg && !profile && imgBase && images.length == 0) {
+        if (bgImg && !profile && imgBase.length && images.length == 0) {
             console.log("Loading magic8 images from base", imgBase);
             let q = am7client.newQuery("data.data");
-            q.field("groupId", imgBase);
+            //q.field("groupId", imgBase);
+            let qg = q.field(null, null);
+            qg.comparator = "group_or";
+            qg.fields = imgBase.map((a) => {
+                return {
+                    name: "groupId",
+                    comparator: "equals",
+                    value: a
+                }
+            });
             q.range(0, 0);
-            imgBase = 0;
+            imgBase = [];
             page.search(q).then((res) => {
 
                 if (res && res.results) {
@@ -281,7 +290,7 @@
             });
         }
         if (bgImg && images.length > 0) {
-            const imageClasses = 'absolute top-0 left-0 w-full h-full rounded-full object-cover transition-all duration-3000 ease-in-out';
+            const imageClasses = 'absolute top-0 left-0 w-full h-full rounded-full object-cover transition-all ease-in-out duration-300';
 
             gimg = m("div", { class: 'relative w-full h-full' }, [
                 // Image A
@@ -290,7 +299,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageA_src,
-                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 blur-0'}`,
+                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-30 blur-0'}`,
                     onload: !imgCfg.isA_onTop ? imageTransition : null
                 }),
                 // Image B
@@ -299,7 +308,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageB_src,
-                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 blur-0'}`,
+                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-30 blur-0'}`,
                     onload: imgCfg.isA_onTop ? imageTransition : null
                 })
             ]);
@@ -1109,7 +1118,7 @@
                 vprops.engine = "piper";
                 vprops.speaker = "en_GB-alba-medium";
             }
-            console.log("Synthethize '" + name + "'");
+            console.log("Synthesize '" + name + "'");
             let d;
             try {
                 d = await m.request({ method: 'POST', url: g_application_path + "/rest/voice/" + name, withCredentials: true, body: vprops });
@@ -1163,7 +1172,7 @@
         return m("button", { class: "button", onclick: toggleRecord }, m("span", { class: "material-symbols-outlined material-icons-24" }, "adaptive_audio_mic" + (recording ? "" : "_off")));
     }
 
-    /*
+    
     let toneCtx;
     let leftOsc, rightOsc;
     let leftGain, rightGain;
@@ -1277,15 +1286,15 @@
         rightOsc.frequency.linearRampToValueAtTime(baseFreq + minBeat, now + halfCycle);
         rightOsc.frequency.linearRampToValueAtTime(baseFreq + maxBeat, now + 2 * halfCycle);
     }
-    */
-
+    
+    /*
     let toneCtx;
     let leftOsc, rightOsc;
     let leftGain, rightGain;
     let merger;
 
     function startBinauralSweep(baseFreq = 440, beatFreq = 4) {
-    return;
+
       toneCtx = new (window.AudioContext || window.webkitAudioContext)();
 
       // Create two oscillators
@@ -1324,7 +1333,7 @@
       if (rightOsc) rightOsc.stop();
       if (toneCtx) toneCtx.close();
     }
-
+    */
     let audio = {
         configureAudio,
         unconfigureAudio,
