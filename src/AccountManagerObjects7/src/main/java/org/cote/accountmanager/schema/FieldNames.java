@@ -72,10 +72,11 @@ public class FieldNames {
 		public static final String FIELD_DECISION_AGE = "decisionAge";
 		public static final String FIELD_SOURCE_DATA = "sourceData";
 		
-		/// Depracet sourceType?
+		/// Deprecate sourceType?
 		public static final String FIELD_SOURCE_TYPE = "sourceType";
 		/// Deprecate sourceDataType?
 		public static final String FIELD_SOURCE_DATA_TYPE = "sourceDataType";
+		/// Deprecate factData?
 		public static final String FIELD_FACT_DATA = "factData";
 		public static final String FIELD_FACT_DATA_TYPE = "factDataType";
 		public static final String FIELD_FACT_TYPE = "factType";
