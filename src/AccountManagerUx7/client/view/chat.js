@@ -441,13 +441,12 @@
           promptConfig: { objectId: e.promptConfig.objectId },
           uid: page.uid()
         };
-
         let obj = await m.request({ method: 'POST', url: g_application_path + "/rest/chat/new", withCredentials: true, body: chatReq });
-
         inst = am7model.prepareInstance(obj);
         window.dbgInst = inst;
         aSess = undefined;
         doClear();
+        await am7client.clearCache();
         await loadConfigList();
         doPeek();
       });
@@ -822,7 +821,7 @@
 
 
     async function loadConfigList() {
-      am7client.clearCache(undefined, true);
+      await am7client.clearCache(undefined, true);
       let dir = await page.findObject("auth.group", "DATA", "~/Chat");
       if (aPCfg == undefined) {
         aPCfg = await am7client.list("olio.llm.promptConfig", dir.objectId, null, 0, 0);
@@ -909,26 +908,14 @@
 
         if (window.remoteEntity) {
           inst = am7model.prepareInstance(remoteEntity, am7model.forms.chatSettings);
-          window.dbgInst = inst;
           bPopSet = true;
           delete window.remoteEntity;
         }
 
-        let cfg = page.context().contextObjects["chatConfig"];
-        if (cfg) {
-          // && !inst.api.chatConfig() && !inst.api.promptConfig()
-          console.warn("TODO: Refactor sending in chat config ref");
-          /*
-          console.log(cfg["olio.llm.chatConfig"].name);
-          inst.api.chatConfig(chatCfg.chatConfig);
-          inst.api.promptConfig(chatCfg.promptConfig);
-          */
-        }
         document.documentElement.addEventListener("keydown", navKey);
 
         if (bPopSet) {
           openChatSettings(inst);
-
         }
 
 

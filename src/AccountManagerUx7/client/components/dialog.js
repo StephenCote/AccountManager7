@@ -14,7 +14,7 @@
         let ca = (await loadChatList()).filter(c => c.name.match(/^Object/gi));
         let cname = "Analyze " + inst.api.name();
         let remoteEnt = {
-          schema: "olio.llm.chatRequest",
+          schema: "olio.llm.chatRequest",          
           chatConfig: ca.length ? ca[0] : undefined,
           promptConfig: pa.length ? pa[0] : undefined,
           name:cname
@@ -141,7 +141,7 @@
         return await am7client.list("olio.llm.chatConfig", dir.objectId, null, 0, 0);
       }
 
-    function updateSessionName(inst, acfg, pcfg){
+    function updateSessionName(inst, acfg, pcfg, bRename){
         let chat = inst.api.chatConfig();
         let prompt = inst.api.promptConfig();
         if(!chat || !prompt){
@@ -159,7 +159,8 @@
 
         let name;
         if(inst.api.name) name = inst.api.name();
-        //if(!name || !name.length){
+
+        if(bRename || !name || !name.length){
             if(page.components.dnd.workingSet.length){
                 name = page.components.dnd.workingSet[0].name;
             }
@@ -171,7 +172,7 @@
             else {
                 name = page.sessionName();
             }
-        //}
+        }
         inst.api.name(name);
 
     }
@@ -188,8 +189,8 @@
         //am7model.getModelField("chatSettings", "prompt").limit  = pcfg.map((c) => { return c.name; });
        // am7model.forms.newChatSettings.fields.promptConfig.field.limit = pcfg.map((c) => { return c.name; });
 
-        inst.action("chatConfig", function(){updateSessionName(inst, acfg, pcfg);});
-        inst.action("promptConfig", function(){updateSessionName(inst, acfg, pcfg);});
+        inst.action("chatConfig", function(){updateSessionName(inst, acfg, pcfg, true);});
+        inst.action("promptConfig", function(){updateSessionName(inst, acfg, pcfg, true);});
         updateSessionName(inst, acfg, pcfg);
 
         let cfg = {

@@ -159,8 +159,6 @@
         menuButton: button,
         activeShuffle: function(o){
             activeShuffle = o;
-            console.log(o);
-            //doPickShuffle(o, true);
         },
         oninit: function (x) {
             page.navigable.setupPendingContextMenus();

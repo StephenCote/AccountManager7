@@ -2100,8 +2100,12 @@
         label: "Fact Form",
         fields: {
             name: {
-                layout: "full"
+                layout: "half"
             },
+            type: {
+                layout: "half"
+            },
+
             description: {
                 layout: "full"
             },

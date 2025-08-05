@@ -23,7 +23,6 @@
     let magic8 = newMagic8();
 
     function clearMagic8(audioMagic8) {
-        console.log("Clear Magic8");
 
         let preserveContent = magic8.lastContent;
         upNext = [];
