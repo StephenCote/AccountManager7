@@ -441,10 +441,11 @@ public class Chat {
 		if (systemAnalyze != null && systemAnalyze.length() > 0) {
 			sys = systemAnalyze;
 		}
+
 		sysMsg.setContent(sys);
 		areq.addMessage(sysMsg);
 
-		if (assistantAnalyze != null) {
+		if (assistantAnalyze != null && assistantAnalyze.length() > 0) {
 			OpenAIMessage aaMsg = new OpenAIMessage();
 			aaMsg.setRole(assistantRole);
 			aaMsg.setContent(assistantAnalyze);
@@ -452,11 +453,14 @@ public class Chat {
 		}
 
 		StringBuilder msg = new StringBuilder();
-		msg.append(command + System.lineSeparator());
+		
+		msg.append("--- ANALYSIS INSTRUCTIONS ---" + System.lineSeparator());
+		msg.append("Use the following content to create a response for the request: " + command);
+		
 		msg.append(lines.subList(offset, max).stream().collect(Collectors.joining(System.lineSeparator()))
 				+ System.lineSeparator());
-		msg.append(System.lineSeparator()
-				+ "Analyze the previous content. DO NOT REPEAT, CONTINUE, OR NARRATE THE CONTENT!");
+		msg.append("--- END CONTENT FOR ANALYSIS ---" + System.lineSeparator());
+		msg.append(command);
 		String cont = msg.toString();
 		boolean useJB = chatConfig.get("useJailBreak");
 		if (useJB || forceJailbreak) {
@@ -944,6 +948,7 @@ public class Chat {
 		BaseRecord userChar = chatConfig.get("userCharacter");
 
 		String lab = systemChar.get("firstName") + " and " + userChar.get("firstName");
+
 		msg.setContent(
 				"(KeyFrame: (Summary of " + lab + " with " + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating)
 						+ "-rated content) " + analyze(req, null, false, false, false) + ")");
