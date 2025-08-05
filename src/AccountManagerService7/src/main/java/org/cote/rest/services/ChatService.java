@@ -154,12 +154,15 @@ public class ChatService {
 		String name = chatReq.get(FieldNames.FIELD_NAME);
 		String chatConfigId = null;
 		String promptConfigId = null;
+
 		if (chatReq.getChatConfig() != null) {
 			chatConfigId = chatReq.get("chatConfig.objectId");
 		}
+
 		if (chatReq.getPromptConfig() != null) {
 			promptConfigId = chatReq.get("promptConfig.objectId");
 		}
+
 		if(promptConfigId == null || promptConfigId.length() == 0|| chatConfigId == null || chatConfigId.length() == 0 || name == null || name.length() == 0) {
 			logger.warn("Name, prompt, or chat config was null or empty");
 			return Response.status(404).entity(null).build();

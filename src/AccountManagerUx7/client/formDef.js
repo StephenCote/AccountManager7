@@ -2100,35 +2100,61 @@
         label: "Fact Form",
         fields: {
             name: {
-                layout: "half"
+                layout: "third"
             },
             type: {
-                layout: "half"
+                layout: "third"
+            },
+            score: {
+                layout: "third"
             },
 
             description: {
                 layout: "full"
             },
             factType: {
-                layout: "two"
+                layout: "third"
             },
             modelType: {
-                layout: "two"
+                layout: "third"
             },
             sourceDataType: {
-                layout: "one"
-            },
-            score: {
-                layout: "one"
+                layout: "third"
             },
             sourceUrn: {
-                layout: "half"
+                layout: "third"
             },
             sourceUrl: {
-                layout: "half"
+                layout: "third"
             },
             factData: {
-                layout: "half"
+                layout: "third"
+            },
+            promptConfig: {
+                layout: 'third',
+                format: 'picker',
+                field: {
+                format: 'picker',
+                pickerType: "olio.llm.promptConfig",
+                pickerProperty: {
+                    selected: "{object}",
+                    entity: "promptConfig"
+                },
+                label: "Prompt Config"
+                }
+            },
+            chatConfig: {
+                layout: 'third',
+                format: 'picker',
+                field: {
+                format: 'picker',
+                pickerType: "olio.llm.chatConfig",
+                pickerProperty: {
+                    selected: "{object}",
+                    entity: "chatConfig"
+                },
+                label: "Chat Config"
+                }
             }
         },
         forms: ["grouptypeinfo", "attributes"]
@@ -4358,6 +4384,7 @@
                     limit: ['none', 'system', 'user']
                 }
             },
+            /*
             blank : {
                 layout : "one",
                 format: "blank",
@@ -4366,7 +4393,20 @@
                     readOnly: true
                 }
             },
-
+            */
+            policy: {
+                layout: 'one',
+                format: 'picker',
+                field: {
+                    format: 'picker',
+                    pickerType: "policy.policy",
+                    pickerProperty: {
+                        selected: "{object}",
+                        entity: "policy"
+                    },
+                    label: "Policy"
+                }
+            },
             serverUrl:{
                 layout: "third"
             },

@@ -53,7 +53,8 @@
 	{
 		"name": "factType",
 		"type": "string",
-		"maxLength": 32
+		"maxLength": 32,
+		"deprecated": true
 	},
 	{
 		"name": "sourceUrn",
@@ -89,5 +90,19 @@
 		"name": "sourceType",
 		"type": "string",
 		"maxLength": 32
+	},
+	{
+		"name": "chatConfig",
+		"type": "model",
+		"baseModel": "olio.llm.chatConfig",
+		"foreign": true,
+		"followReference": false
+	},
+	{
+		"name": "promptConfig",
+		"type": "model",
+		"baseModel": "olio.llm.promptConfig",
+		"foreign": true,
+		"followReference": false
 	}
 ]}

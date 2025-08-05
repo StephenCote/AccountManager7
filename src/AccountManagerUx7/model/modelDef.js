@@ -2738,7 +2738,20 @@
           "name": "sourceType",
           "type": "string",
           "maxLength": 32
+        },
+        {
+          "name": "chatConfig",
+          "baseModel": "olio.llm.chatConfig",
+          "type": "model",
+          "foreign": true
+        },
+        {
+          "name": "promptConfig",
+          "baseModel": "olio.llm.promptConfig",
+          "type": "model",
+          "foreign": true
         }
+
       ]
     },
     {
@@ -8880,6 +8893,12 @@
           "type": "int",
           "default": 20,
           "description": "When prune is true, sets the size of the message history to include in each request. messageTrim and keyframeEvery should be the same size when used in conjunction.  Note: The entire conversation is always preserved and may be used for summarization and analysis, this only affects the number of messages to include when using the chat capability."
+        },
+    {
+          "name": "policy",
+          "type": "model",
+          "baseModel": "policy.policy",
+          "foreign": true
         }
       ]
     },

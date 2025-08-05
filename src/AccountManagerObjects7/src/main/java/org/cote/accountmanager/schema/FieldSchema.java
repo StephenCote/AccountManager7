@@ -25,6 +25,7 @@ public class FieldSchema {
 	private boolean required = false;
 	private boolean readOnly = false;
 	private boolean identity = false;
+	private boolean deprecated = false;
 	
 	/// Virtual is used to indicate the field contains a non-persistent generated value
 	/// For example, path is a virtual field in that it is computed when the field is requested
@@ -86,6 +87,14 @@ public class FieldSchema {
 	
 	public FieldSchema() {
 		
+	}
+
+	public boolean isDeprecated() {
+		return deprecated;
+	}
+
+	public void setDeprecated(boolean deprecated) {
+		this.deprecated = deprecated;
 	}
 
 	public boolean isParticipation() {

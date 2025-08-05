@@ -945,8 +945,8 @@ public class Chat {
 
 		String lab = systemChar.get("firstName") + " and " + userChar.get("firstName");
 		msg.setContent(
-				"(KeyFrame: (Summary of " + lab + " in a" + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating)
-						+ "-rated roleplay) " + analyze(req, null, false, false, false) + ")");
+				"(KeyFrame: (Summary of " + lab + " with " + rating.toString() + "/" + ESRBEnumType.getESRBMPA(rating)
+						+ "-rated content) " + analyze(req, null, false, false, false) + ")");
 		List<OpenAIMessage> msgs = req.getMessages().stream()
 				.filter(m -> m.getContent() != null && !m.getContent().startsWith("(KeyFrame"))
 				.collect(Collectors.toList());
