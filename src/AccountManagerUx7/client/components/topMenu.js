@@ -25,7 +25,7 @@
         let img;
         if (xProf) img = m("img", { class: "h-8 w-8 rounded-full", src: g_application_path + "/thumbnail/" + xProf + "/" + profileDimensions });
         else img = m("span", { class: "material-symbols-outlined" }, "account_circle");
-        return m("button", { id: "profileContextMenuButton", class: "context-menu-button" }, [img]);
+        return m("button", { id: "profileContextMenuButton", class: "context-menu-button px-2 py-1 space-x-4" }, [img]);
 
     }
 

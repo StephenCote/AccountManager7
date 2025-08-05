@@ -213,12 +213,12 @@
             magic8.configuring = false;
         });
     }
-
+    let bgAudio = false;
     let bgAnim = true;
-    let bgImg = true;
+    let bgImg = false;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = [172,130];//265; //266; 265 //267;//131;
+    let imgBase = [282, 281, 283, 284, 265, 266, 267]; 
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -299,7 +299,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageA_src,
-                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-30 blur-0'}`,
+                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-15 blur-0'}`,
                     onload: !imgCfg.isA_onTop ? imageTransition : null
                 }),
                 // Image B
@@ -308,7 +308,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageB_src,
-                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-30 blur-0'}`,
+                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-15 blur-0'}`,
                     onload: imgCfg.isA_onTop ? imageTransition : null
                 })
             ]);
@@ -319,7 +319,7 @@
         return m("div", {
             key: "magic8-container", // Use a stable key instead of magic8.id
             class: `
-      relative aspect-square w-[90vw] max-w-[600px] max-h-[600px] mx-auto
+      relative aspect-square w-[90vw] max-w-[800px] max-h-[800px] mx-auto
       rounded-full overflow-hidden
       
       ring-2 ring-white/20
@@ -1185,6 +1185,9 @@
     let sweepInterval;
 
     function startBinauralSweep() {
+        if(!bgAudio){
+            return;
+        }
         toneCtx = new (window.AudioContext || window.webkitAudioContext)();
 
         // Oscillators
@@ -1244,6 +1247,10 @@
     }
 
     function stopBinauralSweep() {
+        if(!bgAudio){
+            return;
+        }
+
         if (sweepInterval) clearInterval(sweepInterval);
 
         if (masterGain && toneCtx) {

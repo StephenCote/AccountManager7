@@ -9,12 +9,16 @@
 
     async function chatInto(ref, inst, aCCfg){
         let sessName = page.sessionName();
+
+        let pa = (await loadPromptList()).filter(c => c.name.match(/^Object/gi));
+        let ca = (await loadChatList()).filter(c => c.name.match(/^Object/gi));
+        let cname = "Analyze " + inst.api.name();
         let remoteEnt = {
           schema: "olio.llm.chatRequest",
-          chat: "Object Chat",
-          prompt: "Object Prompt",
-          session: sessName,
-          sessions: sessName
+          chatConfig: ca.length ? ca[0] : undefined,
+          promptConfig: pa.length ? pa[0] : undefined,
+          name:cname
+          //sessions: sessName
         };
         let wset = [];
         /*
@@ -87,8 +91,8 @@
         }
   
         let w = window.open("/", "_blank");
+        w.remoteEntity = remoteEnt;
         w.onload = function(){
-          w.remoteEntity = remoteEnt;
           w.page.components.dnd.workingSet.push(...wset);
           if(wset.length){
             w.page.components.topMenu.activeShuffle(wset[0]);
@@ -172,16 +176,15 @@
 
     }
     
-    async function chatSettings(fHandler){
-        let entity = am7model.newPrimitive("olio.llm.chatRequest");
+    async function chatSettings(cinst, fHandler){
+        let entity = cinst ? cinst.entity : am7model.newPrimitive("olio.llm.chatRequest");
         let inst = am7model.prepareInstance(entity, am7model.forms.newChatRequest);
-
         let acfg = await loadChatList();
         if(acfg && acfg.length && !entity.chatConfig) entity.chatConfig = acfg[0];
         //am7model.getModelField("chatSettings", "chat").limit  = acfg.map((c) => { return c.name; });
         //am7model.forms.newChatRequest.fields.chatConfig.field.limit = acfg.map((c) => { return c.name; });
         let pcfg = await loadPromptList();
-        if(pcfg && pcfg.length && !entity.prompt) entity.promptConfig = pcfg[0];
+        if(pcfg && pcfg.length && !entity.promptConfig) entity.promptConfig = pcfg[0];
         //am7model.getModelField("chatSettings", "prompt").limit  = pcfg.map((c) => { return c.name; });
        // am7model.forms.newChatSettings.fields.promptConfig.field.limit = pcfg.map((c) => { return c.name; });
 

@@ -429,8 +429,8 @@
     }
 
 
-    function openChatSettings() {
-      page.components.dialog.chatSettings(async function (e) {
+    function openChatSettings(cinst) {
+      page.components.dialog.chatSettings(cinst && cinst.model ? cinst : undefined, async function (e) {
 
         //let obj = await page.createObject(e);
         let chatReq = {
@@ -927,7 +927,7 @@
         document.documentElement.addEventListener("keydown", navKey);
 
         if (bPopSet) {
-          openChatSettings();
+          openChatSettings(inst);
 
         }
 
