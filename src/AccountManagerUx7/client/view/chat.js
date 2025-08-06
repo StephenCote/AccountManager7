@@ -500,7 +500,6 @@
           ),
           age: id.age
         };
-       console.log(faceProfile); 
       }
     }
 
