@@ -1,3 +1,8 @@
+# --- ADD THESE TWO LINES AT THE VERY TOP ---
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
+# --- The rest of your script follows ---
 import cv2
 import face_recognition
 import numpy as np
@@ -9,6 +14,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from deepface import DeepFace
 
+# --- (The rest of your code remains the same) ---
 # --- Define the application and the request model ---
 
 app = FastAPI(
@@ -20,7 +26,15 @@ class ImagePayload(BaseModel):
     image_data: str 
 
 # --- 1. REVISED: Startup event with a more robust pre-loader ---
-
+def clean_numpy(data):
+    if isinstance(data, dict):
+        return {k: clean_numpy(v) for k, v in data.items()}
+    elif isinstance(data, list):
+        return [clean_numpy(v) for v in data]
+    elif isinstance(data, (np.integer, np.floating)):
+        return data.item()
+    return data
+    
 @app.on_event("startup")
 async def load_all_models():
     """
@@ -39,7 +53,7 @@ async def load_all_models():
     try:
         DeepFace.analyze(
             dummy_image,
-            actions=['age', 'gender', 'emotion'],
+            actions=['age', 'gender', 'emotion', 'race'],
         )
     except ValueError as e:
         # This error is expected on a blank image, we can safely ignore it.
@@ -65,7 +79,7 @@ def base64_to_cv2_image(base64_string: str):
 @app.post("/analyze/")
 async def analyze_face(payload: ImagePayload):
     frame = base64_to_cv2_image(payload.image_data)
-    rgb_frame = frame[:, :, ::-1] # BGR to RGB
+    rgb_frame = frame[:, :, ::-1]  # Convert BGR to RGB
     face_locations = face_recognition.face_locations(rgb_frame)
     results = []
 
@@ -75,28 +89,58 @@ async def analyze_face(payload: ImagePayload):
     for face_location in face_locations:
         top, right, bottom, left = face_location
         face_image = frame[top:bottom, left:right]
+
         try:
             analysis = DeepFace.analyze(
-                face_image, 
-                actions=['age', 'gender', 'emotion'], 
+                face_image,
+                actions=["age", "gender", "emotion", "race"],
                 enforce_detection=False
             )
+
+            # Handle if it's a list or a single result
             if isinstance(analysis, list) and len(analysis) > 0:
                 face_data = analysis[0]
-                results.append({
-                    "face_location": {"top": top, "right": right, "bottom": bottom, "left": left},
-                    "age": face_data.get('age'),
-                    "gender": face_data.get('gender'),
-                    "dominant_emotion": face_data.get('dominant_emotion')
-                })
+            elif isinstance(analysis, dict):
+                face_data = analysis
+            else:
+                face_data = {}
+
+            result = {
+                "face_location": {
+                    "top": int(top),
+                    "right": int(right),
+                    "bottom": int(bottom),
+                    "left": int(left)
+                },
+                "age": int(face_data.get("age", -1)),
+                "dominant_gender": face_data.get("dominant_gender"),
+                "gender_scores": clean_numpy(face_data.get("gender", {})),
+                "dominant_emotion": face_data.get("dominant_emotion"),
+                "emotion_scores": clean_numpy(face_data.get("emotion", {})),
+                "dominant_race": face_data.get("dominant_race"),
+                "race_scores": clean_numpy(face_data.get("race", {})),
+                "face_confidence": clean_numpy(face_data.get("face_confidence", 0.0)),
+                "region": clean_numpy(face_data.get("region", {}))
+            }
+
+            results.append(result)
+
         except Exception as e:
             print(f"DeepFace analysis error: {e}")
             results.append({
-                "face_location": {"top": top, "right": right, "bottom": bottom, "left": left},
+                "face_location": {
+                    "top": int(top),
+                    "right": int(right),
+                    "bottom": int(bottom),
+                    "left": int(left)
+                },
                 "error": str(e)
             })
-            
-    return {"message": f"Successfully analyzed {len(results)} face(s).", "results": results}
+
+    return {
+        "message": f"Successfully analyzed {len(results)} face(s).",
+        "results": results
+    }
 
 @app.get("/")
 def read_root():

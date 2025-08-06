@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MithrilJS Webcam Selector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/mithril/mithril.js"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+    <div id="app"></div>
+
+    <script>
+        const FrameCapture = {
+            // --- STATE ---
+            statusMessage: "Click 'Initialize' to find cameras.",
+            isCapturing: false,
+            isInitialized: false, // NEW: Track if we have successfully found devices
+            videoEl: null,
+            videoDevices: [],
+            selectedDeviceId: null,
+            API_ENDPOINT: 'https://localhost:8443/AccountManagerService7/rest/face/analyze',
+            CAPTURE_INTERVAL_SECONDS: 5,
+            // --- LIFECYCLE METHODS ---
+            oncreate: function(vnode) {
+                this.videoEl = vnode.dom.querySelector('#webcam');
+            },
+            oninit: function(){
+                this.initializeAndFindDevices();
+            },
+            onremove: function() {
+                if (this.videoEl && this.videoEl.srcObject) {
+                    this.videoEl.srcObject.getTracks().forEach(track => track.stop());
+                }
+            },
+
+            // --- ACTIONS ---
+
+            // NEW: This function handles the robust initialization flow
+            initializeAndFindDevices: async function() {
+                this.statusMessage = "Requesting camera permission...";
+                m.redraw();
+
+                // 1. Request generic access to trigger the permission prompt
+                let stream;
+                try {
+                    stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                } catch (err) {
+                    this.statusMessage = "Permission denied. Please allow camera access.";
+                    console.error("Initial permission error:", err);
+                    m.redraw();
+                    return;
+                }
+
+                // 2. Immediately stop the tracks of the temporary stream
+                stream.getTracks().forEach(track => track.stop());
+
+                // 3. NOW, we can safely enumerate devices to get the full list
+                try {
+                    const devices = await navigator.mediaDevices.enumerateDevices();
+                    this.videoDevices = devices.filter(device => device.kind === 'videoinput');
+                    
+                    if (this.videoDevices.length > 0) {
+                        this.selectedDeviceId = this.videoDevices[0].deviceId;
+                        this.statusMessage = "Ready. Select a camera and start capture.";
+                        this.isInitialized = true; // Mark as initialized!
+                    } else {
+                        this.statusMessage = "No webcams found.";
+                    }
+                } catch (err) {
+                    this.statusMessage = "Error finding devices.";
+                    console.error("Device enumeration error:", err);
+                }
+                m.redraw();
+            },
+
+            startCapture: async function() {
+                // ... (This function remains the same as before)
+                if (!this.selectedDeviceId) {
+                    this.statusMessage = "No camera selected.";
+                    return;
+                }
+                this.isCapturing = true;
+                this.statusMessage = "Starting selected camera...";
+                m.redraw();
+
+                if (this.videoEl.srcObject) {
+                    this.videoEl.srcObject.getTracks().forEach(track => track.stop());
+                }
+
+                const constraints = { video: { deviceId: { exact: this.selectedDeviceId } } };
+                
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    this.videoEl.srcObject = stream;
+                    this.videoEl.onplaying = () => {
+                        this.statusMessage = `Camera active. Capturing every ${this.CAPTURE_INTERVAL_SECONDS}s.`;
+                        // Start the capture loop
+                        this.captureIntervalId = setInterval(
+                            () => this.captureAndSendFrame(), 
+                            this.CAPTURE_INTERVAL_SECONDS * 1000
+                        );
+                    };
+                } catch (err) {
+                    this.statusMessage = "Could not access selected camera.";
+                    this.isCapturing = false;
+                    console.error("getUserMedia error:", err);
+                    m.redraw();
+                }
+            },
+            captureAndSendFrame: function() {
+                if (!this.videoEl || this.videoEl.paused || this.videoEl.ended) {
+                    return;
+                }
+                
+                this.statusMessage = "Capturing and sending frame...";
+                m.redraw();
+
+                // 1. Create a canvas to draw the video frame onto
+                const canvas = document.createElement('canvas');
+                canvas.width = this.videoEl.videoWidth;
+                canvas.height = this.videoEl.videoHeight;
+                const context = canvas.getContext('2d');
+                context.drawImage(this.videoEl, 0, 0, canvas.width, canvas.height);
+
+                // 2. Get the frame as a Base64 encoded JPEG
+                const imageData = canvas.toDataURL('image/jpeg', 0.9); // 0.9 is quality
+
+                // 3. Send the data to the Python API using Mithril's request utility
+                m.request({
+                    method: 'POST',
+                    url: this.API_ENDPOINT,
+                    body: { image_data: imageData }
+                })
+                .then(response => {
+                    // Update status with the response from the server
+                    this.statusMessage = `API Response: ${response.status}`;
+                    console.log("Server response:", response);
+                })
+                .catch(error => {
+                    this.statusMessage = "Error: Could not connect to API.";
+                    console.error("API request error:", error);
+                })
+                .finally(() => m.redraw()); // Ensure UI updates
+            },
+            // --- VIEW ---
+            view: function() {
+                return m('.max-w-2xl.w-full.bg-white.p-6.rounded-lg.shadow-lg.text-center', [
+                    m('h1.text-2xl.font-bold.text-gray-800.mb-4', 'Webcam Selector & Capture'),
+                    
+                    m('.relative.w-full.bg-gray-900.rounded-md.overflow-hidden.mb-4.aspect-video', [
+                        m('video#webcam', { autoplay: true, muted: true, playsinline: true, class: 'w-full h-full' }),
+                        m('.absolute.top-2.left-2.px-3.py-1.text-sm.font-semibold.rounded-full.bg-blue-100.text-blue-800', this.statusMessage)
+                    ]),
+                    
+                    // --- REVISED: UI flow is now controlled by initialization state ---
+                    !this.isInitialized 
+                        ? m('button', { // The new Initialize button
+                                onclick: this.initializeAndFindDevices.bind(this),
+                                class: 'w-full px-4 py-2 text-white font-semibold rounded-md bg-green-600 hover:bg-green-700'
+                            }, 'Initialize Cameras')
+                        : [
+                            m('.mb-4', [
+                                m('label.block.text-sm.font-medium.text-gray-700.mb-1', 'Select Camera:'),
+                                m('select.w-full.p-2.border.border-gray-300.rounded-md', {
+                                        onchange: e => { this.selectedDeviceId = e.target.value; },
+                                        disabled: this.isCapturing,
+                                        value: this.selectedDeviceId
+                                    },
+                                    this.videoDevices.map(device => 
+                                        m('option', { value: device.deviceId }, device.label || `Camera (${device.deviceId.slice(0, 8)})`)
+                                    )
+                                )
+                            ]),
+                            m('button', {
+                                    onclick: this.startCapture.bind(this),
+                                    disabled: this.isCapturing,
+                                    class: 'w-full px-4 py-2 text-white font-semibold rounded-md ' + (this.isCapturing ? 'bg-gray-400' : 'bg-blue-600 hover:bg-blue-700')
+                                },
+                                'Start Capture'
+                            )
+                        ]
+                ]);
+            }
+        };
+        m.mount(document.getElementById('app'), FrameCapture);
+    </script>
+</body>
+</html>

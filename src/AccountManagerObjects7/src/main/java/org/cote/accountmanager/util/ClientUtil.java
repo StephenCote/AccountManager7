@@ -135,7 +135,9 @@ public class ClientUtil {
 		T outObj = null;
 		if(response != null) {
 			if(response.getStatus() == 200){
-				outObj = response.readEntity(cls);
+				String json = response.readEntity(String.class);
+				outObj = JSONUtil.importObject(json, cls);
+				//outObj = response.readEntity(cls);
 			}
 			else {
 				logger.warn("Received response: " + response.getStatus() + " for " + resource.getUri());
