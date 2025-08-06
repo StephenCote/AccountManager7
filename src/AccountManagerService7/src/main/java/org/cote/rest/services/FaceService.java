@@ -74,7 +74,6 @@ public class FaceService {
 		logger.info("Received face request");
 		FaceRequest req = JSONUtil.importObject(json, FaceRequest.class);
 		FaceResponse fr = postFaceRequest(req, "http://localhost:8003", "analyze");
-		logger.info("Received face response: " + JSONUtil.exportObject(fr));
 		return Response.status((fr != null ? 200 : 404)).entity(fr != null ? JSONUtil.exportObject(fr) : null).build();
 	}
 
@@ -82,7 +81,7 @@ public class FaceService {
 
 		FaceResponse voice = null;
 
-		logger.info("Posting voice request to " + server + "/" + apiName + "/");
+		logger.info("Posting face request to " + server + "/" + apiName + "/");
 		try {
 			voice = ClientUtil.post(FaceResponse.class, ClientUtil.getResource(server + "/" + apiName + "/"), null, req, MediaType.APPLICATION_JSON_TYPE);
 

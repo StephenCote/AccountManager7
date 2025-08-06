@@ -495,9 +495,11 @@
             Object.entries(id.gender_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
           ),
           race: id.dominant_race,
+          /*
           races: Object.fromEntries(
             Object.entries(id.race_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
           ),
+          */
           age: id.age
         };
       }
