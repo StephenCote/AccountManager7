@@ -79,6 +79,7 @@
     let audioText = "";
     let chatCfg = newChatConfig();
 
+    let camera = false;
     let audio = false;
     let audioMagic8 = false;
 
@@ -218,7 +219,7 @@
           schema: inst.model.name,
           objectId: inst.api.objectId(),
           uid: page.uid(),
-          message: msg,
+          message: msg + (msg.length && faceProfile ? "\n(Metrics: " + JSON.stringify(faceProfile) + ")": ""),
           data
         };
         try {
@@ -479,14 +480,52 @@
         audioMagic8 = false;
       }
     }
+    
+    let faceProfile;
+    function handleFaceMetricCapture(imageData) {
+      if(imageData && imageData.results?.length){
+        let id = imageData.results[0];
+       faceProfile = {
+          emotion: id.dominant_emotion,
+          emotions: Object.fromEntries(
+            Object.entries(id.emotion_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
+          ),
+          gender: id.dominant_gender,
+          genders: Object.fromEntries(
+            Object.entries(id.gender_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
+          ),
+          race: id.dominant_race,
+          races: Object.fromEntries(
+            Object.entries(id.race_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
+          ),
+          age: id.age
+        };
+       console.log(faceProfile); 
+      }
+    }
 
     function toggleProfile() {
       profile = !profile;
+    }
+    function toggleCamera() {
+      camera = !camera;
+      if(camera){
+        if(!page.components.camera.devices().length){
+          page.components.camera.initializeAndFindDevices(handleFaceMetricCapture);
+        }
+        else{
+          page.components.camera.startCapture(handleFaceMetricCapture);
+        }
+      }
+      else{
+        page.components.camera.stopCapture();
+      }
     }
 
     function toggleThoughts() {
       hideThoughts = !hideThoughts;
     }
+
     function clearEditMode() {
       editMode = false;
       editIndex = -1;
@@ -611,6 +650,7 @@
 
         }
         if (!bectl && hideThoughts) {
+          cnt = pruneToMark(cnt, "(Metrics");
           cnt = pruneToMark(cnt, "(Reminder");
           cnt = pruneToMark(cnt, "(KeyFrame");
         }
@@ -676,6 +716,7 @@
       cnt = pruneToMark(cnt, "<|reserved_special_token");
       cnt = pruneTag(cnt, "think");
       cnt = pruneTag(cnt, "thought");
+      cnt = pruneToMark(cnt, "(Metrics");
       cnt = pruneToMark(cnt, "(Reminder");
       cnt = pruneToMark(cnt, "(KeyFrame");
       cnt = pruneOther(cnt);
@@ -755,6 +796,7 @@
               m("div", { class: "tab-container result-nav w-full" }, [
                 m("button", { class: "button", onclick: toggleFullMode }, m("span", { class: "material-symbols-outlined material-icons-24" }, (fullMode ? "close_fullscreen" : "open_in_new"))),
                 m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
+                m("button", { class: "button", onclick: toggleCamera }, m("span", { class: "material-symbols-outlined material-icons-24" }, (camera ? "photo_camera" : "no_photography"))),
                 m("button", { class: "button", onclick: toggleProfile }, m("span", { class: "material-symbols-outlined material-icons-24" }, (profile ? "account_circle" : "account_circle_off"))),
                 m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")))),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
@@ -857,6 +899,7 @@
         m("div", { class: "content-main" },
           m("div", { class: "list-results-container" },
             m("div", { class: "list-results" }, [
+              (camera ? page.components.camera.videoView() : ""),
               getChatTopMenuView(),
               getSplitContainerView(),
               getChatBottomMenuView()
@@ -935,6 +978,7 @@
         document.documentElement.removeEventListener("keydown", navKey);
         page.components.audio.stopBinauralSweep();
         page.components.audio.unconfigureAudio(false);
+        page.components.camera.stopCapture();
       },
 
       view: function (vnode) {

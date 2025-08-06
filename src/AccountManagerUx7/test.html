@@ -146,12 +146,13 @@
             // --- VIEW ---
             view: function() {
                 return m('.max-w-2xl.w-full.bg-white.p-6.rounded-lg.shadow-lg.text-center', [
+                    m('video#webcam', { autoplay: true, muted: true, playsinline: true, class: "absolute top-0 left-0 opacity-0", style: "width: 1px; height: 1px;" }),
                     m('h1.text-2xl.font-bold.text-gray-800.mb-4', 'Webcam Selector & Capture'),
                     
-                    m('.relative.w-full.bg-gray-900.rounded-md.overflow-hidden.mb-4.aspect-video', [
-                        m('video#webcam', { autoplay: true, muted: true, playsinline: true, class: 'w-full h-full' }),
-                        m('.absolute.top-2.left-2.px-3.py-1.text-sm.font-semibold.rounded-full.bg-blue-100.text-blue-800', this.statusMessage)
-                    ]),
+                    //m('.relative.w-full.bg-gray-900.rounded-md.overflow-hidden.mb-4.aspect-video', [
+                        
+                        //,m('.absolute.top-2.left-2.px-3.py-1.text-sm.font-semibold.rounded-full.bg-blue-100.text-blue-800', this.statusMessage)
+                    //]),
                     
                     // --- REVISED: UI flow is now controlled by initialization state ---
                     !this.isInitialized 

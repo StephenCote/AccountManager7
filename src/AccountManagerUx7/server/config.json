@@ -34,6 +34,7 @@
     "files" : [
         "/blank.html",
         "/index.html",
+        "/test.html",
         "/styles/basiTail.css",
         "/styles/pageStyle.css",
         "/node_modules/big.js/big.mjs",
