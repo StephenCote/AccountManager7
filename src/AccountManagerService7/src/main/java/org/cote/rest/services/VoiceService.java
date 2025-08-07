@@ -73,7 +73,7 @@ public class VoiceService {
 	@Context
 	SecurityContext securityCtx;
 	
-	private static final Logger logger = LogManager.getLogger(ListService.class);
+	private static final Logger logger = LogManager.getLogger(VoiceService.class);
 
 	private static Set<String> synthesized = ConcurrentHashMap.newKeySet();
 	private static Set<String> textToSpeech = ConcurrentHashMap.newKeySet();

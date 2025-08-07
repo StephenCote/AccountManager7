@@ -59,6 +59,7 @@ public class FaceService {
 	
 	private static final Logger logger = LogManager.getLogger(FaceService.class);
 
+	@RolesAllowed({"admin","user"})
 	@GET
 	@Path("/")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
@@ -67,21 +68,25 @@ public class FaceService {
 		return Response.status(200).entity("Ping").build();
 	}	
 
+	@RolesAllowed({"admin","user"})
 	@POST
 	@Path("/analyze")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response analyzeFace(String json, @Context HttpServletRequest request){
-		logger.info("Received face request");
+		// logger.info("Received face request");
 		FaceRequest req = JSONUtil.importObject(json, FaceRequest.class);
 		FaceResponse fr = postFaceRequest(req, "http://localhost:8003", "analyze");
 		return Response.status((fr != null ? 200 : 404)).entity(fr != null ? JSONUtil.exportObject(fr) : null).build();
 	}
 
+	
+	// TODO: Make this configurable; I'm still experimenting with different face models, so the object model will likely change
+	///
 	private synchronized FaceResponse postFaceRequest(FaceRequest req, String server, String apiName) {
 
 		FaceResponse voice = null;
 
-		logger.info("Posting face request to " + server + "/" + apiName + "/");
+		// logger.info("Posting face request to " + server + "/" + apiName + "/");
 		try {
 			voice = ClientUtil.post(FaceResponse.class, ClientUtil.getResource(server + "/" + apiName + "/"), null, req, MediaType.APPLICATION_JSON_TYPE);
 

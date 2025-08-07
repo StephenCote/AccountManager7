@@ -494,13 +494,13 @@
           genders: Object.fromEntries(
             Object.entries(id.gender_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
           ),
-          race: id.dominant_race,
+          race: id.dominant_race
           /*
           races: Object.fromEntries(
             Object.entries(id.race_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
           ),
           */
-          age: id.age
+          //age: id.age
         };
       }
     }
@@ -797,7 +797,7 @@
               m("div", { class: "tab-container result-nav w-full" }, [
                 m("button", { class: "button", onclick: toggleFullMode }, m("span", { class: "material-symbols-outlined material-icons-24" }, (fullMode ? "close_fullscreen" : "open_in_new"))),
                 m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
-                m("button", { class: "button", onclick: toggleCamera }, m("span", { class: "material-symbols-outlined material-icons-24" }, (camera ? "photo_camera" : "no_photography"))),
+                m("button", { class: "button", onclick: toggleCamera }, m("span", { class: "material-symbols-outlined material-icons-24" + (camera ? " animate-pulse" : "") }, (camera ? "photo_camera" : "no_photography"))),
                 m("button", { class: "button", onclick: toggleProfile }, m("span", { class: "material-symbols-outlined material-icons-24" }, (profile ? "account_circle" : "account_circle_off"))),
                 m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")))),
                 m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),

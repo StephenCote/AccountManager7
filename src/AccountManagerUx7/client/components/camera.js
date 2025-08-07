@@ -158,6 +158,8 @@
         let resp = await m.request({
             method: 'POST',
             url: API_ENDPOINT,
+            withCredentials: true,
+            headers: { 'Content-Type': 'application/json' },
             body: { image_data: imageData }
         });
         if(fCaptureHandler && typeof fCaptureHandler === 'function') {
