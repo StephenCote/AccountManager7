@@ -382,20 +382,22 @@ class FaceEmotionScores{
 	
 }
 class FaceRaceScores{
+	@JsonProperty("asian")
+	private double asian = 0.0;
 	@JsonProperty("East Asian")
 	private double east_asian = 0.0;
 	@JsonProperty("Southeast Asian")
 	private double southeast_asian = 0.0;
-	@JsonProperty("Indian")
+	@JsonProperty("indian")
 	private double indian = 0.0;
-	@JsonProperty("Black")
+	@JsonProperty("black")
 	private double black = 0.0;
-	@JsonProperty("White")
+	@JsonProperty("white")
 	private double white = 0.0;
 	
-	@JsonProperty("Middle Eastern")
+	@JsonProperty("middle eastern")
 	private double middle_eastern = 0.0;
-	@JsonProperty("Latino_Hispanic")
+	@JsonProperty("latino hispanic")
 	private double latino_hispanic = 0.0;
 	public FaceRaceScores() {
 		
