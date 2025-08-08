@@ -23,7 +23,7 @@ public class OperationType extends LooseRecord {
 	public static final Logger logger = LogManager.getLogger(OperationType.class);
 	public OperationType(){
 		try {
-			RecordFactory.newInstance("operation", this, null);
+			RecordFactory.newInstance("policy.operation", this, null);
 		} catch (FieldException | ModelNotFoundException e) {
 			logger.error(e);
 		}

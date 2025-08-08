@@ -24,7 +24,7 @@ import org.junit.Test;
 
 public class TestChatAsync extends BaseTest {
 
-	
+
 	@Test
 	public void TestAsynchronousChat() {
 		logger.info("Test Asynchronous Chat");
@@ -42,7 +42,7 @@ public class TestChatAsync extends BaseTest {
 		String chatName = "Gruffy Chat Test " + UUID.randomUUID().toString();
 		BaseRecord creq = ChatUtil.getCreateChatRequest(testUser1, chatName, cfg, pcfg);
 		assertNotNull("Chat request is null", creq);
-		
+
 		//OpenAIRequest req = ChatUtil.getChatSession(testUser1, chatName, cfg, pcfg);
 		//req.setValue("stream", true);
 		//addMessage(req, "user", "Hello Gruffy!");
@@ -50,7 +50,7 @@ public class TestChatAsync extends BaseTest {
 		String flds = req.getFields().stream().map(f -> f.getName()).collect(Collectors.joining(", "));
 		logger.info(flds);
 		logger.info(JSONUtil.exportObject(ChatUtil.getPrunedRequest(req), RecordSerializerConfig.getHiddenForeignUnfilteredModule()));
-	    */
+		 */
 		//Chat chat = new Chat(testUser1, cfg, pcfg);
 		MockWebSocket mockWebSocket = new MockWebSocket(testUser1);
 		creq.setValue("uid", UUID.randomUUID().toString());
@@ -68,7 +68,7 @@ public class TestChatAsync extends BaseTest {
 		//chat.setListener(mockWebSocket);
 		//chat.continueChat(req, "Hello Gruffy! How are you today?");
 	}
-	
+
 
 	public void addMessage(BaseRecord req, String role, String message) {
 		BaseRecord aimsg = null;
@@ -84,6 +84,6 @@ public class TestChatAsync extends BaseTest {
 		}
 
 	}
-	
-	
+
+
 }

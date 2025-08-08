@@ -34,6 +34,7 @@ public enum RuleEnumType {
 
     UNKNOWN,
     PERMIT,
+    TRANSFORM,
     DENY;
 
     public String value() {

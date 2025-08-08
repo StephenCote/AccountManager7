@@ -52,6 +52,7 @@ public class Chat {
 	private boolean chatMode = true;
 	private boolean includeMessageHistory = chatMode;
 	private boolean includeContextHistory = !chatMode;
+	private boolean persistSession = true;
 
 	private static int contextSize = 8192;
 
@@ -95,6 +96,14 @@ public class Chat {
 	}
 
 
+
+	public boolean isPersistSession() {
+		return persistSession;
+	}
+
+	public void setPersistSession(boolean persistSession) {
+		this.persistSession = persistSession;
+	}
 
 	public BaseRecord getPromptConfig() {
 		return promptConfig;
@@ -330,6 +339,9 @@ public class Chat {
 	}
 
 	public void saveSession(OpenAIRequest req) {
+		if(!persistSession) {
+			return;
+		}
 		ChatUtil.saveSession(user, req);
 		if (chatConfig != null) {
 			ChatUtil.applyTags(user, chatConfig, req);
