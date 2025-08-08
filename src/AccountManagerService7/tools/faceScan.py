@@ -1,7 +1,8 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 import io
 import base64
-import requests
+# import requests # No longer needed
 import cv2
 import numpy as np
 from PIL import Image
@@ -28,10 +29,9 @@ import uvicorn
 # -------------------
 app = FastAPI(title="Hybrid Facial Analysis API")
 
-# --- FairFace Globals ---
-CACHE_DIR = os.path.expanduser("./face_models")
-FAIRFACE_WEIGHTS_URL = "https://github.com/dchen236/FairFace/releases/download/v1.0/fairface_res34_state_dict.pkl"
-FAIRFACE_WEIGHTS_PATH = os.path.join(CACHE_DIR, "fairface_res34_state_dict.pkl") # Use original name
+# --- FairFace Globals (MODIFIED) ---
+# TODO: Update this path to point to your local .pt model file!
+FAIRFACE_WEIGHTS_PATH = "./face_models/res34_fair_align_multi_7_20190809.pt"
 FAIRFACE_MODEL = None
 FAIRFACE_LABELS = ["White", "Black", "Latino_Hispanic", "East Asian", "Southeast Asian", "Indian", "Middle Eastern"]
 
@@ -54,21 +54,19 @@ class FairFaceClassifier(nn.Module):
     def forward(self, x):
         return self.model(x)
 
-def download_fairface_weights():
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    if not os.path.exists(FAIRFACE_WEIGHTS_PATH):
-        print("[FairFace] Downloading weights...")
-        resp = requests.get(FAIRFACE_WEIGHTS_URL, stream=True)
-        resp.raise_for_status()
-        with open(FAIRFACE_WEIGHTS_PATH, 'wb') as f:
-            for chunk in resp.iter_content(chunk_size=8192):
-                f.write(chunk)
-        print("[FairFace] Download complete.")
+# The automatic download function has been removed.
 
 def load_fairface_model(device="cpu"):
     global FAIRFACE_MODEL
-    download_fairface_weights()
+    if not os.path.exists(FAIRFACE_WEIGHTS_PATH):
+        raise FileNotFoundError(
+            f"FairFace model not found at {FAIRFACE_WEIGHTS_PATH}. "
+            "Please update the FAIRFACE_WEIGHTS_PATH variable in the script."
+        )
+    
+    print(f"[FairFace] Loading local model from: {FAIRFACE_WEIGHTS_PATH}")
     FAIRFACE_MODEL = FairFaceClassifier()
+    # map_location ensures it loads on CPU first before being moved
     state_dict = torch.load(FAIRFACE_WEIGHTS_PATH, map_location=torch.device('cpu'))
     FAIRFACE_MODEL.load_state_dict(state_dict, strict=False)
     FAIRFACE_MODEL.eval()
@@ -94,7 +92,6 @@ def predict_fairface_race(image_rgb: np.ndarray, device="cpu"):
 def load_emotion_model():
     global EMOTION_MODEL
     EMOTION_MODEL = FER(mtcnn=True)
-    # The model warms up by detecting a dummy face
     EMOTION_MODEL.detect_emotions(np.zeros((100, 100, 3), dtype=np.uint8))
     print("[FER] Emotion model loaded. ✅")
 
@@ -102,8 +99,8 @@ def predict_emotion(image_rgb: np.ndarray):
     results = EMOTION_MODEL.detect_emotions(image_rgb)
     if not results:
         return None
-    # Return emotion scores for the first face found
-    return results[0]['emotions']
+    emotions = results[0]['emotions']
+    return {emotion: float(score) for emotion, score in emotions.items()}
 
 # -------------------
 # DeepFace (Age, Gender) Functions
@@ -115,14 +112,19 @@ def warm_up_deepface():
 
 def analyze_age_gender(image_bgr: np.ndarray):
     results = DeepFace.analyze(image_bgr, actions=['age', 'gender'], enforce_detection=False)
-    # If multiple faces, results is a list. We'll take the first.
     first_result = results[0] if isinstance(results, list) else results
+    
+    # Get the dictionary of gender scores from the results
+    gender_data = first_result.get("gender", {})
+    
+    # Return a new dictionary with all values converted to standard Python types
     return {
-        "age": first_result.get("age"),
+        "age": int(first_result.get("age")),  # <-- Convert age to standard int
         "gender": first_result.get("dominant_gender"),
-        "gender_scores": first_result.get("gender")
+        # Rebuild the scores dictionary, converting each score to a standard float
+        "gender_scores": {gender: float(score) for gender, score in gender_data.items()}
     }
-
+    
 # -------------------
 # API Endpoints
 # -------------------
@@ -148,21 +150,29 @@ async def analyze(payload: ImagePayload):
         image_np_rgb = np.array(image)
 
         # --- Run all specialized analyses ---
-        # 1. Race Analysis (FairFace)
         ff_device = next(FAIRFACE_MODEL.parameters()).device
         race_scores = predict_fairface_race(image_np_rgb, device=ff_device)
-        
-        # 2. Emotion Analysis (FER)
         emotion_scores = predict_emotion(image_np_rgb)
-        
-        # 3. Age & Gender Analysis (DeepFace)
         image_np_bgr = cv2.cvtColor(image_np_rgb, cv2.COLOR_RGB2BGR)
         age_gender_data = analyze_age_gender(image_np_bgr)
 
-        # --- Combine results into a single response ---
+        # --- Combine results ---
         return {
             "age": age_gender_data.get("age"),
-            "gender": age_gender_data.get("gender"),
+            "dominant_gender": age_gender_data.get("gender"),
             "dominant_emotion": max(emotion_scores, key=emotion_scores.get) if emotion_scores else "N/A",
             "dominant_race": max(race_scores, key=race_scores.get) if race_scores else "N/A",
             "emotion_scores": emotion_scores,
+            "race_scores": race_scores,
+            "gender_scores": age_gender_data.get("gender_scores"),
+        }
+        
+    except Exception as e:
+        return {"error": f"An error occurred during analysis: {str(e)}"}
+
+@app.get("/")
+def read_root():
+    return {"status": "ok", "message": "Hybrid Facial Analysis API is running."}
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8003)

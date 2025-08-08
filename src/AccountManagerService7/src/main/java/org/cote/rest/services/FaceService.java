@@ -84,18 +84,27 @@ public class FaceService {
 	///
 	private synchronized FaceResponse postFaceRequest(FaceRequest req, String server, String apiName) {
 
-		FaceResponse voice = null;
+		FaceResponse frep = new FaceResponse();
 
 		// logger.info("Posting face request to " + server + "/" + apiName + "/");
 		try {
-			voice = ClientUtil.post(FaceResponse.class, ClientUtil.getResource(server + "/" + apiName + "/"), null, req, MediaType.APPLICATION_JSON_TYPE);
-
+			long start = System.currentTimeMillis();
+			FaceResult fres = ClientUtil.post(FaceResult.class, ClientUtil.getResource(server + "/" + apiName + "/"), null, req, MediaType.APPLICATION_JSON_TYPE);
+			long stop = System.currentTimeMillis();
+			if(fres != null) {
+				frep.setMessage("Analyzed face in " + (stop - start) + "ms");
+				frep.getResults().add(fres);
+			}
+			else {
+				frep.setMessage("Failed to analyze face");
+			}
 
 		}
 		catch(ProcessingException e) {
 			logger.error(e);
+			frep.setMessage("Error analyzing face: " + e.getMessage());
 		}
-		return voice;
+		return frep;
 	}
 	
 	
@@ -144,7 +153,7 @@ class FaceLocation{
 }
 
 class FaceResponse{
-	private List<FaceResult> results = null;
+	private List<FaceResult> results = new ArrayList<>();
 	private String message = null;
 	public FaceResponse() {
 		
@@ -373,23 +382,41 @@ class FaceEmotionScores{
 	
 }
 class FaceRaceScores{
-	private double asian = 0.0;
+	@JsonProperty("East Asian")
+	private double east_asian = 0.0;
+	@JsonProperty("Southeast Asian")
+	private double southeast_asian = 0.0;
+	@JsonProperty("Indian")
 	private double indian = 0.0;
+	@JsonProperty("Black")
 	private double black = 0.0;
+	@JsonProperty("White")
 	private double white = 0.0;
-	@JsonProperty("middle eastern")
+	
+	@JsonProperty("Middle Eastern")
 	private double middle_eastern = 0.0;
-	@JsonProperty("latino hispanic")
+	@JsonProperty("Latino_Hispanic")
 	private double latino_hispanic = 0.0;
 	public FaceRaceScores() {
 		
 	}
-	public double getAsian() {
-		return asian;
+
+	public double getEast_asian() {
+		return east_asian;
 	}
-	public void setAsian(double asian) {
-		this.asian = asian;
+
+	public void setEast_asian(double east_asian) {
+		this.east_asian = east_asian;
 	}
+
+	public double getSoutheast_asian() {
+		return southeast_asian;
+	}
+
+	public void setSoutheast_asian(double southeast_asian) {
+		this.southeast_asian = southeast_asian;
+	}
+
 	public double getIndian() {
 		return indian;
 	}
