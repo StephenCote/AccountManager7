@@ -8,7 +8,6 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Query;
 import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.OlioUtil;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.ChatRequest;

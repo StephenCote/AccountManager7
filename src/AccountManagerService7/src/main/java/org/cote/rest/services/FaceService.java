@@ -3,31 +3,11 @@ package org.cote.rest.services;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.exceptions.FieldException;
-import org.cote.accountmanager.exceptions.ModelNotFoundException;
-import org.cote.accountmanager.exceptions.ValueException;
-import org.cote.accountmanager.io.IOSystem;
-import org.cote.accountmanager.io.Query;
-import org.cote.accountmanager.io.QueryUtil;
-import org.cote.accountmanager.olio.llm.LLMServiceEnumType;
-import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.record.RecordFactory;
-import org.cote.accountmanager.schema.FieldNames;
-import org.cote.accountmanager.schema.FieldSchema;
-import org.cote.accountmanager.schema.ModelNames;
-import org.cote.accountmanager.schema.ModelSchema;
-import org.cote.accountmanager.tools.VoiceRequest;
-import org.cote.accountmanager.tools.VoiceResponse;
-import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
-import org.cote.service.util.ServiceUtil;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -39,7 +19,6 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.ProcessingException;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.Context;

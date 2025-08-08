@@ -7,21 +7,13 @@ import java.util.stream.Collectors;
 import org.cote.accountmanager.io.IReader;
 import org.cote.accountmanager.io.ISearch;
 import org.cote.accountmanager.olio.OlioUtil;
-import org.cote.accountmanager.olio.Rules;
-import org.cote.accountmanager.olio.TerrainUtil;
 import org.cote.accountmanager.olio.llm.Chat;
-import org.cote.accountmanager.olio.llm.ChatUtil;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
-import org.cote.accountmanager.olio.llm.OpenAIResponse;
-import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
-import org.cote.accountmanager.policy.FactUtil;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.policy.operation.Operation;
 import org.cote.accountmanager.record.BaseRecord;
-import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
-import org.cote.accountmanager.schema.type.TerrainEnumType;
 
 
 	public class ChatOperation extends Operation {

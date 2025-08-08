@@ -12,8 +12,6 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.Queue;
 import org.cote.accountmanager.olio.NarrativeUtil;
 import org.cote.accountmanager.olio.PersonalityProfile;
-import org.cote.accountmanager.olio.ProfileComparison;
-import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.Rules;
 import org.cote.accountmanager.olio.personality.GroupDynamicUtil;
 import org.cote.accountmanager.olio.personality.PersonalityUtil;
