@@ -140,6 +140,7 @@ async def startup_event():
 @app.post("/analyze/")
 async def analyze(payload: ImagePayload):
     try:
+        # --- 1. Decode the image ---
         if "," in payload.image_data:
             _, b64data = payload.image_data.split(",", 1)
         else:
@@ -149,14 +150,36 @@ async def analyze(payload: ImagePayload):
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         image_np_rgb = np.array(image)
 
-        # --- Run all specialized analyses ---
-        ff_device = next(FAIRFACE_MODEL.parameters()).device
-        race_scores = predict_fairface_race(image_np_rgb, device=ff_device)
-        emotion_scores = predict_emotion(image_np_rgb)
+        # --- 2. Get Age, Gender, and FACE REGION using DeepFace ---
+        # DeepFace needs BGR format, so we convert a copy
         image_np_bgr = cv2.cvtColor(image_np_rgb, cv2.COLOR_RGB2BGR)
-        age_gender_data = analyze_age_gender(image_np_bgr)
+        # We get the full results here to extract the face region
+        deepface_results = DeepFace.analyze(image_np_bgr, actions=['age', 'gender'], enforce_detection=True)
+        
+        # The result is a list, take the first detected face
+        first_face = deepface_results[0]
+        region = first_face['region'] # e.g., {'x': 150, 'y': 205, 'w': 320, 'h': 320}
+        
+        # Re-format the age/gender data using our conversion function
+        age_gender_data = {
+            "age": int(first_face.get("age")),
+            "gender": first_face.get("dominant_gender"),
+            "gender_scores": {gender: float(score) for gender, score in first_face.get("gender", {}).items()}
+        }
 
-        # --- Combine results ---
+        # --- 3. Crop the face from the original RGB image using the detected region ---
+        x, y, w, h = region['x'], region['y'], region['w'], region['h']
+        cropped_face_rgb = image_np_rgb[y:y+h, x:x+w]
+
+        # --- 4. Run specialized analyses on the CROPPED face ---
+        # Race Analysis (FairFace)
+        ff_device = next(FAIRFACE_MODEL.parameters()).device
+        race_scores = predict_fairface_race(cropped_face_rgb, device=ff_device)
+        
+        # Emotion Analysis (FER)
+        emotion_scores = predict_emotion(cropped_face_rgb)
+        
+        # --- 5. Combine all results ---
         return {
             "age": age_gender_data.get("age"),
             "dominant_gender": age_gender_data.get("gender"),
@@ -165,9 +188,11 @@ async def analyze(payload: ImagePayload):
             "emotion_scores": emotion_scores,
             "race_scores": race_scores,
             "gender_scores": age_gender_data.get("gender_scores"),
+            "face_confidence": first_face.get('face_confidence') # Bonus: get face confidence from DeepFace
         }
         
     except Exception as e:
+        # This will catch errors, including if DeepFace can't find a face
         return {"error": f"An error occurred during analysis: {str(e)}"}
 
 @app.get("/")
