@@ -1,152 +1,168 @@
-# --- ADD THESE TWO LINES AT THE VERY TOP ---
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-
-# --- The rest of your script follows ---
-import cv2
-import face_recognition
-import numpy as np
-import base64
 import io
-import uvicorn
+import base64
+import requests
+import cv2
+import numpy as np
 from PIL import Image
-from fastapi import FastAPI
-from pydantic import BaseModel
+
+# --- PyTorch & FairFace Imports ---
+import torch
+import torch.nn as nn
+from torchvision import transforms
+from torchvision.models import resnet34
+
+# --- FER (Emotion) Import ---
+from fer import FER
+
+# --- DeepFace (Age, Gender) Import ---
 from deepface import DeepFace
 
-# --- (The rest of your code remains the same) ---
-# --- Define the application and the request model ---
+# --- FastAPI Imports ---
+from fastapi import FastAPI
+from pydantic import BaseModel
+import uvicorn
 
-app = FastAPI(
-    title="Facial Analysis API",
-    description="An API that uses DeepFace and face_recognition to analyze facial attributes from an image."
-)
+# -------------------
+# Config and Globals
+# -------------------
+app = FastAPI(title="Hybrid Facial Analysis API")
+
+# --- FairFace Globals ---
+CACHE_DIR = os.path.expanduser("./face_models")
+FAIRFACE_WEIGHTS_URL = "https://github.com/dchen236/FairFace/releases/download/v1.0/fairface_res34_state_dict.pkl"
+FAIRFACE_WEIGHTS_PATH = os.path.join(CACHE_DIR, "fairface_res34_state_dict.pkl") # Use original name
+FAIRFACE_MODEL = None
+FAIRFACE_LABELS = ["White", "Black", "Latino_Hispanic", "East Asian", "Southeast Asian", "Indian", "Middle Eastern"]
+
+# --- FER (Emotion) Global ---
+EMOTION_MODEL = None
 
 class ImagePayload(BaseModel):
-    image_data: str 
+    image_data: str
 
-# --- 1. REVISED: Startup event with a more robust pre-loader ---
-def clean_numpy(data):
-    if isinstance(data, dict):
-        return {k: clean_numpy(v) for k, v in data.items()}
-    elif isinstance(data, list):
-        return [clean_numpy(v) for v in data]
-    elif isinstance(data, (np.integer, np.floating)):
-        return data.item()
-    return data
-    
-@app.on_event("startup")
-async def load_all_models():
-    """
-    This function runs once when the application starts.
-    It pre-loads all the necessary models into memory by simulating
-    a real analysis call.
-    """
-    print("🚀 Server is starting up, pre-loading all models...")
-    
-    # Create a dummy image to trigger the model loading
+# -------------------
+# FairFace Model Definition & Functions
+# -------------------
+class FairFaceClassifier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.model = resnet34(weights=None)
+        num_ftrs = self.model.fc.in_features
+        self.model.fc = nn.Linear(num_ftrs, 7)
+
+    def forward(self, x):
+        return self.model(x)
+
+def download_fairface_weights():
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    if not os.path.exists(FAIRFACE_WEIGHTS_PATH):
+        print("[FairFace] Downloading weights...")
+        resp = requests.get(FAIRFACE_WEIGHTS_URL, stream=True)
+        resp.raise_for_status()
+        with open(FAIRFACE_WEIGHTS_PATH, 'wb') as f:
+            for chunk in resp.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print("[FairFace] Download complete.")
+
+def load_fairface_model(device="cpu"):
+    global FAIRFACE_MODEL
+    download_fairface_weights()
+    FAIRFACE_MODEL = FairFaceClassifier()
+    state_dict = torch.load(FAIRFACE_WEIGHTS_PATH, map_location=torch.device('cpu'))
+    FAIRFACE_MODEL.load_state_dict(state_dict, strict=False)
+    FAIRFACE_MODEL.eval()
+    FAIRFACE_MODEL.to(device)
+    print(f"[FairFace] Model loaded onto {device}. ✅")
+
+def predict_fairface_race(image_rgb: np.ndarray, device="cpu"):
+    transform = transforms.Compose([
+        transforms.ToPILImage(),
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    tensor = transform(image_rgb).unsqueeze(0).to(device)
+    with torch.no_grad():
+        outputs = FAIRFACE_MODEL(tensor)
+        probs = torch.softmax(outputs, dim=1).cpu().numpy()[0]
+    return {label: float(p) for label, p in zip(FAIRFACE_LABELS, probs)}
+
+# -------------------
+# FER (Emotion) Functions
+# -------------------
+def load_emotion_model():
+    global EMOTION_MODEL
+    EMOTION_MODEL = FER(mtcnn=True)
+    # The model warms up by detecting a dummy face
+    EMOTION_MODEL.detect_emotions(np.zeros((100, 100, 3), dtype=np.uint8))
+    print("[FER] Emotion model loaded. ✅")
+
+def predict_emotion(image_rgb: np.ndarray):
+    results = EMOTION_MODEL.detect_emotions(image_rgb)
+    if not results:
+        return None
+    # Return emotion scores for the first face found
+    return results[0]['emotions']
+
+# -------------------
+# DeepFace (Age, Gender) Functions
+# -------------------
+def warm_up_deepface():
     dummy_image = np.zeros((100, 100, 3), dtype=np.uint8)
-    
-    # Use a try...except block because DeepFace will raise an error
-    # when it can't find a face in the blank image. This is expected.
-    # The goal is not to get a result, but to force the models to load.
-    try:
-        DeepFace.analyze(
-            dummy_image,
-            actions=['age', 'gender', 'emotion', 'race'],
-        )
-    except ValueError as e:
-        # This error is expected on a blank image, we can safely ignore it.
-        print(f"   -> Ignoring expected error on dummy image: {e}")
+    DeepFace.analyze(dummy_image, actions=['age', 'gender'], enforce_detection=False)
+    print("[DeepFace] Age/Gender models loaded. ✅")
 
-    # Also warm up the face_recognition library
-    face_recognition.face_locations(dummy_image)
-    
-    print("✅ All models have been pre-loaded and are ready.")
-
-
-# --- (Utility functions and API endpoints remain the same) ---
-
-def base64_to_cv2_image(base64_string: str):
-    if "," in base64_string:
-        header, encoded_data = base64_string.split(",", 1)
-    else:
-        encoded_data = base64_string
-    image_bytes = base64.b64decode(encoded_data)
-    pil_image = Image.open(io.BytesIO(image_bytes))
-    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_BGR2RGB)
-
-@app.post("/analyze/")
-async def analyze_face(payload: ImagePayload):
-    frame = base64_to_cv2_image(payload.image_data)
-    rgb_frame = frame[:, :, ::-1]  # Convert BGR to RGB
-    face_locations = face_recognition.face_locations(rgb_frame)
-    results = []
-
-    if not face_locations:
-        return {"message": "No faces found in the image.", "results": []}
-
-    for face_location in face_locations:
-        top, right, bottom, left = face_location
-        face_image = frame[top:bottom, left:right]
-
-        try:
-            analysis = DeepFace.analyze(
-                face_image,
-                actions=["age", "gender", "emotion", "race"],
-                enforce_detection=False
-            )
-
-            # Handle if it's a list or a single result
-            if isinstance(analysis, list) and len(analysis) > 0:
-                face_data = analysis[0]
-            elif isinstance(analysis, dict):
-                face_data = analysis
-            else:
-                face_data = {}
-
-            result = {
-                "face_location": {
-                    "top": int(top),
-                    "right": int(right),
-                    "bottom": int(bottom),
-                    "left": int(left)
-                },
-                "age": int(face_data.get("age", -1)),
-                "dominant_gender": face_data.get("dominant_gender"),
-                "gender_scores": clean_numpy(face_data.get("gender", {})),
-                "dominant_emotion": face_data.get("dominant_emotion"),
-                "emotion_scores": clean_numpy(face_data.get("emotion", {})),
-                "dominant_race": face_data.get("dominant_race"),
-                "race_scores": clean_numpy(face_data.get("race", {})),
-                "face_confidence": clean_numpy(face_data.get("face_confidence", 0.0)),
-                "region": clean_numpy(face_data.get("region", {}))
-            }
-
-            results.append(result)
-
-        except Exception as e:
-            print(f"DeepFace analysis error: {e}")
-            results.append({
-                "face_location": {
-                    "top": int(top),
-                    "right": int(right),
-                    "bottom": int(bottom),
-                    "left": int(left)
-                },
-                "error": str(e)
-            })
-
+def analyze_age_gender(image_bgr: np.ndarray):
+    results = DeepFace.analyze(image_bgr, actions=['age', 'gender'], enforce_detection=False)
+    # If multiple faces, results is a list. We'll take the first.
+    first_result = results[0] if isinstance(results, list) else results
     return {
-        "message": f"Successfully analyzed {len(results)} face(s).",
-        "results": results
+        "age": first_result.get("age"),
+        "gender": first_result.get("dominant_gender"),
+        "gender_scores": first_result.get("gender")
     }
 
-@app.get("/")
-def read_root():
-    return {"status": "ok", "message": "Facial Analysis API is running."}
+# -------------------
+# API Endpoints
+# -------------------
+@app.on_event("startup")
+async def startup_event():
+    print("API starting up... loading all models.")
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    load_fairface_model(device=device)
+    load_emotion_model()
+    warm_up_deepface()
+    print("--- All models are ready. ---")
 
+@app.post("/analyze/")
+async def analyze(payload: ImagePayload):
+    try:
+        if "," in payload.image_data:
+            _, b64data = payload.image_data.split(",", 1)
+        else:
+            b64data = payload.image_data
+            
+        image_bytes = base64.b64decode(b64data)
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        image_np_rgb = np.array(image)
 
-if __name__ == "__main__":
-    # This block allows you to run the app directly with: python main.py
-	uvicorn.run(app, host="0.0.0.0", port=8003)
+        # --- Run all specialized analyses ---
+        # 1. Race Analysis (FairFace)
+        ff_device = next(FAIRFACE_MODEL.parameters()).device
+        race_scores = predict_fairface_race(image_np_rgb, device=ff_device)
+        
+        # 2. Emotion Analysis (FER)
+        emotion_scores = predict_emotion(image_np_rgb)
+        
+        # 3. Age & Gender Analysis (DeepFace)
+        image_np_bgr = cv2.cvtColor(image_np_rgb, cv2.COLOR_RGB2BGR)
+        age_gender_data = analyze_age_gender(image_np_bgr)
+
+        # --- Combine results into a single response ---
+        return {
+            "age": age_gender_data.get("age"),
+            "gender": age_gender_data.get("gender"),
+            "dominant_emotion": max(emotion_scores, key=emotion_scores.get) if emotion_scores else "N/A",
+            "dominant_race": max(race_scores, key=race_scores.get) if race_scores else "N/A",
+            "emotion_scores": emotion_scores,
