@@ -212,12 +212,12 @@
             magic8.configuring = false;
         });
     }
-    let bgAudio = true;
+    let bgAudio = false;
     let bgAnim = false;
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = [282, 281, 283, 284, 265, 266, 267]; 
+    let imgBase = [218, 220, 130, 172, 173];//[282, 281, 283, 284, 265, 266, 267]; 
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -298,8 +298,9 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageA_src,
-                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-35 blur-0'}`,
-                    onload: !imgCfg.isA_onTop ? imageTransition : null
+                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-35 dark:opacity-35 blur-0'}`,
+                    onload: !imgCfg.isA_onTop ? imageTransition : null,
+                    onerror: ()=> {page.toast("error", "Failed to load image: " + imgCfg.imageA_src); imageTransition();}
                 }),
                 // Image B
                 m("img", {
@@ -307,8 +308,9 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageB_src,
-                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-35 blur-0'}`,
-                    onload: imgCfg.isA_onTop ? imageTransition : null
+                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-35 dark:opacity-35 blur-0'}`,
+                    onload: imgCfg.isA_onTop ? imageTransition : null,
+                    onerror: ()=> {page.toast("error", "Failed to load image: " + imgCfg.imageB_src); imageTransition();}
                 })
             ]);
 

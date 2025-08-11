@@ -213,10 +213,19 @@ class FaceResult{
 	private FaceGenderScores gender_scores = null;
 	private FaceRegion region = null;
 	private double face_confidence = 0.0;
+	private String error = null;
 	public FaceResult() {
 		
 	}
 	
+	public String getError() {
+		return error;
+	}
+
+	public void setError(String error) {
+		this.error = error;
+	}
+
 	public String getDominant_race() {
 		return dominant_race;
 	}
