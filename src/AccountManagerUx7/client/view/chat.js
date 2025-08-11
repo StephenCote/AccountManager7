@@ -490,10 +490,12 @@
           emotions: Object.fromEntries(
             Object.entries(id.emotion_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
           ),
+          /*
           gender: id.dominant_gender,
           genders: Object.fromEntries(
             Object.entries(id.gender_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
           ),
+          */
           race: id.dominant_race
           /*
           races: Object.fromEntries(

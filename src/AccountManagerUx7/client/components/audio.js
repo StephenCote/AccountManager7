@@ -212,9 +212,9 @@
             magic8.configuring = false;
         });
     }
-    let bgAudio = false;
-    let bgAnim = true;
-    let bgImg = false;
+    let bgAudio = true;
+    let bgAnim = false;
+    let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
     let imgBase = [282, 281, 283, 284, 265, 266, 267]; 
@@ -298,7 +298,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageA_src,
-                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-15 blur-0'}`,
+                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-35 blur-0'}`,
                     onload: !imgCfg.isA_onTop ? imageTransition : null
                 }),
                 // Image B
@@ -307,7 +307,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageB_src,
-                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-15 blur-0'}`,
+                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-10 dark:opacity-35 blur-0'}`,
                     onload: imgCfg.isA_onTop ? imageTransition : null
                 })
             ]);
