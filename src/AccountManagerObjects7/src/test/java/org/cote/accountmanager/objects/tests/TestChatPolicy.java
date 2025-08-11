@@ -1,5 +1,6 @@
 package org.cote.accountmanager.objects.tests;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
@@ -41,17 +42,19 @@ import org.cote.accountmanager.schema.type.ConditionEnumType;
 import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.OperationEnumType;
 import org.cote.accountmanager.schema.type.PatternEnumType;
+import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
+import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.RuleEnumType;
 import org.junit.Test;
 
 public class TestChatPolicy extends BaseTest {
 
 
-	
+	private boolean recreate = false;
 	
 	@Test
-	public void TestChatPolicy() {
-		logger.info("Test Asynchronous Chat");
+	public void TestChatPolicyRewriteRequest() {
+		logger.info("Test Chat Policy - Rewrite The User Request");
 		OrganizationContext testOrgContext = getTestOrganization("/Development/Olio LLM Policies");
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
@@ -66,9 +69,18 @@ public class TestChatPolicy extends BaseTest {
 
 		
 		BaseRecord pcfg2 = OlioTestUtil.getObjectPromptConfig(testUser1, "Policy Fact Prompt 1");
-		List<String> system2 = pcfg.get("system");
+		List<String> system2 = pcfg2.get("system");
 		system2.clear();
-		system2.add("Evaluate the user request. Restate the user request with additional prompt guidance before and after the request to make sure the request is fair and equitable.");
+		
+		String unnecessarilyPCPromptPolicePrompt = "You are the PROMPT POLICE!" + System.lineSeparator()
+			+ "Your job is to REWRITE the user request to ensure that it is unnecessarily woke and politically correct." + System.lineSeparator()
+			+ "RESPOND WITH YOUR REWRITE OF THE USER REQUEST." + System.lineSeparator()
+			+ "DO NOT ASK QUESTIONS, RESPOND TO, OR CONTINUE THE USER QUESTION." + System.lineSeparator()
+			+ "Example: " + System.lineSeparator()
+			+ "User: Why is the sky blue?" + System.lineSeparator()
+			+ "You: Why is the sky blue? Include a description of all light and color related references that would make sense to visually impaired individuals."
+		;
+		system2.add(unnecessarilyPCPromptPolicePrompt);
 		IOSystem.getActiveContext().getAccessPoint().update(testUser1, pcfg2);
 
 		PolicyType chatPol = getChatPolicy(testUser1, cfg, pcfg2);
@@ -88,15 +100,25 @@ public class TestChatPolicy extends BaseTest {
 		
 		PolicyRequestType prt = IOSystem.getActiveContext().getPolicyUtil().getPolicyRequest(chatPol, testUser1);
 		assertTrue("Expected one parameter", prt.getFacts().size() == 1);
-		prt.getFacts().get(0).setFactData("What's the weather like today?");
+		String uquest = "What's the weather like today?";
+		prt.getFacts().get(0).setFactData(uquest);
 		prt.getFacts().get(0).setValue("factReference", req);
 		PolicyResponseType prr = null;
 		try {
+			// IOSystem.getActiveContext().getPolicyUtil().setTrace(true);
 			prr = ioContext.getPolicyEvaluator().evaluatePolicyRequest(prt).toConcrete();
+			// IOSystem.getActiveContext().getPolicyUtil().setTrace(false);
 		} catch (NullPointerException | FieldException | ModelNotFoundException | ValueException | ScriptException | IndexException | ReaderException | ModelException e) {
 			e.printStackTrace();
 		}
 		assertNotNull("Policy response is null", prr);
+		logger.info(prr.toFullString());
+		assertTrue("Expected policy to be permitted", prr.getType() == PolicyResponseEnumType.PERMIT);
+		
+		String revisedQuest = prt.getFacts().get(0).getFactData();
+		assertFalse("Question was not revised", uquest.equals(revisedQuest));
+		
+		logger.info("Revised question: " + revisedQuest);
 	}
 	
 	public PolicyType getChatPolicy(BaseRecord user, BaseRecord cfg, BaseRecord pcfg) {
@@ -146,7 +168,11 @@ public class TestChatPolicy extends BaseTest {
 		try {
 			upol = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_POLICY, dir.get(FieldNames.FIELD_ID), policyName);
 			if(upol.length > 0) {
-				return new PolicyType(upol[0]);
+				if(recreate) {
+					IOSystem.getActiveContext().getRecordUtil().deleteRecord(upol[0]);
+				} else {
+					return new PolicyType(upol[0]);
+				}
 			}
 			
 			pol = new PolicyType();
@@ -168,11 +194,16 @@ public class TestChatPolicy extends BaseTest {
 		try {
 			urul = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_RULE, dir.get(FieldNames.FIELD_ID), ruleName);
 			if(urul.length > 0) {
-				return new RuleType(urul[0]);
+				if(recreate) {
+					IOSystem.getActiveContext().getRecordUtil().deleteRecord(urul[0]);
+				} else {
+					return new RuleType(urul[0]);
+				}
 			}
 			
 			rul = new RuleType();
 			rul.setType(RuleEnumType.TRANSFORM);
+			rul.setCondition(ConditionEnumType.ALL);
 			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, rul, ruleName, "~/Rules", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			IOSystem.getActiveContext().getRecordUtil().createRecord(rul);
 		} catch (ReaderException | FieldException | ValueException | ModelNotFoundException e) {
@@ -189,7 +220,11 @@ public class TestChatPolicy extends BaseTest {
 		try {
 			upat = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_PATTERN, dir.get(FieldNames.FIELD_ID), patternName);
 			if(upat.length > 0) {
-				return new PatternType(upat[0]);
+				if(recreate) {
+					IOSystem.getActiveContext().getRecordUtil().deleteRecord(upat[0]);
+				} else {
+					return new PatternType(upat[0]);
+				}
 			}
 			
 			pat = new PatternType();
@@ -211,7 +246,11 @@ public class TestChatPolicy extends BaseTest {
 		try {
 			uope = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_OPERATION, dir.get(FieldNames.FIELD_ID), opName);
 			if(uope.length > 0) {
-				return new OperationType(uope[0]);
+				if(recreate) {
+					IOSystem.getActiveContext().getRecordUtil().deleteRecord(uope[0]);
+				} else {
+					return new OperationType(uope[0]);
+				}
 			}
 			
 			ope = new OperationType();
@@ -234,7 +273,11 @@ public class TestChatPolicy extends BaseTest {
 		try {
 			ufac = IOSystem.getActiveContext().getSearch().findByNameInGroup(ModelNames.MODEL_FACT, dir.get(FieldNames.FIELD_ID), factName);
 			if(ufac.length > 0) {
-				return new FactType(ufac[0]);
+				if(recreate) {
+					IOSystem.getActiveContext().getRecordUtil().deleteRecord(ufac[0]);
+				} else {
+					return new FactType(ufac[0]);
+				}
 			}
 			
 			fac = new FactType();

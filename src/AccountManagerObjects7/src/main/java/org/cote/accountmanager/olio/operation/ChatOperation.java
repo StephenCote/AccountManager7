@@ -13,6 +13,7 @@ import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.policy.PolicyUtil;
 import org.cote.accountmanager.policy.operation.Operation;
 import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.schema.FieldNames;
 import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 
 
@@ -63,13 +64,28 @@ import org.cote.accountmanager.schema.type.OperationResponseEnumType;
 			logger.info("Invoking chat ...");
 			BaseRecord fcfg = OlioUtil.getFullRecord(cfg);
 			BaseRecord fpcfg = OlioUtil.getFullRecord(pcfg);
-			logger.info(fcfg.toFullString());
-			Chat chat = new Chat(null, fcfg, pcfg);
+			// logger.info(fcfg.toFullString());
+			// logger.info(fpcfg.toFullString());
+			Chat chat = new Chat(null, fcfg, fpcfg);
 			chat.setPersistSession(false);
 			OpenAIRequest nreq = chat.getChatPrompt();
 			chat.continueChat(nreq, reqStr);
-			logger.info(nreq.toFullString());
-			PolicyUtil.addResponseMessage(prr, "Chat Operation Pending...");
+			List<BaseRecord> rmsgs = ((List<BaseRecord>)nreq.get("messages")).stream().filter(m -> "assistant".equals(m.get("role"))).collect(Collectors.toList());
+			if(rmsgs.size() > 0) {
+				BaseRecord lastMsg = rmsgs.get(rmsgs.size() - 1);
+				String content = lastMsg.get("content");
+				if(content != null && content.length() > 0) {
+					PolicyUtil.addResponseMessage(prr, "Applied " + fpcfg.get(FieldNames.FIELD_NAME));
+					sourceFact.setValue("factData", content);
+					ort = OperationResponseEnumType.SUCCEEDED;
+				} else {
+					logger.error("Chat response is empty");
+				}
+			} else {
+				logger.error("No chat response found");
+			}	
+			//logger.info(nreq.toFullString());
+			
 
 			
 			return ort;
