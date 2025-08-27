@@ -217,6 +217,19 @@
             }
         }
     };
+    forms.tagattributes = {
+        label: "Tags and Attributes",
+        fields: {
+            attributes: {
+                layout: 'half',
+                form: forms.attribute
+            },
+            tags: {
+                layout: "half",
+                form: forms.control
+            }
+        }
+    };
     forms.ctlattributes = {
         label: "Controls and Attributes",
         /*requiredAttributes : ["objectId"],*/
@@ -3483,7 +3496,7 @@
                 format: "textlist"
             }
         },
-        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tags"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tagattributes"]
     };
 
     forms.storeRef = {

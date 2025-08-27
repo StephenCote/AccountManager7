@@ -10402,6 +10402,68 @@
           "type": "string"
         }
       ]
+    },
+ {
+      "name": "olio.playerState",
+      "inherits": [
+        "data.directory"
+      ],
+      "group": "Player States",
+      "icon": "category",
+      "label": "Player State",
+      "dedicatedParticipation": true,
+      "description": "This model represents the state of a player in a realm, including their character, current event, location, and actions.",
+      "fields": [
+        {
+          "name": "realm",
+          "type": "model",
+          "baseModel": "olio.realm",
+          "foreign": true,
+          "followReference": false
+        },
+        {
+          "name": "character",
+          "type": "model",
+          "baseModel": "olio.charPerson",
+          "foreign": true,
+          "followReference": true
+        },
+        {
+          "name": "party",
+          "type": "list",
+          "baseType": "model",
+          "baseModel": "olio.charPerson",
+          "foreign": true,
+          "participantModel": "state.party"
+        },
+        {
+          "name": "user",
+          "type": "model",
+          "baseModel": "system.user",
+          "foreign": true,
+          "followReference": true
+        },
+        {
+          "name": "currentEvent",
+          "type": "model",
+          "baseModel": "olio.event",
+          "foreign": true,
+          "followReference": true
+        },
+        {
+          "name": "currentLocation",
+          "type": "model",
+          "baseModel": "data.geoLocation",
+          "foreign": true,
+          "followReference": true
+        },
+        {
+          "name": "currentAction",
+          "type": "model",
+          "baseModel": "olio.actionResult",
+          "foreign": true
+        }
+      ]
     }
   ],
   "validationRules": [

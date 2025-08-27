@@ -192,6 +192,7 @@
 	
 	function patchObject(sType, oObj, fH){
 	   delete cache[sType];
+	   console.log(oObj);
 	   return patch(sModelSvc, oObj, fH);
 	}
 	
@@ -818,15 +819,15 @@
 		},
 		newAttribute : function(s, v){
 			var a = am7model.newPrimitive("common.attribute"),x=null;
-			a.valueType = "STRING";
+			a.valueType = "string";
 			a.name = s;
 			
 			if(typeof v == "string") x = v;
 			else if(typeof v == "number"){
 				let vs = "" + v;
-				if(vs.match(/\./)) a.valueType = 'DOUBLE';
-				else a.valueType = 'INT';
-				x.push(vs);
+				if(vs.match(/\./)) a.valueType = 'double';
+				else a.valueType = 'int';
+				x = v;
 			}
 			else if(typeof v == "object" && v instanceof Array) x = v;
 			else console.warn("Expected string or array object for value");

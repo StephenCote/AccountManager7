@@ -299,7 +299,7 @@
             size: 75,
             data: {entity, inst: cinst},
             confirm: async function (data) {
-                console.log(data);
+                //console.log(data);
                 page.toast("info", "Reimaging ...", -1);
                 let x = await m.request({ method: 'POST', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage", body:cinst.entity, withCredentials: true });
                 page.clearToast();
@@ -307,9 +307,32 @@
                 if (x && x != null) {
                     page.toast("success", "Reimage complete");
                     inst.entity.profile.portrait = x;
+
                     let od = {id: inst.entity.profile.id, portrait: {id: x.id}};
                     od[am7model.jsonModelKey] = "identity.profile";
-                    page.patchObject(od);
+                    await page.patchObject(od);
+
+                    let seed = x.attributes.filter(a => a.name == "seed");
+                    if(seed.length){
+                        console.log(inst, data);
+                        let cseed = (inst.entity?.attributes || []).filter(a => a.name == "preferredSeed");
+                        if(cseed.length){
+                            console.log("Updating preferred seed");
+                            cseed[0].value = seed[0].value;
+                        }
+                        else{
+                            console.log("Setting preferred seed");
+                            await am7client.patchAttribute(inst.entity, "preferredSeed", seed[0].value);
+                            /*
+                            let attr = am7client.newAttribute("preferredSeed", seed[0].value);
+                            if(!inst.api.attributes()) inst.api.attributes([]);
+                            inst.api.attributes().push(attr);
+                            */
+                        }
+                        inst.change("attributes");
+                        await page.patchObject(inst.patch());
+                    }
+
                     pop = true;
         
                 }

@@ -1983,9 +1983,14 @@
                     if(name === 'messages' || name === 'attributes' || name === 'elementValues'){
                         /// Need to confirm the attribute type, this assumes it's an array 
                         //entity[state.attribute][state.index] = null;
+                        let ov = entity[state.attribute][state.index];
                         entity[state.attribute] = entity[state.attribute].filter((a,i) => i != state.index);
                         delete valuesState[k];
-                        inst.change(name);
+                        //inst.change(name);
+                        console.log(ov);
+                        if(ov && am7model.hasIdentity(ov)){
+                            aP.push(page.deleteObject(ov[am7model.jsonModelKey],ov.objectId));
+                        }
                        //updateChange();
                     }
                     else if(name === 'controls'){
