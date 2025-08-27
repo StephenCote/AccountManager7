@@ -182,12 +182,8 @@
         let inst = am7model.prepareInstance(entity, am7model.forms.newChatRequest);
         let acfg = await loadChatList();
         if(acfg && acfg.length && !entity.chatConfig) entity.chatConfig = acfg[0];
-        //am7model.getModelField("chatSettings", "chat").limit  = acfg.map((c) => { return c.name; });
-        //am7model.forms.newChatRequest.fields.chatConfig.field.limit = acfg.map((c) => { return c.name; });
         let pcfg = await loadPromptList();
         if(pcfg && pcfg.length && !entity.promptConfig) entity.promptConfig = pcfg[0];
-        //am7model.getModelField("chatSettings", "prompt").limit  = pcfg.map((c) => { return c.name; });
-       // am7model.forms.newChatSettings.fields.promptConfig.field.limit = pcfg.map((c) => { return c.name; });
 
         inst.action("chatConfig", function(){updateSessionName(inst, acfg, pcfg, true);});
         inst.action("promptConfig", function(){updateSessionName(inst, acfg, pcfg, true);});

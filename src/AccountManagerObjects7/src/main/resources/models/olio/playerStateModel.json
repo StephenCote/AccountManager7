@@ -1,10 +1,6 @@
 {
 	"name": "olio.playerState",
-	"likeInherits": ["data.directory"],
-	"inherits": [
-		"common.groupExt",
-		"common.baseLight"
-	],
+	"inherits": ["data.directory"],
 	"group": "Player States",
 	"icon": "category",
 	"label": "Player State",
@@ -26,6 +22,14 @@
 			"followReference": true
 		},
 		{
+			"name": "party",
+			"type": "list",
+			"baseType": "model",
+			"baseModel": "olio.charPerson",
+			"foreign": true,
+			"participantModel": "state.party"
+		},
+		{
 			"name": "user",
 			"type": "model",
 			"baseModel": "system.user",
@@ -37,7 +41,7 @@
 			"type": "model",
 			"baseModel": "olio.event",
 			"foreign": true,
-			"followReference": true
+			"followReference": false
 		},
 		{
 			"name": "currentLocation",
@@ -50,7 +54,8 @@
 			"name": "currentAction",
 			"type": "model",
 			"baseModel": "olio.actionResult",
-			"foreign": true
+			"foreign": true,
+			"followReference": false
 		}
 	]
 }

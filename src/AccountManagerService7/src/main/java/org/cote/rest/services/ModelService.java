@@ -75,6 +75,22 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
+	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\\\-]+}/full")
+	@Produces(MediaType.APPLICATION_JSON)
+	public Response getFullModelByObjectId(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
+		BaseRecord user = ServiceUtil.getPrincipalUser(request);
+		Query q = QueryUtil.createQuery(type, FieldNames.FIELD_OBJECT_ID, objectId);
+		q.planMost(true);
+		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		if(rec == null) {
+			return Response.status(404).entity(null).build();
+		}
+
+		return Response.status(200).entity(rec.toFullString()).build();
+	}
+	
+	@RolesAllowed({"user"})
+	@GET
 	@Path("/{type:[A-Za-z\\.]+}/user/{objectType:[A-Za-z]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getUserModelRoot(@PathParam("type") String type, @PathParam("objectType") String objectType, @Context HttpServletRequest request, @Context HttpServletResponse response){

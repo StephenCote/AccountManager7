@@ -359,6 +359,9 @@
 		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"GET",sObjectId,v);} if(f) f(v);};
 	    return get(sModelSvc + "/" + sType + "/" + sObjectId, fc);
 	}
+	function getFullByObjectId(sType, sObjectId){
+		return get(sModelSvc + "/" + sType + "/" + sObjectId + "/full");
+	}
 	function getByUrn(sType, urn, fH){
 		var sKey = sType + "-" + urn;
 		var o = getFromCache(sType, "GET", sKey);
@@ -750,6 +753,7 @@
 		count: count,
 		stream: stream,
 		get : getByObjectId,
+		getFull: getFullByObjectId,
 		getByUrn: getByUrn,
 		getByName : getByName,
 		getByNameInGroupParent : getByNameInGroupParent,
