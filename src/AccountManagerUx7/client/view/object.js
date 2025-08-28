@@ -530,7 +530,8 @@
                                 if(state.mode == 'edit') return m("td", modelField(rm.name, rm.fieldView, rm.field, rm.name + "-" + i, v[rm.name], true, v));
                                 else{
                                     let val;
-                                    if(rm.field.pickerProperty){
+
+                                    if(rm?.field?.pickerProperty){
                                         let findVal = v[rm.field.pickerProperty.entity];
                                         let ctx = page.context();
                     
