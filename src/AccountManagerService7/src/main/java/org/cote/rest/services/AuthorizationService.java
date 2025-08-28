@@ -41,6 +41,16 @@ public class AuthorizationService {
 
 	@RolesAllowed({"admin","user"})
 	@GET
+	@Path("/trace/{enable:(true|false)}")
+	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
+	public Response enableMember(@PathParam("enable") boolean enable, @Context HttpServletRequest request){
+		IOSystem.getActiveContext().getPolicyUtil().setTrace(enable);
+		return Response.status(200).entity(null).build();
+	}
+
+	
+	@RolesAllowed({"admin","user"})
+	@GET
 	@Path("/{objectId:[0-9A-Za-z\\-]+}/member/{fieldName:[0-9A-Za-z\\\\-]+}/{actorType:[\\.A-Za-z]+}/{actorId:[0-9A-Za-z\\-]+}/{enable:(true|false)}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
 	public Response enableMember(@PathParam("type") String objectType, @PathParam("objectId") String objectId, @PathParam("fieldName") String fieldName, @PathParam("actorType") String actorType, @PathParam("actorId") String actorId, @PathParam("enable") boolean enable, @Context HttpServletRequest request){
