@@ -2081,6 +2081,13 @@
                                 case 'boolean':
                                     entry[k] = (e.value.match(/^true$/gi) != null);
                                     break;
+
+                                case 'int':
+                                    entry[k] = parseInt(e.value);
+                                case 'double':
+                                case 'long':
+                                    entry[k] = parseFloat(e.value);
+                                    break;
                                 case 'enum':
                                 case 'string':
                                     entry[k] = e.value;

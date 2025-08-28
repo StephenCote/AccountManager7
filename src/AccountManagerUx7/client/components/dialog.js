@@ -293,6 +293,10 @@
         let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
         let cinst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
         await am7olio.setNarDescription(inst, cinst);
+        let cseed = (inst.entity?.attributes || []).filter(a => a.name == "preferredSeed");
+        if(cseed.length){
+            cinst.api.seed(cseed[0].value);
+        }
         let cfg = {
             label: "Reimage " + inst.api.name(),
             entityType: "olio.sd.config",
@@ -314,27 +318,9 @@
 
                     let seed = x.attributes.filter(a => a.name == "seed");
                     if(seed.length){
-                        console.log(inst, data);
-                        let cseed = (inst.entity?.attributes || []).filter(a => a.name == "preferredSeed");
-                        if(cseed.length){
-                            console.log("Updating preferred seed");
-                            cseed[0].value = seed[0].value;
-                        }
-                        else{
-                            console.log("Setting preferred seed");
-                            await am7client.patchAttribute(inst.entity, "preferredSeed", seed[0].value);
-                            /*
-                            let attr = am7client.newAttribute("preferredSeed", seed[0].value);
-                            if(!inst.api.attributes()) inst.api.attributes([]);
-                            inst.api.attributes().push(attr);
-                            */
-                        }
-                        inst.change("attributes");
-                        await page.patchObject(inst.patch());
+                        await am7client.patchAttribute(inst.entity, "preferredSeed", seed[0].value);
                     }
-
                     pop = true;
-        
                 }
                 else{
                     page.toast("error", "Reimage failed");
