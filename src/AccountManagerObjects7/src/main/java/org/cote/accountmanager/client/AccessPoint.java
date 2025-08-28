@@ -651,6 +651,11 @@ public class AccessPoint {
 			logger.error("Null query or user");
 			return null;
 		}
+		
+		if(IOSystem.getActiveContext().getPolicyUtil().isTrace()) {
+			logger.warn("Authorize query: " + query.toString());
+		}
+		
 		PolicyResponseType[] prrs = context.getPolicyUtil().evaluateQueryToReadPolicyResponses(contextUser, query);
 		PolicyResponseType prr = null;
 		if (prrs.length == 0) {

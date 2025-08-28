@@ -39,6 +39,9 @@ public class AttributeUtil {
 		if(record.hasField(FieldNames.FIELD_ORGANIZATION_ID)) {
 			attr.set(FieldNames.FIELD_ORGANIZATION_ID, record.get(FieldNames.FIELD_ORGANIZATION_ID));
 		}
+		if(record.hasField(FieldNames.FIELD_OWNER_ID)) {
+			attr.set(FieldNames.FIELD_OWNER_ID, record.get(FieldNames.FIELD_OWNER_ID));
+		}
 		attr.set(FieldNames.FIELD_REFERENCE_TYPE, record.getSchema());
 		return attr;
 	}

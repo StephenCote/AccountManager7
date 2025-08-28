@@ -43,7 +43,7 @@ import org.cote.accountmanager.util.ScriptUtil;
 public class PolicyEvaluator {
 
 	public static final Logger logger = LogManager.getLogger(PolicyEvaluator.class);
-	protected static String[] FIELD_POPULATION = new String[] {FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID};
+	protected static String[] FIELD_POPULATION = new String[] {FieldNames.FIELD_ID, FieldNames.FIELD_URN, FieldNames.FIELD_NAME, FieldNames.FIELD_OBJECT_ID, FieldNames.FIELD_TYPE, FieldNames.FIELD_ORGANIZATION_ID, FieldNames.FIELD_GROUP_ID, FieldNames.FIELD_PARENT_ID};
 
 	/*
 	private static DatatypeFactory dtFactory = null;	

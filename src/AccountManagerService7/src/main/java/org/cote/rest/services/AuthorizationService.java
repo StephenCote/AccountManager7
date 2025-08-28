@@ -43,7 +43,7 @@ public class AuthorizationService {
 	@GET
 	@Path("/trace/{enable:(true|false)}")
 	@Produces(MediaType.APPLICATION_JSON) @Consumes(MediaType.APPLICATION_JSON)
-	public Response enableMember(@PathParam("enable") boolean enable, @Context HttpServletRequest request){
+	public Response trace(@PathParam("enable") boolean enable, @Context HttpServletRequest request){
 		IOSystem.getActiveContext().getPolicyUtil().setTrace(enable);
 		return Response.status(200).entity(null).build();
 	}

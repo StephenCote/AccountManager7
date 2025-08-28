@@ -8,6 +8,7 @@ import org.cote.accountmanager.io.IOSystem;
 import org.cote.accountmanager.io.ParameterList;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelNames;
 import org.cote.accountmanager.schema.ModelSchema;
 
 public class BaseFactory extends FactoryBase {
@@ -17,8 +18,6 @@ public class BaseFactory extends FactoryBase {
 	
 	@Override
 	public BaseRecord implement(BaseRecord contextUser, BaseRecord newRecord, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
-		// logger.info("Base Factory: Apply Org and Owner Id");
-
 		if(contextUser != null) {
 			try {
 				IOSystem.getActiveContext().getRecordUtil().applyOwnership(contextUser, newRecord, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -26,6 +25,7 @@ public class BaseFactory extends FactoryBase {
 				throw new FactoryException(e);
 			}
 		}
+
 		return newRecord;
 	}
 }
