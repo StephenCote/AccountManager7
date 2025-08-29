@@ -707,7 +707,7 @@
       ])
       ];
 
-      let ret = [(profile ? m("div", { class: "bg-white user-info-header px-5 py-3" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
+      let ret = [(profile ? m("div", { class: "bg-white dark:bg-black user-info-header px-5 py-3" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
 
         msgs
       ])];
