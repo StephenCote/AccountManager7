@@ -742,6 +742,15 @@
                 layout: "full",
                 format: "print"
             },
+            randomSeed: {
+                format: "button",
+                layout: "one",
+                icon: 'casino',
+                field: {
+                    label: "Random",
+                    command: undefined
+                }
+            },
             seed:{
                 label: 'Seed',
                 layout: 'one'
@@ -783,6 +792,7 @@
                     command: undefined
                 }
             },
+            /*
             blank : {
                 layout : "one",
                 format: "blank",
@@ -791,6 +801,7 @@
                     readOnly: true
                 }
             },
+            */
             bodyStyle: {
                 label: 'Composition',
                 layout: 'third'

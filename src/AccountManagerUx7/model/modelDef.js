@@ -1115,6 +1115,7 @@
       "fields": [
         {
           "name": "id",
+          "label": "Id",
           "type": "long",
           "index": true,
           "identity": true,
@@ -2010,6 +2011,7 @@
         {
           "name": "modifiedDate",
           "type": "timestamp",
+          "label": "Modified Date",
           "shortName": "md"
         },
         {

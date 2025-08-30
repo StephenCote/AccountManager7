@@ -7,12 +7,21 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.analysis.FaceAnalysis;
+import org.cote.accountmanager.analysis.FaceRequest;
+import org.cote.accountmanager.analysis.FaceResponse;
 import org.cote.accountmanager.olio.OlioTaskAgent;
+import org.cote.accountmanager.olio.llm.Chat;
+import org.cote.accountmanager.olio.llm.OpenAIRequest;
+import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
+import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.record.RecordSerializerConfig;
+import org.cote.accountmanager.schema.ModelNames;
+import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.SystemTaskEnumType;
 import org.cote.accountmanager.thread.Threaded;
 import org.cote.accountmanager.util.ClientUtil;
@@ -138,8 +147,17 @@ public class SystemTaskQueue extends Threaded {
 						rtasks.add(resp);
 					}
 				}
-				if(SystemTaskEnumType.SD.toString().equals(task.get("type"))) {
+				else if(SystemTaskEnumType.SD.toString().equals(task.get("type"))) {
 					BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
+					if(localPoll) {
+						SystemTaskUtil.completeTasks(resp);
+					}
+					else if(remotePoll && resp != null) {
+						rtasks.add(resp);
+					}
+				}
+				else {
+					BaseRecord resp = SystemTaskAgent.evaluateTaskResponse(task);
 					if(localPoll) {
 						SystemTaskUtil.completeTasks(resp);
 					}
@@ -168,4 +186,6 @@ public class SystemTaskQueue extends Threaded {
 		}
 	}
 
+	
+	
 }

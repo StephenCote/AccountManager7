@@ -287,11 +287,13 @@
         setDialog(cfg);
     }
 
+    let lastReimage;
     async function reimage(object, inst) {
 
         //let entity = am7model.newPrimitive("olio.sd.config");
         let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
-        let cinst = am7model.prepareInstance(entity, am7model.forms.sdConfig);
+        let cinst = (lastReimage || am7model.prepareInstance(entity, am7model.forms.sdConfig));
+        lastReimage = cinst;
         await am7olio.setNarDescription(inst, cinst);
         let cseed = (inst.entity?.attributes || []).filter(a => a.name == "preferredSeed");
         if(cseed.length){
@@ -345,7 +347,10 @@
             await am7olio.dressCharacter(inst, true);
             await am7olio.setNarDescription(inst, cinst);
         };
-
+        am7model.forms.sdConfig.fields.randomSeed.field.command = async function(){
+            cinst.api.seed(-1);
+        };
+        
         am7model.forms.sdConfig.fields.randomConfig.field.command = async function(){
             let ncfg = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
             // Do style first since that drives the display
