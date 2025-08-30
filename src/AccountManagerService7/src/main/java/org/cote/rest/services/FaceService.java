@@ -68,9 +68,9 @@ public class FaceService {
 			BaseRecord task = FaceAnalysis.createTaskRequest(req);
 			BaseRecord rtask = SystemTaskAgent.executeTask(task);
 			if (rtask != null) {
-				BaseRecord resp = rtask.get("taskModel");
+				String resp = rtask.get("taskModelData");
 				if (resp != null) {
-					fr = JSONUtil.importObject(resp.get("taskModelData"), FaceResponse.class);
+					fr = JSONUtil.importObject(resp, FaceResponse.class);
 				} else {
 					logger.error("Task response was null");
 				}

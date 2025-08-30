@@ -140,12 +140,17 @@
             page.toast("error", "getUserMedia error:", err);
         }
     }
-    
+    let capturing = false;
     async function captureAndSend(fCaptureHandler) {
         let videoEl = videoElement();
         if (!videoEl || videoEl.paused || videoEl.ended) {
             return;
         }
+        if(capturing){
+            console.log("Capture already in progress, skipping this interval.");
+            return;
+        }
+        capturing = true;
                 
         const canvas = document.createElement('canvas');
         canvas.width = videoEl.videoWidth;
@@ -165,6 +170,8 @@
         if(fCaptureHandler && typeof fCaptureHandler === 'function') {
             fCaptureHandler(resp);
         }
+        // console.log("Capture and send complete:", resp);
+        capturing = false;
         return resp;
     }
     let camera = {
