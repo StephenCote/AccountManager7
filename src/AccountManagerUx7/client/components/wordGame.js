@@ -46,6 +46,14 @@
         }
     }
 
+    function calculateTurnScore() {
+        if (data.timeLeft > 24) return 5;
+        if (data.timeLeft > 18) return 4;
+        if (data.timeLeft > 12) return 3;
+        if (data.timeLeft > 6) return 2;
+        return 1;
+    }
+
 
     // --- GAME LOGIC AND STATE MANAGEMENT ---
 
@@ -95,11 +103,26 @@
     }
     
     function exportBoardState() {
-        const exportedData = [];
+        const exportedData = {
+            gameState: {
+                currentRound: data.currentRound,
+                actionsRemainingInRound: 20 - data.actionsThisRound,
+                scores: {
+                    player1: data.player1.score,
+                    player2: data.player2.score,
+                },
+            },
+            playerHands: {
+                player1: data.left.map(w => ({ name: w.name, type: w.type || (w.isCustom ? 'custom' : 'unknown') })),
+                player2: data.right.map(w => ({ name: w.name, type: w.type || (w.isCustom ? 'custom' : 'unknown') })),
+            },
+            board: []
+        };
+
         data.board.forEach((row, rIdx) => {
             row.forEach((cell, cIdx) => {
                 if (cell) {
-                    exportedData.push({
+                    exportedData.board.push({
                         row: rIdx,
                         col: cIdx,
                         word: cell.name,
@@ -113,7 +136,6 @@
         const jsonString = JSON.stringify(exportedData, null, 2);
         console.log("Exported Board State:", jsonString);
 
-        // Fallback for copying to clipboard
         try {
             const textArea = document.createElement("textarea");
             textArea.value = jsonString;
@@ -177,7 +199,6 @@
         let player = playerNum === 1 ? data.player1 : data.player2;
         let words = playerNum === 1 ? data.left : data.right;
         
-        // Scoring penalties for refreshing
         if (words.length > 5) {
              player.score--;
         }
@@ -225,38 +246,48 @@
     }
     
     function runAutopilot() {
-        if (data.turn !== 2 || !data.player2.autopilot || data.right.length === 0) {
-            if (data.right.length === 0) {
-                page.toast("info", "Autopilot has no words and passed its turn.");
-                switchTurn();
-            }
-            return;
-        }
+        if (data.turn !== 2 || !data.player2.autopilot) return;
 
-        const wordToPlace = data.right[Math.floor(Math.random() * data.right.length)];
-        const wordIndex = data.right.indexOf(wordToPlace);
+        const choice = Math.random();
 
+        // Find an empty spot on the board
         let emptyCells = [];
         data.board.forEach((row, rIdx) => {
             row.forEach((cell, cIdx) => {
                 if (!cell) emptyCells.push({r: rIdx, c: cIdx});
             });
         });
-
-        if (emptyCells.length > 0) {
+        
+        // 70% chance to place a dictionary word
+        if (choice < 0.7 && data.right.length > 0 && emptyCells.length > 0) {
+            const wordToPlace = data.right[Math.floor(Math.random() * data.right.length)];
+            const wordIndex = data.right.indexOf(wordToPlace);
             const targetCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
             
             const wordWithPlayer = { ...wordToPlace, player: 2 };
             data.board[targetCell.r][targetCell.c] = wordWithPlayer;
-            page.toast("info", `Autopilot placed the word '${wordWithPlayer.name}'.`);
             data.right.splice(wordIndex, 1);
-            data.player2.score += 5;
+            
+            const points = calculateTurnScore();
+            data.player2.score += points;
+            page.toast("info", `Autopilot placed '${wordWithPlayer.name}' for ${points} points.`);
+
             spendTurnPoints(5);
-            if (data.right.length < 5) {
-                prepareWords(2, true);
-            }
-        } else {
-             page.toast("info", "Autopilot has no space to move and passed its turn.");
+            if (data.right.length < 5) prepareWords(2, true);
+        } 
+        // 20% chance to place a common word
+        else if (choice < 0.9 && !data.commonWordUsedThisTurn && emptyCells.length > 0) {
+            const wordToPlace = data.activeCommonWords[Math.floor(Math.random() * data.activeCommonWords.length)];
+            const targetCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+            
+            const wordWithPlayer = { name: wordToPlace, isCommon: true, player: 2 };
+            data.board[targetCell.r][targetCell.c] = wordWithPlayer;
+            data.commonWordUsedThisTurn = true;
+            page.toast("info", `Autopilot placed common word '${wordWithPlayer.name}'.`);
+        } 
+        // 10% chance to pass, or default action
+        else {
+             page.toast("info", "Autopilot passed its turn.");
              switchTurn();
         }
         m.redraw();
@@ -368,7 +399,10 @@
         }
         
         data.board[targetRowIndex][targetColIndex] = wordWithPlayer;
-        page.toast("info", `Player ${data.turn} placed the word '${wordWithPlayer.name}'.`);
+
+        if (payload.source !== 'board') {
+            page.toast("info", `Player ${data.turn} placed the word '${wordWithPlayer.name}'.`);
+        }
 
         if (payload.source === 'left') {
             data.left.splice(payload.index, 1);
@@ -383,8 +417,10 @@
         }
 
         if (payload.source !== 'common' && payload.source !== 'board') {
-            if (data.turn === 1) data.player1.score += 5;
-            else data.player2.score += 5;
+            const points = calculateTurnScore();
+            if (data.turn === 1) data.player1.score += points;
+            else data.player2.score += points;
+            page.toast("success", `Player ${data.turn} scored ${points} points!`);
             spendTurnPoints(5);
         }
         
