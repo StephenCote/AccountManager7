@@ -91,7 +91,7 @@ public class WordService {
 
 		try {
 			long start = System.currentTimeMillis();
-			WordResponse fres = ClientUtil.post(WordResponse.class, ClientUtil.getResource(server + "/" + apiName + "/"), null, req, MediaType.APPLICATION_JSON_TYPE);
+			frep = ClientUtil.post(WordResponse.class, ClientUtil.getResource(server + "/" + apiName), null, req, MediaType.APPLICATION_JSON_TYPE);
 		}
 		catch(ProcessingException e) {
 			logger.error(e);
@@ -118,16 +118,17 @@ class WordRequest{
 }
 
 class WordResponse{
-	private List<WordResponseScore> phrases = new ArrayList<>();
+	private List<WordResponseScore> scores = new ArrayList<>();
 	public WordResponse() {
 		
 	}
-	public List<WordResponseScore> getPhrases() {
-		return phrases;
+	public List<WordResponseScore> getScores() {
+		return scores;
 	}
-	public void setPhrases(List<WordResponseScore> phrases) {
-		this.phrases = phrases;
+	public void setScores(List<WordResponseScore> scores) {
+		this.scores = scores;
 	}
+
 	
 }
 
