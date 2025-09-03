@@ -375,7 +375,7 @@
             data.commonWordUsedThisTurn = true;
             page.toast("info", `Autopilot placed common word '${wordWithPlayer.name}'.`);
             analyzeAndLockPhrases();
-            setTimeout(switchTurn, 200); // End the turn after placing a common word
+            setTimeout(switchTurn, 200);
         } 
         else {
              page.toast("info", "Autopilot passed its turn.");
@@ -384,73 +384,52 @@
         m.redraw();
     }
     
-    function shiftWords(direction) {
+    async function shiftWords(direction) {
+        // Unlock all words before shifting
+        data.board.forEach(row => row.forEach(cell => {
+            if (cell) {
+                cell.isLocked = false;
+                cell.phraseId = null;
+                cell.owner = null;
+            }
+        }));
+
         const rows = data.board.length;
         const cols = data.board[0].length;
         const newBoard = Array(rows).fill(null).map(() => Array(cols).fill(null));
-
-        const blocks = [];
-        const processedIds = new Set();
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const cell = data.board[r][c];
-                if (!cell || processedIds.has(cell.phraseId || `${r}-${c}`)) continue;
-
-                if (cell.isLocked) {
-                    const phraseBlock = [];
-                    for (let r2 = 0; r2 < rows; r2++) {
-                        for (let c2 = 0; c2 < cols; c2++) {
-                            const innerCell = data.board[r2][c2];
-                            if (innerCell && innerCell.phraseId === cell.phraseId) {
-                                phraseBlock.push({ ...innerCell, r: r2, c: c2 });
-                            }
-                        }
-                    }
-                    blocks.push(phraseBlock);
-                    processedIds.add(cell.phraseId);
-                } else {
-                    blocks.push([{ ...cell, r, c }]);
-                }
-            }
-        }
-
-        const dr = direction === 'up' ? -1 : direction === 'down' ? 1 : 0;
-        const dc = direction === 'left' ? -1 : direction === 'right' ? 1 : 0;
-
-        // Sort blocks to be moved in the correct order to avoid collisions
-        if (dr === -1) blocks.sort((a, b) => a[0].r - b[0].r); // up
-        if (dr === 1) blocks.sort((a, b) => b[0].r - a[0].r);  // down
-        if (dc === -1) blocks.sort((a, b) => a[0].c - b[0].c); // left
-        if (dc === 1) blocks.sort((a, b) => b[0].c - a[0].c);  // right
-
-        for (const block of blocks) {
-            let canMove = true;
-            // First pass to check if the entire block can move
-            while (canMove) {
-                for (const word of block) {
-                    const nextR = word.r + dr;
-                    const nextC = word.c + dc;
-                    if (nextR < 0 || nextR >= rows || nextC < 0 || nextC >= cols || (newBoard[nextR][nextC] && newBoard[nextR][nextC].phraseId !== word.phraseId)) {
-                        canMove = false;
-                        break;
-                    }
-                }
-                if (canMove) {
-                    block.forEach(word => {
-                        word.r += dr;
-                        word.c += dc;
-                    });
-                }
-            }
-             // Place the block in the new board
-            block.forEach(word => {
-                newBoard[word.r][word.c] = word;
-            });
-        }
         
+        // **BUG FIX START**: Capture coordinates when gathering words.
+        const allWords = [];
+        data.board.forEach((row, rIdx) => row.forEach((cell, cIdx) => {
+            if (cell) allWords.push({ ...cell, row: rIdx, col: cIdx });
+        }));
+        // **BUG FIX END**
+
+        if (direction === 'up') {
+            for (let c = 0; c < cols; c++) {
+                const colWords = allWords.filter(w => w.col === c).sort((a,b) => a.row - b.row);
+                colWords.forEach((word, r) => newBoard[r][c] = word);
+            }
+        } else if (direction === 'down') {
+            for (let c = 0; c < cols; c++) {
+                const colWords = allWords.filter(w => w.col === c).sort((a,b) => b.row - a.row);
+                colWords.forEach((word, i) => newBoard[rows - 1 - i][c] = word);
+            }
+        } else if (direction === 'left') {
+            for (let r = 0; r < rows; r++) {
+                const rowWords = allWords.filter(w => w.row === r).sort((a,b) => a.col - b.col);
+                rowWords.forEach((word, c) => newBoard[r][c] = word);
+            }
+        } else if (direction === 'right') {
+            for (let r = 0; r < rows; r++) {
+                const rowWords = allWords.filter(w => w.row === r).sort((a,b) => b.col - a.col);
+                rowWords.forEach((word, i) => newBoard[r][cols - 1 - i] = word);
+            }
+        }
+
         data.board = newBoard;
         page.toast("info", `Player ${data.turn} shifted the board ${direction}.`);
-        analyzeAndLockPhrases();
+        await analyzeAndLockPhrases();
         spendTurnPoints(5);
         m.redraw();
     }
@@ -471,6 +450,7 @@
 
     function handleGridDragStart(e, word, rowIndex, colIndex) {
         e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'move'; // Firefox compatibility
         const payload = { word: word, source: 'board', rowIndex: rowIndex, colIndex: colIndex };
         e.dataTransfer.setData("text/plain", JSON.stringify(payload));
     }
@@ -481,8 +461,10 @@
         const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
         
         const targetCell = data.board[targetRowIndex][targetColIndex];
-        if (targetCell && targetCell.isLocked) {
-             page.toast("error", "Cannot drop a word on a locked phrase.");
+        const emptySpot = findEmptyAdjacent(targetRowIndex, targetColIndex);
+        
+        if (targetCell && targetCell.isLocked && emptySpot) {
+             page.toast("error", "Cannot bump a locked phrase.");
              return;
         }
 
@@ -491,15 +473,23 @@
         if(payload.source === 'board' && payload.word.player !== data.turn) return;
 
         const wordWithPlayer = { ...payload.word, player: data.turn };
-
+        
         if (targetCell) {
             const bumpedWord = targetCell;
-            const emptySpot = findEmptyAdjacent(targetRowIndex, targetColIndex);
-            
             if (emptySpot) {
                 data.board[emptySpot.r][emptySpot.c] = bumpedWord;
                 page.toast("info", `Player ${bumpedWord.player}'s word '${bumpedWord.name}' was bumped.`);
-            } else {
+            } else { // Destruction logic
+                 if (bumpedWord.isLocked) {
+                    data.board.forEach(row => row.forEach(cell => {
+                        if (cell && cell.phraseId === bumpedWord.phraseId) {
+                            cell.isLocked = false;
+                            cell.phraseId = null;
+                            cell.owner = null;
+                        }
+                    }));
+                    page.toast("info", `A locked phrase owned by Player ${bumpedWord.owner} was broken!`);
+                }
                 if (!bumpedWord.isCommon && !bumpedWord.isCustom) {
                     if (bumpedWord.player === 1) data.player1.score -= 5;
                     else data.player2.score -= 5;
@@ -619,6 +609,7 @@
                                                 e.preventDefault();
                                                 return;
                                             }
+                                            e.dataTransfer.effectAllowed = 'move'; // Firefox compatibility
                                             const payload = { word: { name: word, isCommon: true }, source: 'common' };
                                             e.dataTransfer.setData("text/plain", JSON.stringify(payload));
                                         }
@@ -702,6 +693,7 @@
             class: `flyout-button ${getWordColorClass(word)}`,
             title: word.definition,
             ondragstart: (e) => {
+                e.dataTransfer.effectAllowed = 'move'; // Firefox compatibility
                 const payload = { word: word, source: 'left', index: index };
                 e.dataTransfer.setData("text/plain", JSON.stringify(payload));
             }
@@ -714,6 +706,7 @@
             class: `flyout-button ${getWordColorClass(word)}`,
             title: word.definition,
             ondragstart: (e) => {
+                e.dataTransfer.effectAllowed = 'move'; // Firefox compatibility
                 const payload = { word: word, source: 'right', index: index };
                 e.dataTransfer.setData("text/plain", JSON.stringify(payload));
             }
