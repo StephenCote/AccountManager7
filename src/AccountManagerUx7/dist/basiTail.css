@@ -4262,6 +4262,10 @@ button.button-tab-active:hover:is(.dark *) {
   position: static;
 }
 
+.fixed {
+  position: fixed;
+}
+
 .absolute {
   position: absolute;
 }

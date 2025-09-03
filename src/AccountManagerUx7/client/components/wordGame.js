@@ -53,6 +53,8 @@
         return {
             turn: 1, // 1 or 2
             turnPoints: 5,
+            currentRound: 1,
+            actionsThisRound: 0,
             commonWordUsedThisTurn: false, // Prevents using more than one common word per turn
             timerId: null,
             timeLeft: 30,
@@ -91,6 +93,44 @@
         page.toast("info", `Timer ${data.isPaused ? 'paused' : 'resumed'}.`);
         m.redraw();
     }
+    
+    function exportBoardState() {
+        const exportedData = [];
+        data.board.forEach((row, rIdx) => {
+            row.forEach((cell, cIdx) => {
+                if (cell) {
+                    exportedData.push({
+                        row: rIdx,
+                        col: cIdx,
+                        word: cell.name,
+                        type: cell.type || (cell.isCommon ? 'common' : 'custom'),
+                        player: cell.player
+                    });
+                }
+            });
+        });
+
+        const jsonString = JSON.stringify(exportedData, null, 2);
+        console.log("Exported Board State:", jsonString);
+
+        // Fallback for copying to clipboard
+        try {
+            const textArea = document.createElement("textarea");
+            textArea.value = jsonString;
+            textArea.style.position = "fixed";
+            textArea.style.left = "-9999px";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            page.toast("success", "Board state copied to clipboard!");
+        } catch (err) {
+            page.toast("error", "Could not copy. See browser console for data.");
+            console.error("Clipboard write failed:", err);
+        }
+    }
+
 
     function startTimer() {
         clearInterval(data.timerId);
@@ -123,6 +163,12 @@
     function spendTurnPoints(points) {
         data.turnPoints -= points;
         if(data.turnPoints <= 0) {
+            data.actionsThisRound++;
+            if (data.actionsThisRound >= 20) {
+                page.toast("success", `Round ${data.currentRound} has ended!`);
+                data.currentRound++;
+                data.actionsThisRound = 0;
+            }
             setTimeout(switchTurn, 200); // Short delay before switching turns
         }
     }
@@ -314,8 +360,10 @@
                 if (!bumpedWord.isCommon && !bumpedWord.isCustom) {
                     if (bumpedWord.player === 1) data.player1.score -= 5;
                     else data.player2.score -= 5;
+                    page.toast("info", `Player ${bumpedWord.player}'s word '${bumpedWord.name}' was destroyed! (-5 points)`);
+                } else {
+                    page.toast("info", `Player ${bumpedWord.player}'s word '${bumpedWord.name}' was destroyed!`);
                 }
-                page.toast("info", `Player ${bumpedWord.player}'s word '${bumpedWord.name}' was destroyed!`);
             }
         }
         
@@ -389,7 +437,8 @@
                         // Center Game Board Panel
                         m("div", { class: "flex flex-col w-3/5 p-2 overflow-auto mx-auto" }, [
                             m("h2", { class: "text-center text-2xl font-bold" }, "Word Battle"),
-                            m("div", {class: "text-center font-semibold text-lg"}, `Turn: Player ${data.turn} | Time Left: ${data.timeLeft}s | Actions: ${data.turnPoints}`),
+                            m("div", {class: "text-center font-semibold text-lg"}, `Round: ${data.currentRound} | Actions Left: ${20 - data.actionsThisRound}`),
+                            m("div", {class: "text-center font-semibold text-lg"}, `Turn: Player ${data.turn} | Time: ${data.timeLeft}s | Turn Actions: ${data.turnPoints}`),
                             m("div", { class: "menu-buttons-spaced my-2 justify-center" },
                                 data.activeCommonWords.map(word =>
                                     m("button", {
@@ -435,6 +484,7 @@
                             m("div", { class: "flex justify-center items-center mt-2" }, [
                                 m("button", { class: "menu-button", onclick: resetGame }, m("span", { class: "material-symbols-outlined" }, "restart_alt")),
                                 m("button", { class: "menu-button", onclick: togglePause }, m("span", { class: "material-symbols-outlined" }, data.isPaused ? "play_arrow" : "pause")),
+                                m("button", { class: "menu-button", onclick: exportBoardState }, m("span", { class: "material-symbols-outlined" }, "download")),
                                 m("button", { class: "menu-button", onclick: () => shiftWords('up'), disabled: data.turnPoints < 5 }, m("span", { class: "material-symbols-outlined" }, "arrow_upward")),
                                 m("button", { class: "menu-button", onclick: () => shiftWords('down'), disabled: data.turnPoints < 5 }, m("span", { class: "material-symbols-outlined" }, "arrow_downward")),
                                 m("button", { class: "menu-button", onclick: () => shiftWords('left'), disabled: data.turnPoints < 5 }, m("span", { class: "material-symbols-outlined" }, "arrow_back")),
@@ -529,9 +579,9 @@
 
         for (const typeCode in wordTypes) {
             let q = am7client.newQuery("data.wordNet");
-            q.cache(false);
             q.field("groupId", grp.id);
             q.field("type", typeCode);
+            q.cache(false);
             q.range(0, 30); // Fetch a larger pool to pick from
             q.entity.request = ["name", "groupId", "organizationId", "type", "definition"];
             q.entity.sortField = "random()";
