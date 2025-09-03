@@ -385,68 +385,71 @@
     }
     
     function shiftWords(direction) {
-        const tempBoard = JSON.parse(JSON.stringify(data.board)); // Deep copy
         const rows = data.board.length;
         const cols = data.board[0].length;
+        const newBoard = Array(rows).fill(null).map(() => Array(cols).fill(null));
 
-        // Group locked words by phraseId
-        const phrases = {};
+        const blocks = [];
+        const processedIds = new Set();
         for (let r = 0; r < rows; r++) {
             for (let c = 0; c < cols; c++) {
-                const cell = tempBoard[r][c];
-                if (cell && cell.isLocked) {
-                    if (!phrases[cell.phraseId]) {
-                        phrases[cell.phraseId] = [];
+                const cell = data.board[r][c];
+                if (!cell || processedIds.has(cell.phraseId || `${r}-${c}`)) continue;
+
+                if (cell.isLocked) {
+                    const phraseBlock = [];
+                    for (let r2 = 0; r2 < rows; r2++) {
+                        for (let c2 = 0; c2 < cols; c2++) {
+                            const innerCell = data.board[r2][c2];
+                            if (innerCell && innerCell.phraseId === cell.phraseId) {
+                                phraseBlock.push({ ...innerCell, r: r2, c: c2 });
+                            }
+                        }
                     }
-                    phrases[cell.phraseId].push({ ...cell, r, c });
+                    blocks.push(phraseBlock);
+                    processedIds.add(cell.phraseId);
+                } else {
+                    blocks.push([{ ...cell, r, c }]);
                 }
             }
         }
 
-        const canMovePhrase = (phrase, dr, dc) => {
-            for (const word of phrase) {
-                const newR = word.r + dr;
-                const newC = word.c + dc;
-                if (newR < 0 || newR >= rows || newC < 0 || newC >= cols) return false; // Out of bounds
-                const targetCell = tempBoard[newR][newC];
-                if (targetCell && targetCell.phraseId !== word.phraseId) return false; // Collision
-            }
-            return true;
-        };
+        const dr = direction === 'up' ? -1 : direction === 'down' ? 1 : 0;
+        const dc = direction === 'left' ? -1 : direction === 'right' ? 1 : 0;
 
-        const movePhrase = (phrase, dr, dc) => {
-            phrase.forEach(word => (tempBoard[word.r][word.c] = null));
-            phrase.forEach(word => {
-                word.r += dr;
-                word.c += dc;
-                tempBoard[word.r][word.c] = word;
+        // Sort blocks to be moved in the correct order to avoid collisions
+        if (dr === -1) blocks.sort((a, b) => a[0].r - b[0].r); // up
+        if (dr === 1) blocks.sort((a, b) => b[0].r - a[0].r);  // down
+        if (dc === -1) blocks.sort((a, b) => a[0].c - b[0].c); // left
+        if (dc === 1) blocks.sort((a, b) => b[0].c - a[0].c);  // right
+
+        for (const block of blocks) {
+            let canMove = true;
+            // First pass to check if the entire block can move
+            while (canMove) {
+                for (const word of block) {
+                    const nextR = word.r + dr;
+                    const nextC = word.c + dc;
+                    if (nextR < 0 || nextR >= rows || nextC < 0 || nextC >= cols || (newBoard[nextR][nextC] && newBoard[nextR][nextC].phraseId !== word.phraseId)) {
+                        canMove = false;
+                        break;
+                    }
+                }
+                if (canMove) {
+                    block.forEach(word => {
+                        word.r += dr;
+                        word.c += dc;
+                    });
+                }
+            }
+             // Place the block in the new board
+            block.forEach(word => {
+                newBoard[word.r][word.c] = word;
             });
-        };
-
-        const unlockedWords = [];
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                if (tempBoard[r][c] && !tempBoard[r][c].isLocked) {
-                    unlockedWords.push(tempBoard[r][c]);
-                    tempBoard[r][c] = null;
-                }
-            }
         }
-
-        // Simplified logic for unlocked words for now
-        // This part needs a more robust implementation to handle block shifting correctly
-        if (direction === 'up') unlockedWords.sort((a,b) => a.r - b.r);
-        if (direction === 'down') unlockedWords.sort((a,b) => b.r - a.r);
-        if (direction === 'left') unlockedWords.sort((a,b) => a.c - b.c);
-        if (direction === 'right') unlockedWords.sort((a,b) => b.c - a.c);
         
-        unlockedWords.forEach(word => {
-             // A proper implementation would find the first available slot in the shift direction
-        });
-
-
+        data.board = newBoard;
         page.toast("info", `Player ${data.turn} shifted the board ${direction}.`);
-        data.board = tempBoard;
         analyzeAndLockPhrases();
         spendTurnPoints(5);
         m.redraw();
