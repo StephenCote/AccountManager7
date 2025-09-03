@@ -5,9 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Biometric Hypnosis Demonstration</title>
     <!-- Tailwind CSS for styling -->
+     <script>
+        let g_application_path = "https://localhost:8443/AccountManagerService7";
+     </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Mithril.js for the application structure -->
     <script src="/node_modules/mithril/mithril.min.js"></script>
+    <script src="/model/modelDef.js" type = "module"></script>
+    <script src="/model/model.js" type = "module"></script>
+
+    <script type = "text/javascript" src = "client/am7client.js"></script>
+
     <!-- Tone.js for audio generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <style>
@@ -29,8 +37,19 @@
         // This will be updated by the Mithril component based on biometrics
         let particleColor = { r: 150, g: 180, b: 255 }; 
         const PARTICLE_COUNT = 50;
-
+        let imgBase = [218, 220, 130, 172, 173];//[282, 281, 283, 284, 265, 266, 267]; 
+        let imageUrls = [];
+        let page = {};
+        /*
+            "https://images.unsplash.com/photo-1485470733090-0aae1788d5af?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1476610182048-b716b8518a2a?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1594724889613-2895123d49f6?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-150220952416៤-acea59203632?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1505373333342-429910b3765e?q=80&w=1920&auto=format&fit=crop"
+            ],
+        */
+      
         function setupCanvas() {
+
+        
+
+
             canvas = document.getElementById('visual-canvas');
             if (!canvas) return;
             ctx = canvas.getContext('2d');
@@ -111,9 +130,6 @@
                 "Listen to the space between sounds...", "The feeling of now is the memory of later...", "What if right was left?", "Remember to forget...", "A thought is just a visitor...", "Up is down if you allow it...", "Focus on everything and nothing...", "The future was yesterday...", "Notice your breath without changing it...", "See the silence..."
             ],
             coreMessages: ["peace of mind", "purity of essence", "peace and harmony"],
-            imageUrls: [
-                "https://images.unsplash.com/photo-1485470733090-0aae1788d5af?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1476610182048-b716b8518a2a?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1594724889613-2895123d49f6?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1448375240586-882707db888b?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-150220952416៤-acea59203632?q=80&w=1920&auto=format&fit=crop", "https://images.unsplash.com/photo-1505373333342-429910b3765e?q=80&w=1920&auto=format&fit=crop"
-            ],
             
             // --- Color & Theme Mappings ---
             emotionThemes: {
@@ -221,7 +237,35 @@
 
             // --- Component Methods ---
             startExperience: function() {
-                this.isStarted = true;
+                
+this.isStarted = true;
+if (imgBase.length && imageUrls.length == 0) {
+            let q = am7client.newQuery("data.data");
+            let qg = q.field(null, null);
+            qg.comparator = "group_or";
+            qg.fields = imgBase.map((a) => {
+                return {
+                    name: "groupId",
+                    comparator: "equals",
+                    value: a
+                }
+            });
+            q.range(0, 0);
+            imgBase = [];
+            am7client.search(q, function(res){
+
+                if (res && res.results) {
+                    imageUrls = res.results.map((r) => {
+                        return g_application_path + "/media/Public/data.data" + r.groupPath + "/" + r.name;
+                    });
+                    //console.log(imageUrls);
+                    
+                    HypnoApp.cycleContent();
+                    m.redraw();
+                }
+            });
+        }
+
                 /*
                 if (!this.audioReady) {
                     Tone.start().then(() => {
@@ -238,7 +282,7 @@
             cycleContent: function() {
                 this.distractionText = this.distractions[Math.floor(Math.random() * this.distractions.length)];
                 this.coreText = this.coreMessages[Math.floor(Math.random() * this.coreMessages.length)];
-                this.imageUrl = this.imageUrls[Math.floor(Math.random() * this.imageUrls.length)];
+                this.imageUrl = (imageUrls.length ? imageUrls[Math.floor(Math.random() * imageUrls.length)] : "");
                 m.redraw();
             },
 
@@ -251,6 +295,9 @@
                 // Initial biometric data processing with the provided example
                 const initialData = {"age":41,"dominant_gender":"Man","dominant_emotion":"neutral","dominant_race":"white","emotion_scores":{"angry":0.18,"disgust":0,"fear":0.09,"happy":0,"sad":0.32,"surprise":0.01,"neutral":0.39},"race_scores":{"asian":1.46,"indian":0.09,"black":0.01,"white":87.78,"middle eastern":4.13,"latino hispanic":6.5},"gender_scores":{"Woman":0.01,"Man":99.98},"face_confidence":0.94};
                 this.processBiometricData(initialData);
+            },
+            oninit: function(){
+
             },
 
             onremove: function() {

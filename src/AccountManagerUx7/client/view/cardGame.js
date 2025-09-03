@@ -151,8 +151,8 @@ async function popPlayerState(bRepop){
     };
 
     if(aps.length){
-        //workWithState(aps[0]);
-        page.components.dialog.setDialog(scfg);
+        workWithState(aps[0]);
+        //page.components.dialog.setDialog(scfg);
     }   
     else{
         page.components.dialog.setDialog(cfg);
@@ -164,6 +164,7 @@ async function popPlayerState(bRepop){
 async function workWithState(o){
     //console.log("Work with", o);
     playerState = await am7client.getFull("olio.playerState", o.objectId);
+    am7model.applyModelNames(playerState);
     console.log(playerState);
     /// Need to get full state information for all characters, events, etc
 
@@ -195,13 +196,14 @@ const MapView = {
             
         }
         function getInnerView(){
-            return m(".flex.flex-col.h-screen", [
-                m(".flex.flex-1", [
+            console.log(playerState);
+            return m("div", {class: "flex flex-col h-screen"}, [
+                m("div", {class: "flex flex-1"}, [
                     // 3D Crawl View (Top-Left)
-                    m(".flex-1.border-r.border-b.border-gray-600.flex.flex-col", [
-                        m("h2.text-lg.p-2.bg-gray-700", "View"),
-                        m(".flex-1.flex.items-center.justify-center.bg-black", [
-                            m("p.text-gray-400", "3D Viewport")
+                    m("div", {class: "flex-1 border-r border-b border-gray-600 flex flex-col"}, [
+                        m("h2", {class: "text-lg p-2 bg-gray-700"}, "View"),
+                        m("div", {class: "flex-1 flex items-center justify-center bg-black"}, [
+                            m("p", {class: "text-gray-400"}, "3D Viewport")
                         ]),
                         m(".flex.justify-center.p-4.bg-gray-700", [
                             m("button.bg-gray-600.hover:bg-gray-500.text-white.font-bold.py-2.px-4.rounded.mx-2", "Forward"),
@@ -210,29 +212,31 @@ const MapView = {
                         ])
                     ]),
                     // Map View (Top-Right)
-                    m(".w-1/3.border-b.border-gray-600.flex.flex-col", [
+                    m("div", {class: ".w-1/3.border-b.border-gray-600.flex.flex-col"}, [
                         m("h2.text-lg.p-2.bg-gray-700", "Map"),
                         m(MapView)
                     ])
                 ]),
+
                 // Card Stacks (Bottom)
-                m(".h-1/3.border-t.border-gray-600.flex", [
+                m("div", {class: "h-1/3 border-t border-gray-600 flex"}, [
                     // Player Card Stack
-                    m(".flex-1.border-r.border-gray-600.flex.flex-col", [
+                    m("div", {class: "flex-1 border-r border-gray-600 flex flex-col"}, [
                         m("h2.text-lg.p-2.bg-gray-700", "Player & Companions"),
                         m(CardStack, {
-                            characters: [playerState?.player, playerState?.companion],
+                            characters: [playerState?.character, playerState?.companion],
                             isPlayerStack: true
                         })
                     ]),
                     // NPC Card Stack
                     m(".flex-1.flex.flex-col", [
                         m("h2.text-lg.p-2.bg-gray-700", "NPCs, Hostiles, & POIs"),
-                        m(CardStack, {
+                        m("p", {
                             characters: [...npcs, ...pois]
                         })
                     ])
                 ])
+        
             ]);
         }
 
@@ -266,10 +270,12 @@ const MapView = {
 // Card Stack Component
 let CardStack = {
     view: function(vnode) {
-        const characters = vnode.attrs.characters;
+
+        const characters = vnode.attrs.characters || [];
         const isPlayerStack = vnode.attrs.isPlayerStack;
-        return m("flex-1 overflow-y-auto",
-            characters.map(char => m(CharacterCard, {
+        //console.log(characters);
+        return m("div", {class: "flex-1 overflow-y-auto"},
+            characters.filter(char => char != undefined).map(char => m(CharacterCard, {
                 character: char,
                 isPlayer: isPlayerStack
             }))
@@ -281,12 +287,14 @@ let CharacterCard = {
     view: function(vnode) {
         const character = vnode.attrs.character;
         const isPlayer = vnode.attrs.isPlayer;
-        return m('p-2 m-2 rounded-lg shadow-md flex items-center', {
-            class: isPlayer ? 'bg-blue-800' : 'bg-gray-700'
-        }, [
+
+        return m("div", {class: 'p-2 m-2 rounded-lg shadow-md flex items-center ' + isPlayer ? 'bg-blue-800' : 'bg-gray-700'}, [
+            
             m("div", {class: 'mr-4'}, [
+                am7decorator.icon(character)
                 // Placeholder for character icon
-                m("svg", {class: "w-12.h-12.text-gray-400"}, {
+                /*
+                m("svg", {class: "w-12 h-12 text-gray-400"}, {
                     fill: "currentColor",
                     viewBox: "0 0 20 20"
                 }, [
@@ -296,11 +304,14 @@ let CharacterCard = {
                         "fill-rule": "evenodd"
                     })
                 ])
+                */
             ]),
+            
             m("div", [
                 m("h3.font-bold", character?.name),
-                m("p.text-sm", 'Health: ${character?.health}')
+                m("p.text-sm", 'Health: ${character?.statistics?.health}')
             ])
+                
         ]);
     }
 };
@@ -320,7 +331,8 @@ function getFooter(){
                     m("div", {class: "flex-1 overflow-hidden"}, [
                         m("div", {class: "max-h-full h-full flex"}, [
                             m("div", {class: "flex flex-col w-1/4 p-4 overflow-y-auto mx-auto"},[
-                                "left"
+                                "left",
+                                getInnerView()
                             ]),
                             m("div", {class: "flex flex-col w-1/2 p-4 overflow-y-auto mx-auto overflow-hidden"}, [
                                 "center"

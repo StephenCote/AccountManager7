@@ -49,7 +49,8 @@
                     m(comp ? comp : "", {caller: game})
                 ])
             ])
-        ])
+        ]),
+         page.components.dialog.loadDialog(), page.loadToast()
         ]);
           
     }

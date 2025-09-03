@@ -335,7 +335,10 @@
 		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"GET",sKey,v);} if(f) f(v);};
 		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fH);
 	}
-
+	function trace( bEnable, fH){
+		if(typeof bEnable != "boolean") bEnable = true;
+		return get(sAuthZ + "/unknown/trace/" + bEnable, fH);
+	}
 	function member(sObjectType, sObjectId, sField, sActorType, sActorId, bEnable, fH){
 		return get(sAuthZ + "/" + sObjectType + "/" + sObjectId + "/member/" + sField + "/" + sActorType + "/" + sActorId + "/" + bEnable, fH);
 	}
@@ -781,6 +784,7 @@
 		newPrimaryCredential : newPrimaryCredential,
 		clearCache,
 		cleanup,
+		trace,
 		clearAuthorizationCache : function(fH){
 			return get(sCache + "/clearAuthorization",fH);
 		},
