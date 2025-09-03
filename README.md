@@ -29,7 +29,10 @@ File System Dependencies
 * Console App:
      * AccountManagerConsole7/src/main/resources.properties
      * app.basePath=C:/Projects/data/am7
-       
+ 
+UX
+The UX is separated from the service.  It can be run independently with Node or other HTTP server, or copied as-is into the AccountManagerService7 project.  In the latter case, the g_application_path and dependency paths will need to be updated.  At present, the client files are not being condensed.
+
 Build Order
 * AccountManagerObjects7
   * mvn install
@@ -38,4 +41,5 @@ Build Order
   * cd target
   * Run the following to reset the database, create the default organizations, and create an initial user 'steve'
   * java -jar AccountManagerConsole7-7.0.0-SNAPSHOT.jar -organization /Public -username steve -password password -addUser -adminPassword password -setup -olio -list
-
+* AccountManagerService7
+  * mvn package 
