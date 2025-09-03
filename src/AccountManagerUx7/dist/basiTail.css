@@ -4964,6 +4964,11 @@ button.button-tab-active:hover:is(.dark *) {
   background-color: rgb(234 179 8 / var(--tw-bg-opacity, 1));
 }
 
+.bg-green-100 {
+  --tw-bg-opacity: 1;
+  background-color: rgb(220 252 231 / var(--tw-bg-opacity, 1));
+}
+
 .bg-\[radial-gradient\(circle_at_30\%_30\%\2c rgba\(255\2c 255\2c 255\2c 0\.3\)_0\%\2c transparent_40\%\)\] {
   background-image: radial-gradient(circle at 30% 30%,rgba(255,255,255,0.3) 0%,transparent 40%);
 }
@@ -5119,6 +5124,11 @@ button.button-tab-active:hover:is(.dark *) {
   line-height: 1.25rem;
 }
 
+.text-xl {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+
 .font-bold {
   font-weight: 700;
 }
@@ -5203,6 +5213,11 @@ button.button-tab-active:hover:is(.dark *) {
 .text-white {
   --tw-text-opacity: 1;
   color: rgb(255 255 255 / var(--tw-text-opacity, 1));
+}
+
+.text-green-800 {
+  --tw-text-opacity: 1;
+  color: rgb(22 101 52 / var(--tw-text-opacity, 1));
 }
 
 .opacity-0 {
@@ -5384,6 +5399,21 @@ button.button-tab-active:hover:is(.dark *) {
 .dark\:bg-yellow-800:is(.dark *) {
   --tw-bg-opacity: 1;
   background-color: rgb(133 77 14 / var(--tw-bg-opacity, 1));
+}
+
+.dark\:bg-blue-900:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(30 58 138 / var(--tw-bg-opacity, 1));
+}
+
+.dark\:bg-gray-700:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(55 65 81 / var(--tw-bg-opacity, 1));
+}
+
+.dark\:bg-green-900:is(.dark *) {
+  --tw-bg-opacity: 1;
+  background-color: rgb(20 83 45 / var(--tw-bg-opacity, 1));
 }
 
 .dark\:text-blue-300:is(.dark *) {
