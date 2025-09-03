@@ -108,14 +108,24 @@
 
     function addCustomWord(playerNum) {
         let player = playerNum === 1 ? data.player1 : data.player2;
-        if (player.customWord.trim()) {
+        const wordName = player.customWord.trim();
+        if (wordName) {
+            const isDuplicate = data.left.some(w => w.name.toLowerCase() === wordName.toLowerCase()) || 
+                                data.right.some(w => w.name.toLowerCase() === wordName.toLowerCase());
+            
+            if (isDuplicate) {
+                console.log("Duplicate custom word not added:", wordName);
+                player.customWord = ''; // Clear input anyway
+                return;
+            }
+
             const newWord = {
-                name: player.customWord.trim(),
+                name: wordName,
                 isCustom: true,
                 definition: "A custom word."
             };
-            if (playerNum === 1) data.left.push(newWord);
-            else data.right.push(newWord);
+            if (playerNum === 1) data.left.unshift(newWord);
+            else data.right.unshift(newWord);
             player.customWord = '';
             m.redraw();
         }
@@ -130,7 +140,6 @@
         const wordToPlace = data.right[Math.floor(Math.random() * data.right.length)];
         const wordIndex = data.right.indexOf(wordToPlace);
 
-        // Find an empty spot
         let emptyCells = [];
         data.board.forEach((row, rIdx) => {
             row.forEach((cell, cIdx) => {
@@ -141,15 +150,55 @@
         if (emptyCells.length > 0) {
             const targetCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
             
-            // Simulate drop
             const wordWithPlayer = { ...wordToPlace, player: 2 };
             data.board[targetCell.r][targetCell.c] = wordWithPlayer;
             data.right.splice(wordIndex, 1);
             data.player2.score += 5;
             spendTurnPoints(5);
+            if (data.right.length < 5) {
+                prepareWords(2, true);
+            }
         } else {
              switchTurn(); // No space, pass turn
         }
+        m.redraw();
+    }
+    
+    function shiftWords(direction) {
+        const newBoard = Array(8).fill(null).map(() => Array(10).fill(null));
+        const rows = data.board.length;
+        const cols = data.board[0].length;
+
+        if (direction === 'up' || direction === 'down') {
+            for (let c = 0; c < cols; c++) {
+                const colWords = [];
+                for (let r = 0; r < rows; r++) {
+                    if (data.board[r][c]) {
+                        colWords.push(data.board[r][c]);
+                    }
+                }
+                if (direction === 'up') {
+                    colWords.forEach((word, i) => newBoard[i][c] = word);
+                } else { // down
+                    colWords.forEach((word, i) => newBoard[rows - colWords.length + i][c] = word);
+                }
+            }
+        } else { // left or right
+            for (let r = 0; r < rows; r++) {
+                const rowWords = [];
+                for (let c = 0; c < cols; c++) {
+                    if (data.board[r][c]) {
+                        rowWords.push(data.board[r][c]);
+                    }
+                }
+                if (direction === 'left') {
+                    rowWords.forEach((word, i) => newBoard[r][i] = word);
+                } else { // right
+                    rowWords.forEach((word, i) => newBoard[r][cols - rowWords.length + i] = word);
+                }
+            }
+        }
+        data.board = newBoard;
         m.redraw();
     }
 
@@ -158,8 +207,8 @@
     
     function findEmptyAdjacent(row, col) {
         const directions = [
-            [0, 1], [0, -1], [1, 0], [-1, 0], // Orthogonal
-            [1, 1], [1, -1], [-1, 1], [-1, -1] // Diagonal
+            [0, 1], [0, -1], [1, 0], [-1, 0], 
+            [1, 1], [1, -1], [-1, 1], [-1, -1]
         ];
         for (const [dr, dc] of directions) {
             const newRow = row + dr;
@@ -186,9 +235,17 @@
         e.preventDefault();
         e.stopPropagation();
         const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
+        
+        // --- Turn Validation ---
+        if ((payload.source === 'left' && data.turn !== 1) || (payload.source === 'right' && data.turn !== 2)) {
+            return;
+        }
+        if(payload.source === 'board' && payload.word.player !== data.turn) {
+            return;
+        }
+
         const wordWithPlayer = { ...payload.word, player: data.turn };
 
-        // Handle occupied cell (bumping)
         if (data.board[targetRowIndex][targetColIndex]) {
             const bumpedWord = data.board[targetRowIndex][targetColIndex];
             const emptySpot = findEmptyAdjacent(targetRowIndex, targetColIndex);
@@ -196,7 +253,6 @@
             if (emptySpot) {
                 data.board[emptySpot.r][emptySpot.c] = bumpedWord;
             } else {
-                // Word is destroyed
                 if (!bumpedWord.isCommon && !bumpedWord.isCustom) {
                     if (bumpedWord.player === 1) data.player1.score -= 5;
                     else data.player2.score -= 5;
@@ -206,16 +262,16 @@
         
         data.board[targetRowIndex][targetColIndex] = wordWithPlayer;
 
-        // Remove word from original source
         if (payload.source === 'left') {
             data.left.splice(payload.index, 1);
+            if(data.left.length < 5) prepareWords(1, true); // Auto-refresh at no cost
         } else if (payload.source === 'right') {
             data.right.splice(payload.index, 1);
+            if(data.right.length < 5) prepareWords(2, true); // Auto-refresh at no cost
         } else if (payload.source === 'board') {
             data.board[payload.rowIndex][payload.colIndex] = null;
         }
 
-        // Add score for placing a dictionary word and spend points
         if (payload.source !== 'common' && payload.source !== 'board') {
             if (data.turn === 1) data.player1.score += 5;
             else data.player2.score += 5;
@@ -230,15 +286,13 @@
         e.preventDefault();
         const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
 
-        // Can only trash words from the board placed by the current player
         if (payload.source === 'board' && payload.word.player === data.turn) {
-            // No penalty for common or custom words
             if (!payload.word.isCommon && !payload.word.isCustom) {
                  if(data.turn === 1) data.player1.score -= 5;
                  else data.player2.score -= 5;
             }
             data.board[payload.rowIndex][payload.colIndex] = null;
-            spendTurnPoints(5); // Trashing costs the turn
+            spendTurnPoints(5);
             m.redraw();
         }
     }
@@ -262,9 +316,10 @@
                                 placeholder: "Add custom word...",
                                 value: data.player1.customWord,
                                 oninput: (e) => handleCustomWord(1, e.target.value),
-                                onblur: () => addCustomWord(1)
+                                onblur: () => addCustomWord(1),
+                                disabled: data.turn !== 1
                             }),
-                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(1) }, [m("span", {class:"material-symbols-outlined material-icons-24"},"refresh"), "Refresh Words"]),
+                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(1), disabled: data.turn !== 1 }, [m("span", {class:"material-symbols-outlined material-icons-24"},"refresh"), "Refresh Words"]),
                             leftWords()
                         ]),
                         
@@ -299,7 +354,7 @@
                                                 },
                                                     slot ? m("div", {
                                                         class: `p-1 rounded text-center text-sm cursor-move ${slot.player === 1 ? 'bg-blue-200 text-blue-800' : 'bg-green-200 text-green-800'}`,
-                                                        draggable: true,
+                                                        draggable: slot.player === data.turn,
                                                         title: slot.definition,
                                                         ondragstart: (e) => handleGridDragStart(e, slot, rowIndex, colIndex)
                                                     }, slot.name)
@@ -310,11 +365,17 @@
                                     )
                                 )
                             ]),
-                            m("button", { 
-                                class: "flyout-button text-center mt-2",
-                                ondragover: (e) => e.preventDefault(),
-                                ondrop: handleTrashDrop
-                            }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "delete"), "Trash"])
+                            m("div", { class: "flex justify-center items-center mt-2" }, [
+                                m("button", { class: "menu-button", onclick: () => shiftWords('up') }, m("span", { class: "material-symbols-outlined" }, "arrow_upward")),
+                                m("button", { class: "menu-button", onclick: () => shiftWords('down') }, m("span", { class: "material-symbols-outlined" }, "arrow_downward")),
+                                m("button", { class: "menu-button", onclick: () => shiftWords('left') }, m("span", { class: "material-symbols-outlined" }, "arrow_back")),
+                                m("button", { class: "menu-button", onclick: () => shiftWords('right') }, m("span", { class: "material-symbols-outlined" }, "arrow_forward")),
+                                m("button", {
+                                    class: "flyout-button text-center ml-4",
+                                    ondragover: (e) => e.preventDefault(),
+                                    ondrop: handleTrashDrop
+                                }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "delete"), "Trash"])
+                            ])
                         ]),
                         
                         // Player 2 Panel
@@ -328,9 +389,10 @@
                                 placeholder: "Add custom word...",
                                 value: data.player2.customWord,
                                 oninput: (e) => handleCustomWord(2, e.target.value),
-                                onblur: () => addCustomWord(2)
+                                onblur: () => addCustomWord(2),
+                                disabled: data.turn !== 2
                             }),
-                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(2) }, [m("span", {class:"material-symbols-outlined material-icons-24"},"refresh"), "Refresh Words"]),
+                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(2), disabled: data.turn !== 2 }, [m("span", {class:"material-symbols-outlined material-icons-24"},"refresh"), "Refresh Words"]),
                             m("label", {class: "flex items-center my-2"}, [
                                 m("input", {
                                     type: "checkbox",
@@ -352,7 +414,7 @@
 
     function leftWords() {
         return data.left.map((word, index) => m("button", {
-            draggable: true,
+            draggable: data.turn === 1,
             class: "flyout-button",
             title: word.definition,
             ondragstart: (e) => {
@@ -364,7 +426,7 @@
 
     function rightWords() {
         return data.right.map((word, index) => m("button", {
-            draggable: true,
+            draggable: data.turn === 2,
             class: "flyout-button",
             title: word.definition,
             ondragstart: (e) => {
@@ -376,16 +438,19 @@
     
     // --- DATA FETCHING AND SETUP ---
 
-    async function prepareWords(playerNum = null) {
+    async function prepareWords(playerNum = null, isAutoRefresh = false) {
         console.log("Prepare words ...");
         let grp = await page.findObject("auth.group", "data", "/Library/Dictionary");
         let q3 = am7client.newQuery("data.wordNet");
         q3.field("groupId", grp.id);
         
         let wordCount = 10;
-        if(playerNum === 1) wordCount = 5 - data.left.length;
-        if(playerNum === 2) wordCount = 5 - data.right.length;
-        if(wordCount < 0) wordCount = 0;
+        if (playerNum) {
+            const currentWords = playerNum === 1 ? data.left : data.right;
+            wordCount = 5 - currentWords.length;
+        }
+        if (wordCount <= 0 && !isAutoRefresh) wordCount = 5; // Allow manual refresh to get at least some words
+        if (wordCount <= 0 && isAutoRefresh) return; // Don't fetch if already have enough
 
         q3.range(0, playerNum ? wordCount : 20);
         q3.entity.request = ["name", "groupId", "organizationId", "type", "definition"];
@@ -396,14 +461,19 @@
             return;
         }
         
+        const uniqueInFetch = l3.results.filter((word, index, self) => index === self.findIndex(w => w.name.toLowerCase() === word.name.toLowerCase()));
+        const allExistingNames = new Set([...data.left.map(w => w.name.toLowerCase()), ...data.right.map(w => w.name.toLowerCase())]);
+        const finalNewWords = uniqueInFetch.filter(w => !allExistingNames.has(w.name.toLowerCase()));
+
         if (playerNum === 1) {
-            data.left = data.left.concat(l3.results);
+            data.left = data.left.concat(finalNewWords);
         } else if (playerNum === 2) {
-            data.right = data.right.concat(l3.results);
+            data.right = data.right.concat(finalNewWords);
         } else {
-             let res = l3.results.length / 2;
-             data.left = l3.results.slice(0, res);
-             data.right = l3.results.slice(res);
+             let res = Math.ceil(finalNewWords.length / 2);
+             data.left = finalNewWords.slice(0, res);
+             const rightNames = new Set(data.left.map(w => w.name.toLowerCase()));
+             data.right = finalNewWords.slice(res).filter(w => !rightNames.has(w.name.toLowerCase()));
         }
         m.redraw();
     }
