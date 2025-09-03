@@ -246,6 +246,7 @@
 				order: 'ascending',
 				comparator: "group_and",
 				recordCount: 10,
+				cache: true,
 				request: am7model
 					.inheritsFrom(m)
 					.filter(m => m.query)
@@ -253,6 +254,10 @@
 					.flat(1)
 					.filter( (v, i, z) => z.indexOf(v) == i)
 			}
+		};
+
+		q.cache = (b) => {
+			q.entity.cache = b;
 		};
 		
 		q.range = function(s, c){
@@ -326,14 +331,16 @@
 	function search(q, fH, bCount){
 		
 		var sKey = q.key();
-		var o = getFromCache(q.type, "GET", sKey);
-		if(o){
-			if(fH) fH(o);
-			return o;
+		if(q.entity.cache){
+			var o = getFromCache(q.type, "GET", sKey);
+			if(o){
+				if(fH) fH(o);
+				return o;
+			}
 		}
 		var f = fH;
-		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"GET",sKey,v);} if(f) f(v);};
-		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fH);
+		var fc = function(v){if(q.entity.cache && typeof v != "undefined" && v != null){addToCache(sType,"GET",sKey,v);} if(f) f(v);};
+		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fc);
 	}
 	function trace( bEnable, fH){
 		if(typeof bEnable != "boolean") bEnable = true;

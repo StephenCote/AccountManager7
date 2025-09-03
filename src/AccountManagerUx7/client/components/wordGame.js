@@ -24,17 +24,6 @@
             state: {
                 layout: 'full',
                 format: 'select'
-                /*,
-                field: {
-                  format: 'picker',
-                  pickerType: "olio.playerState",
-                  pickerProperty: {
-                    selected: "{object}",
-                    entity: "state"
-                  },
-                  label: "State"
-                }
-        */
             }
         }
     };
@@ -82,8 +71,6 @@
 
     }
 
-
-
     let icon = "gamepad";
 
     function newGame(){
@@ -97,6 +84,48 @@
             )
         ];
     }
+    
+    // *** MODIFICATION START ***
+    // Helper function to handle starting a drag from a grid cell.
+    function handleGridDragStart(e, word, rowIndex, colIndex) {
+        // Prevent the event from bubbling up to the parent TD's drop handler.
+        e.stopPropagation(); 
+        const payload = {
+            word: word,
+            source: 'board', // The source is the board itself
+            rowIndex: rowIndex,
+            colIndex: colIndex
+        };
+        e.dataTransfer.setData("text/plain", JSON.stringify(payload));
+    }
+
+    // handleDrop is updated to manage words coming from the sidebars OR the grid.
+    function handleDrop(e, targetRowIndex, targetColIndex) {
+        e.preventDefault();
+        e.stopPropagation();
+        const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
+        
+        // Prevent dropping on a slot that is already filled.
+        if (data.board[targetRowIndex][targetColIndex]) {
+            return;
+        }
+
+        // Place the dropped word into the new grid location.
+        data.board[targetRowIndex][targetColIndex] = payload.word;
+
+        // Remove the word from its original location.
+        if (payload.source === 'left') {
+            data.left.splice(payload.index, 1);
+        } else if (payload.source === 'right') {
+            data.right.splice(payload.index, 1);
+        } else if (payload.source === 'board') {
+            // If the word came from another grid cell, clear the original cell.
+            data.board[payload.rowIndex][payload.colIndex] = null;
+        }
+
+        m.redraw();
+    }
+    // *** MODIFICATION END ***
 
     function modelPanel() {
         return [
@@ -109,9 +138,39 @@
                                 leftWords()
                                 
                             ]),
-                            m("div", { class: "flex flex-col w-1/2 p-4 overflow-y-auto mx-auto overflow-hidden" }, [
-                                m("h2", "Word Battle")
+                            // *** MODIFICATION START ***
+                            // The center column's view logic is updated to render a wider grid.
+                            m("div", { class: "flex flex-col w-1/2 p-2 overflow-auto mx-auto" }, [ // Wider column
+                                m("h2.text-center", "Word Battle"),
+                                m("div", {class: "menu-buttons-spaced"}, [
+                                    m("button[draggable]", {class: "menu-button"}, "And")
+                                ]),
+                                m("table.w-full.border-collapse.mt-4.table-fixed", [
+                                    m("tbody", 
+                                        data.board.map((row, rowIndex) => 
+                                            m("tr", { key: rowIndex }, 
+                                                row.map((slot, colIndex) => 
+                                                    m("td.border.border-gray-500.h-12.p-1", 
+                                                        {
+                                                            ondragover: (e) => e.preventDefault(),
+                                                            ondrop: (e) => handleDrop(e, rowIndex, colIndex)
+                                                        },
+                                                        // If a slot is filled, render a draggable word "chip".
+                                                        // Otherwise, render an empty div.
+                                                        slot ? m("div.bg-blue-200.text-blue-800.rounded.p-1.text-center.text-sm.cursor-move", {
+                                                                    draggable: true,
+                                                                    ondragstart: (e) => handleGridDragStart(e, slot, rowIndex, colIndex)
+                                                                }, slot.name) 
+                                                             : m("div.w-full.h-full")
+                                                    )
+                                                )
+                                            )
+                                        )
+                                    )
+                                ]),
+                                    m("button[draggable]", {class: "flyout-button"}, "Trash")
                             ]),
+                            // *** MODIFICATION END ***
                             m("div", { class: "flex flex-col w-1/4 p-4 overflow-y-auto mx-auto" }, [
                                 m("h3", "Player 2"),
                                 rightWords()
@@ -178,16 +237,42 @@
             score: 0,
             words: []
         },
-
+        // *** MODIFICATION START ***
+        // The 'board' is now a wider 8x10 grid.
+        board: Array(8).fill(null).map(() => Array(10).fill(null)),
+        // *** MODIFICATION END ***
         left: [],
         right: []
     };
-
+    
     function leftWords(){
-        return data.left.map(word => m("button[draggable]", { class: "flyout-button" }, word.name));
+        return data.left.map((word, index) => m("button[draggable]", { 
+            class: "flyout-button",
+            title: word.definition,
+            ondragstart: (e) => {
+                const payload = {
+                    word: word,
+                    source: 'left',
+                    index: index
+                };
+                e.dataTransfer.setData("text/plain", JSON.stringify(payload));
+            }
+        }, word.name));
     }
+    
     function rightWords(){
-        return data.right.map(word => m("button[draggable]", { class: "flyout-button" }, word.name));
+        return data.right.map((word, index) => m("button[draggable]", {
+            class: "flyout-button",
+            title: word.definition,
+            ondragstart: (e) => {
+                const payload = {
+                    word: word,
+                    source: 'right',
+                    index: index
+                };
+                e.dataTransfer.setData("text/plain", JSON.stringify(payload));
+            }
+        }, word.name));
     }
 
     
@@ -209,6 +294,7 @@
         let q3 = am7client.newQuery("data.wordNet");
         q3.field("groupId", grp.id);
         q3.range(0, 20);
+        q3.cache(false);
         q3.entity.request = ["name", "groupId", "organizationId", "type", "definition"];
         q3.entity.sortField = "random()";
         let l3 = await page.search(q3);
@@ -236,7 +322,6 @@
             setup();
         },
         view: function () {
-            //return [getOuterView(), page.components.dialog.loadDialog(), page.loadToast()];
             return modelPanel()
         }
     };
