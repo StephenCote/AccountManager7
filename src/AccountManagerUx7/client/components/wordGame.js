@@ -6,6 +6,24 @@
     let fullMode = false;
     let gridPath = "/Olio/Universes/My Grid Universe/Worlds/My Grid World";
 
+    // *** MODIFICATION START ***
+    // Array of common "glue" words for poetry.
+    const commonWords = [
+        'a', 'an', 'the', 'this', 'that', 'these', 'those', 'my', 'your', 'its', 'our', 'their', 'some', 'any', 'every', 'each', 'no',
+        'of', 'in', 'on', 'for', 'to', 'from', 'with', 'by', 'at', 'as', 'like', 'into', 'unto', 'over', 'under', 'above', 'below', 'beneath', 'beside', 'between', 'beyond', 'through', 'against', 'without', 'within', 'before', 'after', 'since', 'until',
+        'I', 'me', 'you', 'he', 'him', 'she', 'her', 'it', 'we', 'us', 'they', 'them', 'who', 'what', 'where', 'when', 'why', 'how',
+        'and', 'but', 'or', 'nor', 'so', 'yet', 'for', 'if', 'then', 'than', 'while', 'because', 'though',
+        'is', 'am', 'are', 'was', 'were', 'be', 'being', 'been', 'has', 'have', 'had', 'do', 'does', 'did', 'will', 'would', 'shall', 'should', 'can', 'could', 'may', 'might', 'must'
+    ];
+
+    // Function to shuffle and pick a new set of common words.
+    function randomizeCommonWords() {
+        const shuffled = commonWords.sort(() => 0.5 - Math.random());
+        data.activeCommonWords = shuffled.slice(0, 8); // Pick 8 random words
+    }
+    // *** MODIFICATION END ***
+
+
     am7model.models.push(
         {
             name: "playerStates", icon: "gamepad", fields: [
@@ -73,7 +91,7 @@
 
     let icon = "gamepad";
 
-    function newGame(){
+    function newGame() {
 
     }
 
@@ -84,48 +102,45 @@
             )
         ];
     }
-    
-    // *** MODIFICATION START ***
-    // Helper function to handle starting a drag from a grid cell.
+
     function handleGridDragStart(e, word, rowIndex, colIndex) {
-        // Prevent the event from bubbling up to the parent TD's drop handler.
-        e.stopPropagation(); 
+        e.stopPropagation();
         const payload = {
             word: word,
-            source: 'board', // The source is the board itself
+            source: 'board',
             rowIndex: rowIndex,
             colIndex: colIndex
         };
         e.dataTransfer.setData("text/plain", JSON.stringify(payload));
     }
 
-    // handleDrop is updated to manage words coming from the sidebars OR the grid.
     function handleDrop(e, targetRowIndex, targetColIndex) {
         e.preventDefault();
         e.stopPropagation();
         const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
-        
-        // Prevent dropping on a slot that is already filled.
+
         if (data.board[targetRowIndex][targetColIndex]) {
             return;
         }
 
-        // Place the dropped word into the new grid location.
         data.board[targetRowIndex][targetColIndex] = payload.word;
 
-        // Remove the word from its original location.
         if (payload.source === 'left') {
             data.left.splice(payload.index, 1);
         } else if (payload.source === 'right') {
             data.right.splice(payload.index, 1);
         } else if (payload.source === 'board') {
-            // If the word came from another grid cell, clear the original cell.
             data.board[payload.rowIndex][payload.colIndex] = null;
         }
+        // *** MODIFICATION START ***
+        // No removal logic is needed for 'common' source, as they are a static pool.
+
+        // Re-randomize the common words list after any successful drop.
+        randomizeCommonWords();
+        // *** MODIFICATION END ***
 
         m.redraw();
     }
-    // *** MODIFICATION END ***
 
     function modelPanel() {
         return [
@@ -136,41 +151,52 @@
                             m("div", { class: "flex flex-col w-1/4 p-4 overflow-y-auto mx-auto" }, [
                                 m("h3", "Player 1"),
                                 leftWords()
-                                
+
                             ]),
-                            // *** MODIFICATION START ***
-                            // The center column's view logic is updated to render a wider grid.
-                            m("div", { class: "flex flex-col w-1/2 p-2 overflow-auto mx-auto" }, [ // Wider column
+                            m("div", { class: "flex flex-col w-3/5 p-2 overflow-auto mx-auto" }, [
                                 m("h2.text-center", "Word Battle"),
-                                m("div", {class: "menu-buttons-spaced"}, [
-                                    m("button[draggable]", {class: "menu-button"}, "And")
-                                ]),
-                                m("table.w-full.border-collapse.mt-4.table-fixed", [
-                                    m("tbody", 
-                                        data.board.map((row, rowIndex) => 
-                                            m("tr", { key: rowIndex }, 
-                                                row.map((slot, colIndex) => 
-                                                    m("td.border.border-gray-500.h-12.p-1", 
+                                // *** MODIFICATION START ***
+                                // Container for the randomly selected common words.
+                                m("div", { class: "menu-buttons-spaced my-2 justify-center" },
+                                    data.activeCommonWords.map(word =>
+                                        m("button[draggable]", {
+                                            class: "menu-button",
+                                            ondragstart: (e) => {
+                                                const payload = {
+                                                    // Ensure the word object has a 'name' property to match other words.
+                                                    word: { name: word },
+                                                    source: 'common'
+                                                };
+                                                e.dataTransfer.setData("text/plain", JSON.stringify(payload));
+                                            }
+                                        }, word)
+                                    )
+                                ),
+                                // *** MODIFICATION END ***
+                                m("table.w-full.border-collapse.mt-2.table-fixed", [
+                                    m("tbody",
+                                        data.board.map((row, rowIndex) =>
+                                            m("tr", { key: rowIndex },
+                                                row.map((slot, colIndex) =>
+                                                    m("td.border.border-gray-500.h-12.p-1",
                                                         {
                                                             ondragover: (e) => e.preventDefault(),
                                                             ondrop: (e) => handleDrop(e, rowIndex, colIndex)
                                                         },
-                                                        // If a slot is filled, render a draggable word "chip".
-                                                        // Otherwise, render an empty div.
                                                         slot ? m("div.bg-blue-200.text-blue-800.rounded.p-1.text-center.text-sm.cursor-move", {
-                                                                    draggable: true,
-                                                                    ondragstart: (e) => handleGridDragStart(e, slot, rowIndex, colIndex)
-                                                                }, slot.name) 
-                                                             : m("div.w-full.h-full")
+                                                            draggable: true,
+                                                            title: slot.definition,
+                                                            ondragstart: (e) => handleGridDragStart(e, slot, rowIndex, colIndex)
+                                                        }, slot.name)
+                                                            : m("div.w-full.h-full")
                                                     )
                                                 )
                                             )
                                         )
                                     )
                                 ]),
-                                    m("button[draggable]", {class: "flyout-button"}, "Trash")
+                                m("button", {class: "flyout-button text-center"}, [m("span",{class: "material-symbols-outlined material-icons-24"}, "delete"), "Trash"])
                             ]),
-                            // *** MODIFICATION END ***
                             m("div", { class: "flex flex-col w-1/4 p-4 overflow-y-auto mx-auto" }, [
                                 m("h3", "Player 2"),
                                 rightWords()
@@ -186,43 +212,15 @@
         ];
 
     }
- function keyControl(e){
-    
-        var i = e.keyCode;
-        /* Move a piece left */
-        if(i==37 || i==52 || i==100)
-            move(-1);
-    
-        /* Move a piece right */
-        if(i==39 || i==54 || i==102)
-            move(1);
-    
-        /* Drop a piece */
-        if(i == 38) down(1);
-        if(i==40 || i==50 || i==98)
-            down();
+    function keyControl(e) {
 
-        /* Rotate left */
-        if(i==44 || i==55 || i==188 || i==101)
-            rotatePiece(-1);
-    
-        /* Rotate right */
-        if(i==46 || i==57 || i==190)
-            rotatePiece(1);
-    
-        /* Reset */
-        if(i==82 || i==114)
-            clearAllNodes();
-    
-        /* Start */
-        if(i==83 || i==115)
-            tryStart();
-    
+
+
     }
-        function start(){
+    function start() {
         tryStart();
     }
-    function stop(){
+    function stop() {
         endGame();
     }
 
@@ -237,16 +235,17 @@
             score: 0,
             words: []
         },
-        // *** MODIFICATION START ***
-        // The 'board' is now a wider 8x10 grid.
         board: Array(8).fill(null).map(() => Array(10).fill(null)),
+        // *** MODIFICATION START ***
+        // This array holds the currently displayed common words.
+        activeCommonWords: [],
         // *** MODIFICATION END ***
         left: [],
         right: []
     };
-    
-    function leftWords(){
-        return data.left.map((word, index) => m("button[draggable]", { 
+
+    function leftWords() {
+        return data.left.map((word, index) => m("button[draggable]", {
             class: "flyout-button",
             title: word.definition,
             ondragstart: (e) => {
@@ -259,8 +258,8 @@
             }
         }, word.name));
     }
-    
-    function rightWords(){
+
+    function rightWords() {
         return data.right.map((word, index) => m("button[draggable]", {
             class: "flyout-button",
             title: word.definition,
@@ -275,7 +274,7 @@
         }, word.name));
     }
 
-    
+
     function getScoreCard() {
         return m("div", { class: "result-nav-outer" }, [
             m("div", { class: "result-nav-inner" }, [
@@ -287,18 +286,17 @@
         ]);
     }
 
-    async function prepareWords(){
+    async function prepareWords() {
         /// gridPath + "/Words"
         console.log("Prepare words ...");
         let grp = await page.findObject("auth.group", "data", "/Library/Dictionary");
         let q3 = am7client.newQuery("data.wordNet");
         q3.field("groupId", grp.id);
         q3.range(0, 20);
-        q3.cache(false);
         q3.entity.request = ["name", "groupId", "organizationId", "type", "definition"];
         q3.entity.sortField = "random()";
         let l3 = await page.search(q3);
-        if(!l3 || !l3.results){
+        if (!l3 || !l3.results) {
             page.toast("error", "No word results");
             return;
         }
@@ -309,8 +307,12 @@
     }
 
     let isSetup = false;
-    async function setup(){
+    async function setup() {
         console.log("Setup");
+        // *** MODIFICATION START ***
+        // Initialize the first set of common words when the game starts.
+        randomizeCommonWords();
+        // *** MODIFICATION END ***
         prepareWords();
     }
 

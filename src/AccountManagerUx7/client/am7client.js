@@ -332,14 +332,14 @@
 		
 		var sKey = q.key();
 		if(q.entity.cache){
-			var o = getFromCache(q.type, "GET", sKey);
+			var o = getFromCache(q.entity.type, "GET", sKey);
 			if(o){
 				if(fH) fH(o);
 				return o;
 			}
 		}
 		var f = fH;
-		var fc = function(v){if(q.entity.cache && typeof v != "undefined" && v != null){addToCache(sType,"GET",sKey,v);} if(f) f(v);};
+		var fc = function(v){if(q.entity.cache && typeof v != "undefined" && v != null){addToCache(q.entity.type,"GET",sKey,v);} if(f) f(v);};
 		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fc);
 	}
 	function trace( bEnable, fH){
