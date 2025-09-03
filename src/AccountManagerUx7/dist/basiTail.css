@@ -4663,6 +4663,10 @@ button.button-tab-active:hover:is(.dark *) {
   cursor: pointer;
 }
 
+.cursor-not-allowed {
+  cursor: not-allowed;
+}
+
 .grid-cols-10 {
   grid-template-columns: repeat(10, minmax(0, 1fr));
 }
@@ -5234,6 +5238,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .opacity-60 {
   opacity: 0.6;
+}
+
+.opacity-50 {
+  opacity: 0.5;
 }
 
 .mix-blend-screen {

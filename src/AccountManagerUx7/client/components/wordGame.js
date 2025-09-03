@@ -23,31 +23,47 @@
     
     // --- GAME LOGIC AND STATE MANAGEMENT ---
 
-    let data = {
-        turn: 1, // 1 or 2
-        turnPoints: 5,
-        timerId: null,
-        timeLeft: 30,
-        isPaused: false,
-        player1: {
-            name: "Player 1",
-            score: 0,
-            customWord: '',
-            customWordTimeout: null,
-        },
-        player2: {
-            name: "Player 2",
-            score: 0,
-            customWord: '',
-            customWordTimeout: null,
-            autopilot: false,
-        },
-        board: Array(8).fill(null).map(() => Array(10).fill(null)),
-        activeCommonWords: [],
-        left: [], // Player 1's words
-        right: [] // Player 2's words
-    };
+    function getInitialData() {
+        return {
+            turn: 1, // 1 or 2
+            turnPoints: 5,
+            commonWordUsedThisTurn: false, // Prevents using more than one common word per turn
+            timerId: null,
+            timeLeft: 30,
+            isPaused: false,
+            player1: {
+                name: "Player 1",
+                score: 0,
+                customWord: '',
+                customWordTimeout: null,
+            },
+            player2: {
+                name: "Player 2",
+                score: 0,
+                customWord: '',
+                customWordTimeout: null,
+                autopilot: false,
+            },
+            board: Array(8).fill(null).map(() => Array(10).fill(null)),
+            activeCommonWords: [],
+            left: [], // Player 1's words
+            right: [] // Player 2's words
+        };
+    }
+
+    let data = getInitialData();
     
+    function resetGame() {
+        clearInterval(data.timerId);
+        data = getInitialData();
+        setup();
+    }
+
+    function togglePause() {
+        data.isPaused = !data.isPaused;
+        m.redraw();
+    }
+
     function startTimer() {
         clearInterval(data.timerId);
         data.timeLeft = 30;
@@ -67,6 +83,7 @@
     function switchTurn() {
         data.turn = data.turn === 1 ? 2 : 1;
         data.turnPoints = 5;
+        data.commonWordUsedThisTurn = false; // Reset for the new turn
         startTimer();
         
         if (data.turn === 2 && data.player2.autopilot) {
@@ -199,6 +216,7 @@
             }
         }
         data.board = newBoard;
+        spendTurnPoints(5); // Shifting words costs the turn
         m.redraw();
     }
 
@@ -236,7 +254,11 @@
         e.stopPropagation();
         const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
         
-        // --- Turn Validation ---
+        // Rule: Only one common word per turn
+        if (payload.source === 'common' && data.commonWordUsedThisTurn) {
+            return;
+        }
+
         if ((payload.source === 'left' && data.turn !== 1) || (payload.source === 'right' && data.turn !== 2)) {
             return;
         }
@@ -264,12 +286,14 @@
 
         if (payload.source === 'left') {
             data.left.splice(payload.index, 1);
-            if(data.left.length < 5) prepareWords(1, true); // Auto-refresh at no cost
+            if(data.left.length < 5) prepareWords(1, true);
         } else if (payload.source === 'right') {
             data.right.splice(payload.index, 1);
-            if(data.right.length < 5) prepareWords(2, true); // Auto-refresh at no cost
+            if(data.right.length < 5) prepareWords(2, true);
         } else if (payload.source === 'board') {
             data.board[payload.rowIndex][payload.colIndex] = null;
+        } else if (payload.source === 'common') {
+            data.commonWordUsedThisTurn = true; // Set the flag
         }
 
         if (payload.source !== 'common' && payload.source !== 'board') {
@@ -330,9 +354,13 @@
                             m("div", { class: "menu-buttons-spaced my-2 justify-center" },
                                 data.activeCommonWords.map(word =>
                                     m("button", {
-                                        draggable: true,
-                                        class: "menu-button",
+                                        draggable: !data.commonWordUsedThisTurn,
+                                        class: `menu-button ${data.commonWordUsedThisTurn ? 'opacity-50 cursor-not-allowed' : ''}`,
                                         ondragstart: (e) => {
+                                            if (data.commonWordUsedThisTurn) {
+                                                e.preventDefault();
+                                                return;
+                                            }
                                             const payload = {
                                                 word: { name: word, isCommon: true },
                                                 source: 'common'
@@ -366,10 +394,12 @@
                                 )
                             ]),
                             m("div", { class: "flex justify-center items-center mt-2" }, [
-                                m("button", { class: "menu-button", onclick: () => shiftWords('up') }, m("span", { class: "material-symbols-outlined" }, "arrow_upward")),
-                                m("button", { class: "menu-button", onclick: () => shiftWords('down') }, m("span", { class: "material-symbols-outlined" }, "arrow_downward")),
-                                m("button", { class: "menu-button", onclick: () => shiftWords('left') }, m("span", { class: "material-symbols-outlined" }, "arrow_back")),
-                                m("button", { class: "menu-button", onclick: () => shiftWords('right') }, m("span", { class: "material-symbols-outlined" }, "arrow_forward")),
+                                m("button", { class: "menu-button", onclick: resetGame }, m("span", { class: "material-symbols-outlined" }, "restart_alt")),
+                                m("button", { class: "menu-button", onclick: togglePause }, m("span", { class: "material-symbols-outlined" }, data.isPaused ? "play_arrow" : "pause")),
+                                m("button", { class: "menu-button", onclick: () => shiftWords('up'), disabled: data.turnPoints < 5 }, m("span", { class: "material-symbols-outlined" }, "arrow_upward")),
+                                m("button", { class: "menu-button", onclick: () => shiftWords('down'), disabled: data.turnPoints < 5 }, m("span", { class: "material-symbols-outlined" }, "arrow_downward")),
+                                m("button", { class: "menu-button", onclick: () => shiftWords('left'), disabled: data.turnPoints < 5 }, m("span", { class: "material-symbols-outlined" }, "arrow_back")),
+                                m("button", { class: "menu-button", onclick: () => shiftWords('right'), disabled: data.turnPoints < 5 }, m("span", { class: "material-symbols-outlined" }, "arrow_forward")),
                                 m("button", {
                                     class: "flyout-button text-center ml-4",
                                     ondragover: (e) => e.preventDefault(),
@@ -441,26 +471,51 @@
     async function prepareWords(playerNum = null, isAutoRefresh = false) {
         console.log("Prepare words ...");
         let grp = await page.findObject("auth.group", "data", "/Library/Dictionary");
-        let q3 = am7client.newQuery("data.wordNet");
-        q3.field("groupId", grp.id);
+
         
         let wordCount = 10;
         if (playerNum) {
             const currentWords = playerNum === 1 ? data.left : data.right;
             wordCount = 5 - currentWords.length;
         }
-        if (wordCount <= 0 && !isAutoRefresh) wordCount = 5; // Allow manual refresh to get at least some words
-        if (wordCount <= 0 && isAutoRefresh) return; // Don't fetch if already have enough
+        if (wordCount <= 0 && !isAutoRefresh) wordCount = 5;
+        if (wordCount <= 0 && isAutoRefresh) return;
 
-        q3.range(0, playerNum ? wordCount : 20);
-        q3.entity.request = ["name", "groupId", "organizationId", "type", "definition"];
-        q3.entity.sortField = "random()";
-        let l3 = await page.search(q3);
-        if (!l3 || !l3.results) {
-            page.toast("error", "No word results");
-            return;
+        let wordDict = {
+            nouns: [],
+            verbs: [],
+            adjectives: [],
+            adverbs: []
         }
-        
+        let wordTypes = ["v", "n", "r", "s"];
+        for (let type of wordTypes) {
+            let q = am7client.newQuery("data.wordNet");
+            q.field("groupId", grp.id);
+            q.field("type", type);
+            q.range(0, playerNum ? wordCount : 20);
+            q.entity.request = ["name", "groupId", "organizationId", "type", "definition"];
+            q.entity.sortField = "random()";
+            let l = await page.search(q3);
+            if (!l || !l.results) {
+                page.toast("error", "No word results");
+                return;
+            }
+            if(type == "v"){
+                wordDict.verbs = l.results;
+            }
+            if(type == "n"){
+                wordDict.nouns = l.results;
+            }
+            if(type == "r"){
+                wordDict.adverbs = l.results;
+            }
+            if(type == "s"){
+                wordDict.adjectives = l.results;
+            }
+        }
+
+        /// TODO - FIX CURRENT LOGIC TO ACCOUNT FOR SEPARATING WORDS BY WORD TYPE
+
         const uniqueInFetch = l3.results.filter((word, index, self) => index === self.findIndex(w => w.name.toLowerCase() === word.name.toLowerCase()));
         const allExistingNames = new Set([...data.left.map(w => w.name.toLowerCase()), ...data.right.map(w => w.name.toLowerCase())]);
         const finalNewWords = uniqueInFetch.filter(w => !allExistingNames.has(w.name.toLowerCase()));
