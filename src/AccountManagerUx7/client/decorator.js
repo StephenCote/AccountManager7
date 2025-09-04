@@ -377,7 +377,6 @@
     }
 
     function getTabularView(ctl, rset){
-
         let results = (rset || []).map((p, i) => {
           return getTabularRow(ctl, p, i);
         });

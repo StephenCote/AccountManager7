@@ -443,7 +443,6 @@
             let tableForm = fieldView.form;
             let bEdit = false;
             let bSel = false;
-
             if(field.foreign){
                 if(!foreignData[name]){
                     if(field.function){
@@ -1981,7 +1980,8 @@
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 if(state.selected){
-                    if(name === 'messages' || name === 'attributes' || name === 'elementValues'){
+                    /// TODO - fix this
+                    if(name === 'episodes' || name === 'messages' || name === 'attributes' || name === 'elementValues'){
                         /// Need to confirm the attribute type, this assumes it's an array 
                         //entity[state.attribute][state.index] = null;
                         let ov = entity[state.attribute][state.index];
@@ -2048,11 +2048,10 @@
         };
 
         objectPage.checkEntry = function(name, field, tableType, tableForm, props){
-            console.log("check entry: " + name);
+
             let formName = tableType.substring(tableType.lastIndexOf(".") + 1);
             let fieldView = am7model.forms[formName];
-            console.log(name, tableType, tableForm);
-
+            let parentField = am7model.getModelField(entity[am7model.jsonModelKey], name);
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
@@ -2063,7 +2062,7 @@
                     let entry;
                     if(field.foreign) entry = foreignData[state.fieldName || name][idx]
                     else entry = entity[state.fieldName || name][idx];
-                    console.log(entry);
+                    let einst = am7model.prepareInstance(entry, tableForm);
                     Object.keys(tableForm.fields).forEach((k)=>{
                         let tableField = am7model.getModelField(tableType, k);
 
@@ -2073,6 +2072,7 @@
                         }
                         else{
                             let useType = tableField.type;
+
                             if(useType == 'flex'){
                                 if(entry.valueType){
                                     useType = entry.valueType.toLowerCase();
@@ -2095,7 +2095,8 @@
                                     break;
                                 case 'list':
                                 case 'array':
-                                    entry[k] = [e.value];
+                                    //entry[k] = [e.value];
+                                    einst.api[k](e.value);
                                     break;
                                 default:
                                     console.warn("Unhandled entry type: " + useType);
@@ -2103,7 +2104,8 @@
                             }
                         }
                     });
-                    if(!fieldView.standardUpdate && am7model.hasIdentity(entity)){
+                    if((parentField?.foreign || parentField?.referenced) && !fieldView?.standardUpdate && am7model.hasIdentity(entity)){
+                        console.log("Patching object: " + name, entry);
                         if(entry.objectId) aP.push(am7client.patch(entry));
                         else{
                             entry[am7model.jsonModelKey] = tableType;
@@ -2115,8 +2117,11 @@
                             aP.push(am7client.create(tableType, entry));
                         }
                     }
-                    else if(fieldView.standardUpdate){
+                    else if((!parentField?.foreign && !parentField?.referenced) ||  fieldView?.standardUpdate){
                         inst.change(name);
+                    }
+                    else{
+                        console.warn("Foreign data, not updating: " + name, entry);
                     }
                     /*
                     if(name.match(/^(controls|requestsList)$/gi)){
@@ -2130,7 +2135,7 @@
             
             Promise.all(aP).then((aB)=>{
                 if(!aB || !aB.filter((b)=>{if(!b) return true;}).length){
-                    console.log("Saved foreign data: " + name, foreignData[name]);
+                    //console.log("Saved foreign data: " + name, foreignData[name]);
                     valuesState = {};
                     m.redraw();
                 }

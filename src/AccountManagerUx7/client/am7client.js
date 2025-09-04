@@ -297,7 +297,9 @@
 				q.entity.type,
 				q.entity.order,
 				q.entity.limit || false,
-				q.entity.sortBy || "id",
+				q.entity.sortField || "id",
+				q.entity.startRecord || 0,
+				q.entity.recordCount || 10,
 				page?.user?.objectId || "000",
 				q.keyField(q.entity.fields)
 			];
@@ -331,15 +333,16 @@
 	function search(q, fH, bCount){
 		
 		var sKey = q.key();
+		let type = (q.entity.type + (bCount ? "-Count" : ""));
 		if(q.entity.cache){
-			var o = getFromCache(q.entity.type, "GET", sKey);
+			var o = getFromCache(type, "GET", sKey);
 			if(o){
 				if(fH) fH(o);
 				return o;
 			}
 		}
 		var f = fH;
-		var fc = function(v){if(q.entity.cache && typeof v != "undefined" && v != null){addToCache(q.entity.type,"GET",sKey,v);} if(f) f(v);};
+		var fc = function(v){if(q.entity.cache && typeof v != "undefined" && v != null){addToCache(type,"GET",sKey,v);} if(f) f(v);};
 		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fc);
 	}
 	function trace( bEnable, fH){

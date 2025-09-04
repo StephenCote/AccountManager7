@@ -12,7 +12,7 @@
 
         let pa = (await loadPromptList()).filter(c => c.name.match(/^Object/gi));
         let ca = (await loadChatList()).filter(c => c.name.match(/^Object/gi));
-        let cname = "Analyze " + inst.api.name();
+        let cname = "Analyze " + (ref && ref[am7model.jsonModelKey] ? ref[am7model.jsonModelKey].toUpperCase() + " " : "") + (ref?.name ? ref.name : inst.api.name());
         let remoteEnt = {
           schema: "olio.llm.chatRequest",          
           chatConfig: ca.length ? ca[0] : undefined,
@@ -30,7 +30,7 @@
         */
         let aCPs = [];
         
-        if(aCCfg){
+        if(inst && aCCfg){
             let aC = aCCfg.filter(c => c.name == inst.api.chatConfig()?.name);
             if(aC.length && aC[0].userCharacter && aC[0].systemCharacter){
                 aCPs.push(aC[0].userCharacter.name);
@@ -41,7 +41,7 @@
             aCPs.push(ref.name);
         }
         
-        if(inst.api.session && inst.api.session() != null && inst.api.session()[am7model.jsonModelKey]){
+        if(inst && inst.api.session && inst.api.session() != null && inst.api.session()[am7model.jsonModelKey]){
             let sq = am7view.viewQuery(inst.api.session()[am7model.jsonModelKey]);
             sq.entity.request = ["id", "objectId", "groupId", "groupPath", "organizationId", "organizationPath"];
             sq.field("id", inst.api.session().id);

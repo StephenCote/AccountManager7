@@ -4268,6 +4268,10 @@
             femalePerspective: {
                 layout: "full",
                 format: "textlist"
+            },
+            episodeRule: {
+                layout: "full",
+                format: "textlist"
             }
         },
         forms: []
@@ -4524,7 +4528,7 @@
     };
 
     forms.episodes = {
-        label: "Chat Configuration",
+        label: "Episodes",
         format: "table",
         commands: {
             new: {
