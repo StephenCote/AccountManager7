@@ -189,74 +189,23 @@
 
     let chatName = "WordBattle.chat";
     async function prepareChatConfig(){
-        let grp = await page.findObject("auth.group", "data", "~/Chat");
-        let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatConfig"));
-        q.field("groupId", grp.id);
-        q.field("name", chatName);
-        q.cache(false);
-        let cfg;
-        let qr = await page.search(q);
-        if(!qr || !qr.results || qr.results.length == 0){
-            let icfg = am7model.newInstance("olio.llm.chatConfig");
-            icfg.api.groupId(grp.id);
-            icfg.api.groupPath(grp.path);
-            icfg.api.name(chatName);
-            icfg.api.model("herm-local");
-            icfg.api.serverUrl("http://localhost:11434");
-            icfg.api.serviceType("ollama");
-            await page.createObject(icfg.entity);
-            console.log(icfg);
-            qr = await page.search(q);
-        }
-        if(qr?.results.length > 0){
-            cfg = qr.results[0];
-        }
-
-        if(!cfg){
-            page.toast("Error", "Could not create chat config");
-        }
-
-        return cfg;
+        return am7chat.makeChat(chatName, "herm-local", "http://localhost:11434", "ollama");
     }
 
     let promptName = "WordBattle.prompt";
     async function preparePrompt(){
-        let grp = await page.findObject("auth.group", "data", "~/Chat");
-        let q = am7view.viewQuery(am7model.newInstance("olio.llm.promptConfig"));
-        q.field("groupId", grp.id);
-        q.field("name", promptName);
-        q.cache(false);
-        let cfg;
-        let qr = await page.search(q);
-        if(!qr || !qr.results || qr.results.length == 0){
-            let icfg = am7model.newInstance("olio.llm.promptConfig");
-            icfg.api.groupId(grp.id);
-            icfg.api.groupPath(grp.path);
-            icfg.api.name(promptName);
-            icfg.entity.system = [
-                "You are the controller for a word battle game. Random words will be assembled into phrases. Possible coherent phrases will be sent to you to be evaluated.",
-                "Your job is to evaluate these phrases and respond in one of three ways:",
-                "1. If the phrase is incoherent, respond with 'incoherent'.",
-                "2. If the phrase is coherent as-is, respond with the phrase itself.",
-                "3. If the phrase can be improved by changing word order, tense, count, etc, or by adding a pronoun, preposition, or conjunction, then respond with the improved phrase.",
-                "Example: 'Holbein fatally choke vicariously' -> 'Holbein fatally choked vicariously'",
-                "Example: 'aphyllous blood count' -> 'incoherent'",
-                "Example: 'blessed whistle' -> 'blessed whistle'",
-                "Example: 'like blessed whistle knock' -> 'knocked like a blessed whistle'"
-            ];
-            await page.createObject(icfg.entity);
-            console.log(icfg);
-            qr = await page.search(q);
-        }
-        if(qr?.results.length > 0){
-            cfg = qr.results[0];
-        }
 
-        if(!cfg){
-            page.toast("Error", "Could not create prompt config");
-        }
-
-        return cfg;
+        return am7chat.makePrompt(promptName, [
+            "You are the controller for a word battle game. Random words will be assembled into phrases. Possible coherent phrases will be sent to you to be evaluated.",
+            "Your job is to evaluate these phrases and respond in one of three ways:",
+            "1. If the phrase is incoherent, respond with 'incoherent'.",
+            "2. If the phrase is coherent as-is, respond with the phrase itself.",
+            "3. If the phrase can be improved by changing word order, tense, count, etc, or by adding a pronoun, preposition, or conjunction, then respond with the improved phrase.",
+            "Example: 'Holbein fatally choke vicariously' -> 'Holbein fatally choked vicariously'",
+            "Example: 'aphyllous blood count' -> 'incoherent'",
+            "Example: 'blessed whistle' -> 'blessed whistle'",
+            "Example: 'like blessed whistle knock' -> 'knocked like a blessed whistle'"
+        ]);
     }
 
     let chatRequestName = "WordBattle Chat";
