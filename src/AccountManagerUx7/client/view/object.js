@@ -11,7 +11,6 @@
         let childPickerMode;
         let fullMode = false;
         let designMode = false;
-        let changed = false;
         let caller;
         let callerIndex;
         let callerActive;
@@ -21,8 +20,6 @@
         let foreignData = {};
         let definition;
         let listView = page.views.list().view;
-        let requesting = false;
-        let pendingRequest;
 
         let embeddedMode = false;
         let embeddedController;
@@ -44,8 +41,6 @@
             return oinst;
         };
 
-
-
         function toggleFullMode(){
             fullMode = !fullMode;
             if(embeddedController){
@@ -60,21 +55,6 @@
             let s = JSON.stringify(inst.entity, null, 2);
             let bu = page.blobUrl("data:text/json;base64," + Base64.encode(s));
             let w = window.open(bu, inst.entity.name);
-            
-            
-            //let u = "data:x-application/json;base64," + Base64.encode(s);
-            //window.open(u, inst.entity.name);
-            /*
-            let b = new Blob(["\ufeff", s]);
-            let u = URL.createObjectURL(b);
-            let l = document.createElement("a");
-            l.href = u;
-            l.download = entity.name + ".json";
-        
-            document.body.appendChild(l);
-            l.click();
-            document.body.removeChild(l);
-            */
         }
 
         async function toggleDesignMode(){
@@ -106,11 +86,6 @@
             designMode = !designMode;
             m.redraw();
         }
-        /*
-        function textField(sClass, id, fKeyHandler){
-            return m("input",{onkeydown: fKeyHandler, rid: id, type: "text", class: sClass});
-        }
-        */
 
         function doUpdate(){
             if(!entity){
@@ -182,7 +157,6 @@
                     let puint = (upatch ? e.patch() : e.entity);
                     /// Make sure to create the object, even if it has no changes
                     /// OR - if nothing has changed, it needs to be stripped off the entity, pinst, and oinst 
-                    //if(puint && (!upatch || e.changes.length)){
                     
                     if(puint && bpatch && (!upatch || e.changes.length)){
     
@@ -193,7 +167,7 @@
                                     e.entity[i] = v[i];
                                 }
                                 /// For create operations, substitute the whole object for the minimal id reference received in the response
-                                // e.entity
+
                                 inst.api[k](v);
                             }
                             else{
@@ -213,7 +187,6 @@
 
             if(!inst.changes.length){
                 page.toast("warn", "No changes were detected, so nothing was updated");
-                changed = false;
                 return;
             }
             
@@ -228,7 +201,6 @@
                 if(v != null){
                     page.toast("success", "Saved!");
                     let bNew = objectNew || parentNew;
-                    changed = false;
                     inst.resetChanges();
                     if(entity[am7model.jsonModelKey].match(/message/i)){
                         history.back();
@@ -317,7 +289,6 @@
             let path = entity.groupPath;
             page.components.dialog.confirm("Delete this object?", async function(){
                 await page.deleteObject(entity[am7model.jsonModelKey], entity.objectId);
-                // page.pagination.new();
                 history.back();
             });
         }
@@ -331,20 +302,11 @@
             cancelPicker();
         }
 
-        function modelFormTab(active, type, form){
-            return m("div",{class : "tab-panel" + (!active ? " hidden" : "")}, modelForm(active, type, form));
-        }
-
         function getFormatForContentType(format){
             if(!entity || !entity.contentType){
                 return "textarea";
             }
-            /*
-            if(!entity.contentType){
-                console.log("Entity does not define a contentType");
-                return format;
-            }
-            */
+
             let mt = entity.contentType;
             if(!am7view.isBinary(entity, mt)) format = 'textarea';
             else if(mt.match(/^image/)) format = 'image';
@@ -414,7 +376,6 @@
 
             if(!field.function){
                 console.error("Expected the field for " + name + " to specify a function");
-                //console.log(field);
                 return rows;
             }
 
@@ -424,7 +385,6 @@
         function getValuesForTableField(name, fieldView, field, fieldClass, hidden){
             let cmds = [];
             let rows = [];
-            //console.log(name, fieldView, field);
             /// Get the field for the viewModel off the itemType of the supplied field
             if(!entity) return rows;
             if(!field.baseModel){
@@ -447,7 +407,6 @@
                 if(!foreignData[name]){
                     if(field.function){
                         objectPage[field.function](name, field).then((data) => {
-                            //let fData = data || [];
                             foreignData[name] = data;
                             m.redraw();
                         });
@@ -458,7 +417,6 @@
 
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
-                //console.log(name, state);
                 if(state.attribute === name){
                     if(state.mode === 'edit') bEdit = true;
                     if(state.selected) bSel = true;
@@ -479,7 +437,6 @@
                 rows.push(m("tr",rowModel.map((r)=>{
                     if(!r.field){
                         r.field = am7model.getModelField(tableType, r.name);
-                        //console.error(field.baseModel, r);
                     }
                     return m("th", r.fieldView?.label || r.field?.label);
                 })));
@@ -499,18 +456,7 @@
                 if(vals && field.type.match(/^(array|list)$/)){
                     vals.forEach((v, i) => {
                         if(!valuesState[name + "-" + i]){
-                            //if(name === 'elementValues' || name === 'attribute'){
-                                valuesState[name + "-" + i] = {attribute: name, foreign: field.foreign, index : i, selected: false, mode: 'view'};
-                            //}
-                            /*
-                            else if(name === 'selectOption'){
-                                valuesState[name + "-" + i] = {attribute: name, fieldName: 'elementValues', foreign: field.foreign, index : i, selected: false, mode: 'view'};
-                            }
-                            
-                            else{
-                                console.error("Handle: " + name);
-                            }
-                            */
+                            valuesState[name + "-" + i] = {attribute: name, foreign: field.foreign, index : i, selected: false, mode: 'view'};
                         }
                         let state = valuesState[name + "-" + i];
                         let rowClass = "";
@@ -518,15 +464,22 @@
                         let selectHandler;
                         if(state.mode === 'view'){
                             rowClass += " row-field";
-                            //if(state.selected) rowClass += " row-field-active";
                             selectHandler = function(){
                                 valuesState[name + "-" + i].selected = !valuesState[name + "-" + i].selected;
                                 m.redraw();
                             }
                         }
+                        let cv;
+                        if(v && v[am7model.jsonModelKey]){
+                            cv = am7model.prepareInstance(v, fieldView?.form);
+                        }
+
+
                         rows.push(m("tr", {class: rowClass, onclick : selectHandler},
                             rowModel.map((rm)=>{
-                                if(state.mode == 'edit') return m("td", modelField(rm.name, rm.fieldView, rm.field, rm.name + "-" + i, v[rm.name], true, v));
+                                if(state.mode == 'edit'){
+                                    return m("td", modelField(rm.name, rm.fieldView, rm.field, rm.name + "-" + i, (cv ? cv.api[rm.name]() : v[rm.name]), true, v, fieldView?.form));
+                                }
                                 else{
                                     let val;
 
@@ -555,7 +508,8 @@
                                         }
                                     }
                                     else{
-                                        val = v[rm.name];
+
+                                        val = (cv ? cv.api[rm.name]() : v[rm.name]);
                                     }
                                     return m("td", "" + val);
                                 }
@@ -620,7 +574,6 @@
         }
 
         function updateChange(evt, field){
-            changed = true;
             if(entity && field && field.pickerProperty && field.pickerProperty.entity){
                 entity[field.pickerProperty.entity] = (evt.srcElement || evt.target).value;
             }
@@ -628,7 +581,10 @@
 
 
 
-        function modelField(name, fieldView, field, altName, altVal, noChange, altEntity){
+        function modelField(name, fieldView, field, altName, altVal, noChange, altEntity, altForm){
+            if(name == "stages"){
+                console.log(name, field, altEntity);
+            }
             let useEntity = altEntity || entity;
             let format = (fieldView?.form?.format || fieldView.format || field.format || am7view.getFormatForType(field.type));
             let useName = altName || name;
@@ -660,11 +616,6 @@
                 }
             }
 
-            /*
-            if(inst && !inst.api[name]){
-                console.warn("Missing " + name);
-            }
-            */
             let defVal = (inst && !altEntity && inst.api[name] ? inst.api[name]() : undefined);
             if(field.function && objectPage[field.function] && !field.foreign){
                 if(field.promise){
@@ -683,6 +634,7 @@
                 }
             }
             else if(altVal){
+
                 defVal = altVal;
             }
 
@@ -710,8 +662,6 @@
             switch(format){
                 case "blank":
                     view.push(m("span", {class: "blank"}));
-
-                    
                     break;
                 case "button":
                     fieldClass += " button-field-full";
@@ -753,9 +703,6 @@
                             max = field.maxValue;
                         }
                     }
-                    // view.push(m("span",{class: 'label inline w-1/4'}, defVal));
-                    //view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName, min, max}));
-
                     view.push(m("div", {class: 'relative mb-5'}, [
                         m("label", {class: "sr-only"},"Range"),
                         m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName, min, max}),
@@ -763,11 +710,6 @@
                         m("span", {class: "text-sm text-gray-500 absolute start-1/2 -translate-x-1/2 -bottom-6"}, defVal),
                         m("span", {class: "text-sm text-gray-500 absolute end-0 -bottom-6"}, max)
                     ]));
-/*
-    <span class="text-sm text-gray-500 dark:text-gray-400 absolute start-1/3 -translate-x-1/2 rtl:translate-x-1/2 -bottom-6">$500</span>
-    <span class="text-sm text-gray-500 dark:text-gray-400 absolute start-2/3 -translate-x-1/2 rtl:translate-x-1/2 -bottom-6">$1000</span>
-*/
-
 
                     break;
                 case "color":
@@ -807,16 +749,9 @@
                         props = Object.assign(props, dnd);
                         props.placeholder = "{ Type Text or Drop File Here }";
                     }
-                    /*
-                    if(name == "dataBytesStore"){
-                        console.log(name, format, defVal);
-                    }
-                    */
                     view.push(m("textarea", props, defVal));
                     break;
                 case "pdf":
-                    // fieldClass += " pdf-field";
-                    //view.push(m("canvas", {class: fieldClass, name: useName}));
                     if(pdfViewer){
                         view.push(pdfViewer.container());
                     }
@@ -841,15 +776,7 @@
                     if(useEntity[am7model.jsonModelKey].match(/^imageView$/gi)){
                         let ui = useEntity.image;
                         fieldClass = "carousel-item-img";
-                        /*
-                        if(ui.contentType && ui.dataBytesStore){
-
-                            dataUrl = "data:" + ui.contentType + ";base64," + ui.dataBytesStore;
-                        }
-                        else{
-                        */
-                            dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + ui.groupPath + "/" + ui.name + "/512x512";
-                        //}
+                        dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + ui.groupPath + "/" + ui.name + "/512x512";
                     }
 
                     else if(useEntity[am7model.jsonModelKey].match(/^data\.data$/gi)){
@@ -870,13 +797,11 @@
                     }
                     else if(useEntity.profile && useEntity.profile.portrait && useEntity.profile.portrait.contentType){
                         let pp = useEntity.profile.portrait;
-                        //clickF = function(){ page.imageView(inst.api.profile().portrait);};
                         clickF = function(){ page.imageView(pp); };
                         dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
                     }
                     else if(useEntity.portrait && useEntity.portrait.contentType){
                         let pp = useEntity.portrait;
-                        //clickF = function(){ page.imageView(inst.api.profile().portrait);};
                         clickF = function(){ page.imageView(pp); };
                         dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
                     }
@@ -953,7 +878,6 @@
                     if(valPick){
                         view.push(
                             m("div", {class : "context-menu-container"}, [
-                                //m("button",{class: "context-menu-button", id: bid}, m("span", {class: "material-icons"}, "menu")),
                                 m("div", {class : "transition transition-0 context-menu", id: mid}, [
                                     page.navigable.contextMenuButton(pickerName, "Find","search", function(){ doFieldPicker(field, useName, useEntity);}),
                                     page.navigable.contextMenuButton(pickerName, "View","file_open", function(){ doFieldOpen(field);}),
@@ -984,7 +908,6 @@
             }
             if(field.pickerProperty.selected === '{object}') id = entity[prop].objectId;
             else id = entity[prop];
-            //console.log(id, type);
             if(id && type){
                 if(typeof id == "number" || id.match(/^am:/)){
                     let obj2 = await page.openObject(type, id);
@@ -1035,7 +958,7 @@
                 &&
                 field.pickerType.match(/^\./)
             ){
-                console.log(field.pickerType.slice(1) + mat[1]);
+                // console.log(field.pickerType.slice(1) + mat[1]);
                 let el = document.querySelector("[name='" + field.pickerType.slice(1) + mat[1] + "']");
                 type = el.value.toLowerCase();
                 setType = true;
@@ -1052,8 +975,6 @@
                         if(useEntity == inst.entity){
                             
                             if(field.pickerProperty.selected === '{object}'){
-                                // inst.api[field.pickerProperty.entity](data[0]);
-
                                 if(field.pickerProperty.entity.match(/\./)){
                                     let pv = field.pickerProperty.entity.split(".");
                                     if(pinst[pv[0]]){
@@ -1063,8 +984,6 @@
                                     else{
                                         console.warn("didn't find " + pv[0]);
                                     }
-                                    //inst.dapi(field.pickerProperty.entity, data[0]);
-                                    
                                 }
                                 else{
                                     inst.api[field.pickerProperty.entity](data[0]);
@@ -1072,7 +991,6 @@
                             }
                             else{
                                 console.log("Update", field.pickerProperty.entity);
-                                //inst.api[field.pickerProperty.entity](data[0][field.pickerProperty.selected]);
                                 inst.api[field.pickerProperty.entity](data[0][field.pickerProperty.selected]);
                             }
                             cancelPicker(true);
@@ -1089,14 +1007,6 @@
                                 useEntity[field.pickerType.slice(1)] = type;
                             }
                         }
-                        /*
-                        if(field.pickerProperty.selected === '{object}') useEntity[field.pickerProperty.entity] = data[0];
-                        else useEntity[field.pickerProperty.entity] = data[0][field.pickerProperty.selected];
-                        cancelPicker(true);
-                        if(setType){
-                            useEntity[field.pickerType.slice(1)] = type;
-                        }
-                        */
                         updateChange();
                         inst.action(useName);
                         if(pickerHandler){
@@ -1129,7 +1039,6 @@
                     console.warn("A property is required");
                     return m("div", "Property name required for form");
                 }
-                //return m("div", "Model def");
                 let minst;
                 
                 if(!pinst[form.property]){
@@ -1146,15 +1055,12 @@
                         oid = mo.objectId;
                     }
                     else{
-                        // mo = am7model.newPrimitive(mf.baseModel);
                         mo = getPrimitive(mf.baseModel);
-                        // console.log(objectType, mf.baseModel, mo);
                         inst.api[form.property](mo);
                         /// force the model def because certain settings will result in an empty object
                         mo[am7model.jsonModelKey] = mf.baseModel;
 
                     }
-                    //let mio = (mo || am7model.newPrimitive(mf.baseModel));
                     minst = am7model.prepareInstance(mo);
                     pinst[form.property] = minst;
                     oinst[form.property] = page.views.object();
@@ -1168,7 +1074,6 @@
                     freeFormEntity: minst.entity,
                     freeFormType: minst.model.name,
                     parentProperty: form.property,
-                   // pickerCfg: pickerMode,
                     objectId: minst.entity.objectId,
                     callerIndex: tabIndex,
                     caller: objectPage,
@@ -1222,7 +1127,7 @@
             let cactive = (callerIndex == undefined || callerActive);
 
             let active = (tabIndex == 0) && cactive;
-            //console.log(objectType, caller?.tabIndex() + " " + callerIndex);
+
             let mForm = modelForm(active, type, form);
             if(active) pickList = modelPicker(active);
             forms.push(mForm);
@@ -1287,10 +1192,10 @@
         }
 
         function getObjectViewInner(){
-            /// let bNew = m.route.get().match(/^\/new/gi);
+
             let bNew = objectNew || parentNew;
             let designable = (entity && entity.contentType && entity.contentType.match(/(^text\/(css|plain)$|\/x-javascript$)/gi)) ? true : false;
-            // console.log("Obj Inner", designable, entity);
+
             let altCls = '';
             if(inst.changes.length){
                 altCls = ' warn';
@@ -1340,14 +1245,13 @@
             
         }
         function getPrimitive(type){
-            //let objectId = m.route.param("objectId");
+
             let model = page.context();
             let bNew = objectNew;//m.route.get().match(/^\/new/gi);
             let modType = am7model.getModel(type);
             let primitive = am7model.newPrimitive(type);
             let cobj;
 
-            //console.log(bNew, type, modType, objectId, am7model.isGroup(modType), cobj?.path);
             if(bNew && (cobj = model.contextObjects[objectId])){
                 if(am7model.isGroup(modType)){
                     
@@ -1365,17 +1269,11 @@
                     primitive.parentId = cobj.id;
                     primitive.path = cobj.path;
                 }
-                else if(type.match(/^(request)$/gi)){
-                    //console.log(cobj);
-                    //primitive.parentId = cobj.id;
-                    //primitive.parentPath = cobj.parentPath + "/" + cobj.name;
-                }
                 else{
                     console.warn("Handle not a group for " + type);
                 }
             }
             if(model.pendingEntity){
-                changed = true;
                 Object.keys(model.pendingEntity).forEach((i) => {
                     if(!i.match(/^(parentId|parentPath|groupPath)$/)){
                         primitive[i] = model.pendingEntity[i];
@@ -1395,10 +1293,9 @@
             entity = null;
             tabIndex = 0;
 
-            //let objectId = m.route.param("objectId");
             let model = page.context();
-            let bNew = objectNew;//(m.route.get().match(/^\/new/gi) != null);
-            let bPNew = parentNew; //(m.route.get().match(/^\/pnew/gi) != null);
+            let bNew = objectNew;
+            let bPNew = parentNew;
             let modType = am7model.getModel(type);
             if(vnode && vnode.attrs.freeForm){
                 entity = vnode.attrs.freeFormEntity || {schema: objectType};
@@ -1410,7 +1307,7 @@
                     if(am7model.hasField(type, "objectId") && !q.entity.request.filter(r => r == "objectId").length){
                         q.entity.request.push("objectId");
                     }
-                    //if(type == 'olio.store') console.warn(q);
+
                     if(entity.id){
                         q.field("id", entity.id);    
                     }
@@ -1500,10 +1397,6 @@
         function setApp(vnode){
             let ldraw = !inst;
             if(entity[am7model.jsonModelKey]){
-                /*
-                let fname = entity[am7model.jsonModelKey].substring(entity[am7model.jsonModelKey].lastIndexOf(".") + 1);
-                inst = am7model.prepareInstance(entity, am7model.forms[fname]);
-                */
                 setInst(vnode);
                 if(!caller){
                     window.dbgObj = objectPage;
@@ -1513,7 +1406,6 @@
             }
             if(caller){
                 caller.callback('set', objectPage, inst, undefined, parentProperty);
-                // m.redraw();
             }
             else{
                 postRender();
@@ -1522,7 +1414,7 @@
         }
 
         function preparePicker(type, handler, altPath){
-            requesting = true;
+
             return new Promise((res, rej)=>{
 
                 let model = am7model.getModel(type);
@@ -1535,10 +1427,9 @@
                 pickerMode.handler = handler;
                 if(am7model.isGroup(model) || am7model.isParent(model)) pickerMode.pickPath = altPath || am7view.path(type);
                 if(am7model.isGroup(model)){
-                    // console.warn("PICK PATH", pickerMode.pickPath);
                     am7client.make("auth.group","data", pickerMode.pickPath, function(v){
                         pickerMode.containerId = v.objectId;
-                        requesting = false;
+
                         enablePicker();
                         res();
                     });
@@ -1547,7 +1438,7 @@
                     am7client.user(type, "user", function(v){
                         uwm.getDefaultParentForType(type, v).then((parObj) =>{
                             pickerMode.containerId = parObj.objectId;
-                            requesting = false;
+
                             enablePicker();
                             res();
                         });
@@ -1590,14 +1481,13 @@
                     }
                     if(e[f.name] ){
                         objectPage.mergeEntity(entity[f.name], e[f.name], f.baseModel);
-                        //e[f.name] = undefined;
                     }
                 }
             });
             
             am7model.applyModelNames(x);
             if(!s) resetEntity(x);
-            // m.redraw();
+
         };
         objectPage.resetEntity = resetEntity;
         objectPage.getModel = function(name, fieldView, field, fieldClass){
@@ -1674,14 +1564,11 @@
             return Promise.all(aP);
         }
         function pickChild(name, field, data){
-            // let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
-            // vProp[name] = page.removeDuplicates(vProp[name].concat(data), "objectId");
             reparent(entity, data).then(()=>{
                 let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
                 vProp[name] = page.removeDuplicates(vProp[name].concat(data), "objectId");
                 cancelPicker(true);
                 // don't update because the new lineage is already persisted
-                //updateChange();
                 am7client.clearCache(entity[am7model.jsonModelKey], false, function(s, v){
                     m.redraw();
                 });
@@ -1917,16 +1804,6 @@
                 }
                 else{
                     let type = am7view.typeToModel(entity[ftype]);
-                    /*
-                    if(type == "$flex"){
-                        if(field.foreignType){
-                            type = inst.api[field.foreignType]();
-                        }
-                        else{
-                            console.warn("Cannot reference a flex field without a foreign type");
-                        }
-                    }
-                    */
                     am7client.members(entity[am7model.jsonModelKey], entity.objectId, type, 0, 100, function(v){
                         am7model.updateListModel(v);
                         res(v);
@@ -1934,36 +1811,6 @@
                 }
             });
         };
-
-        /*
-        objectPage.parentPath = function(){
-            let path;
-            let model = page.context();
-            let bNew = objectNew || parentNew; //m.route.get().match(/^\/(new|pnew)/gi);
-            if(!entity || (!entity.objectId && !objectId)) return path;
-            switch(entity[am7model.jsonModelKey]){
-                case 'auth.role':
-                case 'auth.permission':
-                case 'auth.group':
-                    if(bNew){
-                        if(model.contextObjects[objectId]){
-                            path = model.contextObjects[objectId].path;
-                        }
-                    }
-                    else{
-                        if(entity[am7model.jsonModelKey] === 'auth.group') path = entity.path.substring(0, entity.path.lastIndexOf("/"));
-                        else path = entity.path;
-                    }
-                    break;
-                case 'data.data':
-                    break;
-                default:
-                    console.error('Handle type: ' + entity[am7model.jsonModelKey]);
-                    break;
-            }
-            return path;
-        };
-        */
 
         objectPage.editEntry = function(){
             Object.keys(valuesState).forEach((k)=>{
@@ -1983,16 +1830,15 @@
                     /// TODO - fix this
                     if(name === 'episodes' || name === 'messages' || name === 'attributes' || name === 'elementValues'){
                         /// Need to confirm the attribute type, this assumes it's an array 
-                        //entity[state.attribute][state.index] = null;
                         let ov = entity[state.attribute][state.index];
                         entity[state.attribute] = entity[state.attribute].filter((a,i) => i != state.index);
                         delete valuesState[k];
-                        //inst.change(name);
-                        console.log(ov);
                         if(ov && am7model.hasIdentity(ov)){
                             aP.push(page.deleteObject(ov[am7model.jsonModelKey],ov.objectId));
                         }
-                       //updateChange();
+                        else{
+                            inst.change(name);
+                        }
                     }
                     else if(name === 'controls'){
                         let model = page.context();
@@ -2056,8 +1902,6 @@
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 if(state.mode === 'edit'){
-
-                    //let attr = state.attribute;
                     let idx = state.index;
                     let entry;
                     if(field.foreign) entry = foreignData[state.fieldName || name][idx]
@@ -2123,19 +1967,12 @@
                     else{
                         console.warn("Foreign data, not updating: " + name, entry);
                     }
-                    /*
-                    if(name.match(/^(controls|requestsList)$/gi)){
-                        aP.push(page.updateObject(entry));
-                    }
-                    */
-
                 }
             });
 
             
             Promise.all(aP).then((aB)=>{
                 if(!aB || !aB.filter((b)=>{if(!b) return true;}).length){
-                    //console.log("Saved foreign data: " + name, foreignData[name]);
                     valuesState = {};
                     m.redraw();
                 }
@@ -2190,10 +2027,8 @@
 
             /// don't clear pendingEntity
             /// pendingEntity = undefined;
-            pendingRequest = undefined;
             pendingResponse = undefined;
             definition = undefined;
-            requesting = false;
 
             tabIndex = 0;
             pickerMode = {clear:true};
@@ -2280,9 +2115,7 @@
             }
             else{
                 am7client.define(entity.objectId, function(v){
-
                     definition = v;
-                    // console.log(v);
                     m.redraw();
                 });
                 return [];
@@ -2293,7 +2126,6 @@
             let cmds = [];
             let rows = [];
             if(!field){
-                //console.warn("Skip unavailable field");
                 return rows;
             }
             let form = fieldView.form;
@@ -2353,7 +2185,6 @@
                 else{
                     /// Handled as patch operation in doUpdate
                     let uname = cname || pname;
-                    // console.log(cinst.entity[am7model.jsonModelKey], uname);
                     let fld = am7model.getModelField(cinst.entity[am7model.jsonModelKey], uname);
                     if(fld && fld.type == "list" && fld.foreign && fld.baseType == "model"){
                         console.log("Patch member", obj);
@@ -2373,7 +2204,6 @@
                     }
                     else{
                         /// Nothing to do - parent was updated
-                        /// console.error("Handle patch", fld);
                     }
                 }
                 
@@ -2385,8 +2215,6 @@
                 return foreignData;
             },
             oninit : function(x){
-                // window.dbgObj = objectPage;
-
                 fullMode = x.attrs.fullMode || fullMode;
                 embeddedMode = x.attrs.embeddedMode;
                 embeddedController = x.attrs.embeddedController;
@@ -2399,7 +2227,6 @@
                 if(x.attrs.pickerCfg){
                     pickerMode = x.attrs.pickerCfg;
                 }
-                // console.log("init", objectType, inst);
                 setEntity(x);
 
             },
@@ -2407,9 +2234,6 @@
                 
             },
             oncreate : function (x) {
-
-                // setEntity(x);
-                // console.log("create", objectType, inst);
                 page.navigable.setupPendingContextMenus();
             },
             onupdate : function(x){
@@ -2417,7 +2241,7 @@
                 postRender();
             },
             onunload : function(x){
-                // console.log("Unloading ...");
+
             },
             onremove : function(x){
                 objectPage.clear();
@@ -2438,5 +2262,5 @@
         };
         return objectPage;
     }
-    page.views.object = newObjectPage;//objectPage.view;
+    page.views.object = newObjectPage;
 }());
