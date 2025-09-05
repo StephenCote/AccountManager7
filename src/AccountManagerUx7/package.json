@@ -26,6 +26,7 @@
     "material-symbols": "^0.28.2",
     "mithril": "^2.2.8",
     "pdfjs-dist": "^5.1.91",
+    "tone": "^15.1.22",
     "uuid": "^8.3.2"
   },
   "devDependencies": {

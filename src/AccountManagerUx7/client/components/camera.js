@@ -137,12 +137,14 @@
             };
         } catch (err) {
             isCapturing = false;
+            console.error("getUserMedia error:", err);
             page.toast("error", "getUserMedia error:", err);
         }
     }
     let capturing = false;
     async function captureAndSend(fCaptureHandler) {
         let videoEl = videoElement();
+        console.log("Capture and send triggered.");
         if (!videoEl || videoEl.paused || videoEl.ended) {
             return;
         }
