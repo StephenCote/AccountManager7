@@ -97,14 +97,16 @@
 
     let data = getInitialData();
     
+    let analyzing = false;
     async function analyzeAndLockPhrases() {
+        if(analyzing) return;
         scanForCombinations();
         const phrasesToAnalyze = data.foundCombinations
             .filter(combo => !combo.isLocked)
             .map(combo => combo.phrase);
 
         if (phrasesToAnalyze.length === 0) return;
-
+        analyzing = true;
         try {
             let resp = await m.request({
                 method: 'POST',
@@ -137,11 +139,13 @@
                             page.toast("success", `Phrase "${scoredPhrase.phrase}" locked by Player ${owner}!`);
                         }
                     }
+                    analyzing = false;
                 });
             }
         } catch (e) {
             console.error("Error analyzing phrases:", e);
             page.toast("error", "Could not analyze phrases.");
+            analyzing = false;
         }
     }
 
@@ -183,9 +187,173 @@
         data.foundCombinations = combinations;
     }
 
+    let chatName = "WordBattle.chat";
+    async function prepareChatConfig(){
+        let grp = await page.findObject("auth.group", "data", "~/Chat");
+        let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatConfig"));
+        q.field("groupId", grp.id);
+        q.field("name", chatName);
+        q.cache(false);
+        let cfg;
+        let qr = await page.search(q);
+        if(!qr || !qr.results || qr.results.length == 0){
+            let icfg = am7model.newInstance("olio.llm.chatConfig");
+            icfg.api.groupId(grp.id);
+            icfg.api.groupPath(grp.path);
+            icfg.api.name(chatName);
+            icfg.api.model("herm-local");
+            icfg.api.serverUrl("http://localhost:11434");
+            icfg.api.serviceType("ollama");
+            await page.createObject(icfg.entity);
+            console.log(icfg);
+            qr = await page.search(q);
+        }
+        if(qr?.results.length > 0){
+            cfg = qr.results[0];
+        }
+
+        if(!cfg){
+            page.toast("Error", "Could not create chat config");
+        }
+
+        return cfg;
+    }
+
+    let promptName = "WordBattle.prompt";
+    async function preparePrompt(){
+        let grp = await page.findObject("auth.group", "data", "~/Chat");
+        let q = am7view.viewQuery(am7model.newInstance("olio.llm.promptConfig"));
+        q.field("groupId", grp.id);
+        q.field("name", promptName);
+        q.cache(false);
+        let cfg;
+        let qr = await page.search(q);
+        if(!qr || !qr.results || qr.results.length == 0){
+            let icfg = am7model.newInstance("olio.llm.promptConfig");
+            icfg.api.groupId(grp.id);
+            icfg.api.groupPath(grp.path);
+            icfg.api.name(promptName);
+            icfg.entity.system = [
+                "You are the controller for a word battle game. Random words will be assembled into phrases. Possible coherent phrases will be sent to you to be evaluated.",
+                "Your job is to evaluate these phrases and respond in one of three ways:",
+                "1. If the phrase is incoherent, respond with 'incoherent'.",
+                "2. If the phrase is coherent as-is, respond with the phrase itself.",
+                "3. If the phrase can be improved by changing word order, tense, count, etc, or by adding a pronoun, preposition, or conjunction, then respond with the improved phrase.",
+                "Example: 'Holbein fatally choke vicariously' -> 'Holbein fatally choked vicariously'",
+                "Example: 'aphyllous blood count' -> 'incoherent'",
+                "Example: 'blessed whistle' -> 'blessed whistle'",
+                "Example: 'like blessed whistle knock' -> 'knocked like a blessed whistle'"
+            ];
+            await page.createObject(icfg.entity);
+            console.log(icfg);
+            qr = await page.search(q);
+        }
+        if(qr?.results.length > 0){
+            cfg = qr.results[0];
+        }
+
+        if(!cfg){
+            page.toast("Error", "Could not create prompt config");
+        }
+
+        return cfg;
+    }
+
+    let chatRequestName = "WordBattle Chat";
+    async function getChatRequest(){
+        let grp = await page.findObject("auth.group", "data", "~/ChatRequests");
+        let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatRequest"));
+        q.field("groupId", grp.id);
+        q.field("name", chatRequestName);
+        q.cache(false);
+        let req;
+        let qr = await page.search(q);
+        if(!qr || !qr.results || qr.results.length == 0){
+            let chatReq = {
+                schema: "olio.llm.chatRequest",
+                name: chatRequestName,
+                chatConfig: { objectId: chatCfg.objectId },
+                promptConfig: { objectId: promptCfg.objectId },
+                uid: page.uid()
+            };
+        
+            req = await m.request({ method: 'POST', url: g_application_path + "/rest/chat/new", withCredentials: true, body: chatReq });
+        }
+        else if(qr && qr.results && qr.results.length > 0){
+            req = qr.results[0];
+        }
+        console.log(req);
+        return req;
+        
+    }
+
+    async function chat(msg){
+        if(!gameChat) return;
+        gameChat.message = msg;
+        gameChat.uid = page.uid();
+        console.log(gameChat);
+        m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: gameChat }).then((r) => {
+            console.log(r);
+
+        });
+
+        /*
+        let cent = am7model.newPrimitive("olio.llm.chatRequest");
+        cent.chatConfig = {id: chatCfg.id};
+        cent.promptConfig = {id: promptCfg.id};
+        cent.name = "Word Battle";
+
+        if(pcfg && pcfg.length && !entity.promptConfig) entity.promptConfig = pcfg[0];
+
+        let chatReq = {
+          schema: "olio.llm.chat.request",
+          objectId: inst.api.objectId(),
+          uid: page.uid(),
+          message: msg + (msg.length && faceProfile ? "\n(Metrics: " + JSON.stringify(faceProfile) + ")": ""),
+          data
+        };
+        try {
+          if (chatCfg?.chat.stream) {
+            page.chatStream = newChatStream();
+            chatCfg.streaming = true;
+            page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
+          }
+          else {
+            m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
+              if (!chatCfg.history) chatCfg.history = {};
+              chatCfg.history.messages = r?.messages || [];
+              chatCfg.pending = false;
+              page.components.audio.clearMagic8();
+            });
+          }
+        }
+        */
+    }
+
+
+    let promptCfg = null;
+    let chatCfg = null;
+    let gameChat = null;
     async function startGame() {
-        data.isGameStarted = true;
+        promptCfg = await preparePrompt();
+        if(!promptCfg){
+            page.toast("Error", "Could not start game without prompt config");
+            return;
+        }
+
+        chatCfg = await prepareChatConfig();
+        if(!chatCfg){
+            page.toast("Error", "Could not start game without chat config");
+            return;
+        }
+        gameChat = await getChatRequest();
+        if(!gameChat){
+            page.toast("Error", "Could not start game without chat request");
+            return;
+        }
         await prepareWords();
+        data.isGameStarted = true;
+
         startTimer();
     }
 
@@ -786,11 +954,15 @@
     }
 
     let wordGame = {
+        chat,
         scoreCard: () => "",
         oninit: function () {
             setup();
         },
         onremove: function() {
+            if(data){
+                data.isPaused = true;
+            }
             clearInterval(data.timerId); // Cleanup timer on component removal
         },
         view: function () {
