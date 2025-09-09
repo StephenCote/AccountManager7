@@ -6,18 +6,8 @@ import java.util.List;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.cote.accountmanager.analysis.FaceAnalysis;
-import org.cote.accountmanager.analysis.FaceRequest;
-import org.cote.accountmanager.analysis.FaceResponse;
-import org.cote.accountmanager.analysis.FaceResult;
-import org.cote.accountmanager.io.SystemTaskAgent;
-import org.cote.accountmanager.olio.OlioTaskAgent;
-import org.cote.accountmanager.olio.llm.OpenAIResponse;
-import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.JSONUtil;
-
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 import jakarta.annotation.security.DeclareRoles;
 import jakarta.annotation.security.RolesAllowed;
