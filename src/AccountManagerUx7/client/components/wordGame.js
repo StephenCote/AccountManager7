@@ -139,6 +139,9 @@
                             page.toast("success", `Phrase "${scoredPhrase.phrase}" locked by Player ${owner}!`);
                         }
                     }
+                    else{
+                        console.log(`Phrase "${scoredPhrase.phrase}" not coherent enough to lock (score: ${scoredPhrase.score}).`);
+                    }
                     analyzing = false;
                 });
             }
@@ -211,10 +214,11 @@
     let chatRequestName = "WordBattle Chat";
     async function getChatRequest(){
         let grp = await page.findObject("auth.group", "data", "~/ChatRequests");
-        let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatRequest"));
+        let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest));
         q.field("groupId", grp.id);
         q.field("name", chatRequestName);
         q.cache(false);
+        q.entity.request.push("chatConfig", "promptConfig", "objectId");
         let req;
         let qr = await page.search(q);
         if(!qr || !qr.results || qr.results.length == 0){
@@ -237,7 +241,14 @@
     }
 
     async function chat(msg){
-        if(!gameChat) return;
+        if(!gameChat){
+            page.toast("error", "Chat request is not defined.");
+            return;
+        }
+        if(!gameChat.chatConfig || !gameChat.promptConfig){
+            page.toast("error", "Chat request is missing the prompt or chat config.");
+            return;
+        }
         gameChat.message = msg;
         gameChat.uid = page.uid();
         console.log(gameChat);
@@ -356,7 +367,8 @@
         });
 
         const jsonString = JSON.stringify(exportedData, null, 2);
-        console.log("Exported Board State:", jsonString);
+        //console.log("Exported Board State:", jsonString);
+        console.log(exportedData);
 
         try {
             const textArea = document.createElement("textarea");
