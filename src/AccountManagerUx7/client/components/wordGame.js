@@ -20,19 +20,19 @@
         const shuffled = commonWords.sort(() => 0.5 - Math.random());
         data.activeCommonWords = shuffled.slice(0, 10); // Pick 10 random words
     }
-    
+
     // --- UTILITY FUNCTIONS ---
-    
+
     function getWordColorClass(word) {
         if (!word) return '';
         let classes = '';
 
         if (word.isLocked) {
-             classes += word.owner === 1 ? 'shadow-[0_0_8px_#60a5fa] ' : 'shadow-[0_0_8px_#4ade80] ';
+            classes += word.owner === 1 ? 'shadow-[0_0_8px_#60a5fa] ' : 'shadow-[0_0_8px_#4ade80] ';
         }
 
         if (word.isCustom) return classes + 'bg-gray-200 text-gray-800';
-        
+
         if (word.isCommon) {
             if (word.player === 1) return classes + 'bg-blue-200 text-blue-800';
             if (word.player === 2) return classes + 'bg-green-200 text-green-800';
@@ -65,6 +65,7 @@
 
     function getInitialData() {
         return {
+            isProcessingEndOfRound: false,
             isGameStarted: false,
             turn: 1, // 1 or 2
             turnPoints: 5,
@@ -89,17 +90,17 @@
             },
             board: Array(8).fill(null).map(() => Array(10).fill(null)),
             activeCommonWords: [],
-            left: [], 
+            left: [],
             right: [],
             foundCombinations: []
         };
     }
 
     let data = getInitialData();
-    
+
     let analyzing = false;
     async function analyzeAndLockPhrases() {
-        if(analyzing) return;
+        if (analyzing) return;
         scanForCombinations();
         const phrasesToAnalyze = data.foundCombinations
             .filter(combo => !combo.isLocked)
@@ -125,7 +126,7 @@
                             const p1Words = comboToLock.words.filter(w => w.player === 1).length;
                             const p2Words = comboToLock.words.filter(w => w.player === 2).length;
                             const owner = p1Words > p2Words ? 1 : (p2Words > p1Words ? 2 : data.turn);
-                            
+
                             // Mark words on board as locked
                             const phraseId = Date.now() + Math.random();
                             comboToLock.words.forEach(wordInfo => {
@@ -139,7 +140,7 @@
                             page.toast("success", `Phrase "${scoredPhrase.phrase}" locked by Player ${owner}!`);
                         }
                     }
-                    else{
+                    else {
                         console.log(`Phrase "${scoredPhrase.phrase}" not coherent enough to lock (score: ${scoredPhrase.score}).`);
                     }
                     analyzing = false;
@@ -190,13 +191,91 @@
         data.foundCombinations = combinations;
     }
 
+async function handleEndOfRound() {
+        // --- STEP 1: Set processing state to show the overlay ---
+        data.isProcessingEndOfRound = true;
+        page.toast("info", `Round ${data.currentRound} has ended! Calculating scores...`);
+        clearInterval(data.timerId);
+        data.isPaused = true;
+        m.redraw();
+
+        scanForCombinations();
+        const combinationsThisRound = [...data.foundCombinations];
+        
+        combinationsThisRound.forEach(combo => {
+            const p1Words = combo.words.filter(w => w.player === 1).length;
+            const p2Words = combo.words.filter(w => w.player === 2).length;
+            let owner = p1Words > p2Words ? 1 : (p2Words > p1Words ? 2 : 0);
+
+            if (owner !== 0) {
+                combo.owner = owner;
+                if (owner === 1) data.player1.score += 5; else data.player2.score += 5;
+                page.toast("success", `Player ${owner} gets 5 points for forming "${combo.phrase}"`);
+            }
+        });
+
+        // --- STEP 2: Process all phrases in parallel for speed ---
+        const chatPromises = combinationsThisRound
+            .filter(combo => combo.owner)
+            .map(async (combo) => {
+                try {
+                    const response = await chat(combo.phrase);
+                    const lastMessage = response?.messages?.[response.messages.length - 1]?.content;
+                    const isCoherent = lastMessage && lastMessage.toLowerCase().trim() !== 'incoherent';
+                    return { ...combo, isCoherent };
+                } catch (e) {
+                    console.error("Error evaluating phrase:", combo.phrase, e);
+                    page.toast("error", `Could not evaluate phrase: "${combo.phrase}"`);
+                    return { ...combo, isCoherent: false }; // Treat errors as incoherent
+                }
+            });
+
+        const results = await Promise.all(chatPromises);
+        const survivingPhrases = [];
+
+        results.forEach(resultCombo => {
+            if (resultCombo.isCoherent) {
+                page.toast("success", `Phrase "${resultCombo.phrase}" is coherent!`);
+                if (resultCombo.owner === 1) data.player1.score += 10; else data.player2.score += 10;
+                page.toast("success", `Player ${resultCombo.owner} gets 10 bonus points!`);
+                survivingPhrases.push(resultCombo);
+            } else {
+                page.toast("info", `Phrase "${resultCombo.phrase}" was incoherent and is removed.`);
+            }
+        });
+
+        // --- STEP 3: Rebuild the board ---
+        const newBoard = Array(8).fill(null).map(() => Array(10).fill(null));
+        let nextAvailableRow = 0;
+        survivingPhrases.forEach(combo => {
+            if (nextAvailableRow < data.board.length) {
+                combo.words.forEach(wordInfo => {
+                    const originalWord = data.board[wordInfo.row][wordInfo.col];
+                    if (originalWord) newBoard[nextAvailableRow][wordInfo.col] = originalWord;
+                });
+                nextAvailableRow++;
+            }
+        });
+        data.board = newBoard;
+
+        // --- STEP 4: Reset state for the next round and hide overlay ---
+        data.currentRound++;
+        data.actionsThisRound = 0;
+        data.isPaused = false;
+        data.isProcessingEndOfRound = false; // <-- Hide the overlay
+        page.toast("success", `Starting Round ${data.currentRound}!`);
+        
+        switchTurn();
+        m.redraw();
+    }
+
     let chatName = "WordBattle.chat";
-    async function prepareChatConfig(){
+    async function prepareChatConfig() {
         return am7chat.makeChat(chatName, "herm-local", "http://localhost:11434", "ollama");
     }
 
     let promptName = "WordBattle.prompt";
-    async function preparePrompt(){
+    async function preparePrompt() {
 
         return am7chat.makePrompt(promptName, [
             "You are the controller for a word battle game. Random words will be assembled into phrases. Possible coherent phrases will be sent to you to be evaluated.",
@@ -212,7 +291,7 @@
     }
 
     let chatRequestName = "WordBattle Chat";
-    async function getChatRequest(){
+    async function getChatRequest() {
         let grp = await page.findObject("auth.group", "data", "~/ChatRequests");
         let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest));
         q.field("groupId", grp.id);
@@ -221,7 +300,7 @@
         q.entity.request.push("chatConfig", "promptConfig", "objectId");
         let req;
         let qr = await page.search(q);
-        if(!qr || !qr.results || qr.results.length == 0){
+        if (!qr || !qr.results || qr.results.length == 0) {
             let chatReq = {
                 schema: "olio.llm.chatRequest",
                 name: chatRequestName,
@@ -229,23 +308,23 @@
                 promptConfig: { objectId: promptCfg.objectId },
                 uid: page.uid()
             };
-        
+
             req = await m.request({ method: 'POST', url: g_application_path + "/rest/chat/new", withCredentials: true, body: chatReq });
         }
-        else if(qr && qr.results && qr.results.length > 0){
+        else if (qr && qr.results && qr.results.length > 0) {
             req = qr.results[0];
         }
         console.log(req);
         return req;
-        
+
     }
 
-    async function chat(msg){
-        if(!gameChat){
+    async function chat(msg) {
+        if (!gameChat) {
             page.toast("error", "Chat request is not defined.");
             return;
         }
-        if(!gameChat.chatConfig || !gameChat.promptConfig){
+        if (!gameChat.chatConfig || !gameChat.promptConfig) {
             page.toast("error", "Chat request is missing the prompt or chat config.");
             return;
         }
@@ -256,58 +335,25 @@
             console.log(r);
 
         });
-
-        /*
-        let cent = am7model.newPrimitive("olio.llm.chatRequest");
-        cent.chatConfig = {id: chatCfg.id};
-        cent.promptConfig = {id: promptCfg.id};
-        cent.name = "Word Battle";
-
-        if(pcfg && pcfg.length && !entity.promptConfig) entity.promptConfig = pcfg[0];
-
-        let chatReq = {
-          schema: "olio.llm.chat.request",
-          objectId: inst.api.objectId(),
-          uid: page.uid(),
-          message: msg + (msg.length && faceProfile ? "\n(Metrics: " + JSON.stringify(faceProfile) + ")": ""),
-          data
-        };
-        try {
-          if (chatCfg?.chat.stream) {
-            page.chatStream = newChatStream();
-            chatCfg.streaming = true;
-            page.wss.send("chat", JSON.stringify(chatReq), undefined, inst.model.name);
-          }
-          else {
-            m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chatReq }).then((r) => {
-              if (!chatCfg.history) chatCfg.history = {};
-              chatCfg.history.messages = r?.messages || [];
-              chatCfg.pending = false;
-              page.components.audio.clearMagic8();
-            });
-          }
-        }
-        */
     }
-
 
     let promptCfg = null;
     let chatCfg = null;
     let gameChat = null;
     async function startGame() {
         promptCfg = await preparePrompt();
-        if(!promptCfg){
+        if (!promptCfg) {
             page.toast("Error", "Could not start game without prompt config");
             return;
         }
 
         chatCfg = await prepareChatConfig();
-        if(!chatCfg){
+        if (!chatCfg) {
             page.toast("Error", "Could not start game without chat config");
             return;
         }
         gameChat = await getChatRequest();
-        if(!gameChat){
+        if (!gameChat) {
             page.toast("Error", "Could not start game without chat request");
             return;
         }
@@ -330,7 +376,7 @@
         page.toast("info", `Timer ${data.isPaused ? 'paused' : 'resumed'}.`);
         m.redraw();
     }
-    
+
     function exportBoardState() {
         scanForCombinations(); // Ensure combinations are up-to-date
         const exportedData = {
@@ -410,39 +456,40 @@
         data.turnPoints = 5;
         data.commonWordUsedThisTurn = false;
         startTimer();
-        
+
         if (data.turn === 2 && data.player2.autopilot) {
             setTimeout(runAutopilot, 1500);
         }
     }
-    
+
     function spendTurnPoints(points) {
         data.turnPoints -= points;
-        if(data.turnPoints <= 0) {
+        if (data.turnPoints <= 0) {
             data.actionsThisRound++;
             if (data.actionsThisRound >= 20) {
-                page.toast("success", `Round ${data.currentRound} has ended!`);
-                data.currentRound++;
-                data.actionsThisRound = 0;
+                // Trigger the new end-of-round logic
+                handleEndOfRound(); 
+            } else {
+                // Continue to the next turn normally
+                setTimeout(switchTurn, 200);
             }
-            setTimeout(switchTurn, 200);
         }
     }
 
     function handleRefreshWords(playerNum) {
         let player = playerNum === 1 ? data.player1 : data.player2;
         let words = playerNum === 1 ? data.left : data.right;
-        
+
         if (words.length > 5) player.score--;
         if (words.length >= 6) player.score -= 5;
         page.toast("info", `Player ${playerNum} refreshed their word list.`);
         prepareWords(playerNum);
     }
-    
+
     function handleCustomWord(playerNum, value) {
         let player = playerNum === 1 ? data.player1 : data.player2;
         player.customWord = value;
-        
+
         clearTimeout(player.customWordTimeout);
         player.customWordTimeout = setTimeout(() => {
             addCustomWord(playerNum);
@@ -453,9 +500,9 @@
         let player = playerNum === 1 ? data.player1 : data.player2;
         const wordName = player.customWord.trim();
         if (wordName) {
-            const isDuplicate = data.left.some(w => w.name.toLowerCase() === wordName.toLowerCase()) || 
-                                data.right.some(w => w.name.toLowerCase() === wordName.toLowerCase());
-            
+            const isDuplicate = data.left.some(w => w.name.toLowerCase() === wordName.toLowerCase()) ||
+                data.right.some(w => w.name.toLowerCase() === wordName.toLowerCase());
+
             if (isDuplicate) {
                 page.toast("error", "Cannot add a duplicate word.");
                 player.customWord = '';
@@ -470,49 +517,49 @@
             m.redraw();
         }
     }
-    
+
     function runAutopilot() {
         if (data.turn !== 2 || !data.player2.autopilot) return;
 
         const choice = Math.random();
 
         let emptyCells = [];
-        data.board.forEach((row, rIdx) => row.forEach((cell, cIdx) => { if (!cell) emptyCells.push({r: rIdx, c: cIdx}); }));
-        
+        data.board.forEach((row, rIdx) => row.forEach((cell, cIdx) => { if (!cell) emptyCells.push({ r: rIdx, c: cIdx }); }));
+
         if (choice < 0.7 && data.right.length > 0 && emptyCells.length > 0) {
             const wordToPlace = data.right[Math.floor(Math.random() * data.right.length)];
             const wordIndex = data.right.indexOf(wordToPlace);
             const targetCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-            
+
             const wordWithPlayer = { ...wordToPlace, player: 2 };
             data.board[targetCell.r][targetCell.c] = wordWithPlayer;
             data.right.splice(wordIndex, 1);
-            
+
             const points = calculateTurnScore();
             data.player2.score += points;
             page.toast("info", `Autopilot placed '${wordWithPlayer.name}' for ${points} points.`);
             analyzeAndLockPhrases();
             spendTurnPoints(5);
             if (data.right.length < 5) prepareWords(2, true);
-        } 
+        }
         else if (choice < 0.9 && !data.commonWordUsedThisTurn && emptyCells.length > 0) {
             const wordToPlace = data.activeCommonWords[Math.floor(Math.random() * data.activeCommonWords.length)];
             const targetCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-            
+
             const wordWithPlayer = { name: wordToPlace, isCommon: true, player: 2 };
             data.board[targetCell.r][targetCell.c] = wordWithPlayer;
             data.commonWordUsedThisTurn = true;
             page.toast("info", `Autopilot placed common word '${wordWithPlayer.name}'.`);
             analyzeAndLockPhrases();
             setTimeout(switchTurn, 200);
-        } 
+        }
         else {
-             page.toast("info", "Autopilot passed its turn.");
-             switchTurn();
+            page.toast("info", "Autopilot passed its turn.");
+            switchTurn();
         }
         m.redraw();
     }
-    
+
     async function shiftWords(direction) {
         // Unlock all words before shifting
         data.board.forEach(row => row.forEach(cell => {
@@ -526,7 +573,7 @@
         const rows = data.board.length;
         const cols = data.board[0].length;
         const newBoard = Array(rows).fill(null).map(() => Array(cols).fill(null));
-        
+
         // **BUG FIX START**: Capture coordinates when gathering words.
         const allWords = [];
         data.board.forEach((row, rIdx) => row.forEach((cell, cIdx) => {
@@ -536,22 +583,22 @@
 
         if (direction === 'up') {
             for (let c = 0; c < cols; c++) {
-                const colWords = allWords.filter(w => w.col === c).sort((a,b) => a.row - b.row);
+                const colWords = allWords.filter(w => w.col === c).sort((a, b) => a.row - b.row);
                 colWords.forEach((word, r) => newBoard[r][c] = word);
             }
         } else if (direction === 'down') {
             for (let c = 0; c < cols; c++) {
-                const colWords = allWords.filter(w => w.col === c).sort((a,b) => b.row - a.row);
+                const colWords = allWords.filter(w => w.col === c).sort((a, b) => b.row - a.row);
                 colWords.forEach((word, i) => newBoard[rows - 1 - i][c] = word);
             }
         } else if (direction === 'left') {
             for (let r = 0; r < rows; r++) {
-                const rowWords = allWords.filter(w => w.row === r).sort((a,b) => a.col - b.col);
+                const rowWords = allWords.filter(w => w.row === r).sort((a, b) => a.col - b.col);
                 rowWords.forEach((word, c) => newBoard[r][c] = word);
             }
         } else if (direction === 'right') {
             for (let r = 0; r < rows; r++) {
-                const rowWords = allWords.filter(w => w.row === r).sort((a,b) => b.col - a.col);
+                const rowWords = allWords.filter(w => w.row === r).sort((a, b) => b.col - a.col);
                 rowWords.forEach((word, i) => newBoard[r][cols - 1 - i] = word);
             }
         }
@@ -565,9 +612,9 @@
 
 
     // --- DRAG AND DROP HANDLERS ---
-    
+
     function findEmptyAdjacent(row, col) {
-        const directions = [ [0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1] ];
+        const directions = [[0, 1], [0, -1], [1, 0], [-1, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]];
         for (const [dr, dc] of directions) {
             const newRow = row + dr, newCol = col + dc;
             if (newRow >= 0 && newRow < 8 && newCol >= 0 && newCol < 10 && !data.board[newRow][newCol]) {
@@ -588,28 +635,28 @@
         e.preventDefault();
         e.stopPropagation();
         const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
-        
+
         const targetCell = data.board[targetRowIndex][targetColIndex];
         const emptySpot = findEmptyAdjacent(targetRowIndex, targetColIndex);
-        
+
         if (targetCell && targetCell.isLocked && emptySpot) {
-             page.toast("error", "Cannot bump a locked phrase.");
-             return;
+            page.toast("error", "Cannot bump a locked phrase.");
+            return;
         }
 
         if (payload.source === 'common' && data.commonWordUsedThisTurn) return;
         if ((payload.source === 'left' && data.turn !== 1) || (payload.source === 'right' && data.turn !== 2)) return;
-        if(payload.source === 'board' && payload.word.player !== data.turn) return;
+        if (payload.source === 'board' && payload.word.player !== data.turn) return;
 
         const wordWithPlayer = { ...payload.word, player: data.turn };
-        
+
         if (targetCell) {
             const bumpedWord = targetCell;
             if (emptySpot) {
                 data.board[emptySpot.r][emptySpot.c] = bumpedWord;
                 page.toast("info", `Player ${bumpedWord.player}'s word '${bumpedWord.name}' was bumped.`);
             } else { // Destruction logic
-                 if (bumpedWord.isLocked) {
+                if (bumpedWord.isLocked) {
                     data.board.forEach(row => row.forEach(cell => {
                         if (cell && cell.phraseId === bumpedWord.phraseId) {
                             cell.isLocked = false;
@@ -628,17 +675,17 @@
                 }
             }
         }
-        
+
         data.board[targetRowIndex][targetColIndex] = wordWithPlayer;
 
         if (payload.source !== 'board') page.toast("info", `Player ${data.turn} placed the word '${wordWithPlayer.name}'.`);
 
         if (payload.source === 'left') {
             data.left.splice(payload.index, 1);
-            if(data.left.length < 5) prepareWords(1, true);
+            if (data.left.length < 5) prepareWords(1, true);
         } else if (payload.source === 'right') {
             data.right.splice(payload.index, 1);
-            if(data.right.length < 5) prepareWords(2, true);
+            if (data.right.length < 5) prepareWords(2, true);
         } else if (payload.source === 'board') {
             data.board[payload.rowIndex][payload.colIndex] = null;
         } else if (payload.source === 'common') {
@@ -652,12 +699,12 @@
             page.toast("success", `Player ${data.turn} scored ${points} points!`);
             spendTurnPoints(5);
         }
-        
+
         analyzeAndLockPhrases();
         randomizeCommonWords();
         m.redraw();
     }
-    
+
     function handleTrashDrop(e) {
         e.preventDefault();
         const payload = JSON.parse(e.dataTransfer.getData("text/plain"));
@@ -673,12 +720,12 @@
                         cell.owner = null;
                     }
                 }));
-                 page.toast("info", "A locked phrase was broken!");
+                page.toast("info", "A locked phrase was broken!");
             }
 
             if (!wordToTrash.isCommon && !wordToTrash.isCustom) {
-                 if(data.turn === 1) data.player1.score -= 5;
-                 else data.player2.score -= 5;
+                if (data.turn === 1) data.player1.score -= 5;
+                else data.player2.score -= 5;
             }
             page.toast("info", `Player ${data.turn} trashed the word '${wordToTrash.name}'.`);
             data.board[payload.rowIndex][payload.colIndex] = null;
@@ -700,16 +747,20 @@
                 ])
             ]);
         }
-        
-        return m("div", { class: "flex-grow overflow-hidden flex bg-white border border-gray-200 dark:bg-black dark:border-gray-700 dark:text-gray-200" }, [
+
+        return m("div", { class: "relative flex-grow overflow-hidden flex bg-white border border-gray-200 dark:bg-black dark:border-gray-700 dark:text-gray-200" }, [
+            data.isProcessingEndOfRound ? m("div", { class: "absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50" }, [
+                m("div", { class: "text-white text-2xl font-bold animate-pulse" }, "Calculating End of Round Scores...")
+            ]) : null,
+
             m("div", { class: "flex flex-col w-full overflow-hidden p-0" }, [
                 m("div", { class: "flex-1 overflow-hidden" }, [
                     m("div", { class: "max-h-full h-full flex" }, [
                         // Player 1 Panel
                         m("div", { class: `flex flex-col w-1/4 p-4 overflow-y-auto mx-auto ${data.turn === 1 ? 'bg-blue-100 dark:bg-blue-900' : ''}` }, [
-                            m("div", {class: "flex justify-between items-center"}, [
-                                m("h3", {class: "text-lg font-bold"}, "Player 1"),
-                                m("div", {class: "font-bold text-xl p-2 bg-gray-200 dark:bg-gray-700 rounded"}, data.player1.score)
+                            m("div", { class: "flex justify-between items-center" }, [
+                                m("h3", { class: "text-lg font-bold" }, "Player 1"),
+                                m("div", { class: "font-bold text-xl p-2 bg-gray-200 dark:bg-gray-700 rounded" }, data.player1.score)
                             ]),
                             m("input", {
                                 class: "w-full p-1 my-2 border rounded",
@@ -719,20 +770,20 @@
                                 onblur: () => addCustomWord(1),
                                 disabled: data.turn !== 1
                             }),
-                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(1), disabled: data.turn !== 1 }, [m("span", {class:"material-symbols-outlined material-icons-24"},"refresh"), "Refresh Words"]),
+                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(1), disabled: data.turn !== 1 }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "refresh"), "Refresh Words"]),
                             leftWords()
                         ]),
-                        
+
                         // Center Game Board Panel
                         m("div", { class: "flex flex-col w-3/5 p-2 overflow-auto mx-auto" }, [
                             m("h2", { class: "text-center text-2xl font-bold" }, "Word Battle"),
-                            m("div", {class: "text-center font-semibold text-lg"}, `Round: ${data.currentRound} | Actions Left: ${20 - data.actionsThisRound}`),
-                            m("div", {class: "text-center font-semibold text-lg"}, `Turn: Player ${data.turn} | Time: ${data.timeLeft}s | Turn Actions: ${data.turnPoints}`),
+                            m("div", { class: "text-center font-semibold text-lg" }, `Round: ${data.currentRound} | Actions Left: ${20 - data.actionsThisRound}`),
+                            m("div", { class: "text-center font-semibold text-lg" }, `Turn: Player ${data.turn} | Time: ${data.timeLeft}s | Turn Actions: ${data.turnPoints}`),
                             m("div", { class: "menu-buttons-spaced my-2 justify-center" },
                                 data.activeCommonWords.map(word =>
                                     m("button", {
                                         draggable: !data.commonWordUsedThisTurn,
-                                        class: `menu-button ${getWordColorClass({isCommon: true})} ${data.commonWordUsedThisTurn ? 'opacity-50 cursor-not-allowed' : ''}`,
+                                        class: `menu-button ${getWordColorClass({ isCommon: true })} ${data.commonWordUsedThisTurn ? 'opacity-50 cursor-not-allowed' : ''}`,
                                         ondragstart: (e) => {
                                             if (data.commonWordUsedThisTurn) {
                                                 e.preventDefault();
@@ -784,14 +835,14 @@
                                 }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "delete"), "Trash"])
                             ])
                         ]),
-                        
+
                         // Player 2 Panel
                         m("div", { class: `flex flex-col w-1/4 p-4 overflow-y-auto mx-auto ${data.turn === 2 ? 'bg-green-100 dark:bg-green-900' : ''}` }, [
-                             m("div", {class: "flex justify-between items-center"}, [
-                                m("h3", {class: "text-lg font-bold"}, "Player 2"),
-                                m("div", {class: "font-bold text-xl p-2 bg-gray-200 dark:bg-gray-700 rounded"}, data.player2.score)
+                            m("div", { class: "flex justify-between items-center" }, [
+                                m("h3", { class: "text-lg font-bold" }, "Player 2"),
+                                m("div", { class: "font-bold text-xl p-2 bg-gray-200 dark:bg-gray-700 rounded" }, data.player2.score)
                             ]),
-                             m("input", {
+                            m("input", {
                                 class: "w-full p-1 my-2 border rounded",
                                 placeholder: "Add custom word...",
                                 value: data.player2.customWord,
@@ -799,14 +850,14 @@
                                 onblur: () => addCustomWord(2),
                                 disabled: data.turn !== 2
                             }),
-                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(2), disabled: data.turn !== 2 }, [m("span", {class:"material-symbols-outlined material-icons-24"},"refresh"), "Refresh Words"]),
-                            m("label", {class: "flex items-center my-2"}, [
+                            m("button", { class: "menu-button", onclick: () => handleRefreshWords(2), disabled: data.turn !== 2 }, [m("span", { class: "material-symbols-outlined material-icons-24" }, "refresh"), "Refresh Words"]),
+                            m("label", { class: "flex items-center my-2" }, [
                                 m("input", {
                                     type: "checkbox",
                                     checked: data.player2.autopilot,
-                                    onchange: (e) => { data.player2.autopilot = e.target.checked; if(data.turn === 2 && data.player2.autopilot) runAutopilot(); }
+                                    onchange: (e) => { data.player2.autopilot = e.target.checked; if (data.turn === 2 && data.player2.autopilot) runAutopilot(); }
                                 }),
-                                m("span", {class: "ml-2"}, "Autopilot")
+                                m("span", { class: "ml-2" }, "Autopilot")
                             ]),
                             rightWords()
                         ])
@@ -841,7 +892,7 @@
             }
         }, word.name));
     }
-    
+
     // --- DATA FETCHING AND SETUP ---
 
     async function prepareWords(playerNum = null, isAutoRefresh = false) {
@@ -920,8 +971,8 @@
         oninit: function () {
             setup();
         },
-        onremove: function() {
-            if(data){
+        onremove: function () {
+            if (data) {
                 data.isPaused = true;
             }
             clearInterval(data.timerId); // Cleanup timer on component removal

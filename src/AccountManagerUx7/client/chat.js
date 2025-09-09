@@ -14,6 +14,7 @@
             icfg.api.groupPath(grp.path);
             icfg.api.name(sName);
             icfg.api.model(sModel);
+            icfg.api.messageTrim(6);
             icfg.api.serverUrl(sServerUrl);
             icfg.api.serviceType(sServiceType);
             await page.createObject(icfg.entity);
