@@ -245,38 +245,11 @@
     }
 
     async function deleteChat(s) {
-      page.components.dialog.confirm("Delete chat " + s + "?", async function () {
-        if (s.session) {
-          let q = am7client.newQuery(s.sessionType);
-          q.field("id", s.session.id);
-          try {
-            let qr = await page.search(q);
-            if (qr && qr.results && qr.results.length > 0) {
-              page.toast("info", "Deleting session data - " + qr.results[0].objectId);
-              await page.deleteObject(s.sessionType, qr.results[0].objectId);
-            }
-            else {
-              page.toast("error", "Failed to find session data to delete", 5000);
-              console.error("Failed to delete session data", qr);
-            }
-          }
-          catch (e) {
-            page.toast("error", "Error deleting session data", 5000);
-            console.error("Error deleting session data", e);
-          }
-
-        }
-        else {
-          console.warn("No session data found");
-        }
-        // console.log("Deleting request", s.objectId);
-        await page.deleteObject(s[am7model.jsonModelKey], s.objectId);
-
+      am7chat.deleteChat(s, false, async function () {
         aSess = undefined;
         await loadConfigList();
         doClear();
         m.redraw();
-
       });
     }
 

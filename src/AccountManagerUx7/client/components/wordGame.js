@@ -65,6 +65,7 @@
 
     function getInitialData() {
         return {
+             endGameInfo: null,
             isProcessingEndOfRound: false,
             isGameStarted: false,
             turn: 1, // 1 or 2
@@ -191,101 +192,135 @@
         data.foundCombinations = combinations;
     }
 
-    async function handleEndOfRound() {
+async function handleEndOfRound() {
+        // --- STEP 1: Set processing state to show the overlay ---
+        data.isProcessingEndOfRound = true;
         page.toast("info", `Round ${data.currentRound} has ended! Calculating scores...`);
-        // Pause game activity during calculation
         clearInterval(data.timerId);
         data.isPaused = true;
         m.redraw();
 
-        // 1. Get the final board state for the round
-        console.log("End of Round - Scanning for combinations");
         scanForCombinations();
         const combinationsThisRound = [...data.foundCombinations];
-
-        // 2. Award initial points for all formed phrases
-        console.log("End of Round - Awarding initial points");
+        
+        // Award initial points for all formed phrases
         combinationsThisRound.forEach(combo => {
             const p1Words = combo.words.filter(w => w.player === 1).length;
             const p2Words = combo.words.filter(w => w.player === 2).length;
-
-            let owner = 0;
-            if (p1Words > p2Words) owner = 1;
-            else if (p2Words > p1Words) owner = 2;
+            let owner = p1Words > p2Words ? 1 : (p2Words > p1Words ? 2 : 0);
 
             if (owner !== 0) {
-                combo.owner = owner; // Tag owner for the next step
-                if (owner === 1) data.player1.score += 5;
-                else data.player2.score += 5;
+                combo.owner = owner;
+                if (owner === 1) data.player1.score += 5; else data.player2.score += 5;
                 page.toast("success", `Player ${owner} gets 5 points for forming "${combo.phrase}"`);
             }
         });
 
+        // --- STEP 2: Process all phrases serially using a for...of loop ---
         const survivingPhrases = [];
-        console.log("End of Round - Identifying coherent phrases");
+        const combosToEvaluate = combinationsThisRound.filter(c => c.owner);
 
-        // 3. Use chat to check coherency for bonus points
-        for (const combo of combinationsThisRound) {
-            if (!combo.owner) continue; // Skip phrases with no clear owner
-
+        // This for...of loop will pause and wait for each chat call
+        for (const combo of combosToEvaluate) {
             try {
-                console.log("Evaluating phrase for coherence:", combo.phrase);
-                const response = await chat(combo.phrase);
+                const response = await am7chat.chat(gameChat, combo.phrase);
                 const lastMessage = response?.messages?.[response.messages.length - 1]?.content;
-
-                if (lastMessage && !lastMessage.trim().match(/^incoherent/gi)) {
+                
+                if (lastMessage && lastMessage.toLowerCase().trim() !== 'incoherent') {
                     // Phrase is coherent, award bonus and mark for survival
                     page.toast("success", `Phrase "${combo.phrase}" is coherent!`);
-                    if (combo.owner === 1) data.player1.score += 10;
-                    else data.player2.score += 10;
+                    if (combo.owner === 1) data.player1.score += 10; else data.player2.score += 10;
                     page.toast("success", `Player ${combo.owner} gets 10 bonus points!`);
                     survivingPhrases.push(combo);
                 } else {
-                    // Phrase is incoherent, it gets tossed
+                    // Phrase is incoherent
                     page.toast("info", `Phrase "${combo.phrase}" was incoherent and is removed.`);
                 }
             } catch (e) {
-                console.error("Error during chat-based phrase evaluation:", e);
+                console.error("Error evaluating phrase:", combo.phrase, e);
                 page.toast("error", `Could not evaluate phrase: "${combo.phrase}"`);
             }
         }
-
-        // 4. Clean the board and stack surviving phrases at the top
-        console.log("Adjusting board for next round");
+        
+        // --- STEP 3: Rebuild the board ---
         const newBoard = Array(8).fill(null).map(() => Array(10).fill(null));
         let nextAvailableRow = 0;
-        console.log(survivingPhrases);
         survivingPhrases.forEach(combo => {
             if (nextAvailableRow < data.board.length) {
-                // Get the original word objects to preserve their properties
                 combo.words.forEach(wordInfo => {
                     const originalWord = data.board[wordInfo.row][wordInfo.col];
-                    if (originalWord) {
-                        newBoard[nextAvailableRow][wordInfo.col] = originalWord;
-                    }
+                    if (originalWord) newBoard[nextAvailableRow][wordInfo.col] = originalWord;
                 });
                 nextAvailableRow++;
             }
         });
-
         data.board = newBoard;
 
-        // 5. Reset for the next round
+        // --- STEP 4: CHECK FOR END GAME CONDITION ---
+        // Condition: The number of surviving phrases equals the total number of rows.
+        if (survivingPhrases.length > 0 && survivingPhrases.length >= data.board.length) {
+            const finalPhraseStrings = survivingPhrases.map(p => p.phrase);
+            triggerEndGame(finalPhraseStrings); // Trigger the end game routine
+            return; // Stop the normal round progression
+        }
+
+        // --- STEP 5: Reset for the next round (if not game over) ---
         data.currentRound++;
         data.actionsThisRound = 0;
         data.isPaused = false;
-        data.isProcessingEndOfRound = false; 
+        data.isProcessingEndOfRound = false; // Hide the overlay
         page.toast("success", `Starting Round ${data.currentRound}!`);
-
-        // Restart the turn cycle
+        
         switchTurn();
         m.redraw();
     }
 
-    let chatName = "WordBattle.chat";
+     async function triggerEndGame(finalPhrases) {
+        page.toast("success", "Game Over! All rows are coherent phrases!");
+        
+        // 1. Determine the winner
+        let winner = "It's a tie!";
+        if (data.player1.score > data.player2.score) winner = "Player 1 Wins!";
+        if (data.player2.score > data.player1.score) winner = "Player 2 Wins!";
+
+        // 2. Stub out the final LLM call (as requested)
+        const finalPrompt = `Create a poem and brief analysis from the following coherent phrases:\n\n${finalPhrases.join("\n")}.`;
+        let finalMessage = "### Final Summary\n\nThe AI summary could not be generated at this time.";
+        try {
+            const response = await am7chat.chat(endGameChat, finalPrompt);
+            const content = response?.messages?.[response.messages.length - 1]?.content;
+            if (content) finalMessage = content;
+        } catch (e) {
+            console.error("Failed to get final game summary:", e);
+        }
+
+        // 3. Set the state to show the popup
+        data.endGameInfo = {
+            winner: winner,
+            finalMessage: finalMessage
+        };
+        data.isProcessingEndOfRound = false; // Turn off the "calculating" screen
+        m.redraw();
+    }
+
+    //let chatName = "WordBattle.chat";
+    let chatName = "A1 Mini";
     async function prepareChatConfig() {
         return am7chat.makeChat(chatName, "herm-local", "http://localhost:11434", "ollama");
     }
+
+    let endPromptName = "WordBattle.prompt";
+    async function prepareEndPrompt() {
+
+        return am7chat.makePrompt(endPromptName, [
+            "You are the controller for a word battle game. You receive phrases you have identified as coherent.",
+            "Your job is to format these phrases into a poem.  You are allowed to make changes to each phrase by changing word order, tense, count, or adding pronoun, preposition, or conjunction.",
+            "The resulting poem may use any or no rhyme and meter.",
+            "Following the poem, you will include an analysis of the poem. For the analysis, you will adopt the persona of a very pompous literary critic who extolls the brilliance, profoundness, and genius of the poem while downplaying any negative qualities.",
+            "USE *markdown* TO FORMAT YOUR RESPONSE."
+        ]);
+    }
+
 
     let promptName = "WordBattle.prompt";
     async function preparePrompt() {
@@ -304,56 +339,22 @@
     }
 
     let chatRequestName = "WordBattle Chat";
-    async function getChatRequest() {
-        let grp = await page.findObject("auth.group", "data", "~/ChatRequests");
-        let q = am7view.viewQuery(am7model.newInstance("olio.llm.chatRequest", am7model.forms.chatRequest));
-        q.field("groupId", grp.id);
-        q.field("name", chatRequestName);
-        q.cache(false);
-        q.entity.request.push("chatConfig", "promptConfig", "objectId");
-        let req;
-        let qr = await page.search(q);
-        if (!qr || !qr.results || qr.results.length == 0) {
-            let chatReq = {
-                schema: "olio.llm.chatRequest",
-                name: chatRequestName,
-                chatConfig: { objectId: chatCfg.objectId },
-                promptConfig: { objectId: promptCfg.objectId },
-                uid: page.uid()
-            };
+    let endChatRequestName = "WordBattle End Chat";
 
-            req = await m.request({ method: 'POST', url: g_application_path + "/rest/chat/new", withCredentials: true, body: chatReq });
-        }
-        else if (qr && qr.results && qr.results.length > 0) {
-            req = qr.results[0];
-        }
-        console.log(req);
-        return req;
-
-    }
-
-    async function chat(msg) {
-        if (!gameChat) {
-            page.toast("error", "Chat request is not defined.");
-            return;
-        }
-        if (!gameChat.chatConfig || !gameChat.promptConfig) {
-            page.toast("error", "Chat request is missing the prompt or chat config.");
-            return;
-        }
-        gameChat.message = msg;
-        gameChat.uid = page.uid();
-        console.log(gameChat);
-        return await m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: gameChat });
-    }
-
+    let endPromptCfg = null;
     let promptCfg = null;
     let chatCfg = null;
     let gameChat = null;
+    let endGameChat = null;
     async function startGame() {
         promptCfg = await preparePrompt();
         if (!promptCfg) {
             page.toast("Error", "Could not start game without prompt config");
+            return;
+        }
+        endPromptCfg = await prepareEndPrompt();
+        if (!promptCfg) {
+            page.toast("Error", "Could not start game without end prompt config");
             return;
         }
 
@@ -362,11 +363,19 @@
             page.toast("Error", "Could not start game without chat config");
             return;
         }
-        gameChat = await getChatRequest();
+        gameChat = await am7chat.getChatRequest(chatRequestName, chatCfg, promptCfg);
         if (!gameChat) {
             page.toast("Error", "Could not start game without chat request");
             return;
         }
+
+        endGameChat = await am7chat.getChatRequest(endChatRequestName, chatCfg, endPromptCfg);
+        if (!endGameChat) {
+            page.toast("Error", "Could not start game without end chat request");
+            return;
+        }
+
+
         await prepareWords();
         data.isGameStarted = true;
 
@@ -762,7 +771,20 @@
             data.isProcessingEndOfRound ? m("div", { class: "absolute inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50" }, [
                 m("div", { class: "text-white text-2xl font-bold animate-pulse" }, "Calculating End of Round Scores...")
             ]) : null,
-
+            data.endGameInfo ? m("div", { class: "absolute inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 p-4" },
+                m("div", { class: "bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-2xl w-full text-center" }, [
+                    m("h1", { class: "text-4xl font-bold text-blue-500 mb-2" }, "Game Over!"),
+                    m("h2", { class: "text-3xl font-semibold mb-4 dark:text-white" }, data.endGameInfo.winner),
+                    m("div", { class: "prose dark:prose-invert text-left p-4 my-4 border rounded-md max-h-60 overflow-y-auto" },
+                        // This will render the markdown from the AI
+                        m.trust(marked.parse(data.endGameInfo.finalMessage))
+                    ),
+                    m("button", { 
+                        class: "menu-button text-xl p-3 mt-4", 
+                        onclick: resetGame 
+                    }, "Play Again")
+                ])
+            ) : null,
             m("div", { class: "flex flex-col w-full overflow-hidden p-0" }, [
                 m("div", { class: "flex-1 overflow-hidden" }, [
                     m("div", { class: "max-h-full h-full flex" }, [
@@ -976,7 +998,6 @@
     }
 
     let wordGame = {
-        chat,
         scoreCard: () => "",
         oninit: function () {
             setup();
@@ -984,6 +1005,12 @@
         onremove: function () {
             if (data) {
                 data.isPaused = true;
+            }
+            if(gameChat){
+                am7chat.deleteChat(gameChat, true);
+            }
+            if(endGameChat){
+                am7chat.deleteChat(endGameChat, true);
             }
             clearInterval(data.timerId); // Cleanup timer on component removal
         },

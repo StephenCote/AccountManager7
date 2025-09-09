@@ -3,7 +3,7 @@
     // This will be updated by the Mithril component based on biometrics
     let particleColor = { r: 150, g: 180, b: 255 }; 
     const PARTICLE_COUNT = 100;
-    let imgBase = [282, 281, 283, 284, 265, 266, 267]; // [218, 220, 130, 172, 173];//[307]; //
+    let imgBase = [218, 220, 130, 172, 173]; //[282, 281, 283, 284, 265, 266, 267]; // [218, 220, 130, 172, 173];//[307]; //
     let imageUrls = [];
 
     /*
