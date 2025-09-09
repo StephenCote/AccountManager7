@@ -191,80 +191,93 @@
         data.foundCombinations = combinations;
     }
 
-async function handleEndOfRound() {
-        // --- STEP 1: Set processing state to show the overlay ---
-        data.isProcessingEndOfRound = true;
+    async function handleEndOfRound() {
         page.toast("info", `Round ${data.currentRound} has ended! Calculating scores...`);
+        // Pause game activity during calculation
         clearInterval(data.timerId);
         data.isPaused = true;
         m.redraw();
 
+        // 1. Get the final board state for the round
+        console.log("End of Round - Scanning for combinations");
         scanForCombinations();
         const combinationsThisRound = [...data.foundCombinations];
-        
+
+        // 2. Award initial points for all formed phrases
+        console.log("End of Round - Awarding initial points");
         combinationsThisRound.forEach(combo => {
             const p1Words = combo.words.filter(w => w.player === 1).length;
             const p2Words = combo.words.filter(w => w.player === 2).length;
-            let owner = p1Words > p2Words ? 1 : (p2Words > p1Words ? 2 : 0);
+
+            let owner = 0;
+            if (p1Words > p2Words) owner = 1;
+            else if (p2Words > p1Words) owner = 2;
 
             if (owner !== 0) {
-                combo.owner = owner;
-                if (owner === 1) data.player1.score += 5; else data.player2.score += 5;
+                combo.owner = owner; // Tag owner for the next step
+                if (owner === 1) data.player1.score += 5;
+                else data.player2.score += 5;
                 page.toast("success", `Player ${owner} gets 5 points for forming "${combo.phrase}"`);
             }
         });
 
-        // --- STEP 2: Process all phrases in parallel for speed ---
-        const chatPromises = combinationsThisRound
-            .filter(combo => combo.owner)
-            .map(async (combo) => {
-                try {
-                    const response = await chat(combo.phrase);
-                    const lastMessage = response?.messages?.[response.messages.length - 1]?.content;
-                    const isCoherent = lastMessage && lastMessage.toLowerCase().trim() !== 'incoherent';
-                    return { ...combo, isCoherent };
-                } catch (e) {
-                    console.error("Error evaluating phrase:", combo.phrase, e);
-                    page.toast("error", `Could not evaluate phrase: "${combo.phrase}"`);
-                    return { ...combo, isCoherent: false }; // Treat errors as incoherent
-                }
-            });
-
-        const results = await Promise.all(chatPromises);
         const survivingPhrases = [];
+        console.log("End of Round - Identifying coherent phrases");
 
-        results.forEach(resultCombo => {
-            if (resultCombo.isCoherent) {
-                page.toast("success", `Phrase "${resultCombo.phrase}" is coherent!`);
-                if (resultCombo.owner === 1) data.player1.score += 10; else data.player2.score += 10;
-                page.toast("success", `Player ${resultCombo.owner} gets 10 bonus points!`);
-                survivingPhrases.push(resultCombo);
-            } else {
-                page.toast("info", `Phrase "${resultCombo.phrase}" was incoherent and is removed.`);
+        // 3. Use chat to check coherency for bonus points
+        for (const combo of combinationsThisRound) {
+            if (!combo.owner) continue; // Skip phrases with no clear owner
+
+            try {
+                console.log("Evaluating phrase for coherence:", combo.phrase);
+                const response = await chat(combo.phrase);
+                const lastMessage = response?.messages?.[response.messages.length - 1]?.content;
+
+                if (lastMessage && !lastMessage.trim().match(/^incoherent/gi)) {
+                    // Phrase is coherent, award bonus and mark for survival
+                    page.toast("success", `Phrase "${combo.phrase}" is coherent!`);
+                    if (combo.owner === 1) data.player1.score += 10;
+                    else data.player2.score += 10;
+                    page.toast("success", `Player ${combo.owner} gets 10 bonus points!`);
+                    survivingPhrases.push(combo);
+                } else {
+                    // Phrase is incoherent, it gets tossed
+                    page.toast("info", `Phrase "${combo.phrase}" was incoherent and is removed.`);
+                }
+            } catch (e) {
+                console.error("Error during chat-based phrase evaluation:", e);
+                page.toast("error", `Could not evaluate phrase: "${combo.phrase}"`);
             }
-        });
+        }
 
-        // --- STEP 3: Rebuild the board ---
+        // 4. Clean the board and stack surviving phrases at the top
+        console.log("Adjusting board for next round");
         const newBoard = Array(8).fill(null).map(() => Array(10).fill(null));
         let nextAvailableRow = 0;
+        console.log(survivingPhrases);
         survivingPhrases.forEach(combo => {
             if (nextAvailableRow < data.board.length) {
+                // Get the original word objects to preserve their properties
                 combo.words.forEach(wordInfo => {
                     const originalWord = data.board[wordInfo.row][wordInfo.col];
-                    if (originalWord) newBoard[nextAvailableRow][wordInfo.col] = originalWord;
+                    if (originalWord) {
+                        newBoard[nextAvailableRow][wordInfo.col] = originalWord;
+                    }
                 });
                 nextAvailableRow++;
             }
         });
+
         data.board = newBoard;
 
-        // --- STEP 4: Reset state for the next round and hide overlay ---
+        // 5. Reset for the next round
         data.currentRound++;
         data.actionsThisRound = 0;
         data.isPaused = false;
-        data.isProcessingEndOfRound = false; // <-- Hide the overlay
+        data.isProcessingEndOfRound = false; 
         page.toast("success", `Starting Round ${data.currentRound}!`);
-        
+
+        // Restart the turn cycle
         switchTurn();
         m.redraw();
     }
@@ -331,10 +344,7 @@ async function handleEndOfRound() {
         gameChat.message = msg;
         gameChat.uid = page.uid();
         console.log(gameChat);
-        m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: gameChat }).then((r) => {
-            console.log(r);
-
-        });
+        return await m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: gameChat });
     }
 
     let promptCfg = null;
