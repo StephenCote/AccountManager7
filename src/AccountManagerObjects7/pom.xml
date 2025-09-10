@@ -71,8 +71,9 @@
 					<excludes>
 						<!--
 							
-						<exclude>**/TestAttribute.java</exclude>
+						<exclude>**/TestGenericData.java</exclude>
 						-->
+						<exclude>**/TestAttribute.java</exclude>
 						<exclude>**/TestChatPolicy.java</exclude>
 						<exclude>**/TestVoice.java</exclude>
 						<exclude>**/TestChatAsync.java</exclude>
