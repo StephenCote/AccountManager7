@@ -6,9 +6,15 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 import org.apache.commons.csv.CSVFormat;
@@ -32,6 +38,19 @@ public class GenericParser {
 	
 	public static final Pattern numberPattern = Pattern.compile("^[\\d+\\-]+$");
 	public static final Pattern floatPattern = Pattern.compile("^[\\d\\.\\-]+$");
+	
+	private static Map<String, SimpleDateFormat> dateFormatters = new ConcurrentHashMap<>();
+	
+	public static SimpleDateFormat getDateFormatter(String format) {
+		if(format == null) {
+			return null;
+		}
+		if(!dateFormatters.containsKey(format)) {
+			dateFormatters.put(format, new SimpleDateFormat(format, Locale.ENGLISH));
+		}
+		return dateFormatters.get(format);
+	}
+	
 	public static List<BaseRecord> parseFile(BaseRecord owner, String model, String[] fields, String groupPath, String path){
 		return parseFile(owner, model, fields, groupPath, path, 0);
 	}
@@ -172,6 +191,36 @@ public class GenericParser {
 								}
 								else {
 									logger.error("Unhandled list base type: " + fs.getBaseType());
+								}
+								break;
+							case TIMESTAMP:
+								String format = field.getDateFormat();
+								if(format == null) {
+									format = cfg.getDateFormat();
+								}
+								if(format != null) {
+							        SimpleDateFormat sdf = getDateFormatter(format);
+							        try {
+										Date date = new Date();
+										if(rval != null && rval.length() > 0) {
+											date = sdf.parse(rval);
+											if(date != null) {
+												
+											}
+										}
+										else {
+											logger.warn("Blank timestamp value");
+										}
+										ft.setValue(date);
+										break;
+									} catch (ParseException e) {
+										// TODO Auto-generated catch block
+										logger.error("Failed to parse date: " + rval + " with format " + format);
+										e.printStackTrace();
+									}
+								}
+								else {
+									logger.warn("A timestamp format is required.");
 								}
 								break;
 

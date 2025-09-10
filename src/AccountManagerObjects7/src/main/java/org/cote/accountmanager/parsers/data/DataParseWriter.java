@@ -20,6 +20,11 @@ public class DataParseWriter implements IParseWriter {
 	}
 
 	@Override
+	public void setBatchSize(int batchSize) {
+		this.batchSize = batchSize;
+	}
+
+	@Override
 	public int write(ParseConfiguration cfg, List<BaseRecord> records) {
 		long start = System.currentTimeMillis();
 		
