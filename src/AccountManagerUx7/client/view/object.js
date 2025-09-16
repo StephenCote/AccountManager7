@@ -508,7 +508,6 @@
                                         }
                                     }
                                     else{
-
                                         val = (cv ? cv.api[rm.name]() : v[rm.name]);
                                     }
                                     return m("td", "" + val);
@@ -582,9 +581,7 @@
 
 
         function modelField(name, fieldView, field, altName, altVal, noChange, altEntity, altForm){
-            if(name == "stages"){
-                console.log(name, field, altEntity);
-            }
+
             let useEntity = altEntity || entity;
             let format = (fieldView?.form?.format || fieldView.format || field.format || am7view.getFormatForType(field.type));
             let useName = altName || name;

@@ -217,19 +217,9 @@
             }
         }
     };
-    forms.tagattributes = {
-        label: "Tags and Attributes",
-        fields: {
-            attributes: {
-                layout: 'half',
-                form: forms.attribute
-            },
-            tags: {
-                layout: "half",
-                form: forms.control
-            }
-        }
-    };
+    
+
+
     forms.ctlattributes = {
         label: "Controls and Attributes",
         /*requiredAttributes : ["objectId"],*/
@@ -1678,6 +1668,21 @@
         },
         forms: ["grouptypeinfo", "attributes"]
     };
+
+    forms.tagattributes = {
+        label: "Tags and Attributes",
+        fields: {
+            attributes: {
+                layout: 'half',
+                form: forms.attribute
+            },
+            tags: {
+                layout: "half",
+                form: forms.tag
+            }
+        }
+    };
+
     forms.locationrel = {
         label: "Relation",
         requiredAttributes: ["objectId"],
