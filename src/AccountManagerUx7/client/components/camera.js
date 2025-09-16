@@ -181,7 +181,7 @@
         deviceId: ()=> selectedDeviceId,
         startCapture,
         stopCapture: function(){
-            console.log("Stopping camera capture.");
+            //console.log("Stopping camera capture.");
             let videoEl = videoElement();
             if (videoEl && videoEl.srcObject) {
              videoEl.srcObject.getTracks().forEach(track => track.stop());
