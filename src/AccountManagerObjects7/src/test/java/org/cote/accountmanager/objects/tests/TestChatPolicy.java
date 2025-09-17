@@ -43,7 +43,6 @@ import org.cote.accountmanager.schema.type.FactEnumType;
 import org.cote.accountmanager.schema.type.OperationEnumType;
 import org.cote.accountmanager.schema.type.PatternEnumType;
 import org.cote.accountmanager.schema.type.PolicyResponseEnumType;
-import org.cote.accountmanager.schema.type.ResponseEnumType;
 import org.cote.accountmanager.schema.type.RuleEnumType;
 import org.junit.Test;
 

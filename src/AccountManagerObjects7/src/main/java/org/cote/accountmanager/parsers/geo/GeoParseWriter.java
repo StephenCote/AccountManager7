@@ -25,6 +25,11 @@ public class GeoParseWriter implements IParseWriter {
 		// TODO Auto-generated method stub
 		return batchSize;
 	}
+	
+	@Override
+	public void setBatchSize(int batchSize) {
+		this.batchSize = batchSize;
+	}
 
 	@Override
 	public int write(ParseConfiguration cfg, List<BaseRecord> records) {

@@ -127,8 +127,9 @@ public class ModelService {
 			}
 		}
 		q.setRequest(fields.toArray(new String[0]));
-		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
 
+		BaseRecord rec = IOSystem.getActiveContext().getAccessPoint().find(user, q);
+		
 		if(rec == null) {
 			logger.error("Failed to find: " + type + " " + objectId);
 			return Response.status(404).entity(null).build();

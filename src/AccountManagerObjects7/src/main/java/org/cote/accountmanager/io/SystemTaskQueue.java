@@ -138,8 +138,17 @@ public class SystemTaskQueue extends Threaded {
 						rtasks.add(resp);
 					}
 				}
-				if(SystemTaskEnumType.SD.toString().equals(task.get("type"))) {
+				else if(SystemTaskEnumType.SD.toString().equals(task.get("type"))) {
 					BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
+					if(localPoll) {
+						SystemTaskUtil.completeTasks(resp);
+					}
+					else if(remotePoll && resp != null) {
+						rtasks.add(resp);
+					}
+				}
+				else {
+					BaseRecord resp = SystemTaskAgent.evaluateTaskResponse(task);
 					if(localPoll) {
 						SystemTaskUtil.completeTasks(resp);
 					}
@@ -168,4 +177,6 @@ public class SystemTaskQueue extends Threaded {
 		}
 	}
 
+	
+	
 }

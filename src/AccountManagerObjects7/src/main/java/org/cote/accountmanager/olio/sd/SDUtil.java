@@ -177,25 +177,20 @@ public class SDUtil {
 			IOSystem.getActiveContext().getReader().populate(nar, new String[] {"images"});
 			
 			String path = basePath + "/Characters/" + per.get(FieldNames.FIELD_NAME);
-			//List<BaseRecord> images = nar.get("images");
-			//if(images.size() == 0) {
-				List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useStyle, useBodyStyle, verb, steps, batchSize, hires, seed);
-			
-				if(bl.size() > 0) {
-					// if(prof.get("portrait") == null) {
-						prof.setValue("portrait", bl.get(rand.nextInt(bl.size())));
-						Queue.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
-					//}
-					for(BaseRecord b1 : bl) {
-						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
-						IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), prof, "album", b1, null, true);
-						if(export) {
-							FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
-						}
+			List<BaseRecord> bl = createPersonImage(octx.getOlioUser(), per, path, sdConfig,"Photo Op",  setting, useStyle, useBodyStyle, verb, steps, batchSize, hires, seed);
+		
+			if(bl.size() > 0) {
+				prof.setValue("portrait", bl.get(rand.nextInt(bl.size())));
+				Queue.queueUpdate(prof, new String[] {FieldNames.FIELD_ID, "portrait"});
+
+				for(BaseRecord b1 : bl) {
+					IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), nar, "images", b1, null, true);
+					IOSystem.getActiveContext().getMemberUtil().member(octx.getOlioUser(), prof, "album", b1, null, true);
+					if(export) {
+						FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
 					}
 				}
-	
-			//}
+			}
 		}
 		Queue.processQueue();
 	}
@@ -306,8 +301,9 @@ public class SDUtil {
 					data.set(FieldNames.FIELD_BYTE_STORE, datab);
 					data.set(FieldNames.FIELD_CONTENT_TYPE, "image/png");
 					AttributeUtil.addAttribute(data, "seed", seedl);
-					// TODO: Fix issue when setting attribute flexValue on create for a null value 
-					//AttributeUtil.addAttribute(data, "character", (String)person.get(FieldNames.FIELD_OBJECT_ID));
+					if(person.get(FieldNames.FIELD_OBJECT_ID) != null) {
+						AttributeUtil.addAttribute(data, "character", (String)person.get(FieldNames.FIELD_OBJECT_ID));
+					}
 					AttributeUtil.addAttribute(data, "s2i", JSONUtil.exportObject(s2i));
 					IOSystem.getActiveContext().getAccessPoint().create(user, data);
 				}

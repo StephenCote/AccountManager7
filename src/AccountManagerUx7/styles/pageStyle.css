@@ -1,3 +1,9 @@
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
 .material-icons.dino-dark { color: rgba(0, 0, 0, 0.54); }
 .material-icons.dino-dark.dino-inactive { color: rgba(0, 0, 0, 0.26); }
 .material-icons.dino-light { color: rgba(255, 255, 255, 1); }

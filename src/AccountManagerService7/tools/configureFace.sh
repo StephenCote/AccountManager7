@@ -1,4 +1,4 @@
-rm -rf face-tts
+rm -rf env-face
 python3.10 -m venv env-face
 source ./env-face/bin/activate
 pip install --upgrade pip

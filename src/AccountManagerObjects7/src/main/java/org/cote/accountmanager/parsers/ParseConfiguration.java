@@ -20,12 +20,23 @@ public class ParseConfiguration {
 	private QueryResult parentQueryResult = null;
 	private String mapField = null;
 	private String parentMapField = null;
+	private String dateFormat = null;
 	
 	public ParseConfiguration() {
 		
 	}
 	
 	
+	public String getDateFormat() {
+		return dateFormat;
+	}
+
+
+	public void setDateFormat(String dateFormat) {
+		this.dateFormat = dateFormat;
+	}
+
+
 	public ParseMap[] getFilters() {
 		return filters;
 	}

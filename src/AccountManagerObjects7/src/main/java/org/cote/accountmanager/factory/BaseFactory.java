@@ -17,8 +17,6 @@ public class BaseFactory extends FactoryBase {
 	
 	@Override
 	public BaseRecord implement(BaseRecord contextUser, BaseRecord newRecord, ParameterList parameterList, BaseRecord... arguments) throws FactoryException {
-		// logger.info("Base Factory: Apply Org and Owner Id");
-
 		if(contextUser != null) {
 			try {
 				IOSystem.getActiveContext().getRecordUtil().applyOwnership(contextUser, newRecord, contextUser.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -26,6 +24,7 @@ public class BaseFactory extends FactoryBase {
 				throw new FactoryException(e);
 			}
 		}
+
 		return newRecord;
 	}
 }

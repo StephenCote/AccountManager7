@@ -217,6 +217,9 @@
             }
         }
     };
+    
+
+
     forms.ctlattributes = {
         label: "Controls and Attributes",
         /*requiredAttributes : ["objectId"],*/
@@ -729,6 +732,15 @@
                 layout: "full",
                 format: "print"
             },
+            randomSeed: {
+                format: "button",
+                layout: "one",
+                icon: 'casino',
+                field: {
+                    label: "Random",
+                    command: undefined
+                }
+            },
             seed:{
                 label: 'Seed',
                 layout: 'one'
@@ -770,6 +782,7 @@
                     command: undefined
                 }
             },
+            /*
             blank : {
                 layout : "one",
                 format: "blank",
@@ -778,6 +791,7 @@
                     readOnly: true
                 }
             },
+            */
             bodyStyle: {
                 label: 'Composition',
                 layout: 'third'
@@ -1654,6 +1668,21 @@
         },
         forms: ["grouptypeinfo", "attributes"]
     };
+
+    forms.tagattributes = {
+        label: "Tags and Attributes",
+        fields: {
+            attributes: {
+                layout: 'half',
+                form: forms.attribute
+            },
+            tags: {
+                layout: "half",
+                form: forms.tag
+            }
+        }
+    };
+
     forms.locationrel = {
         label: "Relation",
         requiredAttributes: ["objectId"],
@@ -3483,7 +3512,7 @@
                 format: "textlist"
             }
         },
-        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tags"]
+        forms: ["personalityRef", "statisticsRef", "storeRef", "narrativeRef", "profileRef", "groupinfo", "tagattributes"]
     };
 
     forms.storeRef = {
@@ -4244,6 +4273,10 @@
             femalePerspective: {
                 layout: "full",
                 format: "textlist"
+            },
+            episodeRule: {
+                layout: "full",
+                format: "textlist"
             }
         },
         forms: []
@@ -4500,7 +4533,7 @@
     };
 
     forms.episodes = {
-        label: "Chat Configuration",
+        label: "Episodes",
         format: "table",
         commands: {
             new: {

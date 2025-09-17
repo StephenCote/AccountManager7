@@ -32,6 +32,7 @@ public class OlioTaskAgent  {
 			ret = ResponseEnumType.PENDING;
 			SystemTaskEnumType type = request.getEnum("type");
 			switch(type) {
+
 				case CHAT:
 					BaseRecord config = request.get("data");
 					Chat chat = new Chat(null, config, null);
@@ -87,6 +88,7 @@ public class OlioTaskAgent  {
 		tr.setValue("responseType", ret);
 		return tr;		
 	}
+	
 
 	public static BaseRecord createTaskRequest(SDTxt2Img req) {
 		BaseRecord tr = null;

@@ -192,6 +192,7 @@
 	
 	function patchObject(sType, oObj, fH){
 	   delete cache[sType];
+	   console.log(oObj);
 	   return patch(sModelSvc, oObj, fH);
 	}
 	
@@ -245,6 +246,7 @@
 				order: 'ascending',
 				comparator: "group_and",
 				recordCount: 10,
+				cache: true,
 				request: am7model
 					.inheritsFrom(m)
 					.filter(m => m.query)
@@ -252,6 +254,10 @@
 					.flat(1)
 					.filter( (v, i, z) => z.indexOf(v) == i)
 			}
+		};
+
+		q.cache = (b) => {
+			q.entity.cache = b;
 		};
 		
 		q.range = function(s, c){
@@ -291,7 +297,9 @@
 				q.entity.type,
 				q.entity.order,
 				q.entity.limit || false,
-				q.entity.sortBy || "id",
+				q.entity.sortField || "id",
+				q.entity.startRecord || 0,
+				q.entity.recordCount || 10,
 				page?.user?.objectId || "000",
 				q.keyField(q.entity.fields)
 			];
@@ -325,16 +333,22 @@
 	function search(q, fH, bCount){
 		
 		var sKey = q.key();
-		var o = getFromCache(q.type, "GET", sKey);
-		if(o){
-			if(fH) fH(o);
-			return o;
+		let type = (q.entity.type + (bCount ? "-Count" : ""));
+		if(q.entity.cache){
+			var o = getFromCache(type, "GET", sKey);
+			if(o){
+				if(fH) fH(o);
+				return o;
+			}
 		}
 		var f = fH;
-		var fc = function(v){if(typeof v != "undefined" && v != null){addToCache(sType,"GET",sKey,v);} if(f) f(v);};
-		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fH);
+		var fc = function(v){if(q.entity.cache && typeof v != "undefined" && v != null){addToCache(type,"GET",sKey,v);} if(f) f(v);};
+		return post(sModelSvc + "/search" + (bCount ? "/count" : ""), q.entity, fc);
 	}
-
+	function trace( bEnable, fH){
+		if(typeof bEnable != "boolean") bEnable = true;
+		return get(sAuthZ + "/unknown/trace/" + bEnable, fH);
+	}
 	function member(sObjectType, sObjectId, sField, sActorType, sActorId, bEnable, fH){
 		return get(sAuthZ + "/" + sObjectType + "/" + sObjectId + "/member/" + sField + "/" + sActorType + "/" + sActorId + "/" + bEnable, fH);
 	}
@@ -780,6 +794,7 @@
 		newPrimaryCredential : newPrimaryCredential,
 		clearCache,
 		cleanup,
+		trace,
 		clearAuthorizationCache : function(fH){
 			return get(sCache + "/clearAuthorization",fH);
 		},
@@ -818,15 +833,15 @@
 		},
 		newAttribute : function(s, v){
 			var a = am7model.newPrimitive("common.attribute"),x=null;
-			a.valueType = "STRING";
+			a.valueType = "string";
 			a.name = s;
 			
 			if(typeof v == "string") x = v;
 			else if(typeof v == "number"){
 				let vs = "" + v;
-				if(vs.match(/\./)) a.valueType = 'DOUBLE';
-				else a.valueType = 'INT';
-				x.push(vs);
+				if(vs.match(/\./)) a.valueType = 'double';
+				else a.valueType = 'int';
+				x = v;
 			}
 			else if(typeof v == "object" && v instanceof Array) x = v;
 			else console.warn("Expected string or array object for value");

@@ -360,7 +360,7 @@
                 val = (om[um.name] ? " " + (new Date(om[um.name])).toLocaleDateString("en-US", {year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric' }) : "");
             }
 
-            if(um.type == "model"){
+            else if(um.type == "model"){
                 if(!om[um.name]){
                     console.warn("Couldn't find model for field", um.name, "in", p);
                     return "";
@@ -377,7 +377,6 @@
     }
 
     function getTabularView(ctl, rset){
-
         let results = (rset || []).map((p, i) => {
           return getTabularRow(ctl, p, i);
         });

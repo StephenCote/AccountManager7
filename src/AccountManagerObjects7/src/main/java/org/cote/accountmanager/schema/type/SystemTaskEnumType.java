@@ -3,5 +3,6 @@ package org.cote.accountmanager.schema.type;
 public enum SystemTaskEnumType {
 	UNKNOWN,
 	CHAT,
-	SD
+	SD,
+	PYTHON_FACE
 }

@@ -8,6 +8,7 @@ public class ParseMap {
 	private IParseInterceptor interceptor = null;
 	private String matchValue = null;
 	private boolean excludeMatch = false;
+	private String dateFormat = null;
 	
 	public ParseMap() {
 		
@@ -16,6 +17,12 @@ public class ParseMap {
 	public ParseMap(String fieldName, int columnIndex) {
 		this.fieldName = fieldName;
 		this.columnIndex = columnIndex;
+	}
+
+	public ParseMap(String fieldName, int columnIndex, String dateFormat) {
+		this.fieldName = fieldName;
+		this.columnIndex = columnIndex;
+		this.dateFormat = dateFormat;
 	}
 	
 	public ParseMap(String fieldName, int columnIndex, ParseMap link) {
@@ -30,6 +37,14 @@ public class ParseMap {
 		this.interceptor = interceptor;
 	}
 	
+
+	public String getDateFormat() {
+		return dateFormat;
+	}
+
+	public void setDateFormat(String dateFormat) {
+		this.dateFormat = dateFormat;
+	}
 
 	public boolean isExcludeMatch() {
 		return excludeMatch;

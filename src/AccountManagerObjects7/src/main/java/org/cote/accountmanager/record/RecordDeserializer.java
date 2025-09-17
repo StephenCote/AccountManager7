@@ -377,6 +377,9 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
 	}
 	private FieldType setFieldValue(JsonParser jsonParser, FieldType ifld, FieldType fld, FieldSchema lft, String foreignType, boolean possibleForeign, JsonNode value) throws ValueException, IOException {
 			FieldType outFld = fld;
+			
+			
+			// logger.info(ifld.getValueType().toString() + " " + ifld.getName() + " = " + value.toString());
         	switch(ifld.getValueType()) {
 	        	case ZONETIME:
 	        		String zdv = value.textValue();
@@ -390,7 +393,12 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				fld.setValue(new Date(value.longValue()));
     				break;
     			case LONG:
-    				fld.setValue(value.longValue());
+    				if(value.isTextual()) {
+    					fld.setValue(Long.parseLong(value.textValue()));
+    				}
+    				else {
+    					fld.setValue(value.longValue());
+    				}
     				break;
     			case BOOLEAN:
     				/// .booleanValue is not reliable
@@ -398,6 +406,7 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				break;
 
     			case FLEX:
+
 					if(value.isBoolean()) {
 						outFld = FieldFactory.fieldByType(FieldEnumType.BOOLEAN, ifld.getName(), value.booleanValue());	
 					}
@@ -533,10 +542,20 @@ public class RecordDeserializer<T extends BaseRecord> extends StdDeserializer<T>
     				fld.setValue(value.textValue());
     				break;
     			case DOUBLE:
-    				fld.setValue(value.doubleValue());
+    				if(value.isTextual()) {
+    					fld.setValue(Double.parseDouble(value.textValue()));
+    				}
+    				else {
+    					fld.setValue(value.doubleValue());
+    				}
     				break;
     			case INT:
-    				fld.setValue(value.intValue());
+    				if(value.isTextual()) {
+    					fld.setValue(Integer.parseInt(value.textValue()));
+    				}
+    				else {
+    					fld.setValue(value.intValue());
+    				}
     				break;
     			case BLOB:
     				if(value.textValue() != null) {
