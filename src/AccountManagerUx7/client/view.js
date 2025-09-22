@@ -316,14 +316,7 @@
     function showField(inst, ref, useName) {
         let show = true;
         let entity = inst?.entity;
-        if (useName && useName.match(/(sender|recipient)/)) {
-            //console.log(useName, ref);
-        }
-        /*
-        if(useName){
-            refer = false;
-        }
-        */
+
         if (ref.requiredRoles) {
             show = false;
             let rctx = page.context().roles;
@@ -351,14 +344,12 @@
                     }
                     let e = document.querySelector('[name=' + a2 + ']');
                     if (e && e.type == 'checkbox') {
-                        //show = e.checked;
                         if (e.checked || invert) showCount++;
                     }
                     else if (e) {
                         let reqVals = (reqVal ? reqVal.split("|") : [undefined]);
                         let showTotal = 0;
                         reqVals.forEach((v2) => {
-                            // console.log(a2, "Scan: " + v2, e.value);
                             if (
                                 (v2 && e.value == v2)
                                 ||
@@ -367,8 +358,6 @@
                                 showTotal++;
                             }
                         });
-                        // show = (reqVal && reqVal.indexOf("|") > -1 ? showTotal > 0 : showTotal == reqVals.length);
-                        //showCount += (reqVal && reqVal.indexOf("|") > -1 ? showTotal > 0 : showTotal == reqVals.length) ? 1 : 0;
                         if (reqVal) {
                             if (reqVal.indexOf("|") > -1 && showTotal > 0) showCount++;
                             else if (showTotal == reqVals.length) showCount++;
@@ -376,13 +365,10 @@
                         else if (showTotal > 0) {
                             showCount++;
                         }
-                        //console.log(a2, showCount, showTotal, ref.requiredAttributes.length);
                     }
                     else {
                         //console.log("Else: " + a2);
                     }
-                    //if(invert) show = !show;
-                    //console.log("Match " + a2 + " == " + reqVal + " / " + entity[a] + " == " + show);
                 }
                 else if ((reqVal && entity[a2] != reqVal) || (!reqVal && ((!invert && !entity[a2]) || (invert && entity[a2])))) {
                     //console.log("Else...");
@@ -394,7 +380,6 @@
             });
             show = ref.requiredAttributes.length == showCount;
         }
-        //console.log(show, ref);
         return show;
     }
 
