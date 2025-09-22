@@ -700,6 +700,7 @@
                             max = field.maxValue;
                         }
                     }
+
                     view.push(m("div", {class: 'relative mb-5'}, [
                         m("label", {class: "sr-only"},"Range"),
                         m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName, min, max}),

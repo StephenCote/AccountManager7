@@ -4334,6 +4334,10 @@ button.button-tab-active:hover:is(.dark *) {
   z-index: 20;
 }
 
+.z-50 {
+  z-index: 50;
+}
+
 .row-span-1 {
   grid-row: span 1 / span 1;
 }
@@ -4389,6 +4393,11 @@ button.button-tab-active:hover:is(.dark *) {
 .my-2 {
   margin-top: 0.5rem;
   margin-bottom: 0.5rem;
+}
+
+.my-4 {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
 }
 
 .mb-0 {
@@ -4537,6 +4546,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .h-screen {
   height: 100vh;
+}
+
+.max-h-60 {
+  max-height: 15rem;
 }
 
 .max-h-\[800px\] {
@@ -5057,6 +5070,14 @@ button.button-tab-active:hover:is(.dark *) {
   --tw-bg-opacity: 0.4;
 }
 
+.bg-opacity-70 {
+  --tw-bg-opacity: 0.7;
+}
+
+.bg-opacity-80 {
+  --tw-bg-opacity: 0.8;
+}
+
 .bg-\[radial-gradient\(circle_at_30\%_30\%\2c rgba\(255\2c 255\2c 255\2c 0\.3\)_0\%\2c transparent_40\%\)\] {
   background-image: radial-gradient(circle at 30% 30%,rgba(255,255,255,0.3) 0%,transparent 40%);
 }
@@ -5132,6 +5153,10 @@ button.button-tab-active:hover:is(.dark *) {
   padding: 0.5rem;
 }
 
+.p-3 {
+  padding: 0.75rem;
+}
+
 .p-4 {
   padding: 1rem;
 }
@@ -5199,10 +5224,6 @@ button.button-tab-active:hover:is(.dark *) {
 
 .text-center {
   text-align: center;
-}
-
-.font-\[\'Inter\'\2c _sans-serif\] {
-  font-family: 'Inter', sans-serif;
 }
 
 .text-2xl {
@@ -5463,6 +5484,12 @@ button.button-tab-active:hover:is(.dark *) {
 .shadow-md {
   --tw-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
   --tw-shadow-colored: 0 4px 6px -1px var(--tw-shadow-color), 0 2px 4px -2px var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.shadow-xl {
+  --tw-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --tw-shadow-colored: 0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 

@@ -395,7 +395,9 @@
 
 		if (f.readOnly || f.virtual || f.ephemeral || f.private) return 1;
 
-		let v = o.api[f.name]();
+		/// don't read from API for validation because it will include decorators which may change the value
+		///
+		let v = o.entity[f.name];
 		let err;
 		switch (f.type) {
 			case "enum":
@@ -436,7 +438,7 @@
 					break;
 				}
 				if (f.validateRange && (v < f.minValue || v > f.maxValue)) {
-					err = "Outside value range " + f.minValue + " - " + f.maxValue;
+					err = v + " outside value range " + f.minValue + " - " + f.maxValue;
 					re = 0;
 					break;
 				}
@@ -612,6 +614,7 @@
 			return v;
 		},
 		decorateIn: function (i, f, v) {
+			
 			if (f.type == "double" && f.maxValue >= 1) {
 				if (v != 0) {
 					v = parseFloat(v / 100);
