@@ -325,21 +325,7 @@ public class SDUtil {
 	}
 
 	public void applyHRRefiner(SDTxt2Img s2i) {
-		/*
-		 * 	"extra_generation_params": {
-		"Denoising strength": 0.7,
-		"Hires prompt": null,
-		"Hires negative prompt": null,
-		"Hires schedule type": null,
-		"Hires upscale": 2,
-		"Hires upscaler": "Latent",
-		"Lora hashes": "add-detail-xl: 9c783c8ce46c, xl_more_art-full_v1: fe3b4816be83",
-		"TI hashes": "negativeXL_D: fff5d51ab655, negativeXL_D: fff5d51ab655",
-		"Schedule type": "Karras",
-		"Refiner": "Juggernaut_X_RunDiffusion_Hyper [010be7341c]",
-		"Refiner switch at": 0.8
-	},
-		 */
+
 		SDExtraGenerationParams sgp = s2i.getExtra_generation_params();
 		if(sgp == null) {
 			sgp = new SDExtraGenerationParams();
@@ -353,6 +339,8 @@ public class SDUtil {
 		
 		s2i.setDenoising_strength(0.45);
 		//s2i.setRefiner_checkpoint("Juggernaut_X_RunDiffusion_Hyper");
+		// TODO: Make models configurable
+		//s2i.setRefiner_checkpoint("juggernautXL_ragnarokBy");
 		//s2i.setRefiner_switch_at(0.75);
 		s2i.setHr_scale(2);
 		s2i.setHr_upscaler("Latent");

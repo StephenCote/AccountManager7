@@ -38,16 +38,8 @@ public class SDTxt2Img {
 	private String negative_prompt = null;
 	private Object override_settings = null;
 	private boolean override_settings_restore_afterwards = true;
-	//private String[] extra_generation_params = new String[0];
 	private SDExtraGenerationParams extra_generation_params = null;
-	/*
-	 *     "extra_generation_params": {
-        "Lora hashes": "add-detail-xl: 9c783c8ce46c, xl_more_art-full_v1: fe3b4816be83",
-        "Schedule type": "Karras",
-        "Refiner": "Juggernaut_X_RunDiffusion_Hyper [010be7341c]",
-        "Refiner switch at": 0.8
-    },
-	 */
+
 	private String prompt = null;
 	private String refiner_checkpoint = null;
     private double refiner_switch_at = 0;

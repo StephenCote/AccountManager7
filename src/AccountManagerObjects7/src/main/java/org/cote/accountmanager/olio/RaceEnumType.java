@@ -6,7 +6,10 @@ import java.util.Map;
 public enum RaceEnumType {
 	A("American Indian/Alaska Native"),
 	B("Asian"),
-	C("Black or African American"),
+	/// Removed 'African American' since the word 'African' causes LLMs and Diffusion models to misinterpret the context
+	/// this can be designated via ethnicity
+	///
+	C("Black"),
 	D("Native Hawaiian or other Pacific Islander"),
 	E("White"),
 	L("Lunatic"),
