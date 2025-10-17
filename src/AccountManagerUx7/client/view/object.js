@@ -718,13 +718,20 @@
                 case "text":
                     fieldClass += " text-field-full";
                     let propst = {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName};
+                    let textContainerClass = "flex items-center";
                     if(entity && !entity.objectId && fieldView.dragAndDrop){
                         propst.class += " border-dotted";
                         propst = Object.assign(propst, dnd);
                         propst.placeholder = "{ Type Text or Drop File Here }";
                     }
 
-                    view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", propst));
+                    view.push(m("div", {class: textContainerClass}, [
+                        m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", propst),
+                        page.components.audio.recordField(function(text) {
+                            let currentVal = document.querySelector(`[name='${useName}']`).value || "";
+                            inst.apiname;
+                        })
+                    ]));
                     break;
                 case "checkbox":
                     fieldClass += " check-field";
@@ -741,13 +748,19 @@
                 case "textlist":
                 case "textarea":
                     fieldClass += " textarea-field-full w-full";
+                    let textareaContainerClass = "flex items-start";
                     let props = {onchange: fHandler, class : fieldClass, name : useName};
                     if(entity && !entity.objectId && fieldView.dragAndDrop){
                         props.class += " border-dotted";
                         props = Object.assign(props, dnd);
                         props.placeholder = "{ Type Text or Drop File Here }";
                     }
-                    view.push(m("textarea", props, defVal));
+                    view.push(m("div", {class: textareaContainerClass}, [
+                        m("textarea", props, defVal),
+                        page.components.audio.recordField(function(text) {
+                            inst.api[name]((inst.apiname || "") + text);
+                        })
+                    ]));
                     break;
                 case "pdf":
                     if(pdfViewer){

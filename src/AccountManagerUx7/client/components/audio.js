@@ -217,7 +217,7 @@
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = [218, 220, 130, 172, 173];//[282, 281, 283, 284, 265, 266, 267]; 
+    let imgBase = [282, 281, 283, 284, 265, 266, 267]; //[218, 220, 130, 172, 173];
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -1173,6 +1173,75 @@
         return m("button", { class: "button", onclick: toggleRecord }, m("span", { class: "material-symbols-outlined material-icons-24" }, "adaptive_audio_mic" + (recording ? "" : "_off")));
     }
 
+    function recordField(ctl) {
+        let isRecording = false;
+
+        if (!recognition) {
+            // Find the correct SpeechRecognition object for the browser
+            let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+            // Check if the browser supports the API
+            if (SpeechRecognition) {
+                recognition = new SpeechRecognition();
+
+                // --- Configuration ---
+                recognition.continuous = true; // Keep listening even after a pause
+                recognition.lang = 'en-US';    // Set the language
+                recognition.interimResults = true; // Get results as they are being spoken
+            } else {
+                // If not supported, check for specific browsers and show a message.
+                const ua = navigator.userAgent.toLowerCase();
+                if (ua.includes("firefox")) {
+                    page.toast("info", "To enable speech-to-text, go to about:config and set media.webspeech.recognition.enable to true.", 10000);
+                } else if (navigator.brave) {
+                     page.toast("info", "To enable speech-to-text in Brave, go to brave://settings/shields and set 'Fingerprinting blocking' to 'Standard' or 'Allow all'.", 10000);
+                }
+
+                // If not supported, return an empty element so nothing is rendered.
+                return m.fragment("");
+            }
+        }
+
+        // The rest of the function remains the same as it was correctly implemented in the previous step.
+
+        let currentHandler;
+        let finalTranscript = '';
+
+        return m("button", {
+            class: "button" + (isRecording ? " active" : ""),
+            onclick: function() {
+                isRecording = !isRecording;
+                if (isRecording) {
+                    finalTranscript = '';
+                    recognition.onresult = (event) => {
+                        let interimTranscript = '';
+                        for (let i = event.resultIndex; i < event.results.length; i++) {
+                            const transcript = event.results[i][0].transcript;
+                            if (event.results[i].isFinal) {
+                                finalTranscript += transcript + ' ';
+                            } else {
+                                interimTranscript += transcript;
+                            }
+                        }
+                    };
+                    recognition.onend = () => {
+                        isRecording = false;
+                        if (ctl && finalTranscript.trim()) {
+                            console.log("Speech recognized:", finalTranscript.trim());
+                            ctl(finalTranscript.trim());
+                        }
+                        m.redraw();
+                    };
+                    recognition.start();
+                } else {
+                    recognition.stop();
+                }
+            }
+        }, m("span", { class: "material-symbols-outlined material-icons-24" }, (isRecording ? "mic" : "mic_off")));
+    }
+
+    let recognition;
+
     
     let toneCtx;
     let leftOsc, rightOsc;
@@ -1351,6 +1420,7 @@
         clearAudioSource: clearAudioSource,
         hasAudioMap: (name) => audioMap[name] ? true : false,
         recordButton,
+        recordField,
         recordWithVisualizer,
         extractText,
         recording: () => recording,
