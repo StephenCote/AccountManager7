@@ -717,20 +717,23 @@
                 case "datetime-local":
                 case "text":
                     fieldClass += " text-field-full";
-                    let propst = {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName};
-                    let textContainerClass = "flex items-center";
+                    let propst = {oninput: fHandler, value: defVal, type: format, class : fieldClass + " pr-8", name : useName};
+                    let textContainerClass = "relative w-full";
                     if(entity && !entity.objectId && fieldView.dragAndDrop){
                         propst.class += " border-dotted";
                         propst = Object.assign(propst, dnd);
                         propst.placeholder = "{ Type Text or Drop File Here }";
                     }
 
-                    view.push(m("div", {class: textContainerClass}, [
+                    view.push(m("div", {class: textContainerClass},
                         m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", propst),
-                        page.components.audio.recordField(function(text) {
-                            inst.api[name]((inst.apiname || "") + text);
-                        })
-                    ]));
+                        m("div", {class: "absolute inset-y-0 right-0 flex items-center"},
+                            page.components.audio.recordField(function(text) {
+                                if (text !== null) inst.api[name](text);
+                                else return inst.api[name]() || "";
+                            })
+                        )
+                    ));
                     break;
                 case "checkbox":
                     fieldClass += " check-field";
@@ -747,19 +750,22 @@
                 case "textlist":
                 case "textarea":
                     fieldClass += " textarea-field-full w-full";
-                    let textareaContainerClass = "flex items-start";
-                    let props = {onchange: fHandler, class : fieldClass, name : useName};
+                    let textareaContainerClass = "relative w-full";
+                    let props = {onchange: fHandler, class : fieldClass + " pr-8", name : useName};
                     if(entity && !entity.objectId && fieldView.dragAndDrop){
                         props.class += " border-dotted";
                         props = Object.assign(props, dnd);
                         props.placeholder = "{ Type Text or Drop File Here }";
                     }
-                    view.push(m("div", {class: textareaContainerClass}, [
+                    view.push(m("div", {class: textareaContainerClass},
                         m("textarea", props, defVal),
-                        page.components.audio.recordField(function(text) {
-                            inst.api[name]((inst.apiname || "") + text);
-                        })
-                    ]));
+                        m("div", {class: "absolute top-2 right-0 flex items-start"},
+                            page.components.audio.recordField(function(text) {
+                                if (text !== null) inst.api[name](text);
+                                else return inst.api[name]() || "";
+                            })
+                        )
+                    ));
                     break;
                 case "pdf":
                     if(pdfViewer){

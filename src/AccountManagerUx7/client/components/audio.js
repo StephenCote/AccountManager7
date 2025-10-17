@@ -1210,40 +1210,45 @@
         let finalTranscript = '';
 
         return m('button.button', {
-            class: recording ? 'active' : '',
-            onclick: function () {
+            class: (recording ? 'active animate-pulse' : '') + " p-1",
+            onclick: function (e) {
                 if (recording) {
                     recognition.stop();
                     return;
                 }
 
+                let baseText = ctl(null);
+                if(baseText && baseText.length > 0) baseText += " ";
+
                 recording = true;
                 finalTranscript = '';
 
                 recognition.onresult = (event) => {
+                    let interimTranscript = '';
                     for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        const transcript = event.results[i][0].transcript;
                         if (event.results[i].isFinal) {
-                            finalTranscript += event.results[i][0].transcript + ' ';
+                            finalTranscript += transcript.trim() + ' ';
+                            baseText += transcript.trim() + ' ';
+                        } else {
+                            interimTranscript += transcript;
                         }
-                        ctl(event.results[i][0].transcript.trim() + "");
-                        console.log("Interim result:", event.results[i][0].transcript);
-                        m.redraw();
                     }
+                    ctl(baseText + interimTranscript);
+                    m.redraw();
                 };
 
                 recognition.onend = () => {
                     recording = false;
-                    if (ctl && finalTranscript.trim()) {
-                        ctl(finalTranscript.trim());
-                    }
                     m.redraw();
                 };
                 recognition.start();
             },
-        }, m('span.material-symbols-outlined.material-icons-24', recording ? 'mic' : 'mic_off'));
+        }, m('span.material-symbols-outlined.material-icons-20', recording ? 'mic' : 'mic_off'));
     }
 
     let recognition;
+
 
     
     let toneCtx;
