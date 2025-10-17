@@ -1051,26 +1051,30 @@
             } else {
                 console.warn("Handle state " + aud.context.state);
             }
-            aud.source.onended = function () {
-                aud.started = false;
-                aud.source = aud.context.createBufferSource();
-                aud.source.buffer = aud.buffer;
-                if (upNext.length > 0) {
-                    togglePlayAudioSource(upNext.shift());
-                }
-            };
-        }
-        else if (aud.context.state == "suspended") {
+
+            // Re-create the source node for every playback to avoid DOMException
+            aud.source = aud.context.createBufferSource();
+            aud.source.buffer = aud.buffer;
+            aud.source.connect(aud.context.destination);
+            aud.source.start(0);
+            aud.started = true;
+
+        } else if (aud.context.state == "suspended") {
             console.log("Resume");
             aud.context.resume();
-        }
-        else if (aud.context.state != "closed") {
+        } else if (aud.context.state != "closed") {
             console.log("Suspend");
             aud.context.suspend();
-        }
-        else {
+        } else {
             console.error("Handle state " + aud.context.state);
         }
+
+        aud.source.onended = function () {
+            aud.started = false;
+            if (upNext.length > 0) {
+                togglePlayAudioSource(upNext.shift());
+            }
+        };
     }
 
     function createAudioVisualizer(name, idx, profileId, autoPlay, content) {
@@ -1174,8 +1178,6 @@
     }
 
     function recordField(ctl) {
-        let isRecording = false;
-
         if (!recognition) {
             // Find the correct SpeechRecognition object for the browser
             let SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1207,37 +1209,38 @@
         let currentHandler;
         let finalTranscript = '';
 
-        return m("button", {
-            class: "button" + (isRecording ? " active" : ""),
-            onclick: function() {
-                isRecording = !isRecording;
-                if (isRecording) {
-                    finalTranscript = '';
-                    recognition.onresult = (event) => {
-                        let interimTranscript = '';
-                        for (let i = event.resultIndex; i < event.results.length; i++) {
-                            const transcript = event.results[i][0].transcript;
-                            if (event.results[i].isFinal) {
-                                finalTranscript += transcript + ' ';
-                            } else {
-                                interimTranscript += transcript;
-                            }
-                        }
-                    };
-                    recognition.onend = () => {
-                        isRecording = false;
-                        if (ctl && finalTranscript.trim()) {
-                            console.log("Speech recognized:", finalTranscript.trim());
-                            ctl(finalTranscript.trim());
-                        }
-                        m.redraw();
-                    };
-                    recognition.start();
-                } else {
+        return m('button.button', {
+            class: recording ? 'active' : '',
+            onclick: function () {
+                if (recording) {
                     recognition.stop();
+                    return;
                 }
-            }
-        }, m("span", { class: "material-symbols-outlined material-icons-24" }, (isRecording ? "mic" : "mic_off")));
+
+                recording = true;
+                finalTranscript = '';
+
+                recognition.onresult = (event) => {
+                    for (let i = event.resultIndex; i < event.results.length; ++i) {
+                        if (event.results[i].isFinal) {
+                            finalTranscript += event.results[i][0].transcript + ' ';
+                        }
+                        ctl(event.results[i][0].transcript.trim() + "");
+                        console.log("Interim result:", event.results[i][0].transcript);
+                        m.redraw();
+                    }
+                };
+
+                recognition.onend = () => {
+                    recording = false;
+                    if (ctl && finalTranscript.trim()) {
+                        ctl(finalTranscript.trim());
+                    }
+                    m.redraw();
+                };
+                recognition.start();
+            },
+        }, m('span.material-symbols-outlined.material-icons-24', recording ? 'mic' : 'mic_off'));
     }
 
     let recognition;

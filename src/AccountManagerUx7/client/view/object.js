@@ -728,8 +728,7 @@
                     view.push(m("div", {class: textContainerClass}, [
                         m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", propst),
                         page.components.audio.recordField(function(text) {
-                            let currentVal = document.querySelector(`[name='${useName}']`).value || "";
-                            inst.apiname;
+                            inst.api[name]((inst.apiname || "") + text);
                         })
                     ]));
                     break;
