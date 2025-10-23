@@ -1139,6 +1139,10 @@ public class Chat {
 		String tokField = ChatUtil.getMaxTokenField(chatConfig);
 		ignoreFields.addAll(Arrays.asList(new String[] {"num_ctx", "max_tokens", "max_completion_tokens"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));	
 		
+		String penField = ChatUtil.getPresencePenaltyField(chatConfig);
+		ignoreFields.addAll(Arrays.asList(new String[] {"presence_penalty"}).stream().filter(f -> !f.equals(tokField)).collect(Collectors.toList()));	
+
+		
 		String ser = JSONUtil.exportObject(ChatUtil.getPrunedRequest(req, ignoreFields), RecordSerializerConfig.getHiddenForeignUnfilteredModule());
 
 		OpenAIResponse orec = null;

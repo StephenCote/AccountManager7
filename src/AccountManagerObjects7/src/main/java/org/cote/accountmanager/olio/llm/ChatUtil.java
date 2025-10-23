@@ -1046,6 +1046,16 @@ public class ChatUtil {
 		}
 		return maxTokenField;
 	}
+	
+	public static String getPresencePenaltyField(BaseRecord cfg) {
+		String presencePenField = "presence_penalty";
+		String modelName = cfg.get("model");
+		if(modelName.startsWith("gpt-5")) {
+			presencePenField = "";
+		}
+
+		return presencePenField;
+	}
 
 	public static void applyChatOptions(OpenAIRequest req, BaseRecord cfg) {
 		String modelName = null;
