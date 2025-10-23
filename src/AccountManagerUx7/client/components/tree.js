@@ -177,13 +177,13 @@
                 /// Auto-Type, Lock from dragging out
                 let pathType;
                 if (bGroup) {
-                    if (node.type.match(/^(account|person)$/gi)) {
+                    if (node.type && node.type.match(/^(account|person)$/gi)) {
                         /// fListType = node.type;
                         fListType = "identity." + node.type;
                         let modType = am7model.getModel(fListType.toLowerCase());
                         ico = modType.icon;
                     }
-                    else if (node.type.match(/^(bucket)$/gi)) {
+                    else if (node.type && node.type.match(/^(bucket)$/gi)) {
                         ico = "collections_bookmark";
                         if (node.name.match(/^favorite/i)) {
                             ico = "favorite";

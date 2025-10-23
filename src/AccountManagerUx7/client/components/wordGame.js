@@ -98,7 +98,7 @@
     }
 
     let data = getInitialData();
-
+    let coherenceScoreThreshold = 0.6;
     let analyzing = false;
     async function analyzeAndLockPhrases() {
         if (analyzing) return;
@@ -120,7 +120,7 @@
 
             if (resp && resp.scores) {
                 resp.scores.forEach(scoredPhrase => {
-                    if (scoredPhrase.score > 7.5) {
+                    if (scoredPhrase.score >= coherenceScoreThreshold) {
                         const comboToLock = data.foundCombinations.find(c => c.phrase === scoredPhrase.phrase);
                         if (comboToLock) {
                             // Determine ownership
@@ -228,9 +228,8 @@ async function handleEndOfRound() {
                 
                 if (lastMessage && lastMessage.toLowerCase().trim() !== 'incoherent') {
                     // Phrase is coherent, award bonus and mark for survival
-                    page.toast("success", `Phrase "${combo.phrase}" is coherent!`);
+                    page.toast("success", `Phrase "${combo.phrase}" is coherent! Player ${combo.owner} gets 10 bonus points!`);
                     if (combo.owner === 1) data.player1.score += 10; else data.player2.score += 10;
-                    page.toast("success", `Player ${combo.owner} gets 10 bonus points!`);
                     survivingPhrases.push(combo);
                 } else {
                     // Phrase is incoherent
@@ -245,6 +244,9 @@ async function handleEndOfRound() {
         // --- STEP 3: Rebuild the board ---
         const newBoard = Array(8).fill(null).map(() => Array(10).fill(null));
         let nextAvailableRow = 0;
+        if( survivingPhrases.length === 0) {
+            page.toast("info", "No coherent phrases survived this round. Going to next round.");
+        }
         survivingPhrases.forEach(combo => {
             if (nextAvailableRow < data.board.length) {
                 combo.words.forEach(wordInfo => {
@@ -309,7 +311,7 @@ async function handleEndOfRound() {
         return am7chat.makeChat(chatName, "herm-local", "http://localhost:11434", "ollama");
     }
 
-    let endPromptName = "WordBattle.prompt";
+    let endPromptName = "WordBattleEndRound.prompt";
     async function prepareEndPrompt() {
 
         return am7chat.makePrompt(endPromptName, [
@@ -322,7 +324,7 @@ async function handleEndOfRound() {
     }
 
 
-    let promptName = "WordBattle.prompt";
+    let promptName = "WordBattlePhraseCoherence.prompt";
     async function preparePrompt() {
 
         return am7chat.makePrompt(promptName, [

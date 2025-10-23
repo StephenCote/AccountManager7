@@ -1035,6 +1035,9 @@ public class ChatUtil {
 		if(modelName.startsWith("o")) {
 			maxTokenField = "max_completion_tokens";
 		}
+		else if(modelName.startsWith("gpt-5")) {
+			maxTokenField = "";
+		}
 		else if(cfg.getEnum("serviceType") == LLMServiceEnumType.OLLAMA) {
 			maxTokenField = "num_ctx";
 		}
