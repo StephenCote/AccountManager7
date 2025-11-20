@@ -999,6 +999,26 @@ async function handleEndOfRound() {
         // Words will be prepared when the game is started
     }
 
+    async function testEndGame() {
+        console.log("--- Running testEndGame ---");
+
+        // 1. Set up initial game state for the test
+        data.player1.score = 100;
+        data.player2.score = 50;
+
+        // 2. Set up local dependencies required by triggerEndGame
+        endPromptCfg = await prepareEndPrompt();
+        chatCfg = await prepareChatConfig();
+        endGameChat = await am7chat.getChatRequest(endChatRequestName, chatCfg, endPromptCfg);
+
+        // 3. Invoke triggerEndGame with an array of 5 phrases
+        const testPhrases = ["the quick brown fox", "jumps over the lazy dog", "a stitch in time", "saves nine", "an apple a day"];
+        await triggerEndGame(testPhrases);
+
+        console.log("--- testEndGame Finished ---");
+        console.log("Final data.endGameInfo:", data.endGameInfo);
+    }
+
     let wordGame = {
         scoreCard: () => "",
         oninit: function () {
@@ -1017,9 +1037,9 @@ async function handleEndOfRound() {
             clearInterval(data.timerId); // Cleanup timer on component removal
         },
         view: function () {
-            return modelPanel()
-        }
+            return modelPanel();
+        },
+        testEndGame: testEndGame // Exposing the test function
     };
     page.components.wordGame = wordGame;
 }());
-
