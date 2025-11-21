@@ -137,7 +137,7 @@
         }
         chat.message = msg;
         chat.uid = page.uid();
-        console.log(chat);
+        //console.log(chat);
         return await m.request({ method: 'POST', url: g_application_path + "/rest/chat/text", withCredentials: true, body: chat });
     }
 

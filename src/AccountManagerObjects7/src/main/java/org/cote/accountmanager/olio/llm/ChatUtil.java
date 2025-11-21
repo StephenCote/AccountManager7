@@ -882,13 +882,26 @@ public class ChatUtil {
 		}
 		else {
 			for(BaseRecord frec : frecs) {
-				if(msg != null && msg.length() > 0) {
+				if(frec.getSchema().equals(OlioModelNames.MODEL_CHAT_REQUEST)) {
+					//logger.info(frec.toFullString());
+					ChatRequest rcreq = new ChatRequest(frec);
+					OpenAIRequest  oreq = getOpenAIRequest(user, rcreq);
+					BaseRecord ccfg = OlioUtil.getFullRecord(rcreq.getChatConfig());
+					String hist = getFormattedChatHistory(oreq, ccfg, -1, false).stream().collect(Collectors.joining(System.lineSeparator() + System.lineSeparator()));
+					
+					String citationKey = "<citation schema=\"" + OlioModelNames.MODEL_CHAT_REQUEST + "\" id = \"" + ccfg.get(FieldNames.FIELD_ID) + "\">";
+					String citationSuff = "</citation>";
+					
+					dataCit.add(citationKey + System.lineSeparator()  + "--- CHAT HISTORY ---" + System.lineSeparator() + hist + System.lineSeparator() + "--- END CHAT HISTORY ---" + System.lineSeparator() + citationSuff);
+				}
+				
+				else if(msg != null && msg.length() > 0) {
 					//  + (findSummaryNote ? " and include any summary note" : "")
 					logger.info("Building citations with " + frecs.size() + " references of which " + tags.size() + " are tags");
 					if(
 						frec.getSchema().equals(OlioModelNames.MODEL_CHAR_PERSON)
 					) {
-						vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 10, 0.6, false));
+						vects.addAll(vu.find(null, null, tags.toArray(new BaseRecord[0]), new String[] {OlioModelNames.MODEL_VECTOR_CHAT_HISTORY}, msg, 3, 0.6, false));
 					}
 					vects.addAll(vu.find(frec, frec.getSchema(), tags.toArray(new BaseRecord[0]), new String[] {ModelNames.MODEL_VECTOR_MODEL_STORE}, msg, 5, 0.6, false));
 					//if(findSummaryNote) {
@@ -1114,6 +1127,9 @@ public class ChatUtil {
 			String cont = msg.getContent();
 			if (cont != null && cont.startsWith("(KeyFrame")) {
 				continue;
+			}
+			if(cont != null && cont.indexOf("(Reminder") > -1) {
+				cont = cont.substring(0, cont.indexOf("(Reminder")).trim();
 			}
 			String name = null;
 			boolean isUser = msg.getRole().equals(Chat.userRole);
