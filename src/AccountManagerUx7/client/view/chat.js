@@ -59,6 +59,10 @@
       name: {
         label: "Chat Name",
         layout: 'third'
+      },
+      setting: {
+        label: "Setting",
+        layout: 'full'
       }
     }
   };
@@ -587,7 +591,8 @@
 
       let midx = -1;
       let aidx = 1;
-      let msgs = (chatCfg?.history?.messages || []).map((msg) => {
+      let amsg = chatCfg.history?.messages || [];
+      let msgs = amsg.map((msg) => {
         midx++;
         let align = "justify-start";
         let txt = "bg-gray-600 text-white";
@@ -679,9 +684,19 @@
         ])
       ])
       ];
+      let setting = inst.api.setting();
+      let setLbl = "";
+      if (setting) {
+        setLbl = m("div", { class: "relative receive-chat flex justify-start"},
+          setLbl = m("div", { class:  "px-5 mb-2 bg-gray-200 text-black py-2 text-base w-full border rounded-md font-light" },
+             m("p", "Setting: " + setting)
 
+          )
+        );
+      }
+      
       let ret = [(profile ? m("div", { class: "bg-white dark:bg-black user-info-header px-5 py-3" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
-
+        setLbl,
         msgs
       ])];
 

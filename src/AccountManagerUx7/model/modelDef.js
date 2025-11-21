@@ -9813,6 +9813,10 @@
           "type": "list",
           "baseType": "string",
           "ephemeral": true
+        },
+        {
+          "name": "setting",
+          "type": "string"
         }
       ]
     },

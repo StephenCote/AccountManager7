@@ -286,12 +286,23 @@ public class ChatUtil {
 			BaseRecord chatConfig = OlioUtil.getFullRecord(cfg);
 			BaseRecord promptConfig = OlioUtil.getFullRecord(pcfg);
 			
+			String setting = chatConfig.get("setting");
+			if (setting != null) {
+				if(setting.equals("random")) {
+					setting = NarrativeUtil.getRandomSetting();
+					chatConfig = chatConfig.copyRecord();
+					chatConfig.setValue("setting", setting);
+				}
+				creq.setValue("setting", setting);
+			}
+			
 			Chat chat = new Chat(user, chatConfig, promptConfig);
 			OpenAIRequest req = chat.getChatPrompt();
 			IOSystem.getActiveContext().getRecordUtil().applyNameGroupOwnership(user, req, name, "~/ChatRequests", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 			BaseRecord oreq = IOSystem.getActiveContext().getAccessPoint().create(user, req);
 			creq.set("sessionType", oreq.getSchema());
 			creq.set("session", oreq);
+
 			ocreq = IOSystem.getActiveContext().getAccessPoint().create(user, creq);
 		} catch (FieldException | ModelNotFoundException | ValueException | FactoryException e) {
 			logger.error(e);
@@ -989,6 +1000,10 @@ public class ChatUtil {
 				}
 			}
 			if(req == null) {
+				if (creq.get("setting") != null) {
+					chatConfig = chatConfig.copyRecord();
+					chatConfig.setValue("setting", creq.get("setting"));
+				}
 				chat = new Chat(user, chatConfig, promptConfig);
 				req = chat.getChatPrompt();
 			}
@@ -1003,7 +1018,13 @@ public class ChatUtil {
 		BaseRecord promptConfig = OlioUtil.getFullRecord(req.getPromptConfig());
 		Chat chat = null;
 		if(chatConfig != null && promptConfig != null) {
-			chat = new Chat(user, chatConfig, promptConfig);
+			BaseRecord cchatConfig = chatConfig.copyRecord();
+			if (req.get("setting") != null) {
+				cchatConfig.setValue("setting", req.get("setting"));
+			}
+
+			
+			chat = new Chat(user, cchatConfig, promptConfig);
 			chat.setDeferRemote(deferRemote);
 		}
 		return chat;

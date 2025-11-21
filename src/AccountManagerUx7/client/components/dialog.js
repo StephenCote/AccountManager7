@@ -148,6 +148,7 @@
             console.warn("Invalid chat or prompt selection: " + chat + " / " + prompt);
             return;
         }
+       
         let ycfg = pcfg.filter(a => a.name.toLowerCase() == prompt.name.toLowerCase());
         let vcfg = acfg.filter(a => a.name.toLowerCase() == chat.name.toLowerCase());
         if(!ycfg.length || !vcfg.length){
@@ -156,6 +157,8 @@
         }
         let occfg = vcfg[0];
         let opcfg = ycfg[0];
+
+        inst.api.setting(occfg.setting)
 
         let name;
         if(inst.api.name) name = inst.api.name();
