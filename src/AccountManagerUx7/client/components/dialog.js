@@ -195,7 +195,7 @@
         let cfg = {
             label: "Chat Settings",
             entityType: "olio.llm.chatRequest",
-            size: 50,
+            size: 75,
             data: {entity, inst},
             confirm: async function (data) {
 

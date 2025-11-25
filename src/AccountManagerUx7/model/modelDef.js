@@ -9769,7 +9769,8 @@
         "chatConfig",
         "promptConfig",
         "session",
-        "sessionType"
+        "sessionType",
+        "setting"
       ],
       "description": "Used for proxying chat requests",
       "fields": [

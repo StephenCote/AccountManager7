@@ -107,6 +107,7 @@
 
     inst.designer("organization", orgFieldDesigner);
     inst.viewProperties("password", { onkeydown : function(e){ if (e.which == 13) doLogin(); }});
+    inst.viewProperties("userName", { autocapitalize  : "off"" });
 
  
     

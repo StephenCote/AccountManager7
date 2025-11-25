@@ -6,7 +6,7 @@
 	"group": "ChatRequests",
 	"icon": "chat",
 	"label": "Requests",
-	"query": ["id", "groupId", "chatConfig", "promptConfig", "session", "sessionType"],
+	"query": ["id", "groupId", "chatConfig", "promptConfig", "session", "sessionType", "setting"],
 	"description": "Used for proxying chat requests",
 	"fields": [
 		{

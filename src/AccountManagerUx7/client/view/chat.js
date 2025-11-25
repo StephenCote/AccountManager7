@@ -96,6 +96,7 @@
     function doClear() {
 
       clearEditMode();
+      inst = undefined;
       // page.components.audio.unconfigureAudio(audio);
       // page.components.audio.clearMagic8(audioMagic8);
       chatCfg = newChatConfig();
