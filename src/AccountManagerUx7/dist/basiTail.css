@@ -4270,6 +4270,11 @@ button.button-tab-active:hover:is(.dark *) {
   inset: 0px;
 }
 
+.inset-y-0 {
+  top: 0px;
+  bottom: 0px;
+}
+
 .-bottom-6 {
   bottom: -1.5rem;
 }
@@ -4296,6 +4301,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .left-2 {
   left: 0.5rem;
+}
+
+.right-0 {
+  right: 0px;
 }
 
 .start-0 {
@@ -4723,6 +4732,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .content-end {
   align-content: flex-end;
+}
+
+.items-start {
+  align-items: flex-start;
 }
 
 .items-center {
@@ -5216,6 +5229,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .pl-4 {
   padding-left: 1rem;
+}
+
+.pr-8 {
+  padding-right: 2rem;
 }
 
 .text-left {

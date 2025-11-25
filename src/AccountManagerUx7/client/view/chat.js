@@ -600,7 +600,7 @@
         // console.log(msg);
         if (msg.role == "user") {
           align = "justify-end";
-          txt = "bg-gray-200 text-black";
+          txt = "dark:bg-gray-900 dark:text-white bg-gray-200 text-black";
         }
         let cnt = msg.content || "";
         let ectl = "";
@@ -689,7 +689,7 @@
       let setLbl = "";
       if (setting) {
         setLbl = m("div", { class: "relative receive-chat flex justify-start"},
-          setLbl = m("div", { class:  "px-5 mb-2 bg-gray-200 text-black py-2 text-base w-full border rounded-md font-light" },
+          setLbl = m("div", { class:  "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-base w-full border rounded-md font-light" },
              m("p", "Setting: " + setting)
 
           )
