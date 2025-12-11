@@ -60,7 +60,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\\\-]+}")
+	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getModelByObjectId(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -75,7 +75,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\\\-]+}/full")
+	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}/full")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getFullModelByObjectId(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -105,7 +105,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@DELETE
-	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\\\-]+}")
+	@Path("/{type:[A-Za-z\\.]+}/{objectId:[0-9A-Za-z\\-]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response deleteModel(@PathParam("type") String type, @PathParam("objectId") String objectId, @Context HttpServletRequest request, @Context HttpServletResponse response){
 		BaseRecord user = ServiceUtil.getPrincipalUser(request);
@@ -252,7 +252,7 @@ public class ModelService {
 	
 	@RolesAllowed({"user"})
 	@GET
-	@Path("/stream/{objectId:[0-9A-Za-z\\-]+}/{startIndex:[\\\\d]+}/{length:[\\\\d]+}")
+	@Path("/stream/{objectId:[0-9A-Za-z\\-]+}/{startIndex:[\\d]+}/{length:[\\d]+}")
 	@Produces(MediaType.APPLICATION_JSON)
 	public Response getStreamSegment(@PathParam("objectId") String objectId,@PathParam(FieldNames.FIELD_NAME) String name, @PathParam("startIndex") long startIndex, @PathParam("length") int length, @Context HttpServletRequest request){
 		BaseRecord rseg = null;
