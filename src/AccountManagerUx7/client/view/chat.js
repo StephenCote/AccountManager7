@@ -94,16 +94,12 @@
     let profile = false;
 
     function doClear() {
-
       clearEditMode();
       inst = undefined;
-      // page.components.audio.unconfigureAudio(audio);
-      // page.components.audio.clearMagic8(audioMagic8);
       chatCfg = newChatConfig();
     }
 
     function pickSession(obj) {
-
       doClear();
       inst = am7model.prepareInstance(obj);
       window.dbgInst = inst;
@@ -119,15 +115,17 @@
       chatCfg.pending = false;
       chatCfg.peek = false;
       chatCfg.history = [];
-      let chatReq = {
-        schema: inst.model.name,
-        objectId: inst.api.objectId(),
-        uid: page.uid()
-      };
+      if(inst && inst.api.objectId()){
+        let chatReq = {
+          schema: inst.model.name,
+          objectId: inst.api.objectId(),
+          uid: page.uid()
+        };
 
-      return m.request({ method: 'POST', url: g_application_path + "/rest/chat/clear", withCredentials: true, body: chatReq }).then((r) => {
-        m.redraw();
-      });
+        return m.request({ method: 'POST', url: g_application_path + "/rest/chat/clear", withCredentials: true, body: chatReq }).then((r) => {
+          m.redraw();
+        });
+      }
     }
 
     function newChatStream() {
@@ -786,31 +784,25 @@
             m("div", { class: "splitrightcontainer result-nav-inner" },
 
               m("div", { class: "tab-container result-nav w-full" }, [
-                m("button", { class: "button", onclick: toggleFullMode }, m("span", { class: "material-symbols-outlined material-icons-24" }, (fullMode ? "close_fullscreen" : "open_in_new"))),
-                m("button", { class: "button", onclick: doCancel }, m("span", { class: "material-symbols-outlined material-icons-24" }, "cancel")),
-                m("button", { class: "button", onclick: toggleCamera }, m("span", { class: "material-symbols-outlined material-icons-24" + (camera ? " animate-pulse" : "") }, (camera ? "photo_camera" : "no_photography"))),
-                m("button", { class: "button", onclick: toggleProfile }, m("span", { class: "material-symbols-outlined material-icons-24" }, (profile ? "account_circle" : "account_circle_off"))),
-                m("button", { class: "button", onclick: toggleAudio }, m("span", { class: "material-symbols-outlined material-icons-24" }, (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")))),
-                m("button", { class: "button", onclick: chatInto }, m("span", { class: "material-symbols-outlined material-icons-24" }, "query_stats")),
-                m("button", { class: "button", onclick: toggleThoughts }, m("span", { class: "material-symbols-outlined material-icons-24" }, "visibility" + (hideThoughts ? "" : "_off"))),
+                page.iconButton("button",  (fullMode ? "close_fullscreen" : "open_in_new"), "", toggleFullMode),
+                page.iconButton("button",  "cancel", "", doCancel),
+                // (camera ? " animate-pulse" : "")
+                page.iconButton("button",  (camera ? "photo_camera" : "no_photography"), "", toggleCamera),
+                page.iconButton("button",  (profile ? "account_circle" : "account_circle_off"), "", toggleProfile),
+                page.iconButton("button",  (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")), "", toggleAudio),
+                page.iconButton("button",  "query_stats", "", chatInto),
+                page.iconButton("button",  "visibility" + (hideThoughts ? "" : "_off"), "", toggleThoughts),
                 page.components.audio.recordButton(),
                 (page.components.audio.recording() ? page.components.audio.recordWithVisualizer(true, function (text) { audioText += text; console.log(text); }, function (contentType, b64) { handleAudioSave(contentType, b64); }) : (chatCfg.pending ? pendBar : input)),
-                m("button", { class: "button", onclick: doStop }, m("span", { class: "material-symbols-outlined material-icons-24" }, "stop")),
-                m("button", { class: "button", onclick: doChat }, m("span", { class: "material-symbols-outlined material-icons-24" }, "chat"))
+                page.iconButton("button",  "stop", "", doStop),
+                page.iconButton("button",  "chat", "", doChat)
               ])
             )
           ]),
         )
       );
-      /*
-      return m("div", {class: "result-nav-outer"}, 
-        m("div", {class: "result-nav-inner"}, [
-          m("div", {class: "result-nav"}, "..."),
-          m("div", {class: "result-nav"}, "Bottom")
-        ])
-      );
-      */
     }
+    
     async function handleAudioSave(mimeType, base64) {
       let name = inst.api.objectId() + " - " + (chatCfg?.history?.messages?.length || 1);
       console.log("Save:", name);
@@ -820,11 +812,9 @@
       sinst.api.organizationId(page.user.organizationId);
       sinst.api.contentType(mimeType);
       sinst.api.name(name);
-
       sinst.entity.dataBytesStore = base64;
-
-
     }
+
     function navKey(e) {
       switch (e.keyCode) {
         /// ESC
@@ -832,8 +822,6 @@
           if (fullMode) toggleFullMode();
           break;
       }
-
-      // }
     }
 
     let lastCount = -1;

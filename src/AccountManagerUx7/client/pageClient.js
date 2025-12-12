@@ -198,7 +198,7 @@
     }
 
     async function chatAvatar(){
-        await am7model.forms.commands.character("Basi Lisk", undefined, 42, "M", "/media/logo_512.png")
+        await am7model.forms.commands.character("Basi Lisk", undefined, 42, "M", "/media/logo_512.png");
     }
     function isFavorite(obj){
         let ctx = contextModel;
