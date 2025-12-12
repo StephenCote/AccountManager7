@@ -98,7 +98,8 @@ public class ExportAction extends CommonAction {
 					value = ByteModelUtil.getValue(object);
 				}
 				
-				String fpath = fspath + "." + ContentTypeUtil.getExtensionFromType(object.get(FieldNames.FIELD_CONTENT_TYPE));
+				String fpath = fspath;
+				if(fpath.indexOf(".") == -1) fpath =  fspath + "." + ContentTypeUtil.getExtensionFromType(object.get(FieldNames.FIELD_CONTENT_TYPE));
 				FileUtil.emitFile(fpath, value);
 			}
 		}

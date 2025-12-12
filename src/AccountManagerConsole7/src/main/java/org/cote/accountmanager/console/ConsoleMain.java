@@ -120,6 +120,7 @@ public class ConsoleMain {
 		OlioModelNames.use();
 		Properties properties = loadProperties();
 		IOFactory.DEFAULT_FILE_BASE = properties.getProperty("app.basePath");
+		IOFactory.addPermittedPath(IOFactory.DEFAULT_FILE_BASE + "/.streams");
 		boolean enableVector = Boolean.parseBoolean(properties.getProperty("test.vector.enable"));
 		resetContext(properties.getProperty("test.db.url"), properties.getProperty("test.db.user"), properties.getProperty("test.db.password"), setup && Boolean.parseBoolean(properties.getProperty("test.db.reset")));
 		if(ioContext != null) {
