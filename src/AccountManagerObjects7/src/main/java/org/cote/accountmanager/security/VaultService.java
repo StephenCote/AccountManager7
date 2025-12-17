@@ -51,6 +51,7 @@ import org.cote.accountmanager.schema.type.CredentialEnumType;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ByteModelUtil;
 import org.cote.accountmanager.util.CryptoUtil;
+import org.cote.accountmanager.util.ErrorUtil;
 import org.cote.accountmanager.util.FieldUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
@@ -505,7 +506,9 @@ public class VaultService
 		String path = vaultBasePath + File.separator + Hex.encodeHexString(CryptoUtil.getDigest(vaultName.getBytes(),new byte[0])) + "-" + chkV.getKeyPrefix() + (isProtected ? chkV.getKeyProtectedPrefix() : "") + chkV.getKeyExtension();
 		File f = new File(path);
 		if(!f.exists()){
+			/// Possible issue where an unprotected vault is being cited.
 			logger.warn("Vault file is not accessible: '" + path + "'");
+			ErrorUtil.printStackTrace();
 			return null;
 		}
 		String content = FileUtil.getFileAsString(f);
