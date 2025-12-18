@@ -172,6 +172,9 @@ public class TestPerformance extends BaseTest {
 					data = getCreateFileData(user, "~/Data/Pictures", "./media/" + sampleData[rand.nextInt(sampleData.length)], name);
 					if(data != null) {
 						trec = ThumbnailUtil.getCreateThumbnail(data, 250, 250);
+						if (trec == null) {
+							logger.error("Thumbnail creation failed for " + name);
+						}
 					}
 				} catch (FieldException | ValueException | ModelNotFoundException | FactoryException | IndexException
 						| ReaderException | IOException | ModelException e) {

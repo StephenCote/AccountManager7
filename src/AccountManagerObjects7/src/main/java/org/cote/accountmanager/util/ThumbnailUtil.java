@@ -124,6 +124,7 @@ public class ThumbnailUtil {
 		}
 		if(imageBytes.length == 0) {
 			logger.error("Data has no bytes or stream");
+			logger.error(record.toFullString());
 			return null;
 		}
 
