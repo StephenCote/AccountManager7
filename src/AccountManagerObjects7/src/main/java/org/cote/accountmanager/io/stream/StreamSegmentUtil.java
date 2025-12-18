@@ -1,6 +1,7 @@
 package org.cote.accountmanager.io.stream;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
@@ -159,8 +160,8 @@ public class StreamSegmentUtil {
 			else {
 				orgPath = orgPath.substring(1).replace('/', '.');
 			}
-			String fullPath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + orgPath + groupPath + "/" + objectId + ext;
-			String densePath = IOFactory.DEFAULT_FILE_BASE + "/.streams/" + organizationId + "/" + groupId + "/" + objectId + ext;
+			String fullPath = IOFactory.DEFAULT_FILE_BASE + File.separator + ".streams" + File.separator + orgPath + groupPath + File.separator + objectId + ext;
+			String densePath = IOFactory.DEFAULT_FILE_BASE + File.separator + ".streams" + File.separator + organizationId + File.separator + groupId + File.separator + objectId + ext;
 
 			source = densePath;
 			try {

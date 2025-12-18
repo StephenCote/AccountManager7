@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.commons.codec.binary.Hex;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
@@ -73,8 +74,6 @@ public class VaultService
 	
 	
 	public static final Logger logger = LogManager.getLogger(VaultService.class);
-	
-	private static Map<String,VaultBean> cacheByObjectId = new ConcurrentHashMap<>();
 	
 	/// export a version of the vault that does not include exposed (aka unencrypted) information that should be protected
 	///
@@ -143,7 +142,7 @@ public class VaultService
 		cred.set(FieldNames.FIELD_TYPE, CredentialEnumType.ENCRYPTED_PASSWORD);
 		cred.set(FieldNames.FIELD_ENCIPHERED, true);
 		
-		String keyName = filePath.substring(filePath.lastIndexOf("/") + 1);
+		String keyName = filePath.substring(filePath.lastIndexOf(File.separator) + 1);
 		
 
 		BaseRecord crypto = recordUtil.getCreateRecord(vaultOwner, ModelNames.MODEL_KEY_SET, "Vault Key - " + keyName, "~/keys", vaultOwner.get(FieldNames.FIELD_ORGANIZATION_ID));
@@ -265,13 +264,14 @@ public class VaultService
 		vault.setProtectedCredential(credential);
 	}
 	
-	public VaultBean getCreateVault(BaseRecord vaultUser, String vaultName, long organizationId) {
+	public synchronized VaultBean getCreateVault(BaseRecord vaultUser, String vaultName, long organizationId) {
 		VaultBean vault = null;
 		try {
 			vault = getVault(vaultUser, vaultName);
 			if(vault == null) {
-				String credPath = IOFactory.DEFAULT_FILE_BASE + DEFAULT_VAULT_PATH + "/" + organizationId + "/credential/" + vaultName + ".json";
-				String vaultPath = IOFactory.DEFAULT_FILE_BASE + DEFAULT_VAULT_PATH + "/" + organizationId + "/vault";
+				logger.info("Creating new vault " + vaultName + " in org #" + organizationId);
+				String credPath = IOFactory.DEFAULT_FILE_BASE + DEFAULT_VAULT_PATH + File.separator + organizationId + File.separator +"credential" + File.separator + vaultName + ".json";
+				String vaultPath = IOFactory.DEFAULT_FILE_BASE + DEFAULT_VAULT_PATH + File.separator + organizationId + File.separator + "vault";
 				if(!createProtectedCredentialFile(vaultUser, credPath, UUID.randomUUID().toString().getBytes())) {
 					logger.error("Failed to create protected credential");
 					return null;
@@ -281,12 +281,14 @@ public class VaultService
 					logger.error("Failed to restore protected credential");
 					return null;
 				}
+				
 				VaultBean nvault = newVault(vaultUser, vaultPath, vaultName);
 				setProtectedCredentialPath(nvault, credPath);
 				if(!createVault(nvault, cred)) {
 					logger.error("Failed to create new vault");
 					return null;
 				}
+
 				vault = getVault(vaultUser, vaultName);
 			}
 		}
@@ -318,7 +320,7 @@ public class VaultService
 		return vault;
 	}
 	
-	public boolean createVault(VaultBean vault, BaseRecord credential){
+	public synchronized boolean createVault(VaultBean vault, BaseRecord credential){
 		try{
 			IOSystem.getActiveContext().getRecordUtil().populate(vault.getServiceUser());
 			if ((boolean)vault.get(FieldNames.FIELD_HAVE_VAULT_KEY) == true){
@@ -446,7 +448,7 @@ public class VaultService
 		return activeBean;
 	}
 	
-	public VaultBean getPublicVault(BaseRecord user, String name) {
+	public synchronized VaultBean getPublicVault(BaseRecord user, String name) {
 		VaultBean dvault = new VaultBean();
 		VaultBean pvault = null;
 		
@@ -466,7 +468,12 @@ public class VaultService
 				return null;
 			}
 			pvault = new VaultBean(rec);
-			if(!initialize(pvault, null)) {
+			
+
+			String credPath = getProtectedCredentialPath(pvault);
+			BaseRecord cred = loadProtectedCredential(credPath);
+			
+			if(!initialize(pvault, cred)) {
 				logger.error("Failed to initialize public vault");
 				return null;
 			}
@@ -476,9 +483,10 @@ public class VaultService
 		}
 		return pvault;
 	}
-	public VaultBean getVault(BaseRecord user, String name) {
+	public synchronized VaultBean getVault(BaseRecord user, String name) {
 		
 		VaultBean pvault = getPublicVault(user, name);
+		
 		if(pvault == null) {
 			logger.warn("Failed to find public vault " + name);
 			return null;
@@ -488,7 +496,7 @@ public class VaultService
 		String credPath = getProtectedCredentialPath(pvault);
 
 		BaseRecord cred = loadProtectedCredential(credPath);
-
+logger.info(pvault.toString());
 		VaultBean vault = loadVault(vaultPath, pvault.get(FieldNames.FIELD_NAME), pvault.isProtected());
 		if(vault == null){
 			logger.error("Failed to restore vault " + vaultPath);
@@ -507,7 +515,7 @@ public class VaultService
 		File f = new File(path);
 		if(!f.exists()){
 			/// Possible issue where an unprotected vault is being cited.
-			logger.warn("Vault file is not accessible: '" + path + "'");
+			logger.warn("***** Vault file is not accessible: '" + path + "' / protected = " + isProtected);
 			ErrorUtil.printStackTrace();
 			return null;
 		}
@@ -519,7 +527,7 @@ public class VaultService
 	/// When loading a vault via urn, this method will be invoked twice: Once for the meta data reference in the database which is used to find the vault, and Two for the vault itself
 	/// Therefore, log statements are dialed down to debug, otherwise it looks like the call to initialize twice is in error
 	///
-	public boolean initialize(VaultBean vault, BaseRecord credential) {
+	public synchronized boolean initialize(VaultBean vault, BaseRecord credential) {
 		boolean init = false;
 		try {
 

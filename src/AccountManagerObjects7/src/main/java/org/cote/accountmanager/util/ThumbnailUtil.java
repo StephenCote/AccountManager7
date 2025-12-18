@@ -77,7 +77,8 @@ public class ThumbnailUtil {
 		BaseRecord thumbDir = ctx.getAccessPoint().findById(owner, ModelNames.MODEL_GROUP, irecord.get(FieldNames.FIELD_GROUP_ID));
 		if (thumbDir == null) {
 			logger.error("Unable to find group for thumbnail in group " + irecord.get(FieldNames.FIELD_GROUP_ID));
-			
+			//logger.error(irecord.toString());
+			ErrorUtil.printStackTrace();
 			return null;
 		}
 		String thumbName = record.get(FieldNames.FIELD_NAME) + " " + width + "x" + height;

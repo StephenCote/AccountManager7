@@ -1,5 +1,6 @@
 package org.cote.accountmanager.parsers.geo;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -304,7 +305,7 @@ public class GeoParser {
 		cfg.setSchema(ModelNames.MODEL_GEO_LOCATION);
 		cfg.setCsvFormat(defaultFormat);
 		cfg.setFields(map.toArray(new ParseMap[0]));
-		cfg.setFilePath(basePath + "/" + isoCode.toUpperCase() + ".txt");
+		cfg.setFilePath(basePath + File.separator + isoCode.toUpperCase() + ".txt");
 		cfg.setGroupPath(groupPath);
 		cfg.setMaxCount(maxLines);
 		cfg.setOwner(user);

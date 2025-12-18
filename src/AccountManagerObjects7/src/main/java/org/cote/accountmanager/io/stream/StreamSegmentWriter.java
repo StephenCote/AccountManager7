@@ -1,5 +1,6 @@
 package org.cote.accountmanager.io.stream;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
@@ -127,7 +128,7 @@ public class StreamSegmentWriter implements IWriter {
 		if(ssUtil.isRestrictedPath(path)) {
 			throw new ModelException("Path " + path + " is restricted");
 		}
-		FileUtil.makePath(path.substring(0, path.lastIndexOf("/")));
+		FileUtil.makePath(path.substring(0, path.lastIndexOf(File.separator)));
 		long totalSize = 0L;
 		try (
 			RandomAccessFile writer = new RandomAccessFile(path, "rw");

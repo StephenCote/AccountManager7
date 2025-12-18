@@ -1,5 +1,6 @@
 package org.cote.accountmanager.io;
 
+import java.io.File;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -49,7 +50,7 @@ public class BatchQueue extends Threaded {
 				if(v.size() > 0) {
 					if(IOSystem.getActiveContext() == null) {
 						logger.error("Context is not active.  Caching " + v.size() + " " + k + " entrie(s)");
-						FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + "/.queue/" + k + "/" + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
+						FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + File.separator + ".queue" + File.separator+ k + File.separator + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
 					}
 					else {
 						IOSystem.getActiveContext().getRecordUtil().updateRecords(v.toArray(new BaseRecord[0]));

@@ -1,5 +1,6 @@
 package org.cote.accountmanager.util;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -58,7 +59,7 @@ public class SystemTaskUtil {
 		try {
 			useMap.forEach((k, v) -> {
 				if(v.size() > 0) {
-					FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + "/.tasks/" + label + "/" + k + "/" + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
+					FileUtil.emitFile(IOFactory.DEFAULT_FILE_BASE + File.separator + ".tasks" + File.separator + label + File.separator + k + File.separator + UUID.randomUUID().toString() + ".json", JSONUtil.exportObject(v, RecordSerializerConfig.getUnfilteredModule()));
 				}
 			});
 		}

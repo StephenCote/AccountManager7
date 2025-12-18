@@ -340,7 +340,7 @@ public class StreamUtil {
 	}
 	
 	private static void writeFile(String path, byte[] bytes, long startPosition) throws ValueException {
-		FileUtil.makePath(path.substring(0, path.lastIndexOf("/")));
+		FileUtil.makePath(path.substring(0, path.lastIndexOf(File.separator)));
 		try (
 			RandomAccessFile writer = new RandomAccessFile(path, "rw");
 			FileChannel channel = writer.getChannel()

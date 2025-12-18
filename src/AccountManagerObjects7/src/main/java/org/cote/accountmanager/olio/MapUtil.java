@@ -506,7 +506,7 @@ public class MapUtil {
 		if(tileMap.containsKey(key)) {
 			return tileMap.get(key);
 		}
-		byte[] imgData = FileUtil.getFile(tilePath + "/" + tet.toString().toLowerCase() + ".png");
+		byte[] imgData = FileUtil.getFile(tilePath + File.separator + tet.toString().toLowerCase() + ".png");
 		if(imgData.length == 0) {
 			logger.error("Failed to find tile for " + tet.toString());
 			tileMap.put(key, null);

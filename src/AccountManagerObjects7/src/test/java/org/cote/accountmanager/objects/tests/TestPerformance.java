@@ -10,8 +10,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
+import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
@@ -91,10 +93,14 @@ public class TestPerformance extends BaseTest {
 	public void TestMultiThreadedConcurrency() {
 		logger.info("Test multi-threaded concurrency");
 		
-		OrganizationContext testOrgContext = getTestOrganization("/Development/Concurrency");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Concurrency - " + UUID.randomUUID().toString());
+
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
+		testOrgContext.getVault();
+		CacheUtil.clearCache();
+		assertNotNull("Vault is null", testOrgContext.getVault());
 		//loadTestData(testUser1);
 		
 		cleanup(testUser1);
@@ -129,7 +135,7 @@ public class TestPerformance extends BaseTest {
 		private int recordCount = 0;
 		
 		private Random rand = new Random();
-		private String[] sampleData = new String[] {"airship.jpg", "anaconda.jpg", "antikythera.jpg", "railplane.png", "steampunk.png", "sunflower.png"};
+		private String[] sampleData = new String[] {"airship.jpg", "anaconda.jpg", "antikythera.jpg", "railplane.png", "steampunk.png", "sunflower.jpg"};
 		
 		public TestRunnable(BaseRecord user, int startIndex, int recordCount) {
 			this.startIndex = startIndex;
@@ -154,10 +160,10 @@ public class TestPerformance extends BaseTest {
 			int iter = 0;
 			int errorCount = 0;
 		    for(int i= 0; i < recordCount; i++) {
-		    	String name = "Picture " + (startIndex + i + 1) + ".jpg";
-		    	assertFalse("Name already exists: " + name, nameSet.contains(name));
-		    	nameSet.add(name);
-		    	logger.info((i + 1) + ") " + name);
+			    	String name = "Picture " + (startIndex + i + 1) + ".jpg";
+			    	assertFalse("Name already exists: " + name, nameSet.contains(name));
+			    	nameSet.add(name);
+			    	logger.info((i + 1) + ") " + name);
 		        BaseRecord group = ioContext.getPathUtil().makePath(user, ModelNames.MODEL_GROUP, "~/Data/Pictures", GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 				assertNotNull("Group is null for " + "~/Data/Pictures", group);
 
