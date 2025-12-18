@@ -496,7 +496,7 @@ public class VaultService
 		String credPath = getProtectedCredentialPath(pvault);
 
 		BaseRecord cred = loadProtectedCredential(credPath);
-logger.info(pvault.toString());
+
 		VaultBean vault = loadVault(vaultPath, pvault.get(FieldNames.FIELD_NAME), pvault.isProtected());
 		if(vault == null){
 			logger.error("Failed to restore vault " + vaultPath);

@@ -303,6 +303,8 @@ public class BaseTest {
 		data = ioContext.getFactory().newInstance(ModelNames.MODEL_DATA, user, null, plist);
 		data.set(FieldNames.FIELD_NAME, dataName);
 		data.set(FieldNames.FIELD_CONTENT_TYPE, ContentTypeUtil.getTypeFromExtension(dataName));
+		
+		BaseRecord stream = null;
 		if(fdata.length == 0) {
 			throw new ValueException("Invalid file: " + filePath);
 		}
@@ -314,7 +316,7 @@ public class BaseTest {
 			///		b) or, if all segments are present, write the segments with the stream
 			///		c) or, re-read the stream after writing the segment
 			///	Both (a) and (c) are done below
-			BaseRecord stream = ioContext.getFactory().newInstance(ModelNames.MODEL_STREAM, user, null, plist);
+			stream = ioContext.getFactory().newInstance(ModelNames.MODEL_STREAM, user, null, plist);
 			stream.set(FieldNames.FIELD_CONTENT_TYPE, data.get(FieldNames.FIELD_CONTENT_TYPE));
 			stream.set(FieldNames.FIELD_SIZE, (long)fdata.length);
 			stream.set(FieldNames.FIELD_TYPE, StreamEnumType.FILE);
@@ -329,9 +331,7 @@ public class BaseTest {
 			seg.set(FieldNames.FIELD_STREAM_ID, stream.get(FieldNames.FIELD_OBJECT_ID));
 			logger.info("Invoke create on segment");
 			ioContext.getRecordUtil().createRecord(seg);
-			
-			StreamUtil.boxStream(stream, false);
-			//StreamUtil.clearAllUnboxedStreams();
+
 			
 			stream = ioContext.getAccessPoint().findByObjectId(user, ModelNames.MODEL_STREAM, stream.get(FieldNames.FIELD_OBJECT_ID));
 			data.set(FieldNames.FIELD_STREAM, stream);
@@ -342,7 +342,11 @@ public class BaseTest {
 		}
 		logger.info("Invoke create on data");
 		data = ioContext.getAccessPoint().create(user, data);
-		
+		if (stream != null) {
+			StreamUtil.boxStream(stream, false);
+			StreamUtil.clearUnboxedStream(stream);
+			//StreamUtil.clearAllUnboxedStreams();
+		}
 		if(ThumbnailUtil.canCreateThumbnail(data)) {
 			BaseRecord trec = ThumbnailUtil.getCreateThumbnail(data, 50, 50);
 			assertNotNull("Thumbnail record is null", trec);
