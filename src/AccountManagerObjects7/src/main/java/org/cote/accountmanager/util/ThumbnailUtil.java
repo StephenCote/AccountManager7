@@ -120,6 +120,11 @@ public class ThumbnailUtil {
 					logger.warn("Stream size marker is 0");
 				}
 				imageBytes = ssu.streamToEnd(stream.get(FieldNames.FIELD_OBJECT_ID), 0L, stream.get(FieldNames.FIELD_SIZE));
+				if(imageBytes.length == 0) {
+					logger.error("Stream has no bytes");
+					logger.error(stream.toFullString());
+					return null;
+				}
 			}
 		}
 		if(imageBytes.length == 0) {
