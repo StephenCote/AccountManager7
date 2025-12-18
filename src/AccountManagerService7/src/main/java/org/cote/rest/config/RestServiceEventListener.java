@@ -69,7 +69,7 @@ public class RestServiceEventListener implements ApplicationEventListener {
             		shutdown();
             	break;
 		default:
-			logger.warn("Unhandled ApplicationEvent type: " + event.getType());
+			//logger.warn("Unhandled ApplicationEvent type: " + event.getType());
 			break;
         }
     }
@@ -197,12 +197,13 @@ public class RestServiceEventListener implements ApplicationEventListener {
 			
 			boolean testVector = false;
 			for (String org : OrganizationContext.DEFAULT_ORGANIZATIONS) {
-				OrganizationContext octx = ioContext.getOrganizationContext(org,
-						OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
-				if (!octx.isInitialized()) {
+				OrganizationContext octx = ioContext.getOrganizationContext(org, OrganizationEnumType.valueOf(org.substring(1).toUpperCase()));
+				if (octx ==null || !octx.isInitialized()) {
 					logger.error("**** Organizations are not configured.  Run /rest/setup");
 					break;
 				} else {
+					/// Initialize vault
+					octx.getVault();
 					logger.info("Working with existing organization " + org);
 					if (!testVector) {
 						testVectorStore(ioContext, octx);

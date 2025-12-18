@@ -14,6 +14,7 @@ import org.apache.logging.log4j.Logger;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.SystemException;
@@ -48,6 +49,7 @@ import org.cote.accountmanager.util.DocumentUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+import org.cote.accountmanager.util.StreamUtil;
 import org.cote.accountmanager.util.ThumbnailUtil;
 import org.cote.accountmanager.util.VectorUtil;
 import org.junit.After;
@@ -277,13 +279,13 @@ public class BaseTest {
 		return getCreateData(user, f.getName(), "~/Data", content);
 	}
 	
-	protected BaseRecord getCreateFileData(BaseRecord user, String groupPath, String filePath) throws FieldException, ValueException, ModelNotFoundException, FactoryException, IndexException, ReaderException, IOException {
+	protected BaseRecord getCreateFileData(BaseRecord user, String groupPath, String filePath) throws FieldException, ValueException, ModelNotFoundException, FactoryException, IndexException, ReaderException, IOException, ModelException {
 		String dataName = filePath.replaceAll("\\\\", "/");
 		dataName = dataName.substring(dataName.lastIndexOf("/") + 1);
         return getCreateFileData(user, groupPath, filePath, dataName);
 	}
 	
-	protected BaseRecord getCreateFileData(BaseRecord user, String groupPath, String filePath, String dataName) throws FieldException, ValueException, ModelNotFoundException, FactoryException, IndexException, ReaderException, IOException {
+	protected BaseRecord getCreateFileData(BaseRecord user, String groupPath, String filePath, String dataName) throws FieldException, ValueException, ModelNotFoundException, FactoryException, IndexException, ReaderException, IOException, ModelException {
 		BaseRecord data = null;
 		BaseRecord dir = ioContext.getPathUtil().findPath(user, ModelNames.MODEL_GROUP, groupPath, GroupEnumType.DATA.toString(), user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		if(dir != null) {
@@ -327,6 +329,9 @@ public class BaseTest {
 			seg.set(FieldNames.FIELD_STREAM_ID, stream.get(FieldNames.FIELD_OBJECT_ID));
 			logger.info("Invoke create on segment");
 			ioContext.getRecordUtil().createRecord(seg);
+			
+			StreamUtil.boxStream(stream, false);
+			//StreamUtil.clearAllUnboxedStreams();
 			
 			stream = ioContext.getAccessPoint().findByObjectId(user, ModelNames.MODEL_STREAM, stream.get(FieldNames.FIELD_OBJECT_ID));
 			data.set(FieldNames.FIELD_STREAM, stream);

@@ -17,6 +17,7 @@ import org.cote.accountmanager.cache.CacheUtil;
 import org.cote.accountmanager.exceptions.FactoryException;
 import org.cote.accountmanager.exceptions.FieldException;
 import org.cote.accountmanager.exceptions.IndexException;
+import org.cote.accountmanager.exceptions.ModelException;
 import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.exceptions.ReaderException;
 import org.cote.accountmanager.exceptions.ValueException;
@@ -82,7 +83,7 @@ public class TestPerformance extends BaseTest {
 				assertNotNull("Data is null", data);
 			}
 		}
-		catch(ValueException | FieldException | ModelNotFoundException | FactoryException | IndexException | ReaderException | IOException | WriterException e) {
+		catch(ValueException | FieldException | ModelNotFoundException | FactoryException | IndexException | ReaderException | IOException | WriterException | ModelException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
@@ -98,8 +99,6 @@ public class TestPerformance extends BaseTest {
 		Factory mf = ioContext.getFactory();
 		BaseRecord testUser1 =  mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
 
-		testOrgContext.getVault();
-		CacheUtil.clearCache();
 		assertNotNull("Vault is null", testOrgContext.getVault());
 		//loadTestData(testUser1);
 		
@@ -175,7 +174,7 @@ public class TestPerformance extends BaseTest {
 						trec = ThumbnailUtil.getCreateThumbnail(data, 250, 250);
 					}
 				} catch (FieldException | ValueException | ModelNotFoundException | FactoryException | IndexException
-						| ReaderException | IOException e) {
+						| ReaderException | IOException | ModelException e) {
 					logger.error("Error creating data record: " + e.getMessage(), e);
 				}
 				assertNotNull("Data is null for " + name, data);

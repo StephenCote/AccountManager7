@@ -192,7 +192,7 @@ public class TestData extends BaseTest {
 			assertNotNull("Data is null", data);
 			//logger.info(data.toFullString());
 		}
-		catch(ValueException | FieldException | ModelNotFoundException | FactoryException | IndexException | ReaderException | IOException e) {
+		catch(ValueException | FieldException | ModelNotFoundException | FactoryException | IndexException | ReaderException | IOException | ModelException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}

@@ -1,5 +1,6 @@
 package org.cote.accountmanager.console.actions;
 
+import java.io.File;
 import java.util.ArrayList;
 
 import org.apache.commons.cli.CommandLine;
@@ -85,7 +86,7 @@ public class ExportAction extends CommonAction {
 		BaseRecord object = IOSystem.getActiveContext().getSearch().findRecord(eq);
 
 		String upath = exportPath + path;
-		String fspath = upath + "/" + object.get(FieldNames.FIELD_NAME);
+		String fspath = upath + File.separator + object.get(FieldNames.FIELD_NAME);
 		FileUtil.makePath(upath);
 		if(cmd.hasOption("extract")) {
 			if(model.equals(ModelNames.MODEL_DATA)) {
