@@ -169,6 +169,7 @@ public class TestSD extends BaseTest {
 		sdConfig.setValue("scheduler", "Karras");
 		sdConfig.setValue("sampler", "dpm_2");
 		sdConfig.setValue("hires", true);
+		sdConfig.setValue("refinerUpscale", 2);
 		return sdConfig;
 	}
 	

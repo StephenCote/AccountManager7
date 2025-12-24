@@ -116,7 +116,7 @@ public class OlioService {
 		// sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 
 		BaseRecord a1 = null;
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.apiType")));
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.apiType")), context.getInitParameter("sd.server"));
 		sdu.setDeferRemote(Boolean.parseBoolean(context.getInitParameter("task.defer.remote")));
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
@@ -144,7 +144,7 @@ public class OlioService {
 		// sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 
 		BaseRecord a1 = null;
-		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.apiType")));
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(context.getInitParameter("sd.apiType")), context.getInitParameter("sd.server"));
 
 		Query q = QueryUtil.createQuery(OlioModelNames.MODEL_CHAR_PERSON, FieldNames.FIELD_OBJECT_ID, objectId);
 		q.planMost(true);
