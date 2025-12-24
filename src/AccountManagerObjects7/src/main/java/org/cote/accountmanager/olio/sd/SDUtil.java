@@ -22,12 +22,13 @@ import org.cote.accountmanager.olio.OlioContext;
 import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
-import org.cote.accountmanager.olio.sd.automatic1111.SDAlwaysOnScripts;
-import org.cote.accountmanager.olio.sd.automatic1111.SDExtraGenerationParams;
-import org.cote.accountmanager.olio.sd.automatic1111.SDOverrideSettings;
-import org.cote.accountmanager.olio.sd.automatic1111.SDRefiner;
-import org.cote.accountmanager.olio.sd.automatic1111.SDResponse;
-import org.cote.accountmanager.olio.sd.automatic1111.SDTxt2Img;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Util;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111AlwaysOnScripts;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111ExtraGenerationParams;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111OverrideSettings;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Refiner;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Response;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Txt2Img;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.LooseRecord;
 import org.cote.accountmanager.record.RecordDeserializerConfig;
@@ -113,8 +114,8 @@ public class SDUtil {
 		this.refiner = refiner;
 	}
 
-	public SDResponse txt2img(SDTxt2Img req) {
-		return ClientUtil.post(SDResponse.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
+	public Auto1111Response txt2img(Auto1111Txt2Img req) {
+		return ClientUtil.post(Auto1111Response.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
 	public int getSteps() {
@@ -210,21 +211,21 @@ public class SDUtil {
 		
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
 
-		SDTxt2Img s2i = newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
+		Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
 		if(seed > 0) {
 			s2i.setSeed(seed);
 		}
 		s2i.setBatch_size(batch);
 		if(hires) {
 			logger.info("Apply hires/refiner configuration");
-			applyHRRefiner(s2i);
+			Auto1111Util.applyHRRefiner(s2i);
 		}
 		return createPersonImage(user, person, groupPath, name, s2i, seed);
 
 	}
 	
 	public List<BaseRecord> createPersonFigurine(BaseRecord user, BaseRecord person, String groupPath, String name, int steps, int batch, boolean hires, int seed) {
-		SDTxt2Img s2i = newTxt2Img(person, randomSDConfig(), "random", "professional portrait", "full body", null, steps);
+		Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, randomSDConfig(), "random", "professional portrait", "full body", null, steps);
 		
 		s2i.setPrompt(NarrativeUtil.getSDFigurinePrompt(ProfileUtil.getProfile(null, person)));
 		if(seed > 0) {
@@ -234,7 +235,7 @@ public class SDUtil {
 		s2i.setScheduler(scheduler);
 		s2i.setSampler_name(sampler);
 
-		SDOverrideSettings sos = new SDOverrideSettings();
+		Auto1111OverrideSettings sos = new Auto1111OverrideSettings();
 		//sos.setSd_model_checkpoint("Juggernaut_X_RunDiffusion_Hyper");
 		sos.setSd_model_checkpoint("dreamshaperXL_v21TurboDPMSDE");
 		sos.setSd_vae(null);
@@ -243,20 +244,20 @@ public class SDUtil {
 
 		if(hires) {
 			logger.info("Apply hires/refiner configuration");
-			applyHRRefiner(s2i);
+			Auto1111Util.applyHRRefiner(s2i);
 		}
 		return createPersonImage(user, person, groupPath, name, s2i, seed);
 
 	}
 	
-	public SDResponse checkRemote(SDTxt2Img req) {
-		SDResponse oresp = null;
+	public Auto1111Response checkRemote(Auto1111Txt2Img req) {
+		Auto1111Response oresp = null;
 		if (deferRemote) {
 
 			BaseRecord task = OlioTaskAgent.createTaskRequest(req);
 			BaseRecord rtask = OlioTaskAgent.executeTask(task);
 			if (rtask != null) {
-				oresp = JSONUtil.importObject(rtask.get("taskModelData"), SDResponse.class);
+				oresp = JSONUtil.importObject(rtask.get("taskModelData"), Auto1111Response.class);
 				if (oresp == null) {
 					logger.error("Task response was null");
 				}
@@ -265,7 +266,7 @@ public class SDUtil {
 		return oresp;
 	}
 	
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, SDTxt2Img s2i, int seed) {
+	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, Auto1111Txt2Img s2i, int seed) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		List<BaseRecord> datas = new ArrayList<>();
 		int rando = Math.abs(rand.nextInt());
@@ -275,7 +276,7 @@ public class SDUtil {
 			
 			
 			
-			SDResponse rep = null;
+			Auto1111Response rep = null;
 			if(deferRemote) {
 				rep = checkRemote(s2i);
 			}
@@ -330,59 +331,8 @@ public class SDUtil {
 		return datas;
 	}
 
-	public void applyHRRefiner(SDTxt2Img s2i) {
 
-		SDExtraGenerationParams sgp = s2i.getExtra_generation_params();
-		if(sgp == null) {
-			sgp = new SDExtraGenerationParams();
-			s2i.setExtra_generation_params(sgp);
-		}
-		//sgp.setDenoisingStrength(0.45);
-		//sgp.setHiresUpscale(2);
-		//sgp.setHiresUpscaler("Latent");
-		sgp.setRefiner(refiner);
-		sgp.setRefinerSwitchAt(0.75);
-		
-		s2i.setDenoising_strength(0.45);
-		//s2i.setRefiner_checkpoint("Juggernaut_X_RunDiffusion_Hyper");
-		// TODO: Make models configurable
-		//s2i.setRefiner_checkpoint("juggernautXL_ragnarokBy");
-		//s2i.setRefiner_switch_at(0.75);
-		s2i.setHr_scale(2);
-		s2i.setHr_upscaler("Latent");
-		s2i.setEnable_hr(true);
-		
-		SDAlwaysOnScripts sas = new SDAlwaysOnScripts();
-		SDRefiner sdr = new SDRefiner();
-		sdr.setArgs(new Object[] {true, refiner, 0.8});
-		sas.setRefiner(sdr);
-		s2i.setAlwayson_scripts(sas);
-		
-		
-	}
-	public SDTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb, int steps) {
-		SDTxt2Img s2i = new SDTxt2Img();
-		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, pictureType, bodyType, verb));
-		s2i.setNegative_prompt(NarrativeUtil.getSDNegativePrompt(person));
-		s2i.setSeed(Math.abs(rand.nextInt()));
-		s2i.setSteps(steps);
-		s2i.setSubseed(0);
-		s2i.setDenoising_strength(0.7);
-		s2i.setWidth(512);
-		s2i.setHeight(512);
-		s2i.setScheduler("Karras");
-		s2i.setSampler_name("DPM++ 2M");
-		s2i.setSteps(steps);
-		s2i.setCfg_scale(8);
-		
-		SDOverrideSettings sos = new SDOverrideSettings();
-		sos.setSd_model_checkpoint(modelCheckpoint);
-		sos.setSd_vae(modelVae);
-		s2i.setOverride_settings(sos);
-		s2i.setOverride_settings_restore_afterwards(true);
-		
-		return s2i;
-	}
+
 	
 	private static BaseRecord configData = null;
 

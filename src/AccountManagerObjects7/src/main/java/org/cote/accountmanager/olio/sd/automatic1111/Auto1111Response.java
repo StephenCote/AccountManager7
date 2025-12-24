@@ -1,11 +1,11 @@
 package org.cote.accountmanager.olio.sd.automatic1111;
 
-public class SDResponse {
+public class Auto1111Response {
 	private String[] images = new String[0];
-	private SDTxt2Img parameters = null;
+	private Auto1111Txt2Img parameters = null;
 	private String info = null;
 	
-	public SDResponse() {
+	public Auto1111Response() {
 		
 	}
 
@@ -17,11 +17,11 @@ public class SDResponse {
 		this.images = images;
 	}
 
-	public SDTxt2Img getParameters() {
+	public Auto1111Txt2Img getParameters() {
 		return parameters;
 	}
 
-	public void setParameters(SDTxt2Img parameters) {
+	public void setParameters(Auto1111Txt2Img parameters) {
 		this.parameters = parameters;
 	}
 

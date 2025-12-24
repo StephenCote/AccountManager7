@@ -10,8 +10,8 @@ import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
 import org.cote.accountmanager.olio.sd.SDUtil;
-import org.cote.accountmanager.olio.sd.automatic1111.SDResponse;
-import org.cote.accountmanager.olio.sd.automatic1111.SDTxt2Img;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Response;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Txt2Img;
 import org.cote.accountmanager.record.BaseRecord;
 import org.cote.accountmanager.record.RecordFactory;
 import org.cote.accountmanager.schema.ModelNames;
@@ -53,11 +53,11 @@ public class OlioTaskAgent  {
 						ret = ResponseEnumType.INVALID;
 					}
 					break;
-				case SD:
-					SDTxt2Img s2i = JSONUtil.importObject(request.get("taskModelData"), SDTxt2Img.class);
+				case SD_AUTO1111:
+					Auto1111Txt2Img s2i = JSONUtil.importObject(request.get("taskModelData"), Auto1111Txt2Img.class);
 					if(s2i != null) {
 						SDUtil sdu = new SDUtil();
-						SDResponse resp = sdu.txt2img(s2i);
+						Auto1111Response resp = sdu.txt2img(s2i);
 						;
 						if(resp != null) {
 							ret = ResponseEnumType.INFO;
@@ -90,13 +90,13 @@ public class OlioTaskAgent  {
 	}
 	
 
-	public static BaseRecord createTaskRequest(SDTxt2Img req) {
+	public static BaseRecord createTaskRequest(Auto1111Txt2Img req) {
 		BaseRecord tr = null;
 		try{
 			tr = RecordFactory.newInstance(ModelNames.MODEL_TASK_REQUEST);
 		
 			tr.setValue("taskModelData", JSONUtil.exportObject(req));
-			tr.setValue("type", SystemTaskEnumType.SD);
+			tr.setValue("type", SystemTaskEnumType.SD_AUTO1111);
 			tr.setValue("id", UUID.randomUUID().toString());
 		}
 		catch(ModelNotFoundException | FieldException e) {

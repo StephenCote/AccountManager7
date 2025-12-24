@@ -2,7 +2,7 @@ package org.cote.accountmanager.olio.sd.automatic1111;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-public class SDExtraGenerationParams {
+public class Auto1111ExtraGenerationParams {
 	@JsonProperty("Lora hashes")
 	private String loraHashes = null;
 	
@@ -24,7 +24,7 @@ public class SDExtraGenerationParams {
 	@JsonProperty("Denoising strength")
 	private double denoisingStrength = 0.75;
 
-	public SDExtraGenerationParams() {
+	public Auto1111ExtraGenerationParams() {
 		
 	}
 

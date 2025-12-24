@@ -1,9 +1,9 @@
 package org.cote.accountmanager.olio.sd.automatic1111;
 
-public class SDRefiner {
+public class Auto1111Refiner {
 	private Object[] args = new Object[0];
 	
-	public SDRefiner() {
+	public Auto1111Refiner() {
 		
 	}
 

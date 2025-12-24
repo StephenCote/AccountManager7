@@ -15,9 +15,9 @@ import javax.imageio.metadata.IIOMetadataNode;
 import javax.imageio.stream.ImageInputStream;
 
 import org.cote.accountmanager.olio.sd.SDUtil;
-import org.cote.accountmanager.olio.sd.automatic1111.SDOverrideSettings;
-import org.cote.accountmanager.olio.sd.automatic1111.SDResponse;
-import org.cote.accountmanager.olio.sd.automatic1111.SDTxt2Img;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111OverrideSettings;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Response;
+import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Txt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWImageInfo;
 import org.cote.accountmanager.olio.sd.swarm.SWImageResponse;
 import org.cote.accountmanager.olio.sd.swarm.SWSessionResponse;
@@ -146,9 +146,6 @@ public class TestSD extends BaseTest {
 		String session = getAnonymousSession(server);
 		assertNotNull("Session is null", session);
 		
-		
-		
-		//logger.info
 		SWTxt2Img req = new SWTxt2Img();
 		req.setSession_id(session);
 		req.setPrompt(testProperties.getProperty("test.swarm.prompt"));
@@ -226,12 +223,12 @@ public class TestSD extends BaseTest {
 		String txt = FileUtil.getFileAsString("./samp.doesnt.exist.json");
 		assertTrue("Expected data", txt != null && txt.length() > 0);
 
-		SDResponse is = JSONUtil.importObject(txt, SDResponse.class);
+		Auto1111Response is = JSONUtil.importObject(txt, Auto1111Response.class);
 		assertNotNull("Import was null", is);
 		SecureRandom rand = new SecureRandom();
 		
 		logger.info("Test prompt");
-		SDTxt2Img s2i = new SDTxt2Img();
+		Auto1111Txt2Img s2i = new Auto1111Txt2Img();
 		s2i.setPrompt("8k highly detailed professional photograph ((highest quality)) ((ultra realistic)) (full body:1.5) of a gorgeous woman (twenty-four year old:1.5) (24 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat. Sharp focus, ultra sharp image. Natural light only.  <lora:add-detail-xl:1> <lora:xl_more_art-full_v1:1.2>");
 		// s2i.setAll_prompts(new String[] {s2i.getPrompt()});
 		s2i.setNegative_prompt("Washed out colors, lifeless, illogical, wonky, boring, bland, ugly, disgusting, uncanny, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, fugly, mutated, distorted, melting, cropped, disproportionate, weird, wonky, low quality, compressed, muddy colors, overexposed, bland, censored, mosaic, ugliness, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, old, masculine, (busty:1.3), extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face, negativeXL_D");
@@ -267,7 +264,7 @@ public class TestSD extends BaseTest {
 		s2i.setSteps(40);
 		//logger.info(JSONUtil.exportObject(s2i));
 		
-		SDOverrideSettings sos = new SDOverrideSettings();
+		Auto1111OverrideSettings sos = new Auto1111OverrideSettings();
 		sos.setSd_model_checkpoint("sdXL_v10VAEFix");
 		sos.setSd_vae("sdxl_vae.safetensors");
 		SDUtil sdu = new SDUtil();
@@ -275,10 +272,10 @@ public class TestSD extends BaseTest {
 		
 		String txt2 = FileUtil.getFileAsString("./samp2.doesnt.exist.json");
 		
-		SDTxt2Img is2 = JSONUtil.importObject(txt2, SDTxt2Img.class);
+		Auto1111Txt2Img is2 = JSONUtil.importObject(txt2, Auto1111Txt2Img.class);
 		assertNotNull("Obj is null", is2);
 		//logger.info(JSONUtil.exportObject(is2));
-		SDResponse rep = sdu.txt2img(s2i);
+		Auto1111Response rep = sdu.txt2img(s2i);
 		assertNotNull("Rep is null", rep);
 		//logger.info(JSONUtil.exportObject(rep));
 		//int seed = rep.getParameters().getSeed();

@@ -1,9 +1,9 @@
 package org.cote.accountmanager.olio.sd.automatic1111;
 
-public class SDOverrideSettings {
+public class Auto1111OverrideSettings {
 	private String sd_model_checkpoint = null;
 	private String sd_vae = "";
-	public SDOverrideSettings() {
+	public Auto1111OverrideSettings() {
 		
 	}
 	public String getSd_model_checkpoint() {

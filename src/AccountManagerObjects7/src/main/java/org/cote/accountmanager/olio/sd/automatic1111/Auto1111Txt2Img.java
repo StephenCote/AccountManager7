@@ -1,6 +1,6 @@
 package org.cote.accountmanager.olio.sd.automatic1111;
 
-public class SDTxt2Img {
+public class Auto1111Txt2Img {
 	
 	private Integer[] all_seeds = new Integer[0];
 	private Integer[] all_subseeds = new Integer[0];
@@ -14,7 +14,7 @@ public class SDTxt2Img {
 	private double denoising_strength = 0;
     private boolean disable_extra_networks = false;
     private boolean do_not_save_grid = false;
-    private SDAlwaysOnScripts alwayson_scripts = null;
+    private Auto1111AlwaysOnScripts alwayson_scripts = null;
 	private boolean do_not_save_samples = false;
 	private boolean enable_hr = false;
 	private int eta = 0;
@@ -38,7 +38,7 @@ public class SDTxt2Img {
 	private String negative_prompt = null;
 	private Object override_settings = null;
 	private boolean override_settings_restore_afterwards = true;
-	private SDExtraGenerationParams extra_generation_params = null;
+	private Auto1111ExtraGenerationParams extra_generation_params = null;
 
 	private String prompt = null;
 	private String refiner_checkpoint = null;
@@ -71,15 +71,15 @@ public class SDTxt2Img {
 	private String tiling = null;
 	private int width = 512;
 	
-	public SDTxt2Img() {
+	public Auto1111Txt2Img() {
 		
 	}
 
-	public SDAlwaysOnScripts getAlwayson_scripts() {
+	public Auto1111AlwaysOnScripts getAlwayson_scripts() {
 		return alwayson_scripts;
 	}
 
-	public void setAlwayson_scripts(SDAlwaysOnScripts alwayson_scripts) {
+	public void setAlwayson_scripts(Auto1111AlwaysOnScripts alwayson_scripts) {
 		this.alwayson_scripts = alwayson_scripts;
 	}
 
@@ -115,11 +115,11 @@ public class SDTxt2Img {
 		this.all_subseeds = all_subseeds;
 	}
 
-	public SDExtraGenerationParams getExtra_generation_params() {
+	public Auto1111ExtraGenerationParams getExtra_generation_params() {
 		return extra_generation_params;
 	}
 
-	public void setExtra_generation_params(SDExtraGenerationParams extra_generation_params) {
+	public void setExtra_generation_params(Auto1111ExtraGenerationParams extra_generation_params) {
 		this.extra_generation_params = extra_generation_params;
 	}
 
