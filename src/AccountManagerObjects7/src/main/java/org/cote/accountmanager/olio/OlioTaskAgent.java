@@ -9,6 +9,7 @@ import org.cote.accountmanager.exceptions.ModelNotFoundException;
 import org.cote.accountmanager.olio.llm.Chat;
 import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.OpenAIResponse;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Response;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Txt2Img;
@@ -56,7 +57,7 @@ public class OlioTaskAgent  {
 				case SD_AUTO1111:
 					Auto1111Txt2Img s2i = JSONUtil.importObject(request.get("taskModelData"), Auto1111Txt2Img.class);
 					if(s2i != null) {
-						SDUtil sdu = new SDUtil();
+						SDUtil sdu = new SDUtil(SDAPIEnumType.AUTO1111);
 						Auto1111Response resp = sdu.txt2img(s2i);
 						;
 						if(resp != null) {

@@ -14,6 +14,7 @@ import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.metadata.IIOMetadataNode;
 import javax.imageio.stream.ImageInputStream;
 
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111OverrideSettings;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Response;
@@ -267,7 +268,7 @@ public class TestSD extends BaseTest {
 		Auto1111OverrideSettings sos = new Auto1111OverrideSettings();
 		sos.setSd_model_checkpoint("sdXL_v10VAEFix");
 		sos.setSd_vae("sdxl_vae.safetensors");
-		SDUtil sdu = new SDUtil();
+		SDUtil sdu = new SDUtil(SDAPIEnumType.AUTO1111);
 		
 		
 		String txt2 = FileUtil.getFileAsString("./samp2.doesnt.exist.json");

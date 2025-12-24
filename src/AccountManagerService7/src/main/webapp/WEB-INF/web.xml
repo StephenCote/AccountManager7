@@ -73,6 +73,11 @@
 		<param-value>http://localhost:7860</param-value>
 	</context-param>
 		<context-param>
+		<description>Stable Diffusion API Type</description>
+		<param-name>sd.server.apiType</param-name>
+		<param-value>SWARM</param-value>
+	</context-param>
+		<context-param>
 		<description></description>
 		<param-name>logToConsole</param-name>
 		<param-value>true</param-value>
@@ -85,7 +90,7 @@
 	<context-param>
 		<description>Defer to Remote Tasks</description>
 		<param-name>task.defer.remote</param-name>
-		<param-value>false</param-value>
+		<param-value>true</param-value>
 	</context-param>
 	<context-param>
 		<description>Voice Server TTS</description>
@@ -208,7 +213,7 @@
 		</init-param>
 		<init-param>
 			<param-name>cors.allowed.origins</param-name>
-			<param-value>http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.9:8899,https://192.168.1.9:8443</param-value>
+			<param-value>http://localhost:8899,http://localhost,http://localhost:8080,http://localhost:8888,https://localhost:8899,https://localhost,https://localhost:8443,https://localhost:8888,https://192.168.1.12:8899,https://192.168.1.12:8443</param-value>
 		</init-param>
 		<init-param>
 			<param-name>cors.allowed.headers</param-name>

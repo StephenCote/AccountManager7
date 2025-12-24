@@ -138,7 +138,7 @@ public class SystemTaskQueue extends Threaded {
 						rtasks.add(resp);
 					}
 				}
-				else if(SystemTaskEnumType.SD.toString().equals(task.get("type"))) {
+				else if(SystemTaskEnumType.SD_AUTO1111.toString().equals(task.get("type"))) {
 					BaseRecord resp = OlioTaskAgent.evaluateTaskResponse(task);
 					if(localPoll) {
 						SystemTaskUtil.completeTasks(resp);

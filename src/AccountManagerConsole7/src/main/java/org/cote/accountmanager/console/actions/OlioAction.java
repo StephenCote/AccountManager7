@@ -33,6 +33,7 @@ import org.cote.accountmanager.olio.llm.OpenAIRequest;
 import org.cote.accountmanager.olio.llm.PromptUtil;
 import org.cote.accountmanager.olio.schema.OlioFieldNames;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
+import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.personality.CompatibilityEnumType;
 import org.cote.accountmanager.personality.MBTIUtil;
@@ -131,7 +132,7 @@ public class OlioAction extends CommonAction implements IAction{
 		BaseRecord cevt = null;
 		String genSet = null;
 		int seed = 0;
-		SDUtil sdu = new SDUtil(this.getProperties().getProperty("sd.server"));
+		SDUtil sdu = new SDUtil(SDAPIEnumType.valueOf(this.getProperties().getProperty("sd.server.apiType")), this.getProperties().getProperty("sd.server"));
 		if(cmd.hasOption("checkpoint")) sdu.setModelCheckpoint(cmd.getOptionValue("checkpoint"));
 		if(cmd.hasOption("vae")) sdu.setModelVae(cmd.getOptionValue("vae"));
 		if(cmd.hasOption("refiner")) sdu.setRefiner(cmd.getOptionValue("refiner"));

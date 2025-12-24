@@ -56,12 +56,13 @@ public class SDUtil {
 	private String sampler = "DPM++ SDE";
 	
 	private boolean deferRemote = false;
-	
-	public SDUtil() {
-		
+	private SDAPIEnumType apiType = SDAPIEnumType.UNKNOWN;
+	public SDUtil(SDAPIEnumType type) {
+		this.apiType = type;
 	}
 	
-	public SDUtil(String server) {
+	public SDUtil(SDAPIEnumType type, String server) {
+		this(type);
 		autoserver = server;
 	}
 	
