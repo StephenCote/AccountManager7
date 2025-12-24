@@ -3,15 +3,39 @@ package org.cote.accountmanager.objects.tests;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Paths;
 import java.security.SecureRandom;
 
-import org.cote.accountmanager.olio.sd.SDOverrideSettings;
-import org.cote.accountmanager.olio.sd.SDResponse;
-import org.cote.accountmanager.olio.sd.SDTxt2Img;
+import javax.imageio.ImageIO;
+import javax.imageio.metadata.IIOMetadata;
+import javax.imageio.metadata.IIOMetadataNode;
+import javax.imageio.stream.ImageInputStream;
+
 import org.cote.accountmanager.olio.sd.SDUtil;
+import org.cote.accountmanager.olio.sd.automatic1111.SDOverrideSettings;
+import org.cote.accountmanager.olio.sd.automatic1111.SDResponse;
+import org.cote.accountmanager.olio.sd.automatic1111.SDTxt2Img;
+import org.cote.accountmanager.olio.sd.swarm.SWImageInfo;
+import org.cote.accountmanager.olio.sd.swarm.SWImageResponse;
+import org.cote.accountmanager.olio.sd.swarm.SWSessionResponse;
+import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
+import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.util.BinaryUtil;
+import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
+import org.junit.Test;
+
+import com.drew.imaging.ImageMetadataReader;
+import com.drew.imaging.ImageProcessingException;
+import com.drew.metadata.Directory;
+import com.drew.metadata.Metadata;
+import com.drew.metadata.Tag;
+
+import jakarta.ws.rs.core.MediaType;
 
 public class TestSD extends BaseTest {
 	
@@ -114,6 +138,67 @@ public class TestSD extends BaseTest {
 		return octx;
 	}
 	*/
+	
+	@Test
+	public void TestSwarmAPI() {
+		logger.info("Test Swarm API");
+		String session = getAnonymousSession();
+		assertNotNull("Session is null", session);
+		
+		//\"refinermodel\": \"realmixXL_v10.safetensors\", \"refinermethod\": \"PostApply\", \"refinerupscalemethod\": \"pixel-lanczos\", \"refinersteps\": 40, \"refinercontrolpercentage\": 0.2, \"refinerupscale\": 2, \"refinercfgscale\": 6}"
+		
+		
+		//logger.info
+		SWTxt2Img req = new SWTxt2Img();
+		req.setSession_id(session);
+		req.setPrompt("4k HD high resolution realistic photograph of a(white) (irish) (woman)) with (red hair) in a futuristic alien city");
+		req.setNegativeprompt("Washed out colors, illogical, disgusting, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, censored, mosaic, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face. American Indian/Alaska Native people, Asian people, Black people, Native Hawaiian or other Pacific Islander people");
+		req.setModel("lustifySDXLNSFW_endgame.safetensors");
+		
+		SWImageResponse resp = txt2img(req);
+		assertNotNull("Response is null", resp);
+		assertTrue("No images returned", resp.getImages().size() > 0);
+		for(String path : resp.getImages()) {
+			String name = Paths.get(path).getFileName().toString();
+			byte[] data = ClientUtil.get(byte[].class, ClientUtil.getResource(server + "/" + path), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+			assertNotNull("Image data is null", data);
+			FileUtil.emitFile("./" + name, data);
+
+			logger.info("Extracting metadata from image");
+			
+	        try {
+				SWImageInfo info = SWUtil.extractInfo(data);
+				assertNotNull("Image info was null", info);
+				assertNotNull("Image params was null", info.getImageParams());
+				logger.info("Image Info: " + info.getImageParams().getSeed());
+
+
+	        } catch (IOException | ImageProcessingException e) {
+	            e.printStackTrace();
+	        }
+	    }
+
+
+		
+		//logger.info(JSONUtil.exportObject(req));
+	}
+
+	private String server = "http://192.168.1.42:7801";
+	public String getAnonymousSession() {
+		// curl -X POST -H "Content-Type: application/json" -d "{}" http://192.168.1.42:7801/API/GetNewSession
+		
+		SWSessionResponse test = ClientUtil.post(SWSessionResponse.class, ClientUtil.getResource(server + "/API/GetNewSession"), "{}", MediaType.APPLICATION_JSON_TYPE);
+		if (test == null) {
+			logger.error("Session response was null");
+			return null;
+		}
+		return test.getSession_id();
+		
+	}
+	public SWImageResponse txt2img(SWTxt2Img req) {
+		return ClientUtil.post(SWImageResponse.class, ClientUtil.getResource(server + "/API/GenerateText2Image"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
+	}
+	
 	public void TestSDImageToTextMARK() {
 		logger.info("Test SD API");
 		

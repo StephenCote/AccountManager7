@@ -85,11 +85,11 @@
 			"default": 0.7
 		},
 		{
-			"name": "refinerScale",
-			"type": "double",
-			"minValue": 0.5,
-			"maxValue": 4.0,
-			"default": 2.0
+			"name": "refinerUpScale",
+			"type": "int",
+			"minValue": 1,
+			"maxValue": 2,
+			"default": 1
 		},
 		{
 			"name": "refinerCfg",
