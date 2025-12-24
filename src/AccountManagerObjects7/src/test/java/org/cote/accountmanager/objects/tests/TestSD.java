@@ -142,7 +142,8 @@ public class TestSD extends BaseTest {
 	@Test
 	public void TestSwarmAPI() {
 		logger.info("Test Swarm API");
-		String session = getAnonymousSession();
+		String server = testProperties.getProperty("test.swarm.server");
+		String session = getAnonymousSession(server);
 		assertNotNull("Session is null", session);
 		
 		
@@ -150,11 +151,11 @@ public class TestSD extends BaseTest {
 		//logger.info
 		SWTxt2Img req = new SWTxt2Img();
 		req.setSession_id(session);
-		req.setPrompt("4k HD high resolution realistic photograph of a(white) (irish) (woman)) with (red hair) in a futuristic alien city");
-		req.setNegativeprompt("Washed out colors, illogical, disgusting, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, censored, mosaic, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face. American Indian/Alaska Native people, Asian people, Black people, Native Hawaiian or other Pacific Islander people");
-		req.setModel("lustifySDXLNSFW_endgame.safetensors");
+		req.setPrompt(testProperties.getProperty("test.swarm.prompt"));
+		req.setNegativeprompt(testProperties.getProperty("test.swarm.negativePrompt"));
+		req.setModel(testProperties.getProperty("test.swarm.model"));
 		
-		SWImageResponse resp = txt2img(req);
+		SWImageResponse resp = txt2img(server, req);
 		assertNotNull("Response is null", resp);
 		assertTrue("No images returned", resp.getImages().size() > 0);
 		for(String path : resp.getImages()) {
@@ -178,7 +179,7 @@ public class TestSD extends BaseTest {
 	    }
 		
 		logger.info("Test refiner");
-		req.setRefinerModel("realmixXL_v10.safetensors");
+		req.setRefinerModel(testProperties.getProperty("test.swarm.refinerModel"));
 		req.setRefinerMethod("PostApply");
 		req.setRefinerUpscaleMethod("pixel-lanczos");
 		req.setRefinerSteps(20);
@@ -186,7 +187,7 @@ public class TestSD extends BaseTest {
 		req.setCfgScale(6);
 		req.setRefinerUpscale(2);
 		
-		SWImageResponse resp2 = txt2img(req);
+		SWImageResponse resp2 = txt2img(server, req);
 		assertNotNull("Response is null", resp2);
 		assertTrue("No images returned", resp2.getImages().size() > 0);
 		for(String path : resp2.getImages()) {
@@ -202,8 +203,8 @@ public class TestSD extends BaseTest {
 		//logger.info(JSONUtil.exportObject(req));
 	}
 
-	private String server = "http://192.168.1.42:7801";
-	public String getAnonymousSession() {
+	
+	public String getAnonymousSession(String server) {
 		// curl -X POST -H "Content-Type: application/json" -d "{}" http://192.168.1.42:7801/API/GetNewSession
 		
 		SWSessionResponse test = ClientUtil.post(SWSessionResponse.class, ClientUtil.getResource(server + "/API/GetNewSession"), "{}", MediaType.APPLICATION_JSON_TYPE);
@@ -214,7 +215,7 @@ public class TestSD extends BaseTest {
 		return test.getSession_id();
 		
 	}
-	public SWImageResponse txt2img(SWTxt2Img req) {
+	public SWImageResponse txt2img(String server, SWTxt2Img req) {
 		return ClientUtil.post(SWImageResponse.class, ClientUtil.getResource(server + "/API/GenerateText2Image"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
