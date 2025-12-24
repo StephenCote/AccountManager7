@@ -45,6 +45,9 @@ public class SWUtil {
 			s2i.setRefinerCfgScale((Integer) sdConfig.get("refinerCfg"));
 			s2i.setRefinerControlPercentage((Double) sdConfig.get("refinerControlPercentage"));
 		}
+		else {
+			s2i.setRefinerControlPercentage(0.0);
+		}
 		
 		return s2i;
 	}
