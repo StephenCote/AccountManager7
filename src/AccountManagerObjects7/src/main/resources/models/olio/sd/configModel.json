@@ -64,6 +64,26 @@
 			"type": "string"
 		},
 		{
+			"name": "scheduler",
+			"type": "string",
+			"default": "Karras"
+		},
+		{
+			"name": "sampler",
+			"type": "string",
+			"default": "dpm_2"
+		},
+		{
+			"name": "refinerScheduler",
+			"type": "string",
+			"default": "Karras"
+		},
+		{
+			"name": "refinerSampler",
+			"type": "string",
+			"default": "dpm_2"
+		},
+		{
 			"name": "refinerModel",
 			"type": "string"
 		},
@@ -85,7 +105,7 @@
 			"default": 0.7
 		},
 		{
-			"name": "refinerUpScale",
+			"name": "refinerUpscale",
 			"type": "int",
 			"minValue": 1,
 			"maxValue": 2,

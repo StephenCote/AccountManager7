@@ -8,12 +8,28 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Paths;
 import java.security.SecureRandom;
+import java.util.List;
+import java.util.Random;
+import java.util.UUID;
 
 import javax.imageio.ImageIO;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.metadata.IIOMetadataNode;
 import javax.imageio.stream.ImageInputStream;
 
+import org.cote.accountmanager.factory.Factory;
+import org.cote.accountmanager.io.OrganizationContext;
+import org.cote.accountmanager.io.Query;
+import org.cote.accountmanager.io.QueryUtil;
+import org.cote.accountmanager.io.Queue;
+import org.cote.accountmanager.objects.tests.olio.OlioTestUtil;
+import org.cote.accountmanager.olio.ApparelUtil;
+import org.cote.accountmanager.olio.ItemUtil;
+import org.cote.accountmanager.olio.NarrativeUtil;
+import org.cote.accountmanager.olio.OlioContext;
+import org.cote.accountmanager.olio.OlioUtil;
+import org.cote.accountmanager.olio.schema.OlioFieldNames;
+import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.SDAPIEnumType;
 import org.cote.accountmanager.olio.sd.SDUtil;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111OverrideSettings;
@@ -24,6 +40,10 @@ import org.cote.accountmanager.olio.sd.swarm.SWImageResponse;
 import org.cote.accountmanager.olio.sd.swarm.SWSessionResponse;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
+import org.cote.accountmanager.record.BaseRecord;
+import org.cote.accountmanager.record.RecordFactory;
+import org.cote.accountmanager.schema.FieldNames;
+import org.cote.accountmanager.schema.ModelSchema;
 import org.cote.accountmanager.util.BinaryUtil;
 import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
@@ -140,7 +160,56 @@ public class TestSD extends BaseTest {
 	}
 	*/
 	
+	private BaseRecord getSwarmConfig() {
+		BaseRecord sdConfig = SDUtil.randomSDConfig();
+		//sdConfig.set("prompt", testProperties.getProperty("test.swarm.prompt"));
+		//sdConfig.set("negativePrompt", testProperties.getProperty("test.swarm.negativePrompt"));
+		sdConfig.setValue("model", testProperties.getProperty("test.swarm.model"));
+		sdConfig.setValue("refinerModel", testProperties.getProperty("test.swarm.refinerModel"));
+		sdConfig.setValue("scheduler", "Karras");
+		sdConfig.setValue("sampler", "dpm_2");
+		sdConfig.setValue("hires", true);
+		return sdConfig;
+	}
+	
 	@Test
+	public void TestCreatePersonImage() {
+		logger.info("Test Create Person Image");
+		OrganizationContext testOrgContext = getTestOrganization("/Development/Realm");
+		Factory mf = ioContext.getFactory();
+		BaseRecord testUser1 = mf.getCreateUser(testOrgContext.getAdminUser(), "testUser1", testOrgContext.getOrganizationId());
+		String dataPath = testProperties.getProperty("test.datagen.path");
+		OlioContext ctx = OlioTestUtil.getContext(orgContext, dataPath);
+		List<BaseRecord> realms = ctx.getRealms();
+		assertTrue("Expected at least one realm", realms.size() > 0);
+		BaseRecord popGrp = realms.get(0).get(OlioFieldNames.FIELD_POPULATION);
+		assertNotNull("Expected a population group", popGrp);
+		List<BaseRecord> pop  = OlioUtil.listGroupPopulation(ctx, popGrp);
+		assertTrue("Expected a population", pop.size() > 0);
+		String setting = NarrativeUtil.getRandomSetting();
+		SDUtil sdu = new SDUtil(SDAPIEnumType.SWARM, testProperties.getProperty("test.swarm.server"));
+
+		ApparelUtil.outfitAndStage(ctx, null, pop);
+		ItemUtil.showerWithMoney(ctx, pop);
+		Queue.processQueue();
+		
+		Random rand = new Random();
+		BaseRecord per = pop.get(rand.nextInt(pop.size()));
+		
+		logger.info("Creating image for " + per.get(FieldNames.FIELD_NAME));
+		BaseRecord sdCfg = getSwarmConfig();
+		//BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed)
+	//public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
+		
+		List<BaseRecord> bl = sdu.createPersonImage(testUser1, per, "~/Gallery", sdCfg, "Photo Op - " + per.get(FieldNames.FIELD_NAME) + " - " + UUID.randomUUID().toString(), "random", "professional portrait", "full body", "walking", 40, 3, false, -1);		
+		assertTrue("Expected images to be created", bl.size() > 0);
+		for(BaseRecord b1 : bl) {
+			FileUtil.emitFile("./img-" + b1.get(FieldNames.FIELD_NAME) + ".png", (byte[])b1.get(FieldNames.FIELD_BYTE_STORE));
+		}
+		
+	
+	}
+	
 	public void TestSwarmAPI() {
 		logger.info("Test Swarm API");
 		String server = testProperties.getProperty("test.swarm.server");
@@ -150,8 +219,11 @@ public class TestSD extends BaseTest {
 		SWTxt2Img req = new SWTxt2Img();
 		req.setSession_id(session);
 		req.setPrompt(testProperties.getProperty("test.swarm.prompt"));
-		req.setNegativeprompt(testProperties.getProperty("test.swarm.negativePrompt"));
+		req.setNegativePrompt(testProperties.getProperty("test.swarm.negativePrompt"));
 		req.setModel(testProperties.getProperty("test.swarm.model"));
+		
+		req.setScheduler("Karras");
+		req.setSampler("dpm_2");
 		
 		SWImageResponse resp = txt2img(server, req);
 		assertNotNull("Response is null", resp);

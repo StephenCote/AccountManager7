@@ -23,6 +23,9 @@ import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Util;
+import org.cote.accountmanager.olio.sd.swarm.SWImageResponse;
+import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
+import org.cote.accountmanager.olio.sd.swarm.SWUtil;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111AlwaysOnScripts;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111ExtraGenerationParams;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111OverrideSettings;
@@ -119,6 +122,18 @@ public class SDUtil {
 		return ClientUtil.post(Auto1111Response.class, ClientUtil.getResource(autoserver + "/sdapi/v1/txt2img"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
 	}
 	
+	public SWImageResponse txt2img(SWTxt2Img req) {
+		if (req.getSession_id() == null || req.getSession_id().isEmpty()) {
+			String sess = SWUtil.getAnonymousSession(autoserver);
+			if (sess == null || sess.isEmpty()) {
+				logger.error("Could not obtain anonymous session");
+				return null;
+			}
+			req.setSession_id(sess);
+		}
+		return ClientUtil.post(SWImageResponse.class, ClientUtil.getResource(autoserver + "/API/GenerateText2Image"), JSONUtil.exportObject(req), MediaType.APPLICATION_JSON_TYPE);
+	}
+	
 	public int getSteps() {
 		return steps;
 	}
@@ -202,29 +217,15 @@ public class SDUtil {
 		}
 		Queue.processQueue();
 	}
-	
+	/*
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name) {
 		return createPersonImage(user, person, groupPath, name, null, "professional portrait", 50, 1);
 	}
 	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, String setting, String pictureType, int steps, int batch) {
 		return createPersonImage(user, person, groupPath, randomSDConfig(), name, null, pictureType, "full body", null, steps, batch, false, 0);
 	}
-		
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
+    */
 
-		Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
-		if(seed > 0) {
-			s2i.setSeed(seed);
-		}
-		s2i.setBatch_size(batch);
-		if(hires) {
-			logger.info("Apply hires/refiner configuration");
-			Auto1111Util.applyHRRefiner(s2i);
-		}
-		return createPersonImage(user, person, groupPath, name, s2i, seed);
-
-	}
-	
 	public List<BaseRecord> createPersonFigurine(BaseRecord user, BaseRecord person, String groupPath, String name, int steps, int batch, boolean hires, int seed) {
 		Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, randomSDConfig(), "random", "professional portrait", "full body", null, steps);
 		
@@ -266,8 +267,32 @@ public class SDUtil {
 		}
 		return oresp;
 	}
+	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, BaseRecord sdConfig, String name, String setting, String pictureType, String bodyType, String verb, int steps, int batch, boolean hires, int seed) {
+		Object s2iObj = null;
+		if (apiType == SDAPIEnumType.AUTO1111) {
+			Auto1111Txt2Img s2i = Auto1111Util.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
+			if(seed > 0) {
+				s2i.setSeed(seed);
+			}
+			s2i.setBatch_size(batch);
+			if(hires) {
+				logger.info("Apply hires/refiner configuration");
+				Auto1111Util.applyHRRefiner(s2i);
+			}
+			s2iObj = s2i;
+		}
+		else if (apiType == SDAPIEnumType.SWARM) {
+			s2iObj = SWUtil.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
+			logger.info(JSONUtil.exportObject(s2iObj));
+		}
+		else if (apiType == SDAPIEnumType.UNKNOWN) {
+			logger.error("Unknown API type – cannot create image");
+			return new ArrayList<>();
+		}
+		return createPersonImage(user, person, groupPath, name, s2iObj, seed);
+	}
 	
-	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, Auto1111Txt2Img s2i, int seed) {
+	public List<BaseRecord> createPersonImage(BaseRecord user, BaseRecord person, String groupPath, String name, Object s2i, int seed) {
 		BaseRecord dir = IOSystem.getActiveContext().getPathUtil().makePath(user, ModelNames.MODEL_GROUP, groupPath, "DATA", user.get(FieldNames.FIELD_ORGANIZATION_ID));
 		List<BaseRecord> datas = new ArrayList<>();
 		int rando = Math.abs(rand.nextInt());
@@ -275,27 +300,69 @@ public class SDUtil {
 
 			logger.info("Generating image for " + person.get(FieldNames.FIELD_NAME));
 			
-			
-			
-			Auto1111Response rep = null;
-			if(deferRemote) {
-				rep = checkRemote(s2i);
-			}
-			else {
-				rep = txt2img(s2i);
-			}
-			if(rep == null) {
-				logger.error("Response is null");
+			List<String> repImages = new ArrayList<>();
+			if (apiType == SDAPIEnumType.UNKNOWN) {
+				logger.error("Unknown API type – cannot generate image");
 				return datas;
 			}
-			if(seed <= 0 && rep.getParameters() != null) {
-				seed = rep.getParameters().getSeed();
+			else if (apiType == SDAPIEnumType.AUTO1111) {
+				Auto1111Response rep = null;
+				if(deferRemote) {
+					if (apiType != SDAPIEnumType.AUTO1111) {
+						rep = checkRemote((Auto1111Txt2Img)s2i);
+					}
+					else {
+						logger.warn("Deferred remote generation is only supported for AUTO1111 API type");
+					}
+				}
+				else {
+					rep = txt2img((Auto1111Txt2Img)s2i);
+				}
+				if(rep == null) {
+					logger.error("Response is null");
+					return datas;
+				}
+				if(seed <= 0 && rep.getParameters() != null) {
+					seed = rep.getParameters().getSeed();
+				}
+				repImages = Arrays.asList(rep.getImages());
 			}
+			else if (SDAPIEnumType.SWARM == apiType) {
+				SWImageResponse rep = txt2img((SWTxt2Img)s2i);
+				if (rep != null && rep.getImages() != null) {
+					repImages =  rep.getImages();
+					if (rep.getImages().size() == 0) {
+						logger.error("No images returned in response");
+						return datas;
+					}
+				} else {
+					logger.error("Response is null");
+					return datas;
+				}
+				
+			}
+			
 			int counter = 1;
+			
 			int seedl = seed;
-			for(String bai : rep.getImages()) {
+			for(String bai : repImages) {
 				logger.info("Processing image " + counter);
-				byte[] datab = BinaryUtil.fromBase64(bai.getBytes());
+				byte[] datab = new byte[0];
+				if(apiType == SDAPIEnumType.AUTO1111) {
+					datab = BinaryUtil.fromBase64(bai.getBytes());
+				}
+				else if (apiType == SDAPIEnumType.SWARM) {
+					byte[] dataTest = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+					if (dataTest == null || dataTest.length == 0) {
+						logger.error("Could not retrieve image data from swarm server for " + bai);
+						continue;
+					}
+					datab = dataTest;
+				}
+				else {
+					logger.error("Unknown API type – cannot process image");
+					return datas;
+				}
 				
 				Query q = QueryUtil.createQuery(ModelNames.MODEL_DATA, FieldNames.FIELD_GROUP_ID, dir.get(FieldNames.FIELD_ID));
 				String dname = person.get(FieldNames.FIELD_NAME) + " - " + name + " - " + counter + " - " + rando + " - " + seedl;

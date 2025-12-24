@@ -59,7 +59,7 @@
 					<environmentVariables>
 
 					</environmentVariables>
-					<skipTests>true</skipTests>
+					<skipTests>false</skipTests>
 					<argLine>-Xmx4096m -XX:+UnlockExperimentalVMOptions
 						-XX:+EnableJVMCI --module-path=${compiler.dir}
 						--upgrade-module-path=${compiler.dir}/compiler.jar${path.separator}${compiler.dir}/compiler-management.jar
@@ -70,9 +70,10 @@
 					</includes>
 					<excludes>
 						<!--
-						<exclude>**/TestPerformance.java</exclude>
+						<exclude>**/TestSD.java</exclude>
 						
 						-->
+						<exclude>**/TestPerformance.java</exclude>
 						<exclude>**/TestGenericData.java</exclude>
 						<exclude>**/TestAttribute.java</exclude>
 						<exclude>**/TestChatPolicy.java</exclude>
@@ -108,7 +109,7 @@
 						<exclude>**/TestH2Database.java</exclude>
 						<exclude>**/TestOlio2.java</exclude>
 						<exclude>**/TestOlio.java</exclude>
-						<exclude>**/TestSD.java</exclude>
+						
 						<!-- Repeatable Set -->
 						<exclude>**/TestRealm.java</exclude>
 						<exclude>**/TestNestedStructures.java</exclude>
@@ -393,6 +394,13 @@
 			<artifactId>pgvector</artifactId>
 			<version>0.1.6</version>
 		</dependency>
+
+
+<dependency>
+    <groupId>com.twelvemonkeys.imageio</groupId>
+    <artifactId>imageio-metadata</artifactId>
+    <version>3.12.0</version>
+</dependency>
 
 	</dependencies>
 </project>

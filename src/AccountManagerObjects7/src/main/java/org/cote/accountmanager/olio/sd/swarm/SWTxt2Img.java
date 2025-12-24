@@ -8,7 +8,20 @@ public class SWTxt2Img extends SWCommon {
 
 	private String model = null;
 	private String prompt = null;
-	private String negativeprompt = null;
+	
+	private String sampler = null;
+	private String scheduler = null;
+	
+	@JsonProperty("refinersampler")
+	private String refinerSampler = null;
+	@JsonProperty("refinerscheduler")
+	private String refinerScheduler = null;
+	
+	//s2i.setScheduler("Karras");
+	//s2i.setSampler_name("DPM++ 2M");
+	
+	@JsonProperty("negativeprompt")
+	private String negativePrompt = null;
 	private int images = 1;
 	private int steps = 20;
 	@JsonProperty("cfgscale")
@@ -44,6 +57,38 @@ public class SWTxt2Img extends SWCommon {
 		
 	}
 
+	public String getSampler() {
+		return sampler;
+	}
+
+	public void setSampler(String sampler) {
+		this.sampler = sampler;
+	}
+
+	public String getScheduler() {
+		return scheduler;
+	}
+
+	public void setScheduler(String scheduler) {
+		this.scheduler = scheduler;
+	}
+
+	public String getRefinerSampler() {
+		return refinerSampler;
+	}
+
+	public void setRefinerSampler(String refinerSampler) {
+		this.refinerSampler = refinerSampler;
+	}
+
+	public String getRefinerScheduler() {
+		return refinerScheduler;
+	}
+
+	public void setRefinerScheduler(String refinerScheduler) {
+		this.refinerScheduler = refinerScheduler;
+	}
+
 	public String getModel() {
 		return model;
 	}
@@ -60,12 +105,12 @@ public class SWTxt2Img extends SWCommon {
 		this.prompt = prompt;
 	}
 
-	public String getNegativeprompt() {
-		return negativeprompt;
+	public String getNegativePrompt() {
+		return negativePrompt;
 	}
 
-	public void setNegativeprompt(String negativeprompt) {
-		this.negativeprompt = negativeprompt;
+	public void setNegativePrompt(String negativeprompt) {
+		this.negativePrompt = negativeprompt;
 	}
 
 	public int getImages() {
