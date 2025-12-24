@@ -1,5 +1,6 @@
 package org.cote.accountmanager.olio.sd;
 
+import java.io.IOException;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -23,6 +24,7 @@ import org.cote.accountmanager.olio.OlioTaskAgent;
 import org.cote.accountmanager.olio.ProfileUtil;
 import org.cote.accountmanager.olio.schema.OlioModelNames;
 import org.cote.accountmanager.olio.sd.automatic1111.Auto1111Util;
+import org.cote.accountmanager.olio.sd.swarm.SWImageInfo;
 import org.cote.accountmanager.olio.sd.swarm.SWImageResponse;
 import org.cote.accountmanager.olio.sd.swarm.SWTxt2Img;
 import org.cote.accountmanager.olio.sd.swarm.SWUtil;
@@ -44,6 +46,8 @@ import org.cote.accountmanager.util.ClientUtil;
 import org.cote.accountmanager.util.FileUtil;
 import org.cote.accountmanager.util.JSONUtil;
 import org.cote.accountmanager.util.ResourceUtil;
+
+import com.drew.imaging.ImageProcessingException;
 
 import jakarta.ws.rs.core.MediaType;
 
@@ -283,7 +287,7 @@ public class SDUtil {
 		}
 		else if (apiType == SDAPIEnumType.SWARM) {
 			s2iObj = SWUtil.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
-			logger.info(JSONUtil.exportObject(s2iObj));
+			//logger.info(JSONUtil.exportObject(s2iObj));
 		}
 		else if (apiType == SDAPIEnumType.UNKNOWN) {
 			logger.error("Unknown API type – cannot create image");
@@ -353,6 +357,13 @@ public class SDUtil {
 				}
 				else if (apiType == SDAPIEnumType.SWARM) {
 					byte[] dataTest = ClientUtil.get(byte[].class, ClientUtil.getResource(autoserver + "/" + bai), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+
+					SWImageInfo info = SWUtil.extractInfo(dataTest);
+					if (info != null && info.getImageParams() != null) {
+						seedl = info.getImageParams().getSeed();
+						logger.info("Extracted seed " + seed + " from image metadata");
+					}
+					
 					if (dataTest == null || dataTest.length == 0) {
 						logger.error("Could not retrieve image data from swarm server for " + bai);
 						continue;
@@ -391,7 +402,7 @@ public class SDUtil {
 				seedl = seedl + 1;
 			}
 		}
-		catch(NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ModelException e) {
+		catch(NullPointerException | FactoryException | FieldException | ValueException | ModelNotFoundException | ModelException | ImageProcessingException | IOException e) {
 			logger.error(e);
 			e.printStackTrace();
 		}
