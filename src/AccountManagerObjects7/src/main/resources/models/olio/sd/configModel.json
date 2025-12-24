@@ -109,7 +109,7 @@
 			"type": "int",
 			"minValue": 1,
 			"maxValue": 2,
-			"default": 1
+			"default": 2
 		},
 		{
 			"name": "refinerCfg",

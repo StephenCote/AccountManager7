@@ -113,6 +113,12 @@ public class OlioService {
 			logger.error("Invalid config");
 			return Response.status(200).entity(null).build();
 		}
+		if(imp.get("model") == null) {
+			imp.setValue("model", context.getInitParameter("sd.model"));
+		}
+		if(imp.get("refinerModel") == null) {
+			imp.setValue("refinerModel", context.getInitParameter("sd.refinerModel"));
+		}
 		// sdu.generateSDImages(octx, Arrays.asList(char1, char2), cmd.getOptionValue("setting"), cmd.getOptionValue("style"), cmd.getOptionValue("bodyStyle"), Integer.parseInt(cmd.getOptionValue("reimage")), cmd.hasOption("export"), cmd.hasOption("hires"), seed);
 
 		BaseRecord a1 = null;
