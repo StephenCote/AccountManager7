@@ -145,7 +145,6 @@ public class TestSD extends BaseTest {
 		String session = getAnonymousSession();
 		assertNotNull("Session is null", session);
 		
-		//\"refinermodel\": \"realmixXL_v10.safetensors\", \"refinermethod\": \"PostApply\", \"refinerupscalemethod\": \"pixel-lanczos\", \"refinersteps\": 40, \"refinercontrolpercentage\": 0.2, \"refinerupscale\": 2, \"refinercfgscale\": 6}"
 		
 		
 		//logger.info
@@ -177,7 +176,27 @@ public class TestSD extends BaseTest {
 	            e.printStackTrace();
 	        }
 	    }
+		
+		logger.info("Test refiner");
+		req.setRefinerModel("realmixXL_v10.safetensors");
+		req.setRefinerMethod("PostApply");
+		req.setRefinerUpscaleMethod("pixel-lanczos");
+		req.setRefinerSteps(20);
+		req.setRefinerControlPercentage(0.2);
+		req.setCfgScale(6);
+		req.setRefinerUpscale(2);
+		
+		SWImageResponse resp2 = txt2img(req);
+		assertNotNull("Response is null", resp2);
+		assertTrue("No images returned", resp2.getImages().size() > 0);
+		for(String path : resp2.getImages()) {
+			String name = Paths.get(path).getFileName().toString();
+			byte[] data = ClientUtil.get(byte[].class, ClientUtil.getResource(server + "/" + path), null, MediaType.APPLICATION_OCTET_STREAM_TYPE);
+			assertNotNull("Image data is null", data);
+			FileUtil.emitFile("./" + name, data);
+		}
 
+		//\"refinermodel\": \"realmixXL_v10.safetensors\", \"refinermethod\": \"PostApply\", \"refinerupscalemethod\": \"pixel-lanczos\", \"refinersteps\": 40, \"refinercontrolpercentage\": 0.2, \"refinerupscale\": 2, \"refinercfgscale\": 6}"
 
 		
 		//logger.info(JSONUtil.exportObject(req));
