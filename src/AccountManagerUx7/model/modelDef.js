@@ -9470,7 +9470,7 @@
         }
       ]
     },
-    {
+       {
       "name": "olio.sd.config",
       "ioConstraints": [
         "unknown"
@@ -9493,7 +9493,102 @@
         {
           "name": "hires",
           "type": "boolean",
-          "default": true
+          "default": true,
+          "description": "Whether to use the refiner."
+        },
+        {
+          "name": "steps",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 100,
+          "default": 20
+        },
+        {
+          "name": "refinerSteps",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 100,
+          "default": 20
+        },
+        {
+          "name": "width",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 2048,
+          "default": 1024
+        },
+        {
+          "name": "height",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 2048,
+          "default": 1024
+        },
+        {
+          "name": "cfg",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 20,
+          "default": 7
+        },
+        {
+          "name": "model",
+          "type": "string"
+        },
+        {
+          "name": "scheduler",
+          "type": "string",
+          "default": "Karras"
+        },
+        {
+          "name": "sampler",
+          "type": "string",
+          "default": "dpm_2"
+        },
+        {
+          "name": "refinerScheduler",
+          "type": "string",
+          "default": "Karras"
+        },
+        {
+          "name": "refinerSampler",
+          "type": "string",
+          "default": "dpm_2"
+        },
+        {
+          "name": "refinerModel",
+          "type": "string"
+        },
+        {
+          "name": "refinerMethod",
+          "type": "string",
+          "default": "PostApply"
+        },
+        {
+          "name": "refinerUpscaleMethod",
+          "type": "string",
+          "default": "pixel-lanczos"
+        },
+        {
+          "name": "refinerControlPercentage",
+          "type": "double",
+          "minValue": 0.01,
+          "maxValue": 1.0,
+          "default": 0.2
+        },
+        {
+          "name": "refinerUpscale",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 2,
+          "default": 2
+        },
+        {
+          "name": "refinerCfg",
+          "type": "int",
+          "minValue": 1,
+          "maxValue": 20,
+          "default": 7
         },
         {
           "name": "imageCount",
