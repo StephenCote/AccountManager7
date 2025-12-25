@@ -303,9 +303,9 @@ public class TestSD extends BaseTest {
 		
 		logger.info("Test prompt");
 		Auto1111Txt2Img s2i = new Auto1111Txt2Img();
-		s2i.setPrompt("8k highly detailed professional photograph ((highest quality)) ((ultra realistic)) (full body:1.5) of a gorgeous woman (twenty-four year old:1.5) (24 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat. Sharp focus, ultra sharp image. Natural light only.  <lora:add-detail-xl:1> <lora:xl_more_art-full_v1:1.2>");
+		s2i.setPrompt("8k highly detailed professional photograph ((highest quality)) ((ultra realistic)) (full body:1.5) of a gorgeous woman (twenty-four year old:1.5) (24 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat. Sharp focus, ultra sharp image. Natural light only.");
 		// s2i.setAll_prompts(new String[] {s2i.getPrompt()});
-		s2i.setNegative_prompt("Washed out colors, lifeless, illogical, wonky, boring, bland, ugly, disgusting, uncanny, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, fugly, mutated, distorted, melting, cropped, disproportionate, weird, wonky, low quality, compressed, muddy colors, overexposed, bland, censored, mosaic, ugliness, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, old, masculine, (busty:1.3), extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face, negativeXL_D");
+		s2i.setNegative_prompt("Washed out colors, lifeless, illogical, wonky, boring, bland, ugly, disgusting, uncanny, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, blurry, out of focus, low res, fugly, mutated, distorted, melting, cropped, disproportionate, weird, wonky, low quality, compressed, muddy colors, overexposed, bland, censored, mosaic, ugliness, rotten, fake, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face");
 		// s2i.setAll_negative_prompts(new String[] {s2i.getNegative_prompt()});
 		/*
 		s2i.setSd_model_hash("e6bb9ea85b");

@@ -863,7 +863,7 @@ public class NarrativeUtil {
 			fraces.remove(RaceEnumType.valueOf(r));
 		}
 		String negRaces = fraces.stream().map(r -> (RaceEnumType.valueOf(r) + " people")).collect(Collectors.joining(", "));
-		return "Washed out colors, illogical, disgusting, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, cartoon, drawing, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, censored, mosaic, rotten, fake, plastic smooth skin, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, anime, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face, " + negRaces + ",((" + mod + ")), negativeXL_D";
+		return "Washed out colors, illogical, disgusting, dumb, illogical, bad anatomy, errors, glitches, mistakes, horrid, low resolution, pixilated, blurry, out of focus, low res, mutated, distorted, melting, cropped, disproportionate, wonky, low quality, compressed, muddy colors, overexposed, mosaic, rotten, fake, low poly, lacking detail, watermark, malformed, failed, failure, extra fingers, cloned face, missing legs, extra arms, fused fingers, too many fingers, poorly drawn face, " + negRaces + ",((" + mod + "))";
 
 	}
 	public static String getSDPrompt(OlioContext ctx, BaseRecord person, String setting) {
