@@ -936,10 +936,10 @@ public class NarrativeUtil {
 				buff.append(pref + tdesc + ".");
 			}
 		}
-		//woman (eighteen year old:1.5) (18 yo:1.5) Irish, (long tangled red hair), (emerald green eyes), wearing a cowgirl outfit and hat, (carrying a (Winchester rifle)) (riding a horse across the (Oklahoma (tall grass prairie))). She has (wide hips:1.5), (narrow waist:1.5).
-		// Sharp focus, ultra sharp image. Natural light only.
+
 		buff.append(" " + SDUtil.getSDConfigPrompt(sdConfig));
-		buff.append(" <lora:add-detail-xl:.5> <lora:xl_more_art-full_v1:1.2>");
+		// TODO - move these settings to the config model
+		// buff.append(" <lora:add-detail-xl:.5> <lora:xl_more_art-full_v1:1.2>");
 		return buff.toString();
 	}
 	
