@@ -297,12 +297,17 @@
         let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
         let cinst = (lastReimage || am7model.prepareInstance(entity, am7model.forms.sdConfig));
 
-        // TODO - Add to form
-        cinst.api.steps(40);
-        cinst.api.refinerSteps(40);
-        cinst.api.cfg(5);
-        cinst.api.refinerCfg(5);
+        function tempApplyDefaults(){
+            // TODO - Add to form
+            cinst.api.steps(40);
+            cinst.api.refinerSteps(40);
+            cinst.api.cfg(5);
+            cinst.api.refinerCfg(5);
+            cinst.api.model("sdXL_v10VAEFix.safetensors");
+            cinst.api.refinerModel("juggernautXL_ragnarokBy.safetensors");
+        }
 
+        tempApplyDefaults();
 
         lastReimage = cinst;
         await am7olio.setNarDescription(inst, cinst);
@@ -314,10 +319,11 @@
             label: "Reimage " + inst.api.name(),
             entityType: "olio.sd.config",
             size: 75,
-            data: {entity, inst: cinst},
+            data: {entity:cinst.entity, inst: cinst},
             confirm: async function (data) {
                 //console.log(data);
                 page.toast("info", "Reimaging ...", -1);
+
                 let x = await m.request({ method: 'POST', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage", body:cinst.entity, withCredentials: true });
                 page.clearToast();
                 let pop = false;
@@ -373,6 +379,7 @@
                 }
             }
             cinst.api.seed(seed);
+            tempApplyDefaults();
             m.redraw();
         };
         setDialog(cfg);
