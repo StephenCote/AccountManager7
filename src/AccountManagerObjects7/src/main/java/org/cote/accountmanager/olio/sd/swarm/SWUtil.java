@@ -39,11 +39,11 @@ public class SWUtil {
 			s2i.setRefinerSampler(sdConfig.get("refinerSampler"));
 			s2i.setRefinerMethod(sdConfig.get("refinerMethod"));
 			s2i.setRefinerModel(sdConfig.get("refinerModel"));
-			s2i.setRefinerSteps((Integer) sdConfig.get("refinerSteps"));
-			s2i.setRefinerUpscale((Integer) sdConfig.get("refinerUpscale"));
+			s2i.setRefinerSteps(sdConfig.get("refinerSteps"));
+			s2i.setRefinerUpscale(sdConfig.get("refinerUpscale"));
 			s2i.setRefinerUpscaleMethod(sdConfig.get("refinerUpscaleMethod"));
-			s2i.setRefinerCfgScale((Integer) sdConfig.get("refinerCfg"));
-			s2i.setRefinerControlPercentage((Double) sdConfig.get("refinerControlPercentage"));
+			s2i.setRefinerCfgScale(sdConfig.get("refinerCfg"));
+			s2i.setRefinerControlPercentage(sdConfig.get("refinerControlPercentage"));
 		}
 		else {
 			s2i.setRefinerControlPercentage(0.0);
