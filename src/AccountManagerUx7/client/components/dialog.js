@@ -296,6 +296,14 @@
         //let entity = am7model.newPrimitive("olio.sd.config");
         let entity = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
         let cinst = (lastReimage || am7model.prepareInstance(entity, am7model.forms.sdConfig));
+
+        // TODO - Add to form
+        cinst.api.steps(40);
+        cinst.api.refinerSteps(40);
+        cinst.api.cfg(5);
+        cinst.api.refinerCfg(5);
+
+
         lastReimage = cinst;
         await am7olio.setNarDescription(inst, cinst);
         let cseed = (inst.entity?.attributes || []).filter(a => a.name == "preferredSeed");
