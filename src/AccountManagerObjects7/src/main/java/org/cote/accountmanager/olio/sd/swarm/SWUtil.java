@@ -28,7 +28,7 @@ public class SWUtil {
 		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, pictureType, bodyType, verb));
 		s2i.setNegativePrompt(NarrativeUtil.getSDNegativePrompt(person));
 		s2i.setSeed(Math.abs(rand.nextInt()));
-		s2i.setSteps(steps);
+		s2i.setSteps(sdConfig.get("steps"));
 		s2i.setModel(sdConfig.get("model"));
 		s2i.setScheduler(sdConfig.get("scheduler"));
 		s2i.setSampler(sdConfig.get("sampler"));

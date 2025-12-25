@@ -286,12 +286,6 @@
 
     function newChatConfig() {
       return {
-        /*
-        chat: undefined,
-        prompt: undefined,
-        system: undefined,
-        user: undefined,
-        */
         peek: false,
         history: undefined,
         pending: false
@@ -300,7 +294,6 @@
 
 
     function doPeek() {
-      //doClear();
       if (chatCfg.peek || !inst) {
         return Promise.resolve();
       }
@@ -328,7 +321,6 @@
                 }).catch((e) => {
                   console.warn("Error in chat history", e);
                   chatCfg.peek = false;
-                  // rej(e);
                 });
               });
             });
