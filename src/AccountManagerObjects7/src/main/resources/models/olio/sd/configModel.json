@@ -102,7 +102,7 @@
 			"type": "double",
 			"minValue": 0.01,
 			"maxValue": 1.0,
-			"default": 0.7
+			"default": 0.2
 		},
 		{
 			"name": "refinerUpscale",
