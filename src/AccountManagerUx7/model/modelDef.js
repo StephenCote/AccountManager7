@@ -9543,7 +9543,7 @@
         {
           "name": "sampler",
           "type": "string",
-          "default": "dpm_2"
+          "default": "dpmpp_2m"
         },
         {
           "name": "refinerScheduler",
@@ -9553,7 +9553,7 @@
         {
           "name": "refinerSampler",
           "type": "string",
-          "default": "dpm_2"
+          "default": "dpmpp_2m"
         },
         {
           "name": "refinerModel",
