@@ -882,6 +882,41 @@
                 referField: true,
                 requiredAttributes: ["style"],
                 requiredValues: ["movie"],
+            },
+            model: {
+                layout: 'third',
+                label: 'Model',
+                field: {
+                    type: 'list',
+                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                }
+            },
+            steps: {
+                label: 'Steps',
+                layout: 'one'
+            },
+            refinerModel: {
+                layout: 'third',
+                label: 'Refiner Model',
+                field: {
+                    type: 'list',
+                    limit: ['juggernautXL_ragnarokBy.safetensors','dreamshaperXL_v21TurboDPMSDE','chilloutmix_Ni','realismFromHadesXL_lightningV3','realmixXL_V10.safetensors', 'lustifySDXLNSFW_endgame.safetensors', 'ponyRealism_V22.safetensors', 'sdXL_v10VAEFix']
+                }
+            },
+            refinerSteps: {
+                label: 'Refiner Steps',
+                layout: 'one'
+            },
+            cfg: {
+                label: 'CFG',
+                layout: 'third',
+                format: 'range'
+            },
+            refinerCfg: {
+                label: 'Refiner CFG',
+                layout: 'third',
+                format: 'range'
+            
             }
 
 

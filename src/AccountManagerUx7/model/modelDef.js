@@ -9533,7 +9533,8 @@
         },
         {
           "name": "model",
-          "type": "string"
+          "type": "string",
+          "default": "sdXL_v10VAEFix.safetensors"
         },
         {
           "name": "scheduler",
@@ -9557,7 +9558,8 @@
         },
         {
           "name": "refinerModel",
-          "type": "string"
+          "type": "string",
+          "default": "juggernautXL_ragnarokBy.safetensors"
         },
         {
           "name": "refinerMethod",

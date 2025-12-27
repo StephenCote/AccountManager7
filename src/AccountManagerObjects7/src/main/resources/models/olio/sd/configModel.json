@@ -61,7 +61,8 @@
 		},
 		{
 			"name": "model",
-			"type": "string"
+			"type": "string",
+			"default": "sdXL_v10VAEFix.safetensors"
 		},
 		{
 			"name": "scheduler",
