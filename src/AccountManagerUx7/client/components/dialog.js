@@ -372,9 +372,10 @@
             let ncfg = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
             // Do style first since that drives the display
             cinst.api.style(ncfg.style);
+            m.redraw();
             let seed = cinst.api.seed();
             for(let k in ncfg){
-                if(k != "id" && k != "objectId"){
+                if(k != "id" && k != "objectId" && k != "style"){
                     if(cinst.api[k]) cinst.api[k](ncfg[k]);
                 }
             }

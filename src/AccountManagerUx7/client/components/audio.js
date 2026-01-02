@@ -217,7 +217,7 @@
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = [282, 281, 283, 284, 265, 266, 267]; //[218, 220, 130, 172, 173];
+    let imgBase = [132,1546,1545,1547];//[282, 281, 283, 284, 265, 266, 267]; //[218, 220, 130, 172, 173];
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -1437,6 +1437,7 @@
         clearMagic8,
         startBinauralSweep,
         stopBinauralSweep,
+        stopAudioSources,
         component: {
 
             oncreate: function (x) {

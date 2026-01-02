@@ -422,10 +422,11 @@
     }
 
     function toggleAudio() {
+      page.components.audio.unconfigureAudio(false);
+      
       if (audio) {
         // Audio -> Magic8
         audio = false;
-        page.components.audio.unconfigureAudio(false);
         audioMagic8 = true;
         page.components.audio.startBinauralSweep();
         // Force a small delay before configuring Magic8
@@ -437,7 +438,7 @@
         // Magic8 -> Off
         page.components.audio.stopBinauralSweep();
         page.components.audio.clearMagic8(true);
-        page.components.audio.unconfigureAudio(false);
+        
         audio = false;
         audioMagic8 = false;
       }
