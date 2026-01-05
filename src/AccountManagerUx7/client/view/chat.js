@@ -341,7 +341,8 @@
     function getSplitContainerView() {
       let splitLeft = "";
       if (!fullMode) splitLeft = getSplitLeftContainerView();
-      return m("div", { class: "results-fixed", onselectstart: function (e) { e.preventDefault(); } },
+      // , onselectstart: function (e) { e.preventDefault(); }
+      return m("div", { class: "results-fixed" },
         m("div", { class: "splitcontainer" }, [
           splitLeft,
           getSplitRightContainerView()

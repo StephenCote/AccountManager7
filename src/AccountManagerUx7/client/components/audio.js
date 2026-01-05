@@ -1040,16 +1040,21 @@
             stopAudioSources(aud);
         }
         if (!aud.started) {
-            if (aud.context.state === "suspended") {
-                aud.context.resume().then(() => {
-                    try { aud.source.start(0); } catch { }
+            if(aud.context){
+                if (aud.context.state === "suspended") {
+                    aud.context.resume().then(() => {
+                        try { aud.source.start(0); } catch { }
+                        aud.started = true;
+                    });
+                } else if (aud.context.state === "running") {
+                    aud.source.start(0);
                     aud.started = true;
-                });
-            } else if (aud.context.state === "running") {
-                aud.source.start(0);
-                aud.started = true;
-            } else {
-                console.warn("Handle state " + aud.context.state);
+                } else {
+                    console.warn("Handle state " + aud.context.state, audio.context);
+                }
+            }
+            else{
+                console.warn("Audio context not available");
             }
 
             // Re-create the source node for every playback to avoid DOMException

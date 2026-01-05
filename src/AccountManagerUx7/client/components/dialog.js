@@ -381,7 +381,7 @@
             }
             cinst.api.seed(seed);
             tempApplyDefaults();
-            m.redraw();
+            setTimeout(m.redraw, 10);
         };
         setDialog(cfg);
     }
