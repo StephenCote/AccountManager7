@@ -5442,10 +5442,6 @@ button.button-tab-active:hover:is(.dark *) {
   opacity: 0.2;
 }
 
-.opacity-35 {
-  opacity: 0.35;
-}
-
 .opacity-50 {
   opacity: 0.5;
 }
@@ -5708,8 +5704,8 @@ button.button-tab-active:hover:is(.dark *) {
   color: rgb(255 255 255 / var(--tw-text-opacity, 1));
 }
 
-.dark\:opacity-35:is(.dark *) {
-  opacity: 0.35;
+.dark\:opacity-50:is(.dark *) {
+  opacity: 0.5;
 }
 
 .dark\:hover\:bg-gray-700:hover:is(.dark *) {

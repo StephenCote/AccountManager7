@@ -128,6 +128,7 @@
         if (contentChanged || !magic8.audio1 || !magic8.audio2) {
             messagesToProcess.forEach((m, i) => {
                 if (!m) return;
+                console.log("Processing Magic8 message:", i, m.role, m.content?.substring(0, 30) + "...");
                 let actualIndex = aMsg.length - 1 + i;
                 let name = inst.api.objectId() + " - " + actualIndex;
                 let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
@@ -217,7 +218,7 @@
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = [132,1546,1545,1547];//[282, 281, 283, 284, 265, 266, 267]; //[218, 220, 130, 172, 173];
+    let imgBase = [132,1546,1545,1547]; // [3261];
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -298,7 +299,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageA_src,
-                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-35 dark:opacity-35 blur-0'}`,
+                    class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-50 dark:opacity-50 blur-0'}`,
                     onload: !imgCfg.isA_onTop ? imageTransition : null,
                     onerror: ()=> {page.toast("error", "Failed to load image: " + imgCfg.imageA_src); imageTransition();}
                 }),
@@ -308,7 +309,7 @@
                     objectFit: "contain",
                     objectPosition: "center",
                     src: imgCfg.imageB_src,
-                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-35 dark:opacity-35 blur-0'}`,
+                    class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-50 dark:opacity-50 blur-0'}`,
                     onload: imgCfg.isA_onTop ? imageTransition : null,
                     onerror: ()=> {page.toast("error", "Failed to load image: " + imgCfg.imageB_src); imageTransition();}
                 })
@@ -933,14 +934,14 @@
         }
 
         visualizers[aud.id] = { pending: true };
-        console.info("Configuring audio visualizer for", aud.id);
+
         let oM = getAudioMapForContainer(aud.id);
         if (!oM) {
             console.warn("Failed to find map for " + aud.id);
             console.warn(audioMap);
             return;
         }
-
+        console.info("Configuring audio visualizer for", aud.id, oM.name);
         //let cont = aud.parentNode;
 
         createAudioSource(oM.name, oM.profileId, oM.content).then((o) => {
@@ -1000,8 +1001,8 @@
         let running = getRunningAudioSources();
 
         running.forEach(r => {
-            console.log("Stopping other audio sources", r);
-            if (!aud || r.id !== aud.id) {
+            console.log("Stopping other audio sources", r.id, aud?.id, (r.id != aud?.id), r);
+            if (!aud || r.id != aud.id) {
                 togglePlayAudioSource(r, false);
             }
         });
@@ -1039,6 +1040,7 @@
         if (autoStop) {
             stopAudioSources(aud);
         }
+        console.log("Starting audio source", aud);
         if (!aud.started) {
             if(aud.context){
                 if (aud.context.state === "suspended") {

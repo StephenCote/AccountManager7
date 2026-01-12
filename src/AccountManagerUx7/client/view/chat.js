@@ -423,21 +423,26 @@
     }
 
     function toggleAudio() {
+
+      page.components.audio.stopAudioSources();
       page.components.audio.unconfigureAudio(false);
-      
+      // page.components.audio.stopBinauralSweep();
+
       if (audio) {
         // Audio -> Magic8
         audio = false;
         audioMagic8 = true;
-        page.components.audio.startBinauralSweep();
+        page.components.audio.clearMagic8(true);
+        //page.components.audio.startBinauralSweep();
         // Force a small delay before configuring Magic8
         setTimeout(() => {
           page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
+          m.redraw();
         }, 200);
       }
       else if (audioMagic8) {
         // Magic8 -> Off
-        page.components.audio.stopBinauralSweep();
+        
         page.components.audio.clearMagic8(true);
         
         audio = false;
@@ -449,6 +454,7 @@
         audio = true;
         audioMagic8 = false;
       }
+      m.redraw();
     }
     
     let faceProfile;
