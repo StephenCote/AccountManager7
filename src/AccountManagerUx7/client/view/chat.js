@@ -426,13 +426,14 @@
 
       page.components.audio.stopAudioSources();
       page.components.audio.unconfigureAudio(false);
+      //page.components.audio.clearMagic8(false);
       // page.components.audio.stopBinauralSweep();
 
-      if (audio) {
+      if (audio && !audioMagic8) {
         // Audio -> Magic8
         audio = false;
         audioMagic8 = true;
-        page.components.audio.clearMagic8(true);
+        //page.components.audio.clearMagic8(true);
         //page.components.audio.startBinauralSweep();
         // Force a small delay before configuring Magic8
         setTimeout(() => {
@@ -443,16 +444,19 @@
       else if (audioMagic8) {
         // Magic8 -> Off
         
-        page.components.audio.clearMagic8(true);
+        //page.components.audio.clearMagic8(true);
         
         audio = false;
         audioMagic8 = false;
+        page.components.audio.clearMagic8(true);
       }
       else {
         // Off -> Audio
-        page.components.audio.clearMagic8(false);
+        //page.components.audio.clearMagic8(false);
         audio = true;
         audioMagic8 = false;
+        page.components.audio.clearMagic8(false);
+        //page.components.audio.configureAudio(audio);
       }
       m.redraw();
     }
@@ -949,8 +953,9 @@
       onupdate: function (x) {
         page.navigable.setupPendingContextMenus();
         scrollToLast();
+
         page.components.audio.configureAudio(audio);
-        page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
+        // page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
       },
       onremove: function (x) {
         page.navigable.cleanupContextMenus();

@@ -101,12 +101,12 @@
 
         // Only clear and reconfigure if content has actually changed
         if (contentChanged) {
-            console.log("Magic8 content changed, reconfiguring...");
+            //console.log("Magic8 content changed, reconfiguring...");
             clearMagic8(false);
             magic8.lastContent = currentContent;
         } else if (!magic8.audioMotionTop || !magic8.audioMotionBottom) {
             // Only reconfigure visualizers if they don't exist but content is the same
-            console.log("Magic8 visualizers missing, recreating...");
+            //console.log("Magic8 visualizers missing, recreating...");
         } else {
             // Everything is already configured properly
             return;
@@ -128,7 +128,7 @@
         if (contentChanged || !magic8.audio1 || !magic8.audio2) {
             messagesToProcess.forEach((m, i) => {
                 if (!m) return;
-                console.log("Processing Magic8 message:", i, m.role, m.content?.substring(0, 30) + "...");
+                // console.log("Processing Magic8 message:", i, m.role, m.content?.substring(0, 30) + "...");
                 let actualIndex = aMsg.length - 1 + i;
                 let name = inst.api.objectId() + " - " + actualIndex;
                 let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
@@ -200,14 +200,14 @@
             // Auto-start the most recent audio when content changes
             if (contentChanged && magic8.lastAudio && magic8["audio" + magic8.lastAudio]) {
                 let currentAudio = magic8["audio" + magic8.lastAudio];
-                console.log("Starting Magic8 audio after content change:", magic8.lastAudio);
+                // console.log("Starting Magic8 audio after content change:", magic8.lastAudio);
                 setTimeout(() => {
                     togglePlayAudioSource(currentAudio, true);
                 }, 100);
             }
 
             magic8.configuring = false;
-            console.log("Magic8 configuration complete");
+            // console.log("Magic8 configuration complete");
         }).catch(err => {
             console.error("Error configuring Magic8:", err);
             magic8.configuring = false;
@@ -218,7 +218,8 @@
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = [132,1546,1545,1547]; // [3261];
+    let imgBase = [132,1546,1545,1547]; 
+    // let imgBase = [3261];
     let imgUrl;
     const imgCfg = {
         isA_onTop: false,
@@ -262,7 +263,7 @@
 
         let gimg = "";
         if (bgImg && !profile && imgBase.length && images.length == 0) {
-            console.log("Loading magic8 images from base", imgBase);
+            // console.log("Loading magic8 images from base", imgBase);
             let q = am7client.newQuery("data.data");
             //q.field("groupId", imgBase);
             let qg = q.field(null, null);
@@ -673,7 +674,7 @@
                         async function sendChunk(chunk, close = false) {
                             try {
                                 window.dbgBlob = chunk;
-                                console.log("Sending chunk...", chunk.size, "bytes");
+                                // console.log("Sending chunk...", chunk.size, "bytes");
                                 let b64 = await getAudioBase64(chunk);
 
                                 if (b64 && page.wss) {
@@ -1003,18 +1004,18 @@
         running.forEach(r => {
             console.log("Stopping other audio sources", r.id, aud?.id, (r.id != aud?.id), r);
             if (!aud || r.id != aud.id) {
-                togglePlayAudioSource(r, false);
+                togglePlayAudioSource(r, false, true);
             }
         });
     }
 
 
     function togglePlayMagic8(aud, aud2) {
-        console.log("Toggle play Magic8", aud, aud2);
+        // console.log("Toggle play Magic8", aud, aud2);
         togglePlayAudioSource(aud, true);
     }
 
-    function togglePlayAudioSource(aud, autoStop) {
+    function togglePlayAudioSource(aud, autoStop, noStart) {
         if (autoStop) {
             upNext = [];
         }
@@ -1040,7 +1041,10 @@
         if (autoStop) {
             stopAudioSources(aud);
         }
-        console.log("Starting audio source", aud);
+        if(noStart){
+            return;
+        }
+        // console.warn("Starting audio source", aud);
         if (!aud.started) {
             if(aud.context){
                 if (aud.context.state === "suspended") {
