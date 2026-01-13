@@ -4481,6 +4481,10 @@ button.button-tab-active:hover:is(.dark *) {
   display: inline-block;
 }
 
+.inline {
+  display: inline;
+}
+
 .flex {
   display: flex;
 }
@@ -4547,6 +4551,10 @@ button.button-tab-active:hover:is(.dark *) {
 
 .h-8 {
   height: 2rem;
+}
+
+.h-\[60px\] {
+  height: 60px;
 }
 
 .h-full {
@@ -4953,6 +4961,10 @@ button.button-tab-active:hover:is(.dark *) {
 .bg-gray-800 {
   --tw-bg-opacity: 1;
   background-color: rgb(31 41 55 / var(--tw-bg-opacity, 1));
+}
+
+.bg-gray-800\/80 {
+  background-color: rgb(31 41 55 / 0.8);
 }
 
 .bg-gray-900 {
@@ -5601,6 +5613,10 @@ button.button-tab-active:hover:is(.dark *) {
 .hover\:bg-gray-500:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(107 114 128 / var(--tw-bg-opacity, 1));
+}
+
+.hover\:bg-gray-700\/30:hover {
+  background-color: rgb(55 65 81 / 0.3);
 }
 
 .hover\:bg-green-200:hover {
