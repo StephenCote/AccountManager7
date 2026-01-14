@@ -339,6 +339,17 @@
                     if(seed.length){
                         await am7client.patchAttribute(inst.entity, "preferredSeed", seed[0].value);
                     }
+
+                    // Clear the context cache for this object and its portrait
+                    // This ensures the new image will be fetched on next render
+                    page.clearContextObject(inst.api.objectId());
+                    if(x.objectId) {
+                        page.clearContextObject(x.objectId);
+                    }
+
+                    // Force Mithril redraw
+                    m.redraw();
+
                     pop = true;
                 }
                 else{
@@ -348,7 +359,7 @@
                 if(pop){
                     page.imageView(x);
                 }
-                
+
             },
             cancel: async function (data) {
                 endDialog();
