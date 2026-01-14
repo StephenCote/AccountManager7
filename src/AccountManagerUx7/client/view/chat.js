@@ -95,10 +95,6 @@
 
     function doClear() {
       clearEditMode();
-      // Stop all audio when conversation changes
-      if (page.components.audio && page.components.audio.stopAndCleanupAllAudio) {
-        page.components.audio.stopAndCleanupAllAudio();
-      }
       inst = undefined;
       chatCfg = newChatConfig();
     }
@@ -119,7 +115,7 @@
       chatCfg.pending = false;
       chatCfg.peek = false;
       chatCfg.history = [];
-      if (inst && inst.api.objectId()) {
+      if(inst && inst.api.objectId()){
         let chatReq = {
           schema: inst.model.name,
           objectId: inst.api.objectId(),
@@ -226,7 +222,7 @@
           schema: inst.model.name,
           objectId: inst.api.objectId(),
           uid: page.uid(),
-          message: msg + (msg.length && faceProfile ? "\n(Metrics: " + JSON.stringify(faceProfile) + ")" : ""),
+          message: msg + (msg.length && faceProfile ? "\n(Metrics: " + JSON.stringify(faceProfile) + ")": ""),
           data
         };
         try {
@@ -427,64 +423,52 @@
     }
 
     function toggleAudio() {
-      // NEW: Preserve audio state, only pause/resume players
-      // Don't destroy audio sources or contexts
+
+      page.components.audio.stopAudioSources();
+      page.components.audio.unconfigureAudio(false);
+      //page.components.audio.clearMagic8(false);
+      // page.components.audio.stopBinauralSweep();
 
       if (audio && !audioMagic8) {
-        // Audio -> Magic8 (inline to magic8 view)
-        console.log("Switching to Magic8 view");
-
-        // Save current playback state (don't stop)
-        page.components.audio.pauseAllPlayers(true);
-
-        // Switch mode
+        // Audio -> Magic8
         audio = false;
         audioMagic8 = true;
-
-        // Configure Magic8 with hash-based IDs (will resume if needed)
+        //page.components.audio.clearMagic8(true);
+        //page.components.audio.startBinauralSweep();
+        // Force a small delay before configuring Magic8
         setTimeout(() => {
           page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
           m.redraw();
         }, 200);
       }
       else if (audioMagic8) {
-        // Magic8 -> Off (stop but don't destroy)
-        console.log("Switching audio off");
-
-        // Pause all players and save state
-        page.components.audio.pauseAllPlayers(true);
-
-        // Switch mode
+        // Magic8 -> Off
+        
+        //page.components.audio.clearMagic8(true);
+        
         audio = false;
         audioMagic8 = false;
-
-        // Don't clear Magic8 completely - just hide it
-        // The players remain in registry for potential reuse
+        page.components.audio.clearMagic8(true);
       }
       else {
-        // Off -> Audio (inline view)
-        console.log("Switching to inline audio view");
-
-        // Switch mode
+        // Off -> Audio
+        //page.components.audio.clearMagic8(false);
         audio = true;
         audioMagic8 = false;
-
-        // Audio players will be recreated via component lifecycle
-        // Existing players in registry will be reused
-        // Auto-play will be triggered by the component if it's the most recent message
+        page.components.audio.clearMagic8(false);
+        //page.components.audio.configureAudio(audio);
       }
-
       m.redraw();
     }
-
+    
     let faceProfile;
     function handleFaceMetricCapture(imageData) {
-      if (imageData && imageData.results?.length) {
+      if(imageData && imageData.results?.length){
         let id = imageData.results[0];
-        faceProfile = {
+       faceProfile = {
           emotion: id.dominant_emotion,
           emotions: Object.fromEntries(
-            Object.entries(id.emotion_scores).map(([key, value]) => { let vf = value; return [key, vf.toFixed(2)]; })
+            Object.entries(id.emotion_scores).map(([key, value]) => {let vf = value; return [key, vf.toFixed(2)];})
           ),
           /*
           gender: id.dominant_gender,
@@ -508,15 +492,15 @@
     }
     function toggleCamera() {
       camera = !camera;
-      if (camera) {
-        if (!page.components.camera.devices().length) {
+      if(camera){
+        if(!page.components.camera.devices().length){
           page.components.camera.initializeAndFindDevices(handleFaceMetricCapture);
         }
-        else {
+        else{
           page.components.camera.startCapture(handleFaceMetricCapture);
         }
       }
-      else {
+      else{
         page.components.camera.stopCapture();
       }
     }
@@ -666,11 +650,8 @@
         //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
 
         if (chatCfg.chat && audio && !chatCfg.streaming) {
-          // NEW: Use hash-based message ID instead of index
-          const chatObjectId = inst.api.objectId();
-          const msgContent = pruneAll(msg.content);
-          const messageId = page.components.audio.getMessageIdSync(chatObjectId, msg.role, msgContent);
-
+          //let name = chatCfg.chat.objectId + " - " + midx;
+          let name = inst.api.objectId() + " - " + midx;
           let profileId;
           if (msg.role == "assistant") {
             profileId = chatCfg?.system?.profile?.objectId;
@@ -678,82 +659,12 @@
           else {
             profileId = chatCfg?.user?.profile?.objectId;
           }
-
-          // Use the new component-based approach
-          const containerId = `chat-audio-${messageId}`;
-
-          // Lazy loading: Only auto-create for the most recent message
-          if (lastMsg) {
-            // Create audio player for most recent message (will be cached by messageId)
-            page.components.audio.getOrCreatePlayer(messageId, profileId, msgContent).then((player) => {
-              if (player) {
-                // Auto-play most recent message if:
-                // 1. This is the last message
-                // 2. No audio is currently playing
-                // 3. This isn't the message we were just playing (avoid restart)
-                const lastPlayedId = page.components.audio.getActiveOrLastMessageId();
-
-                if (!lastPlayedId || lastPlayedId !== messageId) {
-                  console.log("Inline: Auto-playing new message", messageId);
-                  setTimeout(() => {
-                    page.components.audio.startPlayingMessage(messageId, true);
-                  }, 300);
-                }
-                // Resume if this was the last played message
-                else if (lastPlayedId === messageId && player.context && player.context.state === "suspended") {
-                  console.log("Inline: Resuming playback", messageId);
-                  setTimeout(() => {
-                    page.components.audio.resumePlayer(messageId);
-                  }, 300);
-                }
-              }
-            });
-
-            // Create visualizer component for most recent message
-            aud = m(page.components.audio.AudioVisualizer, {
-              key: messageId,
-              messageId: messageId,
-              containerId: containerId,
-              mode: 'inline',
-              height: 60
-            });
-          } else {
-            // Lazy load: Show placeholder for older messages
-            // Only create player when clicked
-            aud = m("div", {
-              key: messageId,
-              id: containerId,
-              class: "audio-container block w-full h-[60px] cursor-pointer hover:bg-gray-700/30 transition-colors",
-              onclick: function (e) {
-                e.stopPropagation();
-                console.log("Lazy loading audio for", messageId);
-
-                // Create player and visualizer on demand
-                page.components.audio.getOrCreatePlayer(messageId, profileId, msgContent).then((player) => {
-                  if (player) {
-                    // Start playing immediately after load
-                    page.components.audio.startPlayingMessage(messageId, true);
-
-                    // Replace placeholder with actual visualizer
-                    m.redraw();
-                  }
-                });
-              }
-            }, m("div", {
-              class: "flex items-center justify-center h-full text-gray-400"
-            }, m("span", { class: "material-symbols-outlined" }, "play_circle")));
-
-            // Check if player already exists (from previous interaction)
-            if (page.components.audio.hasPlayer && page.components.audio.hasPlayer(messageId)) {
-              // Already exists, show visualizer instead of placeholder
-              aud = m(page.components.audio.AudioVisualizer, {
-                key: messageId,
-                messageId: messageId,
-                containerId: containerId,
-                mode: 'inline',
-                height: 60
-              });
-            }
+          aud = page.components.audio.createAudioVisualizer(name, aidx, profileId, lastMsg, pruneAll(msg.content));
+          if (!aud || typeof aud == "string") {
+            aud = "";
+          }
+          else {
+            aidx++;
           }
 
         }
@@ -779,14 +690,14 @@
       let setting = inst.api.setting();
       let setLbl = "";
       if (setting) {
-        setLbl = m("div", { class: "relative receive-chat flex justify-start" },
-          setLbl = m("div", { class: "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-base w-full border rounded-md font-light" },
-            m("p", "Setting: " + setting)
+        setLbl = m("div", { class: "relative receive-chat flex justify-start"},
+          setLbl = m("div", { class:  "px-5 mb-2 bg-gray-200 dark:bg-gray-900 dark:text-white text-black py-2 text-base w-full border rounded-md font-light" },
+             m("p", "Setting: " + setting)
 
           )
         );
       }
-
+      
       let ret = [(profile ? m("div", { class: "bg-white dark:bg-black user-info-header px-5 py-3" }, flds) : ""), m("div", { id: "messages", class: "h-full w-full overflow-y-auto" }, [
         setLbl,
         msgs
@@ -819,11 +730,11 @@
       return cnt;
     }
 
-    function pruneOut(cnt, start, end) {
+    function pruneOut(cnt, start, end){
       let idx1 = cnt.indexOf(start);
       let idx2 = cnt.indexOf(end);
-      if (idx1 > -1 && idx2 > -1 && idx2 > idx1) {
-        cnt = cnt.substring(0, idx1) + cnt.substring(idx2 + end.length, cnt.length);
+      if(idx1 > -1 && idx2 > -1 && idx2 > idx1){
+        cnt = cnt.substring(0, idx1) + cnt.substring(idx2 + end.length, cnt.length);  
       }
       return cnt;
     }
@@ -877,32 +788,27 @@
             m("div", { class: "splitrightcontainer result-nav-inner" },
 
               m("div", { class: "tab-container result-nav w-full" }, [
-                page.iconButton("button", (fullMode ? "close_fullscreen" : "open_in_new"), "", toggleFullMode),
-                page.iconButton("button", "cancel", "", doCancel),
+                page.iconButton("button",  (fullMode ? "close_fullscreen" : "open_in_new"), "", toggleFullMode),
+                page.iconButton("button",  "cancel", "", doCancel),
                 // (camera ? " animate-pulse" : "")
-                page.iconButton("button", (camera ? "photo_camera" : "no_photography"), "", toggleCamera),
-                page.iconButton("button", (profile ? "account_circle" : "account_circle_off"), "", toggleProfile),
-                page.iconButton("button", (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")), "", toggleAudio),
-                page.iconButton("button", "query_stats", "", chatInto),
-                page.iconButton("button", "visibility" + (hideThoughts ? "" : "_off"), "", toggleThoughts),
+                page.iconButton("button",  (camera ? "photo_camera" : "no_photography"), "", toggleCamera),
+                page.iconButton("button",  (profile ? "account_circle" : "account_circle_off"), "", toggleProfile),
+                page.iconButton("button",  (audio ? "volume_up" : (audioMagic8 ? "counter_8" : "volume_mute")), "", toggleAudio),
+                page.iconButton("button",  "query_stats", "", chatInto),
+                page.iconButton("button",  "visibility" + (hideThoughts ? "" : "_off"), "", toggleThoughts),
                 page.components.audio.recordButton(),
                 (page.components.audio.recording() ? page.components.audio.recordWithVisualizer(true, function (text) { audioText += text; console.log(text); }, function (contentType, b64) { handleAudioSave(contentType, b64); }) : (chatCfg.pending ? pendBar : input)),
-                page.iconButton("button", "stop", "", doStop),
-                page.iconButton("button", "chat", "", doChat)
+                page.iconButton("button",  "stop", "", doStop),
+                page.iconButton("button",  "chat", "", doChat)
               ])
             )
           ]),
         )
       );
     }
-
+    
     async function handleAudioSave(mimeType, base64) {
-      // NEW: Generate hash-based name for recorded audio
-      const chatObjectId = inst.api.objectId();
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const messageCount = chatCfg?.history?.messages?.length || 0;
-      const name = `${chatObjectId}-recording-${messageCount}-${timestamp}`;
-
+      let name = inst.api.objectId() + " - " + (chatCfg?.history?.messages?.length || 1);
       console.log("Save:", name);
       let cdir = await page.makePath("auth.group", "data", "~/Data/Recordings");
       let sinst = am7model.newInstance("data.data");
@@ -1057,10 +963,6 @@
         document.documentElement.removeEventListener("keydown", navKey);
         page.components.audio.stopBinauralSweep();
         page.components.audio.unconfigureAudio(false);
-        // Stop and cleanup all audio when leaving chat view
-        if (page.components.audio && page.components.audio.stopAndCleanupAllAudio) {
-          page.components.audio.stopAndCleanupAllAudio();
-        }
         page.components.camera.stopCapture();
       },
 

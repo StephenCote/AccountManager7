@@ -1,516 +1,9 @@
 (function () {
-    // Audio registry for component-based management
-    const audioRegistry = {
-        players: new Map(),      // messageId -> AudioPlayer instance
-        visualizers: new Map(),  // containerId -> AudioVisualizer instance
-        activePlayer: null,      // Currently playing messageId
-        lastPlayedMessageId: null, // Track last played for view transitions
-        queue: []                // Queued players
-    };
-
-    // Legacy maps (to be gradually migrated)
     let audioMap = {};
     let audioSource = {};
     let visualizers = {};
     let recorder;
     let upNext = [];
-
-    // Utility: Hash content for message identification
-    async function hashContent(str) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(str);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        return hashHex.substring(0, 16); // Use first 16 chars for brevity
-    }
-
-    // Utility: Generate unique message ID
-    async function getMessageId(chatObjectId, role, content) {
-        if (!content || !role) {
-            console.warn("Invalid message parameters for ID generation");
-            return null;
-        }
-        const hash = await hashContent(content.trim());
-        return `${chatObjectId}-${role}-${hash}`;
-    }
-
-    // Utility: Synchronous hash for backward compatibility (less secure, but works)
-    function hashContentSync(str) {
-        let hash = 0;
-        for (let i = 0; i < str.length; i++) {
-            const char = str.charCodeAt(i);
-            hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32bit integer
-        }
-        return Math.abs(hash).toString(16).padStart(8, '0');
-    }
-
-    // Utility: Synchronous message ID generation
-    function getMessageIdSync(chatObjectId, role, content) {
-        if (!content || !role) {
-            console.warn("Invalid message parameters for ID generation");
-            return null;
-        }
-        const hash = hashContentSync(content.trim());
-        return `${chatObjectId}-${role}-${hash}`;
-    }
-
-    // AudioPlayer Component - Manages audio playback for a single message
-    const AudioPlayer = {
-        oninit: function (vnode) {
-            // Initialize component state
-            vnode.state.messageId = vnode.attrs.messageId;
-            vnode.state.profileId = vnode.attrs.profileId;
-            vnode.state.content = vnode.attrs.content;
-            vnode.state.autoPlay = vnode.attrs.autoPlay || false;
-            vnode.state.error = false;
-        },
-
-        oncreate: function (vnode) {
-            const { messageId, profileId, content } = vnode.state;
-
-            // Check if player already exists in registry
-            if (audioRegistry.players.has(messageId)) {
-                vnode.state.player = audioRegistry.players.get(messageId);
-                console.log("AudioPlayer: Reusing existing player for", messageId);
-                return;
-            }
-
-            // Create new audio source
-            console.log("AudioPlayer: Creating new player for", messageId);
-            createAudioSource(messageId, profileId, content).then(audioData => {
-                if (!audioData) {
-                    console.error("AudioPlayer: Failed to create audio source");
-                    vnode.state.error = true;
-                    m.redraw();
-                    return;
-                }
-
-                vnode.state.player = audioData;
-                audioRegistry.players.set(messageId, audioData);
-
-                if (vnode.state.autoPlay) {
-                    togglePlayAudioSource(audioData, true);
-                }
-
-                m.redraw();
-            }).catch(err => {
-                console.error("AudioPlayer: Error creating audio source:", err);
-                vnode.state.error = true;
-                m.redraw();
-            });
-        },
-
-        onupdate: function (vnode) {
-            // Check if message content changed
-            const newMessageId = vnode.attrs.messageId;
-            const newContent = vnode.attrs.content;
-
-            if (newMessageId !== vnode.state.messageId || newContent !== vnode.state.content) {
-                console.log("AudioPlayer: Content changed, recreating player");
-
-                // Stop old player if exists
-                if (vnode.state.player) {
-                    stopAudioSources(vnode.state.player);
-                }
-
-                // Update state
-                vnode.state.messageId = newMessageId;
-                vnode.state.content = newContent;
-                vnode.state.profileId = vnode.attrs.profileId;
-                vnode.state.player = null;
-                vnode.state.error = false;
-
-                // Recreate player (trigger oncreate logic)
-                if (audioRegistry.players.has(newMessageId)) {
-                    vnode.state.player = audioRegistry.players.get(newMessageId);
-                } else {
-                    createAudioSource(newMessageId, vnode.attrs.profileId, newContent).then(audioData => {
-                        if (audioData) {
-                            vnode.state.player = audioData;
-                            audioRegistry.players.set(newMessageId, audioData);
-                            m.redraw();
-                        }
-                    });
-                }
-            }
-        },
-
-        onremove: function (vnode) {
-            // Don't destroy the audio context - just suspend it for potential reuse
-            if (vnode.state.player && vnode.state.player.context) {
-                if (vnode.state.player.context.state === "running") {
-                    vnode.state.player.context.suspend();
-                    console.log("AudioPlayer: Suspended context for", vnode.state.messageId);
-                }
-            }
-            // Keep player in registry for reuse
-        },
-
-        view: function (vnode) {
-            // Minimal UI - just return empty div for now
-            // Actual controls and visualization handled by AudioVisualizer
-            return m("div", {
-                "data-player-id": vnode.state.messageId,
-                style: "display: none;"
-            });
-        }
-    };
-
-    // Helper: Get or create audio player
-    function getOrCreatePlayer(messageId, profileId, content) {
-        if (audioRegistry.players.has(messageId)) {
-            return Promise.resolve(audioRegistry.players.get(messageId));
-        }
-
-        return createAudioSource(messageId, profileId, content).then(audioData => {
-            if (audioData) {
-                audioRegistry.players.set(messageId, audioData);
-            }
-            return audioData;
-        });
-    }
-
-    // Helper: Check if player exists (synchronous)
-    function hasPlayer(messageId) {
-        return audioRegistry.players.has(messageId);
-    }
-
-    // Helper: Pause all players without destroying
-    function pauseAllPlayers(saveState = true) {
-        let pausedAny = false;
-        audioRegistry.players.forEach((player, messageId) => {
-            if (player.context && player.context.state === "running") {
-                player.context.suspend();
-                console.log("Paused player:", messageId);
-                if (saveState) {
-                    audioRegistry.lastPlayedMessageId = messageId;
-                }
-                pausedAny = true;
-            }
-        });
-        if (!saveState) {
-            audioRegistry.activePlayer = null;
-        }
-        return pausedAny;
-    }
-
-    // Helper: Resume specific player
-    function resumePlayer(messageId) {
-        if (audioRegistry.players.has(messageId)) {
-            const player = audioRegistry.players.get(messageId);
-            if (player.context && player.context.state === "suspended") {
-                player.context.resume();
-                audioRegistry.activePlayer = messageId;
-                audioRegistry.lastPlayedMessageId = messageId;
-                console.log("Resumed player:", messageId);
-                return true;
-            }
-        }
-        return false;
-    }
-
-    // Helper: Get currently playing or last played message ID
-    function getActiveOrLastMessageId() {
-        // Check if any player is currently running
-        for (let [messageId, player] of audioRegistry.players) {
-            if (player.context && player.context.state === "running") {
-                return messageId;
-            }
-        }
-        // Return last played if available
-        return audioRegistry.lastPlayedMessageId;
-    }
-
-    // Helper: Start playing a specific message
-    function startPlayingMessage(messageId, autoStop = true) {
-        if (!audioRegistry.players.has(messageId)) {
-            console.warn("Cannot play - player not found:", messageId);
-            return false;
-        }
-
-        const player = audioRegistry.players.get(messageId);
-
-        if (autoStop) {
-            // Stop all other players first
-            audioRegistry.players.forEach((p, id) => {
-                if (id !== messageId && p.context && p.context.state === "running") {
-                    p.context.suspend();
-                }
-            });
-        }
-
-        togglePlayAudioSource(player, autoStop);
-        audioRegistry.activePlayer = messageId;
-        audioRegistry.lastPlayedMessageId = messageId;
-        return true;
-    }
-
-    // AudioVisualizer Component - Renders visualization for audio
-    const AudioVisualizer = {
-        oninit: function (vnode) {
-            vnode.state.messageId = vnode.attrs.messageId;
-            vnode.state.mode = vnode.attrs.mode || 'inline'; // 'inline', 'magic8-top', 'magic8-bottom'
-            vnode.state.containerId = vnode.attrs.containerId || `visualizer-${vnode.state.messageId}`;
-            vnode.state.height = vnode.attrs.height || (vnode.state.mode === 'inline' ? 60 : undefined);
-            vnode.state.onClick = vnode.attrs.onClick;
-            vnode.state.error = false;
-        },
-
-        oncreate: function (vnode) {
-            const { messageId, mode, containerId } = vnode.state;
-
-            // Check if visualizer already exists for this container
-            if (audioRegistry.visualizers.has(containerId)) {
-                console.log("AudioVisualizer: Reusing existing visualizer for", containerId);
-                vnode.state.analyzer = audioRegistry.visualizers.get(containerId);
-                return;
-            }
-
-            // Wait for player to be ready
-            let retryCount = 0;
-            const maxRetries = 50; // 5 seconds max wait time
-
-            const checkPlayer = () => {
-                if (!audioRegistry.players.has(messageId)) {
-                    if (retryCount++ < maxRetries) {
-                        console.log("AudioVisualizer: Waiting for player", messageId);
-                        setTimeout(checkPlayer, 100);
-                    } else {
-                        console.error("AudioVisualizer: Timeout waiting for player", messageId);
-                        vnode.state.error = true;
-                        m.redraw();
-                    }
-                    return;
-                }
-
-                const player = audioRegistry.players.get(messageId);
-                if (!player) {
-                    console.warn("AudioVisualizer: Player is null", messageId);
-                    vnode.state.error = true;
-                    m.redraw();
-                    return;
-                }
-
-                // Check if source exists, if not wait a bit more
-                if (!player.source) {
-                    if (retryCount++ < maxRetries) {
-                        console.log("AudioVisualizer: Waiting for player source", messageId, retryCount);
-                        setTimeout(checkPlayer, 100);
-                    } else {
-                        console.error("AudioVisualizer: Timeout waiting for source", messageId);
-                        vnode.state.error = true;
-                        m.redraw();
-                    }
-                    return;
-                }
-
-                // Create visualizer
-                createVisualizer(vnode, player);
-            };
-
-            checkPlayer();
-        },
-
-        onupdate: function (vnode) {
-            const newMessageId = vnode.attrs.messageId;
-            const { messageId } = vnode.state;
-
-            // If message ID changed, recreate visualizer
-            if (newMessageId !== messageId) {
-                console.log("AudioVisualizer: Message changed, updating visualizer");
-
-                // Destroy old visualizer
-                if (vnode.state.analyzer) {
-                    try {
-                        vnode.state.analyzer.stop();
-                        vnode.state.analyzer.destroy();
-                        audioRegistry.visualizers.delete(vnode.state.containerId);
-                    } catch (e) {
-                        console.warn("Error destroying visualizer:", e);
-                    }
-                }
-
-                // Update state
-                vnode.state.messageId = newMessageId;
-                vnode.state.containerId = vnode.attrs.containerId || `visualizer-${newMessageId}`;
-                vnode.state.analyzer = null;
-                vnode.state.error = false;
-
-                // Recreate visualizer
-                if (audioRegistry.players.has(newMessageId)) {
-                    const player = audioRegistry.players.get(newMessageId);
-                    createVisualizer(vnode, player);
-                }
-            }
-            // If we had an error and now the player exists with a source, retry
-            else if (vnode.state.error && audioRegistry.players.has(messageId)) {
-                const player = audioRegistry.players.get(messageId);
-                if (player && player.source) {
-                    console.log("AudioVisualizer: Player now available after error, retrying", messageId);
-                    vnode.state.error = false;
-                    vnode.state.analyzer = null;
-                    createVisualizer(vnode, player);
-                }
-            }
-            // If we don't have an analyzer yet but player with source exists, create it
-            else if (!vnode.state.analyzer && !vnode.state.error && audioRegistry.players.has(messageId)) {
-                const player = audioRegistry.players.get(messageId);
-                if (player && player.source && !audioRegistry.visualizers.has(vnode.state.containerId)) {
-                    console.log("AudioVisualizer: Player available, creating visualizer", messageId);
-                    createVisualizer(vnode, player);
-                }
-            }
-        },
-
-        onremove: function (vnode) {
-            // Destroy visualizer when view changes
-            if (vnode.state.analyzer) {
-                try {
-                    vnode.state.analyzer.stop();
-                    vnode.state.analyzer.destroy();
-                    audioRegistry.visualizers.delete(vnode.state.containerId);
-                    console.log("AudioVisualizer: Destroyed visualizer for", vnode.state.containerId);
-                } catch (e) {
-                    console.warn("Error destroying visualizer:", e);
-                }
-            }
-        },
-
-        view: function (vnode) {
-            const { containerId, mode, height, error, messageId } = vnode.state;
-
-            if (error) {
-                return m("div", {
-                    id: containerId,
-                    class: "audio-visualizer-error",
-                    style: height ? `height: ${height}px` : ""
-                }, "Audio visualization unavailable");
-            }
-
-            let classNames = "audio-visualizer";
-            let styles = {};
-
-            if (mode === 'inline') {
-                classNames = "audio-container block w-full relative";
-                if (height) styles.height = `${height}px`;
-            } else if (mode === 'magic8-top') {
-                classNames = "absolute top-0 left-0 w-full h-1/2 z-10";
-            } else if (mode === 'magic8-bottom') {
-                classNames = "absolute bottom-0 left-0 w-full h-1/2 z-10 transform scale-y-[-1]";
-            }
-
-            // Check if audio is playing for inline mode
-            let isPlaying = false;
-            if (audioRegistry.players.has(messageId)) {
-                const player = audioRegistry.players.get(messageId);
-                isPlaying = player.context && player.context.state === "running";
-            }
-
-            // Build the visualizer container
-            const container = m("div", {
-                id: containerId,
-                class: classNames,
-                style: styles,
-                onclick: vnode.state.onClick || (() => {
-                    if (audioRegistry.players.has(vnode.state.messageId)) {
-                        togglePlayAudioSource(audioRegistry.players.get(vnode.state.messageId), true);
-                    }
-                })
-            });
-
-            // For inline mode, add play/pause overlay
-            if (mode === 'inline') {
-                return m("div", {
-                    class: "relative",
-                    style: styles
-                }, [
-                    container,
-                    // Play/Pause overlay
-                    m("div", {
-                        class: "absolute inset-0 flex items-center justify-center pointer-events-none z-20",
-                        style: {
-                            opacity: isPlaying ? "0" : "0.7",
-                            transition: "opacity 0.3s ease"
-                        }
-                    }, m("div", {
-                        class: "bg-gray-800/80 rounded-full p-3"
-                    }, m("span", {
-                        class: "material-symbols-outlined text-white text-4xl"
-                    }, isPlaying ? "pause" : "play_arrow")))
-                ]);
-            }
-
-            return container;
-        }
-    };
-
-    // Helper: Create visualizer for a player
-    function createVisualizer(vnode, player) {
-        const { containerId, mode, height } = vnode.state;
-        const element = document.getElementById(containerId);
-
-        if (!element) {
-            console.warn("AudioVisualizer: Container element not found", containerId);
-            setTimeout(() => createVisualizer(vnode, player), 100);
-            return;
-        }
-
-        const props = {
-            overlay: true,
-            bgAlpha: 0,
-            gradient: 'prism',
-            showBgColor: true,
-            showSource: false,
-            showScaleY: false,
-            showScaleX: false
-        };
-
-        if (mode === 'inline') {
-            props.height = height || 60;
-        } else if (mode.startsWith('magic8-')) {
-            props.height = element.offsetHeight;
-        }
-
-        if (player.source) {
-            props.source = player.source;
-        }
-
-        try {
-            const analyzer = new AudioMotionAnalyzer(element, props);
-            vnode.state.analyzer = analyzer;
-            audioRegistry.visualizers.set(containerId, analyzer);
-            console.log("AudioVisualizer: Created visualizer for", containerId);
-            m.redraw();
-        } catch (e) {
-            console.error("AudioVisualizer: Error creating analyzer:", e);
-            vnode.state.error = true;
-            m.redraw();
-        }
-    }
-
-    // Helper: Get or create visualizer
-    function getOrCreateVisualizer(containerId, messageId, mode, height) {
-        if (audioRegistry.visualizers.has(containerId)) {
-            return audioRegistry.visualizers.get(containerId);
-        }
-
-        // Visualizer will be created via component lifecycle
-        return null;
-    }
-
-    // Helper: Connect visualizer to player
-    function connectVisualizerToPlayer(visualizer, player) {
-        if (visualizer && player && player.source) {
-            try {
-                visualizer.connectInput(player.source);
-                console.log("Connected visualizer to player");
-            } catch (e) {
-                console.warn("Error connecting visualizer to player:", e);
-            }
-        }
-    }
 
     function newMagic8() {
         return {
@@ -573,107 +66,13 @@
         }
     }
 
-    // NEW: Component-based Magic8 configuration
     function configureMagic8(inst, chatCfg, audioMagic8, prune) {
         if (!audioMagic8) {
             return;
         }
 
-        let aMsg = chatCfg?.history?.messages;
-        if (!aMsg || !aMsg.length) {
-            return;
-        }
-
-        // Get last 2 messages for Magic8 display
-        let messagesToProcess = aMsg.slice(-2);
-        let currentContent = messagesToProcess.map(m => m?.content || "").join("|");
-
-        // Check if content changed
-        let contentChanged = magic8.lastContent !== currentContent;
-
-        // Store message IDs and metadata for Magic8 view
-        magic8.messages = [];
-        const chatObjectId = inst.api.objectId();
-
-        // Get profile IDs
-        let sysProfileId = chatCfg?.system?.profile?.objectId;
-        let usrProfileId = chatCfg?.user?.profile?.objectId;
-
-        let mostRecentMessageId = null;
-
-        messagesToProcess.forEach((msg, i) => {
-            if (!msg) return;
-
-            let profId = (msg.role === "assistant") ? sysProfileId : usrProfileId;
-            let cnt = prune ? prune(msg.content) : msg.content;
-
-            if (cnt && cnt.trim().length > 0) {
-                // Generate hash-based message ID
-                const messageId = getMessageIdSync(chatObjectId, msg.role, cnt);
-
-                magic8.messages.push({
-                    messageId,
-                    role: msg.role,
-                    content: cnt,
-                    profileId: profId,
-                    autoPlay: false // Don't auto-play, we'll handle it manually
-                });
-
-                if (i === messagesToProcess.length - 1) {
-                    mostRecentMessageId = messageId;
-                }
-
-                // Create audio player in registry if doesn't exist
-                if (!audioRegistry.players.has(messageId)) {
-                    createAudioSource(messageId, profId, cnt).then((aud) => {
-                        if (aud) {
-                            audioRegistry.players.set(messageId, aud);
-
-                            // Auto-play the most recent message if:
-                            // 1. Content changed (new message)
-                            // 2. This is the most recent message
-                            // 3. We're in Magic8 mode
-                            if (contentChanged && messageId === mostRecentMessageId && audioMagic8) {
-                                console.log("Magic8: Auto-playing new message", messageId);
-                                setTimeout(() => {
-                                    startPlayingMessage(messageId, true);
-                                }, 200);
-                            }
-                            // Resume playing if we were playing this message before
-                            else if (!contentChanged && messageId === audioRegistry.lastPlayedMessageId) {
-                                console.log("Magic8: Resuming playback", messageId);
-                                setTimeout(() => {
-                                    resumePlayer(messageId);
-                                }, 200);
-                            }
-
-                            m.redraw(); // Trigger visualizer creation
-                        }
-                    }).catch(err => {
-                        console.error("Error creating audio source for Magic8:", err);
-                    });
-                }
-                // Player already exists - check if we should resume it
-                else if (!contentChanged && messageId === audioRegistry.lastPlayedMessageId) {
-                    console.log("Magic8: Resuming existing player", messageId);
-                    setTimeout(() => {
-                        resumePlayer(messageId);
-                    }, 200);
-                }
-            }
-        });
-
-        magic8.lastContent = currentContent;
-        magic8.configured = true;
-    }
-
-    // LEGACY: Old configureMagic8 (kept for backward compatibility, will be removed)
-    function configureMagic8Legacy(inst, chatCfg, audioMagic8, prune) {
-        if (!audioMagic8) {
-            return;
-        }
-
         if (magic8.configuring) {
+            // console.warn("Magic8 is already configuring, skipping...");
             return;
         }
 
@@ -685,10 +84,13 @@
         let messagesToProcess = aMsg.slice(-2);
         let currentContent = messagesToProcess.map(m => m?.content || "").join("|");
 
+        // If already configured with the same content AND visualizers exist, don't reconfigure
         if (magic8.lastContent === currentContent && magic8.audioMotionTop && magic8.audioMotionBottom) {
+            /// console.log("Magic8 already configured with same content, skipping...");
             return;
         }
 
+        // Check if canvases exist before proceeding
         let canvasTop = document.getElementById("waveform-top");
         let canvasBottom = document.getElementById("waveform-bottom");
         if (!canvasTop || !canvasBottom) {
@@ -697,17 +99,23 @@
 
         let contentChanged = magic8.lastContent !== currentContent;
 
+        // Only clear and reconfigure if content has actually changed
         if (contentChanged) {
+            //console.log("Magic8 content changed, reconfiguring...");
             clearMagic8(false);
             magic8.lastContent = currentContent;
         } else if (!magic8.audioMotionTop || !magic8.audioMotionBottom) {
+            // Only reconfigure visualizers if they don't exist but content is the same
+            //console.log("Magic8 visualizers missing, recreating...");
         } else {
+            // Everything is already configured properly
             return;
         }
 
         magic8.configuring = true;
         let aP = [];
 
+        // Get profile IDs
         let sysProfileId = chatCfg?.system?.profile?.objectId;
         let usrProfileId = chatCfg?.user?.profile?.objectId;
         if (!sysProfileId || !usrProfileId) {
@@ -716,9 +124,11 @@
             return;
         }
 
+        // Only create new audio sources if content changed or they don't exist
         if (contentChanged || !magic8.audio1 || !magic8.audio2) {
             messagesToProcess.forEach((m, i) => {
                 if (!m) return;
+                // console.log("Processing Magic8 message:", i, m.role, m.content?.substring(0, 30) + "...");
                 let actualIndex = aMsg.length - 1 + i;
                 let name = inst.api.objectId() + " - " + actualIndex;
                 let profId = (m.role == "assistant") ? sysProfileId : usrProfileId;
@@ -728,7 +138,7 @@
                     aP.push(createAudioSource(name, profId, cnt).then((aud) => {
                         if (!aud) return;
 
-                        aud.name = name;
+                        aud.name = name; // Store name for cleanup
 
                         if (m.role == "assistant") {
                             console.log("Configure Magic8 audio 1 (assistant)");
@@ -749,6 +159,7 @@
         }
 
         Promise.all(aP).then(() => {
+            // Ensure we still have valid canvases after async operations
             canvasTop = document.getElementById("waveform-top");
             canvasBottom = document.getElementById("waveform-bottom");
             if (!canvasTop || !canvasBottom) {
@@ -756,6 +167,7 @@
                 return;
             }
 
+            // Only create new visualizers if they don't exist
             if (!magic8.audioMotionTop || !magic8.audioMotionBottom) {
                 let props = {
                     overlay: true,
@@ -773,6 +185,7 @@
                 magic8.audioMotionTop = new AudioMotionAnalyzer(canvasTop, props1);
                 magic8.audioMotionBottom = new AudioMotionAnalyzer(canvasBottom, props2);
 
+                // Set up click handlers
                 canvasTop.onclick = function (e) {
                     togglePlayMagic8(magic8.audio1, magic8.audio2);
                 };
@@ -781,16 +194,20 @@
                 };
             }
 
+            // Clear any existing upNext queue to prevent old audio from auto-starting
             upNext = [];
 
+            // Auto-start the most recent audio when content changes
             if (contentChanged && magic8.lastAudio && magic8["audio" + magic8.lastAudio]) {
                 let currentAudio = magic8["audio" + magic8.lastAudio];
+                // console.log("Starting Magic8 audio after content change:", magic8.lastAudio);
                 setTimeout(() => {
                     togglePlayAudioSource(currentAudio, true);
                 }, 100);
             }
 
             magic8.configuring = false;
+            // console.log("Magic8 configuration complete");
         }).catch(err => {
             console.error("Error configuring Magic8:", err);
             magic8.configuring = false;
@@ -801,7 +218,7 @@
     let bgImg = true;
     let images = [];
     /// At the moment, this is just a group id 
-    let imgBase = [132, 1546, 1545, 1547];
+    let imgBase = [132,1546,1545,1547]; 
     // let imgBase = [3261];
     let imgUrl;
     const imgCfg = {
@@ -885,7 +302,7 @@
                     src: imgCfg.imageA_src,
                     class: `${imageClasses} ${imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-50 dark:opacity-50 blur-0'}`,
                     onload: !imgCfg.isA_onTop ? imageTransition : null,
-                    onerror: () => { page.toast("error", "Failed to load image: " + imgCfg.imageA_src); imageTransition(); }
+                    onerror: ()=> {page.toast("error", "Failed to load image: " + imgCfg.imageA_src); imageTransition();}
                 }),
                 // Image B
                 m("img", {
@@ -895,7 +312,7 @@
                     src: imgCfg.imageB_src,
                     class: `${imageClasses} ${!imgCfg.isA_onTop && imgCfg.isTransitioning ? 'opacity-0 blur-md' : 'opacity-50 dark:opacity-50 blur-0'}`,
                     onload: imgCfg.isA_onTop ? imageTransition : null,
-                    onerror: () => { page.toast("error", "Failed to load image: " + imgCfg.imageB_src); imageTransition(); }
+                    onerror: ()=> {page.toast("error", "Failed to load image: " + imgCfg.imageB_src); imageTransition();}
                 })
             ]);
 
@@ -940,34 +357,16 @@
                 }
             }),
 
-            // NEW: Component-based visualizers
-            magic8.messages && magic8.messages.length > 0 && magic8.messages.map((msg, idx) => {
-                const mode = msg.role === "assistant" ? "magic8-top" : "magic8-bottom";
-                const containerId = `magic8-${msg.role}-${idx}`;
-
-                return m(AudioVisualizer, {
-                    key: msg.messageId,
-                    messageId: msg.messageId,
-                    containerId: containerId,
-                    mode: mode,
-                    onClick: () => {
-                        if (audioRegistry.players.has(msg.messageId)) {
-                            togglePlayAudioSource(audioRegistry.players.get(msg.messageId), true);
-                        }
-                    }
-                });
-            }),
-
-            // LEGACY: Top waveform canvas (for backward compatibility)
-            !magic8.messages && m("div", {
+            // Top waveform canvas
+            m("div", {
                 id: "waveform-top",
                 class: `
         absolute top-0 left-0 w-full h-1/2 z-10
       `
             }),
 
-            // LEGACY: Bottom waveform canvas (inverted)
-            !magic8.messages && m("div", {
+            // Bottom waveform canvas (inverted)
+            m("div", {
                 id: "waveform-bottom",
                 class: `
         absolute bottom-0 left-0 w-full h-1/2 z-10
@@ -1600,25 +999,12 @@
     }
 
     function stopAudioSources(aud) {
-        // Stop legacy audio sources
         let running = getRunningAudioSources();
 
         running.forEach(r => {
             console.log("Stopping other audio sources", r.id, aud?.id, (r.id != aud?.id), r);
             if (!aud || r.id != aud.id) {
                 togglePlayAudioSource(r, false, true);
-            }
-        });
-
-        // ALSO stop component-based players in registry
-        audioRegistry.players.forEach((player, messageId) => {
-            if (player.context && player.context.state === "running") {
-                // Don't stop the audio we're about to play
-                if (!aud || player !== aud) {
-                    console.log("Stopping registry player:", messageId);
-                    player.context.suspend();
-                    player.started = false;
-                }
             }
         });
     }
@@ -1655,97 +1041,51 @@
         if (autoStop) {
             stopAudioSources(aud);
         }
-        if (noStart) {
+        if(noStart){
             return;
         }
-
-        // Check if already started
+        // console.warn("Starting audio source", aud);
         if (!aud.started) {
-            // First time playing - create and start source
-            if (!aud.context) {
+            if(aud.context){
+                if (aud.context.state === "suspended") {
+                    aud.context.resume().then(() => {
+                        try { aud.source.start(0); } catch { }
+                        aud.started = true;
+                    });
+                } else if (aud.context.state === "running") {
+                    aud.source.start(0);
+                    aud.started = true;
+                } else {
+                    console.warn("Handle state " + aud.context.state, audio.context);
+                }
+            }
+            else{
                 console.warn("Audio context not available");
-                return;
             }
 
             // Re-create the source node for every playback to avoid DOMException
             aud.source = aud.context.createBufferSource();
             aud.source.buffer = aud.buffer;
             aud.source.connect(aud.context.destination);
+            aud.source.start(0);
+            aud.started = true;
 
-            // Reconnect any visualizers that are using this audio source
-            // Find visualizers connected to this player
-            audioRegistry.visualizers.forEach((analyzer, containerId) => {
-                // Check if this visualizer is for the same messageId
-                // We need to find the messageId from the player
-                let matchingMessageId = null;
-                audioRegistry.players.forEach((player, msgId) => {
-                    if (player === aud) {
-                        matchingMessageId = msgId;
-                    }
-                });
-
-                if (matchingMessageId && containerId.includes(matchingMessageId)) {
-                    console.log("Reconnecting visualizer", containerId, "to new source");
-                    try {
-                        analyzer.disconnectInput();
-                        analyzer.connectInput(aud.source);
-                    } catch (e) {
-                        console.warn("Error reconnecting visualizer:", e);
-                    }
-                }
-            });
-
-            if (aud.context.state === "suspended") {
-                aud.context.resume().then(() => {
-                    try {
-                        aud.source.start(0);
-                        aud.started = true;
-                        // Trigger redraw if m is available
-                        if (typeof m !== 'undefined' && m.redraw) {
-                            m.redraw();
-                        }
-                    } catch (e) {
-                        console.error("Error starting audio:", e);
-                    }
-                });
-            } else {
-                aud.source.start(0);
-                aud.started = true;
-                // Trigger redraw if m is available
-                if (typeof m !== 'undefined' && m.redraw) {
-                    m.redraw();
-                }
-            }
-
-            aud.source.onended = function () {
-                aud.started = false;
-                // Trigger redraw if m is available
-                if (typeof m !== 'undefined' && m.redraw) {
-                    m.redraw();
-                }
-                if (upNext.length > 0) {
-                    togglePlayAudioSource(upNext.shift());
-                }
-            };
         } else if (aud.context.state == "suspended") {
-            // Resume paused audio
-            console.log("Resume audio");
+            console.log("Resume");
             aud.context.resume();
-            // Trigger redraw if m is available
-            if (typeof m !== 'undefined' && m.redraw) {
-                m.redraw();
-            }
-        } else if (aud.context.state == "running") {
-            // Pause playing audio
-            console.log("Suspend audio");
+        } else if (aud.context.state != "closed") {
+            console.log("Suspend");
             aud.context.suspend();
-            // Trigger redraw if m is available
-            if (typeof m !== 'undefined' && m.redraw) {
-                m.redraw();
-            }
         } else {
             console.error("Handle state " + aud.context.state);
         }
+
+        aud.source.onended = function () {
+            aud.started = false;
+            if (upNext.length > 0) {
+                togglePlayAudioSource(upNext.shift());
+            }
+        };
     }
 
     function createAudioVisualizer(name, idx, profileId, autoPlay, content) {
@@ -1824,11 +1164,8 @@
             if (!audioSource[name]) {
                 let audioContext = new AudioContext();
                 let audioBuffer = await audioContext.decodeAudioData(base64ToArrayBuffer(o.dataBytesStore));
-                // Create initial source node for visualizers
                 let sourceNode = audioContext.createBufferSource();
                 sourceNode.buffer = audioBuffer;
-                sourceNode.connect(audioContext.destination);
-
                 audioSource[name] = {
                     id: page.uid(),
                     context: audioContext,
@@ -1870,7 +1207,7 @@
                 if (ua.includes("firefox")) {
                     page.toast("info", "To enable speech-to-text, go to about:config and set media.webspeech.recognition.enable to true.", 10000);
                 } else if (navigator.brave) {
-                    page.toast("info", "To enable speech-to-text in Brave, go to brave://settings/shields and set 'Fingerprinting blocking' to 'Standard' or 'Allow all'.", 10000);
+                     page.toast("info", "To enable speech-to-text in Brave, go to brave://settings/shields and set 'Fingerprinting blocking' to 'Standard' or 'Allow all'.", 10000);
                 }
 
                 // If not supported, return an empty element so nothing is rendered.
@@ -1892,7 +1229,7 @@
                 }
 
                 let baseText = ctl(null);
-                if (baseText && baseText.length > 0) baseText += " ";
+                if(baseText && baseText.length > 0) baseText += " ";
 
                 recording = true;
                 finalTranscript = '';
@@ -1924,7 +1261,7 @@
     let recognition;
 
 
-
+    
     let toneCtx;
     let leftOsc, rightOsc;
     let leftGain, rightGain;
@@ -1937,7 +1274,7 @@
     let sweepInterval;
 
     function startBinauralSweep() {
-        if (!bgAudio) {
+        if(!bgAudio){
             return;
         }
         toneCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1999,7 +1336,7 @@
     }
 
     function stopBinauralSweep() {
-        if (!bgAudio) {
+        if(!bgAudio){
             return;
         }
 
@@ -2045,7 +1382,7 @@
         rightOsc.frequency.linearRampToValueAtTime(baseFreq + minBeat, now + halfCycle);
         rightOsc.frequency.linearRampToValueAtTime(baseFreq + maxBeat, now + 2 * halfCycle);
     }
-
+    
     /*
     let toneCtx;
     let leftOsc, rightOsc;
@@ -2093,90 +1430,7 @@
       if (toneCtx) toneCtx.close();
     }
     */
-
-    /**
-     * Stop and cleanup all audio when chat conversation changes or is deleted
-     */
-    function stopAndCleanupAllAudio() {
-        console.log("Stopping and cleaning up all audio");
-
-        // Stop all component-based players in registry
-        audioRegistry.players.forEach((player) => {
-            if (player.context) {
-                if (player.context.state === "running") {
-                    player.context.suspend();
-                }
-                player.started = false;
-            }
-        });
-
-        // Stop all legacy audio sources
-        Object.values(audioSource).forEach(aud => {
-            if (aud.context && aud.context.state === "running") {
-                aud.context.suspend();
-                aud.started = false;
-            }
-        });
-
-        // Clear state tracking
-        audioRegistry.activePlayer = null;
-        audioRegistry.lastPlayedMessageId = null;
-        audioRegistry.queue = [];
-
-        // Destroy all visualizers
-        audioRegistry.visualizers.forEach((analyzer) => {
-            try {
-                analyzer.stop();
-                analyzer.destroy();
-            } catch (e) {
-                console.warn("Error destroying visualizer:", e);
-            }
-        });
-        audioRegistry.visualizers.clear();
-
-        // Clear legacy visualizers
-        Object.values(visualizers).forEach(viz => {
-            if (viz && typeof viz === 'object' && viz.destroy) {
-                try {
-                    viz.destroy();
-                } catch (e) {
-                    console.warn("Error destroying legacy visualizer:", e);
-                }
-            }
-        });
-
-        // Clear magic8 state
-        if (magic8 && magic8.audio1) {
-            if (magic8.audio1.context && magic8.audio1.context.state === "running") {
-                magic8.audio1.context.suspend();
-            }
-        }
-        if (magic8 && magic8.audio2) {
-            if (magic8.audio2.context && magic8.audio2.context.state === "running") {
-                magic8.audio2.context.suspend();
-            }
-        }
-    }
-
     let audio = {
-        // New component-based API
-        AudioPlayer,
-        AudioVisualizer,
-        getOrCreatePlayer,
-        hasPlayer,
-        getOrCreateVisualizer,
-        connectVisualizerToPlayer,
-        pauseAllPlayers,
-        resumePlayer,
-        getActiveOrLastMessageId,
-        startPlayingMessage,
-        getMessageIdSync,
-        getMessageId,
-        hashContentSync,
-        hashContent,
-        stopAndCleanupAllAudio,
-
-        // Legacy API
         configureAudio,
         unconfigureAudio,
         togglePlayAudio,
