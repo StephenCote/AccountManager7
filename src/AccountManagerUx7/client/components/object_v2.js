@@ -40,7 +40,8 @@
             );
         }
 
-        let content = renderer(inst, "objectId");
+        // Pass attrs to renderer so it can access dynamic values like maxMode
+        let content = renderer(inst, "objectId", attrs);
 
         return m("div", { class: cls }, content);
     }

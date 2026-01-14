@@ -3,10 +3,11 @@
     /// These extend am7view to handle special formats
 
     /// Portrait format renderer (for profile.portrait)
-    function renderPortraitField(inst, fieldName) {
+    function renderPortraitField(inst, fieldName, attrs) {
         let object = inst.entity;
-        let maxMode = inst.api.maxMode ? inst.api.maxMode() : false;
-        let active = inst.api.active ? inst.api.active() : true;
+        // Get maxMode and active from attrs if available, otherwise from inst.api
+        let maxMode = (attrs && attrs.maxMode !== undefined) ? attrs.maxMode : (inst.api.maxMode ? inst.api.maxMode() : false);
+        let active = (attrs && attrs.active !== undefined) ? attrs.active : (inst.api.active ? inst.api.active() : true);
 
         if (!active) return m("span", "");
 
@@ -29,10 +30,11 @@
     }
 
     /// Image format renderer
-    function renderImageField(inst, fieldName) {
+    function renderImageField(inst, fieldName, attrs) {
         let object = inst.entity;
-        let maxMode = inst.api.maxMode ? inst.api.maxMode() : false;
-        let active = inst.api.active ? inst.api.active() : true;
+        // Get maxMode and active from attrs if available, otherwise from inst.api
+        let maxMode = (attrs && attrs.maxMode !== undefined) ? attrs.maxMode : (inst.api.maxMode ? inst.api.maxMode() : false);
+        let active = (attrs && attrs.active !== undefined) ? attrs.active : (inst.api.active ? inst.api.active() : true);
 
         if (!active) return m("span", "");
 
@@ -47,10 +49,11 @@
     }
 
     /// Video format renderer
-    function renderVideoField(inst, fieldName) {
+    function renderVideoField(inst, fieldName, attrs) {
         let object = inst.entity;
-        let maxMode = inst.api.maxMode ? inst.api.maxMode() : false;
-        let active = inst.api.active ? inst.api.active() : true;
+        // Get maxMode and active from attrs if available, otherwise from inst.api
+        let maxMode = (attrs && attrs.maxMode !== undefined) ? attrs.maxMode : (inst.api.maxMode ? inst.api.maxMode() : false);
+        let active = (attrs && attrs.active !== undefined) ? attrs.active : (inst.api.active ? inst.api.active() : true);
 
         if (!active) return m("span", "");
 
@@ -69,10 +72,11 @@
     }
 
     /// Audio format renderer
-    function renderAudioField(inst, fieldName) {
+    function renderAudioField(inst, fieldName, attrs) {
         let object = inst.entity;
-        let maxMode = inst.api.maxMode ? inst.api.maxMode() : false;
-        let active = inst.api.active ? inst.api.active() : true;
+        // Get maxMode and active from attrs if available, otherwise from inst.api
+        let maxMode = (attrs && attrs.maxMode !== undefined) ? attrs.maxMode : (inst.api.maxMode ? inst.api.maxMode() : false);
+        let active = (attrs && attrs.active !== undefined) ? attrs.active : (inst.api.active ? inst.api.active() : true);
 
         if (!active) return m("span", "");
 
@@ -94,9 +98,9 @@
     }
 
     /// Text content renderer
-    function renderTextField(inst, fieldName) {
+    function renderTextField(inst, fieldName, attrs) {
         let object = inst.entity;
-        let active = inst.api.active ? inst.api.active() : true;
+        let active = (attrs && attrs.active !== undefined) ? attrs.active : (inst.api.active ? inst.api.active() : true);
 
         if (!active) return m("span", "");
 
@@ -138,9 +142,9 @@
     }
 
     /// PDF viewer renderer
-    function renderPDFField(inst, fieldName) {
+    function renderPDFField(inst, fieldName, attrs) {
         let object = inst.entity;
-        let active = inst.api.active ? inst.api.active() : true;
+        let active = (attrs && attrs.active !== undefined) ? attrs.active : (inst.api.active ? inst.api.active() : true);
 
         if (!active) return m("span", "");
 
@@ -190,7 +194,7 @@
     }
 
     /// Markdown/Note renderer
-    function renderMarkdownField(inst, fieldName) {
+    function renderMarkdownField(inst, fieldName, attrs) {
         let value = inst.api[fieldName]();
 
         return m("div", { class: "carousel-article-outer" },
@@ -201,9 +205,9 @@
     }
 
     /// Message content renderer
-    function renderMessageContentField(inst, fieldName) {
+    function renderMessageContentField(inst, fieldName, attrs) {
         let object = inst.entity;
-        let active = inst.api.active ? inst.api.active() : true;
+        let active = (attrs && attrs.active !== undefined) ? attrs.active : (inst.api.active ? inst.api.active() : true);
 
         if (!active) return m("span", "");
 
