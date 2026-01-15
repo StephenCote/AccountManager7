@@ -649,263 +649,59 @@
                 defVal = getObjectProperty(name, field);
             }
 
-            let dnd = page.components.dnd.dropProps(inst);
             let show = am7view.showField(inst, fieldView);
             let annot = "";
             if(inst.validationErrors[name]){
                 annot = am7view.errorLabel(inst.validationErrors[name]);
             }
             if(!show) fieldClass += " hidden";
+
+            /// Build context for field renderers
+            let rendererCtx = {
+                inst: inst,
+                entity: entity,
+                useEntity: useEntity,
+                field: field,
+                fieldView: fieldView,
+                name: name,
+                useName: useName,
+                defVal: defVal,
+                fieldClass: fieldClass,
+                disabled: disabled,
+                fHandler: fHandler,
+                show: show,
+                objectPage: objectPage,
+                /// Callbacks for complex renderers
+                updateChange: updateChange,
+                doFieldPicker: doFieldPicker,
+                doFieldOpen: doFieldOpen,
+                doFieldClear: doFieldClear,
+                printJSONToWindow: printJSONToWindow,
+                getValuesForTableField: getValuesForTableField,
+                getValuesForFormField: getValuesForFormField,
+                /// Special state for certain renderers
+                pdfViewer: pdfViewer,
+                streamSeg: streamSeg,
+                loadStream: function(streamId) {
+                    page.stream(streamId).then((o) => {
+                        streamSeg = o;
+                        m.redraw();
+                    });
+                }
+            };
+
+            /// Try to use the new formFieldRenderers component
+            if(page.components.formFieldRenderers && page.components.formFieldRenderers.has(format)){
+                let rendered = page.components.formFieldRenderers.render(format, rendererCtx);
+                if(rendered){
+                    view.push(...rendered);
+                    view.push(annot);
+                    return view;
+                }
+            }
+
+            /// Fallback to original switch for any unhandled formats
             switch(format){
-                case "blank":
-                    view.push(m("span", {class: "blank"}));
-                    break;
-                case "button":
-                    fieldClass += " button-field-full";
-                    let bfHandler = function(){if(field.command) field.command(objectPage, inst, name);};
-                    view.push(
-                        m("button[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {onclick : bfHandler, class: fieldClass}, (fieldView.icon ? m("span",{class: "material-symbols-outlined material-icons-24"}, fieldView.icon) : ""), (field.label || ""))
-                    );
-                    break;
-                case "progress":
-                    fieldClass += " progress-field-full";
-                    console.log("Progress: " + defVal);
-                    view.push(
-                        m("progress", {max: field.maxValue || 100, min: field.minValue || 0, class: fieldClass, name : useName, value: defVal, disabled: disabled})
-                    )
-                    break;
-                case "select":
-                    let vals = am7view.defaultValuesForField(field);
-                    fieldClass += " select-field-full";
-                    view.push(m("select", {oninput: fHandler, class: fieldClass, name : useName}, vals.map((v)=>{
-                        let selected;
-                        if(defVal && (defVal === v || (typeof defVal == "string" && defVal.toLowerCase() === v.toLowerCase()))) selected = true;
-                        return m("option[" + (selected ? "selected = 'true'," : "") + "value = '" + v.toLowerCase() + "']", v);
-                    })));
-                    break;
-                case "range":
-                    fieldClass += " range-field-full";
-                    let min = 0;
-                    let max = 100;
-
-                    if(typeof field.minValue == "number" && typeof field.maxValue == "number"){
-                        if(field.type == "double" && field.maxValue >= 1){
-                            max = field.maxValue * 100;
-                            if(min != 0){
-                                min = field.minValue * 100;
-                            }
-                        }
-                        else{
-                            min = field.minValue;
-                            max = field.maxValue;
-                        }
-                    }
-
-                    view.push(m("div", {class: 'relative mb-5'}, [
-                        m("label", {class: "sr-only"},"Range"),
-                        m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName, min, max}),
-                        m("span", {class: "text-sm text-gray-500 absolute start-0 -bottom-6"}, min),
-                        m("span", {class: "text-sm text-gray-500 absolute start-1/2 -translate-x-1/2 -bottom-6"}, defVal),
-                        m("span", {class: "text-sm text-gray-500 absolute end-0 -bottom-6"}, max)
-                    ]));
-
-                    break;
-                case "color":
-                    fieldClass += " color-field"
-                    view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, value: defVal, type: format, class : fieldClass, name : useName}));
-                    break;
-                case "datetime-local":
-                case "text":
-                    fieldClass += " text-field-full";
-                    let propst = {oninput: fHandler, value: defVal, type: format, class : fieldClass + " pr-8", name : useName};
-                    let textContainerClass = "relative w-full";
-                    if(entity && !entity.objectId && fieldView.dragAndDrop){
-                        propst.class += " border-dotted";
-                        propst = Object.assign(propst, dnd);
-                        propst.placeholder = "{ Type Text or Drop File Here }";
-                    }
-
-                    view.push(m("div", {class: textContainerClass},
-                        m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", propst),
-                        m("div", {class: "absolute inset-y-0 right-0 flex items-center"},
-                            page.components.audio.recordField(function(text) {
-                                if (text !== null) inst.api[name](text);
-                                else return inst.api[name]() || "";
-                            })
-                        )
-                    ));
-                    break;
-                case "checkbox":
-                    fieldClass += " check-field";
-                    view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {oninput: fHandler, checked: defVal, type: format, class : fieldClass, name : useName}));
-                    break;
-                case "print-alert":
-                    if(!defVal && entity) defVal = entity[useName];
-                    view.push(m("span", {"class": "text-content-alert"}, defVal));
-                    break;
-                case "print":
-                    if(!defVal && entity) defVal = entity[useName];
-                    view.push(m("span", {"class": fieldClass + " inline-block text-field-full text-content"}, defVal));
-                    break;
-                case "textlist":
-                case "textarea":
-                    fieldClass += " textarea-field-full w-full";
-                    let textareaContainerClass = "relative w-full";
-                    let props = {onchange: fHandler, class : fieldClass + " pr-8", name : useName};
-                    if(entity && !entity.objectId && fieldView.dragAndDrop){
-                        props.class += " border-dotted";
-                        props = Object.assign(props, dnd);
-                        props.placeholder = "{ Type Text or Drop File Here }";
-                    }
-                    view.push(m("div", {class: textareaContainerClass},
-                        m("textarea", props, defVal),
-                        m("div", {class: "absolute top-2 right-0 flex items-start"},
-                            page.components.audio.recordField(function(text) {
-                                if (text !== null) inst.api[name](text);
-                                else return inst.api[name]() || "";
-                            })
-                        )
-                    ));
-                    break;
-                case "pdf":
-                    if(pdfViewer){
-                        view.push(pdfViewer.container());
-                    }
-                    else{
-                        view.push("Missing PDF viewer");
-                    }
-                    break;
-                case "audio":
-                    if(defVal && typeof defVal == 'object'){
-                        let apath = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + defVal.groupPath + "/" + defVal.name;
-                        let amt = defVal.contentType;
-                        if (amt.match(/mpeg3$/)) amt = "audio/mpeg";
-                        view.push(m("audio", { class: "", id: useName, preload: "auto", controls: "controls", autoplay: "autoplay" },
-                            m("source", { src: apath, type: amt })
-                        ));
-                    }
-                    break;
-                case "image":
-                    fieldClass += " image-field";
-                    let dataUrl;
-                    let clickF;
-                    if(useEntity[am7model.jsonModelKey].match(/^imageView$/gi)){
-                        let ui = useEntity.image;
-                        fieldClass = "carousel-item-img";
-                        dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + ui.groupPath + "/" + ui.name + "/512x512";
-                    }
-
-                    else if(useEntity[am7model.jsonModelKey].match(/^data\.data$/gi)){
-                        if(useEntity.stream){
-                            if(streamSeg){
-                                dataUrl = "data:" + useEntity.contentType + ";base64," + streamSeg.stream;    
-                            }
-                            else{
-                                page.stream(useEntity.stream).then((o)=>{
-                                    streamSeg = o;
-                                    m.redraw();
-                                });
-                            }
-                        }
-                        else{
-                            dataUrl = "data:" + useEntity.contentType + ";base64," + useEntity.dataBytesStore;
-                        }
-                    }
-                    else if(useEntity.profile && useEntity.profile.portrait && useEntity.profile.portrait.contentType){
-                        let pp = useEntity.profile.portrait;
-                        clickF = function(){ page.imageView(pp); };
-                        dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
-                    }
-                    else if(useEntity.portrait && useEntity.portrait.contentType){
-                        let pp = useEntity.portrait;
-                        clickF = function(){ page.imageView(pp); };
-                        dataUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/96x96";
-                    }
-                    view.push(m("img", {class: fieldClass, name : useName, onclick: clickF, src: dataUrl}));
-                    break;
-                case "object-link":
-                    let uri = "about:blank";
-                    let label = "";
-                    if(useEntity && useEntity.objectId){
-                        if(useEntity[am7model.jsonModelKey].match(/^data\.data$/gi)){
-                            uri = g_application_path + "/media/" + am7client.dotPath(am7client.currentOrganization) + "/" + useEntity[am7model.jsonModelKey] + useEntity.groupPath + "/" + useEntity.name;
-                        }
-                        else{
-                            uri = g_application_path + "/rest/model/" + useEntity[am7model.jsonModelKey] + "/" + useEntity.objectId;
-                        }
-                        label = useEntity.name;
-                    }
-                    view.push(m("a",{target: "new", href: uri, class: "text-blue-600"}, [m("span",{class : "material-icons-outlined mr-2"}, "link"), label]));
-                    view.push(m("span", {onclick: printJSONToWindow, class : "cursor-pointer material-symbols-outlined ml-2"}, "file_json"));
-                    break;
-                case 'table':
-                    fieldClass += " table-field";
-                    let rows = getValuesForTableField(useName, fieldView, field, fieldClass, !show);
-                    view.push(rows);
-                    break;
-                case 'form':
-                    fieldClass = "table-field";
-                    let rows2 = getValuesForFormField(useName, fieldView, field, fieldClass, !show);
-                    view.push(rows2);
-                    break;
-                case 'picker':
-                    fieldClass += " text-field-full";
-                    let valPick = (page.components.picker.validateFormat(inst, field, format, useName) === "picker");
-                    if(valPick && useEntity && field.pickerProperty){
-                        let findVal = useEntity[field.pickerProperty.entity];
-                        let ctx = page.context();
-                        if(findVal){
-                            if(typeof findVal === 'object'){
-                                defVal = findVal.name;
-                            }
-                            else if(!ctx.contextObjects[findVal]){
-                                let type = field.pickerType;
-                                if(!type || type === 'self') type = useEntity[am7model.jsonModelKey];
-
-                                if(type.match(/^\./)){
-                                    type = useEntity[field.pickerType.slice(1)];
-                                }
-                                page.openObject(type, findVal).then((a)=>{
-                                    m.redraw();
-                                });
-                            }
-                            else {
-                                defVal = ctx.contextObjects[findVal].name;
-                            }
-                        }
-                    }
-                    else if(useEntity && field.pickerProperty){
-                        defVal = useEntity[field.pickerProperty.entity];
-                    }
-
-                    let pickerName = useName + '-picker';
-                    let mid = pickerName + "-menu";
-                    let bid = pickerName;;
-
-                    if(valPick){
-                        fieldClass += " menu-icon";
-                    }
-                    else{
-                        fHandler = function(e){
-                            updateChange(e, field);
-                        };
-                    }
-                    view.push(m("input[" + (disabled ? "disabled='" + disabled + "'" : "") + "]", {autocomplete:"off", onchange: fHandler, avoid: 1, value: defVal, type: 'text', class : fieldClass, name: useName, id: pickerName}));
-                    if(valPick){
-                        view.push(
-                            m("div", {class : "context-menu-container"}, [
-                                m("div", {class : "transition transition-0 context-menu", id: mid}, [
-                                    page.navigable.contextMenuButton(pickerName, "Find","search", function(){ doFieldPicker(field, useName, useEntity);}),
-                                    page.navigable.contextMenuButton(pickerName, "View","file_open", function(){ doFieldOpen(field);}),
-                                    page.navigable.contextMenuButton(pickerName, "Clear","backspace", function(){ doFieldClear(field);}),
-                                    page.navigable.contextMenuButton(pickerName, "Cancel","cancel")
-                                ])
-                            ])
-                        );
-
-                        page.navigable.pendContextMenu("#" + mid, "#" + bid, null, "context-menu-96");
-                    }
-                    break;
                 default:
                     console.error("Handle: " + format);
                     break;
@@ -1512,6 +1308,9 @@
         }
         
         objectPage.objectControls = function(name, field){
+            if(page.components.membership){
+                return page.components.membership.objectControls(getMembershipContext(field), name, field);
+            }
             return new Promise((res, rej) => {
                 if(!entity || !entity.objectId){
                     res([]);
@@ -1522,6 +1321,9 @@
             });
         };
         objectPage.objectRequests = function(name, field){
+            if(page.components.membership){
+                return page.components.membership.objectRequests(getMembershipContext(field), name, field);
+            }
             return new Promise((res, rej) => {
                 if(!entity || !entity.objectId){
                     res([]);
@@ -1534,6 +1336,9 @@
 
 
         objectPage.deleteChild = function(name, field, tableType, tableForm, props){
+            if(page.components.membership){
+                return page.components.membership.deleteChild(getMembershipContext(field), name, field, tableType, tableForm, props);
+            }
             let aP = [];
             let aC = [];
             Object.keys(valuesState).forEach((k)=>{
@@ -1554,6 +1359,9 @@
             });
         };
         objectPage.addChild = function(name, field, tableType, tableForm, props){
+            if(page.components.membership){
+                return page.components.membership.addChild(getMembershipContext(field), name, tableType, tableForm, props);
+            }
             if(props.picker){
                 return preparePicker(tableType, function(data){ pickChild(name, field, data);});
             }
@@ -1646,7 +1454,40 @@
             cancelPicker();
         }
 
+        /// Helper to build membership context
+        function getMembershipContext(field) {
+            return {
+                entity: entity,
+                inst: inst,
+                field: field,
+                valuesState: valuesState,
+                foreignData: foreignData,
+                caller: caller,
+                objectPage: objectPage,
+                parentProperty: parentProperty,
+                preparePicker: preparePicker,
+                cancelPicker: cancelPicker,
+                updateChange: updateChange
+            };
+        }
+
+        /// Helper to build table entry context
+        function getTableEntryContext() {
+            return {
+                entity: entity,
+                inst: inst,
+                valuesState: valuesState,
+                foreignData: foreignData,
+                resetValuesState: function() {
+                    valuesState = {};
+                }
+            };
+        }
+
         objectPage.addEntity = function(name, field, tableType, tableForm, props){
+            if(page.components.membership){
+                return page.components.membership.addEntity(getMembershipContext(field), name, tableType, tableForm, props);
+            }
             console.log("Add entity " + tableType, field);
             if(props.picker){
                 return preparePicker(tableType, function(data){ pickEntity(name, field, data);});
@@ -1655,6 +1496,9 @@
         };
 
         objectPage.openEntity = function(name, field, tableType, tableForm, props){
+            if(page.components.membership){
+                return page.components.membership.openEntity(getMembershipContext(field), name, field, tableType, tableForm, props);
+            }
             let ent;
 
             Object.keys(valuesState).forEach((k)=>{
@@ -1680,15 +1524,18 @@
         };
 
         objectPage.deleteEntity = function(name, field, tableType, tableForm, props){
+            if(page.components.membership){
+                return page.components.membership.deleteEntity(getMembershipContext(field), name, field, tableType, tableForm, props);
+            }
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
                 if(state.selected && vProp[name]){
-                    
+
                     let per = vProp[name][state.index];
                     if(am7model.hasIdentity(entity)){
-                        console.log("Delete entity", field, name, entity, per);  
+                        console.log("Delete entity", field, name, entity, per);
                         console.log(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false);
                         aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false));
                     }
@@ -1707,15 +1554,18 @@
 
 
         objectPage.deleteMember = function(name, field, tableType, tableForm){
+            if(page.components.membership){
+                return page.components.membership.deleteMember(getMembershipContext(field), name, field, tableType, tableForm);
+            }
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
-                /// state.foreign && 
+                /// state.foreign &&
                 if(state.selected){
                     if(foreignData[state.attribute]){
                         let obj = foreignData[state.attribute][state.index];
                         aP.push(new Promise((res, rej)=>{
-                            
+
                             am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, obj[am7model.jsonModelKey], obj.objectId, false, function(v){
                                 entity[name] = entity[name].filter(m => m.objectId != obj.objectId);
                                 console.log("Deleted: " + v, entity[name]);
@@ -1749,6 +1599,9 @@
         };
 
         objectPage.addMember = function(name, field, tableType, tableForm, props){
+            if(page.components.membership){
+                return page.components.membership.addMember(getMembershipContext(field), name, field.baseModel, tableForm, props);
+            }
             let type = tableType;
             if(type == "$flex"){
                 if(field.foreignType){
@@ -1773,6 +1626,9 @@
 
         /// Need to paginate this
         objectPage.memberObjects = function(name, field){
+            if(page.components.membership){
+                return page.components.membership.memberObjects(getMembershipContext(field), name, field);
+            }
             return new Promise((res, rej)=>{
                 if(!entity || !entity.objectId){
                     //console.warn("Object not available or ready for members");
@@ -1809,6 +1665,9 @@
 
         /// Need to paginate this
         objectPage.objectMembers = function(name, field){
+            if(page.components.membership){
+                return page.components.membership.objectMembers(getMembershipContext(field), name, field);
+            }
             
             return new Promise((res, rej)=>{
                 let ftype;
@@ -1829,6 +1688,9 @@
         };
 
         objectPage.editEntry = function(){
+            if(page.components.tableEntry){
+                return page.components.tableEntry.editEntry(getTableEntryContext());
+            }
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 if(state.selected){
@@ -1839,13 +1701,16 @@
         };
 
         objectPage.deleteEntry = function(name){
+            if(page.components.tableEntry){
+                return page.components.tableEntry.deleteEntry(getTableEntryContext(), name);
+            }
             let aP = [];
             Object.keys(valuesState).forEach((k)=>{
                 let state = valuesState[k];
                 if(state.selected){
                     /// TODO - fix this
                     if(name === 'episodes' || name === 'messages' || name === 'attributes' || name === 'elementValues'){
-                        /// Need to confirm the attribute type, this assumes it's an array 
+                        /// Need to confirm the attribute type, this assumes it's an array
                         let ov = entity[state.attribute][state.index];
                         entity[state.attribute] = entity[state.attribute].filter((a,i) => i != state.index);
                         delete valuesState[k];
@@ -1882,6 +1747,9 @@
         };
 
         objectPage.newEntry = function(name){
+            if(page.components.tableEntry){
+                return page.components.tableEntry.newEntry(getTableEntryContext(), name);
+            }
             let mf = am7model.getModelField(entity[am7model.jsonModelKey], name);
             if(!mf){
                 console.error("Object does not define '" + name + "'");
@@ -1894,7 +1762,7 @@
                 if(name === 'attributes'){
                     ne = am7client.newAttribute("","");
                 }
-                
+
                 else{
                     ne = am7model.newPrimitive(mf.baseModel);
                 }
@@ -1910,6 +1778,9 @@
         };
 
         objectPage.checkEntry = function(name, field, tableType, tableForm, props){
+            if(page.components.tableEntry){
+                return page.components.tableEntry.checkEntry(getTableEntryContext(), name, field, tableType, tableForm, props);
+            }
 
             let formName = tableType.substring(tableType.lastIndexOf(".") + 1);
             let fieldView = am7model.forms[formName];
@@ -1986,7 +1857,7 @@
                 }
             });
 
-            
+
             Promise.all(aP).then((aB)=>{
                 if(!aB || !aB.filter((b)=>{if(!b) return true;}).length){
                     valuesState = {};
@@ -1999,6 +1870,9 @@
         };
 
         objectPage.cancelEntry = function(name){
+            if(page.components.tableEntry){
+                return page.components.tableEntry.cancelEntry(getTableEntryContext(), name);
+            }
 
             valuesState = {};
             m.redraw();
