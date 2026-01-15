@@ -139,7 +139,7 @@
 					</systemProperties>
 				</configuration>
 			</plugin>
-		
+
 		</plugins>
 		<testResources>
 			<testResource>
@@ -244,7 +244,7 @@
 			<artifactId>jakarta.ws.rs-api</artifactId>
 			<version>3.1.0</version>
 		</dependency>
-		
+
 		<dependency>
 			<groupId>org.glassfish.jersey.core</groupId>
 			<artifactId>jersey-client</artifactId>
@@ -260,7 +260,11 @@
 			<artifactId>jersey-media-json-jackson</artifactId>
 			<version>3.1.5</version>
 		</dependency>
-
+		<dependency>
+			<groupId>javax.xml.bind</groupId>
+			<artifactId>jaxb-api</artifactId>
+			<version>2.3.1</version>
+		</dependency>
 		<dependency>
 			<groupId>net.sf.sevenzipjbinding</groupId>
 			<artifactId>sevenzipjbinding</artifactId>
