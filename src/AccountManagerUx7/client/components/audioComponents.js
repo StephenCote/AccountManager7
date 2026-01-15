@@ -52,7 +52,7 @@
             m.redraw();
 
             try {
-                console.log("Synthesizing audio for:", state.name);
+                //console.log("Synthesizing audio for:", state.name);
 
                 // Clean content (remove emojis, quotes, etc.)
                 let cleanContent = state.content
@@ -71,7 +71,7 @@
                     vprops.speaker = "en_GB-alba-medium";
                 }
 
-                console.log("Requesting synthesis with props:", vprops);
+                //console.log("Requesting synthesis with props:", vprops);
 
                 // Request audio synthesis
                 let response = await m.request({
@@ -81,7 +81,7 @@
                     body: vprops
                 });
 
-                console.log("Synthesis response received for:", state.name);
+                //console.log("Synthesis response received for:", state.name);
 
                 // Create audio context and decode
                 state.context = new AudioContext();
@@ -93,7 +93,7 @@
                 let arrayBuffer = base64ToArrayBuffer(response.dataBytesStore);
                 state.buffer = await state.context.decodeAudioData(arrayBuffer);
 
-                console.log("Audio decoded successfully for:", state.name);
+                //console.log("Audio decoded successfully for:", state.name);
 
                 state.isLoading = false;
                 m.redraw();
@@ -243,7 +243,7 @@
         }
 
         function togglePlayPause() {
-            console.log("togglePlayPause called on audio source:", state.name, "isPlaying:", state.isPlaying);
+            // console.log("togglePlayPause called on audio source:", state.name, "isPlaying:", state.isPlaying);
             if (state.isPlaying) {
                 pause();
             } else if (state.context && state.context.state === "suspended" && state.sourceNode) {
@@ -286,7 +286,7 @@
         // Register with audio system
         if (page.components.audio && page.components.audio.registerAudioSource) {
             page.components.audio.registerAudioSource(state.id, api);
-            console.log("Registered audio source:", state.id, "name:", state.name);
+            // console.log("Registered audio source:", state.id, "name:", state.name);
         }
 
         return api;
@@ -338,7 +338,7 @@
 
             try {
                 vnode.state.visualizer = new AudioMotionAnalyzer(vnode.dom, props);
-                console.log("AudioMotionAnalyzer created successfully for audio source:", currentAudioSource.state.name, "height:", height);
+                //console.log("AudioMotionAnalyzer created successfully for audio source:", currentAudioSource.state.name, "height:", height);
 
                 // Clear the check interval once created
                 if (vnode.state.checkInterval) {
@@ -415,8 +415,8 @@
                         // Always use the current audioSource from attrs, not the cached one
                         let currentAudioSource = attrs.audioSource;
                         if (currentAudioSource) {
-                            console.log("AudioVisualizer clicked, audio source ID:", currentAudioSource.state.id, "name:", currentAudioSource.state.name);
-                            console.log("About to call togglePlayPause on:", currentAudioSource.state.name);
+                            //console.log("AudioVisualizer clicked, audio source ID:", currentAudioSource.state.id, "name:", currentAudioSource.state.name);
+                            //console.log("About to call togglePlayPause on:", currentAudioSource.state.name);
                             currentAudioSource.togglePlayPause();
                         } else {
                             console.warn("AudioVisualizer clicked but no audio source available");
@@ -440,7 +440,7 @@
             oninit: function(vnode) {
                 let attrs = vnode.attrs;
 
-                console.log("SimpleAudioPlayer oninit - ID:", attrs.id, "Name:", attrs.name, "Key:", attrs.key);
+                // console.log("SimpleAudioPlayer oninit - ID:", attrs.id, "Name:", attrs.name, "Key:", attrs.key);
 
                 // Store state on vnode.state to prevent sharing between component instances
                 vnode.state.visualizer = null;
@@ -462,16 +462,16 @@
                     }
                 });
 
-                console.log("SimpleAudioPlayer created audio source:", vnode.state.audioSource.state.name);
+                // console.log("SimpleAudioPlayer created audio source:", vnode.state.audioSource.state.name);
             },
 
             oncreate: function(vnode) {
                 let attrs = vnode.attrs;
-                console.log("SimpleAudioPlayer oncreate - ID:", attrs.id, "Looking for element:", attrs.id + "-viz");
+                // console.log("SimpleAudioPlayer oncreate - ID:", attrs.id, "Looking for element:", attrs.id + "-viz");
 
                 // Auto-load audio (synthesize without playing) if requested
                 if ((attrs.autoLoad || attrs.autoPlay) && !vnode.state.audioSource.state.buffer && !vnode.state.audioSource.state.isLoading) {
-                    console.log("Auto-loading audio for:", vnode.state.audioSource.state.name);
+                    // console.log("Auto-loading audio for:", vnode.state.audioSource.state.name);
                     // Trigger synthesis by calling the internal synthesizeAudio
                     // We need to access the internal state, so let's just trigger a play and immediately pause
                     setTimeout(async () => {
@@ -487,7 +487,7 @@
                             m.redraw();
 
                             try {
-                                console.log("Synthesizing audio for:", state.name);
+                                // console.log("Synthesizing audio for:", state.name);
                                 let cleanContent = state.content
                                     .replace(/([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g, "")
                                     .replace(/["\*]+/g, "");
@@ -518,7 +518,7 @@
                                 let arrayBuffer = base64ToArrayBuffer(response.dataBytesStore);
                                 state.buffer = await state.context.decodeAudioData(arrayBuffer);
 
-                                console.log("Audio decoded successfully for:", state.name);
+                                //console.log("Audio decoded successfully for:", state.name);
                                 state.isLoading = false;
                                 m.redraw();
                             } catch (err) {
@@ -534,7 +534,7 @@
                 // Auto-play if requested (only once on first oncreate)
                 if (attrs.autoPlay && !vnode.state.autoPlayInitiated) {
                     vnode.state.autoPlayInitiated = true;
-                    console.log("Initiating auto-play for:", vnode.state.audioSource.state.name);
+                    //console.log("Initiating auto-play for:", vnode.state.audioSource.state.name);
                     setTimeout(() => {
                         if (vnode.state.audioSource) {
                             vnode.state.audioSource.play();
@@ -556,23 +556,23 @@
                 // Create visualizer for this specific audio source
                 let tryCreateVisualizer = () => {
                     if (vnode.state.visualizer) {
-                        console.log("Visualizer already exists for:", vnode.state.audioSource.state.name);
+                        //console.log("Visualizer already exists for:", vnode.state.audioSource.state.name);
                         return;
                     }
 
                     let analyzerNode = vnode.state.audioSource.getAnalyzerNode();
                     if (!analyzerNode) {
-                        console.log("No analyzer node yet for:", vnode.state.audioSource.state.name);
+                        //console.log("No analyzer node yet for:", vnode.state.audioSource.state.name);
                         return; // Not ready yet
                     }
 
                     let vizElement = document.getElementById(attrs.id + "-viz");
                     if (!vizElement) {
-                        console.warn("No viz element found for ID:", attrs.id + "-viz");
+                        //console.warn("No viz element found for ID:", attrs.id + "-viz");
                         return;
                     }
 
-                    console.log("Creating AudioMotionAnalyzer for:", vnode.state.audioSource.state.name, "on element:", attrs.id + "-viz");
+                    //console.log("Creating AudioMotionAnalyzer for:", vnode.state.audioSource.state.name, "on element:", attrs.id + "-viz");
 
                     let props = {
                         source: analyzerNode,
@@ -589,7 +589,7 @@
 
                     try {
                         vnode.state.visualizer = new AudioMotionAnalyzer(vizElement, props);
-                        console.log("AudioMotionAnalyzer successfully created for:", vnode.state.audioSource.state.name, "Element ID:", attrs.id + "-viz");
+                        // console.log("AudioMotionAnalyzer successfully created for:", vnode.state.audioSource.state.name, "Element ID:", attrs.id + "-viz");
 
                         if (vnode.state.checkInterval) {
                             clearInterval(vnode.state.checkInterval);
@@ -731,11 +731,97 @@
         let lastContentHash = null;
         let backgroundImages = [];
         let imageBaseGroupsLoaded = false;
+        let hasAutoPlayedForHash = {};  // Track which content hashes have auto-played
 
         function getContentHash(messages) {
             if (!messages || !messages.length) return null;
             let lastTwo = messages.slice(-2);
             return lastTwo.map(m => m?.content || "").join("|");
+        }
+
+        // Create or get existing audio source for a message
+        function getOrCreateAudioSource(name, profId, content, role) {
+            // Check if we already have this audio source
+            let existingSource = (role === "assistant") ? audioSource1 : audioSource2;
+            if (existingSource && existingSource.state.name === name) {
+                console.log("Reusing existing audio source:", name);
+                return existingSource;
+            }
+
+            // Destroy old source for this role if it exists with different name
+            if (existingSource) {
+                console.log("Destroying old audio source for role:", role, "old name:", existingSource.state.name);
+                existingSource.destroy();
+            }
+
+            console.log("Creating new audio source:", name);
+            return createAudioSource({
+                id: name,
+                name: name,
+                profileId: profId,
+                content: content,
+                autoStopOthers: true,
+                onPlayStateChange: () => {
+                    if (window.m && window.m.redraw) {
+                        window.m.redraw();
+                    }
+                }
+            });
+        }
+
+        function setupAudioSources(vnode, shouldAutoPlay) {
+            let attrs = vnode.attrs;
+            let messages = attrs.messages || [];
+
+            if (!messages.length) {
+                return;
+            }
+
+            // Process last 2 messages (or just 1 if that's all we have)
+            let messagesToProcess = messages.slice(-2);
+            let sysProfileId = attrs.systemProfileId;
+            let usrProfileId = attrs.userProfileId;
+            let prune = attrs.pruneContent || ((c) => c);
+
+            // Create audio source controllers (reuse if same name)
+            messagesToProcess.forEach((msg) => {
+                if (!msg) return;
+
+                let content = prune(msg.content);
+                if (!content || content.length === 0) return;
+
+                let contentHash = simpleHash(content);
+                let name = attrs.instanceId + "-" + msg.role + "-" + contentHash;
+                let profId = (msg.role === "assistant") ? sysProfileId : usrProfileId;
+
+                let audioSource = getOrCreateAudioSource(name, profId, content, msg.role);
+
+                if (msg.role === "assistant") {
+                    audioSource1 = audioSource;
+                } else {
+                    audioSource2 = audioSource;
+                }
+            });
+
+            // Auto-play the most recent message only if:
+            // 1. shouldAutoPlay is true (first view or content changed)
+            // 2. We haven't already auto-played for this content hash
+            let currentHash = getContentHash(messages);
+            if (shouldAutoPlay && !hasAutoPlayedForHash[currentHash]) {
+                hasAutoPlayedForHash[currentHash] = true;
+                // console.log("Auto-playing for content hash:", currentHash);
+
+                setTimeout(() => {
+                    if (messagesToProcess.length > 0) {
+                        let lastMsg = messagesToProcess[messagesToProcess.length - 1];
+                        if (lastMsg.role === "assistant" && audioSource1) {
+                            audioSource1.play();
+                        } else if (lastMsg.role === "user" && audioSource2) {
+                            audioSource2.play();
+                        }
+                    }
+                }, 100);
+            }
         }
 
         return {
@@ -747,6 +833,7 @@
                 vnode.state.imageB_src = null;
                 vnode.state.isA_onTop = false;
                 vnode.state.isTransitioning = false;
+                vnode.state.initialized = false;
             },
 
             oncreate: function(vnode) {
@@ -754,14 +841,15 @@
                 let messages = attrs.messages || [];
                 let contentHash = getContentHash(messages);
 
-                if (!messages.length || messages.length < 2) {
+                if (!messages.length) {
                     return;
                 }
 
                 lastContentHash = contentHash;
+                vnode.state.initialized = true;
 
                 // Load background images from group IDs if not in profile mode
-                let useProfile = attrs.useProfile !== false;  // Default to true
+                let useProfile = attrs.useProfile !== false;
                 let sysUrl = attrs.systemProfileImageUrl;
                 let usrUrl = attrs.userProfileImageUrl;
 
@@ -800,56 +888,8 @@
                     });
                 }
 
-                // Get last two messages
-                let messagesToProcess = messages.slice(-2);
-                let sysProfileId = attrs.systemProfileId;
-                let usrProfileId = attrs.userProfileId;
-                let prune = attrs.pruneContent || ((c) => c);
-
-                // Create audio source controllers
-                messagesToProcess.forEach((m, i) => {
-                    if (!m) return;
-
-                    let content = prune(m.content);
-                    if (!content || content.length === 0) return;
-
-                    // Generate stable name based on chat objectId, role, and content hash
-                    let contentHash = simpleHash(content);
-                    let name = attrs.instanceId + "-" + m.role + "-" + contentHash;
-                    let profId = (m.role === "assistant") ? sysProfileId : usrProfileId;
-
-                    let audioSource = createAudioSource({
-                        id: name,
-                        name: name,
-                        profileId: profId,
-                        content: content,
-                        autoStopOthers: true,
-                        onPlayStateChange: () => {
-                            // Trigger Mithril redraw using global m object
-                            if (window.m && window.m.redraw) {
-                                window.m.redraw();
-                            }
-                        }
-                    });
-
-                    if (m.role === "assistant") {
-                        audioSource1 = audioSource;
-                    } else {
-                        audioSource2 = audioSource;
-                    }
-                });
-
-                // Auto-play the most recent message
-                setTimeout(() => {
-                    if (messagesToProcess.length > 0) {
-                        let lastMsg = messagesToProcess[messagesToProcess.length - 1];
-                        if (lastMsg.role === "assistant" && audioSource1) {
-                            audioSource1.play();
-                        } else if (lastMsg.role === "user" && audioSource2) {
-                            audioSource2.play();
-                        }
-                    }
-                }, 100);
+                // Setup audio sources and auto-play (first time = true)
+                setupAudioSources(vnode, true);
             },
 
             onupdate: function(vnode) {
@@ -857,24 +897,15 @@
                 let messages = attrs.messages || [];
                 let contentHash = getContentHash(messages);
 
-                // Check if content has changed
+                // Only process if content has actually changed
                 if (contentHash !== lastContentHash) {
-                    // Clean up old audio sources
-                    if (audioSource1) {
-                        audioSource1.destroy();
-                        audioSource1 = null;
-                    }
-                    if (audioSource2) {
-                        audioSource2.destroy();
-                        audioSource2 = null;
-                    }
-
-                    // Recreate in next frame
+                    console.log("Magic8Ball content changed from", lastContentHash, "to", contentHash);
                     lastContentHash = contentHash;
-                    setTimeout(() => {
-                        this.oncreate(vnode);
-                    }, 0);
+
+                    // Setup audio sources and auto-play (content changed = true)
+                    setupAudioSources(vnode, true);
                 }
+                // If content is the same, don't do anything - don't recreate or auto-play
             },
 
             onremove: function() {
