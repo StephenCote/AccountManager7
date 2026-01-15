@@ -155,3 +155,46 @@ img.alignleft
 }
       
 
+
+
+    background: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+
+/* Audio Player Controls */
+.audio-player-container {
+    background: white;
+}
+
+.dark .audio-player-container {
+    background: rgb(17, 24, 39);
+}
+
+.audio-control-btn {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.audio-control-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.audio-control-btn:active {
+    transform: scale(0.95);
+}
+
+.audio-player-loading,
+.audio-player-error {
+    background: rgba(0, 0, 0, 0.02);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 0.5rem;
+}
+
+.dark .audio-player-loading,
+.dark .audio-player-error {
+    background: rgba(255, 255, 255, 0.02);
+    border-color: rgba(255, 255, 255, 0.1);
+}

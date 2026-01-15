@@ -236,7 +236,7 @@
               if (!chatCfg.history) chatCfg.history = {};
               chatCfg.history.messages = r?.messages || [];
               chatCfg.pending = false;
-              page.components.audio.clearMagic8();
+              // Audio components will automatically update when messages change
             });
           }
         }
@@ -423,41 +423,30 @@
     }
 
     function toggleAudio() {
+      // Stop all currently playing audio from both old and new systems
+      if (page.components.audio) {
+        page.components.audio.stopAudioSources();
+        page.components.audio.stopAllAudioSourceControllers();
+      }
 
-      page.components.audio.stopAudioSources();
-      page.components.audio.unconfigureAudio(false);
-      //page.components.audio.clearMagic8(false);
-      // page.components.audio.stopBinauralSweep();
-
+      // Cycle through audio modes: Off -> Standard Audio -> Magic8 -> Off
       if (audio && !audioMagic8) {
-        // Audio -> Magic8
+        // Standard Audio -> Magic8
         audio = false;
         audioMagic8 = true;
-        //page.components.audio.clearMagic8(true);
-        //page.components.audio.startBinauralSweep();
-        // Force a small delay before configuring Magic8
-        setTimeout(() => {
-          page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
-          m.redraw();
-        }, 200);
       }
       else if (audioMagic8) {
         // Magic8 -> Off
-        
-        //page.components.audio.clearMagic8(true);
-        
         audio = false;
         audioMagic8 = false;
-        page.components.audio.clearMagic8(true);
       }
       else {
-        // Off -> Audio
-        //page.components.audio.clearMagic8(false);
+        // Off -> Standard Audio
         audio = true;
         audioMagic8 = false;
-        page.components.audio.clearMagic8(false);
-        //page.components.audio.configureAudio(audio);
       }
+
+      // Trigger redraw to update the view with new audio mode
       m.redraw();
     }
     
@@ -557,7 +546,28 @@
         return "";
       }
       if (audioMagic8) {
-        return page.components.audio.getMagic8View(chatCfg, profile);
+        // Use new Magic8Ball component
+        let sysUrl, usrUrl;
+        if (profile && chatCfg.system?.profile?.portrait) {
+          let pp = chatCfg.system.profile.portrait;
+          sysUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
+        }
+        if (profile && chatCfg.user?.profile?.portrait) {
+          let pp = chatCfg.user.profile.portrait;
+          usrUrl = g_application_path + "/thumbnail/" + am7client.dotPath(am7client.currentOrganization) + "/data.data" + pp.groupPath + "/" + pp.name + "/256x256";
+        }
+
+        return m(page.components.audioComponents.Magic8Ball, {
+          instanceId: inst.api.objectId(),
+          messages: chatCfg.history?.messages || [],
+          systemProfileId: chatCfg?.system?.profile?.objectId,
+          userProfileId: chatCfg?.user?.profile?.objectId,
+          systemProfileImageUrl: sysUrl,
+          userProfileImageUrl: usrUrl,
+          useProfile: profile,
+          imageBaseGroups: [132, 1546, 1545, 1547],  // Hard-coded group IDs for background images
+          pruneContent: pruneAll
+        });
       }
       let c1g = "man";
       let c1l = "Nobody";
@@ -595,6 +605,7 @@
       let midx = -1;
       let aidx = 1;
       let amsg = chatCfg.history?.messages || [];
+      let hasAutoPlayedThisSession = false;
       let msgs = amsg.map((msg) => {
         midx++;
         let align = "justify-start";
@@ -647,11 +658,8 @@
           cnt = m.trust(marked.parse(cnt = page.components.emoji.markdownEmojis(cnt.replace(/\r/, ""))));
         }
         let aud = "";
-        //if(lastMsg && chatCfg.chat && audio && msg.role == "assistant"){
 
         if (chatCfg.chat && audio && !chatCfg.streaming) {
-          //let name = chatCfg.chat.objectId + " - " + midx;
-          let name = inst.api.objectId() + " - " + midx;
           let profileId;
           if (msg.role == "assistant") {
             profileId = chatCfg?.system?.profile?.objectId;
@@ -659,14 +667,39 @@
           else {
             profileId = chatCfg?.user?.profile?.objectId;
           }
-          aud = page.components.audio.createAudioVisualizer(name, aidx, profileId, lastMsg, pruneAll(msg.content));
-          if (!aud || typeof aud == "string") {
-            aud = "";
-          }
-          else {
-            aidx++;
+
+          // Generate stable name based on chat objectId, role, and content hash
+          let contentForHash = pruneAll(msg.content);
+          let contentHash = page.components.audioComponents.simpleHash(contentForHash);
+          let name = inst.api.objectId() + "-" + msg.role + "-" + contentHash;
+
+          // Auto-play only the last message, and only once per session
+          let shouldAutoPlay = lastMsg && !hasAutoPlayedThisSession;
+          if (shouldAutoPlay) {
+            hasAutoPlayedThisSession = true;
           }
 
+          // Use new SimpleAudioPlayer component with stable key based on content
+          aud = m(page.components.audioComponents.SimpleAudioPlayer, {
+            key: name, // Use stable key based on content hash (same content = same component)
+            id: name + "-" + aidx,
+            name: name,
+            profileId: profileId,
+            content: contentForHash,
+            autoLoad: true,  // Always load audio to create visualizer
+            autoPlay: shouldAutoPlay,
+            autoPlayDelay: 200,
+            autoStopOthers: true,
+            visualizerClass: "audio-container block w-full",
+            height: 60,
+            gradient: "prism",
+            onDelete: () => {
+              // Optional: Handle audio deletion if needed
+              console.log("Delete audio:", name);
+            }
+          });
+
+          aidx++;
         }
         return m("div", { class: "relative receive-chat flex " + align },
           [ectl, m("div", { class: ecls + "px-5 mb-2 " + txt + " py-2 text-base max-w-[80%] border rounded-md font-light" },
@@ -954,15 +987,21 @@
         page.navigable.setupPendingContextMenus();
         scrollToLast();
 
-        page.components.audio.configureAudio(audio);
-        // page.components.audio.configureMagic8(inst, chatCfg, audioMagic8, pruneAll);
+        // Audio components (SimpleAudioPlayer and Magic8Ball) manage themselves
+        // No need to configure old audio system
       },
       onremove: function (x) {
         page.navigable.cleanupContextMenus();
         pagination.stop();
         document.documentElement.removeEventListener("keydown", navKey);
-        page.components.audio.stopBinauralSweep();
-        page.components.audio.unconfigureAudio(false);
+
+        // Stop all audio sources (both old and new systems)
+        if (page.components.audio) {
+          page.components.audio.stopBinauralSweep();
+          page.components.audio.stopAudioSources();
+          page.components.audio.stopAllAudioSourceControllers();
+        }
+
         page.components.camera.stopCapture();
       },
 

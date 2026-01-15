@@ -1430,6 +1430,25 @@
       if (toneCtx) toneCtx.close();
     }
     */
+    /// Registry for new audio source controllers (from audioComponents.js)
+    let audioSourceControllers = {};
+
+    function registerAudioSource(id, controller) {
+        audioSourceControllers[id] = controller;
+    }
+
+    function unregisterAudioSource(id) {
+        delete audioSourceControllers[id];
+    }
+
+    function stopAllAudioSourceControllers(except) {
+        Object.values(audioSourceControllers).forEach(controller => {
+            if (controller !== except && controller.isPlaying && controller.isPlaying()) {
+                controller.stop();
+            }
+        });
+    }
+
     let audio = {
         configureAudio,
         unconfigureAudio,
@@ -1449,6 +1468,10 @@
         startBinauralSweep,
         stopBinauralSweep,
         stopAudioSources,
+        // New audio component integration
+        registerAudioSource,
+        unregisterAudioSource,
+        stopAllAudioSourceControllers,
         component: {
 
             oncreate: function (x) {

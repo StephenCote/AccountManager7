@@ -63,11 +63,25 @@
             if (mt.match(/^image/) || mt.match(/webp$/)) {
                 if (active) objView = m("img", { class: "carousel-item-img" + (maxMode ? " carousel-item-img-max" : ""), src: path });
             }
-            else {
-                if (mt.match(/mpeg3$/)) mt = "audio/mpeg";
-                if (active) objView = m((mt.match(/^video/) ? "video" : "audio"), { class: "carousel-item-img" + (maxMode ? " carousel-item-img-max" : ""), preload: "auto", controls: "controls", autoplay: "autoplay" },
+            else if (mt.match(/^video/)) {
+                // Video playback
+                if (active) objView = m("video", { class: "carousel-item-img" + (maxMode ? " carousel-item-img-max" : ""), preload: "auto", controls: "controls", autoplay: "autoplay" },
                     m("source", { src: path, type: mt })
                 );
+            }
+            else if (mt.match(/^audio/)) {
+                // Audio playback with visualizer
+                if (active) {
+                    // Use standard HTML5 audio with controls
+                    objView = m("div", { class: "flex flex-col items-center justify-center w-full h-full" }, [
+                        m("audio", {
+                            class: "w-full max-w-2xl",
+                            preload: "auto",
+                            controls: "controls",
+                            autoplay: "autoplay"
+                        }, m("source", { src: path, type: mt.match(/mpeg3$/) ? "audio/mpeg" : mt }))
+                    ]);
+                }
             }
         }
         else if (mt.match(/^text/) || mt.match(/pdf$/)) {
