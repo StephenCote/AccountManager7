@@ -1308,21 +1308,151 @@
         }
         
         objectPage.objectControls = function(name, field){
-            return page.components.membership.objectControls(getMembershipContext(field), name, field);
+            if(page.components.membership){
+                return page.components.membership.objectControls(getMembershipContext(field), name, field);
+            }
+            return new Promise((res, rej) => {
+                if(!entity || !entity.objectId){
+                    res([]);
+                }
+                else{
+                    page.controls(entity[am7model.jsonModelKey], entity.objectId).then((v)=>{res(v);});
+                }
+            });
         };
-
         objectPage.objectRequests = function(name, field){
-            return page.components.membership.objectRequests(getMembershipContext(field), name, field);
+            if(page.components.membership){
+                return page.components.membership.objectRequests(getMembershipContext(field), name, field);
+            }
+            return new Promise((res, rej) => {
+                if(!entity || !entity.objectId){
+                    res([]);
+                }
+                else{
+                    page.requests(entity[am7model.jsonModelKey], entity.objectId).then((v)=>{res(v);});
+                }
+            });
         };
 
 
         objectPage.deleteChild = function(name, field, tableType, tableForm, props){
-            return page.components.membership.deleteChild(getMembershipContext(field), name, field, tableType, tableForm, props);
+            if(page.components.membership){
+                return page.components.membership.deleteChild(getMembershipContext(field), name, field, tableType, tableForm, props);
+            }
+            let aP = [];
+            let aC = [];
+            Object.keys(valuesState).forEach((k)=>{
+                let state = valuesState[k];
+                let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
+                if(state.selected && vProp[name]){
+                    let obj = vProp[name][state.index];
+                    aC.push(obj);
+                    /// only for the UI
+                    vProp[name] = vProp[name].filter((o)=> o.objectId != obj.objectId);
+                }
+            });
+            reparent(null, aC).then(()=>{
+                am7client.clearCache(entity[am7model.jsonModelKey], false, function(s, v){
+                    console.log("Complete clear cache: " + v);
+                    m.redraw();
+                });
+            });
+        };
+        objectPage.addChild = function(name, field, tableType, tableForm, props){
+            if(page.components.membership){
+                return page.components.membership.addChild(getMembershipContext(field), name, tableType, tableForm, props);
+            }
+            if(props.picker){
+                return preparePicker(tableType, function(data){ pickChild(name, field, data);});
+            }
+            return Promise.resolve(null);
         };
 
-        objectPage.addChild = function(name, field, tableType, tableForm, props){
-            return page.components.membership.addChild(getMembershipContext(field), name, tableType, tableForm, props);
-        };
+        function reparent(parent, children){
+            let aP = [];
+            children.forEach((c)=>{
+                aP.push(new Promise((res, rej)=>{
+                    if(c[am7model.jsonModelKey].match(/^auth\.group$/gi) && !parent){
+                        rej("Unable to reparent a group to nothing");
+                    }
+                    else{
+                        c.parentId = (parent ? parent.id : 0);
+                        am7client.patch(c[am7model.jsonModelKey], c, function(v){
+                            if(v) res();
+                            else rej();
+                        })
+                    }
+
+                }));
+            });
+            return Promise.all(aP);
+        }
+        function pickChild(name, field, data){
+            reparent(entity, data).then(()=>{
+                let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
+                vProp[name] = page.removeDuplicates(vProp[name].concat(data), "objectId");
+                cancelPicker(true);
+                // don't update because the new lineage is already persisted
+                am7client.clearCache(entity[am7model.jsonModelKey], false, function(s, v){
+                    m.redraw();
+                });
+            });
+        }
+
+        /// TODO: pickMember and pickEntity are almost identical, need to refactor
+        function pickMember(field, members){
+            let aP = [];
+            if(am7model.hasIdentity(entity)){
+                members.forEach((t)=>{
+                    aP.push(new Promise((res, rej)=>{
+                        /// TODO: Differentiate which is the container, eg: entity should participate in a tag, not the other way around
+                        let e2 = entity;
+                        let a2 = t;
+                        if("data.tag" == field.baseModel){
+                            e2 = t;
+                            a2 = entity;
+                        }
+
+                       let fn = (!field.name == "data.tag" && !field.virtual ? field?.name : null);
+                        am7client.member(e2[am7model.jsonModelKey], e2.objectId, fn, a2[am7model.jsonModelKey], a2.objectId, true, function(v){
+                            console.log("Member: " + v);
+                            res(v);
+                        })
+                    }));
+                });
+            }
+            if(!aP.length){
+                console.warn("Nothing picked!");
+            }
+            Promise.all(aP).then(()=>{
+                delete foreignData['members'];
+                cancelPicker();
+            });
+        }
+
+        /// TODO: pickMember and pickEntity are almost identical, need to refactor
+        function pickEntity(name, field, data){
+            console.log("Pick entity", data, field);
+            let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
+            if(!vProp[name] && field.type == "list") vProp[name] = [];
+            vProp[name] = page.removeDuplicates(vProp[name].concat(data), "objectId");
+            
+            if(caller){
+                caller.callback('update', objectPage, inst, name, parentProperty);
+            }
+            else{
+                /// Handle quirk where lists of memberships are only handled on create, otherwise updates and deletes must be handled separately
+                ///
+                if(am7model.hasIdentity(entity)){
+                    let aP = [];
+                    data.forEach(v => {
+                        aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, v[am7model.jsonModelKey], v.objectId, true));
+                    });
+                    Promise.all(aP);
+                }
+            }
+            cancelPicker();
+        }
 
         /// Helper to build membership context
         function getMembershipContext(field) {
@@ -1355,51 +1485,397 @@
         }
 
         objectPage.addEntity = function(name, field, tableType, tableForm, props){
-            return page.components.membership.addEntity(getMembershipContext(field), name, tableType, tableForm, props);
+            if(page.components.membership){
+                return page.components.membership.addEntity(getMembershipContext(field), name, tableType, tableForm, props);
+            }
+            console.log("Add entity " + tableType, field);
+            if(props.picker){
+                return preparePicker(tableType, function(data){ pickEntity(name, field, data);});
+            }
+            return Promise.resolve(null);
         };
 
         objectPage.openEntity = function(name, field, tableType, tableForm, props){
-            return page.components.membership.openEntity(getMembershipContext(field), name, field, tableType, tableForm, props);
+            if(page.components.membership){
+                return page.components.membership.openEntity(getMembershipContext(field), name, field, tableType, tableForm, props);
+            }
+            let ent;
+
+            Object.keys(valuesState).forEach((k)=>{
+                let state = valuesState[k];
+                let vProp;
+                if(field.foreign && foreignData[name]) vProp = foreignData;
+                else{
+                    vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
+                }
+                console.log(ent, name, state, vProp);
+                if(!ent && state.selected && vProp[name]){
+
+                    ent = vProp[name][state.index];
+                }
+            });
+            if(ent){
+                let uri = "/view/" + ent[am7model.jsonModelKey] + "/" + ent.objectId;
+                m.route.set(uri, {key: ent.objectId});
+            }
+            else{
+                console.log("Didn't find entity");
+            }
         };
 
         objectPage.deleteEntity = function(name, field, tableType, tableForm, props){
-            return page.components.membership.deleteEntity(getMembershipContext(field), name, field, tableType, tableForm, props);
+            if(page.components.membership){
+                return page.components.membership.deleteEntity(getMembershipContext(field), name, field, tableType, tableForm, props);
+            }
+            let aP = [];
+            Object.keys(valuesState).forEach((k)=>{
+                let state = valuesState[k];
+                let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
+                if(state.selected && vProp[name]){
+
+                    let per = vProp[name][state.index];
+                    if(am7model.hasIdentity(entity)){
+                        console.log("Delete entity", field, name, entity, per);
+                        console.log(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false);
+                        aP.push(am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, per[am7model.jsonModelKey], per.objectId, false));
+                    }
+                    else{
+                        console.warn("Cannot delete entity without identity: " + entity[am7model.jsonModelKey]);
+                    }
+                    vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
+                }
+            });
+
+            Promise.all(aP).then(()=>{
+                updateChange();
+                m.redraw();
+            });
         };
 
+
         objectPage.deleteMember = function(name, field, tableType, tableForm){
-            return page.components.membership.deleteMember(getMembershipContext(field), name, field, tableType, tableForm);
+            if(page.components.membership){
+                return page.components.membership.deleteMember(getMembershipContext(field), name, field, tableType, tableForm);
+            }
+            let aP = [];
+            Object.keys(valuesState).forEach((k)=>{
+                let state = valuesState[k];
+                /// state.foreign &&
+                if(state.selected){
+                    if(foreignData[state.attribute]){
+                        let obj = foreignData[state.attribute][state.index];
+                        aP.push(new Promise((res, rej)=>{
+
+                            am7client.member(entity[am7model.jsonModelKey], entity.objectId, name, obj[am7model.jsonModelKey], obj.objectId, false, function(v){
+                                entity[name] = entity[name].filter(m => m.objectId != obj.objectId);
+                                console.log("Deleted: " + v, entity[name]);
+                                res(v);
+                            });
+                        }));
+                    }
+                    else{
+                        let vProp = (field.parentProperty ? entity[field.parentProperty] : entity);
+                        let per = vProp[name][state.index]
+                        console.log("Delete parent prop member");;
+                        if(am7model.hasIdentity(entity)){
+                            let fn = (!field.name == "data.tag" && !field.virtual ? field?.name : null);
+                            console.log("Delete member: " + entity[am7model.jsonModelKey], entity.objectId, fn, per[am7model.jsonModelKey], per.objectId);
+                            let obj = entity;
+                            let act = per;
+                            if(per[am7model.jsonModelKey] == "data.tag"){
+                                obj = per;
+                                act = entity;
+                            }
+                            aP.push(am7client.member(obj[am7model.jsonModelKey], obj.objectId, fn, act[am7model.jsonModelKey], act.objectId, false));
+                        }
+                        vProp[name] = vProp[name].filter((o)=> o.objectId != per.objectId);
+                    }
+                }
+            });
+            Promise.all(aP).then(()=>{
+                delete foreignData[name];
+                m.redraw();
+            });
         };
 
         objectPage.addMember = function(name, field, tableType, tableForm, props){
-            return page.components.membership.addMember(getMembershipContext(field), name, field.baseModel, tableForm, props);
+            if(page.components.membership){
+                return page.components.membership.addMember(getMembershipContext(field), name, field.baseModel, tableForm, props);
+            }
+            let type = tableType;
+            if(type == "$flex"){
+                if(field.foreignType){
+                    type = inst.api[field.foreignType]();
+                }
+                else{
+                    console.warn("Cannot reference a flex field without a foreign type");
+                }
+            }
+            if(props.typeAttribute){
+                type = am7view.typeToModel(entity[props.typeAttribute]);
+            }
+            if(props.picker){
+
+                return preparePicker(type, function(members){ pickMember(field, members);});
+            }
+            else{
+                console.log("Not a picker");
+            }
+            return Promise.resolve(null);
         }
 
+        /// Need to paginate this
         objectPage.memberObjects = function(name, field){
-            return page.components.membership.memberObjects(getMembershipContext(field), name, field);
+            if(page.components.membership){
+                return page.components.membership.memberObjects(getMembershipContext(field), name, field);
+            }
+            return new Promise((res, rej)=>{
+                if(!entity || !entity.objectId){
+                    //console.warn("Object not available or ready for members");
+                    res([]);
+                }
+                else if(!field || !field.participantType){
+                    res([]);
+                }
+                else {
+                    let ftype = field.factoryType;
+                    let paftype = field.participationFactoryType;
+                    if(!ftype) ftype = paftype;
+                    let pftype = field.participantFactoryType;
+                    let ptype = field.participantType;
+                    if(paftype.match(/^\./)) paftype = entity[paftype.slice(1)];
+                    if(ftype.match(/^\./)) ftype = entity[ftype.slice(1)];
+                    if(pftype.match(/^\./)) pftype = entity[pftype.slice(1)];
+                    if(ptype.match(/^\./)) ptype = entity[ptype.slice(1)];
+                    let search = new org.cote.objects.participationSearchRequest();
+                    search.startRecord = 0;
+                    search.recordCount = 100;
+                    search.participantList = [entity.objectId];
+                    search.participantFactoryType = pftype;
+                    search.participationFactoryType = paftype;
+                    search.participantType = ptype;
+                    // console.log(search);
+                    am7client.listParticipations(ftype, search, function(v){
+                        am7model.updateListModel(v);
+                        res(v);
+                    });
+                }
+            });
         };
 
+        /// Need to paginate this
         objectPage.objectMembers = function(name, field){
-            return page.components.membership.objectMembers(getMembershipContext(field), name, field);
+            if(page.components.membership){
+                return page.components.membership.objectMembers(getMembershipContext(field), name, field);
+            }
+            
+            return new Promise((res, rej)=>{
+                let ftype;
+                if(field){
+                    ftype = field.typeAttribute || field.foreignType;
+                }
+                if(!entity || !entity.objectId || !field || !ftype){
+                    res([]);
+                }
+                else{
+                    let type = am7view.typeToModel(entity[ftype]);
+                    am7client.members(entity[am7model.jsonModelKey], entity.objectId, type, 0, 100, function(v){
+                        am7model.updateListModel(v);
+                        res(v);
+                    });
+                }
+            });
         };
 
         objectPage.editEntry = function(){
-            return page.components.tableEntry.editEntry(getTableEntryContext());
+            if(page.components.tableEntry){
+                return page.components.tableEntry.editEntry(getTableEntryContext());
+            }
+            Object.keys(valuesState).forEach((k)=>{
+                let state = valuesState[k];
+                if(state.selected){
+                    state.mode = 'edit';
+                }
+            });
+            m.redraw();
         };
 
         objectPage.deleteEntry = function(name){
-            return page.components.tableEntry.deleteEntry(getTableEntryContext(), name);
+            if(page.components.tableEntry){
+                return page.components.tableEntry.deleteEntry(getTableEntryContext(), name);
+            }
+            let aP = [];
+            Object.keys(valuesState).forEach((k)=>{
+                let state = valuesState[k];
+                if(state.selected){
+                    /// TODO - fix this
+                    if(name === 'episodes' || name === 'messages' || name === 'attributes' || name === 'elementValues'){
+                        /// Need to confirm the attribute type, this assumes it's an array
+                        let ov = entity[state.attribute][state.index];
+                        entity[state.attribute] = entity[state.attribute].filter((a,i) => i != state.index);
+                        delete valuesState[k];
+                        if(ov && am7model.hasIdentity(ov)){
+                            aP.push(page.deleteObject(ov[am7model.jsonModelKey],ov.objectId));
+                        }
+                        else{
+                            inst.change(name);
+                        }
+                    }
+                    else if(name === 'controls'){
+                        let model = page.context();
+                        if(model.controls[entity.objectId]){
+                            let ctl = model.controls[entity.objectId][state.index];
+                            delete model.controls[entity.objectId][state.index];
+                            if(ctl.objectId){
+                                aP.push(new Promise((res, rej)=>{
+                                    am7client.delete("CONTROL", ctl.objectId, function(s, v){
+                                        res();
+                                    });
+                                }));
+                            }
+                            console.log("DELETE", ctl);
+                        }
+                    }
+                    else{
+                        console.log("Handle delete " + name, state);
+                    }
+                }
+            });
+            Promise.all(aP).then(()=>{
+                m.redraw();
+            });
         };
 
         objectPage.newEntry = function(name){
-            return page.components.tableEntry.newEntry(getTableEntryContext(), name);
+            if(page.components.tableEntry){
+                return page.components.tableEntry.newEntry(getTableEntryContext(), name);
+            }
+            let mf = am7model.getModelField(entity[am7model.jsonModelKey], name);
+            if(!mf){
+                console.error("Object does not define '" + name + "'");
+                return;
+            }
+            if(mf.type === 'list' && mf.baseModel){
+                if(!entity[name]) entity[name] = [];
+                if(!inst.changes.includes(name)) inst.changes.push(name);
+                let ne;
+                if(name === 'attributes'){
+                    ne = am7client.newAttribute("","");
+                }
+
+                else{
+                    ne = am7model.newPrimitive(mf.baseModel);
+                }
+                entity[name].push(ne);
+                let idx = entity[name].length - 1;
+                valuesState[name + "-" + idx] = {attribute: name, index : idx, selected: true, mode: 'edit'};
+                m.redraw();
+            }
+            else{
+                console.error("Unhandled new entry type: " + mf.type);
+            }
+
         };
 
         objectPage.checkEntry = function(name, field, tableType, tableForm, props){
-            return page.components.tableEntry.checkEntry(getTableEntryContext(), name, field, tableType, tableForm, props);
+            if(page.components.tableEntry){
+                return page.components.tableEntry.checkEntry(getTableEntryContext(), name, field, tableType, tableForm, props);
+            }
+
+            let formName = tableType.substring(tableType.lastIndexOf(".") + 1);
+            let fieldView = am7model.forms[formName];
+            let parentField = am7model.getModelField(entity[am7model.jsonModelKey], name);
+            let aP = [];
+            Object.keys(valuesState).forEach((k)=>{
+                let state = valuesState[k];
+                if(state.mode === 'edit'){
+                    let idx = state.index;
+                    let entry;
+                    if(field.foreign) entry = foreignData[state.fieldName || name][idx]
+                    else entry = entity[state.fieldName || name][idx];
+                    let einst = am7model.prepareInstance(entry, tableForm);
+                    Object.keys(tableForm.fields).forEach((k)=>{
+                        let tableField = am7model.getModelField(tableType, k);
+
+                        let e = document.querySelector("[name='" + k + "-" + idx + "']");
+                        if(tableField.virtual){
+                            console.log("Skipping virtual field");
+                        }
+                        else{
+                            let useType = tableField.type;
+
+                            if(useType == 'flex'){
+                                if(entry.valueType){
+                                    useType = entry.valueType.toLowerCase();
+                                }
+                            }
+                            switch(useType){
+                                case 'boolean':
+                                    entry[k] = (e.value.match(/^true$/gi) != null);
+                                    break;
+
+                                case 'int':
+                                    entry[k] = parseInt(e.value);
+                                case 'double':
+                                case 'long':
+                                    entry[k] = parseFloat(e.value);
+                                    break;
+                                case 'enum':
+                                case 'string':
+                                    entry[k] = e.value;
+                                    break;
+                                case 'list':
+                                case 'array':
+                                    //entry[k] = [e.value];
+                                    einst.api[k](e.value);
+                                    break;
+                                default:
+                                    console.warn("Unhandled entry type: " + useType);
+                                    break;
+                            }
+                        }
+                    });
+                    if((parentField?.foreign || parentField?.referenced) && !fieldView?.standardUpdate && am7model.hasIdentity(entity)){
+                        console.log("Patching object: " + name, entry);
+                        if(entry.objectId) aP.push(am7client.patch(entry));
+                        else{
+                            entry[am7model.jsonModelKey] = tableType;
+                            if(am7model.inherits(tableType, "common.reference")){
+                                entry.referenceId = entity.id;
+                                entry.referenceModel = entity[am7model.jsonModelKey];
+                            }
+                            window.dbgEntry = entry;
+                            aP.push(am7client.create(tableType, entry));
+                        }
+                    }
+                    else if((!parentField?.foreign && !parentField?.referenced) ||  fieldView?.standardUpdate){
+                        inst.change(name);
+                    }
+                    else{
+                        console.warn("Foreign data, not updating: " + name, entry);
+                    }
+                }
+            });
+
+
+            Promise.all(aP).then((aB)=>{
+                if(!aB || !aB.filter((b)=>{if(!b) return true;}).length){
+                    valuesState = {};
+                    m.redraw();
+                }
+                else{
+                    console.warn("Error updating record: " + aB);
+                }
+            });
         };
 
         objectPage.cancelEntry = function(name){
-            return page.components.tableEntry.cancelEntry(getTableEntryContext(), name);
+            if(page.components.tableEntry){
+                return page.components.tableEntry.cancelEntry(getTableEntryContext(), name);
+            }
+
+            valuesState = {};
+            m.redraw();
         };
 
         objectPage.getEntity = function(){
