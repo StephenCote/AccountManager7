@@ -1299,9 +1299,10 @@ public class Chat {
 
 				if (useAssist) {
 					assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, chatConfig);
+					userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
 				}
 				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, chatConfig);
-				userTemp = PromptUtil.getUserChatPromptTemplate(promptConfig, chatConfig);
+				
 			} else {
 				sysTemp = PromptUtil.getSystemChatPromptTemplate(promptConfig, null);
 				assist = PromptUtil.getAssistChatPromptTemplate(promptConfig, null);

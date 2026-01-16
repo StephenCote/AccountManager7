@@ -3771,8 +3771,9 @@
 
             }
         },
-        forms: ["lightgroupinfo"]
+        forms: ["itemStatisticsRef", "lightgroupinfo"]
     };
+
     forms.wearable = {
         label: "Wearable",
         fields: {
@@ -3852,6 +3853,37 @@
         },
         forms: ["lightgroupinfo"]
     };
+    forms.itemStatisticsRef = {
+        label: "Statistics",
+        model: true,
+        property: "statistics",
+        fields: {
+            statistics: {
+                layout: "full",
+                form: forms.itemStatistics
+            }
+        }
+    };
+
+
+    forms.itemStatistics = {
+        label: "Statistics",
+        fields: {
+            damage: {
+                layout: 'one',
+                format: 'range'
+            },
+            protection: {
+                layout: 'one',
+                format: 'range'
+            },
+            range: {
+                layout: 'one',
+                format: 'range'
+            }
+        }
+    };
+
     forms.statisticsRef = {
         label: "Statistics",
         model: true,
@@ -3862,7 +3894,7 @@
                 form: forms.statistics
             }
         }
-    }
+    };
 
 
     forms.statistics = {
@@ -3962,6 +3994,7 @@
 
         }
     };
+
     forms.narrativeRef = {
         label: "Narrative",
         model: true,

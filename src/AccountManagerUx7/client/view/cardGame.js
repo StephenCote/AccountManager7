@@ -28,8 +28,12 @@
 
     // Action deck state
     let actionDeck = [];        // Action cards available to draw
-    let playedActions = [];     // User's actions played to tray (available to use)
-    let systemActions = [];     // System's actions played to tray
+    let actionHand = [];        // User's action cards in hand (not yet played)
+    let actionHandIndex = 0;    // Index of currently viewed card in action hand
+    let systemActionHand = [];  // System's action cards in hand
+    let systemActionHandIndex = 0; // Index for system's action hand
+    let playedActions = [];     // User's played actions (interaction objects)
+    let systemPlayedActions = []; // System's played actions (interaction objects)
     let actionDiscard = [];     // Discarded action cards
     let actionPreview = null;   // Preview card in action deck
     let actionPreviewIndex = 0; // Current preview index
@@ -38,17 +42,27 @@
 
     // Item deck state
     let itemDeck = [];          // Item cards available to draw
-    let itemHand = [];          // User's items in hand
+    let itemHand = [];          // User's items in hand (drawn but not played to tray)
+    let itemTray = [];          // User's items played to tray
     let systemItems = [];       // System's items in hand
+    let systemItemHandIndex = 0; // Index for system's item hand
     let itemDiscard = [];       // Discarded items
-    let itemPreviewIndex = 0;   // Current preview index
+    let itemPreviewIndex = 0;   // Current preview index in deck
+    let itemHandIndex = 0;      // Current preview index in hand
 
     // Apparel deck state
     let apparelDeck = [];       // Apparel cards available to draw
-    let apparelHand = [];       // User's apparel in hand
+    let apparelHand = [];       // User's apparel in hand (drawn but not played to tray)
+    let apparelTray = [];       // User's apparel played to tray
     let systemApparel = [];     // System's apparel in hand
+    let systemApparelHandIndex = 0; // Index for system's apparel hand
     let apparelDiscard = [];    // Discarded apparel
-    let apparelPreviewIndex = 0; // Current preview index
+    let apparelPreviewIndex = 0; // Current preview index in deck
+    let apparelHandIndex = 0;   // Current preview index in hand
+
+    // Selected card for detail view (can be action, item, or apparel)
+    let selectedDetailCard = null;  // The card being viewed in detail
+    let selectedDetailType = null;  // 'action', 'item', or 'apparel'
 
     // Active pile selection for consolidated view
     let activePile = 'character'; // 'character', 'action', 'item', 'apparel'
@@ -56,7 +70,7 @@
     // Action card types (these become cards in the action deck)
     // Each action appears twice in the deck
     const ACTION_CARD_TYPES = [
-        {type: "CHAT", label: "Chat", icon: "forum", description: "Have a conversation"},
+        {type: "TALK", label: "Talk", icon: "forum", description: "Have a conversation"},
         {type: "BEFRIEND", label: "Befriend", icon: "handshake", description: "Attempt to make a friend"},
         {type: "BARTER", label: "Trade", icon: "swap_horiz", description: "Exchange goods or services"},
         {type: "COMBAT", label: "Fight", icon: "swords", description: "Engage in combat"},
@@ -98,10 +112,15 @@
     // ==========================================
 
     function getAge(char) {
-        if (!char || !char.birthDate) return "?";
-        let bd = new Date(char.birthDate);
-        let now = new Date();
-        return Math.floor((now - bd) / (365.25 * 24 * 60 * 60 * 1000));
+        if (!char) return "?";
+        // Use age property directly (game date is event-based, not real time)
+        return char.age !== undefined && char.age !== null ? char.age : "?";
+    }
+
+    // Get display name for apparel (uses name directly)
+    function getApparelDisplayName(apparel) {
+        if (!apparel) return "Apparel";
+        return apparel.name || apparel.type || apparel.category || "Apparel";
     }
 
     function getPortraitUrl(char, size) {
@@ -195,16 +214,111 @@
         }
         try {
             console.log("Loading full character:", char.objectId);
-            let full = await am7client.getFull("olio.charPerson", char.objectId);
-            console.log("Full character loaded:", full);
-            if (full) {
+            let q = am7view.viewQuery("olio.charPerson");
+            q.field("objectId", char.objectId);
+            // Request narrative and other needed fields including objectId
+            q.entity.request.push("objectId", "narrative", "statistics", "store", "instinct", "personality");
+            let qr = await page.search(q);
+            if (qr && qr.results && qr.results.length > 0) {
+                let full = qr.results[0];
                 am7model.applyModelNames(full);
+
+                // Load nested statistics model reference if it exists but isn't fully loaded
+                if (full.statistics && full.statistics.objectId && !full.statistics.physicalStrength) {
+                    let sq = am7view.viewQuery("olio.statistics");
+                    sq.field("objectId", full.statistics.objectId);
+                    let sqr = await page.search(sq);
+                    if (sqr && sqr.results && sqr.results.length > 0) {
+                        full.statistics = sqr.results[0];
+                    }
+                }
+
+                console.log("Full character loaded:", full);
                 return full;
             }
         } catch (e) {
             console.error("Failed to load full character", e);
         }
         return char;
+    }
+
+    // Load a character's store (items and apparel) and return them
+    async function loadCharacterStore(char) {
+        let result = { items: [], apparel: [] };
+        if (!char || !char.store || !char.store.objectId) {
+            return result;
+        }
+
+        try {
+            // Load the full store object with items and apparel lists
+            let sq = am7view.viewQuery("olio.store");
+            sq.field("objectId", char.store.objectId);
+            sq.entity.request.push("items", "apparel", "inventory");
+            let sqr = await page.search(sq);
+            console.log("Loaded store for character:", char.name, sqr);
+
+            if (sqr && sqr.results && sqr.results.length > 0) {
+                let store = sqr.results[0];
+                console.log("Store object:", store);
+                console.log("Store items:", store.items);
+                console.log("Store apparel:", store.apparel);
+
+                // Load full item data for each item in store
+                if (store.items && store.items.length > 0) {
+                    for (let itemRef of store.items) {
+                        if (itemRef && itemRef.id) {
+                            let iq = am7view.viewQuery("olio.item");
+                            iq.field("id", itemRef.id);
+                            // Explicitly request display fields including statistics and objectId
+                            iq.entity.request.push("objectId", "name", "description", "category", "statistics", "qualities");
+                            let iqr = await page.search(iq);
+                            if (iqr && iqr.results && iqr.results.length > 0) {
+                                let item = iqr.results[0];
+                                // Load nested statistics if present
+                                if (item.statistics && item.statistics.id && !item.statistics.damage) {
+                                    let sq = am7view.viewQuery("olio.itemStatistics");
+                                    sq.field("id", item.statistics.id);
+                                    let sqr = await page.search(sq);
+                                    if (sqr && sqr.results && sqr.results.length > 0) {
+                                        item.statistics = sqr.results[0];
+                                    }
+                                }
+                                console.log("Loaded item from store:", item);
+                                result.items.push(item);
+                            }
+                        }
+                    }
+                }
+
+                // Load full apparel data for each apparel in store
+                console.log("Checking store.apparel:", store.apparel, "length:", store.apparel ? store.apparel.length : 0);
+                if (store.apparel && store.apparel.length > 0) {
+                    for (let apparelRef of store.apparel) {
+                        console.log("Processing apparelRef:", apparelRef);
+                        if (apparelRef && apparelRef.id) {
+                            console.log("Loading apparel with id:", apparelRef.id);
+                            let aq = am7view.viewQuery("olio.apparel");
+                            aq.field("id", apparelRef.id);
+                            // Explicitly request display fields including objectId
+                            aq.entity.request.push("objectId", "name", "type", "category", "description", "wearables");
+                            let aqr = await page.search(aq);
+                            console.log("Apparel query result:", aqr);
+                            if (aqr && aqr.results && aqr.results.length > 0) {
+                                let apparel = aqr.results[0];
+                                console.log("Loaded apparel from store:", apparel);
+                                result.apparel.push(apparel);
+                            } else {
+                                console.log("No apparel results found for id:", apparelRef.id);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load character store:", e);
+        }
+
+        return result;
     }
 
     async function loadItems() {
@@ -218,7 +332,7 @@
             let q = am7view.viewQuery("olio.item");
             q.field("groupId", itemDir.id);
             q.range(0, 100);
-            q.entity.request.push("name", "type", "category", "objectId");
+            q.entity.request.push("name", "type", "category", "objectId", "description", "statistics");
 
             let qr = await page.search(q);
             if (qr && qr.results) {
@@ -244,7 +358,7 @@
             let q = am7view.viewQuery("olio.apparel");
             q.field("groupId", apparelDir.id);
             q.range(0, 100);
-            q.entity.request.push("name", "type", "category", "objectId", "description");
+            q.entity.request.push("name", "type", "category", "objectId", "description", "wearables");
 
             let qr = await page.search(q);
             if (qr && qr.results) {
@@ -253,10 +367,88 @@
                 apparelDiscard = [];
                 apparelPreviewIndex = 0;
                 console.log("Loaded apparel:", apparelDeck.length);
+
+                // Generate descriptions for apparel that don't have one
+                for (let app of apparelDeck) {
+                    if (!app.description && app.wearables && app.wearables.length > 0) {
+                        await generateApparelDescription(app);
+                    }
+                }
             }
         } catch (e) {
             console.error("Failed to load apparel", e);
         }
+    }
+
+    // Generate a description for apparel based on its wearables (like setApparelDescription in olio.js)
+    async function generateApparelDescription(app) {
+        try {
+            // Load full wearable data
+            let wearOids = app.wearables.map(w => w.objectId).join(",");
+            let wq = am7view.viewQuery("olio.wearable");
+            wq.field("groupId", app.wearables[0].groupId);
+            let fld = wq.field("objectId", wearOids);
+            fld.comparator = "in";
+            wq.range(0, 50);
+            // Request the fields needed for description
+            wq.entity.request.push("name", "objectId", "inuse", "color", "fabric", "pattern", "location", "qualities");
+
+            let wqr = await page.search(wq);
+            if (!wqr || !wqr.results || !wqr.results.length) {
+                return;
+            }
+
+            let wears = wqr.results;
+            // Filter to only wearables that are in use
+            let inuseWears = wears.filter(w => w.inuse);
+
+            if (inuseWears.length === 0) {
+                app.description = "No apparel worn.";
+            } else {
+                let wdesc = inuseWears.map(w => describeWearable(w)).join(", ");
+                app.description = "Worn apparel includes " + wdesc + ".";
+            }
+
+            console.log("Generated apparel description:", app.description);
+            // Persist the description using the same pattern as olio.js
+            await page.patchObject({
+                schema: "olio.apparel",
+                id: app.id,
+                description: app.description
+            });
+        } catch (e) {
+            console.error("Failed to generate apparel description", e);
+        }
+    }
+
+    // Describe a single wearable (from olio.js)
+    function describeWearable(wear) {
+        let qual = wear.qualities ? wear.qualities[0] : null;
+        let opac = qual?.opacity || 0.0;
+        let shin = qual?.shininess || 0.0;
+        let col = wear?.color?.name?.toLowerCase() || "";
+
+        if (col) {
+            col = col.replaceAll(/([\^\(\)]*)/g, "");
+        }
+        let fab = wear?.fabric?.toLowerCase() || "";
+        let pat = wear?.pattern?.name?.toLowerCase() || "";
+        let loc = wear?.location?.[0]?.toLowerCase() || "";
+        let name = wear?.name;
+        if (name && name.indexOf("pierc") > -1) {
+            name = loc + " piercing";
+            pat = "";
+        }
+        let opacs = "";
+        if (opac > 0.0 && opac <= 0.25) {
+            opacs = " see-through";
+        }
+        let shins = "";
+        if (shin >= 0.7) {
+            shins = " shiny";
+        }
+
+        return (shins + opacs + " " + col + " " + pat + " " + fab + " " + name).replaceAll("  ", " ").trim();
     }
 
     // ==========================================
@@ -558,8 +750,15 @@
     }
 
     function renderApparelView(char) {
-        let store = char.store;
-        let apparel = store && store.apparel ? store.apparel[0] : null;
+        // Try to find apparel from different sources - apparelHand/apparelTray have full data
+        let apparel = null;
+        if (apparelHand.length > 0) {
+            apparel = apparelHand[0];
+        } else if (apparelTray.length > 0) {
+            apparel = apparelTray[0];
+        } else if (char.store && char.store.apparel && char.store.apparel.length > 0) {
+            apparel = char.store.apparel[0];
+        }
         let outfitDesc = char.narrative ? char.narrative.outfitDescription : null;
 
         return m("div", {class: "h-full flex flex-col"}, [
@@ -620,7 +819,8 @@
         draggedCard = card;
         dragSource = source;
         e.dataTransfer.effectAllowed = 'move';
-        e.dataTransfer.setData('text/plain', card.objectId);
+        // Use objectId for items/apparel, id for action cards
+        e.dataTransfer.setData('text/plain', card.objectId || card.id || '');
         e.target.style.opacity = '0.5';
     }
 
@@ -635,11 +835,15 @@
     function handleDragOver(e, target) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        dropTarget = target;
+        if (dropTarget !== target) {
+            dropTarget = target;
+            m.redraw();
+        }
     }
 
     function handleDragLeave(e) {
         dropTarget = null;
+        m.redraw();
     }
 
     function handleDropOnUserHand(e) {
@@ -717,16 +921,37 @@
         m.redraw();
     }
 
-    function handleDropOnActionTray(e) {
+    function handleDropOnActionHand(e) {
         e.preventDefault();
         if (draggedCard && dragSource === 'actionDeck') {
-            // Find and move from action deck to played actions
+            // Draw from deck to hand
             let idx = actionDeck.findIndex(a => a.id === draggedCard.id);
             if (idx > -1) {
                 let action = actionDeck.splice(idx, 1)[0];
-                playedActions.push(action);
+                actionHand.push(action);
                 updateActionPreview();
+                page.toast("info", "Drew: " + action.label);
+            }
+        }
+        draggedCard = null;
+        dragSource = null;
+        dropTarget = null;
+        m.redraw();
+    }
+
+    function handleDropOnPlayedActions(e) {
+        e.preventDefault();
+        if (draggedCard && dragSource === 'actionHand') {
+            // Play action from hand - creates an interaction object
+            let idx = actionHand.findIndex(a => a.id === draggedCard.id);
+            if (idx > -1) {
+                let action = actionHand.splice(idx, 1)[0];
+                let interaction = createInteractionFromAction(action);
+                playedActions.push(interaction);
                 page.toast("info", "Played: " + action.label);
+                // Clear detail view after playing
+                selectedDetailCard = null;
+                selectedDetailType = null;
             }
         }
         draggedCard = null;
@@ -766,6 +991,278 @@
         draggedCard = null;
         dragSource = null;
         dropTarget = null;
+        m.redraw();
+    }
+
+    function handleDropOnItemTray(e) {
+        e.preventDefault();
+        if (draggedCard && dragSource === 'itemHand') {
+            // Move from item hand to item tray
+            let idx = itemHand.findIndex(i => i.objectId === draggedCard.objectId);
+            if (idx > -1) {
+                let item = itemHand.splice(idx, 1)[0];
+                itemTray.push(item);
+                page.toast("info", "Played item: " + (item.name || "Unknown"));
+                // Clear detail view after playing
+                selectedDetailCard = null;
+                selectedDetailType = null;
+            }
+        }
+        draggedCard = null;
+        dragSource = null;
+        dropTarget = null;
+        m.redraw();
+    }
+
+    function handleDropOnApparelTray(e) {
+        e.preventDefault();
+        if (draggedCard && dragSource === 'apparelHand') {
+            // Move from apparel hand to apparel tray
+            let idx = apparelHand.findIndex(a => a.objectId === draggedCard.objectId);
+            if (idx > -1) {
+                let apparel = apparelHand.splice(idx, 1)[0];
+                apparelTray.push(apparel);
+                page.toast("info", "Played apparel: " + (apparel.name || "Unknown"));
+                // Clear detail view after playing
+                selectedDetailCard = null;
+                selectedDetailType = null;
+            }
+        }
+        draggedCard = null;
+        dragSource = null;
+        dropTarget = null;
+        m.redraw();
+    }
+
+    // System hand drop handlers
+    function handleDropOnSystemActionHand(e) {
+        e.preventDefault();
+        if (draggedCard && dragSource === 'actionDeck') {
+            let idx = actionDeck.findIndex(a => a.id === draggedCard.id);
+            if (idx > -1) {
+                let action = actionDeck.splice(idx, 1)[0];
+                systemActionHand.push(action);
+                page.toast("info", "System drew: " + action.label);
+            }
+        }
+        draggedCard = null;
+        dragSource = null;
+        dropTarget = null;
+        m.redraw();
+    }
+
+    function handleDropOnSystemItemHand(e) {
+        e.preventDefault();
+        if (draggedCard && dragSource === 'itemDeck') {
+            let idx = itemDeck.findIndex(i => i.objectId === draggedCard.objectId);
+            if (idx > -1) {
+                let item = itemDeck.splice(idx, 1)[0];
+                systemItems.push(item);
+                page.toast("info", "System drew item: " + (item.name || "Unknown"));
+            }
+        }
+        draggedCard = null;
+        dragSource = null;
+        dropTarget = null;
+        m.redraw();
+    }
+
+    function handleDropOnSystemApparelHand(e) {
+        e.preventDefault();
+        if (draggedCard && dragSource === 'apparelDeck') {
+            let idx = apparelDeck.findIndex(a => a.objectId === draggedCard.objectId);
+            if (idx > -1) {
+                let apparel = apparelDeck.splice(idx, 1)[0];
+                systemApparel.push(apparel);
+                page.toast("info", "System drew apparel: " + (apparel.name || "Unknown"));
+            }
+        }
+        draggedCard = null;
+        dragSource = null;
+        dropTarget = null;
+        m.redraw();
+    }
+
+    // Universal discard handler - discards any card type and shuffles back into appropriate deck
+    function handleUniversalDiscard() {
+        if (!draggedCard || !dragSource) return;
+
+        let cardName = "";
+
+        // Determine card type from dragSource and handle accordingly
+        if (dragSource === 'userHand' || dragSource === 'gameHand') {
+            // Character card - find and remove from hand, shuffle into deck
+            let sourceHand = dragSource === 'userHand' ? userHand : gameHand;
+            let idx = sourceHand.findIndex(c => c.objectId === draggedCard.objectId);
+            if (idx > -1) {
+                let card = sourceHand.splice(idx, 1)[0];
+                cardName = card.name || "Character";
+                deck.push(card);
+                deck = shuffleArray(deck);
+                if (selectedCard && selectedCard.objectId === card.objectId) {
+                    selectedCard = null;
+                }
+            }
+        } else if (dragSource === 'actionHand' || dragSource === 'playedActions') {
+            // Action card from user
+            let sourceArray = dragSource === 'actionHand' ? actionHand : playedActions;
+            let idx = sourceArray.findIndex(a => a.id === draggedCard.id);
+            if (idx > -1) {
+                let card = sourceArray.splice(idx, 1)[0];
+                cardName = card.label || "Action";
+                // Convert interaction back to action card if from playedActions
+                let actionCard = dragSource === 'playedActions' ?
+                    ACTION_CARD_TYPES.find(a => a.type === card.type) || card : card;
+                actionDeck.push({...actionCard, id: Date.now() + Math.random()});
+                actionDeck = shuffleArray(actionDeck);
+            }
+        } else if (dragSource === 'systemActionHand' || dragSource === 'systemPlayedActions') {
+            // Action card from system
+            let sourceArray = dragSource === 'systemActionHand' ? systemActionHand : systemPlayedActions;
+            let idx = sourceArray.findIndex(a => a.id === draggedCard.id);
+            if (idx > -1) {
+                let card = sourceArray.splice(idx, 1)[0];
+                cardName = card.label || "Action";
+                let actionCard = dragSource === 'systemPlayedActions' ?
+                    ACTION_CARD_TYPES.find(a => a.type === card.type) || card : card;
+                actionDeck.push({...actionCard, id: Date.now() + Math.random()});
+                actionDeck = shuffleArray(actionDeck);
+            }
+        } else if (dragSource === 'itemHand' || dragSource === 'itemTray') {
+            // Item card from user
+            let sourceArray = dragSource === 'itemHand' ? itemHand : itemTray;
+            let idx = sourceArray.findIndex(i => i.objectId === draggedCard.objectId || i.id === draggedCard.id);
+            if (idx > -1) {
+                let card = sourceArray.splice(idx, 1)[0];
+                cardName = card.name || "Item";
+                itemDeck.push(card);
+                itemDeck = shuffleArray(itemDeck);
+            }
+        } else if (dragSource === 'systemItems') {
+            // Item card from system
+            let idx = systemItems.findIndex(i => i.objectId === draggedCard.objectId || i.id === draggedCard.id);
+            if (idx > -1) {
+                let card = systemItems.splice(idx, 1)[0];
+                cardName = card.name || "Item";
+                itemDeck.push(card);
+                itemDeck = shuffleArray(itemDeck);
+            }
+        } else if (dragSource === 'apparelHand' || dragSource === 'apparelTray') {
+            // Apparel card from user
+            let sourceArray = dragSource === 'apparelHand' ? apparelHand : apparelTray;
+            let idx = sourceArray.findIndex(a => a.objectId === draggedCard.objectId || a.id === draggedCard.id);
+            if (idx > -1) {
+                let card = sourceArray.splice(idx, 1)[0];
+                cardName = getApparelDisplayName(card);
+                apparelDeck.push(card);
+                apparelDeck = shuffleArray(apparelDeck);
+            }
+        } else if (dragSource === 'systemApparel') {
+            // Apparel card from system
+            let idx = systemApparel.findIndex(a => a.objectId === draggedCard.objectId || a.id === draggedCard.id);
+            if (idx > -1) {
+                let card = systemApparel.splice(idx, 1)[0];
+                cardName = getApparelDisplayName(card);
+                apparelDeck.push(card);
+                apparelDeck = shuffleArray(apparelDeck);
+            }
+        }
+
+        // Clear detail view if discarded card was selected
+        if (selectedDetailCard && (selectedDetailCard.objectId === draggedCard.objectId || selectedDetailCard.id === draggedCard.id)) {
+            selectedDetailCard = null;
+            selectedDetailType = null;
+        }
+
+        if (cardName) {
+            page.toast("info", "Discarded " + cardName + " and shuffled into deck");
+        }
+
+        draggedCard = null;
+        dragSource = null;
+    }
+
+    // Card selection functions - opens detail view for action/item/apparel cards
+    function selectActionCard(card) {
+        selectedDetailCard = card;
+        selectedDetailType = 'action';
+        // Clear character selection when selecting action/item/apparel
+        selectedCard = null;
+        m.redraw();
+    }
+
+    async function selectItemCard(card) {
+        selectedDetailType = 'item';
+        selectedCard = null;
+        // Load full item data including statistics
+        if (card && (card.objectId || card.id)) {
+            try {
+                let q = am7view.viewQuery("olio.item");
+                // Query by objectId if available, otherwise by id
+                if (card.objectId) {
+                    q.field("objectId", card.objectId);
+                } else {
+                    q.field("id", card.id);
+                }
+                // Explicitly request display fields including objectId
+                q.entity.request.push("objectId", "name", "description", "category", "statistics", "qualities");
+                let qr = await page.search(q);
+                if (qr && qr.results && qr.results.length > 0) {
+                    let full = qr.results[0];
+                    am7model.applyModelNames(full);
+                    console.log("Selected item full data:", full);
+
+                    // Load nested itemStatistics model reference if it exists but isn't fully loaded
+                    if (full.statistics && full.statistics.objectId && full.statistics.damage === undefined) {
+                        let sq = am7view.viewQuery("olio.itemStatistics");
+                        sq.field("objectId", full.statistics.objectId);
+                        let sqr = await page.search(sq);
+                        if (sqr && sqr.results && sqr.results.length > 0) {
+                            full.statistics = sqr.results[0];
+                            console.log("Loaded item statistics:", full.statistics);
+                        }
+                    }
+
+                    selectedDetailCard = full;
+                } else {
+                    selectedDetailCard = card;
+                }
+            } catch (e) {
+                console.error("Failed to load full item:", e);
+                selectedDetailCard = card;
+            }
+        } else {
+            selectedDetailCard = card;
+        }
+        m.redraw();
+    }
+
+    async function selectApparelCard(card) {
+        selectedDetailType = 'apparel';
+        selectedCard = null;
+        // Load full apparel data
+        if (card && card.id) {
+            try {
+                let q = am7view.viewQuery("olio.apparel");
+                q.field("id", card.id);
+                // Explicitly request display fields including objectId
+                q.entity.request.push("objectId", "name", "type", "category", "description", "wearables");
+                let qr = await page.search(q);
+                if (qr && qr.results && qr.results.length > 0) {
+                    let full = qr.results[0];
+                    am7model.applyModelNames(full);
+                    console.log("Selected apparel full data:", full);
+                    selectedDetailCard = full;
+                } else {
+                    selectedDetailCard = card;
+                }
+            } catch (e) {
+                console.error("Failed to load full apparel:", e);
+                selectedDetailCard = card;
+            }
+        } else {
+            selectedDetailCard = card;
+        }
         m.redraw();
     }
 
@@ -916,47 +1413,148 @@
     function UserHandPile() {
         return {
             view: function() {
-                let isDropTarget = dropTarget === 'userHand' && dragSource === 'deck';
+                let isCharDropTarget = dropTarget === 'userHand' && dragSource === 'deck';
+                let isActionDropTarget = dropTarget === 'userActionHand' && dragSource === 'actionDeck';
+                let isItemDropTarget = dropTarget === 'userItemHand' && dragSource === 'itemDeck';
+                let isApparelDropTarget = dropTarget === 'userApparelHand' && dragSource === 'apparelDeck';
 
-                return m("div", {
-                    class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors " + (isDropTarget ? "bg-green-100 dark:bg-green-900/30" : ""),
-                    ondragover: function(e) { handleDragOver(e, 'userHand'); },
-                    ondragleave: handleDragLeave,
-                    ondrop: handleDropOnUserHand
-                }, [
+                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900"}, [
                     // Header
                     m("div", {class: "flex items-center justify-between px-2 py-1 bg-green-600 text-white"}, [
                         m("div", {class: "flex items-center space-x-1"}, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "person"),
-                            m("span", {class: "text-sm font-medium"}, "Your Hand"),
-                            m("span", {class: "text-xs opacity-75"}, "(" + userHand.length + "/" + USER_HAND_LIMIT + ")")
+                            m("span", {class: "text-sm font-medium"}, "Your Hand")
                         ])
                     ]),
 
-                    // Hand cards
-                    m("div", {class: "flex-1 flex items-center justify-center p-2"}, [
-                        userHand.length === 0 ?
-                            m("div", {class: "text-center text-gray-400 text-xs"}, [
-                                m("span", {class: "material-symbols-outlined text-3xl block mb-1"}, "person_outline"),
-                                isDropTarget ? "Drop here" : "Draw a character"
-                            ]) :
-                            m("div", {class: "flex space-x-2 items-center justify-center"},
-                                userHand.map(function(card) {
-                                    let isSelected = selectedCard && selectedCard.objectId === card.objectId;
-                                    return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'userHand', 'character');
-                                })
-                            )
-                    ]),
-
-                    // Discard button
-                    m("div", {class: "px-2 py-1 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700"}, [
-                        m("button", {
-                            class: "w-full px-2 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium flex items-center justify-center space-x-1 disabled:opacity-50",
-                            onclick: discardFromUserHand,
-                            disabled: !selectedCard || userHand.findIndex(c => c.objectId === selectedCard.objectId) === -1
+                    // Main content - character card with surrounding card stacks
+                    // Card sizes: action/item/apparel stacks ~60x80, character ~80x110
+                    m("div", {class: "flex-1 flex items-center justify-center p-2 gap-3"}, [
+                        // Left side - Action cards stack
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userActionHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnActionHand
                         }, [
-                            m("span", {class: "material-symbols-outlined text-sm"}, "delete"),
-                            m("span", {}, "Discard")
+                            m("div", {class: "text-xs text-purple-600 dark:text-purple-400 mb-1 flex items-center"}, [
+                                m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "bolt"),
+                                m("span", {class: "ml-0.5 font-medium"}, actionHand.length)
+                            ]),
+                            actionHand.length === 0 ?
+                                m("div", {
+                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
+                                        (isActionDropTarget ? "border-purple-500 bg-purple-100 dark:bg-purple-900" : "border-purple-300 dark:border-purple-700"),
+                                    style: "width: 60px; min-height: 80px;"
+                                }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(actionHand[actionHandIndex]); }}, [
+                                    // Stacked cards visual
+                                    actionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
+                                    actionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    // Top card
+                                    m("div", {
+                                        class: "relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        style: "width: 60px; height: 80px;",
+                                        draggable: true,
+                                        ondragstart: function(e) { handleDragStart(e, actionHand[actionHandIndex], 'actionHand'); },
+                                        ondragend: handleDragEnd
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-purple-600 dark:text-purple-400", style: "font-size: 24px"}, actionHand[actionHandIndex].icon),
+                                        m("span", {class: "text-purple-800 dark:text-purple-200 truncate w-full text-center px-1", style: "font-size: 9px"}, actionHand[actionHandIndex].label)
+                                    ])
+                                ])
+                        ]),
+
+                        // Center - Character card (drop zone)
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isCharDropTarget ? "bg-green-200 dark:bg-green-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnUserHand
+                        }, [
+                            userHand.length === 0 ?
+                                m("div", {class: "text-center text-gray-400 flex-1 flex items-center"}, [
+                                    m("div", {
+                                        class: "rounded border-2 border-dashed flex flex-col items-center justify-center " +
+                                            (isCharDropTarget ? "border-green-500 bg-green-100 dark:bg-green-900" : "border-gray-400"),
+                                        style: "width: 80px; height: 110px;"
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-3xl"}, "person_add"),
+                                        m("span", {class: "text-xs mt-1"}, "Drop")
+                                    ])
+                                ]) :
+                                m("div", {class: "flex-1 flex items-center"},
+                                    userHand.map(function(card) {
+                                        let isSelected = selectedCard && selectedCard.objectId === card.objectId;
+                                        return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'userHand', 'character');
+                                    })
+                                )
+                        ]),
+
+                        // Right side - Item cards stack
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isItemDropTarget ? "bg-emerald-200 dark:bg-emerald-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userItemHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnItemHand
+                        }, [
+                            m("div", {class: "text-xs text-emerald-600 dark:text-emerald-400 mb-1 flex items-center"}, [
+                                m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "inventory_2"),
+                                m("span", {class: "ml-0.5 font-medium"}, itemHand.length)
+                            ]),
+                            itemHand.length === 0 ?
+                                m("div", {
+                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
+                                        (isItemDropTarget ? "border-emerald-500 bg-emerald-100 dark:bg-emerald-900" : "border-emerald-300 dark:border-emerald-700"),
+                                    style: "width: 60px; min-height: 80px;"
+                                }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(itemHand[itemHandIndex]); }}, [
+                                    itemHand.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
+                                    itemHand.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    m("div", {
+                                        class: "relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        style: "width: 60px; height: 80px;",
+                                        draggable: true,
+                                        ondragstart: function(e) { handleDragStart(e, itemHand[itemHandIndex], 'itemHand'); },
+                                        ondragend: handleDragEnd
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-emerald-600 dark:text-emerald-400", style: "font-size: 24px"}, "inventory_2"),
+                                        m("span", {class: "text-emerald-800 dark:text-emerald-200 truncate w-full text-center px-1", style: "font-size: 9px"}, itemHand[itemHandIndex].name ? itemHand[itemHandIndex].name.substring(0, 8) : "Item")
+                                    ])
+                                ])
+                        ]),
+
+                        // Far right - Apparel cards stack
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isApparelDropTarget ? "bg-pink-200 dark:bg-pink-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userApparelHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnApparelHand
+                        }, [
+                            m("div", {class: "text-xs text-pink-600 dark:text-pink-400 mb-1 flex items-center"}, [
+                                m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "checkroom"),
+                                m("span", {class: "ml-0.5 font-medium"}, apparelHand.length)
+                            ]),
+                            apparelHand.length === 0 ?
+                                m("div", {
+                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
+                                        (isApparelDropTarget ? "border-pink-500 bg-pink-100 dark:bg-pink-900" : "border-pink-300 dark:border-pink-700"),
+                                    style: "width: 60px; min-height: 80px;"
+                                }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(apparelHand[apparelHandIndex]); }}, [
+                                    apparelHand.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
+                                    apparelHand.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    m("div", {
+                                        class: "relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        style: "width: 60px; height: 80px;",
+                                        draggable: true,
+                                        ondragstart: function(e) { handleDragStart(e, apparelHand[apparelHandIndex], 'apparelHand'); },
+                                        ondragend: handleDragEnd
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-pink-600 dark:text-pink-400", style: "font-size: 24px"}, "checkroom"),
+                                        m("span", {class: "text-pink-800 dark:text-pink-200 truncate w-full text-center px-1", style: "font-size: 9px"}, getApparelDisplayName(apparelHand[apparelHandIndex]).substring(0, 8))
+                                    ])
+                                ])
                         ])
                     ])
                 ]);
@@ -968,55 +1566,142 @@
     function GameHandPile() {
         return {
             view: function() {
-                let isDropTarget = dropTarget === 'gameHand' && dragSource === 'deck';
+                let isCharDropTarget = dropTarget === 'gameHand' && dragSource === 'deck';
+                let isActionDropTarget = dropTarget === 'systemActionHand' && dragSource === 'actionDeck';
+                let isItemDropTarget = dropTarget === 'systemItemHand' && dragSource === 'itemDeck';
+                let isApparelDropTarget = dropTarget === 'systemApparelHand' && dragSource === 'apparelDeck';
 
-                return m("div", {
-                    class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors " + (isDropTarget ? "bg-red-100 dark:bg-red-900/30" : ""),
-                    ondragover: function(e) { handleDragOver(e, 'gameHand'); },
-                    ondragleave: handleDragLeave,
-                    ondrop: handleDropOnGameHand
-                }, [
-                    // Header
-                    m("div", {class: "flex items-center justify-between px-2 py-1 bg-red-600 text-white"}, [
+                // Index for system hands
+                let sysActionIdx = Math.min(systemActionHandIndex, Math.max(0, systemActionHand.length - 1));
+                let sysItemIdx = Math.min(systemItemHandIndex, Math.max(0, systemItems.length - 1));
+                let sysApparelIdx = Math.min(systemApparelHandIndex, Math.max(0, systemApparel.length - 1));
+
+                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
+                    // Header - flex-shrink-0 to prevent it from growing
+                    m("div", {class: "flex-shrink-0 flex items-center justify-between px-2 py-1 bg-red-600 text-white"}, [
                         m("div", {class: "flex items-center space-x-1"}, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "smart_toy"),
-                            m("span", {class: "text-sm font-medium"}, "Game Hand"),
-                            m("span", {class: "text-xs opacity-75"}, "(" + gameHand.length + "/" + GAME_HAND_LIMIT + ")")
-                        ]),
-                        m("button", {
-                            class: "p-1 rounded hover:bg-red-500 disabled:opacity-50",
-                            onclick: drawToGameHand,
-                            disabled: deck.length === 0 || gameHand.length >= GAME_HAND_LIMIT,
-                            title: "Draw for game"
-                        }, m("span", {class: "material-symbols-outlined text-sm"}, "add"))
+                            m("span", {class: "text-sm font-medium"}, "System Hand")
+                        ])
                     ]),
 
-                    // Hand cards - horizontal scroll for multiple
-                    m("div", {class: "flex-1 overflow-x-auto overflow-y-hidden p-2"}, [
-                        gameHand.length === 0 ?
-                            m("div", {class: "flex items-center justify-center h-full text-gray-400 text-xs"}, [
-                                m("div", {class: "text-center"}, [
-                                    m("span", {class: "material-symbols-outlined text-3xl block mb-1"}, "smart_toy"),
-                                    isDropTarget ? "Drop here" : "No opponents"
-                                ])
-                            ]) :
-                            m("div", {class: "flex space-x-2 h-full items-center"},
-                                gameHand.map(function(card) {
-                                    let isSelected = selectedCard && selectedCard.objectId === card.objectId;
-                                    return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'gameHand', 'character');
-                                })
-                            )
-                    ]),
-
-                    // Discard button
-                    m("div", {class: "px-2 py-1 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700"}, [
-                        m("button", {
-                            class: "w-full px-2 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium flex items-center justify-center space-x-1 disabled:opacity-50",
-                            onclick: discardFromGameHand,
-                            disabled: !selectedCard || gameHand.findIndex(c => c.objectId === selectedCard.objectId) === -1
+                    // Main content - character card with surrounding card stacks
+                    // Card sizes: action/item/apparel stacks ~60x80, character ~80x110
+                    m("div", {class: "flex-1 flex items-center justify-center p-2 gap-3 overflow-hidden"}, [
+                        // Left side - Action cards stack (system)
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'systemActionHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnSystemActionHand
                         }, [
-                            m("span", {class: "material-symbols-outlined text-sm"}, "delete"),
-                            m("span", {}, "Discard")
+                            m("div", {class: "text-xs text-purple-600 dark:text-purple-400 mb-1 flex items-center"}, [
+                                m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "bolt"),
+                                m("span", {class: "ml-0.5 font-medium"}, systemActionHand.length)
+                            ]),
+                            systemActionHand.length === 0 ?
+                                m("div", {
+                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
+                                        (isActionDropTarget ? "border-purple-500 bg-purple-100 dark:bg-purple-900" : "border-purple-300 dark:border-purple-700"),
+                                    style: "width: 60px; min-height: 80px;"
+                                }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(systemActionHand[sysActionIdx]); }}, [
+                                    systemActionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
+                                    systemActionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    m("div", {
+                                        class: "relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        style: "width: 60px; height: 80px;"
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-purple-600 dark:text-purple-400", style: "font-size: 24px"}, systemActionHand[sysActionIdx].icon),
+                                        m("span", {class: "text-purple-800 dark:text-purple-200 truncate w-full text-center px-1", style: "font-size: 9px"}, systemActionHand[sysActionIdx].label)
+                                    ])
+                                ])
+                        ]),
+
+                        // Center - Character cards (drop zone)
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isCharDropTarget ? "bg-red-200 dark:bg-red-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'gameHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnGameHand
+                        }, [
+                            gameHand.length === 0 ?
+                                m("div", {class: "text-center text-gray-400 flex-1 flex items-center"}, [
+                                    m("div", {
+                                        class: "rounded border-2 border-dashed flex flex-col items-center justify-center " +
+                                            (isCharDropTarget ? "border-red-500 bg-red-100 dark:bg-red-900" : "border-gray-400"),
+                                        style: "width: 80px; height: 110px;"
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-3xl"}, "smart_toy"),
+                                        m("span", {class: "text-xs mt-1"}, "Drop")
+                                    ])
+                                ]) :
+                                m("div", {class: "flex space-x-1 flex-1 items-center"},
+                                    gameHand.map(function(card) {
+                                        let isSelected = selectedCard && selectedCard.objectId === card.objectId;
+                                        return renderMiniCard(card, function() { selectCard(card); }, isSelected, 'gameHand', 'character');
+                                    })
+                                )
+                        ]),
+
+                        // Right side - Item cards stack (system)
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isItemDropTarget ? "bg-emerald-200 dark:bg-emerald-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'systemItemHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnSystemItemHand
+                        }, [
+                            m("div", {class: "text-xs text-emerald-600 dark:text-emerald-400 mb-1 flex items-center"}, [
+                                m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "inventory_2"),
+                                m("span", {class: "ml-0.5 font-medium"}, systemItems.length)
+                            ]),
+                            systemItems.length === 0 ?
+                                m("div", {
+                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
+                                        (isItemDropTarget ? "border-emerald-500 bg-emerald-100 dark:bg-emerald-900" : "border-emerald-300 dark:border-emerald-700"),
+                                    style: "width: 60px; min-height: 80px;"
+                                }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(systemItems[sysItemIdx]); }}, [
+                                    systemItems.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
+                                    systemItems.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    m("div", {
+                                        class: "relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        style: "width: 60px; height: 80px;"
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-emerald-600 dark:text-emerald-400", style: "font-size: 24px"}, "inventory_2"),
+                                        m("span", {class: "text-emerald-800 dark:text-emerald-200 truncate w-full text-center px-1", style: "font-size: 9px"}, systemItems[sysItemIdx].name ? systemItems[sysItemIdx].name.substring(0, 8) : "Item")
+                                    ])
+                                ])
+                        ]),
+
+                        // Far right - Apparel cards stack (system)
+                        m("div", {
+                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isApparelDropTarget ? "bg-pink-200 dark:bg-pink-800" : ""),
+                            ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'systemApparelHand'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnSystemApparelHand
+                        }, [
+                            m("div", {class: "text-xs text-pink-600 dark:text-pink-400 mb-1 flex items-center"}, [
+                                m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "checkroom"),
+                                m("span", {class: "ml-0.5 font-medium"}, systemApparel.length)
+                            ]),
+                            systemApparel.length === 0 ?
+                                m("div", {
+                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
+                                        (isApparelDropTarget ? "border-pink-500 bg-pink-100 dark:bg-pink-900" : "border-pink-300 dark:border-pink-700"),
+                                    style: "width: 60px; min-height: 80px;"
+                                }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
+                                m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(systemApparel[sysApparelIdx]); }}, [
+                                    systemApparel.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
+                                    systemApparel.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    m("div", {
+                                        class: "relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        style: "width: 60px; height: 80px;"
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-pink-600 dark:text-pink-400", style: "font-size: 24px"}, "checkroom"),
+                                        m("span", {class: "text-pink-800 dark:text-pink-200 truncate w-full text-center px-1", style: "font-size: 9px"}, getApparelDisplayName(systemApparel[sysApparelIdx]).substring(0, 8))
+                                    ])
+                                ])
                         ])
                     ])
                 ]);
@@ -1148,9 +1833,14 @@
             view: function() {
                 let userChar = userHand.length > 0 ? userHand[0] : null;
                 let gameChar = gameHand.length > 0 ? gameHand[0] : null;
-                let isActionDrop = dropTarget === 'actionTray' && dragSource === 'actionDeck';
-                let isItemDrop = dropTarget === 'itemHand' && dragSource === 'itemDeck';
-                let isApparelDrop = dropTarget === 'apparelHand' && dragSource === 'apparelDeck';
+                // Highlight drop zones when dragging from hand OR when hovering over target
+                let isPlayedDrop = (dropTarget === 'playedActions' && dragSource === 'actionHand') || (dragSource === 'actionHand' && dropTarget === 'playedActions');
+                let isItemDrop = (dropTarget === 'itemTray' && dragSource === 'itemHand') || (dragSource === 'itemHand' && dropTarget === 'itemTray');
+                let isApparelDrop = (dropTarget === 'apparelTray' && dragSource === 'apparelHand') || (dragSource === 'apparelHand' && dropTarget === 'apparelTray');
+                // Also highlight when actively dragging from correct source (even before hovering over drop)
+                let isDraggingAction = dragSource === 'actionHand';
+                let isDraggingItem = dragSource === 'itemHand';
+                let isDraggingApparel = dragSource === 'apparelHand';
 
                 return m("div", {class: "flex flex-col h-full bg-gray-200 dark:bg-gray-800 border-y border-gray-300 dark:border-gray-700"}, [
                     // Pending interaction display (at top if active)
@@ -1180,122 +1870,146 @@
                         ])
                     ]) : "",
 
-                    // Two rows: User hand and System hand
-                    m("div", {class: "flex-1 flex flex-col overflow-hidden"}, [
-                        // USER ROW
-                        m("div", {class: "flex-1 flex border-b border-gray-400 dark:border-gray-600"}, [
+                    // Two rows: User tray and System tray
+                    m("div", {class: "flex-1 flex flex-col min-h-0"}, [
+                        // USER ROW - Played Actions | Items | Apparel
+                        m("div", {class: "flex-1 flex border-b border-gray-400 dark:border-gray-600 min-h-0 overflow-hidden"}, [
                             // User label
-                            m("div", {class: "w-16 flex flex-col items-center justify-center bg-blue-600 text-white text-xs"}, [
+                            m("div", {class: "w-14 flex flex-col items-center justify-center bg-blue-600 text-white text-xs"}, [
                                 m("span", {class: "material-symbols-outlined text-sm"}, "person"),
-                                m("span", {}, userChar ? userChar.name.split(" ")[0] : "User")
+                                m("span", {class: "truncate w-full text-center", style: "font-size: 10px"}, userChar ? userChar.name.split(" ")[0] : "User")
                             ]),
-                            // User Actions
-                            m("div", {
-                                class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 transition-colors " + (isActionDrop ? "bg-purple-100 dark:bg-purple-900/30" : ""),
-                                ondragover: function(e) { handleDragOver(e, 'actionTray'); },
-                                ondragleave: handleDragLeave,
-                                ondrop: handleDropOnActionTray
-                            }, [
-                                m("div", {class: "px-1 py-0.5 bg-purple-600 text-white text-xs flex items-center"}, [
+                            // User Played Actions (drop zone for action cards from hand)
+                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
+                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-purple-700 text-white text-xs flex items-center"}, [
                                     m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "bolt"),
-                                    m("span", {class: "ml-1"}, playedActions.length)
+                                    m("span", {class: "ml-1"}, "Actions (" + playedActions.length + ")")
                                 ]),
                                 m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    playedActions.length === 0 ?
-                                        m("span", {class: "text-gray-400 text-xs"}, "Actions") :
-                                        playedActions.map(function(action) {
-                                            let isSelected = selectedAction && selectedAction.id === action.id;
-                                            return m("div", {class: "relative"}, [
-                                                renderActionCard(action, function() { selectPlayedAction(action); }, isSelected),
-                                                m("button", {
-                                                    class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
-                                                    onclick: function(e) { e.stopPropagation(); discardPlayedAction(action); },
-                                                    title: "Discard"
-                                                }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
-                                            ]);
-                                        })
+                                    // Drop target outline - highlighted when dragging action cards
+                                    m("div", {
+                                        class: "flex-shrink-0 flex flex-col items-center justify-center rounded border-2 border-dashed transition-all " +
+                                            (isPlayedDrop ? "border-purple-500 bg-purple-200 dark:bg-purple-800 scale-105" :
+                                             isDraggingAction ? "border-purple-400 bg-purple-100 dark:bg-purple-900/50 animate-pulse" :
+                                             "border-purple-300 dark:border-purple-700"),
+                                        style: "width: 50px; height: 60px;",
+                                        ondragover: function(e) { e.preventDefault(); e.stopPropagation(); handleDragOver(e, 'playedActions'); },
+                                        ondragleave: handleDragLeave,
+                                        ondrop: handleDropOnPlayedActions
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-lg " + (isPlayedDrop || isDraggingAction ? "text-purple-600" : "text-purple-400")}, "add"),
+                                        m("span", {class: "text-xs " + (isPlayedDrop || isDraggingAction ? "text-purple-600 font-medium" : "text-purple-400")}, isPlayedDrop ? "Release!" : "Drop")
+                                    ]),
+                                    // Played action cards
+                                    playedActions.map(function(action) {
+                                        let isSelected = selectedAction && selectedAction.id === action.id;
+                                        return m("div", {class: "relative"}, [
+                                            renderActionCard(action, function() { selectPlayedAction(action); }, isSelected),
+                                            m("button", {
+                                                class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
+                                                onclick: function(e) { e.stopPropagation(); discardPlayedAction(action); },
+                                                title: "Discard"
+                                            }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
+                                        ]);
+                                    })
                                 ])
                             ]),
-                            // User Items
-                            m("div", {
-                                class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 transition-colors " + (isItemDrop ? "bg-emerald-100 dark:bg-emerald-900/30" : ""),
-                                ondragover: function(e) { handleDragOver(e, 'itemHand'); },
-                                ondragleave: handleDragLeave,
-                                ondrop: handleDropOnItemHand
-                            }, [
-                                m("div", {class: "px-1 py-0.5 bg-emerald-600 text-white text-xs flex items-center"}, [
+                            // User Items (tray - drop zone for items from hand)
+                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
+                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-emerald-600 text-white text-xs flex items-center"}, [
                                     m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "inventory_2"),
-                                    m("span", {class: "ml-1"}, itemHand.length)
+                                    m("span", {class: "ml-1"}, "Items (" + itemTray.length + ")")
                                 ]),
                                 m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    itemHand.length === 0 ?
-                                        m("span", {class: "text-gray-400 text-xs"}, "Items") :
-                                        itemHand.map(function(item) {
-                                            return m("div", {class: "relative"}, [
-                                                renderItemCard(item),
-                                                m("button", {
-                                                    class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
-                                                    onclick: function(e) { e.stopPropagation(); discardItem(item); },
-                                                    title: "Discard"
-                                                }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
-                                            ]);
-                                        })
+                                    // Drop target outline - highlighted when dragging item cards
+                                    m("div", {
+                                        class: "flex-shrink-0 flex flex-col items-center justify-center rounded border-2 border-dashed transition-all " +
+                                            (isItemDrop ? "border-emerald-500 bg-emerald-200 dark:bg-emerald-800 scale-105" :
+                                             isDraggingItem ? "border-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 animate-pulse" :
+                                             "border-emerald-300 dark:border-emerald-700"),
+                                        style: "width: 50px; height: 60px;",
+                                        ondragover: function(e) { e.preventDefault(); e.stopPropagation(); handleDragOver(e, 'itemTray'); },
+                                        ondragleave: handleDragLeave,
+                                        ondrop: handleDropOnItemTray
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-lg " + (isItemDrop || isDraggingItem ? "text-emerald-600" : "text-emerald-400")}, "add"),
+                                        m("span", {class: "text-xs " + (isItemDrop || isDraggingItem ? "text-emerald-600 font-medium" : "text-emerald-400")}, isItemDrop ? "Release!" : "Drop")
+                                    ]),
+                                    // Item cards in tray
+                                    itemTray.map(function(item) {
+                                        return m("div", {class: "relative"}, [
+                                            renderItemCard(item),
+                                            m("button", {
+                                                class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
+                                                onclick: function(e) { e.stopPropagation(); discardItem(item); },
+                                                title: "Discard"
+                                            }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
+                                        ]);
+                                    })
                                 ])
                             ]),
-                            // User Apparel
-                            m("div", {
-                                class: "flex-1 flex flex-col transition-colors " + (isApparelDrop ? "bg-pink-100 dark:bg-pink-900/30" : ""),
-                                ondragover: function(e) { handleDragOver(e, 'apparelHand'); },
-                                ondragleave: handleDragLeave,
-                                ondrop: handleDropOnApparelHand
-                            }, [
-                                m("div", {class: "px-1 py-0.5 bg-pink-600 text-white text-xs flex items-center"}, [
+                            // User Apparel (tray - drop zone for apparel from hand)
+                            m("div", {class: "flex-1 flex flex-col overflow-hidden"}, [
+                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-pink-600 text-white text-xs flex items-center"}, [
                                     m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "checkroom"),
-                                    m("span", {class: "ml-1"}, apparelHand.length)
+                                    m("span", {class: "ml-1"}, "Apparel (" + apparelTray.length + ")")
                                 ]),
                                 m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    apparelHand.length === 0 ?
-                                        m("span", {class: "text-gray-400 text-xs"}, "Apparel") :
-                                        apparelHand.map(function(apparel) {
-                                            return m("div", {class: "relative"}, [
-                                                renderApparelCard(apparel),
-                                                m("button", {
-                                                    class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
-                                                    onclick: function(e) { e.stopPropagation(); discardApparel(apparel); },
-                                                    title: "Discard"
-                                                }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
-                                            ]);
-                                        })
+                                    // Drop target outline - highlighted when dragging apparel cards
+                                    m("div", {
+                                        class: "flex-shrink-0 flex flex-col items-center justify-center rounded border-2 border-dashed transition-all " +
+                                            (isApparelDrop ? "border-pink-500 bg-pink-200 dark:bg-pink-800 scale-105" :
+                                             isDraggingApparel ? "border-pink-400 bg-pink-100 dark:bg-pink-900/50 animate-pulse" :
+                                             "border-pink-300 dark:border-pink-700"),
+                                        style: "width: 50px; height: 60px;",
+                                        ondragover: function(e) { e.preventDefault(); e.stopPropagation(); handleDragOver(e, 'apparelTray'); },
+                                        ondragleave: handleDragLeave,
+                                        ondrop: handleDropOnApparelTray
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-lg " + (isApparelDrop || isDraggingApparel ? "text-pink-600" : "text-pink-400")}, "add"),
+                                        m("span", {class: "text-xs " + (isApparelDrop || isDraggingApparel ? "text-pink-600 font-medium" : "text-pink-400")}, isApparelDrop ? "Release!" : "Drop")
+                                    ]),
+                                    // Apparel cards in tray
+                                    apparelTray.map(function(apparel) {
+                                        return m("div", {class: "relative"}, [
+                                            renderApparelCard(apparel),
+                                            m("button", {
+                                                class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
+                                                onclick: function(e) { e.stopPropagation(); discardApparel(apparel); },
+                                                title: "Discard"
+                                            }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
+                                        ]);
+                                    })
                                 ])
                             ])
                         ]),
 
-                        // SYSTEM ROW
-                        m("div", {class: "flex-1 flex"}, [
+                        // SYSTEM ROW - Actions | Items | Apparel (same as user, no Hand column)
+                        m("div", {class: "flex-1 flex overflow-hidden"}, [
                             // System label
-                            m("div", {class: "w-16 flex flex-col items-center justify-center bg-red-600 text-white text-xs"}, [
+                            m("div", {class: "w-14 flex-shrink-0 flex flex-col items-center justify-center bg-red-600 text-white text-xs"}, [
                                 m("span", {class: "material-symbols-outlined text-sm"}, "smart_toy"),
-                                m("span", {}, gameChar ? gameChar.name.split(" ")[0] : "System")
+                                m("span", {class: "truncate w-full text-center", style: "font-size: 10px"}, gameChar ? gameChar.name.split(" ")[0] : "System")
                             ]),
-                            // System Actions
-                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700"}, [
-                                m("div", {class: "px-1 py-0.5 bg-purple-800 text-white text-xs flex items-center"}, [
+                            // System Actions (played)
+                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
+                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-purple-700 text-white text-xs flex items-center"}, [
                                     m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "bolt"),
-                                    m("span", {class: "ml-1"}, systemActions.length)
+                                    m("span", {class: "ml-1"}, "Actions (" + systemPlayedActions.length + ")")
                                 ]),
                                 m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    systemActions.length === 0 ?
+                                    systemPlayedActions.length === 0 ?
                                         m("span", {class: "text-gray-400 text-xs"}, "Actions") :
-                                        systemActions.map(function(action) {
+                                        systemPlayedActions.map(function(action) {
                                             return renderActionCard(action, null, false);
                                         })
                                 ])
                             ]),
                             // System Items
-                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700"}, [
-                                m("div", {class: "px-1 py-0.5 bg-emerald-800 text-white text-xs flex items-center"}, [
+                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
+                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-emerald-800 text-white text-xs flex items-center"}, [
                                     m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "inventory_2"),
-                                    m("span", {class: "ml-1"}, systemItems.length)
+                                    m("span", {class: "ml-1"}, "Items (" + systemItems.length + ")")
                                 ]),
                                 m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
                                     systemItems.length === 0 ?
@@ -1306,10 +2020,10 @@
                                 ])
                             ]),
                             // System Apparel
-                            m("div", {class: "flex-1 flex flex-col"}, [
-                                m("div", {class: "px-1 py-0.5 bg-pink-800 text-white text-xs flex items-center"}, [
+                            m("div", {class: "flex-1 flex flex-col overflow-hidden"}, [
+                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-pink-800 text-white text-xs flex items-center"}, [
                                     m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "checkroom"),
-                                    m("span", {class: "ml-1"}, systemApparel.length)
+                                    m("span", {class: "ml-1"}, "Apparel (" + systemApparel.length + ")")
                                 ]),
                                 m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
                                     systemApparel.length === 0 ?
@@ -1340,13 +2054,95 @@
 
     // Render a mini apparel card
     function renderApparelCard(apparel) {
+        let displayName = getApparelDisplayName(apparel);
         return m("div", {
             class: "flex-shrink-0 flex flex-col items-center justify-center p-1 rounded border bg-gradient-to-b from-pink-50 to-pink-100 dark:from-pink-900 dark:to-pink-950 border-pink-300 dark:border-pink-700",
             style: "width: 50px; height: 60px;",
-            title: apparel.name || "Apparel"
+            title: displayName
         }, [
             m("span", {class: "material-symbols-outlined text-lg text-pink-600 dark:text-pink-400"}, "checkroom"),
-            m("span", {class: "text-xs text-center text-pink-700 dark:text-pink-300 truncate w-full"}, apparel.name ? apparel.name.substring(0, 6) : "?")
+            m("span", {class: "text-xs text-center text-pink-700 dark:text-pink-300 truncate w-full"}, displayName.substring(0, 6))
+        ]);
+    }
+
+    // Render item statistics (itemStatistics model - damage, protection, range, etc.)
+    function renderItemStatistics(item) {
+        // Get statistics - it's a single object, not an array
+        let stats = item.statistics;
+
+        if (!stats) {
+            return m("div", {class: "mt-2 text-xs text-gray-500 text-center"}, "No statistics");
+        }
+
+        // Item statistics properties from olio.itemStatistics model
+        let statProps = [
+            {key: 'damage', label: 'Damage', icon: 'swords', max: 20},
+            {key: 'protection', label: 'Protection', icon: 'shield', max: 20},
+            {key: 'entrapment', label: 'Entrapment', icon: 'trap', max: 20},
+            {key: 'range', label: 'Range', icon: 'radar', unit: 'm'},
+            {key: 'consumption', label: 'Consumption', icon: 'local_fire_department'},
+            {key: 'replenishment', label: 'Replenish', icon: 'add_circle'}
+        ];
+
+        // Filter to only show non-zero/non-null values
+        let activeProps = statProps.filter(function(p) {
+            return stats[p.key] !== undefined && stats[p.key] !== null && stats[p.key] !== 0;
+        });
+
+        // Also check for type fields
+        let hasConsumptionType = stats.consumptionType && stats.consumptionType.length > 0;
+        let hasReplenishmentType = stats.replenishmentType && stats.replenishmentType.length > 0;
+
+        if (activeProps.length === 0 && !hasConsumptionType && !hasReplenishmentType) {
+            return m("div", {class: "mt-2 text-xs text-gray-500 text-center"}, "No stat data");
+        }
+
+        return m("div", {class: "mt-2 text-xs text-emerald-700 dark:text-emerald-300 overflow-y-auto", style: "max-height: 80px;"}, [
+            // Show stat bars for numeric values
+            activeProps.map(function(p) {
+                let val = stats[p.key];
+                let displayVal = val;
+                if (p.unit) {
+                    displayVal = val + p.unit;
+                }
+
+                // For stats with max values, show a bar
+                if (p.max) {
+                    let pct = Math.min(100, (val / p.max) * 100);
+                    return m("div", {class: "px-1 py-0.5"}, [
+                        m("div", {class: "flex items-center justify-between mb-0.5"}, [
+                            m("span", {class: "flex items-center"}, [
+                                m("span", {class: "material-symbols-outlined mr-1", style: "font-size: 10px"}, p.icon),
+                                m("span", {}, p.label)
+                            ]),
+                            m("span", {class: "font-medium"}, val + "/" + p.max)
+                        ]),
+                        m("div", {class: "w-full h-1.5 bg-gray-300 dark:bg-gray-600 rounded"}, [
+                            m("div", {
+                                class: "h-full rounded " + (p.key === 'damage' ? "bg-red-500" : p.key === 'protection' ? "bg-blue-500" : "bg-yellow-500"),
+                                style: "width: " + pct + "%"
+                            })
+                        ])
+                    ]);
+                }
+
+                return m("div", {class: "flex items-center justify-between px-1 py-0.5"}, [
+                    m("span", {class: "flex items-center"}, [
+                        m("span", {class: "material-symbols-outlined mr-1", style: "font-size: 10px"}, p.icon),
+                        m("span", {}, p.label)
+                    ]),
+                    m("span", {class: "font-medium"}, displayVal)
+                ]);
+            }),
+            // Show consumption/replenishment types if present
+            hasConsumptionType ? m("div", {class: "flex items-center justify-between px-1 py-0.5 border-t border-emerald-300 dark:border-emerald-700 mt-1 pt-1"}, [
+                m("span", {}, "Consumes"),
+                m("span", {class: "font-medium"}, stats.consumptionType)
+            ]) : "",
+            hasReplenishmentType ? m("div", {class: "flex items-center justify-between px-1 py-0.5"}, [
+                m("span", {}, "Replenishes"),
+                m("span", {class: "font-medium"}, stats.replenishmentType)
+            ]) : ""
         ]);
     }
 
@@ -1433,14 +2229,14 @@
                     m("div", {class: "px-2 py-1 bg-gray-600 text-white text-sm font-medium text-center"}, "Draw Piles"),
 
                     // Grid of draw piles
-                    m("div", {class: "flex-1 grid grid-cols-2 gap-1 p-1"}, [
+                    m("div", {class: "grid grid-cols-2 gap-1 p-1"}, [
                         // Character pile
                         renderDrawPile("Characters", "person", "blue", deck, discard, "characterDeck",
                             function() { drawToUserHand(); }, shuffleDeck, reshuffleDiscard),
 
                         // Action pile
                         renderDrawPile("Actions", "bolt", "purple", actionDeck, actionDiscard, "actionDeck",
-                            drawActionToTray, shuffleActionDeck, reshuffleActionDeck),
+                            drawActionToHand, shuffleActionDeck, reshuffleActionDeck),
 
                         // Item pile
                         renderDrawPile("Items", "inventory_2", "emerald", itemDeck, itemDiscard, "itemDeck",
@@ -1449,6 +2245,31 @@
                         // Apparel pile
                         renderDrawPile("Apparel", "checkroom", "pink", apparelDeck, apparelDiscard, "apparelDeck",
                             drawApparelToHand, shuffleApparelDeck, reshuffleApparelDeck)
+                    ]),
+
+                    // Universal discard drop zone
+                    m("div", {
+                        class: "mx-1 mb-1 flex flex-row items-center justify-center gap-2 rounded border-2 border-dashed transition-all flex-shrink-0 " +
+                            (dropTarget === 'universalDiscard' ? "border-red-500 bg-red-100 dark:bg-red-900/30" : "border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-800"),
+                        style: "height: 40px;",
+                        ondragover: function(e) {
+                            e.preventDefault();
+                            dropTarget = 'universalDiscard';
+                            m.redraw();
+                        },
+                        ondragleave: function() {
+                            if (dropTarget === 'universalDiscard') dropTarget = null;
+                            m.redraw();
+                        },
+                        ondrop: function(e) {
+                            e.preventDefault();
+                            handleUniversalDiscard();
+                            dropTarget = null;
+                            m.redraw();
+                        }
+                    }, [
+                        m("span", {class: "material-symbols-outlined text-lg " + (dropTarget === 'universalDiscard' ? "text-red-500" : "text-gray-500 dark:text-gray-400")}, "delete"),
+                        m("span", {class: "text-xs font-medium " + (dropTarget === 'universalDiscard' ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-400")}, "Drop to Discard")
                     ])
                 ]);
             }
@@ -1603,7 +2424,7 @@
                     {id: 'apparel', label: 'Apparel', icon: 'checkroom'}
                 ];
 
-                return m("div", {class: "flex flex-col space-y-1 bg-gray-200 dark:bg-gray-700 p-1 rounded-lg"},
+                return m("div", {class: "flex flex-col space-y-1 bg-gray-200 dark:bg-gray-700 p-1 rounded-lg"}, [
                     tabs.map(function(tab) {
                         let isActive = cardView === tab.id;
                         return m("button", {
@@ -1615,8 +2436,18 @@
                             m("span", {class: "material-symbols-outlined text-sm"}, tab.icon),
                             m("span", {class: "text-xs"}, tab.label)
                         ]);
-                    })
-                );
+                    }),
+                    // Open Object Page link at bottom of tabs
+                    selectedCard ? m("a", {
+                        class: "flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-600 mt-2 border-t border-gray-300 dark:border-gray-600 pt-2",
+                        href: "/#!/view/olio.charPerson/" + (selectedCard.objectId || selectedCard.id || ""),
+                        target: "_blank",
+                        title: "Open full object page in new tab"
+                    }, [
+                        m("span", {class: "material-symbols-outlined text-sm"}, "open_in_new"),
+                        m("span", {class: "text-xs"}, "Object")
+                    ]) : ""
+                ]);
             }
         };
     }
@@ -1630,6 +2461,11 @@
             view: function() {
                 let isDropTarget = dropTarget === 'selected' && dragSource === 'hand';
 
+                // Check if we have a detail card (action/item/apparel) selected
+                if (selectedDetailCard && selectedDetailType) {
+                    return renderDetailCardView();
+                }
+
                 if (!selectedCard) {
                     return m("div", {
                         class: "flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 transition-colors " + (isDropTarget ? "bg-purple-100 dark:bg-purple-900/30" : ""),
@@ -1638,10 +2474,10 @@
                         ondrop: handleDropOnSelected
                     }, [
                         m("span", {class: "material-symbols-outlined text-6xl mb-2"}, "touch_app"),
-                        m("div", {}, isDropTarget ? "Drop to view card" : "Draw or drag a card")
+                        m("div", {}, isDropTarget ? "Drop to view card" : "Click a card to view")
                     ]);
                 }
-
+                console.log(selectedCard);
                 return m("div", {
                     class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors " + (isDropTarget ? "bg-purple-100 dark:bg-purple-900/30" : ""),
                     ondragover: function(e) { handleDragOver(e, 'selected'); },
@@ -1664,17 +2500,17 @@
                         ])
                     ]),
 
-                    // Action buttons
-                    m("div", {class: "p-2 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 flex justify-center space-x-2"}, [
+                    // Action buttons - flex-shrink-0 prevents clipping
+                    m("div", {class: "flex-shrink-0 p-2 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 flex justify-center space-x-2"}, [
                         m("button", {
-                            class: "px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs flex items-center space-x-1",
+                            class: "px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs flex items-center space-x-1",
                             onclick: function() { openCharacterView(selectedCard); }
                         }, [
-                            m("span", {class: "material-symbols-outlined text-sm"}, "open_in_new"),
-                            m("span", {}, "Full")
+                            m("span", {class: "material-symbols-outlined text-sm"}, "open_in_full"),
+                            m("span", {}, "Full View")
                         ]),
                         m("button", {
-                            class: "px-3 py-1.5 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs flex items-center space-x-1",
+                            class: "px-3 py-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs flex items-center space-x-1",
                             onclick: function() { refreshSelectedCard(); }
                         }, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "refresh")
@@ -1683,6 +2519,187 @@
                 ]);
             }
         };
+    }
+
+    // Render detail view for action/item/apparel cards
+    // Uses the same layout as character card view (tabs on left, card on right)
+    function renderDetailCardView() {
+        let card = selectedDetailCard;
+        let type = selectedDetailType;
+
+        // Determine colors based on type
+        let colors = {
+            action: { bg: "purple", icon: "bolt" },
+            item: { bg: "emerald", icon: "inventory_2" },
+            apparel: { bg: "pink", icon: "checkroom" }
+        }[type] || { bg: "gray", icon: "help" };
+
+        // Check if this card is in the user's hand (draggable to tray)
+        let isInUserHand = false;
+        let handArray = null;
+        let handIndex = null;
+        if (type === 'action') {
+            isInUserHand = actionHand.some(a => a.id === card.id);
+            handArray = actionHand;
+            handIndex = actionHand.findIndex(a => a.id === card.id);
+        } else if (type === 'item') {
+            isInUserHand = itemHand.some(i => i.objectId === card.objectId);
+            handArray = itemHand;
+            handIndex = itemHand.findIndex(i => i.objectId === card.objectId);
+        } else if (type === 'apparel') {
+            isInUserHand = apparelHand.some(a => a.objectId === card.objectId);
+            handArray = apparelHand;
+            handIndex = apparelHand.findIndex(a => a.objectId === card.objectId);
+        }
+
+        // Build tabs for this card type - similar to CardViewTabs for character
+        let detailTabs = [
+            {id: 'info', label: 'Info', icon: 'info'}
+        ];
+        // Add type-specific tabs
+        if (type === 'item') {
+            // Items use itemStatistics model (damage, protection, range, etc.)
+            detailTabs.push({id: 'itemStats', label: 'Stats', icon: 'bar_chart'});
+        } else {
+            // Actions and apparel use generic stats tab
+            detailTabs.push({id: 'stats', label: 'Stats', icon: 'bar_chart'});
+        }
+
+        // State for detail card view tab (default to 'info')
+        if (!window._detailCardView) window._detailCardView = 'info';
+
+        return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors"}, [
+            // Main content area - tabs on left, card on right (same as character view)
+            m("div", {class: "flex-1 flex overflow-hidden"}, [
+                // Vertical tabs on left (matching character view layout)
+                m("div", {class: "p-1 border-r border-gray-300 dark:border-gray-700 bg-gray-200 dark:bg-gray-800 overflow-y-auto"}, [
+                    m("div", {class: "flex flex-col space-y-1 bg-gray-200 dark:bg-gray-700 p-1 rounded-lg"}, [
+                        // Type header
+                        m("div", {class: "flex items-center space-x-1 px-2 py-1 text-" + colors.bg + "-600 dark:text-" + colors.bg + "-400 border-b border-gray-300 dark:border-gray-600 mb-1"}, [
+                            m("span", {class: "material-symbols-outlined text-sm"}, colors.icon),
+                            m("span", {class: "text-xs font-medium"}, type.charAt(0).toUpperCase() + type.slice(1))
+                        ]),
+                        // Tab buttons
+                        detailTabs.map(function(tab) {
+                            let isActive = window._detailCardView === tab.id;
+                            return m("button", {
+                                class: "flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors " +
+                                    (isActive ? "bg-white dark:bg-gray-600 text-gray-800 dark:text-white shadow" : "text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-600"),
+                                onclick: function() { window._detailCardView = tab.id; m.redraw(); },
+                                title: tab.label
+                            }, [
+                                m("span", {class: "material-symbols-outlined text-sm"}, tab.icon),
+                                m("span", {class: "text-xs"}, tab.label)
+                            ]);
+                        }),
+                        // Navigation if in hand with multiple cards
+                        isInUserHand && handArray && handArray.length > 1 ? [
+                            m("div", {class: "border-t border-gray-300 dark:border-gray-600 mt-2 pt-2"}, [
+                                m("div", {class: "text-xs text-gray-500 text-center mb-1"}, (handIndex + 1) + "/" + handArray.length),
+                                m("div", {class: "flex justify-center space-x-1"}, [
+                                    m("button", {
+                                        class: "p-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 disabled:opacity-30",
+                                        onclick: function() {
+                                            if (handIndex > 0) {
+                                                if (type === 'action') { actionHandIndex = handIndex - 1; selectActionCard(actionHand[actionHandIndex]); }
+                                                else if (type === 'item') { itemHandIndex = handIndex - 1; selectItemCard(itemHand[itemHandIndex]); }
+                                                else if (type === 'apparel') { apparelHandIndex = handIndex - 1; selectApparelCard(apparelHand[apparelHandIndex]); }
+                                            }
+                                        },
+                                        disabled: handIndex <= 0
+                                    }, m("span", {class: "material-symbols-outlined text-sm"}, "chevron_left")),
+                                    m("button", {
+                                        class: "p-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 disabled:opacity-30",
+                                        onclick: function() {
+                                            if (handIndex < handArray.length - 1) {
+                                                if (type === 'action') { actionHandIndex = handIndex + 1; selectActionCard(actionHand[actionHandIndex]); }
+                                                else if (type === 'item') { itemHandIndex = handIndex + 1; selectItemCard(itemHand[itemHandIndex]); }
+                                                else if (type === 'apparel') { apparelHandIndex = handIndex + 1; selectApparelCard(apparelHand[apparelHandIndex]); }
+                                            }
+                                        },
+                                        disabled: handIndex >= handArray.length - 1
+                                    }, m("span", {class: "material-symbols-outlined text-sm"}, "chevron_right"))
+                                ])
+                            ])
+                        ] : "",
+                        // Open Object Page link at bottom of tabs (for items/apparel with objectId)
+                        (card.objectId || card.id) ? m("a", {
+                            class: "flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-600 mt-2 border-t border-gray-300 dark:border-gray-600 pt-2",
+                            href: "/#!/view/olio." + type + "/" + (card.objectId || card.id),
+                            target: "_blank",
+                            title: "Open full object page in new tab"
+                        }, [
+                            m("span", {class: "material-symbols-outlined text-sm"}, "open_in_new"),
+                            m("span", {class: "text-xs"}, "Object")
+                        ]) : ""
+                    ])
+                ]),
+
+                // Card display area (matching character view layout)
+                m("div", {class: "flex-1 flex flex-col items-center justify-center p-2 bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
+                    // Large draggable card
+                    m("div", {
+                        class: "flex flex-col items-center justify-center p-4 rounded-xl border-4 bg-gradient-to-b from-" + colors.bg + "-100 to-" + colors.bg + "-200 dark:from-" + colors.bg + "-800 dark:to-" + colors.bg + "-900 border-" + colors.bg + "-400 dark:border-" + colors.bg + "-600 shadow-lg " + (isInUserHand ? "cursor-grab" : ""),
+                        style: "width: 180px; height: 240px;",
+                        draggable: isInUserHand,
+                        ondragstart: isInUserHand ? function(e) { handleDragStart(e, card, type + 'Hand'); } : null,
+                        ondragend: isInUserHand ? handleDragEnd : null
+                    }, [
+                        m("span", {class: "material-symbols-outlined text-5xl text-" + colors.bg + "-600 dark:text-" + colors.bg + "-400 mb-2"}, card.icon || colors.icon),
+                        // For apparel use type, for items use name, for actions use label
+                        m("span", {class: "text-lg font-bold text-" + colors.bg + "-800 dark:text-" + colors.bg + "-200 text-center"},
+                            type === 'action' ? (card.label || "Unknown") :
+                            type === 'apparel' ? getApparelDisplayName(card) :
+                            (card.name || "Unknown")),
+                        card.description ? m("p", {class: "text-xs text-" + colors.bg + "-700 dark:text-" + colors.bg + "-300 text-center mt-2 px-2 overflow-y-auto", style: "max-height: 100px;"}, card.description) : "",
+                        // Show additional info based on selected tab
+                        window._detailCardView === 'stats' && type === 'item' && card.type ? m("div", {class: "mt-2 text-xs text-" + colors.bg + "-600 dark:text-" + colors.bg + "-400"}, [
+                            m("span", {class: "font-medium"}, "Type: "),
+                            m("span", {}, card.type)
+                        ]) : "",
+                        window._detailCardView === 'stats' && type === 'apparel' ? m("div", {class: "mt-2 text-xs text-" + colors.bg + "-600 dark:text-" + colors.bg + "-400"}, [
+                            card.type ? m("div", {}, [m("span", {class: "font-medium"}, "Type: "), m("span", {}, card.type)]) : "",
+                            card.category ? m("div", {}, [m("span", {class: "font-medium"}, "Category: "), m("span", {}, card.category)]) : ""
+                        ]) : "",
+                        // Item statistics tab (damage, protection, range, etc.)
+                        window._detailCardView === 'itemStats' && type === 'item' ? renderItemStatistics(card) : ""
+                    ]),
+                    // Drag hint
+                    isInUserHand ? m("div", {class: "mt-2 text-xs text-gray-500 flex items-center space-x-1"}, [
+                        m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "drag_indicator"),
+                        m("span", {}, "Drag to tray to play")
+                    ]) : ""
+                ])
+            ]),
+
+            // Action buttons (same position as character view)
+            m("div", {class: "flex-shrink-0 p-2 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 flex justify-center space-x-2"}, [
+                isInUserHand ? m("button", {
+                    class: "px-3 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs flex items-center space-x-1",
+                    onclick: function() {
+                        if (type === 'action') discardActionFromHand(card);
+                        else if (type === 'item') discardItemFromHand(card);
+                        else if (type === 'apparel') discardApparelFromHand(card);
+                        selectedDetailCard = null;
+                        selectedDetailType = null;
+                    }
+                }, [
+                    m("span", {class: "material-symbols-outlined text-sm"}, "delete"),
+                    m("span", {}, "Discard")
+                ]) : "",
+                m("button", {
+                    class: "px-3 py-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs flex items-center space-x-1",
+                    onclick: function() {
+                        selectedDetailCard = null;
+                        selectedDetailType = null;
+                        m.redraw();
+                    }
+                }, [
+                    m("span", {class: "material-symbols-outlined text-sm"}, "close"),
+                    m("span", {}, "Close")
+                ])
+            ])
+        ]);
     }
 
     // ==========================================
@@ -1735,18 +2752,30 @@
         }
         // Draw from current preview position (or top if not previewing)
         let drawn = deck.splice(previewIndex, 1)[0];
+        // Load full character to get store reference
+        drawn = await loadFullCharacter(drawn);
         userHand.push(drawn);
         // Adjust preview index if needed
         if (previewIndex >= deck.length && deck.length > 0) {
             previewIndex = 0;
         }
         previewCard = deck.length > 0 ? deck[previewIndex] : null;
+
+        // Load character's store items and apparel
+        let store = await loadCharacterStore(drawn);
+        if (store.items.length > 0) {
+            itemHand.push(...store.items);
+        }
+        if (store.apparel.length > 0) {
+            apparelHand.push(...store.apparel);
+        }
+
         // Select the drawn card
         await selectCard(drawn);
         page.toast("info", "Drew: " + drawn.name);
     }
 
-    function drawToGameHand() {
+    async function drawToGameHand() {
         if (deck.length === 0) {
             page.toast("warn", "No cards in deck");
             return;
@@ -1758,12 +2787,24 @@
         // Draw random card for game
         let randIdx = Math.floor(Math.random() * deck.length);
         let drawn = deck.splice(randIdx, 1)[0];
+        // Load full character to get store reference
+        drawn = await loadFullCharacter(drawn);
         gameHand.push(drawn);
         // Adjust preview index if needed
         if (previewIndex >= deck.length && deck.length > 0) {
             previewIndex = 0;
         }
         previewCard = deck.length > 0 ? deck[previewIndex] : null;
+
+        // Load character's store items and apparel
+        let store = await loadCharacterStore(drawn);
+        if (store.items.length > 0) {
+            systemItems.push(...store.items);
+        }
+        if (store.apparel.length > 0) {
+            systemApparel.push(...store.apparel);
+        }
+
         page.toast("info", "Game drew: " + drawn.name);
         m.redraw();
     }
@@ -1821,6 +2862,9 @@
 
     async function selectCard(card) {
         console.log("selectCard called with:", card);
+        // Clear detail card view when selecting a character
+        selectedDetailCard = null;
+        selectedDetailType = null;
         selectedCard = await loadFullCharacter(card);
         console.log("selectedCard set to:", selectedCard);
         m.redraw();
@@ -1884,12 +2928,21 @@
             page.toast("warn", "No card selected");
             return;
         }
-        // Use the same approach as formDef.js
-        let inst = am7model.prepareInstance(selectedCard);
-        await am7model.forms.commands.narrate(undefined, inst);
-        // Clear cache and reload the character
-        am7client.clearCache("olio.charPerson");
-        selectedCard = await loadFullCharacter(selectedCard);
+        page.toast("info", "Generating narrative...");
+        try {
+            // Use the same approach as formDef.js
+            let inst = am7model.prepareInstance(selectedCard);
+            await am7model.forms.commands.narrate(undefined, inst);
+            // Clear cache and reload the character
+            am7client.clearCache("olio.charPerson");
+            am7client.clearCache("olio.narrative");
+            selectedCard = await loadFullCharacter(selectedCard);
+            console.log("Narrative after reload:", selectedCard.narrative);
+            page.toast("success", "Narrative generated");
+        } catch (e) {
+            console.error("Narrative generation failed:", e);
+            page.toast("error", "Narrative generation failed");
+        }
         m.redraw();
     }
 
@@ -1983,7 +3036,7 @@
         page.toast("info", "Reshuffled " + actionDeck.length + " action cards");
     }
 
-    function drawActionToTray() {
+    function drawActionToHand() {
         if (actionDeck.length === 0) {
             page.toast("warn", "No actions in deck");
             return;
@@ -1995,11 +3048,11 @@
         } else {
             card = actionDeck.pop();
         }
-        playedActions.push(card);
+        actionHand.push(card);
         actionPreviewIndex = Math.min(actionPreviewIndex, actionDeck.length - 1);
         if (actionPreviewIndex < 0) actionPreviewIndex = 0;
         updateActionPreview();
-        page.toast("info", "Played " + card.label + " to tray");
+        page.toast("info", "Drew " + card.label + " to hand");
         m.redraw();
     }
 
@@ -2024,13 +3077,28 @@
             actionId: action.id
         };
 
-        // Auto-select first game hand character if only one
-        if (gameHand.length === 1) {
+        // Auto-select first game hand character as target
+        if (gameHand.length >= 1) {
             pendingInteraction.interactor = gameHand[0];
-            selectCard(gameHand[0]);
+        }
+
+        // For Talk action, auto-execute if both hands have characters
+        if (action.type === 'TALK' && userHand.length >= 1 && gameHand.length >= 1) {
+            executeAction();
+            return;
         }
 
         page.toast("info", "Select a target character from the game hand");
+        m.redraw();
+    }
+
+    function discardActionFromHand(action) {
+        let idx = actionHand.findIndex(a => a.id === action.id);
+        if (idx !== -1) {
+            actionHand.splice(idx, 1);
+            actionDiscard.push(action);
+            page.toast("info", "Discarded " + action.label);
+        }
         m.redraw();
     }
 
@@ -2038,7 +3106,8 @@
         let idx = playedActions.findIndex(a => a.id === action.id);
         if (idx !== -1) {
             playedActions.splice(idx, 1);
-            actionDiscard.push(action);
+            // Played actions are interaction objects, don't return the card to discard
+            // The card is already consumed when creating the interaction
             page.toast("info", "Discarded " + action.label);
         }
         m.redraw();
@@ -2055,7 +3124,7 @@
         }
     }
 
-    function discardItem(item) {
+    function discardItemFromHand(item) {
         let idx = itemHand.findIndex(i => i.objectId === item.objectId);
         if (idx !== -1) {
             itemHand.splice(idx, 1);
@@ -2065,10 +3134,32 @@
         m.redraw();
     }
 
-    function discardApparel(apparel) {
+    function discardItem(item) {
+        // Discard from tray
+        let idx = itemTray.findIndex(i => i.objectId === item.objectId);
+        if (idx !== -1) {
+            itemTray.splice(idx, 1);
+            itemDiscard.push(item);
+            page.toast("info", "Discarded " + (item.name || "item"));
+        }
+        m.redraw();
+    }
+
+    function discardApparelFromHand(apparel) {
         let idx = apparelHand.findIndex(a => a.objectId === apparel.objectId);
         if (idx !== -1) {
             apparelHand.splice(idx, 1);
+            apparelDiscard.push(apparel);
+            page.toast("info", "Discarded " + (apparel.name || "apparel"));
+        }
+        m.redraw();
+    }
+
+    function discardApparel(apparel) {
+        // Discard from tray
+        let idx = apparelTray.findIndex(a => a.objectId === apparel.objectId);
+        if (idx !== -1) {
+            apparelTray.splice(idx, 1);
             apparelDiscard.push(apparel);
             page.toast("info", "Discarded " + (apparel.name || "apparel"));
         }
@@ -2087,8 +3178,11 @@
             return;
         }
 
-        // Determine target from selected card
-        let target = selectedCard;
+        // Use already-set interactor, or selectedCard, or first game hand character
+        let target = pendingInteraction.interactor || selectedCard;
+        if (!target && gameHand.length > 0) {
+            target = gameHand[0];
+        }
         if (!target || gameHand.findIndex(c => c.objectId === target.objectId) === -1) {
             page.toast("warn", "Select a target from the game hand");
             return;
@@ -2099,8 +3193,8 @@
         let actor = pendingInteraction.actor;
         let interactor = pendingInteraction.interactor;
 
-        // Handle CHAT action specially - opens dialog instead of creating interaction
-        if (pendingInteraction.type === "CHAT") {
+        // Handle TALK action specially - opens dialog instead of creating interaction
+        if (pendingInteraction.type === "TALK") {
             // Discard the used action card from tray
             discardUsedAction();
 
@@ -2718,7 +3812,13 @@
             updateActionPreview();
 
             if (state.selectedCardId) {
-                selectedCard = findChar(state.selectedCardId);
+                let char = findChar(state.selectedCardId);
+                if (char) {
+                    // Load full character data including statistics
+                    selectedCard = await loadFullCharacter(char);
+                } else {
+                    selectedCard = null;
+                }
             } else {
                 selectedCard = null;
             }
@@ -2885,9 +3985,45 @@
         m.redraw();
     }
 
+    // Create an interaction object from an action card
+    function createInteractionFromAction(action) {
+        return {
+            id: action.id + '_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11),
+            type: action.type,
+            label: action.label,
+            icon: action.icon,
+            description: action.description,
+            cardId: action.id,
+            timestamp: Date.now(),
+            isDefault: action.isDefault || false  // Track if this is an auto-played default action
+        };
+    }
+
+    // Auto-play a Talk card to both trays (special rule: Talk is always available)
+    function autoPlayTalkCards() {
+        // Find and play a Talk card for user
+        let userTalkIdx = actionDeck.findIndex(a => a.type === 'TALK');
+        if (userTalkIdx > -1) {
+            let talkCard = actionDeck.splice(userTalkIdx, 1)[0];
+            talkCard.isDefault = true;  // Mark as default/permanent
+            let interaction = createInteractionFromAction(talkCard);
+            playedActions.push(interaction);
+        }
+
+        // Find and play a Talk card for system
+        let sysTalkIdx = actionDeck.findIndex(a => a.type === 'TALK');
+        if (sysTalkIdx > -1) {
+            let talkCard = actionDeck.splice(sysTalkIdx, 1)[0];
+            talkCard.isDefault = true;
+            let interaction = createInteractionFromAction(talkCard);
+            systemPlayedActions.push(interaction);
+        }
+    }
+
     async function newDeal() {
         // New deal for BOTH user and game:
-        // Each gets: 1 character, 3 random actions, 3 items, 2 apparel
+        // Each gets: 1 character, 1 auto-played Talk, 3 random actions
+        // Items and apparel come from the character's store
         page.toast("info", "Dealing hands...");
 
         // Shuffle all decks first
@@ -2896,60 +4032,54 @@
         itemDeck = shuffleArray(itemDeck);
         apparelDeck = shuffleArray(apparelDeck);
 
-        // Deal 1 character to user hand
+        // SPECIAL RULE: Auto-play Talk cards to both trays first
+        autoPlayTalkCards();
+
+        // Deal 1 character to user hand and load their store items/apparel
+        let userChar = null;
         if (deck.length > 0 && userHand.length < USER_HAND_LIMIT) {
-            let char = deck.splice(0, 1)[0];
-            userHand.push(char);
-            await selectCard(char);
+            userChar = deck.splice(0, 1)[0];
+            // Load full character to get store reference
+            userChar = await loadFullCharacter(userChar);
+            userHand.push(userChar);
+            await selectCard(userChar);
+
+            // Load character's store items and apparel
+            let userStore = await loadCharacterStore(userChar);
+            if (userStore.items.length > 0) {
+                itemHand.push(...userStore.items);
+            }
+            if (userStore.apparel.length > 0) {
+                apparelHand.push(...userStore.apparel);
+            }
         }
 
-        // Deal 1 character to game hand
+        // Deal 1 character to game hand and load their store items/apparel
+        let gameChar = null;
         if (deck.length > 0 && gameHand.length < GAME_HAND_LIMIT) {
-            let char = deck.splice(0, 1)[0];
-            gameHand.push(char);
+            gameChar = deck.splice(0, 1)[0];
+            // Load full character to get store reference
+            gameChar = await loadFullCharacter(gameChar);
+            gameHand.push(gameChar);
+
+            // Load character's store items and apparel
+            let gameStore = await loadCharacterStore(gameChar);
+            if (gameStore.items.length > 0) {
+                systemItems.push(...gameStore.items);
+            }
+            if (gameStore.apparel.length > 0) {
+                systemApparel.push(...gameStore.apparel);
+            }
         }
 
-        // Deal 3 random action cards to user
+        // Deal 3 random action cards to user's hand (excluding Talk since it's auto-played)
         for (let i = 0; i < 3 && actionDeck.length > 0; i++) {
             let randIdx = Math.floor(Math.random() * actionDeck.length);
             let action = actionDeck.splice(randIdx, 1)[0];
-            playedActions.push(action);
+            actionHand.push(action);
         }
 
-        // Deal 3 random action cards to system
-        for (let i = 0; i < 3 && actionDeck.length > 0; i++) {
-            let randIdx = Math.floor(Math.random() * actionDeck.length);
-            let action = actionDeck.splice(randIdx, 1)[0];
-            systemActions.push(action);
-        }
-
-        // Deal 3 random items to user
-        for (let i = 0; i < 3 && itemDeck.length > 0; i++) {
-            let randIdx = Math.floor(Math.random() * itemDeck.length);
-            let item = itemDeck.splice(randIdx, 1)[0];
-            itemHand.push(item);
-        }
-
-        // Deal 3 random items to system
-        for (let i = 0; i < 3 && itemDeck.length > 0; i++) {
-            let randIdx = Math.floor(Math.random() * itemDeck.length);
-            let item = itemDeck.splice(randIdx, 1)[0];
-            systemItems.push(item);
-        }
-
-        // Deal 2 random apparel to user
-        for (let i = 0; i < 2 && apparelDeck.length > 0; i++) {
-            let randIdx = Math.floor(Math.random() * apparelDeck.length);
-            let apparel = apparelDeck.splice(randIdx, 1)[0];
-            apparelHand.push(apparel);
-        }
-
-        // Deal 2 random apparel to system
-        for (let i = 0; i < 2 && apparelDeck.length > 0; i++) {
-            let randIdx = Math.floor(Math.random() * apparelDeck.length);
-            let apparel = apparelDeck.splice(randIdx, 1)[0];
-            systemApparel.push(apparel);
-        }
+        // System only gets Talk auto-played to tray, no cards in hand
 
         // Update preview indices
         previewIndex = 0;
@@ -2962,10 +4092,15 @@
         m.redraw();
     }
 
-    function openSaveDialog(mode) {
+    async function openSaveDialog(mode) {
         saveDialogMode = mode || 'list';
-        newSaveName = currentSave ? currentSave.name : '';
-        loadSavedGames();
+        await loadSavedGames();
+        // Default name: current save name if exists, otherwise "Save #(count+1)"
+        if (currentSave) {
+            newSaveName = currentSave.name;
+        } else {
+            newSaveName = "Save #" + (savedGames.length + 1);
+        }
         saveDialogOpen = true;
         m.redraw();
     }
@@ -3116,29 +4251,31 @@
     function mainPanel() {
         return m("div", {class: "flex-grow overflow-hidden flex bg-gray-100 dark:bg-gray-900"}, [
             m("div", {class: "flex flex-col lg:flex-row w-full h-full"}, [
-                // Left panel - Consolidated Card Decks
-                m("div", {class: "w-full lg:w-48 h-1/3 lg:h-full flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
-                    m(ConsolidatedDecks)
+                // Left panel - Draw Piles only
+                m("div", {class: "w-full lg:w-48 h-1/4 lg:h-full flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700 flex flex-col overflow-y-auto"}, [
+                    m("div", {class: "flex-1"}, [
+                        m(ConsolidatedDecks)
+                    ])
                 ]),
 
                 // Center panel - Both hands with Action Tray between
-                m("div", {class: "flex-1 h-1/3 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
-                    // User's hand (top) - takes about 40%
-                    m("div", {class: "h-2/5 border-b border-gray-300 dark:border-gray-700"}, [
+                m("div", {class: "flex-1 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
+                    // User's hand (top) - takes about 30%
+                    m("div", {class: "h-[30%] border-b border-gray-300 dark:border-gray-700"}, [
                         m(UserHandPile)
                     ]),
-                    // Action tray (middle) - takes about 20%
-                    m("div", {class: "h-1/5 flex-shrink-0"}, [
+                    // Action tray (middle) - takes about 40% to fit two rows with cards
+                    m("div", {class: "h-[40%] flex-shrink-0"}, [
                         m(ActionTray)
                     ]),
-                    // Game's hand (bottom) - takes about 40%
-                    m("div", {class: "h-2/5"}, [
+                    // System's hand (bottom) - takes about 30%
+                    m("div", {class: "h-[30%]"}, [
                         m(GameHandPile)
                     ])
                 ]),
 
                 // Right panel - Selected Card View
-                m("div", {class: "w-full lg:w-1/4 h-1/3 lg:h-full bg-gray-100 dark:bg-gray-900"}, [
+                m("div", {class: "w-full lg:w-1/4 h-1/4 lg:h-full bg-gray-100 dark:bg-gray-900"}, [
                     m(SelectedCardView)
                 ])
             ])

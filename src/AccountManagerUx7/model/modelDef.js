@@ -121,7 +121,8 @@
           "olio.llm.promptConfig",
           "olio.llm.openai.openaiRequest",
           "olio.apparel",
-          "olio.wearable"
+          "olio.wearable",
+          "olio.item"
         ],
         "icon": "event_note"
       },
