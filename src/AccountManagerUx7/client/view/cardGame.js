@@ -3417,27 +3417,28 @@
                 // Load full template to get all fields
                 let fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
 
-                // Create new chatConfig based on template with character assignments
-                let newChatCfg = am7model.newInstance("olio.llm.chatConfig");
-                newChatCfg.api.groupId(chatDir.id);
-                newChatCfg.api.groupPath(chatDir.path);
-                newChatCfg.api.name(chatConfigName);
+                // Copy template like doCopy in object.js - copy all fields, clear identity
+                let newChatCfg = JSON.parse(JSON.stringify(fullTemplate));
 
-                // Copy template settings
-                if (fullTemplate.model) newChatCfg.api.model(fullTemplate.model);
-                if (fullTemplate.serverUrl) newChatCfg.api.serverUrl(fullTemplate.serverUrl);
-                if (fullTemplate.serviceType) newChatCfg.api.serviceType(fullTemplate.serviceType);
-                if (fullTemplate.rating) newChatCfg.api.rating(fullTemplate.rating);
-                if (fullTemplate.messageTrim) newChatCfg.api.messageTrim(fullTemplate.messageTrim);
-                if (fullTemplate.stream !== undefined) newChatCfg.api.stream(fullTemplate.stream);
-                if (fullTemplate.useNLP !== undefined) newChatCfg.api.useNLP(fullTemplate.useNLP);
+                // Clear identity fields (like doCopy)
+                newChatCfg.objectId = undefined;
+                newChatCfg.id = undefined;
+                newChatCfg.urn = undefined;
+                delete newChatCfg.vaultId;
+                delete newChatCfg.vaulted;
+                delete newChatCfg.keyId;
+
+                // Set new location and name
+                newChatCfg.groupId = chatDir.id;
+                newChatCfg.groupPath = chatDir.path;
+                newChatCfg.name = chatConfigName;
 
                 // Assign characters: target = system (AI), actor = user (player)
-                newChatCfg.entity.systemCharacter = { objectId: target.objectId };
-                newChatCfg.entity.userCharacter = { objectId: actor.objectId };
+                newChatCfg.systemCharacter = { objectId: target.objectId };
+                newChatCfg.userCharacter = { objectId: actor.objectId };
 
                 // Create the new chatConfig
-                chatCfg = await page.createObject(newChatCfg.entity);
+                chatCfg = await page.createObject(newChatCfg);
                 if (!chatCfg) {
                     page.toast("error", "Failed to create chat config");
                     chatDialogOpen = false;
