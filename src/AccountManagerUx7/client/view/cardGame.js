@@ -3382,7 +3382,7 @@
 
             // Find template config "Open Chat" and prompt "Chat Prompt"
             let templateCfg = chatConfigs.find(c => c.name === "Open Chat");
-            let promptCfg = promptConfigs.find(c => c.name === "Chat Prompt");
+            let promptCfg = promptConfigs.find(c => c.name === "Quick Chat Prompt");
 
             if (!templateCfg) {
                 page.toast("error", "Template 'Open Chat' not found in ~/Chat");
