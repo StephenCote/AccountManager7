@@ -64,6 +64,11 @@
     let selectedDetailCard = null;  // The card being viewed in detail
     let selectedDetailType = null;  // 'action', 'item', or 'apparel'
 
+    // Fully loaded narrative for the selected character
+    let loadedNarrative = null;     // Full narrative object loaded from server
+    let loadedNarrativeCharId = null; // objectId of character whose narrative is loaded
+    let narrativeLoading = false;   // Loading state for narrative
+
     // Active pile selection for consolidated view
     let activePile = 'character'; // 'character', 'action', 'item', 'apparel'
 
@@ -195,7 +200,6 @@
                 previewIndex = 0;
                 selectedCard = null;
                 previewCard = null;
-                console.log("Loaded characters:", deck);
                 page.toast("success", "Loaded " + deck.length + " characters into deck");
             }
         } catch (e) {
@@ -213,7 +217,6 @@
             return char;
         }
         try {
-            console.log("Loading full character:", char.objectId);
             let q = am7view.viewQuery("olio.charPerson");
             q.field("objectId", char.objectId);
             // Request narrative and other needed fields including objectId
@@ -233,7 +236,6 @@
                     }
                 }
 
-                console.log("Full character loaded:", full);
                 return full;
             }
         } catch (e) {
@@ -255,13 +257,9 @@
             sq.field("objectId", char.store.objectId);
             sq.entity.request.push("items", "apparel", "inventory");
             let sqr = await page.search(sq);
-            console.log("Loaded store for character:", char.name, sqr);
 
             if (sqr && sqr.results && sqr.results.length > 0) {
                 let store = sqr.results[0];
-                console.log("Store object:", store);
-                console.log("Store items:", store.items);
-                console.log("Store apparel:", store.apparel);
 
                 // Load full item data for each item in store
                 if (store.items && store.items.length > 0) {
@@ -283,7 +281,6 @@
                                         item.statistics = sqr.results[0];
                                     }
                                 }
-                                console.log("Loaded item from store:", item);
                                 result.items.push(item);
                             }
                         }
@@ -291,24 +288,16 @@
                 }
 
                 // Load full apparel data for each apparel in store
-                console.log("Checking store.apparel:", store.apparel, "length:", store.apparel ? store.apparel.length : 0);
                 if (store.apparel && store.apparel.length > 0) {
                     for (let apparelRef of store.apparel) {
-                        console.log("Processing apparelRef:", apparelRef);
                         if (apparelRef && apparelRef.id) {
-                            console.log("Loading apparel with id:", apparelRef.id);
                             let aq = am7view.viewQuery("olio.apparel");
                             aq.field("id", apparelRef.id);
-                            // Explicitly request display fields including objectId
                             aq.entity.request.push("objectId", "name", "type", "category", "description", "wearables");
                             let aqr = await page.search(aq);
-                            console.log("Apparel query result:", aqr);
                             if (aqr && aqr.results && aqr.results.length > 0) {
                                 let apparel = aqr.results[0];
-                                console.log("Loaded apparel from store:", apparel);
                                 result.apparel.push(apparel);
-                            } else {
-                                console.log("No apparel results found for id:", apparelRef.id);
                             }
                         }
                     }
@@ -325,7 +314,6 @@
         try {
             let itemDir = await page.findObject("auth.group", "data", gridPath + "/Items");
             if (!itemDir) {
-                console.log("Items directory not found, skipping");
                 return;
             }
 
@@ -340,7 +328,6 @@
                 itemHand = [];
                 itemDiscard = [];
                 itemPreviewIndex = 0;
-                console.log("Loaded items:", itemDeck.length);
             }
         } catch (e) {
             console.error("Failed to load items", e);
@@ -351,7 +338,6 @@
         try {
             let apparelDir = await page.findObject("auth.group", "data", gridPath + "/Apparel");
             if (!apparelDir) {
-                console.log("Apparel directory not found, skipping");
                 return;
             }
 
@@ -366,7 +352,6 @@
                 apparelHand = [];
                 apparelDiscard = [];
                 apparelPreviewIndex = 0;
-                console.log("Loaded apparel:", apparelDeck.length);
 
                 // Generate descriptions for apparel that don't have one
                 for (let app of apparelDeck) {
@@ -409,7 +394,6 @@
                 app.description = "Worn apparel includes " + wdesc + ".";
             }
 
-            console.log("Generated apparel description:", app.description);
             // Persist the description using the same pattern as olio.js
             await page.patchObject({
                 schema: "olio.apparel",
@@ -654,9 +638,49 @@
         ]);
     }
 
+    // Load full narrative object from server
+    async function loadFullNarrative(char) {
+        if (!char || !char.narrative || !char.narrative.objectId) {
+            loadedNarrative = null;
+            loadedNarrativeCharId = null;
+            return;
+        }
+
+        // Skip if already loaded for this character
+        if (loadedNarrativeCharId === char.objectId && loadedNarrative) {
+            return;
+        }
+
+        narrativeLoading = true;
+        m.redraw();
+
+        try {
+            let q = am7view.viewQuery("olio.narrative");
+            q.field("objectId", char.narrative.objectId);
+            let qr = await page.search(q);
+            if (qr && qr.results && qr.results.length > 0) {
+                loadedNarrative = qr.results[0];
+                loadedNarrativeCharId = char.objectId;
+            }
+        } catch (e) {
+            console.error("Failed to load full narrative:", e);
+        }
+
+        narrativeLoading = false;
+        m.redraw();
+    }
+
     function renderNarrativeView(char) {
-        let narrative = char.narrative || {};
+        // Use loaded narrative if available and matches current character, otherwise use char.narrative
+        let narrative = (loadedNarrativeCharId === char.objectId && loadedNarrative)
+            ? loadedNarrative
+            : (char.narrative || {});
         let hasNarrative = narrative.physicalDescription || narrative.outfitDescription || narrative.statisticsDescription;
+
+        // Trigger load of full narrative if not loaded yet
+        if (char.narrative && char.narrative.objectId && loadedNarrativeCharId !== char.objectId && !narrativeLoading) {
+            loadFullNarrative(char);
+        }
 
         return m("div", {class: "h-full flex flex-col"}, [
             // Header
@@ -667,22 +691,28 @@
 
             // Narrative content
             m("div", {class: "flex-1 overflow-y-auto p-2 space-y-3 text-sm"}, [
-                narrative.physicalDescription ? m("div", {}, [
+                // Loading indicator
+                narrativeLoading ? m("div", {class: "flex items-center justify-center py-4"}, [
+                    m("span", {class: "material-symbols-outlined text-2xl text-gray-400 animate-spin"}, "progress_activity"),
+                    m("span", {class: "ml-2 text-gray-500"}, "Loading narrative...")
+                ]) : "",
+
+                !narrativeLoading && narrative.physicalDescription ? m("div", {}, [
                     m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Physical"),
                     m("div", {class: "text-gray-800 dark:text-gray-200"}, narrative.physicalDescription)
                 ]) : "",
 
-                narrative.outfitDescription ? m("div", {}, [
+                !narrativeLoading && narrative.outfitDescription ? m("div", {}, [
                     m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Outfit"),
                     m("div", {class: "text-gray-800 dark:text-gray-200"}, narrative.outfitDescription)
                 ]) : "",
 
-                narrative.statisticsDescription ? m("div", {}, [
+                !narrativeLoading && narrative.statisticsDescription ? m("div", {}, [
                     m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Abilities"),
                     m("div", {class: "text-gray-800 dark:text-gray-200"}, narrative.statisticsDescription)
                 ]) : "",
 
-                !hasNarrative ?
+                !narrativeLoading && !hasNarrative ?
                     m("div", {class: "flex flex-col items-center justify-center py-8"}, [
                         m("span", {class: "material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3"}, "auto_stories"),
                         m("div", {class: "text-gray-500 dark:text-gray-400 mb-3"}, "No narrative generated"),
@@ -1210,7 +1240,6 @@
                 if (qr && qr.results && qr.results.length > 0) {
                     let full = qr.results[0];
                     am7model.applyModelNames(full);
-                    console.log("Selected item full data:", full);
 
                     // Load nested itemStatistics model reference if it exists but isn't fully loaded
                     if (full.statistics && full.statistics.objectId && full.statistics.damage === undefined) {
@@ -1219,7 +1248,6 @@
                         let sqr = await page.search(sq);
                         if (sqr && sqr.results && sqr.results.length > 0) {
                             full.statistics = sqr.results[0];
-                            console.log("Loaded item statistics:", full.statistics);
                         }
                     }
 
@@ -1251,7 +1279,6 @@
                 if (qr && qr.results && qr.results.length > 0) {
                     let full = qr.results[0];
                     am7model.applyModelNames(full);
-                    console.log("Selected apparel full data:", full);
                     selectedDetailCard = full;
                 } else {
                     selectedDetailCard = card;
@@ -1417,16 +1444,10 @@
                 let isActionDropTarget = dropTarget === 'userActionHand' && dragSource === 'actionDeck';
                 let isItemDropTarget = dropTarget === 'userItemHand' && dragSource === 'itemDeck';
                 let isApparelDropTarget = dropTarget === 'userApparelHand' && dragSource === 'apparelDeck';
+                let isPlayedDrop = (dropTarget === 'playedActions' && dragSource === 'actionHand') || (dragSource === 'actionHand' && dropTarget === 'playedActions');
+                let isDraggingAction = dragSource === 'actionHand';
 
                 return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900"}, [
-                    // Header
-                    m("div", {class: "flex items-center justify-between px-2 py-1 bg-green-600 text-white"}, [
-                        m("div", {class: "flex items-center space-x-1"}, [
-                            m("span", {class: "material-symbols-outlined text-sm"}, "person"),
-                            m("span", {class: "text-sm font-medium"}, "Your Hand")
-                        ])
-                    ]),
-
                     // Main content - character card with surrounding card stacks
                     // Card sizes: action/item/apparel stacks ~60x80, character ~80x110
                     m("div", {class: "flex-1 flex items-center justify-center p-2 gap-3"}, [
@@ -1556,6 +1577,76 @@
                                     ])
                                 ])
                         ])
+                    ]),
+
+                    // Footer with action tray - green header with played actions
+                    m("div", {class: "flex-shrink-0 flex flex-col bg-green-600"}, [
+                        // Pending interaction display (if active)
+                        pendingInteraction ? m("div", {class: "flex items-center justify-between px-2 py-1 bg-purple-600 text-white text-sm"}, [
+                            m("div", {class: "flex items-center space-x-2"}, [
+                                m("span", {class: "font-medium"}, userHand.length > 0 ? userHand[0].name.split(" ")[0] : "?"),
+                                m("span", {class: "material-symbols-outlined text-sm"}, pendingInteraction.icon),
+                                m("span", {class: "font-medium"}, pendingInteraction.label),
+                                m("span", {class: "material-symbols-outlined text-sm"}, "arrow_forward"),
+                                m("span", {class: "text-purple-200"},
+                                    selectedCard && gameHand.find(c => c.objectId === selectedCard.objectId)
+                                        ? selectedCard.name.split(" ")[0]
+                                        : "Select target...")
+                            ]),
+                            m("div", {class: "flex space-x-1"}, [
+                                m("button", {
+                                    class: "px-2 py-0.5 rounded bg-green-500 hover:bg-green-400 text-white text-xs disabled:opacity-50",
+                                    onclick: executeAction,
+                                    disabled: !selectedCard || gameHand.findIndex(c => c.objectId === selectedCard?.objectId) === -1
+                                }, "Go"),
+                                m("button", {
+                                    class: "px-2 py-0.5 rounded bg-red-500 hover:bg-red-400 text-white text-xs",
+                                    onclick: cancelAction
+                                }, "X")
+                            ])
+                        ]) : "",
+                        // Header row with title and played actions - whole bar is drop target
+                        m("div", {
+                            class: "flex items-center px-2 py-1 text-white transition-all " +
+                                (isPlayedDrop ? "bg-green-500 ring-2 ring-white ring-inset" :
+                                 isDraggingAction ? "bg-green-500/80" : ""),
+                            ondragover: function(e) { e.preventDefault(); e.stopPropagation(); handleDragOver(e, 'playedActions'); },
+                            ondragleave: handleDragLeave,
+                            ondrop: handleDropOnPlayedActions
+                        }, [
+                            m("div", {class: "flex items-center space-x-1 flex-shrink-0"}, [
+                                m("span", {class: "material-symbols-outlined text-sm"}, "person"),
+                                m("span", {class: "text-sm font-medium"}, "Your Hand")
+                            ]),
+                            // Played actions area
+                            m("div", {class: "flex-1 flex items-center ml-3 space-x-1 overflow-x-auto"}, [
+                                // Played action cards (compact)
+                                playedActions.map(function(action) {
+                                    let isSelected = selectedAction && selectedAction.id === action.id;
+                                    return m("div", {
+                                        class: "relative flex-shrink-0 flex items-center justify-center rounded px-2 py-1 cursor-pointer transition-all " +
+                                            (isSelected ? "bg-white text-green-700" : "bg-green-500 text-white hover:bg-green-400"),
+                                        onclick: function() { selectPlayedAction(action); }
+                                    }, [
+                                        m("span", {class: "material-symbols-outlined text-sm"}, action.icon),
+                                        m("span", {class: "text-xs ml-1"}, action.label),
+                                        m("button", {
+                                            class: "ml-1 hover:text-red-300",
+                                            onclick: function(e) { e.stopPropagation(); discardPlayedAction(action); },
+                                            title: "Discard"
+                                        }, m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "close"))
+                                    ]);
+                                }),
+                                // Drop target guide/placeholder at the end
+                                isDraggingAction ? m("div", {
+                                    class: "flex-shrink-0 flex items-center justify-center rounded border-2 border-dashed transition-all " +
+                                        (isPlayedDrop ? "border-white bg-green-400" : "border-green-300 bg-green-500/50 animate-pulse"),
+                                    style: "width: 40px; height: 28px;"
+                                }, [
+                                    m("span", {class: "material-symbols-outlined text-sm text-white"}, "add")
+                                ]) : ""
+                            ])
+                        ])
                     ])
                 ]);
             }
@@ -1577,11 +1668,26 @@
                 let sysApparelIdx = Math.min(systemApparelHandIndex, Math.max(0, systemApparel.length - 1));
 
                 return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
-                    // Header - flex-shrink-0 to prevent it from growing
-                    m("div", {class: "flex-shrink-0 flex items-center justify-between px-2 py-1 bg-red-600 text-white"}, [
-                        m("div", {class: "flex items-center space-x-1"}, [
-                            m("span", {class: "material-symbols-outlined text-sm"}, "smart_toy"),
-                            m("span", {class: "text-sm font-medium"}, "System Hand")
+                    // Header with action tray - red header with system played actions
+                    m("div", {class: "flex-shrink-0 flex flex-col bg-red-600"}, [
+                        m("div", {class: "flex items-center px-2 py-1 text-white"}, [
+                            m("div", {class: "flex items-center space-x-1 flex-shrink-0"}, [
+                                m("span", {class: "material-symbols-outlined text-sm"}, "smart_toy"),
+                                m("span", {class: "text-sm font-medium"}, "System Hand")
+                            ]),
+                            // System played actions area
+                            m("div", {class: "flex-1 flex items-center ml-3 space-x-1 overflow-x-auto"}, [
+                                systemPlayedActions.length === 0 ?
+                                    m("span", {class: "text-red-200 text-xs"}, "No actions") :
+                                    systemPlayedActions.map(function(action) {
+                                        return m("div", {
+                                            class: "flex-shrink-0 flex items-center justify-center rounded px-2 py-1 bg-red-500 text-white"
+                                        }, [
+                                            m("span", {class: "material-symbols-outlined text-sm"}, action.icon),
+                                            m("span", {class: "text-xs ml-1"}, action.label)
+                                        ]);
+                                    })
+                            ])
                         ])
                     ]),
 
@@ -1709,26 +1815,6 @@
         };
     }
 
-    // Render an action card (mini version for tray)
-    function renderActionCard(action, onClick, isHighlight) {
-        let isPending = pendingInteraction && pendingInteraction.actionId === action.id;
-
-        return m("div", {
-            class: "flex-shrink-0 flex flex-col items-center justify-center p-2 rounded-lg border-2 transition-all cursor-pointer " +
-                (isPending ? "bg-purple-200 dark:bg-purple-800 border-purple-500 ring-2 ring-purple-400" :
-                 isHighlight ? "bg-purple-100 dark:bg-purple-900/50 border-purple-400" :
-                 "bg-gradient-to-b from-purple-50 to-purple-100 dark:from-purple-900 dark:to-purple-950 border-purple-300 dark:border-purple-700 hover:border-purple-400"),
-            style: "width: 60px; height: 75px;",
-            onclick: onClick,
-            title: action.description
-        }, [
-            m("span", {class: "material-symbols-outlined text-lg " +
-                (isPending ? "text-purple-600 dark:text-purple-300" : "text-purple-600 dark:text-purple-400")}, action.icon),
-            m("span", {class: "text-xs mt-1 text-center leading-tight " +
-                (isPending ? "text-purple-700 dark:text-purple-200 font-medium" : "text-purple-700 dark:text-purple-300")}, action.label)
-        ]);
-    }
-
     // Action Deck Pile - goes in left panel with character piles
     function ActionDeckPile() {
         return {
@@ -1821,219 +1907,6 @@
                     // Discard info
                     m("div", {class: "px-2 py-1 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 text-center"}, [
                         m("span", {class: "text-xs text-orange-600 dark:text-orange-400"}, "Discard: " + actionDiscard.length)
-                    ])
-                ]);
-            }
-        };
-    }
-
-    // Action Tray - shows played actions, items, and apparel between character hands
-    function ActionTray() {
-        return {
-            view: function() {
-                let userChar = userHand.length > 0 ? userHand[0] : null;
-                let gameChar = gameHand.length > 0 ? gameHand[0] : null;
-                // Highlight drop zones when dragging from hand OR when hovering over target
-                let isPlayedDrop = (dropTarget === 'playedActions' && dragSource === 'actionHand') || (dragSource === 'actionHand' && dropTarget === 'playedActions');
-                let isItemDrop = (dropTarget === 'itemTray' && dragSource === 'itemHand') || (dragSource === 'itemHand' && dropTarget === 'itemTray');
-                let isApparelDrop = (dropTarget === 'apparelTray' && dragSource === 'apparelHand') || (dragSource === 'apparelHand' && dropTarget === 'apparelTray');
-                // Also highlight when actively dragging from correct source (even before hovering over drop)
-                let isDraggingAction = dragSource === 'actionHand';
-                let isDraggingItem = dragSource === 'itemHand';
-                let isDraggingApparel = dragSource === 'apparelHand';
-
-                return m("div", {class: "flex flex-col h-full bg-gray-200 dark:bg-gray-800 border-y border-gray-300 dark:border-gray-700"}, [
-                    // Pending interaction display (at top if active)
-                    pendingInteraction ? m("div", {class: "px-2 py-1 bg-purple-100 dark:bg-purple-900/30 border-b border-purple-300 dark:border-purple-700"}, [
-                        m("div", {class: "flex items-center justify-between text-sm"}, [
-                            m("div", {class: "flex items-center space-x-2"}, [
-                                m("span", {class: "text-gray-800 dark:text-gray-200 font-medium"}, userChar ? userChar.name.split(" ")[0] : "?"),
-                                m("span", {class: "material-symbols-outlined text-purple-600 dark:text-purple-400"}, pendingInteraction.icon),
-                                m("span", {class: "text-purple-600 dark:text-purple-400 font-medium"}, pendingInteraction.label),
-                                m("span", {class: "material-symbols-outlined text-gray-500"}, "arrow_forward"),
-                                m("span", {class: "text-gray-500 dark:text-gray-400"},
-                                    selectedCard && gameHand.find(c => c.objectId === selectedCard.objectId)
-                                        ? selectedCard.name.split(" ")[0]
-                                        : "Select target...")
-                            ]),
-                            m("div", {class: "flex space-x-1"}, [
-                                m("button", {
-                                    class: "px-2 py-1 rounded bg-green-600 hover:bg-green-500 text-white text-xs disabled:opacity-50",
-                                    onclick: executeAction,
-                                    disabled: !selectedCard || gameHand.findIndex(c => c.objectId === selectedCard?.objectId) === -1
-                                }, "Execute"),
-                                m("button", {
-                                    class: "px-2 py-1 rounded bg-red-500 hover:bg-red-400 text-white text-xs",
-                                    onclick: cancelAction
-                                }, "Cancel")
-                            ])
-                        ])
-                    ]) : "",
-
-                    // Two rows: User tray and System tray
-                    m("div", {class: "flex-1 flex flex-col min-h-0"}, [
-                        // USER ROW - Played Actions | Items | Apparel
-                        m("div", {class: "flex-1 flex border-b border-gray-400 dark:border-gray-600 min-h-0 overflow-hidden"}, [
-                            // User label
-                            m("div", {class: "w-14 flex flex-col items-center justify-center bg-blue-600 text-white text-xs"}, [
-                                m("span", {class: "material-symbols-outlined text-sm"}, "person"),
-                                m("span", {class: "truncate w-full text-center", style: "font-size: 10px"}, userChar ? userChar.name.split(" ")[0] : "User")
-                            ]),
-                            // User Played Actions (drop zone for action cards from hand)
-                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
-                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-purple-700 text-white text-xs flex items-center"}, [
-                                    m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "bolt"),
-                                    m("span", {class: "ml-1"}, "Actions (" + playedActions.length + ")")
-                                ]),
-                                m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    // Drop target outline - highlighted when dragging action cards
-                                    m("div", {
-                                        class: "flex-shrink-0 flex flex-col items-center justify-center rounded border-2 border-dashed transition-all " +
-                                            (isPlayedDrop ? "border-purple-500 bg-purple-200 dark:bg-purple-800 scale-105" :
-                                             isDraggingAction ? "border-purple-400 bg-purple-100 dark:bg-purple-900/50 animate-pulse" :
-                                             "border-purple-300 dark:border-purple-700"),
-                                        style: "width: 50px; height: 60px;",
-                                        ondragover: function(e) { e.preventDefault(); e.stopPropagation(); handleDragOver(e, 'playedActions'); },
-                                        ondragleave: handleDragLeave,
-                                        ondrop: handleDropOnPlayedActions
-                                    }, [
-                                        m("span", {class: "material-symbols-outlined text-lg " + (isPlayedDrop || isDraggingAction ? "text-purple-600" : "text-purple-400")}, "add"),
-                                        m("span", {class: "text-xs " + (isPlayedDrop || isDraggingAction ? "text-purple-600 font-medium" : "text-purple-400")}, isPlayedDrop ? "Release!" : "Drop")
-                                    ]),
-                                    // Played action cards
-                                    playedActions.map(function(action) {
-                                        let isSelected = selectedAction && selectedAction.id === action.id;
-                                        return m("div", {class: "relative"}, [
-                                            renderActionCard(action, function() { selectPlayedAction(action); }, isSelected),
-                                            m("button", {
-                                                class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
-                                                onclick: function(e) { e.stopPropagation(); discardPlayedAction(action); },
-                                                title: "Discard"
-                                            }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
-                                        ]);
-                                    })
-                                ])
-                            ]),
-                            // User Items (tray - drop zone for items from hand)
-                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
-                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-emerald-600 text-white text-xs flex items-center"}, [
-                                    m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "inventory_2"),
-                                    m("span", {class: "ml-1"}, "Items (" + itemTray.length + ")")
-                                ]),
-                                m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    // Drop target outline - highlighted when dragging item cards
-                                    m("div", {
-                                        class: "flex-shrink-0 flex flex-col items-center justify-center rounded border-2 border-dashed transition-all " +
-                                            (isItemDrop ? "border-emerald-500 bg-emerald-200 dark:bg-emerald-800 scale-105" :
-                                             isDraggingItem ? "border-emerald-400 bg-emerald-100 dark:bg-emerald-900/50 animate-pulse" :
-                                             "border-emerald-300 dark:border-emerald-700"),
-                                        style: "width: 50px; height: 60px;",
-                                        ondragover: function(e) { e.preventDefault(); e.stopPropagation(); handleDragOver(e, 'itemTray'); },
-                                        ondragleave: handleDragLeave,
-                                        ondrop: handleDropOnItemTray
-                                    }, [
-                                        m("span", {class: "material-symbols-outlined text-lg " + (isItemDrop || isDraggingItem ? "text-emerald-600" : "text-emerald-400")}, "add"),
-                                        m("span", {class: "text-xs " + (isItemDrop || isDraggingItem ? "text-emerald-600 font-medium" : "text-emerald-400")}, isItemDrop ? "Release!" : "Drop")
-                                    ]),
-                                    // Item cards in tray
-                                    itemTray.map(function(item) {
-                                        return m("div", {class: "relative"}, [
-                                            renderItemCard(item),
-                                            m("button", {
-                                                class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
-                                                onclick: function(e) { e.stopPropagation(); discardItem(item); },
-                                                title: "Discard"
-                                            }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
-                                        ]);
-                                    })
-                                ])
-                            ]),
-                            // User Apparel (tray - drop zone for apparel from hand)
-                            m("div", {class: "flex-1 flex flex-col overflow-hidden"}, [
-                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-pink-600 text-white text-xs flex items-center"}, [
-                                    m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "checkroom"),
-                                    m("span", {class: "ml-1"}, "Apparel (" + apparelTray.length + ")")
-                                ]),
-                                m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    // Drop target outline - highlighted when dragging apparel cards
-                                    m("div", {
-                                        class: "flex-shrink-0 flex flex-col items-center justify-center rounded border-2 border-dashed transition-all " +
-                                            (isApparelDrop ? "border-pink-500 bg-pink-200 dark:bg-pink-800 scale-105" :
-                                             isDraggingApparel ? "border-pink-400 bg-pink-100 dark:bg-pink-900/50 animate-pulse" :
-                                             "border-pink-300 dark:border-pink-700"),
-                                        style: "width: 50px; height: 60px;",
-                                        ondragover: function(e) { e.preventDefault(); e.stopPropagation(); handleDragOver(e, 'apparelTray'); },
-                                        ondragleave: handleDragLeave,
-                                        ondrop: handleDropOnApparelTray
-                                    }, [
-                                        m("span", {class: "material-symbols-outlined text-lg " + (isApparelDrop || isDraggingApparel ? "text-pink-600" : "text-pink-400")}, "add"),
-                                        m("span", {class: "text-xs " + (isApparelDrop || isDraggingApparel ? "text-pink-600 font-medium" : "text-pink-400")}, isApparelDrop ? "Release!" : "Drop")
-                                    ]),
-                                    // Apparel cards in tray
-                                    apparelTray.map(function(apparel) {
-                                        return m("div", {class: "relative"}, [
-                                            renderApparelCard(apparel),
-                                            m("button", {
-                                                class: "absolute -top-1 -right-1 w-4 h-4 rounded-full bg-orange-500 hover:bg-orange-400 text-white flex items-center justify-center",
-                                                onclick: function(e) { e.stopPropagation(); discardApparel(apparel); },
-                                                title: "Discard"
-                                            }, m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, "close"))
-                                        ]);
-                                    })
-                                ])
-                            ])
-                        ]),
-
-                        // SYSTEM ROW - Actions | Items | Apparel (same as user, no Hand column)
-                        m("div", {class: "flex-1 flex overflow-hidden"}, [
-                            // System label
-                            m("div", {class: "w-14 flex-shrink-0 flex flex-col items-center justify-center bg-red-600 text-white text-xs"}, [
-                                m("span", {class: "material-symbols-outlined text-sm"}, "smart_toy"),
-                                m("span", {class: "truncate w-full text-center", style: "font-size: 10px"}, gameChar ? gameChar.name.split(" ")[0] : "System")
-                            ]),
-                            // System Actions (played)
-                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
-                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-purple-700 text-white text-xs flex items-center"}, [
-                                    m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "bolt"),
-                                    m("span", {class: "ml-1"}, "Actions (" + systemPlayedActions.length + ")")
-                                ]),
-                                m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    systemPlayedActions.length === 0 ?
-                                        m("span", {class: "text-gray-400 text-xs"}, "Actions") :
-                                        systemPlayedActions.map(function(action) {
-                                            return renderActionCard(action, null, false);
-                                        })
-                                ])
-                            ]),
-                            // System Items
-                            m("div", {class: "flex-1 flex flex-col border-r border-gray-300 dark:border-gray-700 overflow-hidden"}, [
-                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-emerald-800 text-white text-xs flex items-center"}, [
-                                    m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "inventory_2"),
-                                    m("span", {class: "ml-1"}, "Items (" + systemItems.length + ")")
-                                ]),
-                                m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    systemItems.length === 0 ?
-                                        m("span", {class: "text-gray-400 text-xs"}, "Items") :
-                                        systemItems.map(function(item) {
-                                            return renderItemCard(item);
-                                        })
-                                ])
-                            ]),
-                            // System Apparel
-                            m("div", {class: "flex-1 flex flex-col overflow-hidden"}, [
-                                m("div", {class: "flex-shrink-0 px-1 py-0.5 bg-pink-800 text-white text-xs flex items-center"}, [
-                                    m("span", {class: "material-symbols-outlined", style: "font-size: 12px"}, "checkroom"),
-                                    m("span", {class: "ml-1"}, "Apparel (" + systemApparel.length + ")")
-                                ]),
-                                m("div", {class: "flex-1 flex items-center overflow-x-auto px-1 space-x-1"}, [
-                                    systemApparel.length === 0 ?
-                                        m("span", {class: "text-gray-400 text-xs"}, "Apparel") :
-                                        systemApparel.map(function(apparel) {
-                                            return renderApparelCard(apparel);
-                                        })
-                                ])
-                            ])
-                        ])
                     ])
                 ]);
             }
@@ -2228,8 +2101,8 @@
                     // Header
                     m("div", {class: "px-2 py-1 bg-gray-600 text-white text-sm font-medium text-center"}, "Draw Piles"),
 
-                    // Grid of draw piles
-                    m("div", {class: "grid grid-cols-2 gap-1 p-1"}, [
+                    // Vertical stack of draw piles
+                    m("div", {class: "flex flex-col gap-1 p-1"}, [
                         // Character pile
                         renderDrawPile("Characters", "person", "blue", deck, discard, "characterDeck",
                             function() { drawToUserHand(); }, shuffleDeck, reshuffleDiscard),
@@ -2477,7 +2350,6 @@
                         m("div", {}, isDropTarget ? "Drop to view card" : "Click a card to view")
                     ]);
                 }
-                console.log(selectedCard);
                 return m("div", {
                     class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors " + (isDropTarget ? "bg-purple-100 dark:bg-purple-900/30" : ""),
                     ondragover: function(e) { handleDragOver(e, 'selected'); },
@@ -2861,12 +2733,15 @@
     }
 
     async function selectCard(card) {
-        console.log("selectCard called with:", card);
         // Clear detail card view when selecting a character
         selectedDetailCard = null;
         selectedDetailType = null;
+        // Clear cached narrative if selecting a different character
+        if (!card || !selectedCard || card.objectId !== selectedCard.objectId) {
+            loadedNarrative = null;
+            loadedNarrativeCharId = null;
+        }
         selectedCard = await loadFullCharacter(card);
-        console.log("selectedCard set to:", selectedCard);
         m.redraw();
     }
 
@@ -2937,7 +2812,6 @@
             am7client.clearCache("olio.charPerson");
             am7client.clearCache("olio.narrative");
             selectedCard = await loadFullCharacter(selectedCard);
-            console.log("Narrative after reload:", selectedCard.narrative);
             page.toast("success", "Narrative generated");
         } catch (e) {
             console.error("Narrative generation failed:", e);
@@ -3195,8 +3069,16 @@
 
         // Handle TALK action specially - opens dialog instead of creating interaction
         if (pendingInteraction.type === "TALK") {
-            // Discard the used action card from tray
-            discardUsedAction();
+            // Keep TALK action - either leave in tray or move back to hand if other actions played
+            if (playedActions.length > 1 && selectedAction) {
+                // Move talk action back to hand since there are other actions in play
+                let idx = playedActions.findIndex(a => a.id === selectedAction.id);
+                if (idx !== -1) {
+                    let talkAction = playedActions.splice(idx, 1)[0];
+                    actionHand.push(talkAction);
+                }
+            }
+            // If only TALK is in tray, leave it there for reuse
 
             // Reset action state before opening dialog
             selectedAction = null;
@@ -3215,8 +3097,6 @@
 
             if (interaction) {
                 page.toast("success", "Interaction created: " + pendingInteraction.label);
-                // Could display results, update character state, etc.
-                console.log("Created interaction:", interaction);
             }
         } catch (e) {
             console.error("Failed to create interaction:", e);
@@ -3259,7 +3139,6 @@
         interaction.interactorOutcome = outcomes.interactorOutcome;
         interaction.description += " - " + formatOutcome(outcomes);
 
-        console.log("Interaction result:", interaction);
         page.toast("info", formatOutcome(outcomes));
 
         return interaction;
@@ -3412,7 +3291,6 @@
             if (qr && qr.results && qr.results.length > 0) {
                 // Use existing config
                 chatCfg = qr.results[0];
-                console.log("Found existing chat config:", chatConfigName);
             } else {
                 // Load full template to get all fields
                 let fullTemplate = await am7client.getFull("olio.llm.chatConfig", templateCfg.objectId);
@@ -3444,7 +3322,6 @@
                     chatDialogOpen = false;
                     return;
                 }
-                console.log("Created new chat config:", chatConfigName);
                 page.toast("success", "Created chat config: " + chatConfigName);
             }
 
@@ -3463,7 +3340,6 @@
             if (reqResult && reqResult.results && reqResult.results.length > 0) {
                 // Use existing chat request
                 chatSession = reqResult.results[0];
-                console.log("Found existing chat request:", requestName);
             } else {
                 // Create new chat request
                 let chatReq = {
@@ -3480,7 +3356,6 @@
                     withCredentials: true,
                     body: chatReq
                 });
-                console.log("Created new chat request:", requestName);
             }
 
             if (chatSession) {
@@ -3517,12 +3392,15 @@
     }
 
     async function sendChatMessage(message) {
-        if (!chatSession || !message.trim() || chatPending) {
+        if (!chatSession || chatPending) {
             return;
         }
 
         chatPending = true;
-        chatMessages.push({ role: "user", content: message });
+        // Only add user message to display if there's actual content
+        if (message.trim()) {
+            chatMessages.push({ role: "user", content: message });
+        }
         m.redraw();
 
         try {
@@ -3552,113 +3430,188 @@
         m.redraw();
     }
 
-    // Chat Dialog Component
-    function ChatDialog() {
+    // Chat Panel Component - inline in center column (not a modal)
+    function ChatPanel() {
         let inputMessage = "";
+        let autoStartTimeout = null;
+        let userStartedTyping = false;
+        let lastMessageCount = -1;
+
+        function scrollToLastMessage() {
+            let container = document.getElementById("chatMessagesContainer");
+            if (!container) return;
+            let msgs = container.querySelectorAll(":scope > div");
+            if (msgs.length > 0 && lastMessageCount !== msgs.length) {
+                lastMessageCount = msgs.length;
+                msgs[msgs.length - 1].scrollIntoView({ behavior: "smooth" });
+            }
+        }
+
+        function clearAutoStartTimeout() {
+            if (autoStartTimeout) {
+                clearTimeout(autoStartTimeout);
+                autoStartTimeout = null;
+            }
+        }
+
+        function setupAutoStartTimeout() {
+            // Only set timeout if no chat history and user hasn't started typing
+
+            if (chatMessages.length === 0 && !userStartedTyping && !chatPending) {
+                // Random timeout between 1-15 seconds
+                let delay = Math.floor(Math.random() * 14000) + 1000;
+                page.toast("info", "chat in " + delay, delay);
+                autoStartTimeout = setTimeout(function() {
+                    if (!userStartedTyping && chatMessages.length === 0 && !chatPending) {
+                        // Submit empty string to let assistant start
+                        sendChatMessage("");
+                    }
+                }, delay);
+            }
+        }
 
         return {
+            oninit: function() {
+                userStartedTyping = false;
+                setupAutoStartTimeout();
+            },
+            onremove: function() {
+                clearAutoStartTimeout();
+            },
+            onupdate: function() {
+                scrollToLastMessage();
+            },
             view: function() {
-                if (!chatDialogOpen) return "";
-
                 let actorUrl = getPortraitUrl(chatActor, "96x96");
                 let targetUrl = getPortraitUrl(chatTarget, "96x96");
 
-                return m("div", {
-                    class: "fixed inset-0 z-50 flex items-center justify-center bg-black/50",
-                    onclick: function(e) { if (e.target === e.currentTarget) closeChatDialog(); }
-                }, [
-                    m("div", {
-                        class: "bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-2xl h-[80vh] flex flex-col",
-                        onclick: function(e) { e.stopPropagation(); }
-                    }, [
-                        // Header with character portraits
-                        m("div", {class: "flex items-center justify-between px-4 py-3 bg-purple-600 text-white rounded-t-lg"}, [
-                            m("div", {class: "flex items-center space-x-3"}, [
+                return m("div", {class: "flex flex-col h-full bg-white dark:bg-gray-800"}, [
+                    // Header with character portraits - clickable to select character
+                    m("div", {class: "flex-shrink-0 flex items-center justify-between px-4 py-2 bg-purple-600 text-white"}, [
+                        m("div", {class: "flex items-center space-x-3"}, [
+                            // Actor (user's character) - clickable
+                            m("div", {
+                                class: "flex items-center space-x-2 cursor-pointer hover:bg-purple-500 rounded px-2 py-1 -ml-2 transition-colors",
+                                onclick: function() {
+                                    if (chatActor) {
+                                        selectCard(chatActor);
+                                    }
+                                },
+                                title: "View " + (chatActor?.name || "actor")
+                            }, [
                                 actorUrl ?
-                                    m("img", {src: actorUrl, class: "w-10 h-10 rounded-full border-2 border-white"}) :
-                                    m("span", {class: "material-symbols-outlined text-2xl"}, "person"),
-                                m("span", {class: "font-medium"}, chatActor?.name?.split(" ")[0] || "Actor"),
-                                m("span", {class: "material-symbols-outlined mx-2"}, "swap_horiz"),
-                                targetUrl ?
-                                    m("img", {src: targetUrl, class: "w-10 h-10 rounded-full border-2 border-white"}) :
-                                    m("span", {class: "material-symbols-outlined text-2xl"}, "person"),
-                                m("span", {class: "font-medium"}, chatTarget?.name?.split(" ")[0] || "Target")
+                                    m("img", {src: actorUrl, class: "w-8 h-8 rounded-full border-2 border-white"}) :
+                                    m("span", {class: "material-symbols-outlined text-xl"}, "person"),
+                                m("span", {class: "text-sm font-medium"}, chatActor?.name?.split(" ")[0] || "Actor")
                             ]),
-                            m("button", {
-                                class: "p-1 rounded hover:bg-purple-500",
-                                onclick: closeChatDialog
-                            }, m("span", {class: "material-symbols-outlined"}, "close"))
+                            m("span", {class: "material-symbols-outlined text-sm"}, "swap_horiz"),
+                            // Target (system's character) - clickable
+                            m("div", {
+                                class: "flex items-center space-x-2 cursor-pointer hover:bg-purple-500 rounded px-2 py-1 transition-colors",
+                                onclick: function() {
+                                    if (chatTarget) {
+                                        selectCard(chatTarget);
+                                    }
+                                },
+                                title: "View " + (chatTarget?.name || "target")
+                            }, [
+                                targetUrl ?
+                                    m("img", {src: targetUrl, class: "w-8 h-8 rounded-full border-2 border-white"}) :
+                                    m("span", {class: "material-symbols-outlined text-xl"}, "person"),
+                                m("span", {class: "text-sm font-medium"}, chatTarget?.name?.split(" ")[0] || "Target")
+                            ])
                         ]),
+                        m("button", {
+                            class: "p-1 rounded hover:bg-purple-500",
+                            onclick: closeChatDialog,
+                            title: "Close chat"
+                        }, m("span", {class: "material-symbols-outlined"}, "close"))
+                    ]),
 
-                        // Messages area
-                        m("div", {class: "flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50 dark:bg-gray-900"}, [
-                            chatMessages.length === 0 ?
-                                m("div", {class: "text-center text-gray-500 dark:text-gray-400 py-8"}, [
-                                    m("span", {class: "material-symbols-outlined text-4xl block mb-2"}, "forum"),
-                                    m("div", {}, "Start a conversation...")
-                                ]) :
-                                chatMessages.map(function(msg, idx) {
-                                    let isUser = msg.role === "user";
-                                    let isAssistant = msg.role === "assistant";
-                                    if (!isUser && !isAssistant) return ""; // Skip system messages
+                    // Messages area
+                    m("div", {id: "chatMessagesContainer", class: "flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50 dark:bg-gray-900"}, [
+                        chatMessages.length === 0 ?
+                            m("div", {class: "text-center text-gray-500 dark:text-gray-400 py-8"}, [
+                                m("span", {class: "material-symbols-outlined text-4xl block mb-2"}, "forum"),
+                                m("div", {}, "Start a conversation...")
+                            ]) :
+                            chatMessages.map(function(msg, idx) {
+                                let isUser = msg.role === "user";
+                                let isAssistant = msg.role === "assistant";
+                                if (!isUser && !isAssistant) return ""; // Skip system messages
 
-                                    return m("div", {
-                                        class: "flex " + (isUser ? "justify-end" : "justify-start"),
-                                        key: idx
+                                return m("div", {
+                                    class: "flex " + (isUser ? "justify-end" : "justify-start"),
+                                    key: idx
+                                }, [
+                                    m("div", {
+                                        class: "max-w-[85%] px-3 py-2 rounded-lg text-sm " +
+                                            (isUser ?
+                                                "bg-purple-600 text-white rounded-br-none" :
+                                                "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-none")
                                     }, [
-                                        m("div", {
-                                            class: "max-w-[75%] px-4 py-2 rounded-lg " +
-                                                (isUser ?
-                                                    "bg-purple-600 text-white rounded-br-none" :
-                                                    "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-bl-none")
-                                        }, [
-                                            m("div", {class: "text-xs opacity-70 mb-1"},
-                                                isUser ? (chatActor?.name?.split(" ")[0] || "You") : (chatTarget?.name?.split(" ")[0] || "AI")),
-                                            m("div", {class: "text-sm whitespace-pre-wrap"}, msg.content)
-                                        ])
-                                    ]);
-                                })
-                        ]),
+                                        m("div", {class: "text-xs opacity-70 mb-0.5"},
+                                            isUser ? (chatActor?.name?.split(" ")[0] || "You") : (chatTarget?.name?.split(" ")[0] || "AI")),
+                                        m("div", {class: "whitespace-pre-wrap"}, msg.content)
+                                    ])
+                                ]);
+                            })
+                    ]),
 
-                        // Pending indicator
-                        chatPending ? m("div", {class: "px-4 py-2 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"}, [
-                            m("div", {class: "flex items-center space-x-2 text-gray-500 dark:text-gray-400 text-sm"}, [
-                                m("div", {class: "animate-pulse"}, "..."),
-                                m("span", {}, chatTarget?.name?.split(" ")[0] + " is typing...")
-                            ])
-                        ]) : "",
+                    // Pending indicator
+                    chatPending ? m("div", {class: "flex-shrink-0 px-3 py-2 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"}, [
+                        m("div", {class: "flex items-center space-x-2 text-gray-500 dark:text-gray-400 text-sm"}, [
+                            m("div", {class: "animate-pulse"}, "..."),
+                            m("span", {}, chatTarget?.name?.split(" ")[0] + " is typing...")
+                        ])
+                    ]) : "",
 
-                        // Input area
-                        m("div", {class: "p-3 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 rounded-b-lg"}, [
-                            m("div", {class: "flex space-x-2"}, [
-                                m("input", {
-                                    type: "text",
-                                    class: "flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-purple-500",
-                                    placeholder: "Type a message...",
-                                    value: inputMessage,
-                                    disabled: chatPending,
-                                    oninput: function(e) { inputMessage = e.target.value; },
-                                    onkeydown: function(e) {
-                                        if (e.key === "Enter" && !e.shiftKey && inputMessage.trim()) {
-                                            sendChatMessage(inputMessage);
-                                            inputMessage = "";
-                                        }
+                    // Input area - pb-14 ensures visibility above bottom navigation bar
+                    m("div", {class: "flex-shrink-0 p-2 pb-14 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"}, [
+                        m("div", {class: "flex space-x-2"}, [
+                            m("input", {
+                                type: "text",
+                                class: "flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500",
+                                placeholder: "Type a message...",
+                                value: inputMessage,
+                                disabled: chatPending,
+                                oninput: function(e) {
+                                    inputMessage = e.target.value;
+                                    // Cancel auto-start timeout when user starts typing
+                                    if (!userStartedTyping && inputMessage.length > 0) {
+                                        userStartedTyping = true;
+                                        clearAutoStartTimeout();
                                     }
-                                }),
-                                m("button", {
-                                    class: "px-4 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50",
-                                    disabled: chatPending || !inputMessage.trim(),
-                                    onclick: function() {
-                                        if (inputMessage.trim()) {
-                                            sendChatMessage(inputMessage);
-                                            inputMessage = "";
-                                        }
+                                },
+                                onkeydown: function(e) {
+                                    if (e.key === "Enter" && !e.shiftKey && inputMessage.trim()) {
+                                        sendChatMessage(inputMessage);
+                                        inputMessage = "";
                                     }
-                                }, m("span", {class: "material-symbols-outlined"}, "send"))
-                            ])
+                                }
+                            }),
+                            m("button", {
+                                class: "px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50",
+                                disabled: chatPending || !inputMessage.trim(),
+                                onclick: function() {
+                                    if (inputMessage.trim()) {
+                                        sendChatMessage(inputMessage);
+                                        inputMessage = "";
+                                    }
+                                }
+                            }, m("span", {class: "material-symbols-outlined text-sm"}, "send"))
                         ])
                     ])
                 ]);
+            }
+        };
+    }
+
+    // Keep ChatDialog for backwards compatibility but it now returns empty (ChatPanel is used inline)
+    function ChatDialog() {
+        return {
+            view: function() {
+                return ""; // Chat is now inline in the center panel
             }
         };
     }
@@ -4123,10 +4076,11 @@
                 }, [
                     m("div", {
                         class: "bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col",
+                        style: "height: 400px;",
                         onclick: function(e) { e.stopPropagation(); }
                     }, [
                         // Header
-                        m("div", {class: "flex items-center justify-between px-4 py-3 bg-blue-600 text-white rounded-t-lg"}, [
+                        m("div", {class: "flex-shrink-0 flex items-center justify-between px-4 py-3 bg-blue-600 text-white rounded-t-lg"}, [
                             m("div", {class: "flex items-center space-x-2"}, [
                                 m("span", {class: "material-symbols-outlined"}, "save"),
                                 m("span", {class: "font-medium"},
@@ -4139,27 +4093,27 @@
                             }, m("span", {class: "material-symbols-outlined"}, "close"))
                         ]),
 
-                        // Content
-                        m("div", {class: "p-4 max-h-[60vh] overflow-y-auto"}, [
-                            // Mode buttons
-                            m("div", {class: "flex space-x-2 mb-4"}, [
-                                m("button", {
-                                    class: "flex-1 px-3 py-2 rounded text-sm " +
-                                        (saveDialogMode === 'list' ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"),
-                                    onclick: function() { saveDialogMode = 'list'; }
-                                }, "Load"),
-                                m("button", {
-                                    class: "flex-1 px-3 py-2 rounded text-sm " +
-                                        (saveDialogMode === 'save' ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"),
-                                    onclick: function() { saveDialogMode = 'save'; }
-                                }, "Save"),
-                                m("button", {
-                                    class: "flex-1 px-3 py-2 rounded text-sm " +
-                                        (saveDialogMode === 'new' ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"),
-                                    onclick: function() { saveDialogMode = 'new'; }
-                                }, "New")
-                            ]),
+                        // Mode buttons (fixed, not scrollable)
+                        m("div", {class: "flex-shrink-0 flex space-x-2 p-4 pb-2"}, [
+                            m("button", {
+                                class: "flex-1 px-3 py-2 rounded text-sm " +
+                                    (saveDialogMode === 'list' ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"),
+                                onclick: function() { saveDialogMode = 'list'; }
+                            }, "Load"),
+                            m("button", {
+                                class: "flex-1 px-3 py-2 rounded text-sm " +
+                                    (saveDialogMode === 'save' ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"),
+                                onclick: function() { saveDialogMode = 'save'; }
+                            }, "Save"),
+                            m("button", {
+                                class: "flex-1 px-3 py-2 rounded text-sm " +
+                                    (saveDialogMode === 'new' ? "bg-blue-600 text-white" : "bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"),
+                                onclick: function() { saveDialogMode = 'new'; }
+                            }, "New")
+                        ]),
 
+                        // Content area (scrollable)
+                        m("div", {class: "flex-1 overflow-y-auto px-4 pb-4"}, [
                             // Save mode - input for save name
                             saveDialogMode === 'save' ? [
                                 m("div", {class: "mb-4"}, [
@@ -4191,7 +4145,7 @@
                                 ])
                             ] : "",
 
-                            // List mode - show saved games
+                            // List mode - show saved games (this is the scrollable part)
                             saveDialogMode === 'list' ? [
                                 savedGames.length === 0 ?
                                     m("div", {class: "text-center py-8 text-gray-500 dark:text-gray-400"}, [
@@ -4227,7 +4181,7 @@
                         ]),
 
                         // Footer with current save info
-                        currentSave ? m("div", {class: "px-4 py-2 bg-gray-100 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 rounded-b-lg"}, [
+                        currentSave ? m("div", {class: "flex-shrink-0 px-4 py-2 bg-gray-100 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 rounded-b-lg"}, [
                             m("span", {class: "text-xs text-gray-500 dark:text-gray-400"}, "Current: " + currentSave.name)
                         ]) : ""
                     ])
@@ -4252,28 +4206,30 @@
     function mainPanel() {
         return m("div", {class: "flex-grow overflow-hidden flex bg-gray-100 dark:bg-gray-900"}, [
             m("div", {class: "flex flex-col lg:flex-row w-full h-full"}, [
-                // Left panel - Draw Piles only
-                m("div", {class: "w-full lg:w-48 h-1/4 lg:h-full flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700 flex flex-col overflow-y-auto"}, [
+                // Left panel - Draw Piles only (narrow vertical layout)
+                m("div", {class: "w-full lg:w-24 h-1/4 lg:h-full flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700 flex flex-col overflow-y-auto"}, [
                     m("div", {class: "flex-1"}, [
                         m(ConsolidatedDecks)
                     ])
                 ]),
 
-                // Center panel - Both hands with Action Tray between
-                m("div", {class: "flex-1 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
-                    // User's hand (top) - takes about 30%
-                    m("div", {class: "h-[30%] border-b border-gray-300 dark:border-gray-700"}, [
-                        m(UserHandPile)
+                // Center panel - Either hands or action view (chat, etc.)
+                chatDialogOpen ?
+                    // Chat view replaces the hands
+                    m("div", {class: "flex-1 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
+                        m(ChatPanel)
+                    ]) :
+                    // Default: Both hands stacked (actions integrated into hand headers)
+                    m("div", {class: "flex-1 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
+                        // User's hand (top) - 50%
+                        m("div", {class: "h-1/2"}, [
+                            m(UserHandPile)
+                        ]),
+                        // System's hand (bottom) - 50%
+                        m("div", {class: "h-1/2"}, [
+                            m(GameHandPile)
+                        ])
                     ]),
-                    // Action tray (middle) - takes about 40% to fit two rows with cards
-                    m("div", {class: "h-[40%] flex-shrink-0"}, [
-                        m(ActionTray)
-                    ]),
-                    // System's hand (bottom) - takes about 30%
-                    m("div", {class: "h-[30%]"}, [
-                        m(GameHandPile)
-                    ])
-                ]),
 
                 // Right panel - Selected Card View
                 m("div", {class: "w-full lg:w-1/4 h-1/4 lg:h-full bg-gray-100 dark:bg-gray-900"}, [
