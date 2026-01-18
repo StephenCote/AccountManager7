@@ -309,10 +309,11 @@
           m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/prompt/" + c1.name, withCredentials: true })
             .then((c) => {
               chatCfg.prompt = c;
-              m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/chat/" + c2.name, withCredentials: true }).then((c2) => {
-                chatCfg.chat = c2;
-                chatCfg.system = c2.systemCharacter;
-                chatCfg.user = c2.userCharacter;
+
+              m.request({ method: 'GET', url: g_application_path + "/rest/chat/config/chat/" + c2.name, withCredentials: true }).then((c3) => {
+                chatCfg.chat = c3;
+                chatCfg.system = c3.systemCharacter;
+                chatCfg.user = c3.userCharacter;
                 getHistory().then((h) => {
                   chatCfg.peek = true;
                   chatCfg.history = h;
@@ -322,13 +323,16 @@
                   console.warn("Error in chat history", e);
                   chatCfg.peek = false;
                 });
-              });
+              }).catch((e) => {
+                  console.warn("Error in chat config", e);
+                  chatCfg.peek = false;
+                });;
             });
         });
       }
       else {
         console.warn("No prompt or chat config");
-
+        p = Promise.resolve();
       }
       return p;
     }
