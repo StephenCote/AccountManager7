@@ -409,11 +409,11 @@
         async function deleteImage() {
             if(typeof page === "undefined") return;
             let img = images[currentIndex];
-            if(!img || !img.id) return;
+            if(!img || !img.objectId) return;
 
             if(!confirm("Delete this image?")) return;
 
-            await page.deleteObject("data.data", img.id);
+            await page.deleteObject("data.data", img.objectId);
             images.splice(currentIndex, 1);
             if(currentIndex >= images.length && images.length > 0){
                 if(useEntity){
