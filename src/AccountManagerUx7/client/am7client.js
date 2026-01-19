@@ -192,7 +192,7 @@
 	
 	function patchObject(sType, oObj, fH){
 	   delete cache[sType];
-	   console.log(oObj);
+	   // console.log(oObj);
 	   return patch(sModelSvc, oObj, fH);
 	}
 	
