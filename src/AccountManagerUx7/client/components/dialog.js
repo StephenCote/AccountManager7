@@ -291,6 +291,225 @@
     }
 
     let lastReimage;
+
+    async function loadSDConfig(name){
+        let grp = await page.makePath("auth.group", "DATA", "~/Data/.preferences");
+        if(!grp) return null;
+        try {
+            let q = am7view.viewQuery(am7model.newInstance("data.data"));
+            q.entity.request.push("dataBytesStore");
+            q.field("groupId", grp.id);
+            q.field("name", name);
+            let qr = await page.search(q);
+            if(qr && qr.results && qr.results.length){
+                let obj = qr.results[0];
+                if(obj.dataBytesStore && obj.dataBytesStore.length){
+                    return JSON.parse(uwm.base64Decode(obj.dataBytesStore));
+                }
+            }
+        } catch(e){
+            console.warn("Failed to load SD config: " + name, e);
+        }
+        return null;
+    }
+
+    async function saveSDConfig(name, config){
+        let grp = await page.makePath("auth.group", "DATA", "~/Data/.preferences");
+        if(!grp) return false;
+
+        // Create a clean copy without transient fields
+        let saveConfig = {};
+        let excludeFields = ["narration", "id", "objectId", "ownerId"];
+        for(let k in config){
+            if(!excludeFields.includes(k)){
+                saveConfig[k] = config[k];
+            }
+        }
+
+        let obj;
+        try {
+            obj = await page.searchByName("data.data", grp.objectId, name);
+        } catch(e){
+            // Object doesn't exist yet
+        }
+
+        if(!obj){
+            obj = am7model.newPrimitive("data.data");
+            obj.name = name;
+            obj.mimeType = "application/json";
+            obj.groupId = grp.id;
+            obj.groupPath = grp.path;
+            obj.dataBytesStore = uwm.base64Encode(JSON.stringify(saveConfig));
+            await page.createObject(obj);
+        } else {
+            let patch = {id: obj.id, compressionType: "none", dataBytesStore: uwm.base64Encode(JSON.stringify(saveConfig))};
+            patch[am7model.jsonModelKey] = "data.data";
+            //console.log(patch, saveConfig);
+            await page.patchObject(patch);
+        }
+        return true;
+    }
+
+    function applySDConfig(cinst, config){
+        if(!config) return;
+        let excludeFields = ["narration", "id", "objectId", "groupId", "organizationId", "ownerId", "groupPath", "organizationPath", "seed"];
+        for(let k in config){
+            if(!excludeFields.includes(k) && cinst.api[k]){
+                cinst.api[k](config[k]);
+            }
+        }
+    }
+
+    // Social sharing context mapping to wear levels
+    // Maps wear level names (from wearLevelEnumType) to social sharing tags
+    // Levels: NONE, INTERNAL, UNDER, ON, BASE, ACCENT, SUIT, GARNITURE, ACCESSORY, OVER, OUTER, FULL_BODY, ENCLOSURE, UNKNOWN
+    // UNDER/ON = tattoos/implants (under skin, on skin), BASE = skin contact clothing
+    const socialSharingMap = {
+        "NONE": "inappropriate",      // No clothing - nude
+        "INTERNAL": "inappropriate",  // Internal items (implants)
+        "UNDER": "inappropriate",     // Under skin (implants)
+        "ON": "inappropriate",        // On skin (tattoos)
+        "BASE": "intimate",           // Skin contact clothing (underwear)
+        "ACCENT": "public",           // Everything above BASE is public
+        "SUIT": "public",
+        "GARNITURE": "public",
+        "ACCESSORY": "public",
+        "OVER": "public",
+        "OUTER": "public",
+        "FULL_BODY": "public",
+        "ENCLOSURE": "public",
+        "UNKNOWN": null               // No automatic tag for unknown
+    };
+
+    // All social sharing tags that can be toggled in the gallery
+    // These are the subjective tags users can manually apply
+    const socialSharingTags = [
+        "inappropriate",
+        "intimate",
+        "sexy",
+        "private",
+        "casual",
+        "public",
+        "professional"
+    ];
+
+    // Get or create a social sharing tag
+    async function getOrCreateSharingTag(tagName, objectType){
+        // First try to get existing tag
+        let tag = await page.getTag(tagName, objectType);
+        if(tag){
+            return tag;
+        }
+
+        // Create the tag if it doesn't exist
+        let grp = await page.findObject("auth.group", "data", "~/Tags");
+        if(!grp){
+            console.warn("Tags group not found");
+            return null;
+        }
+
+        let newTag = am7model.newPrimitive("data.tag");
+        newTag.name = tagName;
+        newTag.type = objectType;
+        newTag.groupId = grp.id;
+        newTag.groupPath = grp.path;
+        newTag.description = "Social sharing context: " + tagName;
+
+        tag = await page.createObject(newTag);
+        return tag;
+    }
+
+    // Apply social sharing tag to an image based on wear level
+    async function applySharingTag(image, wearLevelName){
+        let sharingContext = socialSharingMap[wearLevelName];
+        if(!sharingContext){
+            // No automatic tag for this level (e.g., UNKNOWN)
+            return;
+        }
+
+        let tag = await getOrCreateSharingTag(sharingContext, "data.data");
+        if(!tag){
+            console.warn("Failed to get/create sharing tag: " + sharingContext);
+            return;
+        }
+
+        // Make the image a member of the tag
+        await page.member("data.tag", tag.objectId, "data.data", image.objectId, true);
+    }
+
+    // Toggle a sharing tag on an image
+    async function toggleSharingTag(image, tagName, enable){
+        let tag = await getOrCreateSharingTag(tagName, "data.data");
+        if(!tag){
+            console.warn("Failed to get/create sharing tag: " + tagName);
+            return false;
+        }
+
+        // Add or remove membership
+        await page.member("data.tag", tag.objectId, "data.data", image.objectId, enable);
+        return true;
+    }
+
+    // Expose for use in gallery
+    if(typeof window !== "undefined"){
+        window.am7sharingTags = {
+            tags: socialSharingTags,
+            toggle: toggleSharingTag,
+            getOrCreate: getOrCreateSharingTag
+        };
+    }
+
+    async function getCurrentWearLevel(inst){
+        // Get character's store and apparel
+        let sto = await page.searchFirst("olio.store", undefined, undefined, inst.api.store().objectId);
+        if(!sto || !sto.apparel || !sto.apparel.length){
+            return null;
+        }
+
+        // Load the apparel and wearables
+        am7client.clearCache("olio.apparel");
+        let aq = am7view.viewQuery("olio.apparel");
+        aq.field("objectId", sto.apparel[0].objectId);
+        let aqr = await page.search(aq);
+        let app;
+        if(aqr && aqr.results && aqr.results.length){
+            app = aqr.results[0];
+        }
+        if(!app || !app.wearables || !app.wearables.length){
+            return null;
+        }
+
+        // Load full wearable details
+        let q = am7view.viewQuery("olio.wearable");
+        q.range(0, 20);
+        let oids = app.wearables.map((a) => a.objectId).join(",");
+        q.field("groupId", app.wearables[0].groupId);
+        let fld = q.field("objectId", oids);
+        fld.comparator = "in";
+        let qr = await page.search(q);
+        if(!qr || !qr.results || !qr.results.length){
+            return null;
+        }
+        let wears = qr.results;
+
+        // Find the current max level that is in use
+        let maxLevel = -1;
+        let maxLevelName = "NUDE";
+        wears.forEach((w) => {
+            if(w.level && w.inuse){
+                let lvl = am7model.enums.wearLevelEnumType.findIndex(we => we == w.level.toUpperCase());
+                if(lvl > maxLevel){
+                    maxLevel = lvl;
+                    maxLevelName = w.level.toUpperCase();
+                }
+            }
+        });
+
+        // Get level index (position in enum)
+        let levelIndex = maxLevel >= 0 ? maxLevel : 0;
+        return {level: maxLevelName, index: levelIndex};
+    }
+
     async function reimage(object, inst) {
 
         //let entity = am7model.newPrimitive("olio.sd.config");
@@ -309,8 +528,17 @@
 
         tempApplyDefaults();
 
+        // Try to load character-specific config
+        let charConfigName = inst.api.name() + "-SD.json";
+        let charConfig = await loadSDConfig(charConfigName);
+        if(charConfig){
+            applySDConfig(cinst, charConfig);
+        }
+
         lastReimage = cinst;
         await am7olio.setNarDescription(inst, cinst);
+
+        // Apply preferred seed from character attributes (overrides saved config)
         let cseed = (inst.entity?.attributes || []).filter(a => a.name == "preferredSeed");
         if(cseed.length){
             cinst.api.seed(cseed[0].value);
@@ -322,42 +550,89 @@
             data: {entity:cinst.entity, inst: cinst},
             confirm: async function (data) {
                 //console.log(data);
-                page.toast("info", "Reimaging ...", -1);
+                let count = cinst.api.imageCount ? (parseInt(cinst.api.imageCount()) || 1) : 1;
+                if(count < 1) count = 1;
 
-                let x = await m.request({ method: 'POST', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage", body:cinst.entity, withCredentials: true });
+                let baseSeed = cinst.api.seed();
+                let images = [];
+                let wearLevel = await getCurrentWearLevel(inst);
+
+                for(let i = 0; i < count; i++){
+                    page.toast("info", "Creating image " + (i + 1) + " of " + count + "...", -1);
+
+                    // Increment seed for subsequent images
+                    let useSeed = (i === 0) ? baseSeed : (parseInt(baseSeed) + i);
+                    let imgEntity = Object.assign({}, cinst.entity);
+                    imgEntity.seed = useSeed;
+
+                    let x = await m.request({ method: 'POST', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage", body: imgEntity, withCredentials: true });
+
+                    if(!x){
+                        page.toast("error", "Failed to create image " + (i + 1));
+                        break;
+                    }
+
+                    // Tag image with wear level and apply sharing tag
+                    if(wearLevel){
+                        await am7client.patchAttribute(x, "wearLevel", wearLevel.level + "/" + wearLevel.index);
+                        await applySharingTag(x, wearLevel.level);
+                    }
+
+                    images.push(x);
+
+                    // For first image, extract seed and update portrait
+                    if(i === 0){
+                        inst.entity.profile.portrait = x;
+
+                        let od = {id: inst.entity.profile.id, portrait: {id: x.id}};
+                        od[am7model.jsonModelKey] = "identity.profile";
+                        await page.patchObject(od);
+
+                        // Extract seed from response image (important for random seeds)
+                        let seed = x.attributes.filter(a => a.name == "seed");
+                        if(seed.length){
+                            await am7client.patchAttribute(inst.entity, "preferredSeed", seed[0].value);
+                        }
+                    }
+                }
+
                 page.clearToast();
-                let pop = false;
-                if (x && x != null) {
-                    page.toast("success", "Reimage complete");
-                    inst.entity.profile.portrait = x;
 
-                    let od = {id: inst.entity.profile.id, portrait: {id: x.id}};
-                    od[am7model.jsonModelKey] = "identity.profile";
-                    await page.patchObject(od);
+                if(images.length > 0){
+                    page.toast("success", "Created " + images.length + " image(s)");
 
-                    let seed = x.attributes.filter(a => a.name == "seed");
-                    if(seed.length){
-                        await am7client.patchAttribute(inst.entity, "preferredSeed", seed[0].value);
+                    // Save SD config for this character
+                    let charConfigName = inst.api.name() + "-SD.json";
+                    let saveEntity = Object.assign({}, cinst.entity);
+                    saveEntity.shared = false; // Always save character config with shared=false
+                    await saveSDConfig(charConfigName, saveEntity);
+
+                    // If shared was checked, also save to shared config
+                    if(cinst.api.shared && cinst.api.shared()){
+                        await saveSDConfig("sharedSD.json", cinst.entity);
+                        cinst.api.shared(false); // Reset checkbox after save
                     }
 
                     // Clear the context cache for this object and its portrait
-                    // This ensures the new image will be fetched on next render
                     page.clearContextObject(inst.api.objectId());
-                    if(x.objectId) {
-                        page.clearContextObject(x.objectId);
-                    }
+                    images.forEach(img => {
+                        if(img.objectId) page.clearContextObject(img.objectId);
+                    });
 
                     // Force Mithril redraw
                     m.redraw();
-
-                    pop = true;
                 }
                 else{
                     page.toast("error", "Reimage failed");
                 }
+
                 endDialog();
-                if(pop){
-                    page.imageView(x);
+
+                // Show images - single or gallery
+                if(images.length === 1){
+                    page.imageView(images[0]);
+                } else if(images.length > 1){
+                    page.imageGallery(images, inst);
                 }
 
             },
@@ -378,7 +653,179 @@
         am7model.forms.sdConfig.fields.randomSeed.field.command = async function(){
             cinst.api.seed(-1);
         };
-        
+        am7model.forms.sdConfig.fields.createApparelSequence.field.command = async function(){
+            // Get character's store and apparel
+            let sto = await page.searchFirst("olio.store", undefined, undefined, inst.api.store().objectId);
+            let appl = sto.apparel;
+            if(!appl || !appl.length){
+                page.toast("error", "No apparel found in store " + sto.name);
+                return;
+            }
+
+            // Load the apparel and wearables
+            am7client.clearCache("olio.apparel");
+            let aq = am7view.viewQuery("olio.apparel");
+            aq.field("objectId", appl[0].objectId);
+            let aqr = await page.search(aq);
+            let app;
+            if(aqr && aqr.results && aqr.results.length){
+                app = aqr.results[0];
+            }
+            if(!app || !app.wearables || !app.wearables.length){
+                page.toast("error", "No wearables found in apparel");
+                return;
+            }
+
+            // Load full wearable details
+            let q = am7view.viewQuery("olio.wearable");
+            q.range(0, 20);
+            let oids = app.wearables.map((a) => a.objectId).join(",");
+            q.field("groupId", app.wearables[0].groupId);
+            let fld = q.field("objectId", oids);
+            fld.comparator = "in";
+            let qr = await page.search(q);
+            if(!qr || !qr.results || !qr.results.length){
+                page.toast("error", "No wearables found");
+                return;
+            }
+            let wears = qr.results;
+
+            // Get sorted unique wear levels present in wearables
+            let lvls = [...new Set(wears.sort((a, b) => {
+                let aL = am7model.enums.wearLevelEnumType.findIndex(we => we == a.level.toUpperCase());
+                let bL = am7model.enums.wearLevelEnumType.findIndex(we => we == b.level.toUpperCase());
+                return aL < bL ? -1 : aL > bL ? 1 : 0;
+            }).map((w) => w.level.toUpperCase()))];
+
+            if(!lvls.length){
+                page.toast("error", "No wear levels found");
+                return;
+            }
+
+            // Dress down completely (all wearables off) first
+            page.toast("info", "Dressing down completely...", -1);
+            let dressedDown = true;
+            while(dressedDown == true){
+                dressedDown = await am7olio.dressApparel(appl[0], false);
+            }
+
+            // Store original seed
+            let baseSeed = cinst.api.seed();
+            let images = [];
+
+            // Check if lowest level is not NUDE - if so, create a nude image first
+            let lowestLevel = lvls[0];
+            let nudeIdx = am7model.enums.wearLevelEnumType.findIndex(we => we == "NUDE");
+            let lowestIdx = am7model.enums.wearLevelEnumType.findIndex(we => we == lowestLevel);
+            let includeNude = (lowestIdx > nudeIdx);
+
+            // Iterate through each level from lowest to highest
+            page.toast("info", "Creating apparel sequence...", -1);
+            let totalImages = lvls.length + (includeNude ? 1 : 0);
+
+            // Create nude image first if needed
+            if(includeNude){
+                await am7olio.setNarDescription(inst, cinst);
+                page.toast("info", "Creating image 1 of " + totalImages + " (level: NUDE)...", -1);
+                let imgEntity = Object.assign({}, cinst.entity);
+                imgEntity.seed = baseSeed;
+                let x = await m.request({ method: 'POST', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage", body: imgEntity, withCredentials: true });
+                if(x){
+                    // Extract seed if it was random (-1)
+                    let seed = x.attributes.filter(a => a.name == "seed");
+                    if(seed.length){
+                        baseSeed = seed[0].value;
+                        await am7client.patchAttribute(inst.entity, "preferredSeed", baseSeed);
+                    }
+                    await am7client.patchAttribute(x, "wearLevel", "NUDE/" + nudeIdx);
+                    await applySharingTag(x, "NUDE");
+                    images.push(x);
+                }
+            }
+
+            for(let i = 0; i < lvls.length; i++){
+                // Dress up to this level first (we start fully undressed)
+                await am7olio.dressApparel(appl[0], true);
+
+                // Update narration description for current outfit
+                await am7olio.setNarDescription(inst, cinst);
+
+                // Set seed (base seed + image count for 2nd+ images)
+                let useSeed = (images.length === 0) ? baseSeed : (parseInt(baseSeed) + images.length);
+                cinst.api.seed(useSeed);
+
+                // Create image
+                page.toast("info", "Creating image " + (images.length + 1) + " of " + totalImages + " (level: " + lvls[i] + ")...", -1);
+                let imgEntity = Object.assign({}, cinst.entity);
+                imgEntity.seed = useSeed;
+                let x = await m.request({ method: 'POST', url: am7client.base() + "/olio/" + inst.model.name + "/" + inst.api.objectId() + "/reimage", body: imgEntity, withCredentials: true });
+
+                if(!x){
+                    page.toast("error", "Failed to create image at level " + lvls[i]);
+                    break;
+                }
+
+                // For first image (if no nude), extract seed if it was random (-1)
+                if(images.length === 0){
+                    let seed = x.attributes.filter(a => a.name == "seed");
+                    if(seed.length){
+                        baseSeed = seed[0].value;
+                        await am7client.patchAttribute(inst.entity, "preferredSeed", baseSeed);
+                    }
+                }
+
+                // Tag image with wear level and apply sharing tag
+                let levelIndex = am7model.enums.wearLevelEnumType.findIndex(we => we == lvls[i]);
+                await am7client.patchAttribute(x, "wearLevel", lvls[i] + "/" + levelIndex);
+                await applySharingTag(x, lvls[i]);
+
+                images.push(x);
+            }
+
+            // Restore seed to extracted value (important if it was random)
+            cinst.api.seed(baseSeed);
+
+            // Save SD config for this character
+            if(images.length > 0){
+                let charConfigName = inst.api.name() + "-SD.json";
+                let saveEntity = Object.assign({}, cinst.entity);
+                saveEntity.shared = false;
+                await saveSDConfig(charConfigName, saveEntity);
+
+                // If shared was checked, also save to shared config
+                if(cinst.api.shared && cinst.api.shared()){
+                    await saveSDConfig("sharedSD.json", cinst.entity);
+                    cinst.api.shared(false);
+                }
+            }
+            else{
+                page.toast("warn", "Nothing  to save");
+            }
+
+            page.clearToast();
+            page.toast("success", "Created " + images.length + " images in apparel sequence");
+            m.redraw();
+
+            // Show images in gallery
+            if(images.length === 1){
+                page.imageView(images[0]);
+            } else if(images.length > 1){
+                page.imageGallery(images, inst);
+            }
+        };
+        am7model.forms.sdConfig.fields.loadShared.field.command = async function(){
+            let sharedConfig = await loadSDConfig("sharedSD.json");
+            if(sharedConfig){
+                let seed = cinst.api.seed(); // Preserve current seed
+                applySDConfig(cinst, sharedConfig);
+                cinst.api.seed(seed);
+                cinst.api.shared(false); // Reset shared checkbox after loading
+                m.redraw();
+                page.toast("success", "Loaded shared SD config");
+            } else {
+                page.toast("warn", "No shared SD config found");
+            }
+        };
         am7model.forms.sdConfig.fields.randomConfig.field.command = async function(){
             let ncfg = await m.request({ method: 'GET', url: am7client.base() + "/olio/randomImageConfig", withCredentials: true });
             // Do style first since that drives the display

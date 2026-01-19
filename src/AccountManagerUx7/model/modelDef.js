@@ -9492,6 +9492,11 @@
           "default": -1
         },
         {
+        "name": "shared",
+        "type": "boolean",
+        "description": "Whether the config is meant to be shared internally across generations."
+         },
+        {
           "name": "hires",
           "type": "boolean",
           "default": true,

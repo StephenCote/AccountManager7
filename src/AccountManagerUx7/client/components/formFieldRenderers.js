@@ -344,8 +344,12 @@
         /// Profile portrait
         else if (useEntity.profile && useEntity.profile.portrait && useEntity.profile.portrait.contentType) {
             let pp = useEntity.profile.portrait;
+            let charInst = ctx.inst;
             clickHandler = function() {
-                if (typeof page !== "undefined") page.imageView(pp);
+                if (typeof page !== "undefined") {
+                    // Open gallery with character instance to allow profile selection
+                    page.imageGallery([], charInst);
+                }
             };
             dataUrl = buildThumbnailPath(pp, "96x96");
         }
@@ -368,6 +372,149 @@
             onclick: clickHandler,
             src: dataUrl
         })];
+    };
+
+    /// Gallery field renderer for multiple images with navigation
+    renderers.gallery = function(ctx) {
+        let useEntity = ctx.useEntity || ctx.entity;
+        let fieldClass = ctx.fieldClass + " gallery-field";
+
+        // Images can come from ctx.defVal (field value) or useEntity.images
+        let images = ctx.defVal || (useEntity && useEntity.images);
+        if (!images || !images.length) {
+            return [m("span", "No images")];
+        }
+
+        // Get character instance if available (for set-as-profile)
+        let charInst = useEntity && useEntity.characterInstance;
+
+        // Store currentIndex on the entity for state persistence
+        if(useEntity && typeof useEntity.currentIndex === 'undefined'){
+            useEntity.currentIndex = 0;
+        }
+        let currentIndex = useEntity ? (useEntity.currentIndex || 0) : 0;
+
+        // Social sharing tags list
+        let sharingTags = (typeof window !== "undefined" && window.am7sharingTags)
+            ? window.am7sharingTags.tags
+            : ["inappropriate", "intimate", "sexy", "private", "casual", "public", "professional"];
+
+        function navigate(delta) {
+            if(useEntity){
+                useEntity.currentIndex = (currentIndex + delta + images.length) % images.length;
+            }
+            m.redraw();
+        }
+
+        async function deleteImage() {
+            if(typeof page === "undefined") return;
+            let img = images[currentIndex];
+            if(!img || !img.id) return;
+
+            if(!confirm("Delete this image?")) return;
+
+            await page.deleteObject("data.data", img.id);
+            images.splice(currentIndex, 1);
+            if(currentIndex >= images.length && images.length > 0){
+                if(useEntity){
+                    useEntity.currentIndex = images.length - 1;
+                }
+                currentIndex = images.length - 1;
+            }
+            page.toast("success", "Image deleted");
+            m.redraw();
+        }
+
+        async function setAsProfile() {
+            if(typeof page === "undefined" || !charInst) return;
+            let img = images[currentIndex];
+            if(!img || !img.id) return;
+
+            // Update the character's profile portrait
+            charInst.entity.profile.portrait = img;
+            let od = {id: charInst.entity.profile.id, portrait: {id: img.id}};
+            od[am7model.jsonModelKey] = "identity.profile";
+            await page.patchObject(od);
+
+            page.toast("success", "Profile image updated");
+            m.redraw();
+        }
+
+        async function toggleTag(tagName) {
+            if(typeof page === "undefined" || typeof window === "undefined" || !window.am7sharingTags) return;
+            let img = images[currentIndex];
+            if(!img || !img.objectId) return;
+
+            // Check if tag is currently applied
+            let imgTags = img.tags || [];
+            let hasTag = imgTags.some(t => t.name === tagName);
+
+            // Toggle the tag
+            let success = await window.am7sharingTags.toggle(img, tagName, !hasTag);
+            if(success){
+                // Update local tags array
+                if(hasTag){
+                    img.tags = imgTags.filter(t => t.name !== tagName);
+                } else {
+                    let tag = await window.am7sharingTags.getOrCreate(tagName, "data.data");
+                    if(tag){
+                        if(!img.tags) img.tags = [];
+                        img.tags.push(tag);
+                    }
+                }
+                m.redraw();
+            }
+        }
+
+        let currentImage = images[currentIndex];
+        let dataUrl = buildThumbnailPath(currentImage, "512x512");
+
+        // Get current image's tags (filter to only sharing tags)
+        let currentTags = (currentImage.tags || [])
+            .filter(t => sharingTags.includes(t.name))
+            .map(t => t.name);
+
+        // Build navigation buttons
+        let navButtons = [
+            page.iconButton("button", "arrow_back", "", function() { navigate(-1); }, images.length <= 1),
+            m("span", { class: "button" }, (currentIndex + 1) + " / " + images.length),
+            page.iconButton("button mr-4", "arrow_forward", "", function() { navigate(1); }, images.length <= 1),
+            page.iconButton("button", "delete", "", deleteImage)
+        ];
+
+        // Only show set-as-profile button if we have a character instance
+        if(charInst){
+            navButtons.push(page.iconButton("button", "account_circle", "", setAsProfile));
+        }
+
+        // Build sharing tags vertical list
+        let tagsList = sharingTags.map(function(tagName){
+            let isActive = currentTags.includes(tagName);
+            return m("button", {
+                class: "gallery-tag-btn" + (isActive ? " active" : ""),
+                onclick: function(){ toggleTag(tagName); }
+            }, tagName);
+        });
+
+        return [
+            m("div", { class: "gallery-container gallery-with-tags" }, [
+                m("div", { class: "result-nav-outer" }, [
+                    m("div", { class: "result-nav-inner" }, [
+                        m("div", { class: "result-nav tab-container" }, navButtons)
+                    ])
+                ]),
+                m("div", { class: "gallery-content" }, [
+                    m("img", {
+                        class: "carousel-item-img",
+                        src: dataUrl,
+                        onclick: function() {
+                            if (typeof page !== "undefined") page.imageView(currentImage);
+                        }
+                    }),
+                    m("div", { class: "gallery-tags-panel" }, tagsList)
+                ])
+            ])
+        ];
     };
 
     /// Audio player field renderer

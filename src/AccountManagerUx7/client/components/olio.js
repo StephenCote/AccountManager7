@@ -138,17 +138,17 @@
 
         if(!lvls.includes(maxLevelName) || maxLevelIdx == -1){
             page.toast("info", "No wearables found in apparel " + app.name + " for level " + maxLevelName);
-            return;
+            return false;
         }
 
         console.log("Max level is " + maxLevelName + " at index " + maxLevelIdx + " of " + lvls.length);
         if(dressUp && maxLevelIdx >= lvls.length){
             page.toast("info", "Already dressed up to max level");
-            return;
+            return false; // Can't dress up anymore
         }
         else if(!dressUp && maxLevelIdx < 0){
             page.toast("info", "Already dressed down to min level");
-            return;
+            return false; // Can't dress down anymore
         }
 
         let newLevel = am7model.enums.wearLevelEnumType.findIndex(we => we == lvls[maxLevelIdx + (dressUp ? 0 : -1)]);
@@ -174,7 +174,8 @@
 
         if(!patch.length){
             page.toast("info", "No changes to make to " + app.name + " for level " + newLevel);
-            return;
+            // No changes but may still be able to continue dressing
+            return true;
         }
         
         console.log("Patching " + patch.length + " items to level " + newLevel);
@@ -182,10 +183,14 @@
         patch.forEach((p) => {
             aP.push(page.patchObject(p));
         });
-        am7client.clearCache("olio.wearable");
-        am7client.clearCache("olio.apparel");
-        am7client.clearCache("olio.store");
-        am7client.clearCache("olio.charPerson");
+        /*
+        await am7client.clearCache("olio.wearable");
+        await am7client.clearCache("olio.apparel");
+        await am7client.clearCache("olio.store");
+        await am7client.clearCache("olio.charPerson");
+        await am7client.clearCache("olio.narrative");
+        */
+        await am7client.clearCache();
         await Promise.all(aP);
         return true;
     }

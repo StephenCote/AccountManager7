@@ -3215,6 +3215,13 @@ ul.list-results-overflow {
   line-height: 1.25rem;
 }
 
+.\!tag {
+  border-radius: 0.375rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  line-height: 1.25rem;
+}
+
 .result-nav-outer {
   display: flex;
   align-items: center;

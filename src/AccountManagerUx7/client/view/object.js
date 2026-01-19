@@ -1032,6 +1032,7 @@
                             page.iconButton("button","cancel", "", doCancel),
                             (bNew ? "" : page.iconButton("button","content_copy", "", doCopy)),
                             (bNew ? "" : page.iconButton("button","query_stats", "", chatInto)),
+                            (bNew || type !== "olio.charPerson" ? "" : page.iconButton("button","photo_library", "", function(){ page.imageGallery([], inst); })),
                             (bNew ? "" : page.iconButton("button","delete_outline", "", doDelete)),
                             getFormCommands(type, form, null, false, false, true)
                         ]),

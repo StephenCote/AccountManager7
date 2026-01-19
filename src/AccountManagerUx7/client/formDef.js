@@ -909,15 +909,45 @@
             },
             cfg: {
                 label: 'CFG',
-                layout: 'third',
+                layout: 'half',
                 format: 'range'
             },
             refinerCfg: {
                 label: 'Refiner CFG',
-                layout: 'third',
+                layout: 'half',
                 format: 'range'
             
+            },
+            imageCount:{
+                label: "Count",
+                layout: "one"
+            },
+            shared: {
+                label: "Use Shared",
+                layout: 'one'
+            },
+            loadShared: {
+                format: "button",
+                layout: "one",
+                icon: 'open_in_new',
+                field: {
+                    label: "Load Shared",
+                    command: undefined
+                },
+                referField: true,
+                requiredAttributes: ["shared"],
+                requiredValues: ["true"],
+            },
+            createApparelSequence: {
+                format: "button",
+                layout: "one",
+                icon: 'apparel',
+                field: {
+                    label: "Sequence",
+                    command: undefined
+                }
             }
+
 
 
         }
@@ -4699,6 +4729,26 @@
             image: {
                 layout: "full",
                 format: "image"
+            }
+        }
+    };
+
+    am7model.models.push({
+        name: "imageGallery",
+        icon: "photo_library",
+        label: "Gallery",
+        fields: [
+            { name: "images", type: "list", baseModel: "data.data" },
+            { name: "currentIndex", type: "int", default: 0 }
+        ]
+    });
+
+    forms.imageGallery = {
+        label: "Gallery",
+        fields: {
+            images: {
+                layout: "full",
+                format: "gallery"
             }
         }
     };
