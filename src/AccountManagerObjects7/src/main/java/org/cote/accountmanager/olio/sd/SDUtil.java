@@ -286,13 +286,14 @@ public class SDUtil {
 			s2iObj = s2i;
 		}
 		else if (apiType == SDAPIEnumType.SWARM) {
-			s2iObj = SWUtil.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps);
+			s2iObj = SWUtil.newTxt2Img(person, sdConfig, setting, pictureType, bodyType, verb, steps, seed);
 			//logger.info(JSONUtil.exportObject(s2iObj));
 		}
 		else if (apiType == SDAPIEnumType.UNKNOWN) {
 			logger.error("Unknown API type – cannot create image");
 			return new ArrayList<>();
 		}
+		
 		return createPersonImage(user, person, groupPath, name, s2iObj, seed);
 	}
 	

@@ -23,7 +23,7 @@ import jakarta.ws.rs.core.MediaType;
 public class SWUtil {
 	public static final Logger logger = LogManager.getLogger(SWUtil.class);
 	private static SecureRandom rand = new SecureRandom();
-	public static SWTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb, int steps) {
+	public static SWTxt2Img newTxt2Img(BaseRecord person, BaseRecord sdConfig, String setting, String pictureType, String bodyType, String verb, int steps, int seed) {
 		SWTxt2Img s2i = new SWTxt2Img();
 		s2i.setPrompt(NarrativeUtil.getSDPrompt(null,  ProfileUtil.getProfile(null, person), person, sdConfig, setting, pictureType, bodyType, verb));
 		s2i.setNegativePrompt(NarrativeUtil.getSDNegativePrompt(person));
@@ -33,7 +33,7 @@ public class SWUtil {
 		s2i.setScheduler(sdConfig.get("scheduler"));
 		s2i.setSampler(sdConfig.get("sampler"));
 		s2i.setCfgScale(sdConfig.get("cfg"));
-
+		s2i.setSeed(sdConfig.get("seed"));
 		if((Boolean)sdConfig.get("hires") == true) {
 			s2i.setRefinerScheduler(sdConfig.get("refinerScheduler"));
 			s2i.setRefinerSampler(sdConfig.get("refinerSampler"));
