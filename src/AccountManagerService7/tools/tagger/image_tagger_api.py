@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 # Configuration
 MODEL_ID = "microsoft/Florence-2-base"  # Excellent for image tagging, runs well on GPU
+NSFW_MODEL_ID = "Falconsai/nsfw_image_detection"  # NSFW classifier
+WD_MODEL_ID = "SmilingWolf/wd-vit-tagger-v3"  # WaifuDiffusion tagger for detailed tags
 MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "./model_cache")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
@@ -45,6 +47,10 @@ TORCH_DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 # Global model and processor references
 model = None
 processor = None
+nsfw_model = None
+nsfw_processor = None
+wd_model = None
+wd_processor = None
 
 
 class ImageRequest(BaseModel):
@@ -71,11 +77,19 @@ class TagResult(BaseModel):
     confidence: Optional[float] = None
 
 
+class NsfwResult(BaseModel):
+    """NSFW classification result."""
+    is_nsfw: bool
+    confidence: float
+    label: str
+
+
 class ImageResponse(BaseModel):
     """Response model for image tagging endpoint."""
     success: bool
     tags: list[TagResult]
     captions: Optional[list[str]] = None
+    nsfw: Optional[NsfwResult] = None
     device_used: str
     model_id: str
 
@@ -91,7 +105,7 @@ class HealthResponse(BaseModel):
 
 def load_model():
     """Load the vision-language model and processor."""
-    global model, processor
+    global model, processor, nsfw_model, nsfw_processor
     
     logger.info(f"Loading model {MODEL_ID} on device: {DEVICE}")
     logger.info(f"CUDA available: {torch.cuda.is_available()}")
@@ -130,7 +144,36 @@ def load_model():
         model = model.to(DEVICE)
     
     model.eval()
-    logger.info("Model loaded successfully")
+    logger.info("Florence-2 model loaded successfully")
+    
+    # Load NSFW classifier
+    logger.info(f"Loading NSFW model {NSFW_MODEL_ID}")
+    from transformers import pipeline
+    nsfw_processor = pipeline(
+        "image-classification",
+        model=NSFW_MODEL_ID,
+        device=0 if DEVICE == "cuda" else -1,
+        torch_dtype=TORCH_DTYPE
+    )
+    logger.info("NSFW model loaded successfully")
+    
+    # Load WaifuDiffusion tagger for detailed tags
+    logger.info(f"Loading WD tagger {WD_MODEL_ID}")
+    global wd_model, wd_processor
+    from transformers import AutoModelForImageClassification, AutoImageProcessor
+    wd_processor = AutoImageProcessor.from_pretrained(
+        WD_MODEL_ID,
+        cache_dir=MODEL_CACHE_DIR
+    )
+    wd_model = AutoModelForImageClassification.from_pretrained(
+        WD_MODEL_ID,
+        cache_dir=MODEL_CACHE_DIR,
+        torch_dtype=TORCH_DTYPE
+    )
+    if DEVICE == "cuda":
+        wd_model = wd_model.to(DEVICE)
+    wd_model.eval()
+    logger.info("WD tagger loaded successfully")
 
 
 @asynccontextmanager
@@ -220,6 +263,68 @@ def extract_tags_from_caption(caption: str, max_tags: int = 20) -> list[str]:
             tags.append(word)
     
     return tags[:max_tags]
+
+
+def classify_nsfw(image: Image.Image) -> NsfwResult:
+    """Classify image for NSFW content."""
+    global nsfw_processor
+    
+    if nsfw_processor is None:
+        raise RuntimeError("NSFW model not loaded")
+    
+    results = nsfw_processor(image)
+    
+    # Results are sorted by confidence, get top result
+    top_result = results[0]
+    label = top_result["label"].lower()
+    confidence = top_result["score"]
+    
+    # Falconsai model returns "nsfw" or "normal"
+    is_nsfw = label == "nsfw"
+    
+    return NsfwResult(
+        is_nsfw=is_nsfw,
+        confidence=confidence,
+        label=top_result["label"]
+    )
+
+
+def get_wd_tags(image: Image.Image, threshold: float = 0.35) -> list[tuple[str, float]]:
+    """Get detailed tags from WaifuDiffusion tagger."""
+    global wd_model, wd_processor
+    
+    if wd_model is None or wd_processor is None:
+        return []
+    
+    try:
+        # Process image
+        inputs = wd_processor(images=image, return_tensors="pt")
+        inputs = {k: v.to(device=wd_model.device, dtype=wd_model.dtype) if v.is_floating_point() 
+                  else v.to(device=wd_model.device) 
+                  for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            outputs = wd_model(**inputs)
+        
+        # Get probabilities
+        probs = torch.sigmoid(outputs.logits).cpu().numpy()[0]
+        
+        # Get tags above threshold
+        tags_with_scores = []
+        for idx, prob in enumerate(probs):
+            if prob >= threshold:
+                tag = wd_model.config.id2label[idx]
+                # Clean up tag format (replace underscores, etc.)
+                tag = tag.replace("_", " ")
+                tags_with_scores.append((tag, float(prob)))
+        
+        # Sort by confidence
+        tags_with_scores.sort(key=lambda x: x[1], reverse=True)
+        
+        return tags_with_scores
+    except Exception as e:
+        logger.warning(f"WD tagger error: {e}")
+        return []
 
 
 def generate_tags(image: Image.Image, max_tags: int = 20) -> tuple[list[str], str]:
@@ -324,8 +429,25 @@ async def tag_image(request: ImageRequest):
         image = decode_base64_image(request.image_base64)
         logger.info(f"Processing image: {image.size[0]}x{image.size[1]}")
         
-        # Generate tags
+        # Run NSFW classification
+        nsfw_result = classify_nsfw(image)
+        logger.info(f"NSFW: {nsfw_result.label} ({nsfw_result.confidence:.2%})")
+        
+        # Generate tags from Florence-2
         tags, captions = generate_tags(image, request.max_tags)
+        
+        # Get detailed tags from WD tagger (includes NSFW tags)
+        wd_tags = get_wd_tags(image, threshold=0.35)
+        
+        # Merge tags: Florence tags first, then WD tags that aren't duplicates
+        seen_tags = set(t.lower() for t in tags)
+        for wd_tag, confidence in wd_tags:
+            if wd_tag.lower() not in seen_tags:
+                tags.append(wd_tag)
+                seen_tags.add(wd_tag.lower())
+        
+        # Limit to max_tags
+        tags = tags[:request.max_tags]
         
         # Build response
         tag_results = [
@@ -337,6 +459,7 @@ async def tag_image(request: ImageRequest):
             success=True,
             tags=tag_results,
             captions=captions if request.include_confidence else None,
+            nsfw=nsfw_result,
             device_used=DEVICE,
             model_id=MODEL_ID
         )
@@ -365,7 +488,20 @@ async def tag_images_batch(requests: list[ImageRequest]):
     for i, request in enumerate(requests):
         try:
             image = decode_base64_image(request.image_base64)
+            nsfw_result = classify_nsfw(image)
             tags, captions = generate_tags(image, request.max_tags)
+            
+            # Get detailed tags from WD tagger
+            wd_tags = get_wd_tags(image, threshold=0.35)
+            
+            # Merge tags
+            seen_tags = set(t.lower() for t in tags)
+            for wd_tag, confidence in wd_tags:
+                if wd_tag.lower() not in seen_tags:
+                    tags.append(wd_tag)
+                    seen_tags.add(wd_tag.lower())
+            
+            tags = tags[:request.max_tags]
             
             tag_results = [
                 TagResult(tag=tag, confidence=None)
@@ -376,6 +512,7 @@ async def tag_images_batch(requests: list[ImageRequest]):
                 success=True,
                 tags=tag_results,
                 captions=captions if request.include_confidence else None,
+                nsfw=nsfw_result,
                 device_used=DEVICE,
                 model_id=MODEL_ID
             ))
@@ -385,6 +522,7 @@ async def tag_images_batch(requests: list[ImageRequest]):
                 success=False,
                 tags=[],
                 captions=[f"Error: {str(e)}"],
+                nsfw=None,
                 device_used=DEVICE,
                 model_id=MODEL_ID
             ))
