@@ -907,6 +907,566 @@
         @apply dark:text-gray-200;
       }
 
+      /* ==========================================
+         Card Game Component Classes
+         ========================================== */
+
+      /* Card panel backgrounds */
+      .cg-panel {
+        @apply flex flex-col h-full bg-gray-100 dark:bg-gray-900;
+      }
+      .cg-panel-overflow {
+        @apply cg-panel overflow-hidden;
+      }
+      .cg-panel-transition {
+        @apply cg-panel transition-colors;
+      }
+
+      /* Card base styles */
+      .cg-card-mini {
+        @apply rounded-lg overflow-hidden border-2 bg-gradient-to-b from-amber-100 to-amber-200 dark:from-gray-700 dark:to-gray-800 shadow-lg cursor-grab hover:scale-105 transition-transform flex-shrink-0;
+      }
+      .cg-card-back {
+        @apply rounded-lg overflow-hidden border-2 border-gray-400 dark:border-gray-500 bg-gradient-to-b from-blue-800 to-blue-900 shadow-lg flex-shrink-0;
+      }
+      .cg-card-full {
+        @apply rounded-lg shadow-xl overflow-hidden cursor-pointer transition-all duration-200 bg-gradient-to-b from-amber-50 to-amber-100 dark:from-gray-700 dark:to-gray-800 border-2;
+      }
+      .cg-card-selected {
+        @apply border-amber-500 ring-2 ring-amber-400;
+      }
+      .cg-card-unselected {
+        @apply border-amber-300 dark:border-gray-600 hover:border-amber-400;
+      }
+
+      /* Card stack shadows */
+      .cg-stack-shadow-blue {
+        @apply absolute rounded-lg bg-gradient-to-b from-blue-700 to-blue-800 border-2 border-blue-600;
+      }
+      .cg-stack-shadow-orange {
+        @apply absolute rounded-lg bg-gradient-to-b from-orange-700 to-orange-800 border-2 border-orange-600;
+      }
+      .cg-stack-shadow-purple {
+        @apply absolute rounded-lg bg-gradient-to-b from-purple-600 to-purple-800 border-2 border-purple-500;
+      }
+
+      /* Action/Item/Apparel mini-card styles */
+      .cg-mini-action {
+        @apply relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow;
+      }
+      .cg-mini-item {
+        @apply relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow;
+      }
+      .cg-mini-apparel {
+        @apply relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow;
+      }
+
+      /* Stack shadow cards for action/item/apparel */
+      .cg-stack-action {
+        @apply absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400;
+      }
+      .cg-stack-action-alt {
+        @apply absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400;
+      }
+      .cg-stack-item {
+        @apply absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400;
+      }
+      .cg-stack-item-alt {
+        @apply absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400;
+      }
+      .cg-stack-apparel {
+        @apply absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400;
+      }
+      .cg-stack-apparel-alt {
+        @apply absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400;
+      }
+
+      /* Empty drop zones */
+      .cg-dropzone {
+        @apply rounded border-2 border-dashed flex items-center justify-center flex-1;
+      }
+      .cg-dropzone-char {
+        @apply rounded border-2 border-dashed flex flex-col items-center justify-center;
+      }
+      .cg-dropzone-action-active {
+        @apply border-purple-500 bg-purple-100 dark:bg-purple-900;
+      }
+      .cg-dropzone-action-inactive {
+        @apply border-purple-300 dark:border-purple-700;
+      }
+      .cg-dropzone-item-active {
+        @apply border-emerald-500 bg-emerald-100 dark:bg-emerald-900;
+      }
+      .cg-dropzone-item-inactive {
+        @apply border-emerald-300 dark:border-emerald-700;
+      }
+      .cg-dropzone-apparel-active {
+        @apply border-pink-500 bg-pink-100 dark:bg-pink-900;
+      }
+      .cg-dropzone-apparel-inactive {
+        @apply border-pink-300 dark:border-pink-700;
+      }
+      .cg-dropzone-green-active {
+        @apply border-green-500 bg-green-100 dark:bg-green-900;
+      }
+      .cg-dropzone-red-active {
+        @apply border-red-500 bg-red-100 dark:bg-red-900;
+      }
+
+      /* Hand headers */
+      .cg-header-green {
+        @apply flex-shrink-0 flex flex-col bg-green-600;
+      }
+      .cg-header-red {
+        @apply flex-shrink-0 flex flex-col bg-red-600;
+      }
+      .cg-header-purple {
+        @apply flex items-center justify-between px-2 py-1 bg-purple-600 text-white;
+      }
+      .cg-header-blue {
+        @apply flex items-center justify-between px-2 py-1 bg-blue-600 text-white;
+      }
+
+      /* Footer/toolbar areas */
+      .cg-footer {
+        @apply px-2 py-1 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700;
+      }
+      .cg-footer-actions {
+        @apply flex-shrink-0 p-2 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 flex justify-center space-x-2;
+      }
+      .cg-footer-fixed {
+        @apply fixed bottom-0 left-0 right-0 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 px-4 py-2 flex justify-center space-x-2 z-50;
+      }
+
+      /* Buttons */
+      .cg-btn-primary {
+        @apply px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs flex items-center space-x-1;
+      }
+      .cg-btn-secondary {
+        @apply px-3 py-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs flex items-center space-x-1;
+      }
+      .cg-btn-danger {
+        @apply px-3 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-xs flex items-center space-x-1;
+      }
+      .cg-btn-warning {
+        @apply px-3 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs flex items-center space-x-1;
+      }
+      .cg-btn-orange {
+        @apply px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs flex items-center space-x-1;
+      }
+      .cg-btn-success {
+        @apply px-3 py-1 rounded bg-green-600 hover:bg-green-500 text-white text-xs flex items-center space-x-1;
+      }
+      .cg-btn-action {
+        @apply flex-1 px-2 py-1 rounded text-white text-xs font-medium flex items-center justify-center space-x-1 disabled:opacity-50;
+      }
+      .cg-btn-action-green {
+        @apply cg-btn-action bg-green-600 hover:bg-green-500;
+      }
+      .cg-btn-action-red {
+        @apply cg-btn-action bg-red-600 hover:bg-red-500;
+      }
+      .cg-btn-action-orange {
+        @apply cg-btn-action bg-orange-600 hover:bg-orange-500;
+      }
+      .cg-btn-icon {
+        @apply p-0.5 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50;
+      }
+      .cg-btn-icon-orange {
+        @apply p-0.5 rounded bg-orange-500 hover:bg-orange-400 text-white disabled:opacity-50;
+      }
+
+      /* Card section containers */
+      .cg-card-section {
+        @apply flex flex-col items-center transition-colors rounded p-1 h-3/4;
+      }
+      .cg-card-section-action {
+        @apply cg-card-section;
+      }
+      .cg-card-section-action.active {
+        @apply bg-purple-200 dark:bg-purple-800;
+      }
+      .cg-card-section-item {
+        @apply cg-card-section;
+      }
+      .cg-card-section-item.active {
+        @apply bg-emerald-200 dark:bg-emerald-800;
+      }
+      .cg-card-section-apparel {
+        @apply cg-card-section;
+      }
+      .cg-card-section-apparel.active {
+        @apply bg-pink-200 dark:bg-pink-800;
+      }
+      .cg-card-section-char {
+        @apply cg-card-section;
+      }
+      .cg-card-section-char.user-active {
+        @apply bg-green-200 dark:bg-green-800;
+      }
+      .cg-card-section-char.system-active {
+        @apply bg-red-200 dark:bg-red-800;
+      }
+
+      /* Labels and text */
+      .cg-label-action {
+        @apply text-xs text-purple-600 dark:text-purple-400 mb-1 flex items-center;
+      }
+      .cg-label-item {
+        @apply text-xs text-emerald-600 dark:text-emerald-400 mb-1 flex items-center;
+      }
+      .cg-label-apparel {
+        @apply text-xs text-pink-600 dark:text-pink-400 mb-1 flex items-center;
+      }
+      .cg-label-count {
+        @apply ml-0.5 font-medium;
+      }
+
+      /* Hand content areas */
+      .cg-hand-content {
+        @apply flex-1 flex items-center justify-center p-1 md:p-2 gap-1 md:gap-3 overflow-x-auto;
+      }
+
+      /* Played actions */
+      .cg-played-action {
+        @apply flex-shrink-0 flex items-center justify-center rounded px-2 py-1 cursor-pointer transition-all;
+      }
+      .cg-played-action-selected {
+        @apply bg-white text-green-700;
+      }
+      .cg-played-action-unselected {
+        @apply bg-green-500 text-white hover:bg-green-400;
+      }
+      .cg-played-action-system {
+        @apply flex-shrink-0 flex items-center justify-center rounded px-2 py-1 bg-red-500 text-white;
+      }
+
+      /* Draw pile components */
+      .cg-draw-pile {
+        @apply flex flex-col items-center p-1 rounded bg-gray-200 dark:bg-gray-800;
+      }
+      .cg-draw-pile-label {
+        @apply text-xs font-medium text-gray-700 dark:text-gray-300 mb-1;
+      }
+      .cg-draw-pile-stack {
+        @apply relative mb-1;
+      }
+      .cg-draw-pile-card {
+        @apply relative flex flex-col items-center justify-center rounded border cursor-grab;
+      }
+
+      /* Discard zone */
+      .cg-discard-zone {
+        @apply m-1 flex flex-col md:flex-row items-center justify-center gap-1 rounded border-2 border-dashed transition-all flex-shrink-0;
+      }
+      .cg-discard-active {
+        @apply border-red-500 bg-red-100 dark:bg-red-900/30;
+      }
+      .cg-discard-inactive {
+        @apply border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-800;
+      }
+
+      /* Pending interaction bar */
+      .cg-pending-bar {
+        @apply flex items-center justify-between px-2 py-1 bg-purple-600 text-white text-sm;
+      }
+
+      /* Card view tabs */
+      .cg-tab {
+        @apply flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors;
+      }
+      .cg-tab-active {
+        @apply cg-tab bg-white dark:bg-gray-600 text-gray-800 dark:text-white shadow;
+      }
+      .cg-tab-inactive {
+        @apply cg-tab text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-600;
+      }
+      .cg-tab-link {
+        @apply cg-tab text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-600 mt-2 border-t border-gray-300 dark:border-gray-600 pt-2;
+      }
+
+      /* Card view panels */
+      .cg-tabs-panel {
+        @apply p-1 border-r border-gray-300 dark:border-gray-700 bg-gray-200 dark:bg-gray-800 overflow-y-auto;
+      }
+      .cg-card-display {
+        @apply flex-1 flex items-center justify-center p-2 bg-gray-100 dark:bg-gray-900 overflow-hidden;
+      }
+
+      /* Save dialog */
+      .cg-save-item {
+        @apply flex items-center justify-between p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer;
+      }
+      .cg-save-item-selected {
+        @apply cg-save-item bg-blue-100 dark:bg-blue-900;
+      }
+
+      /* Chat components */
+      .cg-chat-message {
+        @apply rounded-lg px-3 py-2 max-w-xs lg:max-w-md;
+      }
+      .cg-chat-user {
+        @apply cg-chat-message bg-blue-600 text-white;
+      }
+      .cg-chat-system {
+        @apply cg-chat-message bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200;
+      }
+      .cg-chat-input {
+        @apply flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500;
+      }
+
+      /* Character card view sections */
+      .cg-card-header {
+        @apply px-3 py-2 bg-amber-200 dark:bg-gray-700 border-b border-amber-300 dark:border-gray-600;
+      }
+      .cg-card-title {
+        @apply text-lg font-bold text-gray-800 dark:text-gray-100;
+      }
+      .cg-card-title-truncate {
+        @apply cg-card-title truncate;
+      }
+      .cg-card-body {
+        @apply flex-1 flex flex-col items-center justify-center bg-gray-200 dark:bg-gray-700 p-2 min-h-0 relative;
+      }
+      .cg-card-footer-section {
+        @apply p-2 bg-amber-100 dark:bg-gray-800 border-t border-amber-200 dark:border-gray-700;
+      }
+      .cg-card-divider {
+        @apply pt-2 border-t border-amber-200 dark:border-gray-700;
+      }
+      .cg-card-divider-alt {
+        @apply pt-1 border-t border-amber-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400;
+      }
+
+      /* Stat bars */
+      .cg-stat-bar-container {
+        @apply flex-1 h-4 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden;
+      }
+      .cg-stat-bar-thin {
+        @apply flex-1 h-3 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden relative;
+      }
+      .cg-stat-label {
+        @apply w-6 text-right text-xs text-gray-800 dark:text-gray-200;
+      }
+      .cg-stat-label-wide {
+        @apply w-8 text-right text-xs text-gray-800 dark:text-gray-200;
+      }
+      .cg-stat-icon {
+        @apply material-symbols-outlined text-sm text-gray-500 dark:text-gray-400;
+      }
+
+      /* Trait tags */
+      .cg-trait-tag {
+        @apply px-2 py-1 rounded-full text-xs bg-amber-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 border border-amber-300 dark:border-gray-500;
+      }
+
+      /* Portrait overlay button */
+      .cg-portrait-overlay-btn {
+        @apply absolute bottom-1 right-1 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white opacity-60 hover:opacity-100 transition-opacity;
+      }
+
+      /* Navigation buttons */
+      .cg-nav-btn {
+        @apply p-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50;
+      }
+      .cg-nav-btn-alt {
+        @apply p-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 disabled:opacity-30;
+      }
+      .cg-nav-btn-text {
+        @apply text-gray-800 dark:text-gray-200;
+      }
+      .cg-nav-label {
+        @apply text-xs text-gray-600 dark:text-gray-400;
+      }
+
+      /* Small action buttons (Go/Cancel in pending bar) */
+      .cg-btn-sm-green {
+        @apply px-2 py-0.5 rounded bg-green-500 hover:bg-green-400 text-white text-xs disabled:opacity-50;
+      }
+      .cg-btn-sm-red {
+        @apply px-2 py-0.5 rounded bg-red-500 hover:bg-red-400 text-white text-xs;
+      }
+
+      /* Card mini text labels */
+      .cg-mini-text-purple {
+        @apply text-purple-800 dark:text-purple-200 truncate w-full text-center px-1;
+      }
+      .cg-mini-text-emerald {
+        @apply text-emerald-800 dark:text-emerald-200 truncate w-full text-center px-1;
+      }
+      .cg-mini-text-pink {
+        @apply text-pink-800 dark:text-pink-200 truncate w-full text-center px-1;
+      }
+      .cg-mini-icon-purple {
+        @apply material-symbols-outlined text-purple-600 dark:text-purple-400;
+      }
+      .cg-mini-icon-emerald {
+        @apply material-symbols-outlined text-emerald-600 dark:text-emerald-400;
+      }
+      .cg-mini-icon-pink {
+        @apply material-symbols-outlined text-pink-600 dark:text-pink-400;
+      }
+
+      /* Render item/apparel mini cards */
+      .cg-render-item-card {
+        @apply flex-shrink-0 flex flex-col items-center justify-center p-1 rounded border bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-900 dark:to-emerald-950 border-emerald-300 dark:border-emerald-700;
+      }
+      .cg-render-apparel-card {
+        @apply flex-shrink-0 flex flex-col items-center justify-center p-1 rounded border bg-gradient-to-b from-pink-50 to-pink-100 dark:from-pink-900 dark:to-pink-950 border-pink-300 dark:border-pink-700;
+      }
+      .cg-item-icon {
+        @apply material-symbols-outlined text-lg text-emerald-600 dark:text-emerald-400;
+      }
+      .cg-item-text {
+        @apply text-xs text-center text-emerald-700 dark:text-emerald-300 truncate w-full;
+      }
+      .cg-apparel-icon {
+        @apply material-symbols-outlined text-lg text-pink-600 dark:text-pink-400;
+      }
+      .cg-apparel-text {
+        @apply text-xs text-center text-pink-700 dark:text-pink-300 truncate w-full;
+      }
+
+      /* Main panel layouts */
+      .cg-main-panel {
+        @apply flex-grow overflow-auto md:overflow-hidden flex bg-gray-100 dark:bg-gray-900;
+      }
+      .cg-main-panel-inner {
+        @apply flex flex-col md:flex-row w-full min-h-full md:h-full;
+      }
+      .cg-left-panel {
+        @apply flex-shrink-0 h-28 md:h-full md:w-24 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700 flex flex-row md:flex-col overflow-x-auto md:overflow-x-hidden md:overflow-y-auto;
+      }
+      .cg-center-panel {
+        @apply flex-1 flex flex-col min-h-64 md:min-h-0 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700;
+      }
+      .cg-right-panel {
+        @apply flex-shrink-0 h-80 md:h-full md:w-1/4 bg-gray-100 dark:bg-gray-900 overflow-y-auto;
+      }
+
+      /* Consolidated decks panel */
+      .cg-decks-panel {
+        @apply flex flex-row md:flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-x-auto md:overflow-y-auto;
+      }
+      .cg-decks-row {
+        @apply flex flex-row md:flex-col gap-1 p-1 flex-shrink-0;
+      }
+
+      /* Tab buttons container */
+      .cg-tabs-container {
+        @apply flex flex-col space-y-1 bg-gray-200 dark:bg-gray-700 p-1 rounded-lg;
+      }
+
+      /* Chat panel components */
+      .cg-chat-header {
+        @apply flex-shrink-0 flex items-center justify-between px-4 py-2 bg-purple-600 text-white;
+      }
+      .cg-chat-character-btn {
+        @apply flex items-center space-x-2 cursor-pointer hover:bg-purple-500 rounded px-2 py-1 transition-colors;
+      }
+      .cg-chat-messages {
+        @apply flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50 dark:bg-gray-900;
+      }
+      .cg-chat-pending {
+        @apply flex-shrink-0 px-3 py-2 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700;
+      }
+      .cg-chat-input-area {
+        @apply flex-shrink-0 p-2 pb-14 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700;
+      }
+      .cg-chat-send-btn {
+        @apply px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50;
+      }
+
+      /* Dialog/Modal components */
+      .cg-modal-overlay {
+        @apply fixed inset-0 z-50 flex items-center justify-center bg-black/50;
+      }
+      .cg-modal-content {
+        @apply bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col;
+      }
+      .cg-modal-header {
+        @apply flex-shrink-0 flex items-center justify-between px-4 py-3 bg-blue-600 text-white rounded-t-lg;
+      }
+      .cg-modal-footer {
+        @apply flex-shrink-0 px-4 py-2 bg-gray-100 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 rounded-b-lg;
+      }
+
+      /* Form elements */
+      .cg-input-field {
+        @apply w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200;
+      }
+      .cg-input-label {
+        @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1;
+      }
+      .cg-btn-submit-green {
+        @apply w-full px-4 py-2 rounded bg-green-600 hover:bg-green-500 text-white font-medium disabled:opacity-50;
+      }
+      .cg-btn-submit-red {
+        @apply px-6 py-2 rounded bg-red-600 hover:bg-red-500 text-white font-medium;
+      }
+
+      /* Save list items */
+      .cg-save-list-item {
+        @apply flex items-center justify-between p-3 rounded border;
+      }
+      .cg-save-list-item-active {
+        @apply bg-blue-50 dark:bg-blue-900/30 border-blue-300 dark:border-blue-700;
+      }
+      .cg-save-list-item-inactive {
+        @apply border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700;
+      }
+      .cg-save-btn-load {
+        @apply p-1 rounded bg-green-600 hover:bg-green-500 text-white;
+      }
+      .cg-save-btn-delete {
+        @apply p-1 rounded bg-red-600 hover:bg-red-500 text-white;
+      }
+
+      /* Empty state placeholder */
+      .cg-empty-state {
+        @apply flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 transition-colors;
+      }
+      .cg-empty-placeholder {
+        @apply text-center text-gray-400 flex-1 flex items-center;
+      }
+
+      /* Mini card portrait area */
+      .cg-mini-portrait {
+        @apply h-16 bg-gray-300 dark:bg-gray-700 flex items-center justify-center overflow-hidden relative;
+      }
+      .cg-mini-portrait-icon {
+        @apply material-symbols-outlined text-xl text-gray-400 dark:text-gray-500;
+      }
+      .cg-mini-badge {
+        @apply absolute top-0.5 right-0.5 p-0.5 rounded bg-black/40 text-white;
+      }
+      .cg-mini-name {
+        @apply h-5 px-0.5 flex items-center justify-center bg-amber-200 dark:bg-gray-800 border-t border-amber-300 dark:border-gray-600;
+      }
+      .cg-mini-name-text {
+        @apply font-bold text-gray-800 dark:text-gray-200 truncate text-center;
+      }
+
+      /* Action deck card */
+      .cg-action-deck-card {
+        @apply relative flex flex-col items-center justify-center p-2 rounded-lg border-2 bg-gradient-to-b from-purple-700 to-purple-900 border-purple-500;
+      }
+      .cg-action-deck-empty {
+        @apply flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg;
+      }
+      .cg-action-deck-btn {
+        @apply w-full px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium flex items-center justify-center space-x-1 disabled:opacity-50;
+      }
+
+      /* Played action drop target */
+      .cg-played-drop-zone {
+        @apply flex-shrink-0 flex items-center justify-center rounded border-2 border-dashed transition-all;
+      }
+
+      /* ==========================================
+         End Card Game Component Classes
+         ========================================== */
+
       @keyframes shimmer {
         100% {
           transform: translateX(0%);

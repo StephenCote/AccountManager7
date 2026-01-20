@@ -449,9 +449,7 @@
 
                 if (!char) return "";
 
-                let cardClass = "rounded-lg shadow-xl overflow-hidden cursor-pointer transition-all duration-200 " +
-                    "bg-gradient-to-b from-amber-50 to-amber-100 dark:from-gray-700 dark:to-gray-800 border-2 " +
-                    (isSelected ? "border-amber-500 ring-2 ring-amber-400" : "border-amber-300 dark:border-gray-600 hover:border-amber-400");
+                let cardClass = "cg-card-full " + (isSelected ? "cg-card-selected" : "cg-card-unselected");
 
                 return m("div", {
                     class: cardClass,
@@ -489,13 +487,13 @@
 
         return m("div", {class: "h-full flex flex-col"}, [
             // Header with name
-            m("div", {class: "px-3 py-2 bg-amber-200 dark:bg-gray-700 border-b border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "text-lg font-bold text-gray-800 dark:text-gray-100 truncate"}, char.name || "Unknown"),
+            m("div", {class: "cg-card-header"}, [
+                m("div", {class: "cg-card-title-truncate"}, char.name || "Unknown"),
                 m("div", {class: "text-xs text-gray-600 dark:text-gray-400"}, char.title || "")
             ]),
 
             // Portrait
-            m("div", {class: "flex-1 flex flex-col items-center justify-center bg-gray-200 dark:bg-gray-700 p-2 min-h-0 relative"}, [
+            m("div", {class: "cg-card-body"}, [
                 portraitUrl ?
                     m("div", {class: "relative max-h-full max-w-full"}, [
                         m("img", {
@@ -505,7 +503,7 @@
                         }),
                         // Reimage overlay button
                         m("button", {
-                            class: "absolute bottom-1 right-1 p-1 rounded-full bg-black/50 hover:bg-black/70 text-white opacity-60 hover:opacity-100 transition-opacity",
+                            class: "cg-portrait-overlay-btn",
                             onclick: function(e) { e.stopPropagation(); generatePortrait(); },
                             title: "Regenerate portrait"
                         }, m("span", {class: "material-symbols-outlined text-sm"}, "refresh"))
@@ -513,7 +511,7 @@
                     m("div", {class: "flex flex-col items-center"}, [
                         m("span", {class: "material-symbols-outlined text-6xl text-gray-400 dark:text-gray-500 mb-2"}, "person"),
                         m("button", {
-                            class: "px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs flex items-center space-x-1",
+                            class: "cg-btn-primary",
                             onclick: function(e) { e.stopPropagation(); generatePortrait(); }
                         }, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "add_photo_alternate"),
@@ -541,7 +539,7 @@
                     m("span", {class: "text-gray-800 dark:text-gray-200 truncate ml-2"}, trades)
                 ]),
                 // Appearance
-                char.eyeColor || char.hairColor ? m("div", {class: "pt-1 border-t border-amber-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400"}, [
+                char.eyeColor || char.hairColor ? m("div", {class: "cg-card-divider-alt"}, [
                     char.eyeColor ? m("span", {}, (char.eyeColor.name || "") + " eyes") : "",
                     char.eyeColor && char.hairColor ? " / " : "",
                     char.hairColor ? m("span", {}, (char.hairColor.name || "") + " hair") : ""
@@ -567,8 +565,8 @@
 
         return m("div", {class: "h-full flex flex-col"}, [
             // Header
-            m("div", {class: "px-3 py-2 bg-amber-200 dark:bg-gray-700 border-b border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "text-lg font-bold text-gray-800 dark:text-gray-100"}, "Statistics"),
+            m("div", {class: "cg-card-header"}, [
+                m("div", {class: "cg-card-title"}, "Statistics"),
                 m("div", {class: "text-xs text-gray-600 dark:text-gray-400 truncate"}, char.name)
             ]),
 
@@ -579,21 +577,21 @@
                     let pct = val !== undefined ? (val / 20) * 100 : 0;
 
                     return m("div", {class: "flex items-center space-x-2"}, [
-                        m("span", {class: "material-symbols-outlined text-sm text-gray-500 dark:text-gray-400"}, sf.icon),
+                        m("span", {class: "cg-stat-icon"}, sf.icon),
                         m("span", {class: "w-8 text-xs text-gray-700 dark:text-gray-300"}, sf.label),
-                        m("div", {class: "flex-1 h-4 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden"}, [
+                        m("div", {class: "cg-stat-bar-container"}, [
                             m("div", {
                                 class: "h-full " + getStatColor(val, 20),
                                 style: "width: " + pct + "%"
                             })
                         ]),
-                        m("span", {class: "w-6 text-right text-xs text-gray-800 dark:text-gray-200"}, formatStatValue(val))
+                        m("span", {class: "cg-stat-label"}, formatStatValue(val))
                     ]);
                 })
             ),
 
             // Derived stats footer
-            m("div", {class: "p-2 bg-amber-100 dark:bg-gray-800 border-t border-amber-200 dark:border-gray-700 text-xs"}, [
+            m("div", {class: "cg-card-footer-section text-xs"}, [
                 m("div", {class: "flex justify-between"}, [
                     m("span", {class: "text-gray-600 dark:text-gray-400"}, "Health:"),
                     m("span", {class: "text-green-600 dark:text-green-400"}, formatStatValue(stats.health))
@@ -611,9 +609,9 @@
 
         return m("div", {class: "h-full flex flex-col"}, [
             // Header
-            m("div", {class: "px-3 py-2 bg-amber-200 dark:bg-gray-700 border-b border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "text-lg font-bold text-gray-800 dark:text-gray-100"}, "Traits"),
-                m("div", {class: "text-xs text-gray-600 dark:text-gray-400 truncate"}, char.name)
+            m("div", {class: "cg-card-header"}, [
+                m("div", {class: "cg-card-title"}, "Traits"),
+                m("div", {class: "cg-nav-label truncate"}, char.name)
             ]),
 
             // Traits list
@@ -623,16 +621,14 @@
                     m("div", {class: "flex flex-wrap gap-2"},
                         traits.map(function(trait) {
                             let tname = trait.name || trait;
-                            return m("span", {
-                                class: "px-2 py-1 rounded-full text-xs bg-amber-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 border border-amber-300 dark:border-gray-500"
-                            }, tname);
+                            return m("span", {class: "cg-trait-tag"}, tname);
                         })
                     )
             ]),
 
             // Alignment section
-            m("div", {class: "p-2 bg-amber-100 dark:bg-gray-800 border-t border-amber-200 dark:border-gray-700"}, [
-                m("div", {class: "text-xs text-gray-600 dark:text-gray-400 mb-1"}, "Alignment"),
+            m("div", {class: "cg-card-footer-section"}, [
+                m("div", {class: "cg-nav-label mb-1"}, "Alignment"),
                 m("div", {class: "text-sm text-gray-800 dark:text-gray-200"}, char.alignment || "Neutral")
             ])
         ]);
@@ -684,9 +680,9 @@
 
         return m("div", {class: "h-full flex flex-col"}, [
             // Header
-            m("div", {class: "px-3 py-2 bg-amber-200 dark:bg-gray-700 border-b border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "text-lg font-bold text-gray-800 dark:text-gray-100"}, "Narrative"),
-                m("div", {class: "text-xs text-gray-600 dark:text-gray-400 truncate"}, char.name)
+            m("div", {class: "cg-card-header"}, [
+                m("div", {class: "cg-card-title"}, "Narrative"),
+                m("div", {class: "cg-nav-label truncate"}, char.name)
             ]),
 
             // Narrative content
@@ -698,17 +694,17 @@
                 ]) : "",
 
                 !narrativeLoading && narrative.physicalDescription ? m("div", {}, [
-                    m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Physical"),
+                    m("div", {class: "cg-nav-label mb-1"}, "Physical"),
                     m("div", {class: "text-gray-800 dark:text-gray-200"}, narrative.physicalDescription)
                 ]) : "",
 
                 !narrativeLoading && narrative.outfitDescription ? m("div", {}, [
-                    m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Outfit"),
+                    m("div", {class: "cg-nav-label mb-1"}, "Outfit"),
                     m("div", {class: "text-gray-800 dark:text-gray-200"}, narrative.outfitDescription)
                 ]) : "",
 
                 !narrativeLoading && narrative.statisticsDescription ? m("div", {}, [
-                    m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Abilities"),
+                    m("div", {class: "cg-nav-label mb-1"}, "Abilities"),
                     m("div", {class: "text-gray-800 dark:text-gray-200"}, narrative.statisticsDescription)
                 ]) : "",
 
@@ -717,7 +713,7 @@
                         m("span", {class: "material-symbols-outlined text-5xl text-gray-400 dark:text-gray-500 mb-3"}, "auto_stories"),
                         m("div", {class: "text-gray-500 dark:text-gray-400 mb-3"}, "No narrative generated"),
                         m("button", {
-                            class: "px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-sm flex items-center space-x-1",
+                            class: "cg-btn-primary text-sm flex items-center space-x-1",
                             onclick: function(e) { e.stopPropagation(); generateNarrative(); }
                         }, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "edit_note"),
@@ -745,9 +741,9 @@
 
         return m("div", {class: "h-full flex flex-col"}, [
             // Header
-            m("div", {class: "px-3 py-2 bg-amber-200 dark:bg-gray-700 border-b border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "text-lg font-bold text-gray-800 dark:text-gray-100"}, "Instincts"),
-                m("div", {class: "text-xs text-gray-600 dark:text-gray-400 truncate"}, char.name)
+            m("div", {class: "cg-card-header"}, [
+                m("div", {class: "cg-card-title"}, "Instincts"),
+                m("div", {class: "cg-nav-label truncate"}, char.name)
             ]),
 
             // Instincts list
@@ -760,9 +756,9 @@
                     let widthPct = Math.abs(displayVal) / 2;
 
                     return m("div", {class: "flex items-center space-x-2"}, [
-                        m("span", {class: "material-symbols-outlined text-sm text-gray-500 dark:text-gray-400"}, inst.icon),
+                        m("span", {class: "cg-stat-icon"}, inst.icon),
                         m("span", {class: "w-16 text-xs text-gray-700 dark:text-gray-300"}, inst.label),
-                        m("div", {class: "flex-1 h-3 bg-gray-300 dark:bg-gray-600 rounded overflow-hidden relative"}, [
+                        m("div", {class: "cg-stat-bar-thin"}, [
                             // Center line
                             m("div", {class: "absolute left-1/2 top-0 bottom-0 w-px bg-gray-400 dark:bg-gray-500"}),
                             // Value bar
@@ -771,8 +767,7 @@
                                 style: "left: " + leftPct + "%; width: " + widthPct + "%"
                             })
                         ]),
-                        m("span", {class: "w-8 text-right text-xs text-gray-800 dark:text-gray-200"},
-                            val !== undefined ? Math.round(val) : "-")
+                        m("span", {class: "cg-stat-label-wide"}, val !== undefined ? Math.round(val) : "-")
                     ]);
                 })
             )
@@ -793,22 +788,22 @@
 
         return m("div", {class: "h-full flex flex-col"}, [
             // Header
-            m("div", {class: "px-3 py-2 bg-amber-200 dark:bg-gray-700 border-b border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "text-lg font-bold text-gray-800 dark:text-gray-100"}, "Apparel"),
-                m("div", {class: "text-xs text-gray-600 dark:text-gray-400 truncate"}, char.name)
+            m("div", {class: "cg-card-header"}, [
+                m("div", {class: "cg-card-title"}, "Apparel"),
+                m("div", {class: "cg-nav-label truncate"}, char.name)
             ]),
 
             // Apparel content
             m("div", {class: "flex-1 overflow-y-auto p-2 space-y-3 text-sm"}, [
                 // Outfit description from narrative
                 outfitDesc ? m("div", {}, [
-                    m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Current Outfit"),
+                    m("div", {class: "cg-nav-label mb-1"}, "Current Outfit"),
                     m("div", {class: "text-gray-800 dark:text-gray-200 text-xs leading-relaxed"}, outfitDesc)
                 ]) : m("div", {class: "text-gray-500 dark:text-gray-400 text-center py-2"}, "No outfit description"),
 
                 // Apparel info
-                apparel ? m("div", {class: "pt-2 border-t border-amber-200 dark:border-gray-700"}, [
-                    m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-1"}, "Apparel Details"),
+                apparel ? m("div", {class: "cg-card-divider"}, [
+                    m("div", {class: "cg-nav-label mb-1"}, "Apparel Details"),
                     apparel.description ?
                         m("div", {class: "text-gray-800 dark:text-gray-200 text-xs"}, apparel.description) :
                         m("div", {class: "text-gray-500 dark:text-gray-400 text-xs italic"}, "No description set")
@@ -816,11 +811,11 @@
             ]),
 
             // Dress up/down buttons
-            m("div", {class: "p-2 bg-amber-100 dark:bg-gray-800 border-t border-amber-200 dark:border-gray-700"}, [
-                m("div", {class: "text-xs text-gray-500 dark:text-gray-400 mb-2 text-center"}, "Change Clothing Level"),
+            m("div", {class: "cg-card-footer-section"}, [
+                m("div", {class: "cg-nav-label mb-2 text-center"}, "Change Clothing Level"),
                 m("div", {class: "flex justify-center space-x-2"}, [
                     m("button", {
-                        class: "px-3 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs flex items-center space-x-1",
+                        class: "cg-btn-primary text-xs flex items-center space-x-1",
                         onclick: function(e) { e.stopPropagation(); dressCharacterUp(); },
                         title: "Add more clothing"
                     }, [
@@ -828,7 +823,7 @@
                         m("span", {}, "Dress Up")
                     ]),
                     m("button", {
-                        class: "px-3 py-2 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs flex items-center space-x-1",
+                        class: "cg-btn-orange text-xs flex items-center space-x-1",
                         onclick: function(e) { e.stopPropagation(); dressCharacterDown(); },
                         title: "Remove clothing"
                     }, [
@@ -1298,29 +1293,29 @@
     // Responsive: smaller on mobile (60x85), larger on desktop (80x110)
     function renderMiniCard(card, onClick, isHighlight, source, cardType) {
         let portraitUrl = card ? getPortraitUrl(card, "128x128") : null;
-        let borderClass = isHighlight ? "border-amber-500 ring-2 ring-amber-400" : "border-gray-400 dark:border-gray-500";
+        let borderClass = isHighlight ? "cg-card-selected" : "border-gray-400 dark:border-gray-500";
         let isDragging = draggedCard && draggedCard.objectId === card?.objectId;
         let typeIcon = cardType === 'character' ? 'person' : cardType === 'item' ? 'inventory_2' : cardType === 'location' ? 'location_on' : 'event';
 
         return m("div", {
-            class: "rounded-lg overflow-hidden border-2 bg-gradient-to-b from-amber-100 to-amber-200 dark:from-gray-700 dark:to-gray-800 shadow-lg cursor-grab hover:scale-105 transition-transform flex-shrink-0 " + borderClass + (isDragging ? " opacity-50" : ""),
+            class: "cg-card-mini " + borderClass + (isDragging ? " opacity-50" : ""),
             style: "width: 60px; height: 85px;",
             onclick: onClick,
             draggable: source ? true : false,
             ondragstart: source ? function(e) { handleDragStart(e, card, source); } : null,
             ondragend: source ? handleDragEnd : null
         }, [
-            m("div", {class: "h-16 bg-gray-300 dark:bg-gray-700 flex items-center justify-center overflow-hidden relative"}, [
+            m("div", {class: "cg-mini-portrait"}, [
                 portraitUrl ?
                     m("img", {src: portraitUrl, class: "w-full h-full object-cover", draggable: false}) :
-                    m("span", {class: "material-symbols-outlined text-xl text-gray-400 dark:text-gray-500"}, "person"),
+                    m("span", {class: "cg-mini-portrait-icon"}, "person"),
                 // Card type icon overlay
-                m("div", {class: "absolute top-0.5 right-0.5 p-0.5 rounded bg-black/40 text-white"}, [
+                m("div", {class: "cg-mini-badge"}, [
                     m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, typeIcon)
                 ])
             ]),
-            m("div", {class: "h-5 px-0.5 flex items-center justify-center bg-amber-200 dark:bg-gray-800 border-t border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "font-bold text-gray-800 dark:text-gray-200 truncate text-center", style: "font-size: 9px"},
+            m("div", {class: "cg-mini-name"}, [
+                m("div", {class: "cg-mini-name-text", style: "font-size: 9px"},
                     card ? card.name.split(" ")[0] : "?")
             ])
         ]);
@@ -1333,7 +1328,7 @@
         let typeName = cardType.charAt(0).toUpperCase() + cardType.slice(1);
 
         return m("div", {
-            class: "rounded-lg overflow-hidden border-2 border-gray-400 dark:border-gray-500 bg-gradient-to-b from-blue-800 to-blue-900 shadow-lg flex-shrink-0",
+            class: "cg-card-back",
             style: "width: 60px; height: 85px;"
         }, [
             m("div", {class: "h-full flex flex-col items-center justify-center"}, [
@@ -1349,9 +1344,9 @@
             view: function() {
                 let topCard = previewCard || (deck.length > 0 ? deck[previewIndex] : null);
 
-                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900"}, [
+                return m("div", {class: "cg-panel"}, [
                     // Header
-                    m("div", {class: "flex items-center justify-between px-2 py-1 bg-blue-600 text-white"}, [
+                    m("div", {class: "cg-header-blue"}, [
                         m("div", {class: "flex items-center space-x-1"}, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "person"),
                             m("span", {class: "text-sm font-medium"}, "Characters"),
@@ -1374,7 +1369,7 @@
                             m("div", {class: "relative"}, [
                                 // Stack shadows with card backs
                                 deck.length > 2 ? m("div", {
-                                    class: "absolute rounded-lg bg-gradient-to-b from-blue-700 to-blue-800 border-2 border-blue-600",
+                                    class: "cg-stack-shadow-blue",
                                     style: "width: 60px; height: 85px; top: 3px; left: 3px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
@@ -1382,7 +1377,7 @@
                                     ])
                                 ]) : "",
                                 deck.length > 1 ? m("div", {
-                                    class: "absolute rounded-lg bg-gradient-to-b from-blue-700 to-blue-800 border-2 border-blue-600",
+                                    class: "cg-stack-shadow-blue",
                                     style: "width: 60px; height: 85px; top: 1.5px; left: 1.5px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
@@ -1395,18 +1390,18 @@
                     ]),
 
                     // Navigation and actions
-                    m("div", {class: "px-2 py-1 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700"}, [
+                    m("div", {class: "cg-footer"}, [
                         // Flip through controls
                         m("div", {class: "flex items-center justify-center space-x-1 mb-1"}, [
                             m("button", {
-                                class: "p-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 disabled:opacity-50",
+                                class: "cg-nav-btn cg-nav-btn-text",
                                 onclick: previewPrevCard,
                                 disabled: deck.length === 0
                             }, m("span", {class: "material-symbols-outlined text-xs"}, "chevron_left")),
-                            m("span", {class: "text-xs text-gray-600 dark:text-gray-400 min-w-12 text-center"},
+                            m("span", {class: "cg-nav-label min-w-12 text-center"},
                                 deck.length > 0 ? (previewIndex + 1) + "/" + deck.length : "-"),
                             m("button", {
-                                class: "p-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 disabled:opacity-50",
+                                class: "cg-nav-btn cg-nav-btn-text",
                                 onclick: previewNextCard,
                                 disabled: deck.length === 0
                             }, m("span", {class: "material-symbols-outlined text-xs"}, "chevron_right"))
@@ -1414,7 +1409,7 @@
                         // Draw buttons
                         m("div", {class: "flex space-x-1"}, [
                             m("button", {
-                                class: "flex-1 px-2 py-1 rounded bg-green-600 hover:bg-green-500 text-white text-xs font-medium flex items-center justify-center space-x-1 disabled:opacity-50",
+                                class: "cg-btn-action-green",
                                 onclick: drawToUserHand,
                                 disabled: deck.length === 0 || userHand.length >= USER_HAND_LIMIT,
                                 title: "Draw to your hand"
@@ -1423,7 +1418,7 @@
                                 m("span", {}, "You")
                             ]),
                             m("button", {
-                                class: "flex-1 px-2 py-1 rounded bg-red-600 hover:bg-red-500 text-white text-xs font-medium flex items-center justify-center space-x-1 disabled:opacity-50",
+                                class: "cg-btn-action-red",
                                 onclick: drawToGameHand,
                                 disabled: deck.length === 0 || gameHand.length >= GAME_HAND_LIMIT,
                                 title: "Draw to game hand"
@@ -1449,48 +1444,47 @@
                 let isPlayedDrop = (dropTarget === 'playedActions' && dragSource === 'actionHand') || (dragSource === 'actionHand' && dropTarget === 'playedActions');
                 let isDraggingAction = dragSource === 'actionHand';
 
-                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
+                return m("div", {class: "cg-panel-overflow"}, [
                     // Main content - character card with surrounding card stacks
                     // Responsive: smaller cards and tighter gaps on mobile
-                    m("div", {class: "flex-1 flex items-center justify-center p-1 md:p-2 gap-1 md:gap-3 overflow-x-auto"}, [
+                    m("div", {class: "cg-hand-content"}, [
                         // Left side - Action cards stack
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
+                            class: "cg-card-section " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userActionHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnActionHand
                         }, [
-                            m("div", {class: "text-xs text-purple-600 dark:text-purple-400 mb-1 flex items-center"}, [
+                            m("div", {class: "cg-label-action"}, [
                                 m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "bolt"),
-                                m("span", {class: "ml-0.5 font-medium"}, actionHand.length)
+                                m("span", {class: "cg-label-count"}, actionHand.length)
                             ]),
                             actionHand.length === 0 ?
                                 m("div", {
-                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
-                                        (isActionDropTarget ? "border-purple-500 bg-purple-100 dark:bg-purple-900" : "border-purple-300 dark:border-purple-700"),
+                                    class: "cg-dropzone " + (isActionDropTarget ? "cg-dropzone-action-active" : "cg-dropzone-action-inactive"),
                                     style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(actionHand[actionHandIndex]); }}, [
                                     // Stacked cards visual
-                                    actionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    actionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    actionHand.length > 1 ? m("div", {class: "cg-stack-action", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    actionHand.length > 2 ? m("div", {class: "cg-stack-action-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     // Top card
                                     m("div", {
-                                        class: "relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        class: "cg-mini-action",
                                         style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, actionHand[actionHandIndex], 'actionHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-purple-600 dark:text-purple-400", style: "font-size: 24px"}, actionHand[actionHandIndex].icon),
-                                        m("span", {class: "text-purple-800 dark:text-purple-200 truncate w-full text-center px-1", style: "font-size: 9px"}, actionHand[actionHandIndex].label)
+                                        m("span", {class: "cg-mini-icon-purple", style: "font-size: 24px"}, actionHand[actionHandIndex].icon),
+                                        m("span", {class: "cg-mini-text-purple", style: "font-size: 9px"}, actionHand[actionHandIndex].label)
                                     ])
                                 ])
                         ]),
 
                         // Center - Character card (drop zone)
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isCharDropTarget ? "bg-green-200 dark:bg-green-800" : ""),
+                            class: "cg-card-section " + (isCharDropTarget ? "bg-green-200 dark:bg-green-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnUserHand
@@ -1498,8 +1492,7 @@
                             userHand.length === 0 ?
                                 m("div", {class: "text-center text-gray-400 flex-1 flex items-center"}, [
                                     m("div", {
-                                        class: "rounded border-2 border-dashed flex flex-col items-center justify-center " +
-                                            (isCharDropTarget ? "border-green-500 bg-green-100 dark:bg-green-900" : "border-gray-400"),
+                                        class: "cg-dropzone-char " + (isCharDropTarget ? "cg-dropzone-green-active" : "border-gray-400"),
                                         style: "width: 60px; height: 85px;"
                                     }, [
                                         m("span", {class: "material-symbols-outlined text-2xl"}, "person_add"),
@@ -1516,75 +1509,73 @@
 
                         // Right side - Item cards stack
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isItemDropTarget ? "bg-emerald-200 dark:bg-emerald-800" : ""),
+                            class: "cg-card-section " + (isItemDropTarget ? "bg-emerald-200 dark:bg-emerald-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userItemHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnItemHand
                         }, [
-                            m("div", {class: "text-xs text-emerald-600 dark:text-emerald-400 mb-1 flex items-center"}, [
+                            m("div", {class: "cg-label-item"}, [
                                 m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "inventory_2"),
-                                m("span", {class: "ml-0.5 font-medium"}, itemHand.length)
+                                m("span", {class: "cg-label-count"}, itemHand.length)
                             ]),
                             itemHand.length === 0 ?
                                 m("div", {
-                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
-                                        (isItemDropTarget ? "border-emerald-500 bg-emerald-100 dark:bg-emerald-900" : "border-emerald-300 dark:border-emerald-700"),
+                                    class: "cg-dropzone " + (isItemDropTarget ? "cg-dropzone-item-active" : "cg-dropzone-item-inactive"),
                                     style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(itemHand[itemHandIndex]); }}, [
-                                    itemHand.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    itemHand.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    itemHand.length > 1 ? m("div", {class: "cg-stack-item", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    itemHand.length > 2 ? m("div", {class: "cg-stack-item-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
-                                        class: "relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        class: "cg-mini-item",
                                         style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, itemHand[itemHandIndex], 'itemHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-emerald-600 dark:text-emerald-400", style: "font-size: 24px"}, "inventory_2"),
-                                        m("span", {class: "text-emerald-800 dark:text-emerald-200 truncate w-full text-center px-1", style: "font-size: 9px"}, itemHand[itemHandIndex].name ? itemHand[itemHandIndex].name.substring(0, 8) : "Item")
+                                        m("span", {class: "cg-mini-icon-emerald", style: "font-size: 24px"}, "inventory_2"),
+                                        m("span", {class: "cg-mini-text-emerald", style: "font-size: 9px"}, itemHand[itemHandIndex].name ? itemHand[itemHandIndex].name.substring(0, 8) : "Item")
                                     ])
                                 ])
                         ]),
 
                         // Far right - Apparel cards stack
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isApparelDropTarget ? "bg-pink-200 dark:bg-pink-800" : ""),
+                            class: "cg-card-section " + (isApparelDropTarget ? "bg-pink-200 dark:bg-pink-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'userApparelHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnApparelHand
                         }, [
-                            m("div", {class: "text-xs text-pink-600 dark:text-pink-400 mb-1 flex items-center"}, [
+                            m("div", {class: "cg-label-apparel"}, [
                                 m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "checkroom"),
-                                m("span", {class: "ml-0.5 font-medium"}, apparelHand.length)
+                                m("span", {class: "cg-label-count"}, apparelHand.length)
                             ]),
                             apparelHand.length === 0 ?
                                 m("div", {
-                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
-                                        (isApparelDropTarget ? "border-pink-500 bg-pink-100 dark:bg-pink-900" : "border-pink-300 dark:border-pink-700"),
+                                    class: "cg-dropzone " + (isApparelDropTarget ? "cg-dropzone-apparel-active" : "cg-dropzone-apparel-inactive"),
                                     style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(apparelHand[apparelHandIndex]); }}, [
-                                    apparelHand.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    apparelHand.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    apparelHand.length > 1 ? m("div", {class: "cg-stack-apparel", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    apparelHand.length > 2 ? m("div", {class: "cg-stack-apparel-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
-                                        class: "relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        class: "cg-mini-apparel",
                                         style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, apparelHand[apparelHandIndex], 'apparelHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-pink-600 dark:text-pink-400", style: "font-size: 24px"}, "checkroom"),
-                                        m("span", {class: "text-pink-800 dark:text-pink-200 truncate w-full text-center px-1", style: "font-size: 9px"}, getApparelDisplayName(apparelHand[apparelHandIndex]).substring(0, 8))
+                                        m("span", {class: "cg-mini-icon-pink", style: "font-size: 24px"}, "checkroom"),
+                                        m("span", {class: "cg-mini-text-pink", style: "font-size: 9px"}, getApparelDisplayName(apparelHand[apparelHandIndex]).substring(0, 8))
                                     ])
                                 ])
                         ])
                     ]),
 
                     // Footer with action tray - green header with played actions
-                    m("div", {class: "flex-shrink-0 flex flex-col bg-green-600"}, [
+                    m("div", {class: "cg-header-green"}, [
                         // Pending interaction display (if active)
-                        pendingInteraction ? m("div", {class: "flex items-center justify-between px-2 py-1 bg-purple-600 text-white text-sm"}, [
+                        pendingInteraction ? m("div", {class: "cg-pending-bar"}, [
                             m("div", {class: "flex items-center space-x-2"}, [
                                 m("span", {class: "font-medium"}, userHand.length > 0 ? userHand[0].name.split(" ")[0] : "?"),
                                 m("span", {class: "material-symbols-outlined text-sm"}, pendingInteraction.icon),
@@ -1597,12 +1588,12 @@
                             ]),
                             m("div", {class: "flex space-x-1"}, [
                                 m("button", {
-                                    class: "px-2 py-0.5 rounded bg-green-500 hover:bg-green-400 text-white text-xs disabled:opacity-50",
+                                    class: "cg-btn-sm-green",
                                     onclick: executeAction,
                                     disabled: !selectedCard || gameHand.findIndex(c => c.objectId === selectedCard?.objectId) === -1
                                 }, "Go"),
                                 m("button", {
-                                    class: "px-2 py-0.5 rounded bg-red-500 hover:bg-red-400 text-white text-xs",
+                                    class: "cg-btn-sm-red",
                                     onclick: cancelAction
                                 }, "X")
                             ])
@@ -1626,8 +1617,7 @@
                                 playedActions.map(function(action) {
                                     let isSelected = selectedAction && selectedAction.id === action.id;
                                     return m("div", {
-                                        class: "relative flex-shrink-0 flex items-center justify-center rounded px-2 py-1 cursor-pointer transition-all " +
-                                            (isSelected ? "bg-white text-green-700" : "bg-green-500 text-white hover:bg-green-400"),
+                                        class: "cg-played-action " + (isSelected ? "cg-played-action-selected" : "cg-played-action-unselected"),
                                         onclick: function() { selectPlayedAction(action); }
                                     }, [
                                         m("span", {class: "material-symbols-outlined text-sm"}, action.icon),
@@ -1641,7 +1631,7 @@
                                 }),
                                 // Drop target guide/placeholder at the end
                                 isDraggingAction ? m("div", {
-                                    class: "flex-shrink-0 flex items-center justify-center rounded border-2 border-dashed transition-all " +
+                                    class: "cg-played-drop-zone " +
                                         (isPlayedDrop ? "border-white bg-green-400" : "border-green-300 bg-green-500/50 animate-pulse"),
                                     style: "width: 40px; height: 28px;"
                                 }, [
@@ -1669,9 +1659,9 @@
                 let sysItemIdx = Math.min(systemItemHandIndex, Math.max(0, systemItems.length - 1));
                 let sysApparelIdx = Math.min(systemApparelHandIndex, Math.max(0, systemApparel.length - 1));
 
-                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
+                return m("div", {class: "cg-panel-overflow"}, [
                     // Header with action tray - red header with system played actions
-                    m("div", {class: "flex-shrink-0 flex flex-col bg-red-600"}, [
+                    m("div", {class: "cg-header-red"}, [
                         m("div", {class: "flex items-center px-2 py-1 text-white"}, [
                             m("div", {class: "flex items-center space-x-1 flex-shrink-0"}, [
                                 m("span", {class: "material-symbols-outlined text-sm"}, "smart_toy"),
@@ -1682,9 +1672,7 @@
                                 systemPlayedActions.length === 0 ?
                                     m("span", {class: "text-red-200 text-xs"}, "No actions") :
                                     systemPlayedActions.map(function(action) {
-                                        return m("div", {
-                                            class: "flex-shrink-0 flex items-center justify-center rounded px-2 py-1 bg-red-500 text-white"
-                                        }, [
+                                        return m("div", {class: "cg-played-action-system"}, [
                                             m("span", {class: "material-symbols-outlined text-sm"}, action.icon),
                                             m("span", {class: "text-xs ml-1"}, action.label)
                                         ]);
@@ -1695,40 +1683,39 @@
 
                     // Main content - character card with surrounding card stacks
                     // Responsive: smaller gaps on mobile
-                    m("div", {class: "flex-1 flex items-center justify-center p-1 md:p-2 gap-1 md:gap-3 overflow-x-auto"}, [
+                    m("div", {class: "cg-hand-content"}, [
                         // Left side - Action cards stack (system)
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
+                            class: "cg-card-section " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'systemActionHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnSystemActionHand
                         }, [
-                            m("div", {class: "text-xs text-purple-600 dark:text-purple-400 mb-1 flex items-center"}, [
+                            m("div", {class: "cg-label-action"}, [
                                 m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "bolt"),
-                                m("span", {class: "ml-0.5 font-medium"}, systemActionHand.length)
+                                m("span", {class: "cg-label-count"}, systemActionHand.length)
                             ]),
                             systemActionHand.length === 0 ?
                                 m("div", {
-                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
-                                        (isActionDropTarget ? "border-purple-500 bg-purple-100 dark:bg-purple-900" : "border-purple-300 dark:border-purple-700"),
+                                    class: "cg-dropzone " + (isActionDropTarget ? "cg-dropzone-action-active" : "cg-dropzone-action-inactive"),
                                     style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(systemActionHand[sysActionIdx]); }}, [
-                                    systemActionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    systemActionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    systemActionHand.length > 1 ? m("div", {class: "cg-stack-action", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    systemActionHand.length > 2 ? m("div", {class: "cg-stack-action-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
-                                        class: "relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        class: "cg-mini-action",
                                         style: "width: 50px; height: 70px;"
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-purple-600 dark:text-purple-400", style: "font-size: 24px"}, systemActionHand[sysActionIdx].icon),
-                                        m("span", {class: "text-purple-800 dark:text-purple-200 truncate w-full text-center px-1", style: "font-size: 9px"}, systemActionHand[sysActionIdx].label)
+                                        m("span", {class: "cg-mini-icon-purple", style: "font-size: 24px"}, systemActionHand[sysActionIdx].icon),
+                                        m("span", {class: "cg-mini-text-purple", style: "font-size: 9px"}, systemActionHand[sysActionIdx].label)
                                     ])
                                 ])
                         ]),
 
                         // Center - Character cards (drop zone)
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isCharDropTarget ? "bg-red-200 dark:bg-red-800" : ""),
+                            class: "cg-card-section " + (isCharDropTarget ? "bg-red-200 dark:bg-red-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'gameHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnGameHand
@@ -1736,8 +1723,7 @@
                             gameHand.length === 0 ?
                                 m("div", {class: "text-center text-gray-400 flex-1 flex items-center"}, [
                                     m("div", {
-                                        class: "rounded border-2 border-dashed flex flex-col items-center justify-center " +
-                                            (isCharDropTarget ? "border-red-500 bg-red-100 dark:bg-red-900" : "border-gray-400"),
+                                        class: "cg-dropzone-char " + (isCharDropTarget ? "cg-dropzone-red-active" : "border-gray-400"),
                                         style: "width: 60px; height: 85px;"
                                     }, [
                                         m("span", {class: "material-symbols-outlined text-2xl"}, "smart_toy"),
@@ -1754,60 +1740,58 @@
 
                         // Right side - Item cards stack (system)
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isItemDropTarget ? "bg-emerald-200 dark:bg-emerald-800" : ""),
+                            class: "cg-card-section " + (isItemDropTarget ? "bg-emerald-200 dark:bg-emerald-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'systemItemHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnSystemItemHand
                         }, [
-                            m("div", {class: "text-xs text-emerald-600 dark:text-emerald-400 mb-1 flex items-center"}, [
+                            m("div", {class: "cg-label-item"}, [
                                 m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "inventory_2"),
-                                m("span", {class: "ml-0.5 font-medium"}, systemItems.length)
+                                m("span", {class: "cg-label-count"}, systemItems.length)
                             ]),
                             systemItems.length === 0 ?
                                 m("div", {
-                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
-                                        (isItemDropTarget ? "border-emerald-500 bg-emerald-100 dark:bg-emerald-900" : "border-emerald-300 dark:border-emerald-700"),
+                                    class: "cg-dropzone " + (isItemDropTarget ? "cg-dropzone-item-active" : "cg-dropzone-item-inactive"),
                                     style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(systemItems[sysItemIdx]); }}, [
-                                    systemItems.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    systemItems.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    systemItems.length > 1 ? m("div", {class: "cg-stack-item", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    systemItems.length > 2 ? m("div", {class: "cg-stack-item-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
-                                        class: "relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        class: "cg-mini-item",
                                         style: "width: 50px; height: 70px;"
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-emerald-600 dark:text-emerald-400", style: "font-size: 24px"}, "inventory_2"),
-                                        m("span", {class: "text-emerald-800 dark:text-emerald-200 truncate w-full text-center px-1", style: "font-size: 9px"}, systemItems[sysItemIdx].name ? systemItems[sysItemIdx].name.substring(0, 8) : "Item")
+                                        m("span", {class: "cg-mini-icon-emerald", style: "font-size: 24px"}, "inventory_2"),
+                                        m("span", {class: "cg-mini-text-emerald", style: "font-size: 9px"}, systemItems[sysItemIdx].name ? systemItems[sysItemIdx].name.substring(0, 8) : "Item")
                                     ])
                                 ])
                         ]),
 
                         // Far right - Apparel cards stack (system)
                         m("div", {
-                            class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isApparelDropTarget ? "bg-pink-200 dark:bg-pink-800" : ""),
+                            class: "cg-card-section " + (isApparelDropTarget ? "bg-pink-200 dark:bg-pink-800" : ""),
                             ondragover: function(e) { e.preventDefault(); handleDragOver(e, 'systemApparelHand'); },
                             ondragleave: handleDragLeave,
                             ondrop: handleDropOnSystemApparelHand
                         }, [
-                            m("div", {class: "text-xs text-pink-600 dark:text-pink-400 mb-1 flex items-center"}, [
+                            m("div", {class: "cg-label-apparel"}, [
                                 m("span", {class: "material-symbols-outlined", style: "font-size: 14px"}, "checkroom"),
-                                m("span", {class: "ml-0.5 font-medium"}, systemApparel.length)
+                                m("span", {class: "cg-label-count"}, systemApparel.length)
                             ]),
                             systemApparel.length === 0 ?
                                 m("div", {
-                                    class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
-                                        (isApparelDropTarget ? "border-pink-500 bg-pink-100 dark:bg-pink-900" : "border-pink-300 dark:border-pink-700"),
+                                    class: "cg-dropzone " + (isApparelDropTarget ? "cg-dropzone-apparel-active" : "cg-dropzone-apparel-inactive"),
                                     style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(systemApparel[sysApparelIdx]); }}, [
-                                    systemApparel.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
-                                    systemApparel.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
+                                    systemApparel.length > 1 ? m("div", {class: "cg-stack-apparel", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    systemApparel.length > 2 ? m("div", {class: "cg-stack-apparel-alt", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
-                                        class: "relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
+                                        class: "cg-mini-apparel",
                                         style: "width: 50px; height: 70px;"
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-pink-600 dark:text-pink-400", style: "font-size: 24px"}, "checkroom"),
-                                        m("span", {class: "text-pink-800 dark:text-pink-200 truncate w-full text-center px-1", style: "font-size: 9px"}, getApparelDisplayName(systemApparel[sysApparelIdx]).substring(0, 8))
+                                        m("span", {class: "cg-mini-icon-pink", style: "font-size: 24px"}, "checkroom"),
+                                        m("span", {class: "cg-mini-text-pink", style: "font-size: 9px"}, getApparelDisplayName(systemApparel[sysApparelIdx]).substring(0, 8))
                                     ])
                                 ])
                         ])
@@ -1823,9 +1807,9 @@
             view: function() {
                 let topCard = actionPreview;
 
-                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900"}, [
+                return m("div", {class: "cg-panel"}, [
                     // Header
-                    m("div", {class: "flex items-center justify-between px-2 py-1 bg-purple-600 text-white"}, [
+                    m("div", {class: "cg-header-purple"}, [
                         m("div", {class: "flex items-center space-x-1"}, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "bolt"),
                             m("span", {class: "text-sm font-medium"}, "Actions"),
@@ -1852,17 +1836,17 @@
                         m("div", {class: "relative mb-2"}, [
                             // Shadow cards
                             actionDeck.length > 2 ? m("div", {
-                                class: "absolute rounded-lg bg-gradient-to-b from-purple-600 to-purple-800 border-2 border-purple-500",
+                                class: "cg-stack-shadow-purple",
                                 style: "width: 70px; height: 90px; top: 4px; left: 4px;"
                             }) : "",
                             actionDeck.length > 1 ? m("div", {
-                                class: "absolute rounded-lg bg-gradient-to-b from-purple-600 to-purple-800 border-2 border-purple-500",
+                                class: "cg-stack-shadow-purple",
                                 style: "width: 70px; height: 90px; top: 2px; left: 2px;"
                             }) : "",
                             // Top card (preview or back)
                             actionDeck.length > 0 ?
                                 m("div", {
-                                    class: "relative flex flex-col items-center justify-center p-2 rounded-lg border-2 bg-gradient-to-b from-purple-700 to-purple-900 border-purple-500",
+                                    class: "cg-action-deck-card",
                                     style: "width: 70px; height: 90px;"
                                 }, [
                                     topCard ? [
@@ -1874,7 +1858,7 @@
                                     ]
                                 ]) :
                                 m("div", {
-                                    class: "flex items-center justify-center text-gray-400 dark:text-gray-500 text-xs border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg",
+                                    class: "cg-action-deck-empty",
                                     style: "width: 70px; height: 90px;"
                                 }, "Empty")
                         ]),
@@ -1882,14 +1866,14 @@
                         // Navigation buttons
                         m("div", {class: "flex items-center space-x-2 mb-2"}, [
                             m("button", {
-                                class: "p-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50",
+                                class: "cg-nav-btn",
                                 onclick: prevActionPreview,
                                 disabled: actionDeck.length === 0
                             }, m("span", {class: "material-symbols-outlined text-sm text-gray-700 dark:text-gray-300"}, "chevron_left")),
-                            m("span", {class: "text-xs text-gray-500 dark:text-gray-400"},
+                            m("span", {class: "cg-nav-label"},
                                 actionDeck.length > 0 ? (actionPreviewIndex + 1) + "/" + actionDeck.length : "-"),
                             m("button", {
-                                class: "p-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50",
+                                class: "cg-nav-btn",
                                 onclick: nextActionPreview,
                                 disabled: actionDeck.length === 0
                             }, m("span", {class: "material-symbols-outlined text-sm text-gray-700 dark:text-gray-300"}, "chevron_right"))
@@ -1897,7 +1881,7 @@
 
                         // Draw button
                         m("button", {
-                            class: "w-full px-3 py-1.5 rounded bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium flex items-center justify-center space-x-1 disabled:opacity-50",
+                            class: "cg-action-deck-btn",
                             onclick: drawActionToTray,
                             disabled: actionDeck.length === 0
                         }, [
@@ -1907,7 +1891,7 @@
                     ]),
 
                     // Discard info
-                    m("div", {class: "px-2 py-1 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 text-center"}, [
+                    m("div", {class: "cg-footer text-center"}, [
                         m("span", {class: "text-xs text-orange-600 dark:text-orange-400"}, "Discard: " + actionDiscard.length)
                     ])
                 ]);
@@ -1918,12 +1902,12 @@
     // Render a mini item card
     function renderItemCard(item) {
         return m("div", {
-            class: "flex-shrink-0 flex flex-col items-center justify-center p-1 rounded border bg-gradient-to-b from-emerald-50 to-emerald-100 dark:from-emerald-900 dark:to-emerald-950 border-emerald-300 dark:border-emerald-700",
+            class: "cg-render-item-card",
             style: "width: 50px; height: 60px;",
             title: item.name || "Item"
         }, [
-            m("span", {class: "material-symbols-outlined text-lg text-emerald-600 dark:text-emerald-400"}, "inventory_2"),
-            m("span", {class: "text-xs text-center text-emerald-700 dark:text-emerald-300 truncate w-full"}, item.name ? item.name.substring(0, 6) : "?")
+            m("span", {class: "cg-item-icon"}, "inventory_2"),
+            m("span", {class: "cg-item-text"}, item.name ? item.name.substring(0, 6) : "?")
         ]);
     }
 
@@ -1931,12 +1915,12 @@
     function renderApparelCard(apparel) {
         let displayName = getApparelDisplayName(apparel);
         return m("div", {
-            class: "flex-shrink-0 flex flex-col items-center justify-center p-1 rounded border bg-gradient-to-b from-pink-50 to-pink-100 dark:from-pink-900 dark:to-pink-950 border-pink-300 dark:border-pink-700",
+            class: "cg-render-apparel-card",
             style: "width: 50px; height: 60px;",
             title: displayName
         }, [
-            m("span", {class: "material-symbols-outlined text-lg text-pink-600 dark:text-pink-400"}, "checkroom"),
-            m("span", {class: "text-xs text-center text-pink-700 dark:text-pink-300 truncate w-full"}, displayName.substring(0, 6))
+            m("span", {class: "cg-apparel-icon"}, "checkroom"),
+            m("span", {class: "cg-apparel-text"}, displayName.substring(0, 6))
         ]);
     }
 
@@ -2029,7 +2013,7 @@
                 let isDropTarget = dropTarget === 'discard' && (dragSource === 'userHand' || dragSource === 'gameHand');
 
                 return m("div", {
-                    class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors " + (isDropTarget ? "bg-orange-100 dark:bg-orange-900/30" : ""),
+                    class: "cg-panel-transition " + (isDropTarget ? "bg-orange-100 dark:bg-orange-900/30" : ""),
                     ondragover: function(e) { handleDragOver(e, 'discard'); },
                     ondragleave: handleDragLeave,
                     ondrop: handleDropOnDiscard
@@ -2059,7 +2043,7 @@
                             m("div", {class: "relative"}, [
                                 // Stack shadows with card backs
                                 discard.length > 2 ? m("div", {
-                                    class: "absolute rounded-lg bg-gradient-to-b from-orange-700 to-orange-800 border-2 border-orange-600",
+                                    class: "cg-stack-shadow-orange",
                                     style: "width: 60px; height: 85px; top: 3px; left: 3px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
@@ -2067,7 +2051,7 @@
                                     ])
                                 ]) : "",
                                 discard.length > 1 ? m("div", {
-                                    class: "absolute rounded-lg bg-gradient-to-b from-orange-700 to-orange-800 border-2 border-orange-600",
+                                    class: "cg-stack-shadow-orange",
                                     style: "width: 60px; height: 85px; top: 1.5px; left: 1.5px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
@@ -2080,9 +2064,9 @@
                     ]),
 
                     // Reshuffle button
-                    m("div", {class: "px-2 py-1 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700"}, [
+                    m("div", {class: "cg-footer"}, [
                         m("button", {
-                            class: "w-full px-2 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs font-medium flex items-center justify-center space-x-1 disabled:opacity-50",
+                            class: "w-full cg-btn-action-orange",
                             onclick: reshuffleDiscard,
                             disabled: discard.length === 0
                         }, [
@@ -2100,9 +2084,9 @@
         return {
             view: function() {
                 // Horizontal on mobile, vertical on desktop
-                return m("div", {class: "flex flex-row md:flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-x-auto md:overflow-y-auto"}, [
+                return m("div", {class: "cg-decks-panel"}, [
                     // Horizontal row on mobile / Vertical stack on desktop of draw piles
-                    m("div", {class: "flex flex-row md:flex-col gap-1 p-1 flex-shrink-0"}, [
+                    m("div", {class: "cg-decks-row"}, [
                         // Character pile
                         renderDrawPile("Characters", "person", "blue", deck, discard, "characterDeck",
                             function() { drawToUserHand(); }, shuffleDeck, reshuffleDiscard),
@@ -2122,8 +2106,7 @@
 
                     // Universal discard drop zone
                     m("div", {
-                        class: "m-1 flex flex-col md:flex-row items-center justify-center gap-1 rounded border-2 border-dashed transition-all flex-shrink-0 " +
-                            (dropTarget === 'universalDiscard' ? "border-red-500 bg-red-100 dark:bg-red-900/30" : "border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-800"),
+                        class: "cg-discard-zone " + (dropTarget === 'universalDiscard' ? "cg-discard-active" : "cg-discard-inactive"),
                         style: "min-width: 50px; min-height: 40px;",
                         ondragover: function(e) {
                             e.preventDefault();
@@ -2160,9 +2143,9 @@
         let discardCount = discardArray.length;
         let topCard = deckCount > 0 ? deckArray[0] : null;
 
-        return m("div", {class: "flex flex-col items-center p-1 rounded bg-gray-200 dark:bg-gray-800"}, [
+        return m("div", {class: "cg-draw-pile"}, [
             // Label
-            m("div", {class: "text-xs font-medium text-gray-700 dark:text-gray-300 mb-1"}, label),
+            m("div", {class: "cg-draw-pile-label"}, label),
 
             // Card stack visual - draggable
             m("div", {class: "relative mb-1", style: "width: 50px; height: 65px;"}, [
@@ -2192,13 +2175,13 @@
             // Buttons row
             m("div", {class: "flex space-x-1"}, [
                 m("button", {
-                    class: "p-0.5 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50",
+                    class: "cg-btn-icon",
                     onclick: onShuffle,
                     disabled: deckCount === 0,
                     title: "Shuffle"
                 }, m("span", {class: "material-symbols-outlined text-xs text-gray-700 dark:text-gray-300"}, "shuffle")),
                 m("button", {
-                    class: "p-0.5 rounded bg-orange-500 hover:bg-orange-400 text-white disabled:opacity-50",
+                    class: "cg-btn-icon-orange",
                     onclick: onReshuffle,
                     disabled: discardCount === 0,
                     title: "Reshuffle discard (" + discardCount + ")"
@@ -2296,12 +2279,11 @@
                     {id: 'apparel', label: 'Apparel', icon: 'checkroom'}
                 ];
 
-                return m("div", {class: "flex flex-col space-y-1 bg-gray-200 dark:bg-gray-700 p-1 rounded-lg"}, [
+                return m("div", {class: "cg-tabs-container"}, [
                     tabs.map(function(tab) {
                         let isActive = cardView === tab.id;
                         return m("button", {
-                            class: "flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors " +
-                                (isActive ? "bg-white dark:bg-gray-600 text-gray-800 dark:text-white shadow" : "text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-600"),
+                            class: isActive ? "cg-tab-active" : "cg-tab-inactive",
                             onclick: function() { cardView = tab.id; m.redraw(); },
                             title: tab.label
                         }, [
@@ -2311,7 +2293,7 @@
                     }),
                     // Open Object Page link at bottom of tabs
                     selectedCard ? m("a", {
-                        class: "flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-600 mt-2 border-t border-gray-300 dark:border-gray-600 pt-2",
+                        class: "cg-tab-link",
                         href: "/#!/view/olio.charPerson/" + (selectedCard.objectId || selectedCard.id || ""),
                         target: "_blank",
                         title: "Open full object page in new tab"
@@ -2340,7 +2322,7 @@
 
                 if (!selectedCard) {
                     return m("div", {
-                        class: "flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400 transition-colors " + (isDropTarget ? "bg-purple-100 dark:bg-purple-900/30" : ""),
+                        class: "cg-empty-state " + (isDropTarget ? "bg-purple-100 dark:bg-purple-900/30" : ""),
                         ondragover: function(e) { handleDragOver(e, 'selected'); },
                         ondragleave: handleDragLeave,
                         ondrop: handleDropOnSelected
@@ -2350,7 +2332,7 @@
                     ]);
                 }
                 return m("div", {
-                    class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors " + (isDropTarget ? "bg-purple-100 dark:bg-purple-900/30" : ""),
+                    class: "cg-panel-transition " + (isDropTarget ? "bg-purple-100 dark:bg-purple-900/30" : ""),
                     ondragover: function(e) { handleDragOver(e, 'selected'); },
                     ondragleave: handleDragLeave,
                     ondrop: handleDropOnSelected
@@ -2358,12 +2340,12 @@
                     // Main content area - tabs on left, card on right
                     m("div", {class: "flex-1 flex overflow-hidden"}, [
                         // Vertical tabs on left
-                        m("div", {class: "p-1 border-r border-gray-300 dark:border-gray-700 bg-gray-200 dark:bg-gray-800 overflow-y-auto"}, [
+                        m("div", {class: "cg-tabs-panel"}, [
                             m(CardViewTabs)
                         ]),
 
                         // Card display
-                        m("div", {class: "flex-1 flex items-center justify-center p-2 bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
+                        m("div", {class: "cg-card-display"}, [
                             m(CharacterCard, {
                                 character: selectedCard,
                                 selected: true
@@ -2372,16 +2354,16 @@
                     ]),
 
                     // Action buttons - flex-shrink-0 prevents clipping
-                    m("div", {class: "flex-shrink-0 p-2 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 flex justify-center space-x-2"}, [
+                    m("div", {class: "cg-footer-actions"}, [
                         m("button", {
-                            class: "px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white text-xs flex items-center space-x-1",
+                            class: "cg-btn-primary",
                             onclick: function() { openCharacterView(selectedCard); }
                         }, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "open_in_full"),
                             m("span", {}, "Full View")
                         ]),
                         m("button", {
-                            class: "px-3 py-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs flex items-center space-x-1",
+                            class: "cg-btn-secondary",
                             onclick: function() { refreshSelectedCard(); }
                         }, [
                             m("span", {class: "material-symbols-outlined text-sm"}, "refresh")
@@ -2439,12 +2421,12 @@
         // State for detail card view tab (default to 'info')
         if (!window._detailCardView) window._detailCardView = 'info';
 
-        return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 transition-colors"}, [
+        return m("div", {class: "cg-panel-transition"}, [
             // Main content area - tabs on left, card on right (same as character view)
             m("div", {class: "flex-1 flex overflow-hidden"}, [
                 // Vertical tabs on left (matching character view layout)
-                m("div", {class: "p-1 border-r border-gray-300 dark:border-gray-700 bg-gray-200 dark:bg-gray-800 overflow-y-auto"}, [
-                    m("div", {class: "flex flex-col space-y-1 bg-gray-200 dark:bg-gray-700 p-1 rounded-lg"}, [
+                m("div", {class: "cg-tabs-panel"}, [
+                    m("div", {class: "cg-tabs-container"}, [
                         // Type header
                         m("div", {class: "flex items-center space-x-1 px-2 py-1 text-" + colors.bg + "-600 dark:text-" + colors.bg + "-400 border-b border-gray-300 dark:border-gray-600 mb-1"}, [
                             m("span", {class: "material-symbols-outlined text-sm"}, colors.icon),
@@ -2454,8 +2436,7 @@
                         detailTabs.map(function(tab) {
                             let isActive = window._detailCardView === tab.id;
                             return m("button", {
-                                class: "flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors " +
-                                    (isActive ? "bg-white dark:bg-gray-600 text-gray-800 dark:text-white shadow" : "text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-600"),
+                                class: isActive ? "cg-tab-active" : "cg-tab-inactive",
                                 onclick: function() { window._detailCardView = tab.id; m.redraw(); },
                                 title: tab.label
                             }, [
@@ -2466,10 +2447,10 @@
                         // Navigation if in hand with multiple cards
                         isInUserHand && handArray && handArray.length > 1 ? [
                             m("div", {class: "border-t border-gray-300 dark:border-gray-600 mt-2 pt-2"}, [
-                                m("div", {class: "text-xs text-gray-500 text-center mb-1"}, (handIndex + 1) + "/" + handArray.length),
+                                m("div", {class: "cg-nav-label text-center mb-1"}, (handIndex + 1) + "/" + handArray.length),
                                 m("div", {class: "flex justify-center space-x-1"}, [
                                     m("button", {
-                                        class: "p-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 disabled:opacity-30",
+                                        class: "cg-nav-btn-alt",
                                         onclick: function() {
                                             if (handIndex > 0) {
                                                 if (type === 'action') { actionHandIndex = handIndex - 1; selectActionCard(actionHand[actionHandIndex]); }
@@ -2480,7 +2461,7 @@
                                         disabled: handIndex <= 0
                                     }, m("span", {class: "material-symbols-outlined text-sm"}, "chevron_left")),
                                     m("button", {
-                                        class: "p-1 rounded bg-gray-300 dark:bg-gray-600 hover:bg-gray-400 dark:hover:bg-gray-500 disabled:opacity-30",
+                                        class: "cg-nav-btn-alt",
                                         onclick: function() {
                                             if (handIndex < handArray.length - 1) {
                                                 if (type === 'action') { actionHandIndex = handIndex + 1; selectActionCard(actionHand[actionHandIndex]); }
@@ -2495,7 +2476,7 @@
                         ] : "",
                         // Open Object Page link at bottom of tabs (for items/apparel with objectId)
                         (card.objectId || card.id) ? m("a", {
-                            class: "flex items-center space-x-2 px-2 py-1.5 rounded text-sm transition-colors text-blue-600 dark:text-blue-400 hover:bg-gray-100 dark:hover:bg-gray-600 mt-2 border-t border-gray-300 dark:border-gray-600 pt-2",
+                            class: "cg-tab-link",
                             href: "/#!/view/olio." + type + "/" + (card.objectId || card.id),
                             target: "_blank",
                             title: "Open full object page in new tab"
@@ -2507,7 +2488,7 @@
                 ]),
 
                 // Card display area (matching character view layout)
-                m("div", {class: "flex-1 flex flex-col items-center justify-center p-2 bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
+                m("div", {class: "cg-card-display"}, [
                     // Large draggable card
                     m("div", {
                         class: "flex flex-col items-center justify-center p-4 rounded-xl border-4 bg-gradient-to-b from-" + colors.bg + "-100 to-" + colors.bg + "-200 dark:from-" + colors.bg + "-800 dark:to-" + colors.bg + "-900 border-" + colors.bg + "-400 dark:border-" + colors.bg + "-600 shadow-lg " + (isInUserHand ? "cursor-grab" : ""),
@@ -2544,9 +2525,9 @@
             ]),
 
             // Action buttons (same position as character view)
-            m("div", {class: "flex-shrink-0 p-2 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 flex justify-center space-x-2"}, [
+            m("div", {class: "cg-footer-actions"}, [
                 isInUserHand ? m("button", {
-                    class: "px-3 py-1 rounded bg-orange-600 hover:bg-orange-500 text-white text-xs flex items-center space-x-1",
+                    class: "cg-btn-warning",
                     onclick: function() {
                         if (type === 'action') discardActionFromHand(card);
                         else if (type === 'item') discardItemFromHand(card);
@@ -2559,7 +2540,7 @@
                     m("span", {}, "Discard")
                 ]) : "",
                 m("button", {
-                    class: "px-3 py-1 rounded bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 text-xs flex items-center space-x-1",
+                    class: "cg-btn-secondary",
                     onclick: function() {
                         selectedDetailCard = null;
                         selectedDetailType = null;
@@ -3486,11 +3467,11 @@
 
                 return m("div", {class: "flex flex-col h-full bg-white dark:bg-gray-800"}, [
                     // Header with character portraits - clickable to select character
-                    m("div", {class: "flex-shrink-0 flex items-center justify-between px-4 py-2 bg-purple-600 text-white"}, [
+                    m("div", {class: "cg-chat-header"}, [
                         m("div", {class: "flex items-center space-x-3"}, [
                             // Actor (user's character) - clickable
                             m("div", {
-                                class: "flex items-center space-x-2 cursor-pointer hover:bg-purple-500 rounded px-2 py-1 -ml-2 transition-colors",
+                                class: "cg-chat-character-btn -ml-2",
                                 onclick: function() {
                                     if (chatActor) {
                                         selectCard(chatActor);
@@ -3506,7 +3487,7 @@
                             m("span", {class: "material-symbols-outlined text-sm"}, "swap_horiz"),
                             // Target (system's character) - clickable
                             m("div", {
-                                class: "flex items-center space-x-2 cursor-pointer hover:bg-purple-500 rounded px-2 py-1 transition-colors",
+                                class: "cg-chat-character-btn",
                                 onclick: function() {
                                     if (chatTarget) {
                                         selectCard(chatTarget);
@@ -3528,7 +3509,7 @@
                     ]),
 
                     // Messages area
-                    m("div", {id: "chatMessagesContainer", class: "flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50 dark:bg-gray-900"}, [
+                    m("div", {id: "chatMessagesContainer", class: "cg-chat-messages"}, [
                         chatMessages.length === 0 ?
                             m("div", {class: "text-center text-gray-500 dark:text-gray-400 py-8"}, [
                                 m("span", {class: "material-symbols-outlined text-4xl block mb-2"}, "forum"),
@@ -3558,7 +3539,7 @@
                     ]),
 
                     // Pending indicator
-                    chatPending ? m("div", {class: "flex-shrink-0 px-3 py-2 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"}, [
+                    chatPending ? m("div", {class: "cg-chat-pending"}, [
                         m("div", {class: "flex items-center space-x-2 text-gray-500 dark:text-gray-400 text-sm"}, [
                             m("div", {class: "animate-pulse"}, "..."),
                             m("span", {}, chatTarget?.name?.split(" ")[0] + " is typing...")
@@ -3566,11 +3547,11 @@
                     ]) : "",
 
                     // Input area - pb-14 ensures visibility above bottom navigation bar
-                    m("div", {class: "flex-shrink-0 p-2 pb-14 bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700"}, [
+                    m("div", {class: "cg-chat-input-area"}, [
                         m("div", {class: "flex space-x-2"}, [
                             m("input", {
                                 type: "text",
-                                class: "flex-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500",
+                                class: "cg-chat-input text-sm focus:ring-2 focus:ring-purple-500",
                                 placeholder: "Type a message...",
                                 value: inputMessage,
                                 disabled: chatPending,
@@ -3590,7 +3571,7 @@
                                 }
                             }),
                             m("button", {
-                                class: "px-3 py-2 rounded-lg bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-50",
+                                class: "cg-chat-send-btn",
                                 disabled: chatPending || !inputMessage.trim(),
                                 onclick: function() {
                                     if (inputMessage.trim()) {
@@ -4070,16 +4051,16 @@
                 if (!saveDialogOpen) return "";
 
                 return m("div", {
-                    class: "fixed inset-0 z-50 flex items-center justify-center bg-black/50",
+                    class: "cg-modal-overlay",
                     onclick: function(e) { if (e.target === e.currentTarget) closeSaveDialog(); }
                 }, [
                     m("div", {
-                        class: "bg-white dark:bg-gray-800 rounded-lg shadow-2xl w-full max-w-md flex flex-col",
+                        class: "cg-modal-content",
                         style: "height: 400px;",
                         onclick: function(e) { e.stopPropagation(); }
                     }, [
                         // Header
-                        m("div", {class: "flex-shrink-0 flex items-center justify-between px-4 py-3 bg-blue-600 text-white rounded-t-lg"}, [
+                        m("div", {class: "cg-modal-header"}, [
                             m("div", {class: "flex items-center space-x-2"}, [
                                 m("span", {class: "material-symbols-outlined"}, "save"),
                                 m("span", {class: "font-medium"},
@@ -4116,17 +4097,17 @@
                             // Save mode - input for save name
                             saveDialogMode === 'save' ? [
                                 m("div", {class: "mb-4"}, [
-                                    m("label", {class: "block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"}, "Save Name"),
+                                    m("label", {class: "cg-input-label"}, "Save Name"),
                                     m("input", {
                                         type: "text",
-                                        class: "w-full px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200",
+                                        class: "cg-input-field",
                                         placeholder: "Enter save name...",
                                         value: newSaveName,
                                         oninput: function(e) { newSaveName = e.target.value; }
                                     })
                                 ]),
                                 m("button", {
-                                    class: "w-full px-4 py-2 rounded bg-green-600 hover:bg-green-500 text-white font-medium disabled:opacity-50",
+                                    class: "cg-btn-submit-green",
                                     disabled: !newSaveName.trim(),
                                     onclick: function() { saveGame(newSaveName); }
                                 }, "Save Game")
@@ -4138,7 +4119,7 @@
                                     m("span", {class: "material-symbols-outlined text-4xl text-yellow-500 mb-2"}, "warning"),
                                     m("p", {class: "text-gray-700 dark:text-gray-300 mb-4"}, "Start a new game? Current progress will be lost unless saved."),
                                     m("button", {
-                                        class: "px-6 py-2 rounded bg-red-600 hover:bg-red-500 text-white font-medium",
+                                        class: "cg-btn-submit-red",
                                         onclick: newGame
                                     }, "Start New Game")
                                 ])
@@ -4154,22 +4135,22 @@
                                     m("div", {class: "space-y-2"}, savedGames.map(function(save) {
                                         let isCurrent = currentSave && currentSave.objectId === save.objectId;
                                         return m("div", {
-                                            class: "flex items-center justify-between p-3 rounded border " +
-                                                (isCurrent ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30" : "border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700")
+                                            class: "cg-save-list-item " +
+                                                (isCurrent ? "cg-save-list-item-active" : "cg-save-list-item-inactive")
                                         }, [
                                             m("div", {class: "flex-1"}, [
                                                 m("div", {class: "font-medium text-gray-800 dark:text-gray-200"}, save.name),
-                                                m("div", {class: "text-xs text-gray-500 dark:text-gray-400"},
+                                                m("div", {class: "cg-nav-label"},
                                                     save.modifiedDate ? new Date(save.modifiedDate).toLocaleString() : "")
                                             ]),
                                             m("div", {class: "flex space-x-1"}, [
                                                 m("button", {
-                                                    class: "p-1 rounded bg-green-600 hover:bg-green-500 text-white",
+                                                    class: "cg-save-btn-load",
                                                     onclick: function() { loadGame(save); },
                                                     title: "Load"
                                                 }, m("span", {class: "material-symbols-outlined text-sm"}, "play_arrow")),
                                                 m("button", {
-                                                    class: "p-1 rounded bg-red-600 hover:bg-red-500 text-white",
+                                                    class: "cg-save-btn-delete",
                                                     onclick: function() { deleteGame(save); },
                                                     title: "Delete"
                                                 }, m("span", {class: "material-symbols-outlined text-sm"}, "delete"))
@@ -4180,8 +4161,8 @@
                         ]),
 
                         // Footer with current save info
-                        currentSave ? m("div", {class: "flex-shrink-0 px-4 py-2 bg-gray-100 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 rounded-b-lg"}, [
-                            m("span", {class: "text-xs text-gray-500 dark:text-gray-400"}, "Current: " + currentSave.name)
+                        currentSave ? m("div", {class: "cg-modal-footer"}, [
+                            m("span", {class: "cg-nav-label"}, "Current: " + currentSave.name)
                         ]) : ""
                     ])
                 ]);
@@ -4205,21 +4186,21 @@
     function mainPanel() {
         // On small screens: vertical scroll layout
         // On medium+ screens: horizontal layout with fixed panels
-        return m("div", {class: "flex-grow overflow-auto md:overflow-hidden flex bg-gray-100 dark:bg-gray-900"}, [
-            m("div", {class: "flex flex-col md:flex-row w-full min-h-full md:h-full"}, [
+        return m("div", {class: "cg-main-panel"}, [
+            m("div", {class: "cg-main-panel-inner"}, [
                 // Left panel - Draw Piles (horizontal row on mobile, vertical column on desktop)
-                m("div", {class: "flex-shrink-0 h-28 md:h-full md:w-24 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700 flex flex-row md:flex-col overflow-x-auto md:overflow-x-hidden md:overflow-y-auto"}, [
+                m("div", {class: "cg-left-panel"}, [
                     m(ConsolidatedDecks)
                 ]),
 
                 // Center panel - Either hands or action view (chat, etc.)
                 chatDialogOpen ?
                     // Chat view replaces the hands
-                    m("div", {class: "flex-1 flex flex-col min-h-64 md:min-h-0 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700"}, [
+                    m("div", {class: "cg-center-panel"}, [
                         m(ChatPanel)
                     ]) :
                     // Default: Both hands stacked (actions integrated into hand headers)
-                    m("div", {class: "flex-1 flex flex-col min-h-64 md:min-h-0 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700"}, [
+                    m("div", {class: "cg-center-panel"}, [
                         // User's hand (top) - 50%
                         m("div", {class: "flex-1 min-h-32 md:min-h-0 overflow-hidden"}, [
                             m(UserHandPile)
@@ -4231,7 +4212,7 @@
                     ]),
 
                 // Right panel - Selected Card View
-                m("div", {class: "flex-shrink-0 h-80 md:h-full md:w-1/4 bg-gray-100 dark:bg-gray-900 overflow-y-auto"}, [
+                m("div", {class: "cg-right-panel"}, [
                     m(SelectedCardView)
                 ])
             ])
@@ -4297,7 +4278,7 @@
                 // Save game dialog
                 m(SaveGameDialog),
                 // Footer toolbar
-                m("div", {class: "fixed bottom-0 left-0 right-0 bg-gray-200 dark:bg-gray-800 border-t border-gray-300 dark:border-gray-700 px-4 py-2 flex justify-center space-x-2 z-50"},
+                m("div", {class: "cg-footer-fixed"},
                     getFooter()
                 )
             ];
