@@ -4,7 +4,7 @@
 	"inherits": [
 		"common.name",
 		"common.groupExt",
-		"common.description",
+		"common.description2K",
 		"common.baseLight"
 	],
 	"group": "Apparel",
