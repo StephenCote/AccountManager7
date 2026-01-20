@@ -474,8 +474,11 @@
             page.toast("info", "Applying image tags...");
             try {
                 let tags = await page.applyImageTags(img.objectId);
-                if(tags && tags.length){
+                if(tags && Array.isArray(tags) && tags.length){
                     page.toast("success", "Applied " + tags.length + " tags");
+                }
+                else if(tags){
+                    page.toast("success", "Tags applied");
                 }
                 else {
                     page.toast("warn", "No tags were applied");
@@ -485,6 +488,13 @@
                 console.error(e);
                 page.toast("error", "Failed to apply tags");
             }
+        }
+
+        function openImageInNewTab() {
+            let img = images[currentIndex];
+            if(!img || !img.objectId) return;
+            let uri = "#/view/data.data/" + img.objectId;
+            window.open(uri, "_blank");
         }
 
         let currentImage = images[currentIndex];
@@ -501,7 +511,8 @@
             m("span", { class: "button" }, (currentIndex + 1) + " / " + images.length),
             page.iconButton("button mr-4", "arrow_forward", "", function() { navigate(1); }, images.length <= 1),
             page.iconButton("button", "delete", "", deleteImage),
-            page.iconButton("button", "sell", "", applyImageTags)
+            page.iconButton("button", "sell", "", applyImageTags),
+            page.iconButton("button", "open_in_new", "", openImageInNewTab)
         ];
 
         // Only show set-as-profile button if we have a character instance

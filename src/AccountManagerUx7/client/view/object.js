@@ -278,8 +278,12 @@
             page.toast("info", "Applying image tags...");
             try {
                 let tags = await page.applyImageTags(entity.objectId);
-                if(tags && tags.length){
+                console.log("applyImageTags result:", tags);
+                if(tags && Array.isArray(tags) && tags.length){
                     page.toast("success", "Applied " + tags.length + " tags");
+                }
+                else if(tags){
+                    page.toast("success", "Tags applied");
                 }
                 else {
                     page.toast("warn", "No tags were applied");

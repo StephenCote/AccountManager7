@@ -173,7 +173,7 @@
         let img = images[i];
         try {
           let tags = await page.applyImageTags(img.objectId);
-          if (tags && tags.length) {
+          if (tags) {
             successCount++;
           }
         }
