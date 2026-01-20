@@ -578,6 +578,9 @@
                         await applySharingTag(x, wearLevel.level);
                     }
 
+                    // Apply image tags (caption/description)
+                    await page.applyImageTags(x.objectId);
+
                     images.push(x);
 
                     // For first image, extract seed and update portrait
@@ -739,6 +742,8 @@
                     }
                     await am7client.patchAttribute(x, "wearLevel", "NUDE/" + nudeIdx);
                     await applySharingTag(x, "NUDE");
+                    // Apply image tags (caption/description)
+                    await page.applyImageTags(x.objectId);
                     images.push(x);
                 }
             }
@@ -778,6 +783,9 @@
                 let levelIndex = am7model.enums.wearLevelEnumType.findIndex(we => we == lvls[i]);
                 await am7client.patchAttribute(x, "wearLevel", lvls[i] + "/" + levelIndex);
                 await applySharingTag(x, lvls[i]);
+
+                // Apply image tags (caption/description)
+                await page.applyImageTags(x.objectId);
 
                 images.push(x);
             }
