@@ -70,7 +70,7 @@
 	<context-param>
 		<description>Stable Diffusion Server</description>
 		<param-name>sd.server</param-name>
-		<param-value>http://localhost:7860</param-value>
+		<param-value>http://localhost:7801</param-value>
 	</context-param>
 		<context-param>
 		<description>Stable Diffusion API Type</description>
@@ -101,6 +101,11 @@
 		<description>Defer to Remote Tasks</description>
 		<param-name>task.defer.remote</param-name>
 		<param-value>true</param-value>
+	</context-param>
+	<context-param>
+		<description>Tag Server</description>
+		<param-name>tag.server</param-name>
+		<param-value>http://192.168.1.42:8000</param-value>
 	</context-param>
 	<context-param>
 		<description>Voice Server TTS</description>
