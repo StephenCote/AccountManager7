@@ -19,6 +19,7 @@
     let embeddedMode = false;
     let embeddedController;
     let pickerHandler;
+    let pickerCancel;
     let containerMode = false;
     let defaultRecordCount = 10;
     let defaultIconRecordCount = 40;
@@ -307,9 +308,15 @@
       let rc = defaultRecordCount;
       if (gridMode == 1) rc = defaultIconRecordCount;
       let pages = pagination.pages();
-      m.route.set(pagination.url(pages.currentPage, rc), { key: Date.now() });
-      //pagination.update(pages.containerType, pages.containerId, pages.filter, pages.startRecord, rc);
-      //m.redraw();
+      if (embeddedMode || pickerMode) {
+        // Reset pagination and start fresh with new record count
+        pagination.new();
+        pagination.update(listType, listContainerId, navigateByParent, navFilter, 0, rc, systemList);
+        m.redraw();
+      }
+      else {
+        m.route.set(pagination.url(1, rc), { key: Date.now() });
+      }
     }
 
     function toggleCarousel() {
@@ -431,6 +438,9 @@
       let buttons = [];
       if (pickerMode) {
         buttons.push(pagination.button("button", "check", "", function () { pickerHandler(getSelected()); }));
+        if (pickerCancel) {
+          buttons.push(pagination.button("button", "close", "", function () { pickerCancel(); }));
+        }
       }
       return buttons;
     }
@@ -667,8 +677,14 @@
       let listFilter = navFilter || vnode.attrs.filter || m.route.param("filter");
       if (listFilter) listFilter = decodeURI(listFilter);
 
+      let pages = pagination.pages();
+      // In embedded/picker mode, skip update if pagination has results to avoid resetting state
+      if ((embeddedMode || pickerMode) && pages.counted && pages.currentPage > 0) {
+        return;
+      }
+      let currentDefaultRecordCount = (gridMode == 1) ? defaultIconRecordCount : defaultRecordCount;
       let startRecord = vnode.attrs.startRecord || m.route.param("startRecord");
-      let recordCount = vnode.attrs.recordCount || m.route.param("recordCount") || defaultRecordCount;
+      let recordCount = vnode.attrs.recordCount || m.route.param("recordCount") || currentDefaultRecordCount;
       pagination.update(listType, listContainerId, navigateByParent, listFilter, startRecord, recordCount, systemList);
 
       if(carousel){
@@ -702,6 +718,8 @@
         embeddedMode = x.attrs.embeddedMode;
         embeddedController = x.attrs.embeddedController;
         pickerHandler = x.attrs.pickerHandler;
+        pickerCancel = x.attrs.pickerCancel;
+        pagination.setEmbeddedMode(embeddedMode || pickerMode);
         update(x);
       },
       onupdate: function (x) {

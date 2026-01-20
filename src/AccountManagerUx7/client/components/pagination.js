@@ -2,6 +2,7 @@
 
   function newPaginationControl() {
     let requesting = false;
+    let embeddedMode = false;
 
     let entity = {
       listFilter: "",
@@ -103,25 +104,28 @@
       m.redraw();
     }
 
-    function listRouter(url) {
-      m.route.set(url);
+    function listRouter(url, iPage) {
+      if (embeddedMode) {
+        updatePage(iPage);
+      }
+      else {
+        m.route.set(url);
+      }
     }
     function navNext(bRedrawOnly) {
       if (pages.currentPage < pages.pageCount) {
-        if (bRedrawOnly) {
-          pages.currentPage++;
-          m.redraw();
+        if (bRedrawOnly || embeddedMode) {
+          updatePage(pages.currentPage + 1);
         }
-        else listRouter(getPageUrl(pages.currentPage + 1));
+        else listRouter(getPageUrl(pages.currentPage + 1), pages.currentPage + 1);
       }
     }
     function navPrev(bRedrawOnly) {
       if (pages.currentPage > 1) {
-        if (bRedrawOnly) {
-          pages.currentPage--;
-          m.redraw();
+        if (bRedrawOnly || embeddedMode) {
+          updatePage(pages.currentPage - 1);
         }
-        else listRouter(getPageUrl(pages.currentPage - 1));
+        else listRouter(getPageUrl(pages.currentPage - 1), pages.currentPage - 1);
       }
     }
 
@@ -133,6 +137,7 @@
       }
 
       pages.currentPage = iPage;
+      pages.startRecord = (iPage - 1) * pages.recordCount;
       pages.currentItem = -1;
       if (pages.pageResults[iPage]) {
         m.redraw();
@@ -344,7 +349,7 @@
 
       let pageButtons = [];
 
-      pageButtons.push(paginationButton("previous button", "keyboard_double_arrow_left", "", function () { listRouter(getPageUrl(1)); }));
+      pageButtons.push(paginationButton("previous button", "keyboard_double_arrow_left", "", function () { listRouter(getPageUrl(1), 1); }));
       pageButtons.push(paginationButton("button", "chevron_left", "", function () { navPrev(); }));
 
       let bMore = (pages.pageCount > 7)
@@ -369,13 +374,13 @@
         }
         if (pages.currentPage == i) style = "page-current";
         else fHandler = function () {
-          listRouter(getPageUrl(i));
+          listRouter(getPageUrl(i), i);
         };
         pageButtons.push(paginationButton(style, null, i, fHandler));
 
       };
       pageButtons.push(paginationButton("button", "chevron_right", "", function () { navNext(); }));
-      pageButtons.push(paginationButton("next button", "keyboard_double_arrow_right", "", function () { listRouter(getPageUrl(pages.pageCount)); }));
+      pageButtons.push(paginationButton("next button", "keyboard_double_arrow_right", "", function () { listRouter(getPageUrl(pages.pageCount), pages.pageCount); }));
       return pageButtons;
     }
 
@@ -412,7 +417,8 @@
       pageButtons: pageButtons,
       state: getPageState,
       button: paginationButton,
-      stop: stopPaginating
+      stop: stopPaginating,
+      setEmbeddedMode: function(bEmbed) { embeddedMode = bEmbed; }
 
     };
     return pagination;

@@ -919,7 +919,8 @@
                     startRecord: 0,
                     recordCount: 0,
                     pickerMode: true,
-                    pickerHandler : pickerMode.handler
+                    pickerHandler : pickerMode.handler,
+                    pickerCancel : cancelPicker
                 });
             }
             return pickList;
