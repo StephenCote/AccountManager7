@@ -108,6 +108,9 @@
     let saveDialogMode = 'list'; // 'list', 'save', 'new'
     let newSaveName = '';        // Name for new save
 
+    // Tag filter state
+    let activeTags = [];         // Active tags to filter characters by (e.g., ["nude"])
+
     // Card dimensions (3x5 aspect ratio)
     const CARD_WIDTH = 240;
     const CARD_HEIGHT = 400;
@@ -189,7 +192,14 @@
             q.field("groupId", popDir.id);
             q.range(0, 50);
             // Request basic fields needed for card backs
-            q.entity.request.push("profile", "name", "gender", "objectId");
+            q.entity.request.push("profile", "name", "gender", "objectId", "tags");
+
+            // Apply tag filters if any are active
+            if (activeTags.length > 0) {
+                activeTags.forEach(function(tag) {
+                    q.field("tags.name", tag);
+                });
+            }
 
             let qr = await page.search(q);
             if (qr && qr.results) {
@@ -200,7 +210,8 @@
                 previewIndex = 0;
                 selectedCard = null;
                 previewCard = null;
-                page.toast("success", "Loaded " + deck.length + " characters into deck");
+                let tagMsg = activeTags.length > 0 ? " (filtered by: " + activeTags.join(", ") + ")" : "";
+                page.toast("success", "Loaded " + deck.length + " characters into deck" + tagMsg);
             }
         } catch (e) {
             console.error("Failed to load characters", e);
@@ -577,7 +588,7 @@
                     let pct = val !== undefined ? (val / 20) * 100 : 0;
 
                     return m("div", {class: "flex items-center space-x-2"}, [
-                        m("span", {class: "cg-stat-icon"}, sf.icon),
+                        m("span", {class: "material-symbols-outlined cg-stat-icon"}, sf.icon),
                         m("span", {class: "w-8 text-xs text-gray-700 dark:text-gray-300"}, sf.label),
                         m("div", {class: "cg-stat-bar-container"}, [
                             m("div", {
@@ -756,7 +767,7 @@
                     let widthPct = Math.abs(displayVal) / 2;
 
                     return m("div", {class: "flex items-center space-x-2"}, [
-                        m("span", {class: "cg-stat-icon"}, inst.icon),
+                        m("span", {class: "material-symbols-outlined cg-stat-icon"}, inst.icon),
                         m("span", {class: "w-16 text-xs text-gray-700 dark:text-gray-300"}, inst.label),
                         m("div", {class: "cg-stat-bar-thin"}, [
                             // Center line
@@ -1309,7 +1320,7 @@
             m("div", {class: "cg-mini-portrait flex-1"}, [
                 portraitUrl ?
                     m("img", {src: portraitUrl, class: "w-full h-full object-cover", draggable: false}) :
-                    m("span", {class: "cg-mini-portrait-icon"}, "person"),
+                    m("span", {class: "material-symbols-outlined cg-mini-portrait-icon"}, "person"),
                 // Card type icon overlay
                 m("div", {class: "cg-mini-badge"}, [
                     m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, typeIcon)
@@ -1473,7 +1484,7 @@
                                         ondragstart: function(e) { handleDragStart(e, actionHand[actionHandIndex], 'actionHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "cg-mini-icon-purple text-2xl md:text-3xl"}, actionHand[actionHandIndex].icon),
+                                        m("span", {class: "material-symbols-outlined cg-mini-icon-purple text-2xl md:text-3xl"}, actionHand[actionHandIndex].icon),
                                         m("span", {class: "cg-mini-text-purple text-xs md:text-sm"}, actionHand[actionHandIndex].label),
                                         actionHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, actionHand.length) : ""
                                     ])
@@ -1527,7 +1538,7 @@
                                         ondragstart: function(e) { handleDragStart(e, itemHand[itemHandIndex], 'itemHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "cg-mini-icon-emerald text-2xl md:text-3xl"}, "inventory_2"),
+                                        m("span", {class: "material-symbols-outlined cg-mini-icon-emerald text-2xl md:text-3xl"}, "inventory_2"),
                                         m("span", {class: "cg-mini-text-emerald text-xs md:text-sm"}, itemHand[itemHandIndex].name ? itemHand[itemHandIndex].name.substring(0, 8) : "Item"),
                                         itemHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-emerald-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, itemHand.length) : ""
                                     ])
@@ -1557,7 +1568,7 @@
                                         ondragstart: function(e) { handleDragStart(e, apparelHand[apparelHandIndex], 'apparelHand'); },
                                         ondragend: handleDragEnd
                                     }, [
-                                        m("span", {class: "cg-mini-icon-pink text-2xl md:text-3xl"}, "checkroom"),
+                                        m("span", {class: "material-symbols-outlined cg-mini-icon-pink text-2xl md:text-3xl"}, "checkroom"),
                                         m("span", {class: "cg-mini-text-pink text-xs md:text-sm"}, getApparelDisplayName(apparelHand[apparelHandIndex]).substring(0, 8)),
                                         apparelHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-pink-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, apparelHand.length) : ""
                                     ])
@@ -1695,7 +1706,7 @@
                                 }, m("span", {class: "material-symbols-outlined text-purple-400 text-2xl md:text-3xl"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectActionCard(systemActionHand[sysActionIdx]); }}, [
                                     m("div", {class: "cg-mini-action"}, [
-                                        m("span", {class: "cg-mini-icon-purple text-2xl md:text-3xl"}, systemActionHand[sysActionIdx].icon),
+                                        m("span", {class: "material-symbols-outlined cg-mini-icon-purple text-2xl md:text-3xl"}, systemActionHand[sysActionIdx].icon),
                                         m("span", {class: "cg-mini-text-purple text-xs md:text-sm"}, systemActionHand[sysActionIdx].label),
                                         systemActionHand.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-purple-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, systemActionHand.length) : ""
                                     ])
@@ -1744,7 +1755,7 @@
                                 }, m("span", {class: "material-symbols-outlined text-emerald-400 text-2xl md:text-3xl"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectItemCard(systemItems[sysItemIdx]); }}, [
                                     m("div", {class: "cg-mini-item"}, [
-                                        m("span", {class: "cg-mini-icon-emerald text-2xl md:text-3xl"}, "inventory_2"),
+                                        m("span", {class: "material-symbols-outlined cg-mini-icon-emerald text-2xl md:text-3xl"}, "inventory_2"),
                                         m("span", {class: "cg-mini-text-emerald text-xs md:text-sm"}, systemItems[sysItemIdx].name ? systemItems[sysItemIdx].name.substring(0, 8) : "Item"),
                                         systemItems.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-emerald-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, systemItems.length) : ""
                                     ])
@@ -1769,7 +1780,7 @@
                                 }, m("span", {class: "material-symbols-outlined text-pink-400 text-2xl md:text-3xl"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center justify-center h-full", onclick: function() { selectApparelCard(systemApparel[sysApparelIdx]); }}, [
                                     m("div", {class: "cg-mini-apparel"}, [
-                                        m("span", {class: "cg-mini-icon-pink text-2xl md:text-3xl"}, "checkroom"),
+                                        m("span", {class: "material-symbols-outlined cg-mini-icon-pink text-2xl md:text-3xl"}, "checkroom"),
                                         m("span", {class: "cg-mini-text-pink text-xs md:text-sm"}, getApparelDisplayName(systemApparel[sysApparelIdx]).substring(0, 8)),
                                         systemApparel.length > 1 ? m("div", {class: "absolute -top-1 -right-1 bg-pink-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center"}, systemApparel.length) : ""
                                     ])
@@ -1886,7 +1897,7 @@
             style: "width: 50px; height: 60px;",
             title: item.name || "Item"
         }, [
-            m("span", {class: "cg-item-icon"}, "inventory_2"),
+            m("span", {class: "material-symbols-outlined cg-item-icon"}, "inventory_2"),
             m("span", {class: "cg-item-text"}, item.name ? item.name.substring(0, 6) : "?")
         ]);
     }
@@ -1899,7 +1910,7 @@
             style: "width: 50px; height: 60px;",
             title: displayName
         }, [
-            m("span", {class: "cg-apparel-icon"}, "checkroom"),
+            m("span", {class: "material-symbols-outlined cg-apparel-icon"}, "checkroom"),
             m("span", {class: "cg-apparel-text"}, displayName.substring(0, 6))
         ]);
     }
@@ -4199,7 +4210,19 @@
         ]);
     }
 
+    function toggleTag(tag) {
+        let idx = activeTags.indexOf(tag);
+        if (idx >= 0) {
+            activeTags.splice(idx, 1);
+        } else {
+            activeTags.push(tag);
+        }
+        // Reload characters with new filter
+        loadCharacters();
+    }
+
     function getFooter() {
+        let nudeActive = activeTags.indexOf("nude") >= 0;
         return [
             // Save/Load game button
             m("button", {
@@ -4217,6 +4240,15 @@
                 m("span", {class: "material-symbols-outlined material-icons-24"}, "save"),
                 "Save"
             ]) : "",
+            // Tag filter - Nude toggle
+            m("button", {
+                class: "flyout-button" + (nudeActive ? " bg-pink-600 hover:bg-pink-500 text-white" : ""),
+                onclick: function() { toggleTag("nude"); },
+                title: nudeActive ? "Nude filter active - click to disable" : "Filter by nude tag"
+            }, [
+                m("span", {class: "material-symbols-outlined material-icons-24"}, nudeActive ? "visibility" : "visibility_off"),
+                "Nude"
+            ]),
             // New Deal button
             m("button", {
                 class: "flyout-button",

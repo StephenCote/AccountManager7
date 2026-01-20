@@ -1255,7 +1255,7 @@
         @apply w-8 text-right text-xs text-gray-800 dark:text-gray-200;
       }
       .cg-stat-icon {
-        @apply material-symbols-outlined text-sm text-gray-500 dark:text-gray-400;
+        @apply text-sm text-gray-500 dark:text-gray-400;
       }
 
       /* Trait tags */
@@ -1301,13 +1301,13 @@
         @apply text-pink-800 dark:text-pink-200 truncate w-full text-center px-1;
       }
       .cg-mini-icon-purple {
-        @apply material-symbols-outlined text-purple-600 dark:text-purple-400;
+        @apply text-purple-600 dark:text-purple-400;
       }
       .cg-mini-icon-emerald {
-        @apply material-symbols-outlined text-emerald-600 dark:text-emerald-400;
+        @apply text-emerald-600 dark:text-emerald-400;
       }
       .cg-mini-icon-pink {
-        @apply material-symbols-outlined text-pink-600 dark:text-pink-400;
+        @apply text-pink-600 dark:text-pink-400;
       }
 
       /* Render item/apparel mini cards */
@@ -1318,13 +1318,13 @@
         @apply flex-shrink-0 flex flex-col items-center justify-center p-1 rounded border bg-gradient-to-b from-pink-50 to-pink-100 dark:from-pink-900 dark:to-pink-950 border-pink-300 dark:border-pink-700;
       }
       .cg-item-icon {
-        @apply material-symbols-outlined text-lg text-emerald-600 dark:text-emerald-400;
+        @apply text-lg text-emerald-600 dark:text-emerald-400;
       }
       .cg-item-text {
         @apply text-xs text-center text-emerald-700 dark:text-emerald-300 truncate w-full;
       }
       .cg-apparel-icon {
-        @apply material-symbols-outlined text-lg text-pink-600 dark:text-pink-400;
+        @apply text-lg text-pink-600 dark:text-pink-400;
       }
       .cg-apparel-text {
         @apply text-xs text-center text-pink-700 dark:text-pink-300 truncate w-full;
@@ -1438,7 +1438,7 @@
         @apply bg-gray-300 dark:bg-gray-700 flex items-center justify-center overflow-hidden relative;
       }
       .cg-mini-portrait-icon {
-        @apply material-symbols-outlined text-xl text-gray-400 dark:text-gray-500;
+        @apply text-xl text-gray-400 dark:text-gray-500;
       }
       .cg-mini-badge {
         @apply absolute top-0.5 right-0.5 p-0.5 rounded bg-black/40 text-white;

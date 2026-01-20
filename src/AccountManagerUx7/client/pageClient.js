@@ -648,10 +648,12 @@
 
             if(portrait && portrait.groupId){
                 // Query for all images in the same group as the portrait
-                let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                //let q = am7view.viewQuery(am7model.newInstance("data.data"));
+                let q = am7client.newQuery("data.data")
                 q.field("groupId", portrait.groupId);
                 //q.field("contentType", "image/%");
                 q.entity.request.push("id", "objectId", "name", "groupId", "groupPath", "contentType", "attributes", "tags");
+                
                 q.range(0, 200);
                 q.sort("createdDate");
                 q.order("descending");
