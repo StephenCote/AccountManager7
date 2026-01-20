@@ -4382,6 +4382,14 @@ button.button-tab-active:hover:is(.dark *) {
   top: 0.5rem;
 }
 
+.right-0\.5 {
+  right: 0.125rem;
+}
+
+.top-0\.5 {
+  top: 0.125rem;
+}
+
 .z-0 {
   z-index: 0;
 }
@@ -4661,6 +4669,14 @@ button.button-tab-active:hover:is(.dark *) {
 
 .h-screen {
   height: 100vh;
+}
+
+.h-16 {
+  height: 4rem;
+}
+
+.h-5 {
+  height: 1.25rem;
 }
 
 .max-h-60 {
@@ -5848,6 +5864,11 @@ button.button-tab-active:hover:is(.dark *) {
 .py-8 {
   padding-top: 2rem;
   padding-bottom: 2rem;
+}
+
+.px-0\.5 {
+  padding-left: 0.125rem;
+  padding-right: 0.125rem;
 }
 
 .pb-14 {

@@ -1295,6 +1295,7 @@
 
     // Mini card for stack display
     // cardType: 'character', 'item', 'location', 'event' (for future use)
+    // Responsive: smaller on mobile (60x85), larger on desktop (80x110)
     function renderMiniCard(card, onClick, isHighlight, source, cardType) {
         let portraitUrl = card ? getPortraitUrl(card, "128x128") : null;
         let borderClass = isHighlight ? "border-amber-500 ring-2 ring-amber-400" : "border-gray-400 dark:border-gray-500";
@@ -1302,41 +1303,42 @@
         let typeIcon = cardType === 'character' ? 'person' : cardType === 'item' ? 'inventory_2' : cardType === 'location' ? 'location_on' : 'event';
 
         return m("div", {
-            class: "rounded-lg overflow-hidden border-2 bg-gradient-to-b from-amber-100 to-amber-200 dark:from-gray-700 dark:to-gray-800 shadow-lg cursor-grab hover:scale-105 transition-transform " + borderClass + (isDragging ? " opacity-50" : ""),
-            style: "width: 80px; height: 110px;",
+            class: "rounded-lg overflow-hidden border-2 bg-gradient-to-b from-amber-100 to-amber-200 dark:from-gray-700 dark:to-gray-800 shadow-lg cursor-grab hover:scale-105 transition-transform flex-shrink-0 " + borderClass + (isDragging ? " opacity-50" : ""),
+            style: "width: 60px; height: 85px;",
             onclick: onClick,
             draggable: source ? true : false,
             ondragstart: source ? function(e) { handleDragStart(e, card, source); } : null,
             ondragend: source ? handleDragEnd : null
         }, [
-            m("div", {class: "h-20 bg-gray-300 dark:bg-gray-700 flex items-center justify-center overflow-hidden relative"}, [
+            m("div", {class: "h-16 bg-gray-300 dark:bg-gray-700 flex items-center justify-center overflow-hidden relative"}, [
                 portraitUrl ?
                     m("img", {src: portraitUrl, class: "w-full h-full object-cover", draggable: false}) :
-                    m("span", {class: "material-symbols-outlined text-2xl text-gray-400 dark:text-gray-500"}, "person"),
+                    m("span", {class: "material-symbols-outlined text-xl text-gray-400 dark:text-gray-500"}, "person"),
                 // Card type icon overlay
-                m("div", {class: "absolute top-1 right-1 p-0.5 rounded bg-black/40 text-white"}, [
-                    m("span", {class: "material-symbols-outlined text-xs"}, typeIcon)
+                m("div", {class: "absolute top-0.5 right-0.5 p-0.5 rounded bg-black/40 text-white"}, [
+                    m("span", {class: "material-symbols-outlined", style: "font-size: 10px"}, typeIcon)
                 ])
             ]),
-            m("div", {class: "h-6 px-1 flex items-center justify-center bg-amber-200 dark:bg-gray-800 border-t border-amber-300 dark:border-gray-600"}, [
-                m("div", {class: "text-xs font-bold text-gray-800 dark:text-gray-200 truncate text-center"},
+            m("div", {class: "h-5 px-0.5 flex items-center justify-center bg-amber-200 dark:bg-gray-800 border-t border-amber-300 dark:border-gray-600"}, [
+                m("div", {class: "font-bold text-gray-800 dark:text-gray-200 truncate text-center", style: "font-size: 9px"},
                     card ? card.name.split(" ")[0] : "?")
             ])
         ]);
     }
 
     // Card back for deck stacks (no portrait, just type icon)
+    // Responsive: smaller on mobile (60x85), larger on desktop (80x110)
     function renderCardBack(cardType) {
         let typeIcon = cardType === 'character' ? 'person' : cardType === 'item' ? 'inventory_2' : cardType === 'location' ? 'location_on' : 'event';
         let typeName = cardType.charAt(0).toUpperCase() + cardType.slice(1);
 
         return m("div", {
-            class: "rounded-lg overflow-hidden border-2 border-gray-400 dark:border-gray-500 bg-gradient-to-b from-blue-800 to-blue-900 shadow-lg",
-            style: "width: 80px; height: 110px;"
+            class: "rounded-lg overflow-hidden border-2 border-gray-400 dark:border-gray-500 bg-gradient-to-b from-blue-800 to-blue-900 shadow-lg flex-shrink-0",
+            style: "width: 60px; height: 85px;"
         }, [
             m("div", {class: "h-full flex flex-col items-center justify-center"}, [
-                m("span", {class: "material-symbols-outlined text-4xl text-blue-300"}, typeIcon),
-                m("div", {class: "text-xs font-bold text-blue-300 mt-1"}, typeName)
+                m("span", {class: "material-symbols-outlined text-3xl text-blue-300"}, typeIcon),
+                m("div", {class: "font-bold text-blue-300 mt-0.5", style: "font-size: 9px"}, typeName)
             ])
         ]);
     }
@@ -1373,18 +1375,18 @@
                                 // Stack shadows with card backs
                                 deck.length > 2 ? m("div", {
                                     class: "absolute rounded-lg bg-gradient-to-b from-blue-700 to-blue-800 border-2 border-blue-600",
-                                    style: "width: 80px; height: 110px; top: 4px; left: 4px;"
+                                    style: "width: 60px; height: 85px; top: 3px; left: 3px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
-                                        m("span", {class: "material-symbols-outlined text-2xl text-blue-400/50"}, "person")
+                                        m("span", {class: "material-symbols-outlined text-xl text-blue-400/50"}, "person")
                                     ])
                                 ]) : "",
                                 deck.length > 1 ? m("div", {
                                     class: "absolute rounded-lg bg-gradient-to-b from-blue-700 to-blue-800 border-2 border-blue-600",
-                                    style: "width: 80px; height: 110px; top: 2px; left: 2px;"
+                                    style: "width: 60px; height: 85px; top: 1.5px; left: 1.5px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
-                                        m("span", {class: "material-symbols-outlined text-2xl text-blue-400/50"}, "person")
+                                        m("span", {class: "material-symbols-outlined text-xl text-blue-400/50"}, "person")
                                     ])
                                 ]) : "",
                                 // Top card (preview card) - draggable
@@ -1447,10 +1449,10 @@
                 let isPlayedDrop = (dropTarget === 'playedActions' && dragSource === 'actionHand') || (dragSource === 'actionHand' && dropTarget === 'playedActions');
                 let isDraggingAction = dragSource === 'actionHand';
 
-                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900"}, [
+                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-hidden"}, [
                     // Main content - character card with surrounding card stacks
-                    // Card sizes: action/item/apparel stacks ~60x80, character ~80x110
-                    m("div", {class: "flex-1 flex items-center justify-center p-2 gap-3"}, [
+                    // Responsive: smaller cards and tighter gaps on mobile
+                    m("div", {class: "flex-1 flex items-center justify-center p-1 md:p-2 gap-1 md:gap-3 overflow-x-auto"}, [
                         // Left side - Action cards stack
                         m("div", {
                             class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
@@ -1466,16 +1468,16 @@
                                 m("div", {
                                     class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
                                         (isActionDropTarget ? "border-purple-500 bg-purple-100 dark:bg-purple-900" : "border-purple-300 dark:border-purple-700"),
-                                    style: "width: 60px; min-height: 80px;"
+                                    style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(actionHand[actionHandIndex]); }}, [
                                     // Stacked cards visual
-                                    actionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
-                                    actionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    actionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    actionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     // Top card
                                     m("div", {
                                         class: "relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
-                                        style: "width: 60px; height: 80px;",
+                                        style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, actionHand[actionHandIndex], 'actionHand'); },
                                         ondragend: handleDragEnd
@@ -1498,10 +1500,10 @@
                                     m("div", {
                                         class: "rounded border-2 border-dashed flex flex-col items-center justify-center " +
                                             (isCharDropTarget ? "border-green-500 bg-green-100 dark:bg-green-900" : "border-gray-400"),
-                                        style: "width: 80px; height: 110px;"
+                                        style: "width: 60px; height: 85px;"
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-3xl"}, "person_add"),
-                                        m("span", {class: "text-xs mt-1"}, "Drop")
+                                        m("span", {class: "material-symbols-outlined text-2xl"}, "person_add"),
+                                        m("span", {style: "font-size: 9px"}, "Drop")
                                     ])
                                 ]) :
                                 m("div", {class: "flex-1 flex items-center"},
@@ -1527,14 +1529,14 @@
                                 m("div", {
                                     class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
                                         (isItemDropTarget ? "border-emerald-500 bg-emerald-100 dark:bg-emerald-900" : "border-emerald-300 dark:border-emerald-700"),
-                                    style: "width: 60px; min-height: 80px;"
+                                    style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(itemHand[itemHandIndex]); }}, [
-                                    itemHand.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
-                                    itemHand.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    itemHand.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    itemHand.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
                                         class: "relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
-                                        style: "width: 60px; height: 80px;",
+                                        style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, itemHand[itemHandIndex], 'itemHand'); },
                                         ondragend: handleDragEnd
@@ -1560,14 +1562,14 @@
                                 m("div", {
                                     class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
                                         (isApparelDropTarget ? "border-pink-500 bg-pink-100 dark:bg-pink-900" : "border-pink-300 dark:border-pink-700"),
-                                    style: "width: 60px; min-height: 80px;"
+                                    style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(apparelHand[apparelHandIndex]); }}, [
-                                    apparelHand.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
-                                    apparelHand.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    apparelHand.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    apparelHand.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
                                         class: "relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
-                                        style: "width: 60px; height: 80px;",
+                                        style: "width: 50px; height: 70px;",
                                         draggable: true,
                                         ondragstart: function(e) { handleDragStart(e, apparelHand[apparelHandIndex], 'apparelHand'); },
                                         ondragend: handleDragEnd
@@ -1692,8 +1694,8 @@
                     ]),
 
                     // Main content - character card with surrounding card stacks
-                    // Card sizes: action/item/apparel stacks ~60x80, character ~80x110
-                    m("div", {class: "flex-1 flex items-center justify-center p-2 gap-3 overflow-hidden"}, [
+                    // Responsive: smaller gaps on mobile
+                    m("div", {class: "flex-1 flex items-center justify-center p-1 md:p-2 gap-1 md:gap-3 overflow-x-auto"}, [
                         // Left side - Action cards stack (system)
                         m("div", {
                             class: "flex flex-col items-center transition-colors rounded p-1 h-3/4 " + (isActionDropTarget ? "bg-purple-200 dark:bg-purple-800" : ""),
@@ -1709,14 +1711,14 @@
                                 m("div", {
                                     class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
                                         (isActionDropTarget ? "border-purple-500 bg-purple-100 dark:bg-purple-900" : "border-purple-300 dark:border-purple-700"),
-                                    style: "width: 60px; min-height: 80px;"
+                                    style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-purple-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectActionCard(systemActionHand[sysActionIdx]); }}, [
-                                    systemActionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
-                                    systemActionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    systemActionHand.length > 1 ? m("div", {class: "absolute rounded bg-purple-300 dark:bg-purple-700 border border-purple-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    systemActionHand.length > 2 ? m("div", {class: "absolute rounded bg-purple-200 dark:bg-purple-800 border border-purple-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
                                         class: "relative rounded bg-gradient-to-b from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-900 border-2 border-purple-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
-                                        style: "width: 60px; height: 80px;"
+                                        style: "width: 50px; height: 70px;"
                                     }, [
                                         m("span", {class: "material-symbols-outlined text-purple-600 dark:text-purple-400", style: "font-size: 24px"}, systemActionHand[sysActionIdx].icon),
                                         m("span", {class: "text-purple-800 dark:text-purple-200 truncate w-full text-center px-1", style: "font-size: 9px"}, systemActionHand[sysActionIdx].label)
@@ -1736,10 +1738,10 @@
                                     m("div", {
                                         class: "rounded border-2 border-dashed flex flex-col items-center justify-center " +
                                             (isCharDropTarget ? "border-red-500 bg-red-100 dark:bg-red-900" : "border-gray-400"),
-                                        style: "width: 80px; height: 110px;"
+                                        style: "width: 60px; height: 85px;"
                                     }, [
-                                        m("span", {class: "material-symbols-outlined text-3xl"}, "smart_toy"),
-                                        m("span", {class: "text-xs mt-1"}, "Drop")
+                                        m("span", {class: "material-symbols-outlined text-2xl"}, "smart_toy"),
+                                        m("span", {style: "font-size: 9px"}, "Drop")
                                     ])
                                 ]) :
                                 m("div", {class: "flex space-x-1 flex-1 items-center"},
@@ -1765,14 +1767,14 @@
                                 m("div", {
                                     class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
                                         (isItemDropTarget ? "border-emerald-500 bg-emerald-100 dark:bg-emerald-900" : "border-emerald-300 dark:border-emerald-700"),
-                                    style: "width: 60px; min-height: 80px;"
+                                    style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-emerald-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectItemCard(systemItems[sysItemIdx]); }}, [
-                                    systemItems.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
-                                    systemItems.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    systemItems.length > 1 ? m("div", {class: "absolute rounded bg-emerald-300 dark:bg-emerald-700 border border-emerald-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    systemItems.length > 2 ? m("div", {class: "absolute rounded bg-emerald-200 dark:bg-emerald-800 border border-emerald-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
                                         class: "relative rounded bg-gradient-to-b from-emerald-100 to-emerald-200 dark:from-emerald-800 dark:to-emerald-900 border-2 border-emerald-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
-                                        style: "width: 60px; height: 80px;"
+                                        style: "width: 50px; height: 70px;"
                                     }, [
                                         m("span", {class: "material-symbols-outlined text-emerald-600 dark:text-emerald-400", style: "font-size: 24px"}, "inventory_2"),
                                         m("span", {class: "text-emerald-800 dark:text-emerald-200 truncate w-full text-center px-1", style: "font-size: 9px"}, systemItems[sysItemIdx].name ? systemItems[sysItemIdx].name.substring(0, 8) : "Item")
@@ -1795,14 +1797,14 @@
                                 m("div", {
                                     class: "rounded border-2 border-dashed flex items-center justify-center flex-1 " +
                                         (isApparelDropTarget ? "border-pink-500 bg-pink-100 dark:bg-pink-900" : "border-pink-300 dark:border-pink-700"),
-                                    style: "width: 60px; min-height: 80px;"
+                                    style: "width: 50px; min-height: 70px;"
                                 }, m("span", {class: "material-symbols-outlined text-pink-400", style: "font-size: 20px"}, "add")) :
                                 m("div", {class: "relative cursor-pointer flex-1 flex items-center", onclick: function() { selectApparelCard(systemApparel[sysApparelIdx]); }}, [
-                                    systemApparel.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 60px; height: 80px; top: 4px; left: 4px;"}) : "",
-                                    systemApparel.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 60px; height: 80px; top: 2px; left: 2px;"}) : "",
+                                    systemApparel.length > 1 ? m("div", {class: "absolute rounded bg-pink-300 dark:bg-pink-700 border border-pink-400", style: "width: 50px; height: 70px; top: 3px; left: 3px;"}) : "",
+                                    systemApparel.length > 2 ? m("div", {class: "absolute rounded bg-pink-200 dark:bg-pink-800 border border-pink-400", style: "width: 50px; height: 70px; top: 1.5px; left: 1.5px;"}) : "",
                                     m("div", {
                                         class: "relative rounded bg-gradient-to-b from-pink-100 to-pink-200 dark:from-pink-800 dark:to-pink-900 border-2 border-pink-400 flex flex-col items-center justify-center hover:shadow-lg transition-shadow",
-                                        style: "width: 60px; height: 80px;"
+                                        style: "width: 50px; height: 70px;"
                                     }, [
                                         m("span", {class: "material-symbols-outlined text-pink-600 dark:text-pink-400", style: "font-size: 24px"}, "checkroom"),
                                         m("span", {class: "text-pink-800 dark:text-pink-200 truncate w-full text-center px-1", style: "font-size: 9px"}, getApparelDisplayName(systemApparel[sysApparelIdx]).substring(0, 8))
@@ -2058,18 +2060,18 @@
                                 // Stack shadows with card backs
                                 discard.length > 2 ? m("div", {
                                     class: "absolute rounded-lg bg-gradient-to-b from-orange-700 to-orange-800 border-2 border-orange-600",
-                                    style: "width: 80px; height: 110px; top: 4px; left: 4px;"
+                                    style: "width: 60px; height: 85px; top: 3px; left: 3px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
-                                        m("span", {class: "material-symbols-outlined text-2xl text-orange-400/50"}, "person")
+                                        m("span", {class: "material-symbols-outlined text-xl text-orange-400/50"}, "person")
                                     ])
                                 ]) : "",
                                 discard.length > 1 ? m("div", {
                                     class: "absolute rounded-lg bg-gradient-to-b from-orange-700 to-orange-800 border-2 border-orange-600",
-                                    style: "width: 80px; height: 110px; top: 2px; left: 2px;"
+                                    style: "width: 60px; height: 85px; top: 1.5px; left: 1.5px;"
                                 }, [
                                     m("div", {class: "h-full flex items-center justify-center"}, [
-                                        m("span", {class: "material-symbols-outlined text-2xl text-orange-400/50"}, "person")
+                                        m("span", {class: "material-symbols-outlined text-xl text-orange-400/50"}, "person")
                                     ])
                                 ]) : "",
                                 // Top card (not draggable from discard)
@@ -2097,12 +2099,10 @@
     function ConsolidatedDecks() {
         return {
             view: function() {
-                return m("div", {class: "flex flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-y-auto"}, [
-                    // Header
-                    m("div", {class: "px-2 py-1 bg-gray-600 text-white text-sm font-medium text-center"}, "Draw Piles"),
-
-                    // Vertical stack of draw piles
-                    m("div", {class: "flex flex-col gap-1 p-1"}, [
+                // Horizontal on mobile, vertical on desktop
+                return m("div", {class: "flex flex-row md:flex-col h-full bg-gray-100 dark:bg-gray-900 overflow-x-auto md:overflow-y-auto"}, [
+                    // Horizontal row on mobile / Vertical stack on desktop of draw piles
+                    m("div", {class: "flex flex-row md:flex-col gap-1 p-1 flex-shrink-0"}, [
                         // Character pile
                         renderDrawPile("Characters", "person", "blue", deck, discard, "characterDeck",
                             function() { drawToUserHand(); }, shuffleDeck, reshuffleDiscard),
@@ -2122,9 +2122,9 @@
 
                     // Universal discard drop zone
                     m("div", {
-                        class: "mx-1 mb-1 flex flex-row items-center justify-center gap-2 rounded border-2 border-dashed transition-all flex-shrink-0 " +
+                        class: "m-1 flex flex-col md:flex-row items-center justify-center gap-1 rounded border-2 border-dashed transition-all flex-shrink-0 " +
                             (dropTarget === 'universalDiscard' ? "border-red-500 bg-red-100 dark:bg-red-900/30" : "border-gray-400 dark:border-gray-600 bg-gray-100 dark:bg-gray-800"),
-                        style: "height: 40px;",
+                        style: "min-width: 50px; min-height: 40px;",
                         ondragover: function(e) {
                             e.preventDefault();
                             dropTarget = 'universalDiscard';
@@ -2141,8 +2141,7 @@
                             m.redraw();
                         }
                     }, [
-                        m("span", {class: "material-symbols-outlined text-lg " + (dropTarget === 'universalDiscard' ? "text-red-500" : "text-gray-500 dark:text-gray-400")}, "delete"),
-                        m("span", {class: "text-xs font-medium " + (dropTarget === 'universalDiscard' ? "text-red-600 dark:text-red-400" : "text-gray-600 dark:text-gray-400")}, "Drop to Discard")
+                        m("span", {class: "material-symbols-outlined text-lg " + (dropTarget === 'universalDiscard' ? "text-red-500" : "text-gray-500 dark:text-gray-400")}, "delete")
                     ])
                 ]);
             }
@@ -4204,35 +4203,35 @@
     }
 
     function mainPanel() {
-        return m("div", {class: "flex-grow overflow-hidden flex bg-gray-100 dark:bg-gray-900"}, [
-            m("div", {class: "flex flex-col lg:flex-row w-full h-full"}, [
-                // Left panel - Draw Piles only (narrow vertical layout)
-                m("div", {class: "w-full lg:w-24 h-1/4 lg:h-full flex-shrink-0 border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700 flex flex-col overflow-y-auto"}, [
-                    m("div", {class: "flex-1"}, [
-                        m(ConsolidatedDecks)
-                    ])
+        // On small screens: vertical scroll layout
+        // On medium+ screens: horizontal layout with fixed panels
+        return m("div", {class: "flex-grow overflow-auto md:overflow-hidden flex bg-gray-100 dark:bg-gray-900"}, [
+            m("div", {class: "flex flex-col md:flex-row w-full min-h-full md:h-full"}, [
+                // Left panel - Draw Piles (horizontal row on mobile, vertical column on desktop)
+                m("div", {class: "flex-shrink-0 h-28 md:h-full md:w-24 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700 flex flex-row md:flex-col overflow-x-auto md:overflow-x-hidden md:overflow-y-auto"}, [
+                    m(ConsolidatedDecks)
                 ]),
 
                 // Center panel - Either hands or action view (chat, etc.)
                 chatDialogOpen ?
                     // Chat view replaces the hands
-                    m("div", {class: "flex-1 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
+                    m("div", {class: "flex-1 flex flex-col min-h-64 md:min-h-0 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700"}, [
                         m(ChatPanel)
                     ]) :
                     // Default: Both hands stacked (actions integrated into hand headers)
-                    m("div", {class: "flex-1 h-1/2 lg:h-full flex flex-col border-b lg:border-b-0 lg:border-r border-gray-300 dark:border-gray-700"}, [
+                    m("div", {class: "flex-1 flex flex-col min-h-64 md:min-h-0 border-b md:border-b-0 md:border-r border-gray-300 dark:border-gray-700"}, [
                         // User's hand (top) - 50%
-                        m("div", {class: "h-1/2"}, [
+                        m("div", {class: "flex-1 min-h-32 md:min-h-0 overflow-hidden"}, [
                             m(UserHandPile)
                         ]),
                         // System's hand (bottom) - 50%
-                        m("div", {class: "h-1/2"}, [
+                        m("div", {class: "flex-1 min-h-32 md:min-h-0 overflow-hidden"}, [
                             m(GameHandPile)
                         ])
                     ]),
 
                 // Right panel - Selected Card View
-                m("div", {class: "w-full lg:w-1/4 h-1/4 lg:h-full bg-gray-100 dark:bg-gray-900"}, [
+                m("div", {class: "flex-shrink-0 h-80 md:h-full md:w-1/4 bg-gray-100 dark:bg-gray-900 overflow-y-auto"}, [
                     m(SelectedCardView)
                 ])
             ])
