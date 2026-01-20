@@ -32,6 +32,8 @@
     let pagination = page.pagination();
 
     let dnd;
+    let taggingInProgress = false;
+    let taggingAbort = false;
 
     function textField(sClass, id, plc, fKeyHandler) {
       return m("input", { placeholder: plc, onkeydown: fKeyHandler, id: id, type: "text", class: sClass });
@@ -108,7 +110,7 @@
             let obj = pages.pageResults[pages.currentPage][idx[i]];
 
             if (bBucket) {
-              aP.push(page.member(contType, listContainerId, getType(obj), obj.objectId, false).then((r) => { if(r) page.toast("success", "Removed member"); else page.toast("error", "Failed to remove member"); })); 
+              aP.push(page.member(contType, listContainerId, getType(obj), obj.objectId, false).then((r) => { if(r) page.toast("success", "Removed member"); else page.toast("error", "Failed to remove member"); }));
             }
             else {
               aP.push(page.deleteObject(getType(obj), obj.objectId).then((r) => { if(r) page.toast("success", "Deleted object"); else page.toast("error", "Failed to delete object"); }));
@@ -120,6 +122,81 @@
         }
       });
 
+    }
+
+    async function applyTagsToList() {
+      // If already in progress, abort
+      if (taggingInProgress) {
+        taggingAbort = true;
+        page.toast("warn", "Aborting tag operation...");
+        m.redraw();
+        return;
+      }
+
+      let pages = pagination.pages();
+      if (!pages.containerId) {
+        page.toast("error", "No container selected");
+        return;
+      }
+
+      // Build query to find first 500 images in the group
+      let q = am7client.newQuery("data.data");
+      q.field("groupId", pages.container.id);
+      q.field("contentType", "image/%");
+      q.entity.request = ["id", "objectId", "name", "contentType"];
+      q.range(0, 500);
+
+      page.toast("info", "Searching for images...");
+      let qr = await page.search(q);
+
+      if (!qr || !qr.results || !qr.results.length) {
+        page.toast("warn", "No images found in this group");
+        return;
+      }
+
+      let images = qr.results;
+      taggingInProgress = true;
+      taggingAbort = false;
+      m.redraw();
+
+      let successCount = 0;
+      let errorCount = 0;
+
+      page.toast("info", "Tagging " + images.length + " images...", 10000);
+
+      for (let i = 0; i < images.length; i++) {
+        if (taggingAbort) {
+          page.toast("warn", "Tag operation aborted at " + i + " of " + images.length);
+          break;
+        }
+
+        let img = images[i];
+        try {
+          let tags = await page.applyImageTags(img.objectId);
+          if (tags && tags.length) {
+            successCount++;
+          }
+        }
+        catch (e) {
+          console.error("Failed to tag image: " + img.name, e);
+          errorCount++;
+        }
+
+        // Update progress every 10 images
+        if ((i + 1) % 10 === 0) {
+          page.toast("info", "Tagged " + (i + 1) + " of " + images.length + " images...", 5000);
+          m.redraw();
+        }
+      }
+
+      taggingInProgress = false;
+      taggingAbort = false;
+
+      if (successCount > 0 || errorCount > 0) {
+        page.toast("success", "Completed: " + successCount + " tagged" + (errorCount > 0 ? ", " + errorCount + " errors" : ""));
+      }
+
+      m.redraw();
     }
 
     function closeSelected() {
@@ -458,6 +535,9 @@
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), "edit", "", editSelected));
         let bBucket = (pagination.pages().containerSubType && pagination.pages().containerSubType.match(/^(bucket|account|person)$/gi));
         buttons.push(pagination.button("button" + (!selected ? " inactive" : ""), (bBucket ? "playlist_remove" : "delete"), "", deleteSelected));
+        if(type && type == "data.data"){
+          buttons.push(pagination.button("button" + (taggingInProgress ? " active" : ""), "sell", "", applyTagsToList));
+        }
       }
 
       return buttons;

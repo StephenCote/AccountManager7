@@ -18,6 +18,9 @@ public class ImageTagResponse {
     @JsonProperty("captions")
     private List<String> captions;
 
+    @JsonProperty("nsfw")
+    private NsfwResult nsfw;
+
     @JsonProperty("device_used")
     private String deviceUsed;
 
@@ -49,6 +52,14 @@ public class ImageTagResponse {
 
     public void setCaptions(List<String> captions) {
         this.captions = captions;
+    }
+
+    public NsfwResult getNsfw() {
+        return nsfw;
+    }
+
+    public void setNsfw(NsfwResult nsfw) {
+        this.nsfw = nsfw;
     }
 
     public String getDeviceUsed() {
@@ -85,8 +96,28 @@ public class ImageTagResponse {
                 "success=" + success +
                 ", tags=" + tags +
                 ", captions=" + captions +
+                ", nsfw=" + nsfw +
                 ", deviceUsed='" + deviceUsed + '\'' +
                 ", modelId='" + modelId + '\'' +
                 '}';
+    }
+
+    /**
+     * Check if the image is flagged as NSFW.
+     *
+     * @return true if NSFW classification indicates adult content
+     */
+    public boolean isNsfw() {
+        return nsfw != null && Boolean.TRUE.equals(nsfw.getIsNsfw());
+    }
+
+    /**
+     * Check if the image is NSFW with confidence above threshold.
+     *
+     * @param threshold Confidence threshold (0.0 - 1.0)
+     * @return true if NSFW and confidence is above threshold
+     */
+    public boolean isNsfwAboveThreshold(double threshold) {
+        return nsfw != null && nsfw.isNsfwAboveThreshold(threshold);
     }
 }

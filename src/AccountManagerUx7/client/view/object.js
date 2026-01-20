@@ -268,6 +268,28 @@
         async function chatInto(){
             page.components.dialog.chatInto(inst.entity);
         }
+
+        async function applyTags(){
+            if(!entity || !entity.objectId) return;
+            if(!entity.contentType || !entity.contentType.match(/^image\//gi)){
+                page.toast("warn", "Tag application is only available for images");
+                return;
+            }
+            page.toast("info", "Applying image tags...");
+            try {
+                let tags = await page.applyImageTags(entity.objectId);
+                if(tags && tags.length){
+                    page.toast("success", "Applied " + tags.length + " tags");
+                }
+                else {
+                    page.toast("warn", "No tags were applied");
+                }
+            }
+            catch(e){
+                console.error(e);
+                page.toast("error", "Failed to apply tags");
+            }
+        }
         
         async function doCopy(){
             if(!entity || !entity.objectId) return;
@@ -1034,6 +1056,7 @@
                             (bNew ? "" : page.iconButton("button","content_copy", "", doCopy)),
                             (bNew ? "" : page.iconButton("button","query_stats", "", chatInto)),
                             (bNew || type !== "olio.charPerson" ? "" : page.iconButton("button","photo_library", "", function(){ page.imageGallery([], inst); })),
+                            (bNew || type !== "data.data" ? "" : page.iconButton("button","sell", "", applyTags)),
                             (bNew ? "" : page.iconButton("button","delete_outline", "", doDelete)),
                             getFormCommands(type, form, null, false, false, true)
                         ]),

@@ -466,6 +466,27 @@
             }
         }
 
+        async function applyImageTags() {
+            if(typeof page === "undefined") return;
+            let img = images[currentIndex];
+            if(!img || !img.objectId) return;
+
+            page.toast("info", "Applying image tags...");
+            try {
+                let tags = await page.applyImageTags(img.objectId);
+                if(tags && tags.length){
+                    page.toast("success", "Applied " + tags.length + " tags");
+                }
+                else {
+                    page.toast("warn", "No tags were applied");
+                }
+            }
+            catch(e){
+                console.error(e);
+                page.toast("error", "Failed to apply tags");
+            }
+        }
+
         let currentImage = images[currentIndex];
         let dataUrl = buildThumbnailPath(currentImage, "512x512");
 
@@ -479,7 +500,8 @@
             page.iconButton("button", "arrow_back", "", function() { navigate(-1); }, images.length <= 1),
             m("span", { class: "button" }, (currentIndex + 1) + " / " + images.length),
             page.iconButton("button mr-4", "arrow_forward", "", function() { navigate(1); }, images.length <= 1),
-            page.iconButton("button", "delete", "", deleteImage)
+            page.iconButton("button", "delete", "", deleteImage),
+            page.iconButton("button", "sell", "", applyImageTags)
         ];
 
         // Only show set-as-profile button if we have a character instance
