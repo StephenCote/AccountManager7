@@ -384,6 +384,8 @@
     // All social sharing tags that can be toggled in the gallery
     // These are the subjective tags users can manually apply
     const socialSharingTags = [
+        "nude",
+        "selfie",
         "inappropriate",
         "intimate",
         "sexy",
